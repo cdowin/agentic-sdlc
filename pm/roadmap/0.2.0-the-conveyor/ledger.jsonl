@@ -87,11 +87,11 @@
 {"ts":"2026-09-05T18:04:15Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1546}
 {"ts":"2026-09-05T18:04:17Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1533}
 {"ts":"2026-09-05T18:04:19Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1681}
-{"ts":"2026-09-05T18:04:19Z","kind":"gate","gate":"gates","verdict":"FAIL","duration_ms":57}
-{"ts":"2026-09-05T18:04:19Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":273}
-{"ts":"2026-09-05T18:04:20Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":227}
-{"ts":"2026-09-05T18:04:20Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":220}
-{"ts":"2026-09-05T18:04:20Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":237}
-{"ts":"2026-09-05T18:04:21Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":247}
 {"ts":"2026-09-05T18:05:05Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":181250}
 {"ts":"2026-09-05T18:39:14Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1695}
+{"ts":"2026-09-05T18:41:56Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1563}
+{"ts":"2026-09-05T18:42:04Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1489}
+{"ts":"2026-09-05T18:42:05Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1484}
+{"ts":"2026-09-05T18:42:07Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1498}
+{"ts":"2026-09-05T18:43:06Z","kind":"gate","gate":"matrix","verdict":"FAIL","duration_ms":226521}
+{"ts":"2026-09-05T18:46:11Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1721}

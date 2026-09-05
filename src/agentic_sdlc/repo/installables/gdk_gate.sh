@@ -60,7 +60,9 @@
 #                             vocabulary (PASS|FAIL|HANG|SKIP), for a runner
 #                             that publishes its own result and never went
 #                             through gdk_gate_capture. Unset, it is DERIVED
-#                             from GDK_GATE_EXIT.
+#                             from what the captures against this run's LOG
+#                             SLOT reported — the first failing one, or the
+#                             last GDK_GATE_EXIT when none failed.
 # -----------------------------------------------------------------------------
 
 # Guard against double-sourcing: a wrapper may source us once, and some chains
@@ -256,8 +258,40 @@ _gdk_ledger_open() {
 	return 0
 }
 
-# _gdk_ledger_verdict — the run's outcome in the ledger's CLOSED vocabulary, or
-# nothing when this library would have to guess.
+# _gdk_ledger_fault <logfile> <exit code> — remember, ON THE SLOT, that a
+# capture against it failed.
+#
+# THE VERDICT IS THE SLOT'S, NOT THE LAST COMMAND'S. `gdk_gate_capture`
+# publishes each command's own code in GDK_GATE_EXIT and a runner reads it
+# there — that is the published contract and it stays last-write-wins. But a
+# runner that captures N times against ONE `gdk_gate_log` slot (this repo's own
+# `matrix` target loops one capture per interpreter) then leaves the LAST
+# command's code standing when the verdict closes the row, so a matrix that
+# failed on the first interpreter and passed on the last filed
+# `"verdict":"PASS"` under a console line reading `FAIL on first`. A durable
+# record that prints the opposite of what the gate found is hard rule 4's
+# read-side sin, in the feature whose whole job is honest measurement.
+#
+# FIRST NON-ZERO WINS, and it is parked in the sidecar rather than a variable
+# for the reason the sidecar exists at all: the state belongs to the SLOT, so
+# two interleaved slots cannot read each other's, and a global would. Appending
+# is the whole write — the first non-zero lands on line 3 and every later one
+# lands past it, unread, so "the first thing that went wrong" needs no compare.
+_gdk_ledger_fault() {
+	[ -n "$GDK_LEDGER_CMD" ] || return 0
+	case "${2-}" in ''|*[!0-9]*) return 0 ;; esac
+	[ "$2" -ne 0 ] || return 0
+	local side
+	side="$(_gdk_ledger_sidecar "${1-}")"
+	# No sidecar means no open slot for this log; a capture must never MINT one
+	# (a row whose start time was never taken would be a fabricated duration).
+	[ -f "$side" ] || return 0
+	printf '%s\n' "$2" 2>/dev/null >> "$side" || true
+	return 0
+}
+
+# _gdk_ledger_verdict [slot exit code] — the run's outcome in the ledger's
+# CLOSED vocabulary, or nothing when this library would have to guess.
 #
 # The verdict never comes from the message. `gdk_gate_verdict`'s second
 # argument is prose a human wrote ("PASS (12 files)", "FAIL (exit 3) — 2
@@ -266,18 +300,24 @@ _gdk_ledger_open() {
 # publishes the command's own code, and 124/137 are the timeout pair the
 # bounded-run contract above already names. A runner that publishes its own
 # result without capturing says so in GDK_GATE_VERDICT.
+#
+# The argument is the SLOT's code when one was remembered (`_gdk_ledger_fault`),
+# and it outranks GDK_GATE_EXIT for the reason spelled out there: a slot's
+# verdict must reflect every capture against it, not the last.
 _gdk_ledger_verdict() {
 	case "$GDK_GATE_VERDICT" in
 		PASS|FAIL|HANG|SKIP) printf '%s' "$GDK_GATE_VERDICT"; return 0 ;;
 		'') ;;
 		*) return 0 ;;
 	esac
-	case "${GDK_GATE_EXIT:-}" in
+	local code="${1-}"
+	[ -n "$code" ] || code="${GDK_GATE_EXIT:-}"
+	case "$code" in
 		''|*[!0-9]*) return 0 ;;
 	esac
-	if [ "$GDK_GATE_EXIT" -eq 0 ]; then
+	if [ "$code" -eq 0 ]; then
 		printf 'PASS'
-	elif gdk_timeout_is_hang "$GDK_GATE_EXIT"; then
+	elif gdk_timeout_is_hang "$code"; then
 		printf 'HANG'
 	else
 		printf 'FAIL'
@@ -315,6 +355,44 @@ _gdk_ledger_run() {
 	gdk_run_bounded "$GDK_LEDGER_TIMEOUT" -- "$@"
 }
 
+# THE VALUE IS PARSED INSIDE THE BOUND, NOT IN FRONT OF IT.
+# GDK_LEDGER_CMD is a command STRING, and the stock spelling carries shell
+# quoting (`uvx --from "git+https://…@$(DEVKIT_VERSION)" agentic-sdlc`), so a
+# bare word split would hand `uvx` a spec with literal quote characters in it.
+# `eval` into an array is the one shape that parses it the way the Makefile
+# recipe next to it does, and that quoting support is not negotiable.
+#
+# But a value is not inert text to `eval`: every `$( )` and backtick in it
+# EXECUTES while the array is built. That build used to happen in the GATE'S
+# OWN shell, before `timeout` was ever invoked. Measured on the shipped file,
+# GDK_LEDGER_TIMEOUT=3:
+#
+#   GDK_LEDGER_CMD='true $(sleep 20)'   ->  20062 ms, and NO note at all
+#
+# Same symptom as the fork case above — the recorder holds the gate open past
+# its bound — and a different mechanism, so that fix does not reach this one:
+# there the READER blocked on an inherited pipe, here the value ran during
+# parse. Refusing `$(`, a backtick and `${` BY SHAPE would close the three
+# spellings the review measured and not the class, because
+# `eval "prefix=(a); sleep 20; x=("` carries none of them and runs just as
+# long. So the parse moved inside the bound, where nothing it spells can
+# outlive the deadline.
+#
+# `exec` is what keeps the bound honest for the recorder too: the shim's last
+# act replaces itself with the recorder, so `timeout`'s direct child is still
+# the recorder's own process and the signal path is the one measured above.
+# 121 is the shim's OWN refusal — outside the codes a recorder plausibly
+# returns, and confirmed against the message it prints, so a value this shell
+# cannot parse is never reported as something the recorder did.
+_GDK_LEDGER_PARSE_REFUSAL='GDK_LEDGER_CMD is not a command line this shell can parse'
+# shellcheck disable=SC2016  # $1/$2/$@ are the SHIM's positionals, not ours
+_GDK_LEDGER_SHIM='
+eval "prefix=($1)" 2>/dev/null || { printf "%s\n" "$2" >&2; exit 121; }
+shift 2
+[ "${#prefix[@]}" -gt 0 ] || exit 0
+exec "${prefix[@]}" "$@"
+'
+
 # _gdk_ledger_record <gate> <verdict> <duration_ms> [scratch]
 #
 # `scratch` is where the recorder's output is parked while it runs. It is a
@@ -325,21 +403,6 @@ _gdk_ledger_run() {
 # degradation; a gate that will not return is not.
 _gdk_ledger_record() {
 	local said='' rc=0 scratch="${4-}"
-	# GDK_LEDGER_CMD is a command STRING, and the stock spelling carries shell
-	# quoting (`uvx --from "git+https://…@$(DEVKIT_VERSION)" agentic-sdlc`), so
-	# a bare word split would hand `uvx` a spec with literal quote characters in
-	# it. `eval` into an array is the one shape that parses it the way the
-	# Makefile recipe next to it does. It is config this library was told to
-	# EXECUTE, not data it read off a payload — and everything this file adds to
-	# it is quoted, so a gate name with a space or a metacharacter is still ONE
-	# argv element and story 01's grammar is what refuses it.
-	local -a prefix
-	prefix=()
-	if ! eval "prefix=($GDK_LEDGER_CMD)" 2>/dev/null; then
-		_gdk_ledger_note 'GDK_LEDGER_CMD is not a command line this shell can parse'
-		return 0
-	fi
-	[ "${#prefix[@]}" -gt 0 ] || return 0
 	local -a argv
 	argv=(pm ledger record --gate "$1" --verdict "$2" --duration-ms "$3")
 	case "$GDK_GATE_CENSUS" in
@@ -359,8 +422,15 @@ _gdk_ledger_record() {
 	# probe is `: >"$scratch"`, run BEFORE the recorder: an unwritable report
 	# dir must degrade to /dev/null rather than turn a redirection failure into
 	# "the recorder exited 1", which would blame the recorder for the tree.
+	# The recorder's own argv is built HERE and parsed THERE — see
+	# `_GDK_LEDGER_SHIM`. Everything this file adds is a separate argv element,
+	# so a gate name with a space or a metacharacter is still ONE element and
+	# story 01's grammar is what refuses it.
+	local -a cmd
+	cmd=("${BASH:-bash}" -c "$_GDK_LEDGER_SHIM" _ \
+		"$GDK_LEDGER_CMD" "$_GDK_LEDGER_PARSE_REFUSAL" "${argv[@]}")
 	if [ -n "$scratch" ] && : 2>/dev/null > "$scratch"; then
-		_gdk_ledger_run "${prefix[@]}" "${argv[@]}" > "$scratch" 2>&1 || rc=$?
+		_gdk_ledger_run "${cmd[@]}" > "$scratch" 2>&1 || rc=$?
 		# One line is all the note carries, so one line is all that is read —
 		# a recorder that printed a megabyte does not become a shell variable.
 		IFS= read -r said < "$scratch" 2>/dev/null || said="${said-}"
@@ -368,9 +438,13 @@ _gdk_ledger_record() {
 		# fd and writes into an inode with no name, freed when it dies.
 		rm -f "$scratch" 2>/dev/null || true
 	else
-		_gdk_ledger_run "${prefix[@]}" "${argv[@]}" > /dev/null 2>&1 || rc=$?
+		_gdk_ledger_run "${cmd[@]}" > /dev/null 2>&1 || rc=$?
 	fi
-	if [ "$rc" -ne 0 ]; then
+	if [ "$rc" -eq 121 ] && [ "$said" = "$_GDK_LEDGER_PARSE_REFUSAL" ]; then
+		# The shim refused the VALUE; no recorder ever ran, so it is not the
+		# recorder's exit code that gets reported.
+		_gdk_ledger_note "$said"
+	elif [ "$rc" -ne 0 ]; then
 		_gdk_ledger_note "the recorder exited $rc: ${said%%$'\n'*}"
 	fi
 	return 0
@@ -379,12 +453,14 @@ _gdk_ledger_record() {
 # _gdk_ledger_close <logfile> — file this slot's row, exactly once.
 _gdk_ledger_close() {
 	[ -n "$GDK_LEDGER_CMD" ] || return 0
-	local side start='' gate='' now duration verdict
+	local side start='' gate='' fault='' now duration verdict
 	side="$(_gdk_ledger_sidecar "${1-}")"
 	# No sidecar: either no slot was opened for this log, or this run already
 	# filed its row and this is a second verdict line. Both are silent.
 	[ -f "$side" ] || return 0
-	{ read -r start && read -r gate; } < "$side" 2>/dev/null || true
+	# Line 3 is the first failing capture against this slot, if there was one;
+	# a slot every capture passed has no line 3 and the chain simply stops.
+	{ read -r start && read -r gate && read -r fault; } < "$side" 2>/dev/null || true
 	rm -f "$side" 2>/dev/null || true
 	case "$start" in ''|*[!0-9]*) return 0 ;; esac
 	[ -n "$gate" ] || return 0
@@ -392,7 +468,7 @@ _gdk_ledger_close() {
 	[ -n "$now" ] || return 0
 	duration=$(( now - start ))
 	[ "$duration" -ge 0 ] || duration=0
-	verdict="$(_gdk_ledger_verdict)"
+	verdict="$(_gdk_ledger_verdict "$fault")"
 	if [ -z "$verdict" ]; then
 		_gdk_ledger_note "gate \"$gate\" published no verdict this library can name (set GDK_GATE_VERDICT, or report through gdk_gate_capture)"
 		return 0
@@ -424,7 +500,10 @@ gdk_gate_log() {
 # gate (boot, then sweep) publishes one transcript.
 #
 # Sets GDK_GATE_EXIT to the COMMAND's own exit code — `head -c` is the last
-# pipe element and exits 0, so a caller must read that and never `$?`.
+# pipe element and exits 0, so a caller must read that and never `$?`. That
+# variable is LAST-WRITE-WINS and stays that way; what a failing capture also
+# does is tell its LOG SLOT, so the row's verdict cannot be the last command's
+# alone — see `_gdk_ledger_fault`.
 #
 # errexit is suspended around the pipeline and restored after. A wrapper under
 # `set -euo pipefail` used to die ON this line: pipefail makes the pipeline's
@@ -445,6 +524,12 @@ gdk_gate_capture() {
 	fi
 	# shellcheck disable=SC2034  # read by the sourcing wrapper, not here
 	GDK_GATE_EXIT="${PIPESTATUS[0]}"
+	# The slot remembers a failing capture, because GDK_GATE_EXIT is
+	# last-write-wins and a slot's verdict is not — see `_gdk_ledger_fault`.
+	# It sits BEFORE the errexit restore on purpose: after it, a bookkeeping
+	# call returning non-zero would kill a wrapper under `set -e` on the line
+	# that was supposed to make the gate reportable.
+	_gdk_ledger_fault "$log" "$GDK_GATE_EXIT"
 	[ "$errexit_was_set" -eq 0 ] || set -e
 	return 0
 }
@@ -781,6 +866,57 @@ FORK_EOF
 	_gdk_st_eq 'three verdicts on one slot file ONE row' '1' \
 		"$(grep -c '^CALL' "$GDK_ST_REC_LOG" | tr -d ' ')"
 
+	# ONE VERDICT PER SLOT, AND IT ANSWERS FOR EVERY CAPTURE — not the last.
+	# A runner that loops one capture per interpreter against one slot (this
+	# repo's own `matrix` target) used to leave the LAST command's code
+	# standing: console `[MATRIX] FAIL on first`, row `"verdict":"PASS"`. An
+	# output-only corpus cannot see that — the verdict LINE is right and the
+	# durable record is inverted — so the assertion is on the recorder's argv.
+	: > "$GDK_ST_REC_LOG"
+	GDK_GATE_EXIT=''
+	log="$(gdk_gate_log mixed)"
+	gdk_gate_capture "$log" -- sh -c 'exit 1' >/dev/null 2>&1
+	gdk_gate_capture "$log" -- sh -c 'exit 0' >/dev/null 2>&1
+	_gdk_st_eq 'the LAST capture still publishes GDK_GATE_EXIT' '0' "$GDK_GATE_EXIT"
+	gdk_gate_verdict MIXED 'FAIL on first' "$log" >/dev/null 2>&1
+	_gdk_st_has 'a slot whose captures were 1 then 0 files FAIL, not PASS' \
+		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--verdict] ARG[FAIL]'
+	_gdk_st_eq 'and a multi-capture slot is still exactly one row' '1' \
+		"$(grep -c '^CALL' "$GDK_ST_REC_LOG" | tr -d ' ')"
+
+	# ...and a slot every capture passed is still a PASS. An accumulator that
+	# cannot go back to green would file hard rule 4's sin from the other side.
+	: > "$GDK_ST_REC_LOG"
+	log="$(gdk_gate_log allgood)"
+	gdk_gate_capture "$log" -- sh -c 'exit 0' >/dev/null 2>&1
+	gdk_gate_capture "$log" -- sh -c 'exit 0' >/dev/null 2>&1
+	gdk_gate_verdict ALLGOOD 'PASS' "$log" >/dev/null 2>&1
+	_gdk_st_has 'two passing captures on one slot file PASS' \
+		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--verdict] ARG[PASS]'
+
+	# A capture against a log NO slot was opened for mints nothing: a row whose
+	# start time was never taken would carry an invented duration.
+	: > "$GDK_ST_REC_LOG"
+	: > "$GDK_GATE_REPORT_DIR/orphan.log"
+	gdk_gate_capture "$GDK_GATE_REPORT_DIR/orphan.log" -- sh -c 'exit 1' >/dev/null 2>&1
+	status=0
+	[ ! -f "$(_gdk_ledger_sidecar "$GDK_GATE_REPORT_DIR/orphan.log")" ] || status=1
+	_gdk_st_true 'a capture never mints a slot its log never opened' "$status"
+	GDK_GATE_EXIT=0
+
+	# THE VALUE'S QUOTING SURVIVES WHATEVER BOUNDS ITS PARSE. The stock
+	# GDK_LEDGER_CMD is a `uvx` line carrying a quoted spec; a bare word split
+	# would hand the recorder a spec with literal quote characters in it, so
+	# "parse it somewhere safer" must never become "stop parsing it".
+	: > "$GDK_ST_REC_LOG"
+	GDK_LEDGER_CMD="bash $scratch/rec.sh --from \"git+https://example.invalid/x@v0.0.0\" agentic-sdlc"
+	log="$(gdk_gate_log quoted)"
+	gdk_gate_verdict QUOTED 'PASS' "$log" >/dev/null 2>&1
+	_gdk_st_has 'a quoted value arrives as ONE argv element' \
+		"$(cat "$GDK_ST_REC_LOG")" \
+		'ARG[--from] ARG[git+https://example.invalid/x@v0.0.0] ARG[agentic-sdlc]'
+	GDK_LEDGER_CMD="bash $scratch/rec.sh"
+
 	# THE PUBLISH-ONLY SHAPE. A runner that reconciles a transcript in a
 	# variable never calls gdk_gate_capture, so nothing sets GDK_GATE_EXIT and
 	# the timer cannot live there. It publishes its own verdict instead.
@@ -891,6 +1027,30 @@ exit=7" "$body"
 				"$status"
 		else
 			echo '  SKIP — no millisecond clock; the forking-recorder bound was not timed' >&2
+		fi
+
+		# AND A VALUE THAT EXECUTES WHILE IT IS PARSED. `eval` runs every
+		# `$( )` in the string as the array is built, and that build used to
+		# happen in the gate's own shell, in FRONT of `timeout`: measured
+		# 20062 ms against a 3 s bound, with no note at all. Wall clock for the
+		# third time, and for the third reason: the verdict line and the exit
+		# code were correct throughout, so nothing but the clock can see it.
+		export GDK_LEDGER_TIMEOUT=1
+		t0="$(_gdk_now_ms)"
+		body="$(_gdk_st_gate "$lib" "bash $scratch/rec.sh \$(sleep 20)" 7)"
+		elapsed="$(_gdk_now_ms)"
+		unset GDK_LEDGER_TIMEOUT
+		_gdk_st_eq 'a substituting recorder value still lets the gate report' \
+			"[STRICT] done — full log: $GDK_GATE_REPORT_DIR/strict.log
+exit=7" "$body"
+		if [ -n "$t0" ] && [ -n "$elapsed" ]; then
+			elapsed=$(( elapsed - t0 ))
+			status=0; [ "$elapsed" -lt 10000 ] || status=1
+			_gdk_st_true \
+				"a substitution in GDK_LEDGER_CMD is parsed UNDER the bound (${elapsed} ms, bound 1000)" \
+				"$status"
+		else
+			echo '  SKIP — no millisecond clock; the parse-under-bound case was not timed' >&2
 		fi
 	else
 		echo '  SKIP — no timeout binary; the bounded-recorder case did not run' >&2

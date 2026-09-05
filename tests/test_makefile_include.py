@@ -505,19 +505,41 @@ def test_the_compositions_add_no_output_of_their_own():
         assert bodies[name].strip() == '', f'{name} grew a recipe: {bodies[name]}'
 
 
-def test_phony_lists_exactly_what_this_file_defines():
-    """None of these produce a file of their own name; a stray `check` file in
-    a repo would otherwise silently disable the gate. And `.PHONY` cannot list
-    what it does not know: a tier target lives in another file, which declares
-    its own — so the framework's list is exactly the framework's targets."""
+def test_phony_lists_this_files_targets_AND_the_declared_tiers():
+    """None of these produce a file of their own name.
+
+    Two groups, and the second one is a bug fix. The framework's own targets
+    are named literally. The declared TIERS are `.PHONY` through the two
+    variables — `$(GDK_PRECOMMIT_TIERS)` and `$(GDK_MILESTONE_TIERS)` — which
+    expand to whatever the tier file declared.
+
+    That second line was added 2026-09-05 after a feature review built the case:
+    `GDK_PRECOMMIT_TIERS := parse test` in a tree that also has a `test/`
+    DIRECTORY ran `check` and `parse`, **skipped `test`**, exited 0, and printed
+    nothing about it. A target with no prerequisites is up-to-date when a file
+    of that name exists, and the orphan guard above cannot see it: `test` IS a
+    defined target, so it is not an orphan — it is a defined target make decided
+    it did not need to build.
+
+    A kit's tier file should declare its own `.PHONY` too. This is the braces:
+    one line, against a gate that reports success without running.
+    """
     text = INCLUDE.read_text(encoding='utf-8')
     phony: set[str] = set()
     for match in re.finditer(r'^\.PHONY:((?:.*\\\n)*.*)$', text, re.M):
         phony |= set(match.group(1).split()) - {'\\'}
-    assert phony == set(STANDARD) | set(INTERNAL)
-    assert phony == set(recipes()), (
+
+    tier_vars = {'$(GDK_PRECOMMIT_TIERS)', '$(GDK_MILESTONE_TIERS)'}
+    assert tier_vars <= phony, (
+        'a declared tier shadowed by a same-named file is skipped in SILENCE — '
+        f'.PHONY must carry {sorted(tier_vars - phony)}')
+
+    literal = phony - tier_vars
+    assert literal == set(STANDARD) | set(INTERNAL)
+    assert literal == set(recipes()), (
         f'.PHONY and the file disagree: '
-        f'{sorted(phony ^ set(recipes()))}')
+        f'{sorted(literal ^ set(recipes()))}')
+
 
 
 def test_the_header_documents_the_tier_file_shape():

@@ -259,11 +259,11 @@ Reviewer's token cost: ~148k.
 ```
 verdict: HOLD
 | id | severity | disposition |
-| R1 | BLOCKER | landed 08f15d2 + this commit: the deadlock dissolved with the halt (D8); the false postcondition is fixed with R2 — one finding read from two ends |
-| R2 | BLOCKER | landed: findings-resolved asks `pm ready-for tag` — the reviewed: pointers' dispositions, never a version substring, never a record's absence |
-| R3 | BLOCKER | landed 274e18c (plus .agent-scope and .claude/worktrees/, found by the sweep) |
-| R4 | MAJOR | open: `_status_at_or_past` IS `at_or_past`; owned by phase 7, which deletes the line |
-| R5 | MINOR | rejected: superseded by D8 — the guard lived entirely inside `if skips:` and went with `--skip` in 50cc01d |
-| R6 | MINOR | landed 274e18c: the write stays (those rows are what `pm ledger report` reads); the false attribution is what was fixed |
-| R7 | NIT | landed 274e18c: refreshes first, and refuses rather than answering off a ref it could not refresh |
+| R1 | BLOCKER | landed 08f15d2 |
+| R2 | BLOCKER | landed 4a351a4 |
+| R3 | BLOCKER | landed 274e18c |
+| R4 | MAJOR | open: `_status_at_or_past` IS `at_or_past`; phase 7 deletes the line |
+| R5 | MINOR | rejected: superseded by D8 — the guard lived inside `if skips:` and went with `--skip` in 50cc01d |
+| R6 | MINOR | landed 274e18c |
+| R7 | NIT | landed 274e18c |
 ```

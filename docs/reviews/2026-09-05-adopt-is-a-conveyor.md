@@ -170,7 +170,7 @@ Reviewer's token cost: ~148k (shared across all three feature records).
 ```
 verdict: HOLD
 | id | severity | disposition |
-| A1 | BLOCKER | landed 274e18c: the census IS the reader list, and the four unasked sections have readers |
+| A1 | BLOCKER | landed 274e18c |
 | A2 | MINOR | landed 274e18c |
 | A3 | NIT | landed 274e18c |
 ```

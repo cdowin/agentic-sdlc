@@ -181,8 +181,8 @@ Reviewer's token cost: ~100k for the three-feature pass, of which this record is
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| E1 | MINOR | landed 50cc01d, and a test asserts the README table IS install.PLANS, both directions |
-| E2 | MINOR | landed 50cc01d: documented, and `routed_verbs()` can see it |
-| E3 | MINOR | landed 52a4d8e: proven by planting repo/checks/phantom.py |
-| E4 | NIT | landed 52a4d8e: bypass executed; the 85-entry claim deleted rather than re-typed |
+| E1 | MINOR | landed 50cc01d |
+| E2 | MINOR | landed 50cc01d |
+| E3 | MINOR | landed 52a4d8e |
+| E4 | NIT | landed 52a4d8e |
 ```

@@ -53,7 +53,10 @@ SUPPORT = TESTS / 'support'
 # the belts and the verify family. The thirtieth is test_conveyor_adopt.py,
 # the adopt list: a pin bump is verified by asking make, git and this
 # package's own CLI about a real tree, so its tests build one per test.
-MARKED_MODULES = 30
+# The thirty-first is test_conveyor_close.py, the two inner belts: a story
+# close asks git what is uncommitted and shells out to the narrow rung, so
+# every one of its trees is a real repo with a real commit in it.
+MARKED_MODULES = 31
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

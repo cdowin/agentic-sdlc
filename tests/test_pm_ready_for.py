@@ -128,18 +128,24 @@ def named(out: str) -> list[str]:
 
 # --- story -> feature ---------------------------------------------------------
 class FeatureBelt(unittest.TestCase):
-    """Is every story under this feature at `reviewing`?"""
+    """Is every story under this feature `done`?
 
-    def test_all_at_reviewing_passes_and_states_the_count_it_checked(self):
-        with tree(story_statuses=('reviewing',) * 4) as root:
+    It asked for `reviewing` until 2026-09-05 and the three cases below moved
+    with the ruling (`ready_for.py`'s module docstring carries the why):
+    `reviewing` at story grain is a HAND-OFF, not a terminus, and a belt that
+    admitted it would start the feature's review over work still in motion.
+    """
+
+    def test_all_done_passes_and_states_the_count_it_checked(self):
+        with tree(story_statuses=('done',) * 4) as root:
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('4 story/ies', out)
-            self.assertIn('all at reviewing', out)
+            self.assertIn('all done', out)
 
     def test_exit_1_names_every_blocker_with_the_status_it_holds(self):
         with tree() as root:
-            stories(root, s0='building', s1='ready', s2='reviewing')
+            stories(root, s0='building', s1='ready', s2='done')
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
             self.assertEqual(code, 1, out)
             self.assertIn('0.1/alpha/s0 is building', out)
@@ -183,15 +189,17 @@ class FeatureBelt(unittest.TestCase):
             self.assertEqual(code, 1, out)
             self.assertIn('0.1/alpha/s0 is wombat', out)
 
-    def test_a_done_story_blocks_too_and_is_named(self):
-        # The documented ruling: nothing moves a story off `reviewing` until a
-        # close does, so a `done` story before its feature closed is a state
-        # the operator should SEE rather than one this verb absorbs.
+    def test_a_story_still_at_reviewing_blocks_and_is_named(self):
+        # The direction the ruling reversed. `reviewing` is the builder saying
+        # "look at this" — a story parked there is genuinely unfinished, and a
+        # feature review started over it reviews work still in motion. The
+        # cascade flow (`pm feature done --cascade`) gets each one named here,
+        # which is the verb saying the cascade has not run yet.
         with tree() as root:
-            stories(root, s0='done')
+            stories(root, s0='reviewing')
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
             self.assertEqual(code, 1, out)
-            self.assertIn('0.1/alpha/s0 is done', out)
+            self.assertIn('0.1/alpha/s0 is reviewing', out)
 
     def test_two_hundred_blockers_are_named_and_the_remainder_is_disclosed(self):
         with tree(story_statuses=()) as root:
@@ -602,7 +610,7 @@ class ConfigRefusals(unittest.TestCase):
     def _with_states(self, key: str, states: str) -> str:
         return f'[pm]\n{key} = {states}\n'
 
-    def test_a_story_vocabulary_without_reviewing_refuses(self):
+    def test_a_story_vocabulary_without_done_refuses(self):
         with tree() as root:
             (root / 'devkit.toml').write_text(
                 self._with_states('story_states', '["todo", "shipped"]'),

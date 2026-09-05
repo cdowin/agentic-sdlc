@@ -1,17 +1,21 @@
-# The release protocol, as the machine runs it
+# The protocol, as the machine runs it
 
 <!-- Written by `agentic-sdlc install-sdlc`. Do not hand-edit: the ordered
-     lists below are RENDERED from `[release] steps` and `[adopt] steps` in
-     this repo's devkit.toml and from the step registry that walks them, so
+     lists below are RENDERED from `[story]`, `[feature]`, `[release]` and
+     `[adopt]` steps in this repo's devkit.toml and from the step registry
+     that walks them, so
      the only way to change them is to change the config or the code and
      re-run the verb. A hand-written document describing the steps is the
      second home for the protocol, and a second home drifts — which is the
      failure this file exists to end. -->
 
-Run it:
+Run it — one verb per level, and none of them is "run the biggest thing":
 
 ```
-agentic-sdlc release <version>
+agentic-sdlc close story   <story-id>      the inner loop, seconds
+agentic-sdlc close feature <feature-id>    once its stories are done
+agentic-sdlc release       <version>       once its features are done
+agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
 ```
 
 It walks the list below in order and **stops at the first step whose
@@ -72,6 +76,27 @@ invisible deviation does not. `--status` prints what has been recorded.
 | 6 | `runner-targets-resolve` | GATE | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`. A tier named with no tier file FAILS here naming the file; an empty tier list passes and SAYS it was empty — `-include`'s silence is never a pass. |
 | 7 | `checks-pass` | GATE | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0. NOT `make check`, not `make precommit`, not `[gates] extra`: those verify the consumer's code against the consumer's rules, and a version bump here cannot change their verdict. |
 | 8 | `pm-validates` | GATE | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0 — the PM tree is still good against the new version. A repo with no PM tree is refused, never vacuously fine. |
+
+## `story` — the ordered list
+
+| # | step | kind | command | what makes it true |
+|---|---|---|---|---|
+| 1 | `claimed` | AUTOMATIC | — | the story's status is `building` or later. The flip goes through `pm story building <id>`, never a regex over frontmatter. |
+| 2 | `narrow-verified` | GATE | `agentic-sdlc verify --story` *(shipped)* | the narrow rung exits 0 — `agentic-sdlc verify --story`, which is a function of the CHANGED PATHS and of `[[verify.narrow]]`. The command is never named in the step: what proves an edit is the project's own fact. On a committed tree the rung says `no changed paths` and that sentence is quoted rather than summarised as a pass. |
+| 3 | `committed` | JUDGEMENT | — *(operator)* | nothing is uncommitted outside the roadmap directory. It NAMES what is, and it never commits — a story closed by a machine that also wrote the commit is a story nobody reviewed. The roadmap directory is excluded because this belt writes there itself. |
+| 4 | `evidence-written` | JUDGEMENT | — *(operator)* | the story file carries `done: <hash(es)> — <what shipped>` (pm-execution.md step 6). READ, never written: the sentence is the author's, and a generated one would be a second scoreboard saying what the commit already says. |
+| 5 | `story-done` | AUTOMATIC | — | the story's status is `done`, through `pm story done`. |
+
+## `feature` — the ordered list
+
+| # | step | kind | command | what makes it true |
+|---|---|---|---|---|
+| 1 | `stories-done` | JUDGEMENT | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is `done`, and each one that is not is NAMED. Never re-implemented: the verb owns that question. |
+| 2 | `feature-reviewing` | AUTOMATIC | — | the feature's status is `reviewing` or later — the hand-off that says a reviewer runs now, once, over the whole feature. |
+| 3 | `feature-verified` | GATE | `agentic-sdlc verify --feature` *(shipped)* | the range rung exits 0 — `agentic-sdlc verify --feature`, the composition the project names for that rung. |
+| 4 | `review-recorded` | JUDGEMENT | — *(operator)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES (`pm/verdict.py`). Whether the review was any good is NOT checked and must not be: a step pretending to check it would be this package's cardinal sin wearing a protocol. A record that does not parse is UNVERIFIABLE — a refusal, never a pass. |
+| 5 | `findings-landed` | JUDGEMENT | — *(operator)* | no finding in that record sits at `disposition: open`. The same question `pm ready-for tag` asks one grain up, through the same parser, so the two cannot disagree. |
+| 6 | `feature-done` | AUTOMATIC | — | the feature's status is `done`, through `pm feature done <id> --review-record <path>`. |
 
 ## Not steps, and why
 

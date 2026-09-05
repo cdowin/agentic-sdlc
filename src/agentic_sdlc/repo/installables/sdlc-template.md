@@ -1,17 +1,21 @@
-# The release protocol, as the machine runs it
+# The protocol, as the machine runs it
 
 <!-- Written by `agentic-sdlc install-sdlc`. Do not hand-edit: the ordered
-     lists below are RENDERED from `[release] steps` and `[adopt] steps` in
-     this repo's devkit.toml and from the step registry that walks them, so
+     lists below are RENDERED from `[story]`, `[feature]`, `[release]` and
+     `[adopt]` steps in this repo's devkit.toml and from the step registry
+     that walks them, so
      the only way to change them is to change the config or the code and
      re-run the verb. A hand-written document describing the steps is the
      second home for the protocol, and a second home drifts — which is the
      failure this file exists to end. -->
 
-Run it:
+Run it — one verb per level, and none of them is "run the biggest thing":
 
 ```
-agentic-sdlc release <version>
+agentic-sdlc close story   <story-id>      the inner loop, seconds
+agentic-sdlc close feature <feature-id>    once its stories are done
+agentic-sdlc release       <version>       once its features are done
+agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
 ```
 
 It walks the list below in order and **stops at the first step whose

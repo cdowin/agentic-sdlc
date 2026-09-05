@@ -90,7 +90,17 @@ head and survives a context clear, an interruption or a handoff:
                                     # installable diffs, the hook corpus — and
                                     # never the project's own gate set, which a
                                     # version bump here cannot change
-    (both take --skip <step> --reason "…", which RECORDS the deviation as a
+    agentic-sdlc close story <id>   # the INNER belts (SDLC.md §0), and the
+    agentic-sdlc close feature <id> # ones that run constantly. `close story`
+                                    # is five steps and well under a second:
+                                    # claimed, the narrow rung green, the work
+                                    # committed, the `done:` evidence written,
+                                    # `done`. `close feature` cannot advance
+                                    # past `stories-done` — which IS `pm
+                                    # ready-for feature` — and refuses while
+                                    # the review record is absent, unparseable
+                                    # or holds a finding at `disposition: open`
+    (all four take --skip <step> --reason "…", which RECORDS the deviation as a
      ledger row. Deviation stays possible; invisible deviation does not.)
 
 Per-project config: devkit.toml at the consuming repo root (see each tool's
@@ -319,12 +329,19 @@ def _dispatch_check(name: str, fix: bool = False) -> int:
     return module.run(fix=fix) if name in FIXABLE_CHECKS else module.run()
 
 
-# `release` and `adopt`, from the driver's own tuple rather than a second list
-# here — the same reason `install_commands()` asks `PLANS` instead of restating
-# it. A third operation is a row there and nothing here.
+# `release`, `adopt` and `close`, from the driver's own tuple rather than a
+# second list here — the same reason `install_commands()` asks `PLANS` instead
+# of restating it. A fifth operation is a row there and nothing here.
+#
+# `driver.VERBS` and not `driver.OPERATIONS`: the driver walks FOUR operations
+# and this router dispatches THREE verbs, because `story` and `feature` are
+# reached through `close`. Routing them as top-level verbs too would put
+# `agentic-sdlc story` beside `agentic-sdlc pm story` meaning something else —
+# an undocumented second spelling, which is the defect this file's docstring
+# test exists to catch, arriving from the other direction.
 def conveyor_verbs() -> tuple[str, ...]:
     from agentic_sdlc.repo.conveyor import driver
-    return driver.OPERATIONS
+    return driver.VERBS
 
 
 class _Lazy(tuple):
@@ -364,9 +381,11 @@ def main(argv: list[str] | None = None) -> int:
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
     if cmd in CONVEYOR_VERBS:
-        # ONE driver, two operations. The verb IS the operation, so it is
-        # passed through rather than re-derived: a second name for the same
-        # fact is how a step list ends up walked under the wrong heading.
+        # ONE driver, four operations, three verbs. The whole argv is passed
+        # through rather than re-derived here — `close` decides which grain it
+        # closes inside the driver, beside the table that says what a story id
+        # looks like. A second name for the same fact is how a step list ends
+        # up walked under the wrong heading.
         from agentic_sdlc.repo.conveyor import driver
         return driver.main([cmd, *rest])
     if cmd in install_commands():

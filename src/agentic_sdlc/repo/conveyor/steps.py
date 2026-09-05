@@ -1,6 +1,7 @@
-"""steps.py — the release and adopt step lists, as registries the driver walks.
+"""steps.py — the four step lists, as registries the driver walks.
 
-`driver.py` is the machine; this is what it walks. Twenty-one steps, each with
+`driver.py` is the machine; this is what it walks. Four lists — `release`,
+`adopt`, and the two INNER belts `story` and `feature` (SDLC.md §0) — each with
 a `check()` that is a QUESTION ABOUT THE TREE and — where the kind allows one —
 a `do()` whose return value the driver discards. That discard is the contract
 this module is written against: **no `check()` here reads a flag its own `do()`
@@ -46,14 +47,25 @@ repository would put a consumer's provenance in this package's source, which is
 judgement too, but its artifact is local — the mainline containing this
 branch's tip is a question `git` answers.
 
-## Two predicates this module CALLS rather than re-implements
+## No step re-implements a predicate that has a verb
 
-`review-landed` and `features-done` go through `pm ready-for tag|milestone`.
-They do not parse a verdict block and do not read frontmatter with a regex. Two
-readers of "is every finding dispositioned" are two answers, and the second one
-is the permissive one on the day they disagree — the argument `gates_extra.py`
-already makes about a second TOML reader. This module does not import
-`agentic_sdlc.repo.pm.verdict` at all, and a test asserts it.
+`review-landed`, `features-done` and `stories-done` go through
+`pm ready-for tag|milestone|feature`. `narrow-verified` and `feature-verified`
+go through `verify --story|--feature`. None of them parses a verdict block,
+reads frontmatter with a regex, or names a test command of its own. Two readers
+of "is every finding dispositioned" are two answers, and the second one is the
+permissive one on the day they disagree — the argument `gates_extra.py` already
+makes about a second TOML reader.
+
+**The one place this module reads a review record itself is the feature belt**,
+and it does it through `pm/verdict.py` — the SAME parser `ready_for` reads,
+never a second one. There is no `pm ready-for` at feature grain that answers
+"does this record parse and is every finding dispositioned" (`ready-for tag`
+asks it of a whole milestone), so `review-recorded` and `findings-landed` ask
+`verdict.parse` directly and INHERIT its rulings whole: a record whose block
+does not parse is UNVERIFIABLE — a refusal to advance — and never a pass, and a
+finding at `disposition: open` blocks. Softening either one here would be the
+second, permissive answer this section exists to refuse.
 
 ## Config (rule 5 — a repo with no `devkit.toml` behaves identically)
 
@@ -75,6 +87,14 @@ already makes about a second TOML reader. This module does not import
     steps          = [...]                 # default: DEFAULT_ADOPT_STEPS
     pin_file       = "Makefile"            # where DEVKIT_VERSION lives
     runner_targets = ["check", "precommit", "milestone"]
+
+    [story]                                # default: DEFAULT_STORY_STEPS
+    [feature]                              # default: DEFAULT_FEATURE_STEPS
+    steps = [...]                          # both take the same two keys as
+                                           # above; a repo declaring NEITHER
+                                           # section closes exactly the way a
+                                           # repo declaring the stock lists
+                                           # does (rule 5)
 
 Every refusal here exits 2 through `ConfigError`: a typo is a config mistake,
 not a finding, and a release list that quietly got shorter is the cardinal sin
@@ -102,6 +122,31 @@ RUNNING, needing no network and no second checkout.
 A step this package cannot perform states precisely what the operator must do
 and refuses to advance until its `check()` is true. `pin-bumped` edits nothing:
 the line it names is in a file this package does not own.
+
+## `story` and `feature` — the belts that run constantly
+
+**The line, and it is the whole design: the entry conditions are ENFORCED, the
+judgement is EXPRESSED.** `stories-done` is a fact about the tree and it blocks.
+`review-recorded` can check only that a record EXISTS and PARSES — whether the
+review was any good is not a thing to encode, and a step that pretended to
+check it would be this package's cardinal sin wearing a protocol. So every
+JUDGEMENT step below says, in its `do()`, what a human must do AND why the
+machine is not doing it.
+
+Two things follow from `close story` running dozens of times a day:
+
+1. **It has to be fast.** Four of its five steps read a status line, a git
+   porcelain listing or a file already open; the fifth shells out once to the
+   narrow rung. A belt slower than closing by hand is a belt that gets skipped,
+   and a skipped belt is worse than none because it looks like control.
+2. **It must not falsify its own preconditions.** `claimed` writes a status
+   line into the PM tree, so `committed` — two steps later — asks about the
+   worktree OUTSIDE the roadmap directory. A machine whose first step reddens
+   its third is `state.py` point 2 arriving one grain down.
+
+`evidence-written` READS the `done:` line and never writes it. The sentence is
+the author's — `.claude/rules/pm-execution.md` step 6 — and a machine-written
+one would be a second scoreboard saying what the commit already says.
 """
 from __future__ import annotations
 
@@ -116,8 +161,9 @@ from pathlib import Path
 from agentic_sdlc import __version__
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.config import ConfigError, config_section
-from agentic_sdlc.repo.conveyor.driver import Answer, Context, Step, StepKind
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.conveyor.driver import (Answer, Context, Step, StepKind,
+                                               grain_path)
+from agentic_sdlc.repo.pm import model, verdict
 
 # --- the shipped default ------------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -167,12 +213,42 @@ DEFAULT_ADOPT_STEPS = (
     'pm-validates',
 )
 
+# The story list. FIVE steps, four of which are already-computed facts, because
+# this is the belt that runs dozens of times a day — and a story close that is
+# slower than closing by hand gets skipped, which is worse than no belt at all
+# because it looks like control. The one step that runs anything is
+# `narrow-verified`, and what it runs is the narrow rung `[verify]` already
+# names: seconds on a changed tree, ~0.1 s on a committed one, where it says
+# "no changed paths" rather than pretending to have proven something.
+DEFAULT_STORY_STEPS = (
+    'claimed',
+    'narrow-verified',
+    'committed',
+    'evidence-written',
+    'story-done',
+)
+
+# The feature list. The level the orchestrator that built this milestone SKIPPED
+# — 28 stories parked at `reviewing` and one review over the whole milestone —
+# which is the omission this list makes impossible: `close feature` cannot
+# advance past `stories-done`, and `stories-done` IS `pm ready-for feature`.
+DEFAULT_FEATURE_STEPS = (
+    'stories-done',
+    'feature-reviewing',
+    'feature-verified',
+    'review-recorded',
+    'findings-landed',
+    'feature-done',
+)
+
 # One table rather than a branch per operation: an operation with no default
 # list answers `()`, and `plan_defect` then refuses to walk it, which is the
 # true sentence rather than a plausible one.
 DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
     'release': DEFAULT_RELEASE_STEPS,
     'adopt': DEFAULT_ADOPT_STEPS,
+    'story': DEFAULT_STORY_STEPS,
+    'feature': DEFAULT_FEATURE_STEPS,
 }
 
 # The ONE command this package ships a default for. `make milestone` is the
@@ -220,6 +296,38 @@ PIN_LINE = re.compile(r'^\s*DEVKIT_VERSION\s*[:?+]?=\s*(\S+)')
 DIGEST_LENGTH = 12
 
 _SEMVER_TAG = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?')
+
+# --- what the close steps look at ---------------------------------------------
+# The three lifecycle words the inner belts compare against, DERIVED from the
+# tracker's own vocabulary rather than respelled here. A second spelling of a
+# state name goes stale in silence, which is exactly how `ready_for`'s D2 tuple
+# used to drift. A project whose `[pm] story_states` cannot express one of them
+# is told so by name (`_grain_status_at_or_past`) rather than answered.
+CLAIMED = model.BUILDING
+REVIEWING = model.REVIEWING
+DONE = model.LIFECYCLE[-1]
+
+# `done: <hash(es)> — <what shipped>` — pm-execution.md step 6, at the grain
+# that closed. Case-insensitive and whitespace-tolerant, because the shape being
+# checked is "the author left evidence", not "the author typed it exactly".
+EVIDENCE_LINE = re.compile(r'^\s*done\s*:\s*(?P<body>\S.*)$', re.IGNORECASE)
+# What "shipped" looks like: a commit hash, or the literal `in-place` for work
+# that is not committed yet. BOTH forms are `pm/verdict.py`'s, inherited rather
+# than re-decided — reviewers in this SDLC fix in place and never commit, so a
+# hash-only rule would refuse the honest half of the corpus.
+HASH_MIN, HASH_MAX = verdict.HASH_MIN_LEN, verdict.HASH_MAX_LEN
+IN_PLACE = verdict.IN_PLACE
+EVIDENCE_LANDED = re.compile(
+    rf'\b(?:[0-9a-fA-F]{{{HASH_MIN},{HASH_MAX}}}|{IN_PLACE})\b', re.IGNORECASE)
+# The budget the rule states. NOT enforced here: how long a human's evidence
+# needs to be is not a fact about anything (`model.record_resolves` made the
+# same call about review records), so the number is QUOTED in the refusal and
+# `check grain-shape` owns caps.
+EVIDENCE_BUDGET = 5
+# A review record is read whole to be parsed, so the read is bounded — the same
+# bound `ready-for` puts on the same files, and for the same reason: a 10 MB
+# record is REPORTED rather than consumed.
+MAX_RECORD_BYTES = 1 << 20
 
 
 # --- small helpers ------------------------------------------------------------
@@ -1456,6 +1564,8 @@ def _config_readers() -> tuple[tuple[str, object], ...]:
         ('[pm]', model.load),
         ('[release] steps / commands', lambda: _read_operation('release')),
         ('[adopt] steps / commands', lambda: _read_operation('adopt')),
+        ('[story] steps / commands', lambda: _read_operation('story')),
+        ('[feature] steps / commands', lambda: _read_operation('feature')),
     )
 
 
@@ -1477,7 +1587,8 @@ def check_config_updated(ctx: Context) -> Answer:
             return Answer.no(
                 f'{label} is not a value {__version__} accepts: {_clip(str(err))}')
     declared = [name for name in ('checks', 'gates', 'pm', 'release', 'adopt',
-                                  'grain_shape', 'repo_hygiene', 'verify')
+                                  'story', 'feature', 'grain_shape',
+                                  'repo_hygiene', 'verify')
                 if section_declared(name)]
     # Rule 4: the census is REPORTED. Zero declared sections is legitimate
     # (rule 5 — a repo with no devkit.toml behaves identically) and it is said
@@ -1588,6 +1699,346 @@ def check_pm_validates(ctx: Context) -> Answer:
     return Answer.no(f'`pm validate` exited {code}: {said}')
 
 
+# --- the story and feature steps ----------------------------------------------
+# The two INNER belts. Every question below is asked of the grain named on the
+# command line — `ctx.version` is a story or feature id here, resolved by the
+# tracker's own resolvers so this file and `pm story done` can never disagree
+# about which file they mean.
+def _grain_file(ctx: Context) -> Path | None:
+    return grain_path(_pm_cfg(ctx), ctx.operation, ctx.version)
+
+
+def _grain_states(cfg: 'model.PmConfig', operation: str) -> tuple[str, ...]:
+    return (cfg.story_states if operation == 'story' else cfg.feature_states)
+
+
+def _grain_status_at_or_past(ctx: Context, wanted: str) -> Answer:
+    """`_status_at_or_past`, one and two grains down.
+
+    Same three answers and the same reason for each: a grain with no document
+    and a status outside the project's own vocabulary are both UNVERIFIABLE —
+    a question nobody can answer — while a status EARLIER than `wanted` is a
+    plain no with the word the file actually holds.
+    """
+    cfg = _pm_cfg(ctx)
+    path = _grain_file(ctx)
+    if path is None:
+        return Answer.unverifiable(
+            f'no {ctx.operation} document for {ctx.version} under '
+            f'{cfg.roadmap_dir}/ — nothing carries a status to read')
+    status = model.field_of(path, 'status')
+    states = _grain_states(cfg, ctx.operation)
+    if status not in states:
+        return Answer.unverifiable(
+            f'{cfg.rel(path)} carries status {status!r}, which is not one of '
+            f'{", ".join(states)}')
+    if wanted not in states:
+        return Answer.unverifiable(
+            f'devkit.toml [pm] {ctx.operation}_states does not carry '
+            f'{wanted!r} ({", ".join(states)}), so this step has no answer in '
+            f'this project')
+    if states.index(status) >= states.index(wanted):
+        return Answer.yes(f'{cfg.rel(path)} is {status!r}')
+    return Answer.no(f'{cfg.rel(path)} is {status!r}, not {wanted!r} or later')
+
+
+def _grain_flip(wanted: str):
+    """An AUTOMATIC status step at story or feature grain.
+
+    `_flip`'s shape exactly, one grain down: the flip goes through the pm CLI
+    so `check pm` — the drift gate — reads what the CLI wrote, and never
+    through a regex over frontmatter.
+    """
+    def check(ctx: Context) -> Answer:
+        return _grain_status_at_or_past(ctx, wanted)
+
+    def do(ctx: Context) -> str:
+        return _pm(ctx, ctx.operation, wanted, ctx.version)
+
+    return check, do
+
+
+# --- story --------------------------------------------------------------------
+_claimed_check, _claimed_do = _grain_flip(CLAIMED)
+
+
+def check_narrow_verified(ctx: Context) -> Answer:
+    """`agentic-sdlc verify --story` — the narrow rung, whatever it is HERE.
+
+    The command is never named in this step. `[verify]`'s `[[verify.narrow]]`
+    rules are a function of the changed paths, they are the project's own, and
+    a step that hard-coded `pytest` would be a second answer to what proves an
+    edit in a repo that may not be Python at all.
+
+    On a tree whose work is already committed the rung reports `no changed
+    paths` and exits 0. That is the verb's own honest answer and it is QUOTED
+    into the line rather than summarised as a pass — a reader who wants to know
+    whether anything ran can see that nothing did.
+    """
+    command = _configured(ctx, 'narrow-verified')
+    if command:
+        return run_command(ctx, 'narrow-verified', command)
+    return _own_verdict(ctx, 'verify', '--story',
+                        found='the narrow rung [verify] names')
+
+
+def check_committed(ctx: Context) -> Answer:
+    """No uncommitted work OUTSIDE the roadmap directory.
+
+    Two things this deliberately does not do. It does not commit — no verb in
+    this package does, and a story closed by a machine that also wrote the
+    commit is a story nobody reviewed. And it does not claim to know WHICH
+    paths are this story's: nothing in the tree records that, so the honest
+    question is about the worktree and the answer NAMES what is outstanding.
+
+    The roadmap directory is excluded because the belt writes there itself —
+    `claimed` moved a status line two steps ago, and a step that reddened on
+    its own machine's write would be `state.py` point 2 one grain down.
+    """
+    code, out = _git(ctx, 'status', '--porcelain', strip=False)
+    if code != 0:
+        return Answer.unverifiable(f'git status failed: {_clip(out)}')
+    cfg = _pm_cfg(ctx)
+    paths = [line[3:] for line in out.split('\n') if len(line) > 3]
+    tree_paths = [p for p in paths
+                  if not p.startswith(f'{cfg.roadmap_dir}/')]
+    if not tree_paths:
+        return Answer.yes(
+            f'no modified path outside {cfg.roadmap_dir}/'
+            + (f' ({len(paths)} inside it, which this belt writes)'
+               if paths else ''))
+    return Answer.no(f'{len(tree_paths)} uncommitted path(s): '
+                     f'{_clip(", ".join(tree_paths))}')
+
+
+def do_committed(ctx: Context) -> str:
+    return ('commit your own paths, by explicit pathspec — this machine never '
+            'commits for you, and it cannot know which of the paths above '
+            'belong to this story; if some of them are another agent\'s work '
+            'in the same worktree, that is what --skip --reason records')
+
+
+def check_evidence_written(ctx: Context) -> Answer:
+    """The story file carries the `done:` line pm-execution.md step 6 asks for.
+
+    READ, never written. `done: <hash(es)> — <what shipped>` is the author's
+    sentence at the grain that closed, and a machine-written one would say
+    exactly what the commit already says while looking like independent
+    evidence — a second scoreboard, which is the thing this tree keeps proving
+    lies.
+
+    Two refusals, because they send the author to two different places: a file
+    with no `done:` line at all, and one whose line names no commit or says
+    nothing about what shipped.
+    """
+    cfg = _pm_cfg(ctx)
+    path = _grain_file(ctx)
+    if path is None:
+        return Answer.unverifiable(
+            f'no story document for {ctx.version} — nothing to read evidence '
+            f'from')
+    try:
+        text = _read(path)
+    except (OSError, UnicodeDecodeError):
+        return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
+    lines = [m.group('body').strip()
+             for m in (EVIDENCE_LINE.match(raw) for raw in text.split('\n'))
+             if m is not None]
+    if not lines:
+        return Answer.no(
+            f'{cfg.rel(path)} carries no `done:` line — step 6 of '
+            f'pm-execution.md: `done: <hash(es)> — <what shipped>`, at most '
+            f'{EVIDENCE_BUDGET} lines, so a fresh session picks this story up '
+            f'from the tree alone')
+    for body in lines:
+        landed = EVIDENCE_LANDED.search(body)
+        if landed is None:
+            continue
+        said = EVIDENCE_LANDED.sub('', body).strip(' \t—–-:;,.')
+        if not said:
+            return Answer.no(
+                f'{cfg.rel(path)} `done: {_clip(body, 80)}` names what landed '
+                f'and not what shipped — the second half of the line is the '
+                f'part a fresh session reads')
+        return Answer.yes(f'{cfg.rel(path)} carries `done: {_clip(body, 80)}`')
+    return Answer.no(
+        f'{cfg.rel(path)} `done: {_clip(lines[0], 80)}` names no commit — a '
+        f'hash of {HASH_MIN}-{HASH_MAX} hex characters, or the literal '
+        f'`{IN_PLACE}` for a fix that has not been committed yet (the form '
+        f'`pm/verdict.py` already rules for exactly this case)')
+
+
+def do_evidence_written(ctx: Context) -> str:
+    return ('write the `done:` line yourself, in the story file: '
+            '`done: <hash(es)> — <what shipped>`. This step will not write it '
+            '— the sentence is your account of the work, and one generated '
+            'from the commit would be a second scoreboard saying what the '
+            'commit already says')
+
+
+_story_done_check, _story_done_do = _grain_flip(DONE)
+
+
+# --- feature ------------------------------------------------------------------
+def check_stories_done(ctx: Context) -> Answer:
+    """`pm ready-for feature <fid>` — never re-implemented.
+
+    THE step this feature exists for. An orchestrator parked 28 finished
+    stories at `reviewing` and reviewed the whole milestone in one pass, in the
+    milestone that built the levels; `pm ready-for feature` had been answering
+    NOT READY with every blocker named for hours. A belt cannot walk past that.
+    """
+    return ready_for(ctx, 'feature')
+
+
+def do_stories_done(ctx: Context) -> str:
+    return ('close each story named above through `agentic-sdlc close story '
+            '<id>` — the belt below this one, and it is five steps and under a '
+            'second')
+
+
+_feature_reviewing_check, _feature_reviewing_do = _grain_flip(REVIEWING)
+
+
+def check_feature_verified(ctx: Context) -> Answer:
+    """`agentic-sdlc verify --feature` — the range rung, whatever it is HERE."""
+    command = _configured(ctx, 'feature-verified')
+    if command:
+        return run_command(ctx, 'feature-verified', command)
+    return _own_verdict(ctx, 'verify', '--feature',
+                        found='the range rung [verify] names')
+
+
+def _record_of(ctx: Context) -> tuple[Path | None, str]:
+    """(the feature's review record, '' or why there is none).
+
+    `model.review_record_for` is the resolver `pm feature done` already uses,
+    so the pointer this reads and the pointer that verb stamps are one fact.
+    What is added here is hard rule 8: an ABSOLUTE pointer is refused rather
+    than followed, because a step answering about a file outside the checkout
+    is a step answering about somebody else's machine.
+    """
+    cfg = _pm_cfg(ctx)
+    pointer = model.review_record_for(cfg, ctx.version)
+    if not pointer:
+        return None, (f'{ctx.version} points at no review record — '
+                      f'`reviewed:` is blank, and a feature closed without one '
+                      f'is a feature nobody read')
+    if pointer.startswith('/') or pointer.startswith('~'):
+        return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
+                      f'outside this checkout is read (hard rule 8)')
+    path = cfg.root / pointer
+    if not path.is_file():
+        return None, f'reviewed: names no file ({pointer})'
+    size = path.stat().st_size
+    if size > MAX_RECORD_BYTES:
+        return None, (f'reviewed: the record is {size} bytes, over the '
+                      f'{MAX_RECORD_BYTES}-byte read bound ({pointer})')
+    return path, ''
+
+
+def _passes(ctx: Context, path: Path) -> tuple[list, str]:
+    """(the record's verdict blocks, '' or why they could not be read).
+
+    `verdict.parse`'s rulings, inherited whole: no block and a block that does
+    not parse are both a REFUSAL to advance, never a pass. This is the single
+    easiest place in the belt to get a false green.
+    """
+    cfg = _pm_cfg(ctx)
+    try:
+        text = _read(path)
+    except (OSError, UnicodeDecodeError):
+        return [], f'{cfg.rel(path)} could not be read as text'
+    try:
+        return verdict.parse(text), ''
+    except (verdict.NoVerdict, verdict.MalformedVerdict) as err:
+        return [], f'{cfg.rel(path)}: {" ".join(str(err).split())}'
+
+
+def check_review_recorded(ctx: Context) -> Answer:
+    """A review record EXISTS and its verdict block PARSES. Nothing more.
+
+    Whether the review was any good is not encodable, and a step that pretended
+    to check it would be this package's cardinal sin wearing a protocol. What a
+    machine can hold is that the artifact is there and machine-readable, and
+    that is exactly what this holds.
+    """
+    path, defect = _record_of(ctx)
+    if path is None:
+        return Answer.no(defect)
+    cfg = _pm_cfg(ctx)
+    passes, why = _passes(ctx, path)
+    if why:
+        return Answer.unverifiable(
+            f'{why} — a record whose verdict block does not parse is '
+            f'UNVERIFIABLE, which is a refusal to advance and never a pass')
+    return Answer.yes(f'{cfg.rel(path)} parses: {len(passes)} pass(es), '
+                      f'{sum(len(p.findings) for p in passes)} finding(s)')
+
+
+def do_review_recorded(ctx: Context) -> str:
+    return ('run the feature review — a fresh reviewer over this feature\'s '
+            'whole commit range — and stamp the record with `pm feature done '
+            '<id> --review-record <path>`, or `pm set <id> reviewed <path>` '
+            'first. This step reads the ARTIFACT of that pass and cannot '
+            'perform it: whether a review was thorough has no postcondition, '
+            'and a machine claiming to check it would be lying in the one '
+            'place this belt exists to stop lying')
+
+
+def check_findings_landed(ctx: Context) -> Answer:
+    """No finding in the record sits at `disposition: open`.
+
+    `verdict.OPEN` is the token, `verdict.parse` is the reader, and both are
+    inherited rather than restated — `ready-for tag` asks the same question one
+    grain up and the two must not be able to disagree.
+    """
+    path, defect = _record_of(ctx)
+    if path is None:
+        return Answer.no(defect)
+    cfg = _pm_cfg(ctx)
+    passes, why = _passes(ctx, path)
+    if why:
+        return Answer.unverifiable(why)
+    opened = [f.id for p in passes for f in p.findings
+              if f.disposition_kind == verdict.OPEN]
+    total = sum(len(p.findings) for p in passes)
+    if opened:
+        return Answer.no(f'{len(opened)} finding(s) open in {cfg.rel(path)}: '
+                         f'{_clip(", ".join(opened))}')
+    # Rule 4: a census of zero is SAID. A record contributing no findings must
+    # not read identically to one this step never opened.
+    return Answer.yes(f'{cfg.rel(path)}: {total} finding(s), none open')
+
+
+def do_findings_landed(ctx: Context) -> str:
+    return ('land each finding above, or defer it explicitly in writing — '
+            '`landed <hash>`, `landed in-place`, `rejected: <why>` or '
+            '`deferred: <grain-id>` in the record\'s verdict block. `open` is '
+            'the honest disposition for a finding nobody has acted on, which '
+            'is why it blocks here rather than being quietly counted as done')
+
+
+def check_feature_done(ctx: Context) -> Answer:
+    return _grain_status_at_or_past(ctx, DONE)
+
+
+def do_feature_done(ctx: Context) -> str:
+    """`pm feature done <id> --review-record <path>`.
+
+    The record pointer is passed even though `review-recorded` already proved
+    it resolves: the verb stamps `reviewed:` from that flag, and a close that
+    left the stamp to a previous run's memory would be the belt trusting
+    something other than the tree.
+    """
+    cfg = _pm_cfg(ctx)
+    pointer = model.review_record_for(cfg, ctx.version)
+    if not pointer:
+        return ('no review record is stamped, so `pm feature done` is not run '
+                '— `review-recorded` is the step that says what to do')
+    return _pm(ctx, 'feature', 'done', ctx.version, '--review-record', pointer)
+
+
 # --- the registry -------------------------------------------------------------
 _reviewing_check, _reviewing_do = _flip('reviewing')
 _accepted_check, _accepted_do = _flip('accepted')
@@ -1651,6 +2102,34 @@ ADOPT_STEPS: dict[str, Step] = {
              check_runner_targets_resolve),
         Step('checks-pass', StepKind.GATE, check_checks_pass),
         Step('pm-validates', StepKind.GATE, check_pm_validates),
+    )
+}
+
+STORY_STEPS: dict[str, Step] = {
+    step.name: step for step in (
+        Step('claimed', StepKind.AUTOMATIC, _claimed_check, _claimed_do),
+        Step('narrow-verified', StepKind.GATE, check_narrow_verified),
+        Step('committed', StepKind.JUDGEMENT, check_committed, do_committed),
+        Step('evidence-written', StepKind.JUDGEMENT, check_evidence_written,
+             do_evidence_written),
+        Step('story-done', StepKind.AUTOMATIC, _story_done_check,
+             _story_done_do),
+    )
+}
+
+FEATURE_STEPS: dict[str, Step] = {
+    step.name: step for step in (
+        Step('stories-done', StepKind.JUDGEMENT, check_stories_done,
+             do_stories_done),
+        Step('feature-reviewing', StepKind.AUTOMATIC,
+             _feature_reviewing_check, _feature_reviewing_do),
+        Step('feature-verified', StepKind.GATE, check_feature_verified),
+        Step('review-recorded', StepKind.JUDGEMENT, check_review_recorded,
+             do_review_recorded),
+        Step('findings-landed', StepKind.JUDGEMENT, check_findings_landed,
+             do_findings_landed),
+        Step('feature-done', StepKind.AUTOMATIC, check_feature_done,
+             do_feature_done),
     )
 }
 
@@ -1738,6 +2217,51 @@ STEP_DOC: dict[str, str] = {
     'pm-validates':
         '`pm validate` exits 0 — the PM tree is still good against the new '
         'version. A repo with no PM tree is refused, never vacuously fine.',
+    # --- story ---
+    'claimed':
+        f'the story\'s status is `{CLAIMED}` or later. The flip goes through '
+        f'`pm story {CLAIMED} <id>`, never a regex over frontmatter.',
+    'narrow-verified':
+        'the narrow rung exits 0 — `agentic-sdlc verify --story`, which is a '
+        'function of the CHANGED PATHS and of `[[verify.narrow]]`. The command '
+        'is never named in the step: what proves an edit is the project\'s own '
+        'fact. On a committed tree the rung says `no changed paths` and that '
+        'sentence is quoted rather than summarised as a pass.',
+    'committed':
+        'nothing is uncommitted outside the roadmap directory. It NAMES what '
+        'is, and it never commits — a story closed by a machine that also '
+        'wrote the commit is a story nobody reviewed. The roadmap directory is '
+        'excluded because this belt writes there itself.',
+    'evidence-written':
+        'the story file carries `done: <hash(es)> — <what shipped>` '
+        '(pm-execution.md step 6). READ, never written: the sentence is the '
+        'author\'s, and a generated one would be a second scoreboard saying '
+        'what the commit already says.',
+    'story-done': 'the story\'s status is `done`, through `pm story done`.',
+    # --- feature ---
+    'stories-done':
+        '`pm ready-for feature <id>` exits 0 — every story under this feature '
+        'is `done`, and each one that is not is NAMED. Never re-implemented: '
+        'the verb owns that question.',
+    'feature-reviewing':
+        f'the feature\'s status is `{REVIEWING}` or later — the hand-off that '
+        f'says a reviewer runs now, once, over the whole feature.',
+    'feature-verified':
+        'the range rung exits 0 — `agentic-sdlc verify --feature`, the '
+        'composition the project names for that rung.',
+    'review-recorded':
+        'the feature\'s `reviewed:` record exists, is repo-relative, and its '
+        'verdict block PARSES (`pm/verdict.py`). Whether the review was any '
+        'good is NOT checked and must not be: a step pretending to check it '
+        'would be this package\'s cardinal sin wearing a protocol. A record '
+        'that does not parse is UNVERIFIABLE — a refusal, never a pass.',
+    'findings-landed':
+        'no finding in that record sits at `disposition: open`. The same '
+        'question `pm ready-for tag` asks one grain up, through the same '
+        'parser, so the two cannot disagree.',
+    'feature-done':
+        'the feature\'s status is `done`, through `pm feature done <id> '
+        '--review-record <path>`.',
 }
 
 # What a step DOES when the project configures no command for it. Only the
@@ -1752,6 +2276,9 @@ SHIPPED_ACTION: dict[str, str] = {
     'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
     'checks-pass': 'agentic-sdlc check all',
     'pm-validates': 'agentic-sdlc pm validate',
+    'narrow-verified': 'agentic-sdlc verify --story',
+    'feature-verified': 'agentic-sdlc verify --feature',
+    'stories-done': 'agentic-sdlc pm ready-for feature <id>',
 }
 
 # What is guidance rather than a step — rendered into the document beside the
@@ -1785,7 +2312,9 @@ GUIDANCE: tuple[tuple[str, str], ...] = (
 )
 
 REGISTRIES: dict[str, dict[str, Step]] = {'release': RELEASE_STEPS,
-                                          'adopt': ADOPT_STEPS}
+                                          'adopt': ADOPT_STEPS,
+                                          'story': STORY_STEPS,
+                                          'feature': FEATURE_STEPS}
 
 
 def registry_for(operation: str) -> dict[str, Step]:

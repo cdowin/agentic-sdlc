@@ -33,7 +33,7 @@ from support import REPO_ROOT  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
-from agentic_sdlc.repo.conveyor import sdlc_doc, steps  # noqa: E402
+from agentic_sdlc.repo.conveyor import driver, sdlc_doc, steps  # noqa: E402
 
 DEST = 'docs/sdlc-protocol.md'
 VERB = 'install-sdlc'
@@ -91,10 +91,23 @@ def test_the_document_is_a_function_of_config_alone():
     assert stock != different, 'the config did not reach the document'
 
 
+def heading_of(operation: str) -> str:
+    return f'## `{operation}` — the ordered list'
+
+
+def section(text: str, operation: str) -> str:
+    """ONE operation's table. The document carries one per operation — four of
+    them since the inner belts landed — so a claim about a list is scoped to
+    its own section and never to "everything below this heading", which is how
+    the adopt assertion came to read the story list too."""
+    after = text.split(heading_of(operation))[1]
+    for other in driver.OPERATIONS:
+        after = after.split(heading_of(other))[0]
+    return after
+
+
 def release_section(text: str) -> str:
-    """The `release` table alone. The document carries one table per
-    operation, so a claim about the release list is scoped to its section."""
-    return text.split('## `adopt` — the ordered list')[0]
+    return section(text, 'release')
 
 
 def test_every_configured_step_appears_in_order_and_nothing_else_does():
@@ -134,21 +147,24 @@ def test_the_renderer_holds_no_per_step_text_of_its_own():
         assert f"'{name}'" not in body and f'"{name}"' not in body, name
 
 
-def test_the_adopt_list_renders_beside_the_release_list():
-    """`adopt-is-a-conveyor` ship criterion 4: one document, both lists, from
-    the same source. The renderer is this file's; what is asserted here is that
-    all eight adopt steps arrive with their kinds."""
+@pytest.mark.parametrize('operation', driver.OPERATIONS)
+def test_every_operation_renders_its_whole_list_beside_the_others(operation):
+    """`the-inner-levels-are-belts-too` ship criterion 5, which subsumes
+    `adopt-is-a-conveyor`'s criterion 4: ALL FOUR lists in one document, from
+    the same source, so the generated protocol is the whole SDLC and not just
+    its outer half. The renderer is `sdlc_doc.py`'s; what is asserted here is
+    that every step of every list arrives with its kind."""
     with repo() as root:
         run()
         text = (root / DEST).read_text(encoding='utf-8')
-        assert '## `adopt` — the ordered list' in text
-        adopt = text.split('## `adopt` — the ordered list')[1]
-        assert 'not configured' not in adopt, adopt[:400]
-        for name, step in steps.ADOPT_STEPS.items():
-            row = next(line for line in adopt.split('\n')
+        assert heading_of(operation) in text, text[:400]
+        body = section(text, operation)
+        assert 'not configured' not in body, body[:400]
+        for name, step in steps.REGISTRIES[operation].items():
+            row = next(line for line in body.split('\n')
                        if line.startswith('| ') and f'| `{name}` |' in line)
             assert step.kind.name in row, row
-        assert listed(adopt) == list(steps.DEFAULT_ADOPT_STEPS)
+        assert listed(body) == list(steps.DEFAULT_STEPS[operation])
 
 
 def test_a_configured_command_is_shown_and_an_unconfigured_one_is_not():

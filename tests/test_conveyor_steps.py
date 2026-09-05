@@ -447,3 +447,38 @@ def test_tree_clean_is_the_defect_the_step_reports_not_a_crash():
         answer = steps.RELEASE_STEPS['tree-clean'].check(ctx(root))
         assert not answer.is_true
         assert 'dirty.txt' in answer.detail
+
+
+def test_the_first_modified_path_is_not_short_by_one_character(tmp_path):
+    """`git status --porcelain` is COLUMNAR, and a blanket strip ate column 0.
+
+    The format is `XY<space>PATH`, and X is a space for a worktree-only change.
+    `_git` stripped the whole output, so the first line arrived as `M SDLC.md`
+    instead of ` M SDLC.md` and `line[3:]` returned `DLC.md` — right for every
+    path below it, wrong for the first, and wrong in the direction that looks
+    like a real filename. Found by running the conveyor on this repo.
+
+    The fixture uses two files on purpose: one alone would pass against a parse
+    that is wrong only about the first line.
+    """
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['git', 'init', '-q', '.'], cwd=root, check=True)
+    for name in ('SDLC.md', 'zzz.md'):
+        (root / name).write_text('one\n', encoding='utf-8')
+    subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
+    subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                    'commit', '-qm', 'init'], cwd=root, check=True)
+    for name in ('SDLC.md', 'zzz.md'):
+        (root / name).write_text('two\n', encoding='utf-8')
+
+    answer = steps.check_tree_clean(
+        driver.Context(root=root, operation='release', version='0.2.0'))
+
+    assert not answer.is_true
+    # The whole list, compared exactly. A substring check cannot see this
+    # defect: `'DLC.md'` is IN `'SDLC.md'`, so the obvious assertion passes on
+    # the broken parse — which is a small demonstration of why the bug survived
+    # in the first place.
+    listed = answer.detail.split(': ', 1)[1].split(', ')
+    assert listed == ['SDLC.md', 'zzz.md'], listed

@@ -377,3 +377,29 @@ def test_check_hooks_says_so_when_the_corpus_is_installed_but_unarmed():
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'UNARMED' in done.stdout, done.stdout
     assert 'bash tools/setup-hooks.sh' in done.stdout, done.stdout
+
+
+def test_check_shell_names_the_UNTRACKED_case_not_the_roots_key():
+    """A fresh `init` writes eight scripts and tracks none of them.
+
+    The gate reads `git ls-files`, so its census is legitimately zero and it is
+    right to FAIL — but until 0.2.0 it said `check [shell] roots`, which was
+    correct all along. Measured on a stock init: the operator is sent to
+    inspect a config key that is not the problem, on the very first run of the
+    tool. A verdict that names the wrong cause costs more than one that names
+    none.
+    """
+    with initialized_project() as root:
+        before = devkit_cli(root, 'check', 'shell')
+        committed(root)
+        after = devkit_cli(root, 'check', 'shell')
+
+    out = before.stdout + before.stderr
+    assert before.returncode == 1, out
+    assert 'none TRACKED' in out, out
+    assert 'git add' in out, out
+    assert 'check [shell] roots' not in out, out
+
+    out = after.stdout + after.stderr
+    assert after.returncode == 0, out
+    assert 'script(s) clean' in out, out

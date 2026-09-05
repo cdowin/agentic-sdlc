@@ -38,18 +38,20 @@ SUPPORT = TESTS / 'support'
 # are what the modules under tests/ currently do, and a module that changes
 # sides changes them. Marked is a COUNT — a peer adding a test to a spawning
 # module must never have to touch this file. Unmarked is the roster, because
-# the nine that do not spawn are the nine three interpreters still run, and
+# the five that do not spawn are the five three interpreters still run, and
 # each one is worth naming.
-MARKED_MODULES = 36
+#
+# The numbers shrank when the scene plane left this package: four unmarked
+# modules (the .tscn round-trip, the uid codec, the tiles grid, the scene
+# summary) went with the code they read, and thirteen marked ones went with the
+# gates they spawned. What the census ASSERTS is unchanged — a module that
+# changes sides still has to change these two lines, in the open.
+MARKED_MODULES = 23
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
     'test_consumer_independence.py',
     'test_fuzz_markdown.py',
-    'test_scene_summary.py',
-    'test_tiles.py',
-    'test_tscn_roundtrip.py',
-    'test_uid_codec.py',
     'test_verdict.py',
 )
 

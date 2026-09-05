@@ -22,6 +22,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -348,7 +349,7 @@ class Check(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn('PASS', out)
         self.assertIn('rule(s)', out)
-        self.assertIn('matched file(s) scanned', out,
+        self.assertIn('tracked file(s) matched by a rule', out,
                       'a check that reports OK over a rule set it did not '
                       'resolve is this package\'s cardinal sin')
 
@@ -394,6 +395,130 @@ class Check(unittest.TestCase):
             code, out = run('--check')
         self.assertEqual(1, code)
         self.assertIn('NONE declares', out)
+
+
+REVERSE_RULE = ('[[verify.narrow]]\ndeclares = "## covers:"\n'
+                'scan = "scen/**"\nrun   = "make story"\n')
+
+
+class ARuleThatCanNeverBeFirst(unittest.TestCase):
+    """S1: `--check` asks whether a rule can ever be SELECTED, not whether its
+    glob matches.
+
+    A rule under one that already claims its paths matches files forever and
+    runs never, and the checker whose whole job is that the declaration does
+    not rot used to report PASS over it. Measured before the fix, three rules
+    all claiming the one file under `src/`:
+    `PASS — 3 rule(s), 3 matched file(s) scanned of 4 tracked`, exit 0.
+    """
+
+    def test_a_shadowed_rule_is_a_finding_naming_it_and_the_rule_above_it(self):
+        with Repo(LADDER + rule('src/**', 'make story')
+                  + rule('src/a.py', 'make precommit')):
+            code, out = run('--check')
+        self.assertEqual(1, code, 'a rule that can never run is drift, not a pass')
+        self.assertIn('#2', out, "the shadowed rule's own index")
+        self.assertIn('#1', out, 'and the one claiming its paths first — an '
+                                 'author who is not told which rule shadows '
+                                 'this one has to re-derive the whole order')
+        self.assertIn('FIRST for NONE', out)
+        self.assertIn('src/a.py', out)
+
+    def test_two_rules_sharing_ONE_command_are_both_first_and_neither_is_drift(self):
+        # The trap in the obvious implementation, and the reason `_first_claims`
+        # asks the selector one path at a time. `select` deduplicates by
+        # COMMAND, so a whole-corpus Selection collapses these two into one
+        # Match carrying #1's index — and a checker reading `matched` as "the
+        # rules that fired" files a shadowing finding against #2, which fires
+        # for README.md on every run. Four of this repo's own twenty rules
+        # collapse into an earlier one's Match that way, so the naive fix
+        # reddens a correct rule set — which teaches the same lesson as missing
+        # the drift: turn the gate off.
+        with Repo(LADDER + rule('src/**', 'make story')
+                  + rule('README.md', 'make story')) as repo:
+            code, out = run('--check')
+            self.assertEqual(0, code, f'both rules fire:\n{out}')
+            repo.edit('README.md')
+            self.assertEqual(0, run('--changed')[0])
+            self.assertEqual(1, repo.runs('story'),
+                             'and #2 really is the rule that claims README.md')
+
+    def test_a_reverse_rule_whose_covered_paths_are_claimed_above_it_is_drift(self):
+        files = {'src/a.py': 'x\n', 'scen/a.md': '## covers: src/a.py\n'}
+        with Repo(LADDER + rule('src/**', 'make precommit') + REVERSE_RULE,
+                  files):
+            code, out = run('--check')
+        self.assertEqual(1, code)
+        self.assertIn('#2', out)
+        self.assertIn('FIRST for NONE', out)
+
+    def test_a_reverse_rule_declaring_only_untracked_paths_is_drift(self):
+        # The reverse direction's other route to "can never be first": the scan
+        # found files, they carry the header, and every path they declare is
+        # gone. Neither zero-census fires — `scanned` and `declaring` are both
+        # 1 — so before S1 this rule passed while covering nothing that exists.
+        files = {'src/a.py': 'x\n', 'scen/a.md': '## covers: gone/x.py\n'}
+        with Repo(LADDER + REVERSE_RULE, files):
+            code, out = run('--check')
+        self.assertEqual(1, code)
+        self.assertIn('#1', out)
+        self.assertIn('moved on', out)
+
+
+class TheCensusIsCountedInOneUnit(unittest.TestCase):
+    """S2: the numerator and the denominator are both DISTINCT TRACKED FILES."""
+
+    def test_six_rules_claiming_one_file_count_that_file_once(self):
+        # Measured before the fix, six rules all naming `src/a.py` in a repo
+        # tracking three files: `6 matched file(s) scanned of 3 tracked`. A
+        # census that can exceed its own denominator is not counting what it
+        # scanned (hard rule 4), and this is the line a consumer reads to decide
+        # whether the gate looked at anything.
+        with Repo(LADDER + rule('src/a.py', 'make story') * 6) as repo:
+            code, out = run('--check')
+            tracked = len(verb.tracked(repo.root))
+        self.assertEqual(1, code, 'five of the six are shadowed')
+        self.assertIn(f'1 of {tracked} tracked file(s) matched by a rule', out,
+                      'one file exists that any rule matched')
+        self.assertNotIn('6 of', out)
+
+    def test_the_census_never_exceeds_the_tracked_count_on_this_repo(self):
+        code, out = run('--check')
+        self.assertEqual(0, code, out)
+        got = re.search(r'(\d+) of (\d+) tracked file\(s\) matched', out)
+        self.assertIsNotNone(got, out)
+        matched, total = int(got.group(1)), int(got.group(2))
+        self.assertLessEqual(matched, total)
+        self.assertEqual(total, len(verb.tracked(verb.repo_root())),
+                         'the denominator is `git ls-files`, and the line can '
+                         'be argued from against it')
+
+
+class ANonMakeRunIsCountedAndNotValidated(unittest.TestCase):
+    """S3, ruled in `main.py`'s docstring: `--check` holds a make target to the
+    Makefile and asks nothing else of a command — and SAYS how many it did not
+    hold, rather than being silent about the gap story 05's `## Close` found."""
+
+    RULES = LADDER + rule('src/**', 'uv run python -m pytest tests/ -q')
+
+    def test_it_is_a_counted_note_and_never_a_finding(self):
+        with Repo(self.RULES):
+            code, out = run('--check')
+        self.assertEqual(0, code, 'a finding here would redden every repo whose '
+                                  'narrow rules are a real command line')
+        self.assertIn('1 run(s) unvalidated', out,
+                      'the count is in the verdict line a consumer greps, not '
+                      'only in the prose above it')
+        self.assertIn('NOTE', out)
+        self.assertNotIn('DRIFT', out)
+
+    def test_a_make_run_beside_it_is_still_held_to_the_makefile(self):
+        with Repo(self.RULES + rule('README.md', 'make no-such-target')):
+            code, out = run('--check')
+        self.assertEqual(1, code)
+        self.assertIn('no-such-target', out)
+        self.assertIn('1 run(s) unvalidated', out,
+                      'the unvalidated one is still counted on a FAIL run')
 
 
 class TheRefusalMatrix(unittest.TestCase):

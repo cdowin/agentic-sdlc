@@ -7,13 +7,18 @@
 # this file, and this file is the proof it can.
 
 [checks]
-# The roster `check all` runs HERE. Four of the eight gates read .tscn/.tres,
-# and this package holds none outside its FIXTURES — so on the default roster
-# those four report a 0-file census and rule 4 correctly reddens every one.
-# That is the roster being wrong for the repo, not a reason to soften a gate:
-# `check uid|tres|props` still run here on demand and still say exactly what
-# they scanned. The repo-family two apply, and `shell` joined them when the
-# repo started self-hosting its own hook corpus under tools/ (0.23.0).
+# The roster `check all` runs HERE. The stock default is `doc` + `shell` — the
+# two that apply to any repo — and this file adds the two the stock roster
+# leaves off for reasons that do not hold here. (`shell` was an addition in
+# THIS file until 0.2.0, made when the repo started self-hosting its own hook
+# corpus under tools/ in 0.23.0; the .tscn/.tres-reading gates that used to
+# redden this roster over a 0-file census left with the scene half.)
+#
+# `pm` is stock-OFF because it would fail a consumer for having no PM tree at
+# all. This tree IS one, self-hosted, so the gate is pointed at its author.
+#
+# `repo-hygiene` is the one known gate this file still leaves out: it hits the
+# network and belongs at milestone close, not inside every `make check`.
 #
 # `hooks` is the other half of that self-hosting, and it is here because the
 # sentence was not enough: `core.hooksPath` was unset in every checkout of this
@@ -22,19 +27,12 @@
 # and on for the repo that told them to.
 all = ["doc", "pm", "shell", "hooks"]
 
-# The deliberately-drifted Godot corpus under tests/fixtures/ is the INPUT to
-# this package's tests, not content this repo maintains: a stale uid and a
-# path-only ext_resource are there on purpose, and the tests point each gate at
-# a temp copy of them to prove it fires. Excluded here so a gate run at the repo
-# root reports this repo, while the tests keep proving the gate works.
-[uid]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
-
-[tres]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
-
-[props]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
+# No scope section is set for the gates above. The deliberately-drifted trees
+# under tests/fixtures/ are the INPUT to this package's tests, not content this
+# repo maintains — but every gate still on the roster is pointed at markdown,
+# shell, git or the PM tree, and none of them walks that directory, so there is
+# nothing left here to carve out. The three `exclude_prefixes` sections that did
+# the carving left with the gates that read them (0.2.0).
 
 [pm]
 # Everything opt-in except D8. The rules this package ships OFF by default are

@@ -162,7 +162,22 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 #
 # Chris, 2026-09-04: *steps are skippable, and a skip is RECORDED.* Deviation
 # stays possible; invisible deviation does not.
+#
+# D8, 2026-09-05, kept the row and changed who mints it. `--skip <step>
+# --reason "<why>"` was how a deviation reached this file, and the flag existed
+# to escape a REFUSAL — with nothing refusing, it was ceremony with a grammar.
+# The row was always the honest half, so the DRIVER now writes one for every
+# step that is not true, carrying the reason the step itself gave. Same row,
+# same durability argument, minus the requirement that somebody remember to
+# type it. `outcome` is what widened: it was the constant `'skipped'` and it is
+# now the step's own verdict.
 KIND_DEVIATION = 'deviation'
+
+# What a `deviation` row may say happened. CLOSED, and `'skipped'` stays in it
+# because rows carrying it are already in every consumer's ledger and a reader
+# that stopped understanding them would be rewriting history (D7's reasoning,
+# one file over).
+OUTCOMES = ('not-true', 'unverifiable', 'skipped')
 
 # A durable log is not a paste buffer. The cap is on the REASON because it is
 # the only free-text field, and a row is one line.
@@ -197,19 +212,29 @@ def reason_defect(reason: object) -> str:
 
 
 def deviation_row(grain_id: str, operation: str, step: str, reason: str,
-                  ts: str = '') -> dict:
-    """One SKIPPED step of a conveyor run: who ran what, and why they did not.
+                  ts: str = '', outcome: str = 'not-true') -> dict:
+    """One step of a conveyor run that did not come out true, and why.
 
     `reason` is validated HERE rather than by the caller, so a row without one
     cannot be minted through any path. A caller that wants a friendlier
-    refusal asks `reason_defect` first and never gets a different answer.
+    refusal asks `reason_defect` first and never gets a different answer. Under
+    D8 the reason is the step's own `Answer.detail`, and `Answer`'s docstring
+    already rules that a step answering not-true with an empty detail has told
+    the operator that something is wrong and nothing about what — so the same
+    validation catches the same defect from the new caller.
+
+    `outcome` must be one of `OUTCOMES`. A row saying something this reader
+    does not understand is the drift a closed set exists to stop.
     """
     defect = reason_defect(reason)
     if defect:
         raise ValueError(f'refusing to mint a {KIND_DEVIATION} row for '
                          f'{step!r}: {defect}')
+    if outcome not in OUTCOMES:
+        raise ValueError(f'refusing to mint a {KIND_DEVIATION} row for '
+                         f'{step!r}: {outcome!r} is not one of {OUTCOMES}')
     return {'ts': ts or utc_now(), 'kind': KIND_DEVIATION, 'grain': grain_id,
-            'operation': operation, 'step': step, 'outcome': 'skipped',
+            'operation': operation, 'step': step, 'outcome': outcome,
             'reason': reason}
 
 

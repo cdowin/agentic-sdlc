@@ -67,6 +67,20 @@ class SkipReason(Enum):
     DOTTED_NAME = '{n} hidden (dot-prefixed — skipped, as D13 skips them)'
     NO_GRAIN_FILE = '{n} dir(s) with no grain file'
     EXCLUDED_PATH = '{n} path(s) excluded from scope'
+    # `rglob` does NOT descend a symlinked directory, so everything under one
+    # reached neither `kept` NOR `skipped` — invisible to every rule at once,
+    # and invisible to the census that exists to say when a walk looked less
+    # far. That is this module's own cardinal sin, in this module. Found
+    # 2026-09-05 by a release reviewer: a symlinked milestone directory holding
+    # two over-cap grains produced a clean PASS while `check pm`, which walks
+    # differently, saw the milestone and failed.
+    #
+    # NOT DESCENDED, and that is the ruling rather than a limitation: a symlink
+    # can point outside the checkout, and following one would make a gate read
+    # a tree hard rule 8 says it must not. So the link is DISCLOSED — the
+    # census names it, an operator sees a directory the walk declined, and
+    # nobody gets a smaller number with nothing said.
+    SYMLINKED_DIR = '{n} symlinked dir(s) NOT descended (a symlink may leave the checkout)'
 
     @property
     def census(self) -> str | None:
@@ -75,6 +89,23 @@ class SkipReason(Enum):
     @property
     def is_narrowing(self) -> bool:
         return self.value is not None
+
+    @property
+    def is_unexamined(self) -> bool:
+        """Was this entry LOOKED AT, or merely not reached?
+
+        The distinction a zero census turns on, and the two answers are not
+        the same kind of fact. `NO_FRONTMATTER` means the file was opened and
+        is not a grain — a classification, and a correct one. `SYMLINKED_DIR`
+        and `EXCLUDED_PATH` mean nobody went in: the first because a link may
+        leave the checkout, the second because config said not to.
+
+        So a walk that kept NOTHING and examined everything it found has
+        genuinely found nothing — a fresh `pm init` is exactly that. A walk
+        that kept nothing and left something UNEXAMINED cannot tell an empty
+        tree from a scope that lost one, and rule 4 says that must be loud.
+        """
+        return self in (SkipReason.EXCLUDED_PATH, SkipReason.SYMLINKED_DIR)
 
 
 class Kind(Enum):
@@ -139,6 +170,10 @@ class Walk:
 
     def merge(self, other: 'Walk') -> 'Walk':
         return Walk(self.kept + other.kept, self.skipped + other.skipped)
+
+    def unexamined(self) -> int:
+        """How many entries this walk never looked inside. See `is_unexamined`."""
+        return sum(1 for skip in self.skipped if skip.reason.is_unexamined)
 
     def counts(self) -> dict[SkipReason, int]:
         """How many entries each narrowing reason removed. Universe reasons are
@@ -244,7 +279,21 @@ def descendants(path: Path, kind: Kind = Kind.ANY, suffix: str | None = None,
         raw = sorted(path.rglob(pattern))
     except OSError:
         return Walk(())
+    # Every symlinked DIRECTORY at or under `path`, whether or not `pattern`
+    # would have matched its name — `rglob('*.md')` never yields the link, so
+    # asking `raw` would disclose nothing on exactly the walks that lose the
+    # most. Asked with its own glob, and a failure to read is not fatal: a
+    # census that cannot enumerate links is still better than one that pretends
+    # there are none.
+    links: list[Skip] = []
+    try:
+        links = [Skip(entry, SkipReason.SYMLINKED_DIR)
+                 for entry in sorted(path.rglob('*'))
+                 if entry.is_symlink() and entry.is_dir()]
+    except OSError:
+        links = []
     walk = _classify(raw, kind)
+    walk = Walk(walk.kept, walk.skipped + tuple(links))
     if suffix is None:
         return walk
     want = suffix.lower()

@@ -70,9 +70,18 @@ def _table(operation: str) -> list[str]:
     for index, name in enumerate(names, start=1):
         step = known[name]
         command = commands.get(name, '')
-        shown = f'`{_cell(command)}`' if command else (
-            '— *(operator)*' if step.kind is not driver.StepKind.AUTOMATIC
-            else '—')
+        # A configured command wins, then the action the step SHIPS, and only
+        # then the operator. A gate that runs something by default read as
+        # "*(operator)*" here, which is the one thing this column must never
+        # say about a step that acts on its own.
+        shipped = steps.SHIPPED_ACTION.get(name, '')
+        if command:
+            shown = f'`{_cell(command)}`'
+        elif shipped:
+            shown = f'`{_cell(shipped)}` *(shipped)*'
+        else:
+            shown = ('— *(operator)*'
+                     if step.kind is not driver.StepKind.AUTOMATIC else '—')
         doc = steps.STEP_DOC.get(
             name, '*(this step ships no postcondition sentence)*')
         out.append(f'| {index} | `{name}` | {step.kind.name} | {shown} | '

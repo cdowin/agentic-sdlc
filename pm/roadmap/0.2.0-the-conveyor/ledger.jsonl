@@ -41,3 +41,4 @@
 {"ts":"2026-09-05T16:57:33Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/03-a-test-declares-what-it-covers","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T16:57:33Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/04-verify-answers-what-proves-this-edit","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T16:57:34Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/05-every-operation-has-one-rung","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T17:16:17Z","kind":"gate","gate":"hooks-self-test","verdict":"PASS","duration_ms":980}

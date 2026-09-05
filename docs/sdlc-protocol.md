@@ -62,7 +62,16 @@ invisible deviation does not. `--status` prints what has been recorded.
 
 ## `adopt` — the ordered list
 
-> `[adopt] steps` is not configured in this repo, and this package ships no default list for `adopt`. Nothing walks it.
+| # | step | kind | command | what makes it true |
+|---|---|---|---|---|
+| 1 | `pin-bumped` | JUDGEMENT | — *(operator)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. It is a line in a file this package does not own, so the step states the edit and writes nothing. |
+| 2 | `installables-diffed` | AUTOMATIC | — | the diff between what this version ships and what is installed here has been produced, and the recorded census still describes the tree (each file with a digest, so an edit made after the diff makes it stale). |
+| 3 | `installable-decisions-recorded` | JUDGEMENT | — *(operator)* | every file that differs carries a decision in the run's record. `--force` is whole-set and has no per-file option, so take / hand-apply / keep is a call only the consumer can make. |
+| 4 | `config-updated` | JUDGEMENT | — *(operator)* | every devkit.toml section this version still READS accepts what this repo declares. There is no retired-key table: a section this package no longer reads may be another kit's, and telling those apart would mean knowing the consumer (hard rule 8). |
+| 5 | `hooks-self-test` | GATE | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards are armed, executable, still start, and still return the verdicts their own corpus asserts. A guard that fails OPEN is not there, and a config diff cannot see it. |
+| 6 | `runner-targets-resolve` | GATE | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`. A tier named with no tier file FAILS here naming the file; an empty tier list passes and SAYS it was empty — `-include`'s silence is never a pass. |
+| 7 | `checks-pass` | GATE | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0. NOT `make check`, not `make precommit`, not `[gates] extra`: those verify the consumer's code against the consumer's rules, and a version bump here cannot change their verdict. |
+| 8 | `pm-validates` | GATE | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0 — the PM tree is still good against the new version. A repo with no PM tree is refused, never vacuously fine. |
 
 ## Not steps, and why
 

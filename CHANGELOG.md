@@ -136,6 +136,17 @@
 - `[doc] scope` and `[doc] ephemeral` were bound at IMPORT, so a malformed section stopped exiting
   2 once the module was loaded — findings, or none, where the contract says 2. Config is read per
   run now, and a boundary test holds every module in the package to it.
+- **`agentic-sdlc adopt <milestone>` walks an eight-step list scoped to the ADOPTION**, on the
+  same driver as `release`: `pin-bumped`, `installables-diffed`,
+  `installable-decisions-recorded`, `config-updated`, `hooks-self-test`, `runner-targets-resolve`,
+  `checks-pass`, `pm-validates`. **`checks-pass` runs this package's `check all` and never your
+  `make check`** — your gates verify your code against your rules, and a version bump here cannot
+  change their verdict. The whole adoption answers in ~3 s on this repo's tree. New config:
+  `[adopt] steps`, `pin_file`, `runner_targets`, `[adopt.commands]`; a repo declaring none behaves
+  byte-identically to one declaring the defaults.
+- `check shell` reported `check [shell] roots` when a fresh `init` had simply not `git add`ed the
+  scripts it just wrote. The census was honestly zero and the FAIL correct; only the cause was
+  wrong, and it sent the operator to a config key that was right. It now names the untracked files.
 
 - **This repo is the agentic half of `godot-devkit`, extracted at that project's `v0.24.0`.** SDLC, CI,
   hooks, the PM tree, installables and release automation; no Godot knowledge of any kind. The split was

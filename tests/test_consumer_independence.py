@@ -73,6 +73,30 @@ OUTSIDE_READS = (r'~/[w]orkspace', r'Path\.home\(\)',
                  r'\$HOME/[w]orkspace',
                  r'os\.environ\[[\'"]HOME[\'"]\]\s*\)?\s*/')
 
+# The OTHER KIT'S ARTIFACTS. Decision D2 of 0.2.0: an installable belongs to
+# the kit whose ARTIFACT it acts on, not to the kit whose STRUCTURE it borrows.
+# `Makefile.devkit` carried the gate framework and one language's target roster
+# in one file, which is what blocked splitting this package in two — so this is
+# the gate that keeps the roster out, the way CONSUMER_NAMES keeps consumer
+# names out.
+#
+# THESE ARE OPERATIVE TOKENS, NOT THE WORD. A file that spells `project.godot`
+# or `--headless` is ACTING on an engine artifact; a comment that says the word
+# "Godot" while explaining why the split happened is doing the opposite, and
+# CLAUDE.md wants that prose kept. Banning the word would make every historical
+# note an exemption, and a scanner whose allowlist grows every release is a
+# scanner somebody eventually switches off.
+ENGINE_ARTIFACTS = (r'project\.godot', r'\.tscn\b', r'\.tres\b',
+                    r'\.gd\.uid\b', r'\bres://', r'GDK_GODOT',
+                    r'--headless', r'\bgdlint\b', r'\bgut_cmdln\b',
+                    r'\bResourceUID\b', r'compile_sweep', r'gdk_runners')
+
+# Where a leak would actually SHIP. Narrower than the consumer-name scan on
+# purpose: `docs/`, `pm/` and `CHANGELOG.md` are the record of the split and
+# have to be able to say what left. `tests/` is excluded for the same reason
+# this file is — the guards spell what they guard.
+SHIPPING_ROOTS = ('src/', 'tools/', '.github/')
+
 # The LOG. Dated records of what was measured; not rewritable without lying.
 LOG_PATHS = ('pm/', 'docs/reviews/', 'CHANGELOG.md')
 
@@ -94,9 +118,15 @@ NOT_CONTENT = {'.git', '.gate-reports', '.pytest_cache', '.ruff_cache', '.venv',
 TOMBSTONES = {
     'tests/test_ci_workflows.py': 'guards the workflows against the same names',
     'tests/test_makefile_include.py': 'guards Makefile.devkit against them',
-    'tests/test_runners_installable.py': 'guards every install-runners file',
     'tests/test_install.py': 'guards every installed hook',
 }
+
+# The same discipline, for ENGINE_ARTIFACTS. Empty, and that is the assertion:
+# every engine token left this package in 0.2.0 and nothing under
+# SHIPPING_ROOTS needs to spell one. An entry added here has to carry the
+# sentence saying why the file ACTS on an engine artifact — at which point the
+# honest answer is usually that the file belongs to the other kit.
+ENGINE_TOMBSTONES: dict[str, str] = {}
 
 # THE MIGRATION DOCUMENT — one file, one clause, and both halves of the
 # exemption written down.
@@ -727,3 +757,58 @@ class TestTheMigrationExemptionOnAScratchTree:
         (tmp_path / MIGRATION_DOC).write_bytes(PLANT.encode() + b'\n\xff\xfe\n')
         hits = offending_lines(tmp_path / MIGRATION_DOC, CONSUMER_NAMES, tmp_path)
         assert _unreadable(hits), hits
+
+
+# --- the other kit's artifacts ------------------------------------------------
+
+def names_an_engine_artifact(root: Path = REPO_ROOT) -> list[str]:
+    """Every `path:line: text` under SHIPPING_ROOTS spelling an engine token."""
+    hits: list[str] = []
+    for path in scanned_files(root):
+        rel = path.relative_to(root).as_posix()
+        if not rel.startswith(SHIPPING_ROOTS):
+            continue
+        if rel in ENGINE_TOMBSTONES:
+            continue
+        hits.extend(offending_lines(path, ENGINE_ARTIFACTS, root))
+    return hits
+
+
+def test_nothing_that_ships_acts_on_an_engine_artifact():
+    """Decision D2, as a gate.
+
+    The middle tier — a gate framework carrying one language's target roster —
+    is what blocked splitting this package in two, and it was invisible because
+    nothing looked. `Makefile.devkit` named twelve engine targets; `init` refused
+    every repo without an engine project file; `install-ci` shipped a workflow
+    running `make uid-scan`. Each of those read as normal until somebody asked
+    which kit owned it.
+    """
+    hits = names_an_engine_artifact()
+    unreadable = _unreadable(hits)
+    assert not unreadable, (
+        'files under the shipping roots could not be read:\n'
+        + '\n'.join(unreadable))
+    assert hits == [], (
+        'these ship and act on an engine artifact — they belong to the kit '
+        'that owns that artifact (decision D2, 0.2.0):\n' + '\n'.join(hits))
+
+
+def test_the_engine_scan_covers_the_places_a_leak_would_ship():
+    """A scan over an empty census passes vacuously. Rule 4."""
+    scanned = [p.relative_to(REPO_ROOT).as_posix() for p in scanned_files()]
+    for root in SHIPPING_ROOTS:
+        assert any(rel.startswith(root) for rel in scanned), (
+            f'{root} contributed no files to the census, so the engine scan '
+            f'passed over nothing')
+
+
+@pytest.mark.parametrize('rel,why', sorted(ENGINE_TOMBSTONES.items()))
+def test_every_engine_tombstone_still_earns_its_exemption(rel, why):
+    """An exemption that outlives its file is documentation of a lie."""
+    path = REPO_ROOT / rel
+    assert path.is_file(), f'{rel} is exempt ({why}) and does not exist'
+    assert offending_lines(path, ENGINE_ARTIFACTS), (
+        f'{rel} is exempt ({why}) and no longer names an engine artifact — '
+        f'drop the entry')
+

@@ -1,18 +1,23 @@
-"""test_makefile_include.py — Makefile.devkit: the standard target set.
+"""test_makefile_include.py — Makefile.devkit: the gate FRAMEWORK.
 
 A consumer's Makefile is two lines plus its own targets; everything else is
-this installable. So the contract under test is:
+this installable. Since 0.2.0 the installable is the framework ONLY — the
+language-specific tiers arrive through `-include $(GDK_TIERS_MK)` and two
+variables a kit sets. So the contract under test is:
 
-  * the standard target set is EXACTLY the declared one, and every target
-    parses and dry-runs on a fixture project that holds nothing but a
-    project.godot;
-  * `help` lists the standard set AND the project's own, from one grep;
+  * the framework's target set is EXACTLY the declared one, it names no
+    language kit's target, and every target parses and dry-runs on a fixture
+    project that holds nothing but the include and its library;
+  * `help` lists the framework set AND the project's own, from one grep;
   * `check` is the devkit gates followed by `[gates] extra` — read once,
     through the CLI, and a bad value STOPS the gate rather than narrowing it;
-  * the quiet convention holds per target, cross-checked against the runners
-    themselves rather than against a memory of which ones publish.
+  * `precommit` / `milestone` compose from `GDK_PRECOMMIT_TIERS` /
+    `GDK_MILESTONE_TIERS`, an EMPTY list announces itself, and a NAMED tier
+    that resolves to no target is a parse-time failure naming the variable.
+    Those two cases are held apart on exactly one condition, and a check that
+    fires on both is as wrong as one that fires on neither.
 
-`make -n` is the whole engine story here: nothing in this file boots Godot,
+`make -n` is the whole engine story here: nothing in this file builds anything,
 and the dry runs are asserted to stay dry — which is why the sub-make in
 `check` is not spelled `$(MAKE)`.
 """
@@ -42,44 +47,31 @@ pytestmark = pytest.mark.skipif(shutil.which('make') is None
 INCLUDE = REPO_ROOT / 'src/agentic_sdlc/repo/installables/Makefile.devkit'
 INSTALLABLES = INCLUDE.parent
 
-# The standard set, spelled out so this file READS as the contract. It is
+# The framework set, spelled out so this file READS as the contract. It is
 # cross-checked against the include below, so it cannot become a second roster
 # that quietly disagrees.
-STANDARD = (
-    'help', 'doctor',
-    'parse', 'lint', 'warnings',
-    'unit', 'integration', 'integration-all', 'integration-diff',
-    'integration-list', 'scenario', 'smoke', 'capture', 'import-cache',
-    'refs', 'scene', 'scene-diff', 'orphans', 'autoloads', 'pm',
-    'pm-scan', 'uid-scan', 'hermetic-scan',
-    'hooks-self-test', 'runners-self-test',
-    'check', 'precommit', 'milestone',
+STANDARD = ('help', 'pm', 'check', 'precommit', 'milestone')
+
+# Framework targets with no `## ` line: they exist to be depended ON, never to
+# be typed, so `help` must not list them — but `.PHONY` must.
+INTERNAL = ('gdk-tiers-none-precommit', 'gdk-tiers-none-milestone')
+
+# Target names that were the Godot roster this file carried through 0.1.0.
+# None of them may come back: the framework composes from tiers now, and a
+# language name in here is what blocked the split of this package in two.
+LANGUAGE_KIT_TARGETS = (
+    'parse', 'lint', 'warnings', 'unit', 'integration', 'integration-all',
+    'integration-diff', 'integration-list', 'scenario', 'smoke', 'capture',
+    'import-cache', 'scene', 'scene-diff', 'refs', 'orphans', 'autoloads',
+    'uid-scan', 'hermetic-scan', 'hooks-self-test', 'runners-self-test',
+    'doctor', 'pm-scan',
 )
 
-# Which targets publish their verdict THEMSELVES, from inside the runner they
-# call — so wrapping them again here would bury it in a log. Asserted against
-# the runner sources, not against this comment.
-SELF_PUBLISHING = {'parse': 'parse.sh', 'lint': 'lint.sh',
-                   'warnings': 'warnings.sh', 'unit': 'unit.sh'}
 # Which targets wrap their tool here, because the tool has no verdict of its
-# own: the devkit CLI gates, the pure-shell scans, the scenario family and the
-# aggregate. The scenario family joined this list in 0.20.0 (MINOR-2): those
-# five streamed whatever their runner printed and IGNORED `VERBOSE` — none of
-# the three runners has a streaming path this file can reach — while the
-# include's header, `help`'s footer and the README all promised it worked.
-WRAPPED = ('uid-scan', 'pm-scan', 'hermetic-scan', 'hooks-self-test',
-           'runners-self-test', 'check',
-           'integration', 'integration-all', 'integration-diff', 'scenario',
-           'smoke', 'capture')
-# Everything else is not a gate: `help` and `doctor` are reports, the read
-# verbs ARE their output, and the compositions print nothing beyond their
-# members' verdicts.
-NOT_A_GATE = set(STANDARD) - set(SELF_PUBLISHING) - set(WRAPPED)
-
-# What each target needs on the command line to be asked for at all.
-ARGS_FOR = {'scenario': ['NAME=boot_to_hub'], 'capture': ['NAME=hub_capture'],
-            'refs': ['NAME=Player'], 'scene': ['FILE=scenes/hub.tscn'],
-            'scene-diff': ['FILE=scenes/hub.tscn']}
+# own. `check` is the only gate the framework itself runs; a tier target's
+# verdict is the tier file's problem, and the `gdk_gate` define is what it
+# reaches for.
+WRAPPED = ('check',)
 
 PROJECT_MAKEFILE = (
     'DEVKIT_VERSION := v0.0.0-fixture\n'
@@ -88,6 +80,23 @@ PROJECT_MAKEFILE = (
     'my-scan: ## a gate this project owns\n'
     '\t@echo "[my-scan] PASS" && touch .my-scan-ran\n'
 )
+
+# A language kit's contribution: it DEFINES its targets, DECLARES which
+# compositions they join, and carries its OWN `.PHONY` — the framework's
+# cannot name what the framework has never heard of.
+TIERS_MK = (
+    'GDK_PRECOMMIT_TIERS := kit-parse kit-unit\n'
+    'GDK_MILESTONE_TIERS := kit-parse kit-lint kit-unit\n'
+    '\n'
+    '.PHONY: kit-parse kit-lint kit-unit\n'
+    'kit-parse: ## the kit\'s compile gate\n'
+    '\t@echo "[KIT-PARSE] PASS"\n'
+    'kit-lint: ## the kit\'s lint gate\n'
+    '\t@echo "[KIT-LINT] PASS"\n'
+    'kit-unit: ## the kit\'s unit gate\n'
+    '\t@echo "[KIT-UNIT] PASS"\n'
+)
+
 # `check all` is stubbed (its roster is not this file's subject and every real
 # gate would report a 0-file census on a fixture); `gates-extra` is the REAL
 # verb, reading the fixture's own devkit.toml.
@@ -102,22 +111,26 @@ esac
 
 
 @contextlib.contextmanager
-def project(config: str = '', makefile: str = PROJECT_MAKEFILE):
-    """A fixture Godot project carrying the include and nothing else."""
+def project(config: str = '', makefile: str = PROJECT_MAKEFILE,
+            tiers: str | None = None):
+    """A fixture project carrying the include and nothing else."""
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / 'game'
+        root = Path(tmp) / 'app'
         root.mkdir()
-        (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
-        # The whole install-runners payload, at its stock layout: the include
+        (root / 'pyproject.toml').write_text('[project]\nname = "fixture"\n',
+                                             encoding='utf-8')
+        # The whole install-gates payload, at its stock layout: the include
         # SOURCES the library, so a fixture carrying only the Makefile would
         # prove the targets parse and nothing about whether they run.
-        for name, rel in install.PLANS['install-runners']:
+        for name, rel in install.PLANS['install-gates']:
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(install.body_of(name), encoding='utf-8')
         (root / 'Makefile').write_text(makefile, encoding='utf-8')
         if config:
             (root / 'devkit.toml').write_text(config, encoding='utf-8')
+        if tiers is not None:
+            (root / 'Makefile.tiers').write_text(tiers, encoding='utf-8')
         (root / 'devkit-stub').write_text(
             DEVKIT_STUB.format(src=REPO_ROOT / 'src'), encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
@@ -178,13 +191,24 @@ def test_the_include_declares_exactly_the_standard_set():
     assert sorted(declared) == sorted(STANDARD)
 
 
+def test_the_framework_names_no_language_kits_target():
+    """The whole point of the split: `Makefile.devkit` composes, it does not
+    enumerate. A roster name back in here is the coupling that blocked
+    godot-devkit 0.25.0 coming back with it."""
+    defined = set(recipes()) | set(declared_targets())
+    leaked = sorted(defined & set(LANGUAGE_KIT_TARGETS))
+    assert not leaked, (
+        f'{leaked} are a language kit\'s targets — they belong in the file '
+        f'GDK_TIERS_MK names, not in the framework')
+
+
 @pytest.mark.parametrize('target', STANDARD)
 def test_make_n_succeeds_for_every_standard_target(target):
     """Parse the whole Makefile, resolve the target, expand its recipe — with
     the STOCK `DEVKIT` (uvx), because a dry run that reached the network would
     be a dry run in name only."""
     with project() as root:
-        done = make(root, '-n', target, *ARGS_FOR.get(target, []))
+        done = make(root, '-n', target)
     assert done.returncode == 0, done.stdout + done.stderr
 
 
@@ -209,8 +233,25 @@ def test_help_lists_the_standard_set_and_the_projects_own():
               re.finditer(r'^  ([a-z][a-z0-9-]*) +\S', plain, re.M)}
     assert set(STANDARD) <= listed, (
         f'missing from `make help`: {sorted(set(STANDARD) - listed)}')
+    assert not (set(INTERNAL) & listed), (
+        'an internal announce target is being offered as something to type')
     assert 'my-scan' in listed, "the project's own target is not listed"
     assert 'a gate this project owns' in plain
+
+
+def test_help_lists_the_kits_tiers_and_names_the_composition():
+    """One grep over MAKEFILE_LIST, so the tier file's own `## ` lines are in
+    the same roster — and the footer says which tiers each composition holds,
+    because that is the number an operator has no other way to see."""
+    with project(tiers=TIERS_MK) as root:
+        done = make(root, 'help')
+    assert done.returncode == 0, done.stdout + done.stderr
+    plain = re.sub(r'\x1b\[[0-9;]*m', '', done.stdout)
+    for tier in ('kit-parse', 'kit-lint', 'kit-unit'):
+        assert re.search(rf'^  {tier} +\S', plain, re.M), (
+            f'{tier} is not in `make help`:\n{plain}')
+    assert 'precommit=[kit-parse kit-unit]' in plain, plain
+    assert 'milestone=[kit-parse kit-lint kit-unit]' in plain, plain
 
 
 # --- check: the devkit gates, then the project's own --------------------------
@@ -252,46 +293,6 @@ def test_verbose_streams_the_transcript_and_still_ends_with_the_verdict():
     assert done.stdout.strip().splitlines()[-1].startswith('[CHECK]')
 
 
-# MINOR-2: `make scenario|smoke|integration|integration-all|capture VERBOSE=1`
-# printed exactly what `VERBOSE=0` did. The runner is reached with no engine
-# on PATH, so it fails — which is the useful shape here: a FAILING gate is
-# where a reader most needs the transcript, and both halves of the convention
-# have to hold on it.
-VERBOSE_TARGETS = [
-    pytest.param('scenario', ['NAME=smoke'], 'SCENARIO', id='scenario'),
-    pytest.param('smoke', [], 'SMOKE', id='smoke'),
-    pytest.param('integration', [], 'INTEGRATION', id='integration'),
-    pytest.param('integration-all', [], 'INTEGRATION', id='integration-all'),
-    pytest.param('integration-diff', [], 'INTEGRATION', id='integration-diff'),
-    pytest.param('capture', ['NAME=shot'], 'CAPTURE', id='capture'),
-]
-
-
-@pytest.mark.parametrize('target,args,tag', VERBOSE_TARGETS)
-def test_the_scenario_family_is_quiet_by_default_and_streams_on_verbose(
-        target, args, tag):
-    with project() as root:
-        quiet = make(root, target, *args, stubbed(root), PATH='/usr/bin:/bin')
-        loud = make(root, target, *args, stubbed(root), PATH='/usr/bin:/bin',
-                    VERBOSE='1')
-        log = root / '.gate-reports' / f'{target}.log'
-        transcript = log.read_text(encoding='utf-8')
-    verdict = f'[{tag}] '
-    quiet_lines = [ln for ln in quiet.stdout.splitlines() if ln.strip()]
-    assert quiet_lines and quiet_lines[-1].startswith(verdict), quiet.stdout
-    assert f'full log: .gate-reports/{target}.log' in quiet_lines[-1]
-    assert transcript, f'the verdict named a log that holds nothing'
-    # VERBOSE ADDS the stream; it never replaces the verdict or skips the file.
-    loud_lines = [ln for ln in loud.stdout.splitlines() if ln.strip()]
-    assert loud_lines[-1].startswith(verdict), loud.stdout
-    assert len(loud_lines) > len(quiet_lines), (
-        f'VERBOSE=1 printed no more than the quiet run:\n{loud.stdout}')
-    for line in transcript.splitlines():
-        if line.strip():
-            assert line in loud.stdout, (
-                f'VERBOSE=1 did not stream what the log holds: {line!r}')
-
-
 def test_a_failing_devkit_gate_shows_what_broke_and_stops_before_the_extras():
     with project('[gates]\nextra = ["my-scan"]\n') as root:
         done = make(root, 'check', f'DEVKIT=bash {root}/no-such-stub')
@@ -322,20 +323,167 @@ def test_extra_naming_check_itself_is_refused_rather_than_recursing():
     assert 're-entered through [gates] extra' in done.stderr, done.stderr
 
 
-# --- the quiet convention, cross-checked against the runners ------------------
-@pytest.mark.parametrize('target,runner', SELF_PUBLISHING.items())
-def test_a_runner_that_publishes_its_own_verdict_is_not_wrapped_twice(target,
-                                                                     runner):
-    body = recipes()[target]
-    assert runner in body, f'{target} no longer calls {runner}'
-    assert 'gdk_gate' not in body, (
-        f'{target} wraps {runner}, which already publishes its own verdict — '
-        f'the wrapper\'s summary would replace it and file the real one away')
-    source = (INSTALLABLES / runner).read_text(encoding='utf-8')
-    assert 'gdk_gate_verdict' in source, (
-        f'{runner} stopped publishing a verdict — {target} must now wrap it')
+# --- the tier seam: what the compositions are made of -------------------------
+def test_precommit_with_no_tiers_runs_check_alone_and_says_the_list_is_empty():
+    """A project with no language kit is a SUPPORTED shape, not a degraded one
+    — and a one-gate run that reads like a five-gate run is the cardinal sin
+    with a Makefile in front of it. It passes, and it announces itself."""
+    with project() as root:
+        done = make(root, 'precommit', stubbed(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    lines = [ln for ln in done.stdout.splitlines() if ln.strip()]
+    assert lines[0].startswith('[TIERS] GDK_PRECOMMIT_TIERS is empty'), done.stdout
+    assert 'Makefile.tiers is not present' in lines[0], done.stdout
+    # The announcement comes BEFORE the gate it is describing, and `check` is
+    # the only thing that ran.
+    assert [ln for ln in lines if ln.startswith('[CHECK]')], done.stdout
+    assert len(lines) == 2, done.stdout
 
 
+def test_milestone_with_no_tiers_names_its_own_variable():
+    """Two compositions, two variables. An announcement that named the wrong
+    one would send an operator to edit a list that was never consulted."""
+    with project() as root:
+        done = make(root, 'milestone', stubbed(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    first = done.stdout.splitlines()[0]
+    assert first.startswith('[TIERS] GDK_MILESTONE_TIERS is empty'), done.stdout
+    assert 'GDK_PRECOMMIT_TIERS' not in done.stdout, done.stdout
+
+
+def test_tiers_compose_into_both_gates_in_declaration_order():
+    """`-include` resolves at parse time and prerequisites stay prerequisites,
+    so the dry run lists the whole composition without running any of it."""
+    with project(tiers=TIERS_MK) as root:
+        pre = make(root, '-n', 'precommit', stubbed(root))
+        mil = make(root, '-n', 'milestone', stubbed(root))
+    assert pre.returncode == 0, pre.stdout + pre.stderr
+    assert mil.returncode == 0, mil.stdout + mil.stderr
+    # The `check` recipe is the devkit CLI; each tier is its own echo. Order is
+    # the order the kit declared, after `check`.
+    def echoed(out: str) -> list[str]:
+        return re.findall(r'^echo "\[(KIT-[A-Z]+)\] PASS"$', out, re.M)
+    assert 'check all' in pre.stdout, pre.stdout
+    assert echoed(pre.stdout) == ['KIT-PARSE', 'KIT-UNIT'], pre.stdout
+    assert 'check all' in mil.stdout, mil.stdout
+    assert echoed(mil.stdout) == ['KIT-PARSE', 'KIT-LINT', 'KIT-UNIT'], mil.stdout
+    # A declared list is not an empty one: no announcement in either.
+    assert '[TIERS]' not in pre.stdout + mil.stdout, pre.stdout + mil.stdout
+
+
+def test_tiers_actually_run_in_the_composition():
+    with project(tiers=TIERS_MK) as root:
+        done = make(root, 'precommit', stubbed(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    lines = [ln for ln in done.stdout.splitlines() if ln.strip()]
+    assert lines[0].startswith('[CHECK]'), done.stdout
+    assert lines[1:] == ['[KIT-PARSE] PASS', '[KIT-UNIT] PASS'], done.stdout
+
+
+@pytest.mark.parametrize('goal', ['help', 'check', 'precommit', 'milestone'])
+def test_neither_tier_path_warns_about_an_undefined_variable(goal):
+    """`--warn-undefined-variables` is on. Both tier variables are defined
+    before use in the include-ABSENT path too, which is the path a project
+    with no language kit takes on every single run."""
+    for tiers in (None, TIERS_MK):
+        with project(tiers=tiers) as root:
+            done = make(root, '-n', goal, stubbed(root))
+        assert done.returncode == 0, done.stdout + done.stderr
+        warnings = [ln for ln in done.stderr.splitlines()
+                    if 'undefined variable' in ln]
+        assert not warnings, (f'tiers={"set" if tiers else "absent"}: '
+                              f'{warnings}')
+
+
+# --- story 02: a named tier that resolves to nothing is loud -------------------
+# The distinguishing condition is whether a tier LIST is empty, and nothing
+# else. Both of the next two have no Makefile.tiers on disk.
+def test_a_missing_tier_file_with_empty_lists_is_the_supported_shape():
+    """`-include` of a missing file is silent BY DESIGN — that silence is what
+    makes a project with no tiers work at all. It must not be turned into an
+    error, or the pure-framework consumer stops existing."""
+    with project() as root:
+        done = make(root, 'precommit', stubbed(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'Makefile.tiers' not in done.stderr, done.stderr
+    assert 'No rule to make target' not in done.stderr, done.stderr
+
+
+def test_a_missing_tier_file_with_a_named_tier_is_the_typo_and_fails():
+    """Same missing file, one condition different: a tier list names something.
+    That is a typo'd GDK_TIERS_MK, and the silence that serves the case above
+    is exactly what would hide it."""
+    with project() as root:
+        done = make(root, 'precommit', stubbed(root),
+                    'GDK_PRECOMMIT_TIERS=kit-parse')
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'GDK_PRECOMMIT_TIERS' in done.stderr, done.stderr
+    assert 'GDK_TIERS_MK=Makefile.tiers does not exist' in done.stderr, done.stderr
+
+
+def test_a_named_tier_with_no_target_fails_naming_the_tier_and_the_variable():
+    """The tier file is present and one name in it resolves to nothing. Make's
+    own "No rule to make target" would name the tier and NOT the variable that
+    named it, which is the half an operator actually has to edit."""
+    broken = ('GDK_PRECOMMIT_TIERS := kit-parse nonexistent-tier\n'
+              '\n.PHONY: kit-parse\nkit-parse:\n\t@echo "[KIT-PARSE] PASS"\n')
+    with project(tiers=broken) as root:
+        done = make(root, 'precommit', stubbed(root))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'nonexistent-tier' in done.stderr, done.stderr
+    assert 'GDK_PRECOMMIT_TIERS' in done.stderr, done.stderr
+
+
+def test_the_milestone_list_is_named_when_it_is_the_one_at_fault():
+    broken = ('GDK_MILESTONE_TIERS := kit-parse nonexistent-tier\n'
+              '\n.PHONY: kit-parse\nkit-parse:\n\t@echo "[KIT-PARSE] PASS"\n')
+    with project(tiers=broken) as root:
+        done = make(root, 'milestone', stubbed(root))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'GDK_MILESTONE_TIERS names a tier no makefile defines' in done.stderr
+    assert 'GDK_PRECOMMIT_TIERS names' not in done.stderr, done.stderr
+
+
+def test_a_bad_tier_list_fails_before_the_gates_run():
+    """An operator should not pay for `check` to be told the list was wrong.
+    The guard is parse-time, so nothing has run when it fires — proven by the
+    transcript directory the first gate would have created."""
+    broken = ('GDK_PRECOMMIT_TIERS := nonexistent-tier\n'
+              '\n.PHONY: kit-parse\nkit-parse:\n\t@echo "[KIT-PARSE] PASS"\n')
+    with project('[gates]\nextra = ["my-scan"]\n', tiers=broken) as root:
+        done = make(root, 'precommit', stubbed(root))
+        assert done.returncode == 2, done.stdout + done.stderr
+        assert not (root / '.gate-reports').exists(), (
+            'check ran before the tier list was refused')
+        assert not (root / '.my-scan-ran').exists()
+    assert '[CHECK]' not in done.stdout, done.stdout
+
+
+def test_a_bad_tier_list_is_refused_under_n_too():
+    """A dry run that printed a plan holding a target that does not exist would
+    be a plan nobody can execute."""
+    broken = ('GDK_PRECOMMIT_TIERS := nonexistent-tier\n'
+              '\n.PHONY: kit-parse\nkit-parse:\n\t@echo ok\n')
+    with project(tiers=broken) as root:
+        done = make(root, '-n', 'precommit', stubbed(root))
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'nonexistent-tier' in done.stderr, done.stderr
+
+
+def test_an_unrelated_goal_is_not_held_hostage_by_a_tier_typo():
+    """The guard is about the compositions, but it is parse-time, so it fires
+    on every goal. That is deliberate and this records it: a tree whose tier
+    list is wrong is wrong before you pick a target, and `help` saying so is
+    better than `help` working and `precommit` quietly shrinking."""
+    broken = ('GDK_PRECOMMIT_TIERS := nonexistent-tier\n'
+              '\n.PHONY: kit-parse\nkit-parse:\n\t@echo ok\n')
+    with project(tiers=broken) as root:
+        done = make(root, 'help')
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert 'nonexistent-tier' in done.stderr, done.stderr
+
+
+# --- the shape of the file ----------------------------------------------------
 @pytest.mark.parametrize('target', WRAPPED)
 def test_a_tool_with_no_verdict_of_its_own_gets_one_here(target):
     body = recipes()[target]
@@ -344,46 +492,36 @@ def test_a_tool_with_no_verdict_of_its_own_gets_one_here(target):
 
 
 def test_the_compositions_add_no_output_of_their_own():
+    """The empty-tier announcement is a PREREQUISITE, not a recipe on the
+    composition: each member's verdict is still the whole output."""
     bodies = recipes()
     for name in ('precommit', 'milestone'):
         assert bodies[name].strip() == '', f'{name} grew a recipe: {bodies[name]}'
 
 
-def test_every_target_is_phony():
+def test_phony_lists_exactly_what_this_file_defines():
     """None of these produce a file of their own name; a stray `check` file in
-    a repo would otherwise silently disable the gate."""
+    a repo would otherwise silently disable the gate. And `.PHONY` cannot list
+    what it does not know: a tier target lives in another file, which declares
+    its own — so the framework's list is exactly the framework's targets."""
     text = INCLUDE.read_text(encoding='utf-8')
-    phony = re.search(r'^\.PHONY:((?:.*\\\n)*.*)$', text, re.M).group(1)
-    assert set(phony.split()) - {'\\'} == set(STANDARD)
+    phony: set[str] = set()
+    for match in re.finditer(r'^\.PHONY:((?:.*\\\n)*.*)$', text, re.M):
+        phony |= set(match.group(1).split()) - {'\\'}
+    assert phony == set(STANDARD) | set(INTERNAL)
+    assert phony == set(recipes()), (
+        f'.PHONY and the file disagree: '
+        f'{sorted(phony ^ set(recipes()))}')
 
 
-# --- runners-self-test: the one target whose recipe is hand-rolled ------------
-def test_runners_self_test_proves_every_installed_runner_not_a_listed_two():
-    """The corpus set is DERIVED from what is installed, so a runner landing
-    tomorrow is proven the day it arrives. Real run — the self-tests boot
-    nothing."""
-    with project() as root:
-        done = make(root, 'runners-self-test')
-    assert done.returncode == 0, done.stdout + done.stderr
-    verdict = done.stdout.strip()
-    runners = sum(1 for _, rel in install.PLANS['install-runners']
-                  if rel.startswith('tools/dev/runners/') and rel.endswith('.sh'))
-    assert verdict.startswith(
-        f'[RUNNERS] the library + {runners} runner corpora PASS'), (
-        f'expected every installed runner ({runners}), got: {verdict}')
-
-
-def test_an_empty_runner_census_fails_rather_than_reporting_nothing_wrong():
-    """Rule 4: a gate that scanned nothing must say so, loudly. A repo that
-    moved its runners without setting GDK_RUNNERS_DIR would otherwise get a
-    green self-test over zero corpora."""
-    with project() as root:
-        for entry in (root / 'tools/dev/runners').iterdir():
-            entry.unlink()
-        done = make(root, 'runners-self-test')
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert 'no runners under' in done.stdout, done.stdout
-    assert 'install-runners' in done.stdout, done.stdout
+def test_the_header_documents_the_tier_file_shape():
+    """The tier file is written by a kit author reading this header and nothing
+    else — the seam, the two variables, and the fact that the tier file carries
+    its own `.PHONY`."""
+    header = INCLUDE.read_text(encoding='utf-8').split('\nSHELL :=')[0]
+    for token in ('GDK_TIERS_MK', 'GDK_PRECOMMIT_TIERS', 'GDK_MILESTONE_TIERS',
+                  '.PHONY'):
+        assert token in header, f'the header never mentions {token}'
 
 
 # --- the file is generic ------------------------------------------------------
@@ -403,5 +541,5 @@ def test_a_missing_devkit_version_is_a_parse_error_naming_the_fix():
 
 def test_the_pin_is_the_projects_and_reaches_the_cli():
     with project() as root:
-        done = make(root, '-n', 'autoloads')
+        done = make(root, '-n', 'pm')
     assert 'v0.0.0-fixture' in done.stdout, done.stdout

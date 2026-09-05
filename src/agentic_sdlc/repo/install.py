@@ -1,16 +1,15 @@
 """install.py — write a file into a repo, once, from one source.
 
-Three verbs, one relationship, and it is deliberately the whole relationship:
+Four verbs, one relationship, and it is deliberately the whole relationship:
 
-    install-ci      the four workflows a Godot project runs on a push:
-                    verify.yml (checkout, uv, the Godot toolchain a tree with
-                    a project.godot asks for, `make milestone`),
-                    uid-guard.yml, semver-gate.yml and auto-tag.yml. Each was forked in both
-                    consumers, drifting on a project name and on which fix each
-                    fork got. They carry no gate of their own and no way to
-                    parameterize one: a project that wants something else edits
-                    the file, which is now its file. Release / website / social
-                    workflows are the project's and are not written.
+    install-ci      the three workflows a project runs on a push: verify.yml
+                    (checkout, uv, `make milestone`), semver-gate.yml and
+                    auto-tag.yml. Each was forked in both consumers, drifting
+                    on a project name and on which fix each fork got. They
+                    carry no gate of their own and no way to parameterize one:
+                    a project that wants something else edits the file, which
+                    is now its file. Release / website / social workflows are
+                    the project's and are not written.
     install-agents  the review and build contract PLUS the base agent roster
                     (architect, po, developer, reviewers, simplifier, the
                     writers, pm-operator), as AGENT DEFINITIONS under
@@ -22,25 +21,34 @@ Three verbs, one relationship, and it is deliberately the whole relationship:
                     marked `Project config` section the repo edits after
                     install, the same relationship the hook corpus has.
     install-hooks   the agent-workflow guard corpus: the Claude Code hooks
-                    (commit-pathspec, engine-boot sandbox, stop gate, write
-                    confinement), the git hooks (pre-push, prepare-commit-msg),
-                    the worktree tool that writes the scope marker the guards
-                    read, the toolchain doctor, and the script that arms them.
+                    (commit-pathspec, stop gate, write confinement), the git
+                    hooks (pre-push, prepare-commit-msg), the worktree tool
+                    that writes the scope marker the guards read, and the
+                    script that arms them.
                     Forked between two repos (~1,000 lines duplicated per repo,
                     drifting on a project-name prefix and on which fixes each
                     fork got); canonical here. Every installed file is
                     STANDALONE — no sourcing of a library the repo may lack —
                     and per-project variation is a small config header the
                     repo edits after install, when the file is its own.
-    install-runners the sandboxed headless-run shell library, the runners
-                    that source it, and `Makefile.devkit` — the standard target
-                    set that calls them. Not folded into install-hooks: a
-                    hooks-only consumer would carry runners it never calls, and
-                    the library is sourced by make targets rather than fired by
-                    Claude Code. Every function is `gdk_*` — the per-project
-                    `<project>_*` forks this replaces are what drifted, so a
-                    consumer keeping its own prefix is a second name for the
-                    same fact and is not supported.
+    install-gates   the gate FRAMEWORK: `gdk_gate.sh`, the shell library that
+                    gives every gate one verdict line and a transcript on disk,
+                    plus `Makefile.devkit` — the standard target set that calls
+                    it (`check`, `precommit`, `milestone`) and the `-include`
+                    seam a LANGUAGE KIT hangs its own tiers on. Not folded into
+                    install-hooks: a hooks-only consumer would carry a make
+                    include it never runs, and the library is sourced by make
+                    targets rather than fired by Claude Code. Every function is
+                    `gdk_*` — the per-project `<project>_*` forks this replaces
+                    are what drifted, so a consumer keeping its own prefix is a
+                    second name for the same fact and is not supported.
+
+                    It was `install-runners` through 0.1.0, and it carried the
+                    engine runners with it. Decision D2 of 0.2.0: an installable
+                    belongs to the kit whose ARTIFACT it acts on, so the runners
+                    left and the framework kept the verb — renamed, because a
+                    verb called `install-runners` that installs no runner is
+                    the kind of name that has to be explained every time.
 
 The verb writes the file. Once. If the destination is already there and is not
 byte-for-byte what would be written, the command REFUSES, names the path, and
@@ -72,13 +80,13 @@ rest of that file is byte-current, so there is nothing in it to take and the
 run needs no `--force` at all. The installer does not MERGE the block: `--force`
 replaces the whole file, header included. Preserving a consumer's header under
 a new body would write a file whose header is one version and whose body is
-another, and this package's own history says what that costs —
-`cc-godot-sandbox.sh`'s header gained `SANDBOX_FUNCTION` in 0.16.0 and
-`GDK_BOOT_FUNCTIONS` in 0.19.0. Grafting the 0.16.0 header onto the current
-body was measured: four keys the body reads go unset, `set -u` kills the hook
-on `GDK_BOOT_FUNCTIONS: unbound variable` before it decides anything, and it
-exits 1 — where only exit 2 is a BLOCK. The raw engine boot goes through a
-guard that is on disk, looks installed, and stops nothing.
+another, and this package's own history says what that costs. A guard hook
+whose header gained two keys across two releases was measured with the OLD
+header grafted onto the current body: four keys the body reads go unset, `set
+-u` kills the hook on an unbound variable before it decides anything, and it
+exits 1 — where only exit 2 is a BLOCK. The thing it guards goes through a
+guard that is on disk, looks installed, and stops nothing. **A hook that fails
+open is not a hook**, and a merge is how you get one without noticing.
 
 The three refusal helpers below are shared with `pm install-skills`, the fourth
 install verb this package ships. They live here rather than in a verb because
@@ -108,7 +116,6 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         # workflows are the PROJECT's — this verb does not write them and does
         # not know they exist.
         ('ci-verify.yml', '.github/workflows/verify.yml'),
-        ('ci-uid-guard.yml', '.github/workflows/uid-guard.yml'),
         ('ci-semver-gate.yml', '.github/workflows/semver-gate.yml'),
         ('ci-auto-tag.yml', '.github/workflows/auto-tag.yml'),
     ),
@@ -134,7 +141,6 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     'install-hooks': (
         ('cc-commit-pathspec.sh', 'tools/hooks/cc-commit-pathspec.sh'),
-        ('cc-godot-sandbox.sh', 'tools/hooks/cc-godot-sandbox.sh'),
         ('cc-stop-gate.sh', 'tools/hooks/cc-stop-gate.sh'),
         ('cc-write-confine.sh', 'tools/hooks/cc-write-confine.sh'),
         # The two ledger couriers. They GUARD nothing — they copy the stop
@@ -147,66 +153,24 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('pre-push', 'tools/hooks/pre-push'),
         ('prepare-commit-msg', 'tools/hooks/prepare-commit-msg'),
         ('agent-worktree.sh', 'tools/dev/agent-worktree.sh'),
-        ('doctor.sh', 'tools/dev/checks/doctor.sh'),
         ('setup-hooks.sh', 'tools/setup-hooks.sh'),
     ),
-    'install-runners': (
-        # The library first, then the runners that source it. The layout is
-        # what every runner's own defaults assume: a runner reaches the library
-        # at ../gdk_runners.sh and the repo root at ../../.. A repo that wants
-        # them elsewhere moves them all and sets GDK_RUNNERS_LIB — after the
-        # write the files are its own.
-        ('gdk_runners.sh', 'tools/dev/gdk_runners.sh'),
-        ('import_cache.sh', 'tools/dev/runners/import_cache.sh'),
-        ('parse.sh', 'tools/dev/runners/parse.sh'),
-        # compile_sweep.gd travels WITH parse.sh, beside it rather than in a
-        # checks/ of its own: it is stage 2 of that runner and has no other
-        # caller, and parse.sh addresses it as res://tools/dev/runners/
-        # compile_sweep.gd (GDK_PARSE_SWEEP_SCRIPT). One directory, so moving
-        # the runners moves the pair together and only one variable has to
-        # follow.
-        ('compile_sweep.gd', 'tools/dev/runners/compile_sweep.gd'),
-        # …and its `.uid` SIDECAR, the only file in this package carrying a
-        # value the ENGINE would otherwise mint. It ships because the
-        # alternative is worse in both directions: without it, `check uid`
-        # CHECK 3 correctly reports a NEW `.gd` with no sidecar on every
-        # freshly-`init`'d project — a red gate on a file the project did not
-        # write and cannot be asked to explain — and softening the check to
-        # exempt "a devkit-installed .gd under tools/dev/" would put a hole in
-        # the one gate that sees a missing sidecar, keyed on a path prefix any
-        # file can move into.
+    'install-gates': (
+        # The library first, then the include that sources it. Two files and
+        # neither is usable alone: `Makefile.devkit`'s `gdk_gate` define sources
+        # `$(GDK_DEV_DIR)/gdk_gate.sh` on every gate recipe, and the library
+        # publishes verdicts nothing would call without the targets. One verb,
+        # one working `make`.
         #
-        # A uid is RANDOM, not derived (`ResourceUID.create_id()`), so this one
-        # was minted once, here, and is a constant like any other. That is not
-        # the invention `check uid --fix` refuses: a gate fabricating a uid for
-        # a file it is JUDGING would be guessing at a fact it cannot know,
-        # while an installable declaring the identity of its own shipped script
-        # is stating one. It is canonical under the ported codec
-        # (`id_to_text(text_to_id(x)) == x`), so Godot will not rewrite it, and
-        # it is the same on every consumer — which is what keeps the install
-        # idempotent and the gate quiet on day one.
-        ('compile_sweep.gd.uid', 'tools/dev/runners/compile_sweep.gd.uid'),
-        ('lint.sh', 'tools/dev/runners/lint.sh'),
-        ('warnings.sh', 'tools/dev/runners/warnings.sh'),
-        ('unit.sh', 'tools/dev/runners/unit.sh'),
-        # scenario.sh is the single-scenario entry point; integration.sh fans
-        # it out and capture.sh is its headed twin. All three sit in one
-        # directory because integration.sh reaches scenario.sh by
-        # GDK_SCENARIO_RUNNER, relative to itself.
-        ('scenario.sh', 'tools/dev/runners/scenario.sh'),
-        ('integration.sh', 'tools/dev/runners/integration.sh'),
-        ('capture.sh', 'tools/dev/runners/capture.sh'),
-        # The gate ON the library rather than a gate that uses it: it proves a
-        # run's HOME self-destructs and nothing persists beside the spool. It
-        # ships here because it can only be true of an installed PAIR — the
-        # library and the wrappers that call it.
-        ('hermetic_run_scan.sh', 'tools/dev/runners/hermetic_run_scan.sh'),
-        # The CALLERS, at the repo root. It ships with the runners rather than
-        # under a verb of its own because neither half is usable alone: the
-        # runners are unreachable without targets pointing at them (this verb's
-        # next step used to be a paragraph asking the operator to write those
-        # targets by hand), and every runner-backed target in the include is
-        # dead without the runners. One verb, one working `make`.
+        # What is NOT here is the point of the verb. Through 0.1.0 this plan
+        # also carried twelve engine runners, and `Makefile.devkit` named their
+        # targets in `precommit` and `milestone` — the gate framework and one
+        # language's roster in one file, which is what blocked the split of this
+        # package in two. The framework now composes from `GDK_PRECOMMIT_TIERS`
+        # and `GDK_MILESTONE_TIERS`, set by a `Makefile.tiers` a LANGUAGE kit
+        # installs. A project that builds nothing gets a working `check`,
+        # `precommit` and `milestone` from this verb alone.
+        ('gdk_gate.sh', 'tools/dev/gdk_gate.sh'),
         ('Makefile.devkit', 'Makefile.devkit'),
     ),
 }
@@ -214,55 +178,47 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
 USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff]
        agentic-sdlc install-agents  [--force] [--diff]
        agentic-sdlc install-hooks   [--force] [--diff]
-       agentic-sdlc install-runners [--force] [--diff]
+       agentic-sdlc install-gates   [--force] [--diff]
 
-install-ci      four workflows under .github/workflows/: verify.yml
-                (checkout, uv, then — only where a project.godot sits — the
-                engine `config/features` declares plus gdlint and
-                shellcheck, then `make milestone`, which it ASSUMES is your
-                full gate), uid-guard.yml (`make uid-scan` on a PR and on
-                a push to staging), semver-gate.yml (a merge to main must bump
-                config/version) and auto-tag.yml (tag the mainline, then
-                dispatch RELEASE_WORKFLOW if you have one). A project without
-                one of those assumptions edits the file, which after the write
-                is its own.
+install-ci      three workflows under .github/workflows/: verify.yml
+                (checkout, uv, `make milestone`, which it ASSUMES is your full
+                gate), semver-gate.yml (a merge to main must bump your version
+                file) and auto-tag.yml (tag the mainline, then dispatch
+                RELEASE_WORKFLOW if you have one). A project without one of
+                those assumptions edits the file, which after the write is its
+                own. A toolchain step your gate needs and the runner lacks goes
+                in verify.yml after the write — it is yours.
 install-agents  the review/build contract plus the base agent roster, as
                 AGENT DEFINITIONS under .claude/agents/ — the one place a
                 subagent actually reads. Each roster file carries a
                 `Project config` section — yours to edit after install.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
-                hooks (cc-commit-pathspec, cc-godot-sandbox, cc-stop-gate,
-                cc-write-confine) plus the two ledger couriers
+                hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine)
+                plus the two ledger couriers
                 (cc-ledger-subagent on SubagentStop, cc-ledger-session on
                 Stop, each handing the stop event's transcript path to
                 `pm ledger record` and exiting 0 whatever it says), the git
                 hooks (pre-push, prepare-commit-msg),
-                tools/dev/agent-worktree.sh, tools/dev/checks/doctor.sh, and
-                tools/setup-hooks.sh, which arms them. Each carries a small
-                `project config` header — yours to edit after install.
-                cc-godot-sandbox.sh and the two couriers ship their own
-                corpora: wire `bash tools/hooks/<hook>.sh --self-test` into
-                your static gate (a `hooks-self-test`-shaped target inside your
-                own `check`). The run prints the .claude/settings.json entries
-                that fire them.
-install-runners tools/dev/gdk_runners.sh — the shell library your
-                Godot-booting make targets source (one verdict line per gate
-                naming .gate-reports/<gate>.log, VERBOSE=1 streams, a per-run
-                self-destroying HOME sandbox, a bounded-run contract, a
-                project.godot restore) — plus the runners that source it under
-                tools/dev/runners/: import_cache.sh, parse.sh (+ its
-                compile_sweep.gd and the .uid sidecar the engine would
-                otherwise mint), lint.sh, warnings.sh, unit.sh (GUT,
-                sliced, with the coverage gate that fails a test script GUT
-                refused to load), scenario.sh, integration.sh (the same
-                scenarios, one process each, N in parallel), capture.sh
-                (headed, because headless is blind to render), and
-                hermetic_run_scan.sh — the gate proving a run's HOME
-                self-destructs and nothing persists beside the spool. Every
-                one carries --help and --self-test. Plus Makefile.devkit at
-                the repo root: the standard target set that calls them, which
-                your own Makefile `include`s.
-
+                tools/dev/agent-worktree.sh and tools/setup-hooks.sh, which
+                arms them. Each carries a small `project config` header — yours
+                to edit after install. The two couriers ship their own corpora:
+                wire `bash tools/hooks/<hook>.sh --self-test` into your static
+                gate (a `hooks-self-test`-shaped target inside your own
+                `check`). The run prints the .claude/settings.json entries that
+                fire them.
+install-gates   tools/dev/gdk_gate.sh — the shell library your gate targets
+                source (one verdict line per gate naming
+                .gate-reports/<gate>.log, VERBOSE=1 streams the transcript, and
+                a bounded-run contract so a hung gate is a verdict rather than
+                a wait) — plus Makefile.devkit at the repo root, the standard
+                target set your own two-line Makefile `include`s: `check`
+                (this package's gates, then your `[gates] extra`), `precommit`
+                and `milestone`.
+                `precommit` and `milestone` compose from GDK_PRECOMMIT_TIERS
+                and GDK_MILESTONE_TIERS, which a LANGUAGE kit sets in a
+                Makefile.tiers this include `-include`s. With no such file a
+                project gets `check` alone, and says so. Both files carry
+                --help and --self-test.
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
@@ -306,11 +262,12 @@ _NEXT_STEP = {
                      'header (gate commands, protected branches, trailer): '
                      'the files are yours now, and the stock values assume '
                      'the standard consumer Makefile. Then wire `bash '
-                     'tools/hooks/cc-godot-sandbox.sh --self-test` into your '
-                     'static gate (a `hooks-self-test`-shaped target inside '
-                     'your own `check`) — it replays the hook\'s own block/allow '
-                     'corpus, so an edit to the guard cannot quietly change '
-                     'a verdict. Then paste the settings block below into '
+                     'tools/hooks/cc-ledger-subagent.sh --self-test` and its '
+                     'session twin into your static gate (a '
+                     '`hooks-self-test`-shaped target inside your own `check`) '
+                     '— each replays its own block/allow corpus, so an edit to '
+                     'a guard cannot quietly change a verdict. Then paste the '
+                     'settings block below into '
                      '.claude/settings.json — installing a Claude Code hook '
                      'is not registering it, and an unregistered hook is a '
                      'file nothing ever runs.',
@@ -323,26 +280,26 @@ _NEXT_STEP = {
                       'carried unverified. The SDLC these agents run is '
                       'SDLC.md at the agentic-sdlc repo root.',
     'install-ci': 'verify.yml runs `make milestone` — confirm that target '
-                  'exists and is your full gate. uid-guard.yml runs `make '
-                  'uid-scan` on a PR to main and a push to staging; rename the '
-                  'branches if yours differ (an `on:` filter takes no '
-                  'variable). semver-gate.yml and auto-tag.yml read '
-                  'config/version out of project.godot; set '
+                  'exists and is your full gate, and add whatever toolchain '
+                  'your gate needs and the runner lacks. semver-gate.yml and '
+                  'auto-tag.yml read your version out of the file `[pm] '
+                  'version_file` names; rename the branches in the `on:` '
+                  'filters if yours differ (a filter takes no variable). Set '
                   'RELEASE_WORKFLOW in auto-tag.yml if your release pipeline '
                   'is not release.yml, and leave it alone if you have none — '
                   'the step is a documented no-op then.',
-    'install-runners': 'make your Makefile two lines — `DEVKIT_VERSION := '
-                       '<tag>` and then `include Makefile.devkit` — plus your '
-                       'own targets; your own gates join `check` through '
-                       '`[gates] extra` in devkit.toml, never a fork of the '
-                       'include. Then gitignore '
-                       '.gate-reports/, .scenario-reports/, .capture-reports/ '
-                       'and .headless-userdata/. Every `.sh` here is written '
-                       'EXECUTABLE, so a target may call it either way — the '
-                       'stock recipes say `bash tools/dev/runners/<x>.sh`, '
-                       'which also works on a checkout that lost the mode '
-                       'bits. Then edit each file\'s `project config` header: '
-                       'the files are yours now.',
+    'install-gates': 'make your Makefile two lines — `DEVKIT_VERSION := '
+                     '<tag>` and then `include Makefile.devkit` — plus your '
+                     'own targets; your own gates join `check` through '
+                     '`[gates] extra` in devkit.toml, never a fork of the '
+                     'include. A language kit\'s own installer writes '
+                     'Makefile.tiers beside it and sets GDK_PRECOMMIT_TIERS / '
+                     'GDK_MILESTONE_TIERS; without one, `precommit` and '
+                     '`milestone` are `check` and say so. Then gitignore '
+                     '.gate-reports/. Both files are written EXECUTABLE where '
+                     'that applies, so a target may call the library either '
+                     'way — the stock recipes source it. Then edit the '
+                     '`project config` header: the files are yours now.',
 }
 
 # The `.claude/settings.json` entries that FIRE the Claude Code half of the
@@ -374,8 +331,7 @@ _HOOK_SETTINGS = '''{
       {
         "matcher": "Bash",
         "hooks": [
-          {"type": "command", "command": "bash tools/hooks/cc-commit-pathspec.sh"},
-          {"type": "command", "command": "bash tools/hooks/cc-godot-sandbox.sh"}
+          {"type": "command", "command": "bash tools/hooks/cc-commit-pathspec.sh"}
         ]
       },
       {

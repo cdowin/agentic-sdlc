@@ -1,6 +1,6 @@
-# Makefile.devkit — the standard target set for a Godot project.
+# Makefile.devkit — the gate FRAMEWORK, and nothing a language kit owns.
 #
-# DEVKIT-OWNED. `agentic-sdlc install-runners` writes it; `--force` overwrites
+# DEVKIT-OWNED. `agentic-sdlc install-gates` writes it; `--force` overwrites
 # it. Edit the source under src/agentic_sdlc/repo/installables/ and re-install
 # — a local edit here is a fork by copy, and it is invisible, because the file
 # still looks like the one that was installed.
@@ -19,12 +19,46 @@
 #     [gates]
 #     extra = ["my-scan"]
 #
+# THE MIDDLE TIER IS NOT IN HERE. `precommit` and `milestone` are `check` plus
+# whatever tiers a LANGUAGE KIT declared, and this file names none of them. The
+# kit writes one file — GDK_TIERS_MK, default `Makefile.tiers` — which DEFINES
+# its targets and DECLARES which compositions they join:
+#
+#     GDK_PRECOMMIT_TIERS := parse lint unit
+#     GDK_MILESTONE_TIERS := parse lint warnings unit integration-all
+#
+#     .PHONY: parse lint warnings unit integration-all
+#     parse: ## Compile gate — every source file compiles
+#     	@bash tools/dev/runners/parse.sh
+#
+# THE TIER FILE DECLARES ITS OWN `.PHONY`. The `.PHONY` below can only list
+# what THIS file defines — a target it never heard of cannot be on it — and a
+# tier target that is not phony is a gate that a stray file of the same name
+# silently disables. One `.PHONY` line per file, each covering its own.
+#
+# `-include` of a missing tier file is SILENT, which is what makes a project
+# with no tiers at all a supported shape rather than a degraded one. It is also
+# how a typo'd GDK_TIERS_MK would turn a five-gate `precommit` into a one-gate
+# `precommit` that exits 0. So the two cases are held apart on exactly one
+# condition — whether a tier list is empty:
+#
+#   * an EMPTY tier list is fine, and SAYS SO on every run. A short gate that
+#     looks like a long one is the one failure a gate must never have;
+#   * a NAMED tier that resolves to no make target is a PARSE-TIME error that
+#     names the variable that named it — before `check` runs, not after.
+#
+# Tier names are NOT validated as strings the way `[gates] extra` is. That
+# refusal matrix exists because `[gates] extra` comes out of TOML a stranger
+# supplied; these are make goals in a make file the project's own kit wrote,
+# already parsed by make itself. The asymmetry is deliberate.
+#
 # EVERY GATE PRINTS ONE LINE. The default output of a gate target is its
 # verdict, naming the full transcript on disk; `VERBOSE=1` streams the whole
 # thing. That is `gdk_gate_capture` / `gdk_gate_verdict` out of
-# tools/dev/gdk_runners.sh — either called by the recipe here, or already
-# called INSIDE the runner it invokes (parse, lint, warnings and unit publish
-# their own verdict; wrapping them again would bury it in a log).
+# tools/dev/gdk_gate.sh — either called by the recipe here, or already
+# called INSIDE the runner it invokes. A tier target whose runner publishes its
+# own verdict must NOT be wrapped again: the wrapper's summary would replace it
+# and file the real one away in a log nobody opens.
 #
 # GNU make 3.81 (what macOS ships) is the floor. Nothing here needs more.
 #
@@ -46,45 +80,25 @@ $(error DEVKIT_VERSION is not set — put `DEVKIT_VERSION := vX.Y.Z` in your Mak
 endif
 DEVKIT ?= uvx --from "git+https://github.com/cdowin/agentic-sdlc@$(DEVKIT_VERSION)" agentic-sdlc
 
-# Where `install-runners` and `install-hooks` put what this file calls. Moving
-# them means setting these; after the write the files are yours.
-GDK_DEV_DIR     ?= tools/dev
-GDK_RUNNERS_DIR ?= $(GDK_DEV_DIR)/runners
-GDK_HOOKS_DIR   ?= tools/hooks
-
-# Passed THROUGH to the runners, which each carry the real default. Declared
-# empty rather than defaulted here: every runner reads `${GDK_X:-<default>}`,
-# so an exported empty value takes the runner's default and this file never
-# holds a second copy of it.
-#   GDK_GODOT           the engine binary (runner default: `godot`)
-#   GDK_SMOKE_SCENARIO  what `make smoke` boots (runner default: `smoke`)
-#   GDK_GUT_CMDLN       GUT's entry point (default: res://addons/gut/gut_cmdln.gd)
-GDK_GODOT          ?=
-GDK_SMOKE_SCENARIO ?=
-GDK_GUT_CMDLN      ?=
-export GDK_GODOT GDK_SMOKE_SCENARIO GDK_GUT_CMDLN
+# Where `install-gates` put the shell library this file sources. Moving it means
+# setting this; after the write the file is yours. A language kit's own runners
+# live wherever its tier file says — that is not this file's business.
+GDK_DEV_DIR  ?= tools/dev
+# The shell library every gate recipe sources. `install-gates` writes it
+# beside this file; it is the other half of the same verb and neither is
+# usable alone.
+GDK_GATE_LIB ?= $(GDK_DEV_DIR)/gdk_gate.sh
 
 # Gate output is a SUMMARY by default; the transcript goes to
 # .gate-reports/<gate>.log, which the verdict line names. Exported so
-# `make parse VERBOSE=1` works as well as `VERBOSE=1 make parse` — a
+# `make check VERBOSE=1` works as well as `VERBOSE=1 make check` — a
 # command-line make variable is not in a recipe's environment otherwise.
 VERBOSE ?=
 export VERBOSE
 
 # Arguments, overridden on the command line:
-#   SYS  — unit slice(s)            make unit SYS="input protocol"
-#   ARGS — passthrough              make integration ARGS="--system input"
-#   NAME — scenario / capture / symbol   make scenario NAME=boot_to_hub
-#   FILE — scene path               make scene FILE=scenes/world/hub.tscn
-#   OLD/NEW — two-file scene-diff   make scene-diff OLD=a.tscn NEW=b.tscn
-#   REF  — the diff base            make integration-diff REF=origin/main
-SYS  ?=
+#   ARGS — passthrough              make pm ARGS="story building <id>"
 ARGS ?=
-NAME ?=
-FILE ?=
-OLD  ?=
-NEW  ?=
-REF  ?= HEAD
 
 # Set by `check` when it re-enters itself through a sub-make. See `check`.
 GDK_IN_CHECK ?=
@@ -96,6 +110,8 @@ GDK_GATE_FAIL_LINES ?= 20
 
 # Each gate's one-line summary, read back out of its own transcript. The
 # leading `[tag]` a tool prints is stripped: the verdict line supplies the tag.
+# Both are part of the framework's surface — a tier file calls `gdk_gate` with
+# one of these, or with a summary command of its own.
 GDK_SUM_CHECKS := printf '%s check(s) PASS' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")"
 # The last line the tool TAGGED, not simply the last line: a runner whose
 # closing word is a pointer ("  full report: …") would otherwise summarise
@@ -110,7 +126,7 @@ GDK_SUM_TAIL   := { grep -aE '^\[[A-Za-z][A-Za-z:_-]*\] ' "$$log" || tail -1 "$$
 # transcript on disk, one verdict line naming it, and the command's own exit
 # code preserved (the helper reads PIPESTATUS, so `$$?` would be the cap's).
 define gdk_gate
-@set -o pipefail; . $(GDK_DEV_DIR)/gdk_runners.sh; \
+@set -o pipefail; . $(GDK_GATE_LIB); \
 log="$$(gdk_gate_log $(1))"; \
 gdk_gate_capture "$$log" -- $(4); \
 status="$$GDK_GATE_EXIT"; \
@@ -124,153 +140,19 @@ gdk_gate_verdict $(2) "$$summary" "$$log"; \
 exit "$$status"
 endef
 
-.PHONY: help doctor parse lint warnings unit integration integration-all \
-        integration-diff integration-list scenario smoke capture \
-        import-cache refs scene \
-        scene-diff orphans \
-        autoloads pm pm-scan uid-scan hermetic-scan hooks-self-test \
-        runners-self-test check precommit milestone
+# ONLY what this file defines. The tier file declares its own — see the header.
+.PHONY: help pm check precommit milestone \
+        gdk-tiers-none-precommit gdk-tiers-none-milestone
 
 help: ## Show this help (authoritative target list)
-	@echo "make <target> — the standard set from Makefile.devkit, plus this project's own"
+	@echo "make <target> — the gate framework from Makefile.devkit, plus this project's tiers and its own"
 	@echo
 	@{ grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) || true; } \
 		| sort -u \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo 'Args: SYS="a b"  ARGS="--all"  NAME=<scenario|symbol>  FILE=<path>  REF=<git ref>  VERBOSE=1'
+	@echo 'Args: ARGS="…"  VERBOSE=1     Tiers: $(GDK_TIERS_MK) -> precommit=[$(strip $(GDK_PRECOMMIT_TIERS))] milestone=[$(strip $(GDK_MILESTONE_TIERS))]'
 	@echo 'Gates print ONE verdict line naming .gate-reports/<gate>.log; VERBOSE=1 streams it.'
-
-doctor: ## Verify the dev toolchain (godot, gdlint, GUT, hooks)
-	@bash $(GDK_DEV_DIR)/checks/doctor.sh
-
-# --- Tier 1: static / fast gates ---------------------------------------------
-# parse, lint, warnings and unit publish their own verdict from inside the
-# runner. They are NOT wrapped again here — a gate wrapped twice reports the
-# wrapper's summary and files the runner's verdict in a log nobody opens.
-parse: ## Compile gate — every .gd compiles + the headless boot is clean
-	@bash $(GDK_RUNNERS_DIR)/parse.sh
-
-lint: ## gdlint static analysis over every tracked source dir
-	@bash $(GDK_RUNNERS_DIR)/lint.sh
-
-warnings: ## GDScript analyzer-warnings gate (the editor-only ones)
-	@bash $(GDK_RUNNERS_DIR)/warnings.sh
-
-uid-scan: ## .uid drift guard (script-ref <-> .gd.uid, sidecar presence, canonicality)
-	$(call gdk_gate,uid-scan,UID,$(GDK_SUM_CHECKS),$(DEVKIT) check uid)
-
-pm-scan: ## PM-tree status-drift guard (contradictory states; done needs a review record)
-	$(call gdk_gate,pm-scan,PM,$(GDK_SUM_CHECKS),$(DEVKIT) check pm)
-
-hermetic-scan: ## Hermeticity gate (a headless run's sandbox HOME self-destructs)
-	$(call gdk_gate,hermetic-scan,HERMETIC,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/hermetic_run_scan.sh)
-
-hooks-self-test: ## The engine-boot guard's own block/allow corpus — proven, not claimed
-	$(call gdk_gate,hooks-self-test,HOOKS,$(GDK_SUM_TAIL),bash $(GDK_HOOKS_DIR)/cc-godot-sandbox.sh --self-test)
-
-# Derived, not listed: every installed runner's own corpus, so a runner that
-# lands tomorrow is proven the day it arrives. A census of ZERO says so and
-# fails — it cannot tell an uninstalled tree from a passing one, and a repo
-# that moved its runners without setting GDK_RUNNERS_DIR is exactly that tree.
-# The census counts RUNNERS only: the library is always exactly one, so
-# counting it would put the floor permanently out of reach.
-runners-self-test: ## Every installed runner's --self-test corpus
-	@set -o pipefail; . $(GDK_DEV_DIR)/gdk_runners.sh; \
-	log="$$(gdk_gate_log runners-self-test)"; count=0; fail=''; \
-	for s in $(GDK_DEV_DIR)/gdk_runners.sh $(GDK_RUNNERS_DIR)/*.sh; do \
-		[ -f "$$s" ] || continue; \
-		case "$$s" in $(GDK_RUNNERS_DIR)/*) count=$$((count + 1));; esac; \
-		echo "=== $$s --self-test ===" >> "$$log"; \
-		gdk_gate_capture "$$log" -- bash "$$s" --self-test; \
-		[ "$$GDK_GATE_EXIT" -eq 0 ] || fail="$$fail $$(basename "$$s")"; \
-	done; \
-	if [ "$$count" -eq 0 ]; then \
-		gdk_gate_verdict RUNNERS "FAIL — no runners under $(GDK_RUNNERS_DIR); run agentic-sdlc install-runners" "$$log"; \
-		exit 2; \
-	fi; \
-	if [ -n "$$fail" ]; then \
-		grep -aE '$(GDK_GATE_FAIL_RE)' "$$log" | head -$(GDK_GATE_FAIL_LINES) || true; \
-		gdk_gate_verdict RUNNERS "FAIL on$$fail" "$$log"; exit 1; \
-	fi; \
-	gdk_gate_verdict RUNNERS "the library + $$count runner corpora PASS" "$$log"
-
-# --- Tier 2: tests ------------------------------------------------------------
-unit: ## Unit tier (GUT, no boot). Slice with SYS="input ..."
-	@bash $(GDK_RUNNERS_DIR)/unit.sh $(SYS)
-
-# The scenario family goes through the capture helper, like every other target
-# whose tool publishes no verdict of its own. Before, these five streamed
-# whatever the runner printed and IGNORED VERBOSE entirely — `scenario.sh`
-# streams only on its own `-v`, and `integration.sh` / `capture.sh` have no
-# streaming path at all — while this file's header, `help`'s footer and the
-# README all said `VERBOSE=1` was how you saw the whole thing. One verdict line
-# naming .gate-reports/<gate>.log, VERBOSE=1 streams it: the same sentence, now
-# true of every gate here. (`scenario.sh -v` remains the hand-run flag for the
-# ENGINE transcript, which lands in .scenario-reports/ and is named in the
-# runner's own output.)
-integration: ## Integration tier. Pass ARGS="--all|--system <dir>|--diff <ref>|<names>"
-	$(call gdk_gate,integration,INTEGRATION,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/integration.sh $(if $(ARGS),$(ARGS),--all))
-
-integration-all: ## Every integration scenario, one process each, N in parallel
-	$(call gdk_gate,integration-all,INTEGRATION,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/integration.sh --all)
-
-# The per-change slice: every scenario whose header declares it covers a path
-# the diff against REF touched, plus the smoke scenario. A touched scenario runs;
-# a touched piece of the tier's own ground (fixtures, the base class, the
-# runners) makes the whole tier the honest slice. REF defaults to HEAD — the
-# uncommitted change — so a clean tree runs exactly what `smoke` runs.
-integration-diff: ## The scenarios covering what the diff against REF touched, plus smoke
-	$(call gdk_gate,integration-diff,INTEGRATION,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/integration.sh --diff $(REF))
-
-# The roster `--all` boots, one repo-relative path per line, booting nothing.
-# Not a gate — the list IS the output — and it lives here rather than as a
-# bare `bash … --list` because this file is where the runner's exports live:
-# `check test-shape` asks its header rule of exactly this list, THROUGH this
-# target, so a keep-list exported above reaches `--list` the same way it
-# reaches `integration`. Whoever runs the gate gets the same census.
-integration-list: ## The roster --all would boot, one path per line (what check test-shape asks)
-	@bash $(GDK_RUNNERS_DIR)/integration.sh --list
-
-scenario: ## One scenario, cold:  make scenario NAME=<scenario>
-	@test -n "$(NAME)" || { echo "usage: make scenario NAME=<scenario>"; exit 2; }
-	$(call gdk_gate,scenario,SCENARIO,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/scenario.sh $(NAME))
-
-smoke: ## The smoke scenario (GDK_SMOKE_SCENARIO) — the shortest proof the game boots
-	$(call gdk_gate,smoke,SMOKE,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/integration.sh --smoke)
-
-capture: ## Headed visual capture (LOCAL, needs a display) -> PNG:  make capture NAME=<scenario>
-	@test -n "$(NAME)" || { echo "usage: make capture NAME=<scenario>"; exit 2; }
-	$(call gdk_gate,capture,CAPTURE,$(GDK_SUM_TAIL),bash $(GDK_RUNNERS_DIR)/capture.sh $(NAME))
-
-import-cache: ## Rebuild the .godot import cache, sandboxed (new class_name, moved files, stale art)
-	@bash $(GDK_RUNNERS_DIR)/import_cache.sh
-
-# --- Introspection (pure parse; never boots Godot) ----------------------------
-# Human aliases over the pinned package — `$(DEVKIT) <sub>` is the canonical
-# invocation and these route through it, so there is ONE dispatch path.
-scene: ## Compact read-only summary of a .tscn/.tres:  make scene FILE=<path> [ARGS=--props]
-	@test -n "$(FILE)" || { echo "usage: make scene FILE=<path.tscn> [ARGS=--props]"; exit 2; }
-	@$(DEVKIT) scene $(FILE) $(ARGS)
-
-scene-diff: ## Structural diff:  make scene-diff FILE=<path> [ARGS="--git <ref>"]  or  OLD=<a> NEW=<b>
-	@if [ -n "$(OLD)" ] || [ -n "$(NEW)" ]; then \
-		test -n "$(OLD)" && test -n "$(NEW)" || { echo "usage: make scene-diff OLD=<old> NEW=<new>"; exit 2; }; \
-		$(DEVKIT) scene-diff $(OLD) $(NEW); \
-	else \
-		test -n "$(FILE)" || { echo "usage: make scene-diff FILE=<path> [ARGS=\"--git <ref>\"]  or  OLD=<a> NEW=<b>"; exit 2; }; \
-		$(DEVKIT) scene-diff $(FILE) $(ARGS); \
-	fi
-
-refs: ## Reference-aware symbol search:  make refs NAME=<symbol> [ARGS=--tests]
-	@test -n "$(NAME)" || { echo "usage: make refs NAME=<symbol> [ARGS=--tests]"; exit 2; }
-	@$(DEVKIT) refs $(NAME) $(ARGS)
-
-orphans: ## Possible-orphan detector (.gd/.tscn/.tres with zero inbound refs)
-	@$(DEVKIT) orphans $(ARGS)
-
-autoloads: ## Autoload census + suffix/heuristic cross-check
-	@$(DEVKIT) autoloads
 
 pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS="story building <id>"
 	@$(DEVKIT) pm $(if $(ARGS),$(ARGS),--help)
@@ -304,11 +186,58 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra)
 	@extra="$$($(DEVKIT) gates-extra)" || exit $$?; \
 	[ -z "$$extra" ] || $${MAKE:-make} GDK_IN_CHECK=1 $$extra
 
-# The per-change gate, and the compositions print nothing of their own: each
-# member's verdict is the output. `integration-diff` is smoke plus whatever the
-# change's declared coverage selects — on a clean tree, exactly smoke.
-precommit: check parse lint unit integration-diff ## Per-change gate: check + parse + lint + unit + integration-diff
+# --- The tier seam ------------------------------------------------------------
+# The language kit's contribution, resolved at PARSE time. No sub-make, no
+# runtime cost, and prerequisites stay prerequisites — so `make -n precommit`
+# keeps its promise to run nothing while still listing everything.
+GDK_TIERS_MK        ?= Makefile.tiers
+GDK_PRECOMMIT_TIERS ?=
+GDK_MILESTONE_TIERS ?=
+-include $(GDK_TIERS_MK)
 
-# The full gate, run once all features land. `unit` runs whole here; the
-# per-change cadence slices it.
-milestone: check parse lint warnings unit integration-all ## Full gate: check + parse + lint + warnings + unit + integration-all
+# The typo guard. `-include` is silent on a missing file and that silence is
+# load-bearing (no tiers is a supported shape), so the guard turns on the
+# moment a tier list is NON-EMPTY and stays off otherwise. Two shapes fail:
+# a tier list with no tier file to have come from, and a tier name no makefile
+# read so far actually defines.
+GDK_TIERS_DECLARED := $(strip $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS))
+ifneq (,$(GDK_TIERS_DECLARED))
+ifeq (,$(wildcard $(GDK_TIERS_MK)))
+$(error GDK_TIERS_MK=$(GDK_TIERS_MK) does not exist yet a tier list names [$(GDK_TIERS_DECLARED)] — `-include` of a missing file is silent by design and this is the typo that silence hides. Point GDK_TIERS_MK at the tier file or clear GDK_PRECOMMIT_TIERS / GDK_MILESTONE_TIERS)
+endif
+# Every explicit target name in the makefiles read so far. Read from the FILES
+# rather than from make's tables because 3.81 exposes no target introspection;
+# a tier defined only by a pattern rule is therefore not visible here and must
+# be given an explicit target in the tier file.
+GDK_TIERS_TARGETS := $(shell awk '/^[A-Za-z0-9][A-Za-z0-9._\/-]*[ \t]*:([^=]|$$)/ { sub(/[ \t]*:.*/, ""); print }' $(MAKEFILE_LIST))
+GDK_TIERS_ORPHAN_PRECOMMIT := $(filter-out $(GDK_TIERS_TARGETS),$(GDK_PRECOMMIT_TIERS))
+GDK_TIERS_ORPHAN_MILESTONE := $(filter-out $(GDK_TIERS_TARGETS),$(GDK_MILESTONE_TIERS))
+ifneq (,$(GDK_TIERS_ORPHAN_PRECOMMIT))
+$(error GDK_PRECOMMIT_TIERS names a tier no makefile defines: [$(GDK_TIERS_ORPHAN_PRECOMMIT)] — declared for $(GDK_TIERS_MK); a gate list that quietly gets shorter is the one failure a gate must never have)
+endif
+ifneq (,$(GDK_TIERS_ORPHAN_MILESTONE))
+$(error GDK_MILESTONE_TIERS names a tier no makefile defines: [$(GDK_TIERS_ORPHAN_MILESTONE)] — declared for $(GDK_TIERS_MK); a gate list that quietly gets shorter is the one failure a gate must never have)
+endif
+endif
+
+# The empty case ANNOUNCES ITSELF. It is legitimate — a project with no
+# language kit gates on `check` alone — but it is one gate where a tiered
+# project runs five, and an operator who cannot tell the two runs apart from
+# the output has been handed the cardinal sin in a Makefile. It is a
+# PREREQUISITE, not a recipe: the compositions themselves still print nothing
+# of their own, and it runs FIRST, before the gate it is describing.
+define gdk_tiers_none
+@echo "[TIERS] $(1) is empty — this gate is \`check\` alone; $(GDK_TIERS_MK) $(if $(wildcard $(GDK_TIERS_MK)),declares no tier for it,is not present)"
+endef
+
+gdk-tiers-none-precommit:
+	$(call gdk_tiers_none,GDK_PRECOMMIT_TIERS)
+
+gdk-tiers-none-milestone:
+	$(call gdk_tiers_none,GDK_MILESTONE_TIERS)
+
+# The per-change gate and the full gate, and the compositions print nothing of
+# their own: each member's verdict is the output.
+precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) check $(GDK_PRECOMMIT_TIERS) ## Per-change gate: check + GDK_PRECOMMIT_TIERS
+
+milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) check $(GDK_MILESTONE_TIERS) ## Full gate: check + GDK_MILESTONE_TIERS

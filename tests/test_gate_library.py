@@ -123,14 +123,84 @@ def test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe(tmp_p
     """
     mutant = tmp_path / LIBRARY.name
     source = LIBRARY.read_text(encoding='utf-8')
-    piped = '\t\tsaid="$(_gdk_ledger_run "${prefix[@]}" "${argv[@]}" 2>&1)" || rc=$?'
-    redirected = ('\t\t_gdk_ledger_run "${prefix[@]}" "${argv[@]}" '
-                  '> "$scratch" 2>&1 || rc=$?')
+    piped = '\t\tsaid="$(_gdk_ledger_run "${cmd[@]}" 2>&1)" || rc=$?'
+    redirected = '\t\t_gdk_ledger_run "${cmd[@]}" > "$scratch" 2>&1 || rc=$?'
     assert source.count(redirected) == 1, 'the redirect this mutant reverts moved'
     mutant.write_text(source.replace(redirected, piped), encoding='utf-8')
     done = run(str(mutant), '--self-test')
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'does not hold the gate open' in done.stderr, done.stderr
+
+
+def test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound(
+        tmp_path):
+    """G1, held to being able to go red — the SECOND way the recorder escaped
+    its bound, and not the one above.
+
+    `eval "prefix=($GDK_LEDGER_CMD)"` executes every `$( )` in the value as the
+    array is built. That build used to happen in the gate's own shell, before
+    `timeout` was ever invoked, so `GDK_LEDGER_CMD='true $(sleep 20)'` cost
+    20062 ms against a 3 s bound — and unlike the pipe case it left no note
+    behind, because the eval SUCCEEDED and the row that followed looked normal.
+
+    The mutant puts the parse back where it was, in front of the bound, and
+    hands the recorder on the same way. Every verdict line and every exit code
+    is identical under it; only the clock can tell them apart.
+    """
+    mutant = tmp_path / LIBRARY.name
+    source = LIBRARY.read_text(encoding='utf-8')
+    bounded = ('\tcmd=("${BASH:-bash}" -c "$_GDK_LEDGER_SHIM" _ \\\n'
+               '\t\t"$GDK_LEDGER_CMD" "$_GDK_LEDGER_PARSE_REFUSAL" "${argv[@]}")\n')
+    in_front = ('\tlocal -a prefix\n'
+                '\tprefix=()\n'
+                '\teval "prefix=($GDK_LEDGER_CMD)" 2>/dev/null || return 0\n'
+                '\t[ "${#prefix[@]}" -gt 0 ] || return 0\n'
+                '\tcmd=("${prefix[@]}" "${argv[@]}")\n')
+    assert source.count(bounded) == 1, 'the shim this mutant reverts moved'
+    mutant.write_text(source.replace(bounded, in_front), encoding='utf-8')
+    done = run(str(mutant), '--self-test')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'is parsed UNDER the bound' in done.stderr, done.stderr
+
+
+def test_the_library_corpus_FAILS_when_the_quoting_in_the_value_is_dropped(tmp_path):
+    """The other half of G1, and the reason it is not fixed by refusing to
+    parse: the stock `GDK_LEDGER_CMD` is a `uvx` line carrying a QUOTED spec,
+    so a bare word split hands the recorder a spec with literal quote
+    characters in it. The mutant makes the shim split instead of parse."""
+    mutant = tmp_path / LIBRARY.name
+    source = LIBRARY.read_text(encoding='utf-8')
+    parsed = ('eval "prefix=($1)" 2>/dev/null'
+              ' || { printf "%s\\n" "$2" >&2; exit 121; }')
+    assert source.count(parsed) == 1, 'the shim eval this mutant reverts moved'
+    mutant.write_text(source.replace(parsed, 'prefix=($1)'), encoding='utf-8')
+    done = run(str(mutant), '--self-test')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'ONE argv element' in done.stderr, done.stderr
+
+
+def test_the_library_corpus_FAILS_when_a_slot_files_its_last_captures_code(tmp_path):
+    """G2, held to being able to go red: the verdict COLUMN, in the feature
+    whose whole job is honest measurement.
+
+    A runner that captures more than once against one `gdk_gate_log` slot (this
+    repo's `matrix` target loops one capture per interpreter) used to file the
+    LAST command's code — console `[MATRIX] FAIL on first`, row
+    `"verdict":"PASS"`. Rule 4's read-side sin, made durable.
+
+    The mutant drops the slot's own code and reads the last one again. Nothing
+    a gate PRINTS moves under it, which is why an output-only corpus could not
+    see this defect and the case asserts on the recorder's argv.
+    """
+    mutant = tmp_path / LIBRARY.name
+    source = LIBRARY.read_text(encoding='utf-8')
+    of_the_slot = 'verdict="$(_gdk_ledger_verdict "$fault")"'
+    assert source.count(of_the_slot) == 1, 'the slot verdict this mutant reverts moved'
+    mutant.write_text(source.replace(of_the_slot, 'verdict="$(_gdk_ledger_verdict)"'),
+                      encoding='utf-8')
+    done = run(str(mutant), '--self-test')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'files FAIL, not PASS' in done.stderr, done.stderr
 
 
 # --- the verdict line and its log, end to end --------------------------------

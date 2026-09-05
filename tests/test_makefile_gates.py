@@ -64,7 +64,15 @@ def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
     # left it on would append one to this repo's own milestone ledger on
     # every run — a test writing into the tree it grades. An EMPTY value
     # is still a defined make variable, so the Makefile's `?=` keeps it.
-    env.setdefault('GDK_LEDGER_CMD', '')
+    #
+    # ASSIGNED, not `setdefault`. The root Makefile EXPORTS GDK_LEDGER_CMD, so
+    # under `make test` and `make matrix` the recipe's environment already
+    # carries it and `setdefault` kept the real recorder: measured on a
+    # `make matrix` run, two `{"gate":"matrix","verdict":"PASS"}` rows at
+    # 236 ms and 247 ms landed in `pm/roadmap/…/ledger.jsonl` from the
+    # stand-in matrix cases below, in the middle of a 226 s real run. Rows
+    # from a stub interpreter are not measurements of anything.
+    env['GDK_LEDGER_CMD'] = ''
     env.update(env_extra)
     return subprocess.run(['make', *args], cwd=REPO_ROOT, text=True,
                           capture_output=True, env=env)

@@ -373,8 +373,11 @@ def main(argv: list[str]) -> int:
         return worst
     _say(f'agentic-sdlc v{__version__} — this project is wired. Next:')
     print()
-    print('  1. `make doctor` — the toolchain census; it names a fix for '
-          'anything missing.')
+    print('  1. `git add -A` — FIRST. Every gate here reads `git ls-files`, '
+          'so until')
+    print('     these files are tracked they are invisible to the tools that '
+          'just wrote')
+    print('     them, and `check shell` correctly reports it scanned nothing.')
     print('  2. `make help` — the standard target set, plus any of your own.')
     print('  3. Edit CLAUDE.md and devkit.toml. They are yours now: the '
           'skeleton says where')

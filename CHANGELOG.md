@@ -28,6 +28,69 @@
   direction: the scene half left and the repo family kept the pinned-tag channel.
 - `devkit.toml` drops `[uid]`, `[tres]` and `[props]`.
 
+### The middle tier splits — what unblocks the other kit
+
+- **`Makefile.devkit` is the gate FRAMEWORK and nothing else**, 314 lines down to 243, naming no
+  language's target. `precommit` and `milestone` compose from `GDK_PRECOMMIT_TIERS` /
+  `GDK_MILESTONE_TIERS`, set by a `Makefile.tiers` a LANGUAGE kit installs and pulled in with
+  `-include $(GDK_TIERS_MK)`. **Breaking for a Godot consumer:** `parse lint warnings unit
+  integration* scenario smoke capture import-cache scene scene-diff refs orphans autoloads
+  uid-scan pm-scan hermetic-scan hooks-self-test runners-self-test doctor` are gone from this
+  file and arrive from the Godot kit instead. Re-install and install that kit's tier file.
+- **A project with no language kit is a supported shape**, not a degraded one: no
+  `Makefile.tiers`, `precommit` is `check` alone — **and it says so**, one `[TIERS] …` line ahead
+  of the gate, so a one-gate run can never read as a five-gate run.
+- **A tier that resolves to no target stops the run at PARSE time**, naming both the tier and the
+  variable that named it — including the case where `GDK_TIERS_MK` points at a file that is not
+  there. `-include`'s silence serves the empty-list case and only that one.
+- **`install-runners` is now `install-gates`** and writes two files: `tools/dev/gdk_gate.sh` and
+  `Makefile.devkit`. `tools/dev/gdk_runners.sh` is `gdk_gate.sh`, the framework half only —
+  `gdk_gate_log` / `gdk_gate_capture` / `gdk_gate_publish` / `gdk_gate_verdict` / `gdk_run_bounded`
+  / `gdk_timeout_is_hang` / `gdk_on_exit` unchanged byte-for-byte; the sandbox HOME, the project-file
+  restore, the compile-sweep readers and the import-cache rebuild left with the runners. A consumer
+  that sources it renames the path.
+- **`install-ci` writes three workflows**, not four. `uid-guard.yml` left with the gate it ran, and
+  `verify.yml` no longer installs a game engine and two linters behind a `hashFiles()` guard — the
+  toolchain seam ships empty and marked, for the project to fill after the write.
+- **`install-hooks` no longer writes the engine-boot sandbox hook or `doctor.sh`.** `check hooks`
+  is the surface that reports an unarmed corpus and names the repair.
+- **`agentic-sdlc init` no longer refuses a repo with no engine project file.** Its one remaining
+  refusal is "not a git repository", because every gate resolves its scope through `git ls-files`.
+- **`[pm] version_file` defaults to `pyproject.toml`** and `version_pattern` to `^version = "(.*)"$`.
+  A project on the old pair sets two keys; one that relied on the default and IS a game repo needs
+  those two lines. Same for `install-ci`'s semver-gate and auto-tag workflows, which now carry
+  `VERSION_FILE` / `VERSION_PATTERN` at the head of the file — **and fail the step when a version
+  cannot be read**, naming the file and the pattern. Previously auto-tag could mint a tag named `v`.
+- `make hooks-self-test` **was passing over an empty corpus**: `for h in $(EMPTY)` exits 0 and the
+  summary reported `0 hook(s) SELF-TEST OK` as a PASS. It counts first now.
+- `check doc` stripped one engine's resource scheme by name; it strips any `<scheme>://`.
+- `[gates] extra` accepted a target name ending in a newline — `$` matches before one — so
+  `["check\n"]` reached a make command line as two goals. `fullmatch` now.
+
+### The vocabulary
+
+- **The deprecation window is closed.** `todo`, `wip`, `blocked` and `review` are removed from the
+  stock `milestone_states` / `feature_states` / `story_states`; a grain still holding one is a D4
+  finding, `check pm` no longer prints the census NOTE, and the `pm` verbs refuse the word as
+  plainly out-of-vocabulary instead of naming a replacement. **Rewrite before bumping the pin:**
+  `todo` → `ready`, `wip` → `building`, `review` → `reviewing`, `blocked` → `building`.
+  `pm ledger report`'s dwell columns narrow from ten states to six, and `pm vocabulary --json`
+  drops the per-grain `deprecated` key.
+
+### The belts
+
+- **`pm ledger record --gate <name> --verdict <v> --duration-ms <n> [--census <n>]`** files what one
+  gate run cost. A census not given is an absent key, never a zero — a zero is a measurement, and it
+  reads forever after as the empty census rule 4 calls a cardinal sin. Milliseconds, because fourteen
+  of twenty measured gates are under a second and an integer-second row cannot resolve the cheap half
+  of its own headline comparison.
+- `ledger.append_row` no longer joins a torn last line: a ledger whose previous writer died mid-line
+  gets a newline in front of the new row instead of `{…}{…}` on one unparseable line.
+- **`devkit.toml` gains `[verify]`** — forward (`paths` + `run`) and reverse (`declares` + `scan` +
+  `run`) rules for the story rung, plus `feature` and `milestone` naming the make targets that ARE
+  the wider rungs. A capture never spans `/`, a rule is forward XOR reverse, and a malformed rule
+  set exits 2 naming every bad rule's own index rather than dropping it in silence.
+
 - **This repo is the agentic half of `godot-devkit`, extracted at that project's `v0.24.0`.** SDLC, CI,
   hooks, the PM tree, installables and release automation; no Godot knowledge of any kind. The split was
   the code's own — there were ZERO imports between `godot-devkit`'s `repo/` and `godot/` halves in either

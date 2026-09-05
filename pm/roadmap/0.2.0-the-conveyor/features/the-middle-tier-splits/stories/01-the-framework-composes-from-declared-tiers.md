@@ -3,7 +3,7 @@ id: 0.2.0/the-middle-tier-splits/01-the-framework-composes-from-declared-tiers
 feature: 0.2.0/the-middle-tier-splits
 milestone: "0.2.0"
 name: precommit and milestone compose from tiers a language kit declares
-status: planning
+status: reviewing
 owner:
 depends_on: []
 ---

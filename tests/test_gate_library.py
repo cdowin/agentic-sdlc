@@ -1,9 +1,19 @@
-"""test_runners_installable.py — the shell gate library, RUN rather than read.
+"""test_gate_library.py — the shell gate library, RUN rather than read.
 
 `gdk_gate.sh` is the library every gate in a consumer routes through — this
 package's own `Makefile` included. It is not Python, so the contract is proven
 the way the hook corpus is: the script carries a `--self-test`, and this file
 drives it through a subprocess and holds it to its published shape.
+
+IT WAS `test_runners_installable.py` UNTIL 0.2.0, and the rename is the point
+rather than tidying. `install-runners` became `install-gates` when the twelve
+engine runners left (decision D2), and the two files that verb still writes are
+`gdk_gate.sh` — this file — and `Makefile.devkit`, which is
+`tests/test_makefile_include.py`. A module named for a deleted verb, holding
+the whole proof of a library that is not a runner and never was, is a signpost
+to nowhere: the next reader looks here for runner coverage, finds a gate
+library, and cannot tell whether the runners are covered somewhere else or not
+at all.
 
 Three things this file adds on top of firing the corpus:
 
@@ -265,7 +275,7 @@ def test_a_consumer_sourcing_the_library_shellchecks_clean(tmp_path):
 @pytest.mark.skipif(shutil.which('shellcheck') is None,
                     reason='needs shellcheck')
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
-def test_every_shipped_runner_shellchecks_clean(script):
+def test_the_shipped_library_shellchecks_clean(script):
     """`shellcheck -x` on the installable itself. It lands in consumer trees
     whose own `check shell` gate runs over tools/ — a finding shipped from here
     reddens somebody else's commit gate."""

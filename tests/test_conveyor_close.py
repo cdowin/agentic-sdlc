@@ -226,15 +226,27 @@ def test_the_narrow_rung_reports_that_it_verified_nothing_rather_than_passing(
         assert 'no changed paths' in out, out
 
 
-# --- close story: it refuses to advance ---------------------------------------
-def test_close_story_cannot_advance_past_a_red_narrow_check():
-    """Ship criterion 2. The claim is about the TREE: the story is not `done`,
-    so no later step ran."""
+# --- close story: it REPORTS, and it finishes ---------------------------------
+# D8, 2026-09-05. Chris: "Everything is just a check. `release` should release
+# on a red tree if I want (we mostly wouldn't but why stop someone?)" These
+# tests used to assert that the belt REFUSED to advance — that the story was
+# still `reviewing` because a later step never ran. It now walks to the end,
+# and what they assert is the pair that actually matters: the problem is NAMED
+# and the exit code is 1. What has NOT changed, and is the half worth keeping,
+# is that the belt never writes what it exists to read and never commits on
+# your behalf.
+def test_a_red_narrow_check_is_named_and_the_belt_still_finishes(capsys):
+    """Ship criterion 2, re-read under D8. The narrow rung is red, it says so,
+    the run exits 1 — and the story closes, because whether a red narrow check
+    should stop this close is the caller's question and not the engine's."""
     with tree(config=CONFIG.replace('run   = "true"', 'run   = "false"')) as root:
         (root / 'src/thing.py').write_text('x = 2\n', encoding='utf-8')
         code = close('story', STORY_ID)
+        out = capsys.readouterr().out
         assert code == 1
-        assert status_of(root, SFILE) == 'reviewing', 'a later step ran'
+        assert 'narrow-verified' in out, out
+        assert 'not true' in out, out
+        assert status_of(root, SFILE) == 'done'
 
 
 def test_the_narrow_command_comes_from_verify_and_not_from_the_step():
@@ -249,13 +261,16 @@ def test_the_narrow_command_comes_from_verify_and_not_from_the_step():
             'the step did not run the command [[verify.narrow]] names')
 
 
-def test_a_repo_that_never_said_what_proves_an_edit_is_refused_not_passed():
+def test_a_repo_that_never_said_what_proves_an_edit_is_never_a_green_step(
+        capsys):
     """`[verify]` absent is exit 2 from the rung, and the step reports it as a
-    CONFIG error that decided nothing — never as a green step."""
+    CONFIG error that decided nothing — never as a green step. That is the
+    claim, and D8 did not touch it: the step is not true, and it is named."""
     with tree(config='') as root:
         code = close('story', STORY_ID)
+        out = capsys.readouterr().out
         assert code == 1
-        assert status_of(root, SFILE) == 'reviewing'
+        assert 'narrow-verified' in out, out
 
 
 def test_committed_names_uncommitted_work_and_commits_nothing():
@@ -266,9 +281,10 @@ def test_committed_names_uncommitted_work_and_commits_nothing():
         # `committed` with a real uncommitted path in front of it.
         code = close('story', STORY_ID)
         assert code == 1
+        # THE half that survives D8 and is the whole point of the test: the
+        # belt reports uncommitted work, and commits nothing on your behalf.
         assert 'src/thing.py' in porcelain(root), 'the belt committed'
         assert head(root) == before, 'the belt moved HEAD'
-        assert status_of(root, SFILE) == 'reviewing'
 
 
 def test_the_belts_own_roadmap_write_does_not_redden_its_own_third_step():
@@ -288,8 +304,10 @@ def test_evidence_written_refuses_a_story_with_no_done_line_and_writes_nothing()
         before = (root / SFILE).read_bytes()
         code = close('story', STORY_ID)
         assert code == 1
-        assert status_of(root, SFILE) == 'reviewing'
-        assert (root / SFILE).read_bytes() == before, (
+        # The half that survives D8: a step that READS the author's evidence
+        # must never write it. A belt that supplied the line it checks for is
+        # the write-side cardinal sin.
+        assert b'done:' not in (root / SFILE).read_bytes().replace(before, b''), (
             'the belt wrote the `done:` line it exists to READ')
 
 
@@ -301,7 +319,6 @@ def test_a_done_line_that_is_not_evidence_is_refused_by_name(line, why):
     with tree(evidence=line) as root:
         code = close('story', STORY_ID)
         assert code == 1, line
-        assert status_of(root, SFILE) == 'reviewing'
 
 
 def test_landed_in_place_is_evidence_because_verdict_py_already_ruled_so():
@@ -314,14 +331,20 @@ def test_landed_in_place_is_evidence_because_verdict_py_already_ruled_so():
 
 
 # --- close feature ------------------------------------------------------------
-def test_close_feature_cannot_advance_past_stories_done(capsys):
-    """Ship criterion 3, and the mistake this feature was written from."""
+def test_close_feature_names_the_story_that_is_not_finished(capsys):
+    """Ship criterion 3, and the mistake this feature was written from — the
+    orchestrator that parked 28 stories at `reviewing`.
+
+    Under D8 the belt does not refuse; it NAMES the story, which is the half
+    that ends the mistake. A feature closed over an unfinished story is then a
+    contradiction in the tree, and `check pm` D3/D5 is the thing that fails
+    it — in CI, pre-push, with an exit-code contract for exactly that."""
     with tree(story='reviewing') as root:
         code = close('feature', FEATURE_ID)
         out = capsys.readouterr().out
         assert code == 1
         assert f'{STORY_ID} is reviewing' in out, out
-        assert status_of(root, FFILE) == 'planning', 'a later step ran'
+        assert 'stories-done' in out, out
 
 
 def test_stories_done_asks_pm_ready_for_rather_than_reading_the_stories(
@@ -367,8 +390,10 @@ def test_a_record_that_does_not_parse_is_unverifiable_and_never_a_pass(
         code = close('feature', FEATURE_ID)
         out = capsys.readouterr().out
         assert code == 1
+        # UNVERIFIABLE is still not a pass, and it is still counted apart from
+        # a plain no — D8 removed the halt, not the third truth value.
         assert expected in out, out
-        assert status_of(root, FFILE) != 'done'
+        assert 'unverifiable' in out, out
 
 
 def test_a_finding_at_disposition_open_blocks_and_is_named(capsys):
@@ -382,7 +407,6 @@ def test_a_finding_at_disposition_open_blocks_and_is_named(capsys):
         out = capsys.readouterr().out
         assert code == 1
         assert 'Q5' in out, out
-        assert status_of(root, FFILE) != 'done'
 
 
 def test_the_whole_feature_belt_walks_and_closes_through_the_pm_cli(capsys):

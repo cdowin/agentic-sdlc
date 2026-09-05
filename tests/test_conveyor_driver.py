@@ -5,16 +5,23 @@ they plug into, and it is proved against steps built in this file — so the
 driver is provable before a single real step exists, and a real step's bug can
 never be mistaken for a driver bug.
 
-The two tests that are the whole feature:
+The three tests that are the whole feature:
 
-  * `test_do_that_lies_does_not_advance` — a fixture `AUTOMATIC` step whose
-    `do()` reports success while `check()` still answers no. The run STOPS on
-    it. `do()` never decides its own outcome; `check()` decides, and at no
-    other moment. Without `verify()` this test passes a lie.
-  * `test_judgement_without_artifact_refuses` — no artifact and no configured
-    command is UNVERIFIABLE, which is a refusal to advance and never a pass.
-    `repo/pm/verdict.py` already rules this way for a record whose block does
-    not parse; this inherits the ruling rather than inventing a softer one.
+  * `test_do_that_lies_is_not_believed` — a fixture `AUTOMATIC` step whose
+    `do()` reports success while `check()` still answers no. It is recorded
+    NOT TRUE. `do()` never decides its own outcome; `check()` decides, and at
+    no other moment. Without `verify()` this test passes a lie.
+  * `test_judgement_without_artifact_is_not_a_pass` — no artifact and no
+    configured command is UNVERIFIABLE, counted in its own column and never
+    folded into a plain no. `repo/pm/verdict.py` already rules this way for a
+    record whose block does not parse; this inherits the ruling.
+  * `TheWalkAlwaysFinishes` — D8, 2026-09-05, and the newest of the three.
+    Every step is a check, every check reports, and NO step halts the walk.
+    Chris: *"Everything is just a check. `release` should release on a red tree
+    if I want (we mostly wouldn't but why stop someone?)"* The exit code still
+    says what happened; the transcript still names every step that is not true;
+    what is gone is the machine deciding on the operator's behalf that the run
+    should not continue.
 
 Deliberately non-spawning — no `subprocess`, no spawning `tests/support`
 helper. `tests/conftest.py` derives the `shell` mark from this module's source.
@@ -121,12 +128,17 @@ class TheKindsAreClosed(unittest.TestCase):
 class DoNeverDecidesItsOwnOutcome(unittest.TestCase):
     """Rule 4 in step-machine clothing."""
 
-    def test_do_that_lies_does_not_advance(self):
+    def test_do_that_lies_is_not_believed(self):
         """The feature. `do()` returns success; `check()` still says no.
 
-        The run must STOP on that step and name the postcondition that did not
-        hold. A driver that trusted the return value reports DONE over a tree
-        where nothing happened — the read-side cardinal sin, printed as PASS.
+        The run must record that step as NOT TRUE and name the postcondition
+        that did not hold. A driver that trusted the return value reports DONE
+        over a tree where nothing happened — the read-side cardinal sin,
+        printed as PASS.
+
+        D8 changed what happens NEXT and nothing about this: the walk no longer
+        stops, so `tag` below is asked too. Disbelieving `do()` was never the
+        same thing as halting.
         """
         liar = Performed('SUCCESS: version bumped to 0.2.0')
         lying = dr.Step('version-sync', dr.StepKind.AUTOMATIC,
@@ -137,18 +149,21 @@ class DoNeverDecidesItsOwnOutcome(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = _walk(Path(tmp), [lying, after])
         self.assertEqual(1, result.exit_code)
-        self.assertEqual('version-sync', result.stopped)
+        self.assertEqual(('version-sync', 'tag'), result.not_true)
         self.assertEqual((), result.done)
         # It was PERFORMED — the driver is not skipping the work, it is
         # disbelieving the report.
         self.assertEqual(1, liar.calls)
         # …and it asked again afterwards. That second ask is `verify()`.
         self.assertEqual(2, lying.check.calls)
-        # The step after it never ran.
-        self.assertEqual(0, after.check.calls)
+        # D8: the step after it DID run. "release should release on a red tree
+        # if I want — why stop someone?"
+        self.assertEqual(2, after.check.calls)
         report = '\n'.join(result.lines)
         self.assertIn('version-sync', report)
         self.assertIn('pyproject.toml still says 0.1.9', report)
+        # …and the scoreboard names both, so nothing is lost by not halting.
+        self.assertIn('2 not true: version-sync, tag', report)
         # The claim is QUOTED, attributed to the step, and never becomes a
         # verdict: the transcript shows the lie next to the refusal, which is
         # more use to the operator than swallowing it would be.
@@ -187,9 +202,17 @@ class DoNeverDecidesItsOwnOutcome(unittest.TestCase):
         self.assertEqual(1, gate.check.calls)
 
 
-class AnUnverifiableJudgementIsARefusal(unittest.TestCase):
+class AnUnverifiableJudgementIsNeverAPass(unittest.TestCase):
+    """D8 renamed this class's premise and kept its point.
 
-    def test_judgement_without_artifact_refuses(self):
+    UNVERIFIABLE used to be *"a REFUSAL to advance"*. It no longer refuses —
+    nothing does — but it is still not a pass, it is still counted apart from
+    FALSE, and the run still exits 1. `Truth` has three values so that "this
+    cannot be decided" is never collapsed into either of the other two, and
+    that is unchanged: the scoreboard has a column for it.
+    """
+
+    def test_judgement_without_artifact_is_not_a_pass(self):
         """No artifact, no configured command. UNVERIFIABLE — never a pass."""
         told = Performed('open the PR and re-run: agentic-sdlc release 0.2.0')
         step = dr.Step(
@@ -200,18 +223,22 @@ class AnUnverifiableJudgementIsARefusal(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = _walk(Path(tmp), [step])
         self.assertEqual(1, result.exit_code)
-        self.assertEqual('ci-green', result.stopped)
+        self.assertEqual(('ci-green',), result.unverifiable)
+        # Counted APART from a plain no — that is the whole reason `Truth` is
+        # an enum, and the scoreboard keeps the two columns separate.
+        self.assertEqual((), result.not_true)
         self.assertEqual((), result.done)
         report = '\n'.join(result.lines)
         self.assertIn('UNVERIFIABLE', report)
+        self.assertIn('1 unverifiable: ci-green', report)
         self.assertNotIn('DONE', report)
         # It printed what the operator must do.
         self.assertEqual(1, told.calls)
         self.assertIn('open the PR', report)
 
     def test_unverifiable_is_not_quietly_false(self):
-        """The two refusals print differently, because they are different
-        facts: FALSE is "not yet", UNVERIFIABLE is "this cannot be decided"."""
+        """The two print differently, because they are different facts:
+        FALSE is "not yet", UNVERIFIABLE is "this cannot be decided"."""
         unk = dr.Step('ci-green', dr.StepKind.JUDGEMENT,
                       check=Scripted(dr.Answer.unverifiable('no artifact')),
                       do=Performed())
@@ -221,8 +248,10 @@ class AnUnverifiableJudgementIsARefusal(unittest.TestCase):
             first = '\n'.join(_walk(Path(tmp), [unk]).lines)
             second = '\n'.join(_walk(Path(tmp), [no]).lines)
         self.assertIn('UNVERIFIABLE', first)
+        self.assertIn('1 unverifiable: ci-green', first)
         self.assertNotIn('UNVERIFIABLE', second)
-        self.assertIn('STOPPED', second)
+        self.assertIn('NOT-TRUE', second)
+        self.assertIn('1 not true: merge', second)
 
 
 class TheCensusIsNeverZeroInSilence(unittest.TestCase):
@@ -252,9 +281,16 @@ class TheCensusIsNeverZeroInSilence(unittest.TestCase):
         self.assertIn('3/3', '\n'.join(result.lines))
 
 
-class AStoppedRunSaysWhatWouldMakeItTrue(unittest.TestCase):
+class ANotTrueStepSaysWhatWouldMakeItTrue(unittest.TestCase):
+    """`Answer.detail` is not decoration — it is the sentence printed under
+    *what would make it true*, and a step answering not-true with an empty one
+    has told the operator that something is wrong and nothing about what.
 
-    def test_the_stop_line_names_the_step_its_kind_and_the_detail(self):
+    D8 kept that line and stopped it being a STOP. The run continues; the
+    sentence still has to be there.
+    """
+
+    def test_the_line_names_the_step_its_kind_and_the_detail(self):
         steps = [
             dr.Step('tree-clean', dr.StepKind.GATE, check=Scripted(YES('ok'))),
             dr.Step('review-landed', dr.StepKind.JUDGEMENT,
@@ -263,12 +299,14 @@ class AStoppedRunSaysWhatWouldMakeItTrue(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmp:
             result = _walk(Path(tmp), steps)
-        stop = [ln for ln in result.lines if ln.startswith('[release] STOPPED')]
-        self.assertEqual(1, len(stop), result.lines)
-        self.assertIn('review-landed', stop[0])
-        self.assertIn('JUDGEMENT', stop[0])
-        self.assertIn('M1, M2 at disposition: open', stop[0])
-        self.assertIn('2/2', stop[0])
+        said = [ln for ln in result.lines if 'is not true; what would' in ln]
+        self.assertEqual(1, len(said), result.lines)
+        self.assertIn('review-landed', said[0])
+        self.assertIn('JUDGEMENT', said[0])
+        self.assertIn('M1, M2 at disposition: open', said[0])
+        self.assertIn('2/2', said[0])
+        # The walk REACHED the end: one step true, one not, and it says both.
+        self.assertIn('1/2 true', result.lines[-1])
 
 
 class TheVersionRefusalMatrix(unittest.TestCase):
@@ -387,3 +425,140 @@ class TheRunStateIsPreflighted(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TheWalkAlwaysFinishes(unittest.TestCase):
+    """D8. Every step is a check, every check reports, nothing halts.
+
+    The ruling, in Chris's words: *"I don't understand tree vs input.
+    Everything is just a check. `release` should release on a red tree if I
+    want (we mostly wouldn't but why stop someone?)"*
+
+    What replaced the halt is a SCOREBOARD, and criterion 2 says it has to be
+    good — a 21-step run prints 21 lines where it used to print five, so the
+    final line is what a caller actually reads.
+    """
+
+    def test_a_red_gate_does_not_stop_the_run_from_reaching_tag(self):
+        """THE test for the ruling, and the one that will be argued about.
+
+        `gate` is red. `tag` runs anyway, and it is PERFORMED — the gate told
+        the operator, and the operator decided. `check <gate>` is still the
+        thing that fails a tree in CI and pre-push, with an exit-code contract
+        for exactly that; the belt is not that thing.
+        """
+        tagger = Performed('tagged v0.2.0')
+        steps = [
+            dr.Step('gate', dr.StepKind.GATE,
+                    check=Scripted(NO('12 failures'))),
+            dr.Step('tag', dr.StepKind.AUTOMATIC,
+                    check=Scripted(NO('no tag'), YES('v0.2.0')), do=tagger),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), steps)
+        # It reached `tag`, performed it, and `tag` came out true.
+        self.assertEqual(1, tagger.calls)
+        self.assertEqual(('tag',), result.done)
+        # …and the red gate is still a finding, named, at exit 1.
+        self.assertEqual(1, result.exit_code)
+        self.assertEqual(('gate',), result.not_true)
+        report = '\n'.join(result.lines)
+        self.assertIn('[release:gate] GATE NOT-TRUE — 12 failures', report)
+        self.assertIn('1/2 true', report)
+        self.assertIn('1 not true: gate', report)
+
+    def test_every_step_is_asked_even_after_several_are_not_true(self):
+        """R1 in fixture form: the steps AFTER the not-true ones are exactly
+        the ones a resumed release most needs to reach."""
+        steps = [dr.Step(f's{i}', dr.StepKind.GATE,
+                         check=Scripted(NO(f'no {i}') if i % 2 else YES()))
+                 for i in range(6)]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), steps)
+        for step in steps:
+            self.assertEqual(1, step.check.calls, step.name)
+        self.assertEqual(('s0', 's2', 's4'), result.done)
+        self.assertEqual(('s1', 's3', 's5'), result.not_true)
+        self.assertEqual(1, result.exit_code)
+        self.assertIn('3/6 true · 3 not true: s1, s3, s5', result.lines[-1])
+
+    def test_the_scoreboard_keeps_not_true_and_unverifiable_apart(self):
+        steps = [
+            dr.Step('a', dr.StepKind.GATE, check=Scripted(YES())),
+            dr.Step('b', dr.StepKind.GATE, check=Scripted(NO('red'))),
+            dr.Step('c', dr.StepKind.JUDGEMENT,
+                    check=Scripted(dr.Answer.unverifiable('no artifact')),
+                    do=Performed()),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), steps)
+        self.assertIn('1/3 true · 1 not true: b · 1 unverifiable: c',
+                      result.lines[-1])
+
+    def test_a_clean_run_still_says_PASS_and_exits_0(self):
+        """The scoreboard replaces the stop line, not the pass line: a run
+        where everything holds reads exactly as it did before."""
+        steps = [dr.Step(f's{i}', dr.StepKind.GATE, check=Scripted(YES()))
+                 for i in range(4)]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), steps)
+        self.assertEqual(0, result.exit_code)
+        self.assertEqual((), result.not_true)
+        self.assertEqual('[release] PASS — 4/4 steps', result.lines[-1])
+
+
+class ACrashIsAnAnswerNotATraceback(unittest.TestCase):
+    """The consequence of no longer halting, and it is not defensive padding.
+
+    While the walk stopped at the first not-true step, a step whose `check()`
+    raised was usually never reached. Now every step is asked on every run, so
+    a latent crash in step 19 surfaces on a tree where step 3 is red — and an
+    uncaught exception is exit 1 with a traceback, which hard rule 6 gives to
+    FINDINGS and which a consumer's CI reads as drift. R4 is exactly that
+    shape.
+    """
+
+    def test_a_check_that_raises_is_UNVERIFIABLE_and_the_walk_continues(self):
+        def boom(ctx):
+            raise ValueError('tuple.index(x): x not in tuple')
+
+        after = dr.Step('after', dr.StepKind.GATE, check=Scripted(YES()))
+        steps = [dr.Step('crasher', dr.StepKind.GATE, check=boom), after]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), steps)
+        # UNVERIFIABLE, not FALSE: it did not answer "no", it failed to answer.
+        self.assertEqual(('crasher',), result.unverifiable)
+        self.assertEqual((), result.not_true)
+        self.assertEqual(('after',), result.done)
+        self.assertEqual(1, result.exit_code)
+        self.assertIn('ValueError while checking: tuple.index',
+                      '\n'.join(result.lines))
+
+    def test_a_do_that_raises_is_reported_and_the_postcondition_re_asked(self):
+        def boom(ctx):
+            raise OSError('git: command not found')
+
+        step = dr.Step('push-branch', dr.StepKind.AUTOMATIC,
+                       check=Scripted(NO('not pushed')), do=boom)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _walk(Path(tmp), [step])
+        report = '\n'.join(result.lines)
+        self.assertIn('SAID — OSError while performing: git: command not found',
+                      report)
+        # …and the ANSWER still comes from check(), never from do().
+        self.assertEqual(('push-branch',), result.not_true)
+        self.assertEqual(2, step.check.calls)
+
+    def test_a_ConfigError_is_re_raised_because_it_is_the_reader_failing(self):
+        """D8's line. A malformed declaration is not a check reporting — it is
+        this module failing to read, and it belongs to exit 2 before the walk
+        rather than to a row on the scoreboard."""
+        from agentic_sdlc.core.config import ConfigError
+
+        def bad(ctx):
+            raise ConfigError('[release] steps: not a list')
+
+        steps = [dr.Step('reader', dr.StepKind.GATE, check=bad)]
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ConfigError):
+                _walk(Path(tmp), steps)

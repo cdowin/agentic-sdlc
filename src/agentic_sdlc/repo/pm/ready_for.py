@@ -8,7 +8,7 @@ of that.** What was missing is a verb that answers with an EXIT CODE, so a step
 machine can gate on it and an operator cannot mis-read it (D3's ladder: these
 are the gates BETWEEN rungs, not rungs themselves).
 
-    ready-for feature   <feature-id>    is every story at `reviewing`?
+    ready-for feature   <feature-id>    is every story `done`?
     ready-for milestone <milestone-id>  is every feature `done`, each with a
                                         non-empty review record?
     ready-for tag       <milestone-id>  is every finding at a disposition other
@@ -50,10 +50,29 @@ about the directory when it is a fact about the filter.
 
 ## What blocks, and what is the belt below's question
 
-`ready-for feature` blocks on any story not AT `reviewing` — including one at
-`done`. Nothing moves a story off `reviewing` until a close does, so a `done`
-story before its feature closed is a state the operator should see rather than
-one this verb should absorb.
+`ready-for feature` blocks on any story not at `done`.
+
+**It asked for `reviewing` until 2026-09-05, and that was wrong.** The belt
+design said "every story at `reviewing`", so this verb did too, and a whole
+milestone's stories were parked there — finished work, committed and green,
+described by a status that says it is waiting for something. Chris, on being
+shown a tree in exactly that state:
+
+> *"We wanna capture work. We want things to be DONE. So we wanna rip through
+> stories really fast. Get a story into done. Its unit tests are done. It's
+> good. … And then when all the stories are done, the feature flips to
+> reviewing, and then the review happens."*
+
+`reviewing` at STORY grain is a hand-off waystation — the builder saying "look
+at this" — and a hand-off is not a terminus. `done` is. Asking for `done` here
+is also the STRICTER question, which is the tell that it was the right one:
+a story at `reviewing` is genuinely unfinished, and a belt that admitted it
+would start the feature's review over work still in motion.
+
+A tree that closes stories through `pm feature done --cascade` — the flow where
+the ORCHESTRATOR flips them, which `pm-execution.md` still permits — gets each
+still-`reviewing` story named here. That is the verb telling it the cascade has
+not run yet, which is a fact worth seeing rather than one to absorb.
 
 `ready-for milestone` reads `features/` only. **Bugs do not block a
 milestone**: an open bug that silently blocked a milestone whose features were
@@ -280,7 +299,10 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
 
 # --- story -> feature ---------------------------------------------------------
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
-    """Is every story under this feature at `reviewing`?
+    """Is every story under this feature `done`?
+
+    `done`, not `reviewing` — see the module docstring for the day that changed
+    and why the stricter question was the right one.
 
     Exit 1 names each story that is not, with the status word the file
     ACTUALLY holds — including one outside the vocabulary (the D4 drift
@@ -290,14 +312,14 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     A feature with NO stories is READY; see the module docstring for why both
     vacuity rulings are stated together.
     """
-    _needs_state(model.REVIEWING, cfg.story_states, 'story', 'story_states')
+    _needs_state(DONE, cfg.story_states, 'story', 'story_states')
     ffile = _grain(cfg, FEATURE, fid, model.FEATURE_DOC, FEATURE,
                    "about a feature's stories")
     walk = model.slot_walk(ffile.parent / 'stories')
     blockers = []
     for sfile in walk.kept:
         status = model.field_of(sfile, 'status') or '(no status:)'
-        if status != model.REVIEWING:
+        if status != DONE:
             sid = model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile)
             blockers.append(f'{sid} is {status}')
     census = walk.census('story/ies')
@@ -305,7 +327,7 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
         census += (f' — {VACUOUS}: an empty set is satisfied, and refusing it '
                    f'would make this verb unusable on a doc-only feature')
     elif not blockers:
-        census += f', all at {model.REVIEWING}'
+        census += f', all {DONE}'
     return _answer(f'{FEATURE} {fid}', blockers, census)
 
 

@@ -28,6 +28,7 @@ file while both claiming phase 1. **Eight features and one bug now, in four phas
 | 3 | `the-belts-refuse-to-advance` | `pm ready-for` — the entry conditions as exit codes |
 | 4 | `the-release-is-a-conveyor` | the driver + `install-sdlc` |
 | 4 | `adopt-is-a-conveyor` | the same driver, scoped to the operation |
+| 5 | `the-inner-levels-are-belts-too` | **added mid-milestone** — `close story` / `close feature`, because the levels that run constantly were the ones left as prose |
 
 Phase 1 is serial before phase 2: `the-extraction-finishes` **prunes** `KNOWN_GATES` and ships
 `roster == dispatchable` as a test; `the-kit-owns-…` then **grows** it through that census.
@@ -109,7 +110,14 @@ the milestone says why it is not", which no tree can be measured against.
    — plus `pm ready-for` between them and `adopt` beside them, and `README.md` carries the table.
    The failure this closes: a story close reaching for `make milestone`, which is the measured
    170x this milestone exists to end.
-9. **0.2.0 is released through `agentic-sdlc release 0.2.0`.** A conveyor whose first release is
+9. **All four levels are belts, not two.** `release` and `adopt` are the OUTER operations, run
+   weekly and on a pin bump; `close story` and `close feature` are the inner ones, run dozens of
+   times a day. Shipping conveyors for the outer two and prose for the inner two is backwards in
+   the most expensive direction, and it is what let this milestone's own orchestrator park 28
+   finished stories at `reviewing` and review the whole thing in one pass.
+10. **0.2.0 is released through `agentic-sdlc release 0.2.0`** — and its own stories and features
+   close through `close story` / `close feature`. A belt whose first run is performed by hand has
+   not been tested. A conveyor whose first release is
    performed by hand has not been tested, and every step that had to be skipped is in the ledger
    with its reason.
 

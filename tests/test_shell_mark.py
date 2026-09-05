@@ -52,8 +52,11 @@ UNMARKED_MODULES = (
     'test_boundaries.py',
     'test_cli_surface.py',
     'test_consumer_independence.py',
+    'test_conveyor_driver.py',
+    'test_conveyor_state.py',
     'test_fuzz_markdown.py',
     'test_verdict.py',
+    'test_verify_rules.py',
     'test_wheel_payload.py',
 )
 

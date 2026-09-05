@@ -8,10 +8,13 @@ reads it, and neither file is ever a copy of the other.
 THREE PROPERTIES, AND EVERY CALLER DEPENDS ON ALL THREE:
 
   * **Append-only.** `append_row` opens `'a'` and writes one line. It never
-    reads, never parses, never rewrites a byte that is already there — so a
-    row landed by another process, another branch, or an older version of this
-    package survives a shape change here, and a `merge=union` on the file makes
-    two branches' rows one file rather than one conflict.
+    parses and never rewrites a byte that is already there — so a row landed by
+    another process, another branch, or an older version of this package
+    survives a shape change here, and a `merge=union` on the file makes two
+    branches' rows one file rather than one conflict. The one byte it READS is
+    the file's last, to know whether the previous writer finished its line: a
+    torn tail is the one shape where appending a row JOINS it (`{…}{…}`), and
+    the repair is a newline in front of the new row, never a touch to the old.
   * **One line per row, compact.** `separators=(',',':')` and no newline inside
     the line, so a row is exactly one `readline()` and a `wc -l` is a row count.
     `ensure_ascii=False` because a decision title is prose and a `\\u2014` in
@@ -32,6 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.repo import gates_extra
+
 # Beside `decisions.md`, inside the milestone directory that owns it — so
 # `retire` removes it with the directory and git is the archive (D6).
 LEDGER_FILE_NAME = 'ledger.jsonl'
@@ -40,6 +45,7 @@ LEDGER_FILE_NAME = 'ledger.jsonl'
 # `pm ledger record` and are not built here.
 KIND_STATUS = 'status'
 KIND_DECISION = 'decision'
+KIND_GATE = 'gate'
 
 # `2026-09-03T21:40:12Z`. `datetime.isoformat()` spells the offset `+00:00`,
 # and two spellings of one instant in a durable log is a parser's problem
@@ -84,6 +90,61 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
             'entry': entry, 'title': title}
 
 
+# --- the gate row -------------------------------------------------------------
+# One GATE RUN's cost. Not a grain row and not a usage row: a gate is not work
+# somebody was dispatched to do, so folding it into either would make the spend
+# table bill a story for the seconds `make check` spent.
+#
+# The name is a make target, and the SAME grammar `[gates] extra` already
+# enforces on one — imported rather than respelled, because story 03's report
+# and the story belt both JOIN on this string and a second spelling of one
+# grammar is how the two halves come to disagree about which names exist.
+GATE_NAME = gates_extra.TARGET
+GATE_NAME_MAX = gates_extra.MAX_LENGTH
+
+# The verdict vocabulary, CLOSED. A gate's console line is prose ("PASS (12
+# files)", "FAIL — 3 findings") and a durable column is not: free text there
+# would give one outcome five spellings and nothing could count them. The four
+# are what a caller can know from an exit code — 0, non-zero, the 124/137
+# timeout pair, and "this gate did not run", which must not read as a PASS.
+GATE_VERDICTS = ('PASS', 'FAIL', 'HANG', 'SKIP')
+
+
+def gate_row(gate: str, verdict: str, duration_ms: int | None,
+             census: int | None = None, ts: str = '') -> dict:
+    """One gate run: what it was, how it went, what it cost, over how much.
+
+    MILLISECONDS, and the unit is the whole reason this row is worth writing.
+    It was whole seconds for one draft, until the numbers the feature was
+    planned from were held against the grammar: of twenty measured gates,
+    fourteen are under a second, and the narrow-vs-wide pair that motivates the
+    story belt is 0.9 s against 154 s. Under an integer-second row the narrow
+    side records `0` — the ratio is undefined — or rounds to `1` and reports
+    154x for a measured 170x. A cost column that cannot resolve the cheap half
+    of its own headline comparison is a write-only column with extra steps.
+
+    `census` is the corpus the run walked, and it is OPTIONAL because not every
+    gate can count one. An absent census is an absent KEY — never a `0`, which
+    is a MEASUREMENT ("this gate walked nothing") and reads forever after as
+    the zero-file census hard rule 4 calls a cardinal sin. `duration_ms` obeys
+    the same rule; the CLI additionally refuses a gate row that carries no
+    duration at all, because a cost row with no cost is a write-only column.
+
+    Integer milliseconds rather than a float second: a float in a JSONL row is
+    a locale and a repr away from two spellings of one number, and the shell
+    that will produce these has no float arithmetic to round with.
+
+    Nothing here judges: no ceiling, no budget, no verdict of its own. The row
+    is the measurement, and what it means is the report's question.
+    """
+    row = {'ts': ts or utc_now(), 'kind': KIND_GATE, 'gate': gate,
+           'verdict': verdict}
+    for key, value in (('duration_ms', duration_ms), ('census', census)):
+        if value is not None:
+            row[key] = value
+    return row
+
+
 def ledger_path(milestone_dir: Path) -> Path:
     """Where one milestone's ledger lives. The only place this name is joined."""
     return milestone_dir / LEDGER_FILE_NAME
@@ -105,14 +166,43 @@ def append_row(milestone_dir: Path, row: dict) -> None:
     on nobody rewriting. Append is a different primitive, not a shortcut past
     the one plan.
 
+    ONE byte is read before the write, and it is the last: if the previous
+    writer did not finish its line — a killed process, a hand edit, a
+    `merge=union` that landed a fragment — `open('a')` puts this row on the END
+    of that line and produces `{…}{…}`, which is two rows nobody can read and
+    one `LedgerError` on a line nobody wrote. So the newline is closed first.
+    That is a READ of one byte, never a parse and never a rewrite: no byte
+    already on disk changes, and a reader that arrives between the two writes
+    sees a blank line, which every reader here already skips.
+
     Raises `OSError` when the line cannot be written. It does NOT swallow that:
     the caller has already changed the tree, and "the row is missing" is a fact
     its report has to carry rather than one this function hides.
     """
+    path = ledger_path(milestone_dir)
     line = dumps(row) + '\n'
-    with ledger_path(milestone_dir).open('a', encoding='utf-8',
-                                         newline='\n') as handle:
+    if _ends_mid_line(path):
+        line = '\n' + line
+    with path.open('a', encoding='utf-8', newline='\n') as handle:
         handle.write(line)
+
+
+def _ends_mid_line(path: Path) -> bool:
+    """True when the file exists, is not empty, and its last byte is not `\\n`.
+
+    Binary, and one `seek`: the file is a day's rows and reading it to answer
+    this would make an append a read of the whole log. A file that cannot be
+    read at all answers False and lets the append itself raise — an OSError
+    here would report the wrong failure for the same underlying one.
+    """
+    try:
+        with path.open('rb') as handle:
+            if not handle.seek(0, 2):
+                return False
+            handle.seek(-1, 2)
+            return handle.read(1) != b'\n'
+    except OSError:
+        return False
 
 
 

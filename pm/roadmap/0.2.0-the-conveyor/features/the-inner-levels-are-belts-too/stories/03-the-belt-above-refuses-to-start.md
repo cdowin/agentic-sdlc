@@ -15,3 +15,11 @@ depends_on: []
 ## Acceptance criteria
 
 ## Out of scope
+
+## Close
+
+done: cc0569d — proven live on this milestone: `close feature` stopped at step 1/6 naming
+three stories at `reviewing`, and `close story` stopped at evidence-written refusing to
+write the author's sentence.
+finding: the run state CORRECTED itself against the tree mid-run and said so — the cache-is-
+never-the-authority rule firing outside a test.

@@ -8,6 +8,24 @@ branch:
 
 # 0.3.0 — the engine has no opinion
 
+**It gates the SDLC. It does not run it.** Chris, 2026-09-05: *"It doesn't even stop you from
+closing something if it has a feature with open stories. It shouldn't say, no, you can't do that.
+It should just say: warning, you're moving to a closed state, and you have open children. That's
+it. The machine running this figures out what to do about all of that."*
+
+Two features, and the second is mostly subtraction:
+
+- **`states-are-categories-not-words`** — three categories, states and transitions declared by
+  the project, read every run, never assumed.
+- **`the-belts-report-they-do-not-refuse`** — a belt moves, warns and finishes. 0.2.0 built
+  refusal into the conveyor against a rule already in this repo
+  (`pm-execution.md`: *"REPORT, never refuse"*), and named the feature after the thing it got
+  wrong.
+
+**One line decides anything added here later:** *is the engine reading what the project declared,
+or deciding what the project should do?* The first is its job. The second belongs to the machine
+running it.
+
 **Chris, 2026-09-05, reading the SDLC after a day of building the belts:**
 
 > *"This tool, all the grammar and the states, it actually really shouldn't have an opinion about

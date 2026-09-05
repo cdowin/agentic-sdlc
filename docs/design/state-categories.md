@@ -360,3 +360,78 @@ The engine still refuses facts about the input, and that is not inference:
 whether the engine is answering a question about what the project SAID, or about what the
 project SHOULD DO. The first is its job. The second is the thing to keep taking out.
 
+---
+
+## 7. It GATES the SDLC. It does not run it.
+
+**Chris, 2026-09-05, and this is the largest correction in the document:**
+
+> *"This is a thing that just gates the SDLC. It's a thing that gives codification to a thing
+> with inference. It doesn't say why something was moved to done. And hell, it doesn't even stop
+> you from closing something if it has, say, a feature with open stories. It shouldn't say, no,
+> you can't do that. It should just say: warning, you're moving to a closed state, and you have
+> open children. That's it. The machine running this figures out what to do about all of that."*
+
+### 0.2.0 built refusal where the package's own rule said report
+
+`.claude/rules/pm-execution.md`, shipped **before** any of today's work:
+
+> *"**`pm feature reviewing` and `pm milestone done` REPORT, never refuse.** Stories not at
+> `reviewing`, features not done — the verb names them and does what it was asked. What the tree
+> is then left holding is D3/D5's question, asked of the tree."*
+
+The PM CLI has always worked this way. **The conveyor I built today refuses**, and the feature is
+literally called `the-release-is-a-conveyor` with the summary *"a resumable step machine that
+refuses to advance"*. I built the opposite of the rule sitting in the repo, and named it after
+the thing it got wrong.
+
+### The rule, and it has exactly one edge
+
+| about | answer | why |
+|---|---|---|
+| **the INPUT** — a malformed id, an undeclared state, a transition not in the table, a config value of the wrong shape | **REFUSE**, exit 2 | reading, not deciding. The declaration is malformed and there is nothing to do with it. |
+| **the TREE** — open children, no review record, a dirty worktree, a red gate | **REPORT**, and proceed | the engine cannot know whether that is wrong. Descoped? A hotfix? Deliberate? **The caller knows and the engine does not.** |
+
+```
+$ agentic-sdlc close feature 0.2.0/alpha
+[feature:stories-done] WARNING — 3 story/ies not in `done`: s1 is building, s2 is
+                       reviewing, s3 is planning
+[feature] feature 0.2.0/alpha: reviewing -> done  (1 warning)
+```
+
+It moved. It said why you might not want it to. **You decide.**
+
+### Why refusing is worse, and it is not a philosophical point
+
+- **A tool that refuses gets worked around.** The workaround is invisible, and then the protocol
+  teaches nothing. This package already knows that — it is the entire argument for
+  `--skip <step> --reason` writing a ledger row, which is the refusal admitting it should not
+  have been one.
+- **The engine cannot hold the reason.** *Why* a feature closed with an open story is a fact
+  about intent. The engine has no access to it, and a machine that blocks on a question it
+  cannot ask is asserting an answer.
+- **The gate already exists, and it is a different tool.** `check pm` is the thing that FAILS a
+  tree whose statuses contradict each other. It runs in CI, it runs pre-push, and it has an exit
+  code contract for exactly this. **`pm` moves and reports; `check pm` gates.** I conflated
+  them, and the conveyor inherited a job it should never have had.
+
+### What this deletes from 0.2.0
+
+- `close story` / `close feature` / `release` / `adopt` **stop blocking.** They walk, they move,
+  they warn, they finish. The step list keeps its whole value — the ORDER is the thing nobody
+  could remember, and that is what 0.24.0's release actually got wrong.
+- `pm ready-for` becomes a **read verb** whose exit code is information for a caller that wants
+  it, not a wall. It already names its blockers; naming them was always the useful half.
+- **The 0.24.0 lesson survives.** That release ran its gate before its review because nobody
+  knew the order, not because a machine let them. An ordered list with a loud warning at
+  `review-landed` fixes the thing that actually broke.
+- `--skip <step> --reason` **can go**, or shrinks to a note. It exists to escape a refusal, and
+  with nothing to escape it is ceremony. The ledger row it wrote was the honest part; keep that
+  as what a warning records.
+
+### The one-line test for anything added to this engine later
+
+**Is this the engine reading what the project declared, or deciding what the project should do?**
+The first is its job. The second belongs to the machine running it — which, for this package's
+consumers, is an agent with a dispatch, a reviewer, and a human who can be asked.
+

@@ -3,7 +3,7 @@ id: 0.2.0/every-gate-reports-its-cost/04-a-dispatch-names-both-commands
 feature: 0.2.0/every-gate-reports-its-cost
 milestone: "0.2.0"
 name: The stock agents name the narrow command and the wide one
-status: planning
+status: reviewing
 owner:
 depends_on: []
 ---

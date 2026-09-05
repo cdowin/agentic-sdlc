@@ -3,7 +3,7 @@ id: 0.2.0/every-gate-reports-its-cost/02-every-gate-path-leaves-a-row
 feature: 0.2.0/every-gate-reports-its-cost
 milestone: "0.2.0"
 name: Every path that prints a verdict also files what it cost
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/every-gate-reports-its-cost/01-the-ledger-holds-what-a-gate-cost"]
 ---

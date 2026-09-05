@@ -3,7 +3,7 @@ id: 0.2.0/the-release-is-a-conveyor/04-every-deviation-is-a-ledger-row
 feature: 0.2.0/the-release-is-a-conveyor
 milestone: "0.2.0"
 name: A skipped step is a ledger row with a reason, never a silence
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance", "0.2.0/the-release-is-a-conveyor/03-the-gate-cannot-run-before-the-review-landed"]
 ---

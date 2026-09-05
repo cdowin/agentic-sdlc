@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit/03-a-test-declares-what-i
 feature: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: A test that declares its coverage is selected by a changed path
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-story-belt-knows-what-verifies-this-edit/01-the-verify-declaration-is-read-or-refused"]
 ---

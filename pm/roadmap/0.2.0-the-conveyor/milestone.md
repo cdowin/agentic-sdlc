@@ -9,11 +9,30 @@ branch:
 # 0.2.0 — the conveyor
 
 The SDLC stops being prose an operator follows correctly and becomes a step machine that
-refuses to advance. Four features compose: **the extraction finishes**, so a stock consumer
-gets a kit that works and describes itself; **the kit owns the gates that scan its own
-artifacts**, so a fix reaches every consumer; **every gate reports its cost**, so the set can
-be argued from data; and **the belts** — one per grain, story / feature / milestone, each
-widening verification by exactly one step and never running the belt above it.
+refuses to advance.
+
+**Re-planned 2026-09-05** — `docs/reviews/2026-09-05-0.2.0-scope-audit.md` is the audit and
+every dispatch's reference. It found the diagnosis right and the decomposition wrong: ship
+criterion 5 was an escape hatch over the one deliverable `godot-devkit` is blocked on, one
+feature was `size: xl` carrying four unrelated things, and two features collided on the same
+file while both claiming phase 1. **Eight features and one bug now, in four phases.**
+
+| phase | feature | why here |
+|---|---|---|
+| 1 | `the-extraction-finishes` | a stock consumer's `check all` exits 2 today; everything else builds on a kit that works |
+| 1 | `bugs/the-deprecation-window-must-close` | a dated obligation whose window this release closes |
+| 2 | `the-middle-tier-splits` | **was ship criterion 5's "or"** — the gate framework sheds its Godot roster, which is what unblocks `godot-devkit` 0.25.0 |
+| 2 | `the-kit-owns-the-gates-that-scan-its-own-artifacts` | grows the roster the phase-1 census now guards |
+| 3 | `every-gate-reports-its-cost` | one funnel, every gate, failing open |
+| 3 | `the-story-belt-knows-what-verifies-this-edit` | the 170x, and the belt that runs continuously |
+| 3 | `the-belts-refuse-to-advance` | `pm ready-for` — the entry conditions as exit codes |
+| 4 | `the-release-is-a-conveyor` | the driver + `install-sdlc` |
+| 4 | `adopt-is-a-conveyor` | the same driver, scoped to the operation |
+
+Phase 1 is serial before phase 2: `the-extraction-finishes` **prunes** `KNOWN_GATES` and ships
+`roster == dispatchable` as a test; `the-kit-owns-…` then **grows** it through that census.
+Run in parallel they collide on `src/agentic_sdlc/cli.py` and the second one has to rewrite the
+first one's guard.
 
 ## ▶ The SDLC, and who provides each piece
 
@@ -68,16 +87,26 @@ same `[gates] extra` mechanism a project already uses for its own. Until that is
 
 ## Ship criterion
 
-1. `release` and `adopt` both run as step lists that refuse to advance, and a skip is recorded
-   rather than silent.
-2. The SDLC document a consumer reads is GENERATED from its own step list — `install-sdlc`
+Restated 2026-09-05 so that each one can fail. The previous fifth criterion read "resolved, **or**
+the milestone says why it is not", which no tree can be measured against.
+
+1. A `git init` repo with no `devkit.toml` runs `agentic-sdlc check all` and exits **0 or 1,
+   never 2** — and a test asserts the declared roster equals the set that actually dispatches.
+2. **`Makefile.devkit` names no Godot target**, `precommit`/`milestone` compose from
+   `GDK_*_TIERS`, and the rule-8 gate asserts it. No "or".
+3. `release` and `adopt` both run as step lists that refuse to advance, and a skip is a ledger
+   row with a reason rather than a silence.
+4. The SDLC document a consumer reads is GENERATED from its own step list — `install-sdlc`
    beside `install-agents` — so it cannot drift from what runs.
-3. Every gate records name, duration, verdict and corpus size to the ledger, through the one
-   funnel, failing open.
-4. The four gates that scan this kit's own artifacts ship in `[checks] all`, and the tree that
+5. Every gate records name, duration, verdict and census through **one funnel**, failing open,
+   and `pm ledger report` grows the view that answers *what got slower*.
+6. The four gates that scan this kit's own artifacts ship in `[checks] all`, and the tree that
    never had a prose-cap gate gains one.
-5. The installables' middle tier is resolved, or the milestone says in writing why it is not
-   and what blocks it.
+7. `verify --changed` answers *what proves this edit* from config, **names any path that matched
+   nothing**, and falls back to wide.
+8. **0.2.0 is released through `agentic-sdlc release 0.2.0`.** A conveyor whose first release is
+   performed by hand has not been tested, and every step that had to be skipped is in the ledger
+   with its reason.
 
 ## Risks
 
@@ -87,6 +116,10 @@ same `[gates] extra` mechanism a project already uses for its own. Until that is
    config-ceilinged, the posture the 0.24.0 deprecation window took.
 3. **A conveyor that is always skipped is worse than none**, because it looks like control. If
    the skip ledger shows one step skipped every release, that step is wrong.
-4. **The middle tier may not decompose cleanly**, and forcing it would put a Godot roster in the
-   agentic kit or a gate framework in the Godot one. Better to state the blocker than to ship a
-   split that re-creates the coupling under new names.
+4. **Nine grains in one milestone is the scope risk.** The phase order is the mitigation: phases
+   1 and 2 deliver a kit that works and a split that finishes — value that stands alone if
+   phases 3 and 4 slip. Phase 4 is the only phase whose absence would leave a criterion unmet
+   rather than a milestone smaller.
+5. **The middle tier may still not decompose cleanly.** If it does not, the honest outcome is a
+   stated blocker — but it is now a *finding against a criterion*, not a criterion that
+   accommodates it.

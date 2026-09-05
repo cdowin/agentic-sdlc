@@ -127,3 +127,30 @@ actually took, read from the ledger, and runs nothing. A repo with no
 `[verify]` section answers differently, and that is the repo's answer rather
 than a default worth inventing.
 <!-- END name-both-commands -->
+
+## Prove it the cheapest way that can actually fail
+<!-- BEGIN cheapest-proof -->
+
+A test that spawns a process to check a pure function is an integration test by
+accident, and the suite pays for it on every run, forever.
+
+Before you write a test, ask what it actually needs:
+
+- **nothing but the code** — call the function. No temp dir, no repo, no
+  subprocess. This is where most tests belong and it is where most tests are
+  not.
+- **a tree on disk** — a temp directory and files. Still no process.
+- **a real repository, a real `make`, a real installed hook** — a process, and
+  therefore an integration test. **Say so**, by reaching for the builder that
+  spawns rather than by passing a flag to one that might.
+
+The default has to be cheap and the exception has to be visible. A builder with
+a `git_repo=`-shaped BRANCH marks every caller as expensive, because a static
+reader cannot see which side of an `if` runs — a single flag once put three
+hundred pure tests in the slow tier.
+
+**Timing is a finding.** A tier that doubles while every gate stays green is
+drift that degrades a human's patience instead of a boolean, so nothing catches
+it unless something is watching the clock. Run the narrow rung after an edit;
+the wide one belongs to the close.
+<!-- END cheapest-proof -->

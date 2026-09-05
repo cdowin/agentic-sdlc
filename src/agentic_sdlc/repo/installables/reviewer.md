@@ -145,3 +145,25 @@ that raised nothing writes the verdict line and the header row alone — that is
 complete block, and it is how the report tells a clean pass from a record nobody
 finished. No separator row, no fourth column, no second block of your own,
 and no `|` inside a reason — it splits the row, so write `or`.
+
+## A new test that spawns is a finding
+<!-- BEGIN cheapest-proof-review -->
+
+Check it the way you check any other claim, because it is one: this change says
+its behaviour cannot be proven without a process.
+
+- **A test that spawns to check a pure function** — name it. A temp git repo to
+  test a parser, a `make` run to test a predicate, an installed corpus to test
+  a string. The cheap version is usually a function call and an assertion.
+- **A tier that got slower** — a suite is a gate, and a gate whose cost doubles
+  has drifted even when it is green. If the change moves a test from the cheap
+  tier to the expensive one, that is a fact worth stating in the review, with
+  the number.
+- **A fixture that shares mutable state** — tests that pass alone and fail
+  together are the shape parallelism exposes and serial runs hide. Isolation by
+  copying a pristine template beats isolation by remembering to clean up.
+
+This is not a style preference. A package once measured 240 s of suite and 150 s
+of CPU inside it, arrived at one honest fixture at a time, with every gate green
+the whole way down and no rule naming the drift.
+<!-- END cheapest-proof-review -->

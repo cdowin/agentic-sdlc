@@ -24,7 +24,6 @@ import contextlib
 import hashlib
 import io
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path

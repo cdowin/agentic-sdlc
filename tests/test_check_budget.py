@@ -1,0 +1,164 @@
+"""test_check_budget.py — a tier that got slower is a finding, and this proves it fails.
+
+The gate exists because a suite is a gate whose cost can double while every
+other gate stays green: the drift degrades a human's patience instead of a
+boolean, so nothing notices. Which means this module's job is the FAILING
+direction. A budget gate that only ever passed would be the thing it was built
+to catch.
+
+Cheap by construction (hard rule 10): every case writes a `ledger.jsonl` and a
+`devkit.toml` into a `tmp_path` and calls `run()`. No repo, no `make`, no
+subprocess — the gate reads rows and compares numbers, so proving it needs rows
+and numbers.
+"""
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.core.project import load_config, repo_root
+from agentic_sdlc.repo.checks import budget
+
+MILESTONE = '---\nid: "1.0"\nname: M\nstatus: building\n---\n\n# M\n'
+
+
+@contextlib.contextmanager
+def tree(tmp_path: Path, rows: list[dict], config: str = ''):
+    """A marked tree with a milestone, a ledger and a config. Never a repo."""
+    root = tmp_path / 'repo'
+    mdir = root / 'pm' / 'roadmap' / '1.0-m'
+    mdir.mkdir(parents=True)
+    (root / '.git').mkdir()
+    (mdir / 'milestone.md').write_text(MILESTONE, encoding='utf-8')
+    (mdir / 'ledger.jsonl').write_text(
+        ''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
+    if config:
+        (root / 'devkit.toml').write_text(config, encoding='utf-8')
+    previous = Path.cwd()
+    os.chdir(root)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        yield root
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+
+
+def gate_row(name: str, ms: int, ts: str = '2026-09-05T12:00:00Z') -> dict:
+    return {'ts': ts, 'kind': 'gate', 'gate': name, 'verdict': 'PASS',
+            'duration_ms': ms}
+
+
+def check() -> tuple[int, str]:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = budget.run()
+    return code, buf.getvalue()
+
+
+BUDGET = '[tests]\nbudget = { unit = 10, integration = 60 }\n'
+
+
+# --- the failing direction, which is the whole point --------------------------
+def test_a_tier_over_its_ceiling_FAILS_and_names_the_overage(tmp_path):
+    rows = [gate_row('unit', 25_000), gate_row('integration', 30_000)]
+    with tree(tmp_path, rows, BUDGET):
+        code, out = check()
+    assert code == 1, out
+    assert 'OVER BUDGET unit' in out, out
+    assert '25.0s against a 10s ceiling' in out, out
+    assert '+15.0s' in out, out
+    # …and the tier that is fine is still reported, so a reader sees the shape
+    # of the whole thing rather than only what broke.
+    assert 'ok          integration' in out, out
+
+
+def test_the_newest_row_wins_so_an_average_cannot_hide_a_regression(tmp_path):
+    """An average hides the run that got slower behind the ten that did not,
+    and the question this gate answers is "what does it cost NOW"."""
+    rows = [gate_row('unit', 1_000, '2026-09-05T10:00:00Z'),
+            gate_row('unit', 1_000, '2026-09-05T11:00:00Z'),
+            gate_row('unit', 40_000, '2026-09-05T12:00:00Z')]
+    with tree(tmp_path, rows, BUDGET):
+        code, out = check()
+    assert code == 1, out
+    assert '40.0s' in out, out
+
+
+# --- the honest-about-not-knowing direction -----------------------------------
+def test_a_tier_with_no_row_is_UNMEASURED_and_never_a_pass(tmp_path):
+    """Rule 4's zero census, in a column of numbers. A tier nobody ran is a
+    tier nobody measured, and reporting it as under budget would be the gate
+    printing PASS over something it did not look at."""
+    with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET):
+        code, out = check()
+    assert 'UNMEASURED  integration' in out, out
+    assert 'run `make integration`' in out, out
+    # It does not FAIL on it — a tier that has never run is not a regression —
+    # but it is said out loud rather than counted as fine.
+    assert code == 0, out
+
+
+def test_every_graded_row_carries_its_AGE(tmp_path):
+    """A ceiling reported against last week's row is a ceiling reported against
+    last week's code. A number without its age reads as a fact about the tree
+    in front of you."""
+    rows = [gate_row('unit', 1_000, '2020-01-01T00:00:00Z'),
+            gate_row('integration', 1_000, '2020-01-01T00:00:00Z')]
+    with tree(tmp_path, rows, BUDGET):
+        _code, out = check()
+    assert 'measured' in out and 'ago' in out, out
+
+
+# --- rule 5: a gate ships stock defaults, and a ceiling cannot be one ---------
+def test_no_budget_declared_REPORTS_and_passes(tmp_path):
+    """"Twenty seconds" is a claim about a machine, and rule 8 says this
+    package knows nothing about its consumers'. A stock ceiling would redden
+    every tree whose runner is slower than the laptop it was picked on."""
+    with tree(tmp_path, [gate_row('unit', 999_000)]):
+        code, out = check()
+    assert code == 0, out
+    assert 'no [tests] budget is declared' in out, out
+    # Reported, not silent: a gate that passes saying nothing has told a reader
+    # nothing about the tree.
+    assert 'unit 999.0s' in out, out
+
+
+def test_an_empty_tree_says_nothing_yet_rather_than_zero(tmp_path):
+    with tree(tmp_path, []):
+        code, out = check()
+    assert code == 0, out
+    assert 'nothing yet' in out, out
+
+
+# --- the config is refused, not interpreted -----------------------------------
+@pytest.mark.parametrize('bad,needle', [
+    ('[tests]\nbudget = { unit = 0 }\n', 'not a budget'),
+    ('[tests]\nbudget = { unit = -5 }\n', 'not a budget'),
+    ('[tests]\nbudget = "fast"\n', 'must be a table'),
+    ('[tests]\nbudget = { unit = "ten" }\n', 'unit'),
+])
+def test_a_malformed_ceiling_is_a_config_error(tmp_path, bad, needle):
+    with tree(tmp_path, [], bad):
+        with pytest.raises(ConfigError) as err:
+            budget.run()
+    assert needle in str(err.value), str(err.value)
+
+
+def test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs(tmp_path):
+    """The census again: a ledger this gate cannot parse is not a tree with no
+    gate rows in it."""
+    with tree(tmp_path, [], BUDGET) as root:
+        ledger = root / 'pm/roadmap/1.0-m/ledger.jsonl'
+        ledger.write_text('{not json\n', encoding='utf-8')
+        code, out = check()
+    assert code == 1, out
+    assert 'could not be read' in out, out

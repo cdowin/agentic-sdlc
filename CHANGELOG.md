@@ -48,6 +48,44 @@ should release on a red tree if I want (we mostly wouldn't but why stop someone?
   `install.PLANS`, both directions.
 - `agentic-sdlc version` is documented. It was routed and named in no `--help` line.
 
+### The suite is cheap, or it declares itself
+
+**Measured before: 1842 tests, 240 s of wall clock, 150 s of CPU inside it — 62%. Spawn-bound,
+not compute-bound.** `make precommit` ran every one of those tests after every edit. This package
+exists to end a measured 170x — a wide gate run in an inner loop — and its own suite was the same
+defect one layer down.
+
+- **`repo_root` walks up for `.git` instead of running `git rev-parse --show-toplevel`.** Every
+  config read came through it, so that was a process per config read — and because it is an
+  `lru_cache` with no argument, the only way a test could point it at another tree was `chdir` +
+  `cache_clear()`, which meant every fixture had to be a real `git init` repo. It answers the same
+  question for a clone, a worktree, a submodule, a subdirectory and a tree outside a repo, and a
+  better one on a machine with no `git` on `PATH`. **`git_lines` still spawns**: asking git what
+  CHANGED is genuinely git's question; asking where the checkout starts is not.
+- **New targets `make unit` and `make integration`**, and **`make precommit` is now the narrow
+  rung** — gates, the hook self-tests, and the unit tier. 7 s in one process, against 240 s. The
+  integration tier runs at the close; `make milestone` still runs everything on every interpreter.
+  The `shell` mark that selects them is not new — it was derived for the matrix and had no target,
+  so the fast half of the suite was unreachable from the command line.
+- **New gate `check budget`** (`[tests] budget = { unit = 20, integration = 130 }`, seconds per
+  tier). It reads the `duration_ms` on the `gate` rows the targets already file and fails a tier
+  over its ceiling. **It ships with no ceiling and it is OFF the stock roster**: "twenty seconds"
+  is a claim about a machine, and this package knows nothing about its consumers' machines
+  (rule 8) — a stock number would redden every tree whose CI runner is slower than the laptop it
+  was picked on. It runs in `make milestone`, never in `check all`, because a per-change gate that
+  reddens over last night's timing is one somebody deletes. Every number it prints carries its own
+  AGE, because a ceiling graded against last week's row is graded against last week's code.
+- **Hard rule 10**: *prove it the cheapest way that can actually fail.* The counterweight rule 4
+  never had — and `test-writer`, `developer`, `reviewer`, `simplifier` and `verification-reviewer`
+  now carry it, so a consumer's roster inherits the rule instead of re-learning it at 240 s a run.
+- The test suite runs under `pytest-xdist`. It is a TEST-time dependency, exactly like pytest;
+  hard rule 1 governs the runtime, and a consumer's pre-push hook resolves neither.
+
+  240 s -> 189 s   the walk, and 14 fixtures that stopped building repos
+  189 s ->  96 s   xdist
+   96 s ->  62 s   two corpus constants in `gdk_gate.sh --self-test`
+   62 s ->  39 s   `--dist loadgroup`, and the tests that share this repo saying so
+
 ### The project declares its flow
 
 **New config, and it is the one section that ships LIVE rather than commented.** `[pm.states.<kind>]`

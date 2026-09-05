@@ -38,44 +38,55 @@ SUPPORT = TESTS / 'support'
 # are what the modules under tests/ currently do, and a module that changes
 # sides changes them. Marked is a COUNT — a peer adding a test to a spawning
 # module must never have to touch this file. Unmarked is the roster, because
-# the five that do not spawn are the five three interpreters still run, and
-# each one is worth naming.
+# every module on it is one the inner loop runs in milliseconds.
 #
-# The numbers shrank when the scene plane left this package: four unmarked
-# modules (the .tscn round-trip, the uid codec, the tiles grid, the scene
-# summary) went with the code they read, and thirteen marked ones went with the
-# gates they spawned. What the census ASSERTS is unchanged — a module that
-# changes sides still has to change these two lines, in the open.
-# 0.2.0 added six spawning modules at once. Three are the conveyor's, and
-# they spawn because a step machine's questions are questions about a REAL
-# git tree: test_conveyor_steps.py and test_conveyor_skip.py build one per
-# test, test_install_sdlc.py installs into one. The other three arrived with
-# the belts and the verify family. The thirtieth is test_conveyor_adopt.py,
-# the adopt list: a pin bump is verified by asking make, git and this
-# package's own CLI about a real tree, so its tests build one per test.
-# The thirty-first is test_conveyor_close.py, the two inner belts: a story
-# close asks git what is uncommitted and shells out to the narrow rung, so
-# every one of its trees is a real repo with a real commit in it.
-# The thirty-second is test_pm_flow.py, the project's declared states: every
-# case loads config through `core.project`, which finds the repo root from
-# git, so each one builds a real repo. It could have been written against a
-# dict and was not, deliberately — the thing under test is what a devkit.toml
-# on disk makes the reader do, and a fixture that skipped the file would be
-# proving the parser rather than the contract.
-# The thirty-third is test_fixture_flows.py, the census of which fixture trees
-# declare `[pm.states.*]`. It spawns for two reasons and both are the point:
-# it drives the other modules' own builders, most of which `git init` a real
-# repo, and it asks THIS checkout's CLI whether the repo the suite runs in
-# declares — self-hosting is a fact about a process, not about an import.
-MARKED_MODULES = 33
+# **THE SPLIT MOVED, and this is the record of why.** The suite was 32 marked
+# against 14 unmarked and took 240 s. It is now 19 against 26 and the two tiers
+# are 7 s and 64 s. Nothing was deleted; the pass count went UP, because tests
+# that had been marked integration for a branch they never took came back.
+#
+# Two changes did it, and the second is the one this file exists to keep true:
+#
+#   * `core/project.py`'s `repo_root` walks for `.git` instead of spawning
+#     `git rev-parse`, so a fixture is a `mkdir` rather than three processes;
+#   * `support.pm.tree` and `support.pm.git_tree` are two functions rather than
+#     one with a `git_repo=` flag. The derivation reads a CALL GRAPH, and
+#     source cannot see which side of an `if` runs — so a single builder with a
+#     spawning branch marked every module that used it, including three hundred
+#     cases that never took the branch. The default is cheap, the exception is
+#     an import you can see, and the tier follows.
+#
+# An unused `import subprocess` marks a module too, and correctly: the
+# derivation cannot know a name is never called. Eight modules carried one
+# after their `git init` went away, and dropping the dead import moved 419
+# tests back to the inner loop.
+MARKED_MODULES = 19
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
+    # The budget gate's own tests, and they had better be here: a gate
+    # about test cost proved by tests that spawn would be the joke
+    # writing itself. Rows and numbers in a tmp_path, no repo, no make.
+    'test_check_budget.py',
     'test_cli_surface.py',
     'test_consumer_independence.py',
+    'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
     'test_conveyor_state.py',
     'test_fuzz_markdown.py',
+    'test_gates_extra.py',
+    'test_grain_shape.py',
+    'test_install_sdlc.py',
+    'test_pm_flow.py',
+    'test_pm_gate.py',
+    'test_pm_guidance.py',
+    'test_pm_ledger.py',
+    'test_pm_ledger_record.py',
+    'test_pm_ledger_report.py',
+    'test_pm_ledger_report_sections.py',
+    'test_pm_ready_for.py',
+    'test_pm_verbs.py',
+    'test_replay_migration.py',
     'test_verdict.py',
     'test_verify_declares.py',
     'test_verify_rules.py',
@@ -92,14 +103,11 @@ UNMARKED_MODULES = (
 # `run_check`, `run_cli`, `run_gate`, the ledger line builders — run in
 # process, which is exactly why the derivation reads the call graph instead of
 # the module's import list.
-# `_mark_or_init` is the newest member and it earns its place by being the one
-# helper that DOES BOTH: `git init` when a case asks for a real repository, a
-# `.git` mkdir when it does not. `tree` binds it, so `tree` still reads as
-# spawning — which is correct and is also the thing to fix next: a module whose
-# every case takes the cheap branch is marked for a process it never starts.
-# The derivation reads SOURCE, and source cannot see which branch runs.
-SPAWNING_HELPERS = frozenset({'_mark_or_init', 'commit', 'git', 'porcelain',
-                              'tree'})
+# `git_tree` replaced a `git_repo=` flag on `tree`, and that is the whole
+# reason this list is short again: a builder with a spawning BRANCH marks
+# every caller, because source cannot see which branch runs. A builder that
+# spawns unconditionally marks only the modules that reach for it.
+SPAWNING_HELPERS = frozenset({'commit', 'git', 'git_tree', 'porcelain'})
 
 # A broken SUPPORT path makes `support_spawn_names()` empty and silently
 # unmarks a third of the suite, so the census asserts the package was found at

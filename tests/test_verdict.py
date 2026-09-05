@@ -672,17 +672,30 @@ def test_the_repo_local_reviewer_carries_the_same_paragraph(name):
     """Five files, one paragraph. `code-reviewer.md` has no installable, so
     nothing else in the suite would notice it drifting away from the other
     four — and a record it writes is a record the report has to read."""
-    body = definition(name)
-    marker = 'verdict: SHIP-WITH-FIXES'
-    start = body.rindex('### ', 0, body.index(marker))
+    assert _verdict_paragraph(definition(name)) == PARAGRAPH, (
+        f'{name} has drifted from the shared paragraph')
+
+
+def _verdict_paragraph(body: str) -> str:
+    """The shared verdict paragraph out of one definition.
+
+    ONE extractor, used for the reference and for every subject. It was two:
+    the subjects were cut at the next `## ` heading and the REFERENCE ran to
+    end of file, so the two agreed only while `reviewer.md` happened to end
+    with this section. The first block appended after it made all five cases
+    fail — against a paragraph that had not changed.
+
+    A comparison whose two sides are built by different rules is a second
+    scoreboard the size of a function.
+    """
+    start = body.rindex('### The verdict block')
     end = body.find('\n## ', start)
-    para = (body[start:] if end == -1 else body[start:end]).rstrip('\n')
-    assert para == PARAGRAPH, f'{name} has drifted from the shared paragraph'
+    return (body[start:] if end == -1 else body[start:end]).rstrip('\n')
 
 
-PARAGRAPH = (Path(REPO_ROOT) / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
-             / 'reviewer.md').read_text(encoding='utf-8')
-PARAGRAPH = PARAGRAPH[PARAGRAPH.rindex('### The verdict block'):].rstrip('\n')
+PARAGRAPH = _verdict_paragraph(
+    (Path(REPO_ROOT) / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
+     / 'reviewer.md').read_text(encoding='utf-8'))
 
 
 # --- R2: `landed in-place`, because a reviewer here has no hash to give -------

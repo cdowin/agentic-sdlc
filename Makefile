@@ -30,7 +30,18 @@ SHELL := /bin/bash
 PY_FLOOR  ?= 3.11
 PY_MATRIX ?= 3.11 3.12 3.13 3.14
 UV        ?= uv
-TEST_DEPS ?= --with pytest
+# xdist is a TEST-time dependency, exactly like pytest. Hard rule 1 governs the
+# RUNTIME — a consumer's pre-push hook resolves neither. The suite is
+# spawn-bound rather than compute-bound (measured: 150 s of CPU in 240 s of
+# wall), so parallelism is the difference between a gate you run and a gate you
+# work around.
+TEST_DEPS ?= --with pytest --with pytest-xdist
+# `auto` is the machine's core count. Overridable, because a shared CI runner
+# and a laptop are not the same machine.
+# `loadgroup`, not the default `load`: tests carrying an `xdist_group` mark are
+# dispatched to the same worker, which is how the handful that spawn `make`
+# against THIS repo serialise against each other without serialising the suite.
+PYTEST_N  ?= -n auto --dist loadgroup
 PYTEST    ?= $(UV) run --python $(PY_FLOOR) $(TEST_DEPS) python -m pytest
 PYTEST_Q  ?= -q
 
@@ -98,12 +109,14 @@ gdk_gate_verdict $(2) "$$summary" "$$log"; \
 exit "$$status"
 endef
 
-.PHONY: help test matrix fuzz gates hooks hooks-self-test precommit milestone pm
+.PHONY: help unit integration test matrix fuzz budget gates hooks hooks-self-test precommit milestone pm
 
 help:
 	@echo 'agentic-sdlc — make targets'
 	@echo
-	@echo '  make test        the suite on the $(PY_FLOOR) floor'
+	@echo '  make unit        the inner loop: no subprocess, one process, seconds'
+	@echo '  make integration everything that spawns — a real repo, make, a hook corpus'
+	@echo '  make test        both tiers on the $(PY_FLOOR) floor'
 	@echo '  make matrix      every claimed interpreter ($(PY_MATRIX)): $(PY_FLOOR) runs the whole suite, the rest -m "not shell" (a spawn is not interpreter-sensitive)'
 	@echo '  make fuzz        the committed seeded harnesses (differential + replay)'
 	@echo '  make gates       agentic-sdlc check all, on this repo'
@@ -125,8 +138,26 @@ help:
 pm:
 	PYTHONPATH=src python3 -m agentic_sdlc.cli pm $(ARGS)
 
+# THE LADDER, and it is the whole of decision D10.
+#
+# `unit` is the inner loop: no subprocess, no git, no make, ~7 s in one
+# process. `integration` is everything that spawns — a real repo, a real
+# `make`, an installed hook corpus — and it is minutes-adjacent, so it is not
+# something an edit should pay for. `test` is both, and it is what a close
+# runs.
+#
+# The tier is the `shell` mark, DERIVED by tests/conftest.py from what the
+# source reaches. It already existed to let the matrix skip spawning modules on
+# three of four interpreters; what it never had was a target, so the fast half
+# was unreachable from the command line and `precommit` ran everything.
+unit:
+	$(call gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) -m "not shell")
+
+integration:
+	$(call gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N) -m shell)
+
 test:
-	$(call gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q))
+	$(call gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N))
 
 # The seeded harnesses on their own, for when one of them is what you changed.
 # `make test` runs them too — they are tests, not a side quest, and a fuzz that
@@ -229,11 +260,25 @@ matrix:
 	fi; \
 	gdk_gate_verdict MATRIX "PASS on $(PY_MATRIX)" "$$log"
 
-# The per-change gate. Gates first: they take under a second and they are what
-# catches a doc or a PM-tree edit that the suite has no opinion about. A
-# composition prints its members' verdicts — one line each, nothing of its own.
-precommit: gates hooks-self-test test
+# The per-change gate, and it is the NARROW rung. Gates first: they take under
+# a second and they are what catches a doc or a PM-tree edit the suite has no
+# opinion about. A composition prints its members' verdicts — one line each,
+# nothing of its own.
+#
+# It used to run `test` — the whole suite, 240 s at the time — after every
+# edit, which is the same 170x this milestone exists to end, one layer down and
+# in the file that names it. The integration tier runs at the CLOSE, through
+# `verify --feature`, and everything runs at `milestone`.
+precommit: gates hooks-self-test unit
 
 # The full gate, and what CI runs. The matrix subsumes `test`, so it is not
 # listed twice.
-milestone: gates hooks-self-test matrix
+# The budget is asked ONCE, here, and never in the per-change gate: it grades
+# the LAST recorded run of each tier, so putting it in `check all` would let a
+# slow afternoon redden the next person's edit over a number they cannot act
+# on. It is also inherently one run behind — the row it reads is written by the
+# run before this one — which is why it catches a DOUBLING rather than a wobble.
+budget:
+	$(call gate,budget,BUDGET,$(SUM_GATES),$(DEVKIT) check budget)
+
+milestone: gates hooks-self-test matrix budget

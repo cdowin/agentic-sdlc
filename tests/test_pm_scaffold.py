@@ -13,20 +13,9 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support.pm import (frontmatter, run_cli, run_gate, write,
-                        tree as _marked_tree)
+from support.pm import frontmatter, run_cli, run_gate, write
+from support.pm import git_tree as tree
 
-# --- this module asks git real questions, so its trees are real repos ---------
-# `support.pm.tree` MARKS a tree with a `.git` directory rather than running
-# `git init`, because `repo_root` walks up for that marker and almost nothing
-# in this suite asks git anything. THIS module does — it stages and commits, to prove `pm new` writes what git then sees — so it opts in
-# once, here, rather than at 49 call sites. An integration test declaring
-# itself is the point: the default is cheap and the exception is visible.
-@contextlib.contextmanager
-def tree(*args, **kwargs):
-    kwargs.setdefault('git_repo', True)
-    with _marked_tree(*args, **kwargs) as root:
-        yield root
 
 from agentic_sdlc.repo.pm import cli, model, templates
 

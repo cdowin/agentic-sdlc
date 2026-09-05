@@ -28,6 +28,8 @@ change here lands in other projects' commit gates — treat the CLI as a publish
 
    A tool that refuses gets worked around invisibly, and then the protocol teaches nothing. `check <gate>` is the thing that FAILS a contradictory tree, in CI and pre-push, with an exit-code contract for exactly that. **`pm` moves and reports; `check` gates.** Conflating them is how the conveyor inherited a job it should never have had (0.2.0; `docs/design/state-categories.md` §7).
 
+
+10. **Prove it the cheapest way that can actually fail.** A test that spawns a process to check a pure function is an integration test by accident, and the suite pays for it forever. Default to a function call; a temp tree when the code reads files; a real repository, `make` or installed hook ONLY when the thing under test is one — and then say so, by reaching for the builder that spawns rather than passing a flag to one that might. **A tier that got slower is a finding**: it degrades a human's patience instead of a boolean, so no other gate will ever notice. This rule is the counterweight rule 4 never had — rule 4 says a gate must not print PASS over what it did not measure, and for two releases every judgement call resolved toward "more real" because nothing argued the other way. Measured 2026-09-05: 1842 tests, 240 s of wall clock with 150 s of CPU inside it, and `make precommit` running all of it after every edit — arrived at one honest fixture at a time, with every gate green the whole way down.
 ## Where things live
 
 One family and a shared floor. The rule, not the inventory — `ls src/agentic_sdlc`
@@ -92,15 +94,25 @@ A, B, C. When nothing needs him, say "nothing needs you" explicitly.
 ## Verification loop
 
 **Run `make precommit` after a change and `make milestone` before a release. Never
-hand-roll an incantation.** `make help` lists every target. If the check you need is not
+hand-roll an incantation.** `precommit` is the NARROW rung — gates, the hook
+self-tests, and the unit tier: no subprocess, one process, seconds. The
+integration tier (`make integration`) runs at the close through
+`verify --feature`, and `milestone` runs everything on every interpreter. It
+was not always split: `precommit` ran the whole suite after every edit, which is
+the same 170x this package exists to end, in the file that names it. `make help` lists every target. If the check you need is not
 a target, **add the target**, then run it — apparatus that lives in one agent's context
 is apparatus that gets rebuilt.
 
 **`make milestone` runs the matrix, and the matrix proves PYTHON on every interpreter —
 bash once.** `PY_FLOOR` runs the whole suite; the other interpreters in `PY_MATRIX` run
-`-m "not shell"`. ~85% of this suite's wall clock is `subprocess` — bash, make, git, the
-installed hook corpora — and a spawn is not something a Python version changes, so
-replaying it four times bought minutes and no information. The `shell` mark is DERIVED
+`-m "not shell"`. A spawn is not something a Python version changes, so replaying it four
+times buys minutes and no information.
+
+**That `shell` mark is the TIER**, and it is what `make unit` / `make integration` select
+on. It was derived for the matrix and had no target for years, so the fast half was
+unreachable from the command line. The suite's wall clock was ~85% subprocess, and that
+number sat in this file as a justification for skipping interpreters rather than as the
+defect it was — which is rule 10, and why rule 10 exists. The `shell` mark is DERIVED
 per module in `tests/conftest.py` from what the source does, never hand-applied (a
 hand-written one is a collection refusal). A `PY_FLOOR` outside `PY_MATRIX` is refused
 by name before the first interpreter starts: a matrix with no full pass would print PASS

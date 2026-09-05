@@ -89,6 +89,27 @@ The rev reaches git as ONE argv element and never through a shell.
 `[verify]` ABSENT IS EXIT 2 FOR ALL FIVE FLAGS, naming the section. A `--plan`
 that prints nothing and exits 0 is the same lie one step earlier than a
 `--story` that runs nothing and exits 0.
+
+WHAT `--check` CAN ANSWER, AND WHAT IT SAYS IT DID NOT (finding S3, ruled here
+because story 05's `## Close` found the same gap by other means):
+
+  * a rung's or a `run`'s `make <target>` is held against the Makefile — TEXT
+    in this checkout, parsed, never `make -n`.
+  * a `run` that is not `make <target>` is NOT validated, and the census says
+    how many of those there were. "Is `uv run … python -m pytest` runnable" is
+    a fact about the MACHINE — PATH, an interpreter's installed packages — and
+    a gate whose verdict moves with the machine answers differently in CI than
+    in a checkout, which is hard rule 8's reason for vendoring fixtures. The
+    cheap version does not even catch the case we have MEASURED: story 05's
+    fifteen rules spelled `python3 -m pytest`, and `python3` is on PATH, so a
+    `shutil.which` on the first word passes all fifteen. What catches it is
+    importing pytest under that interpreter, which boots something (hard rule
+    2). A validation that passes the only case we have observed is worse than
+    none, because it turns an unchecked thing into a checked-LOOKING one.
+  * a rule that can never be FIRST is a finding (S1). The property that matters
+    is a whole-set one — first matching rule wins per path — so it is asked by
+    running the selector over the tracked corpus, not by asking each glob in
+    isolation whether it matches anything.
 """
 from __future__ import annotations
 
@@ -103,7 +124,7 @@ from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo.verify import declares, rules, select
 from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, FORWARD,
-                                            MILESTONE, REVERSE, RuleSet,
+                                            MILESTONE, REVERSE, Rule, RuleSet,
                                             rung_target)
 from agentic_sdlc.repo.verify.select import SelectionError
 
@@ -397,13 +418,24 @@ def _scans(ruleset: RuleSet, root: Path,
             for rule in ruleset.narrow if rule.kind == REVERSE]
 
 
+def _resolver(scans: Sequence[declares.Scan]) -> select.ReverseResolver | None:
+    """`select`'s reverse resolver over these scans, or None when there are none.
+
+    One spelling, used by `plan_for` and by `--check`, because the two ask the
+    selector the SAME question against the same rule set — S1's finding was
+    `--check` answering a per-rule question where the verb answers a whole-set
+    one, and two resolvers would let them drift apart again.
+    """
+    if not scans:
+        return None
+    return lambda rule, path: declares.resolve(scans, rule, path)
+
+
 def plan_for(ruleset: RuleSet, root: Path, ref: str | None) -> select.Selection:
     """The story rung's selection for the current diff."""
     paths = changed(root, ref)
     scans = _scans(ruleset, root, tracked(root)) if paths else []
-    resolver = (lambda rule, path: declares.resolve(scans, rule, path)) \
-        if scans else None
-    return select.select(ruleset.narrow, paths, reverse=resolver)
+    return select.select(ruleset.narrow, paths, reverse=_resolver(scans))
 
 
 # --- running ------------------------------------------------------------------
@@ -626,12 +658,80 @@ def make_targets(root: Path) -> tuple[frozenset[str], str]:
     return frozenset(names), str(path)
 
 
+def _first_claims(ruleset: RuleSet, files: Sequence[str],
+                  resolver: select.ReverseResolver | None) -> dict[str, int]:
+    """tracked path -> the index of the rule that is FIRST for it. S1's answer.
+
+    ONE PATH PER `select` CALL, and that is the trap this function exists to
+    avoid rather than an oversight. A whole-corpus `Selection` CANNOT say which
+    rules fired: `select` deduplicates by COMMAND (select.py:172-190), so two
+    rules whose `run` substitutes to the same string collapse into one `Match`
+    carrying the FIRST one's index. Measured on this repo's own section — #3
+    and #4 both run the whole suite, and #15, #16, #17 and #19 all run
+    `make gates`, so four of its twenty rules are collapsed into an earlier
+    one's Match. Reading `{m.index for m in selection.matched}` as "the rules
+    that fired" therefore files four shadowing findings against a rule set in
+    which every one of the twenty fires for some path, and a gate that invents
+    drift teaches the same lesson as one that misses it: turn it off.
+
+    Asked THROUGH `select` rather than re-derived here, because first-match-wins
+    is the selector's ruling (select.py:35-38) and a second spelling of it in
+    the checker is how the checker comes to validate a selection nobody runs.
+    A tracked path the selector refuses (a control character, a capture binding
+    a value that cannot go on a command line) raises SelectionError and is exit
+    2 at the verb, which is the same answer `--changed` gives for that tree —
+    the two agreeing is the point.
+    """
+    winner: dict[str, int] = {}
+    for path in files:
+        found = select.select(ruleset.narrow, [path], reverse=resolver)
+        if found.matched:
+            winner[path] = found.matched[0].index
+    return winner
+
+
+def _shadowed(where: str, rule: Rule, claims: Sequence[str],
+              winner: dict[str, int]) -> str:
+    """S1: a rule that claims tracked files and never gets to select any of them.
+
+    `claims` is what this rule would select IN ISOLATION — the paths `paths`
+    matches, or, in the reverse direction, the paths the scanned files DECLARE.
+    The two are named differently on purpose: `scan 'tests/integration/**'`
+    does not MATCH the source path it covers, so rendering the glob as the
+    thing that matched would be a lie about which file is which.
+    """
+    example = claims[0]
+    what = (f'paths {rule.glob!r} matches' if rule.kind == FORWARD
+            else f'the files scan {rule.glob!r} found declare')
+    return (f'{where}: {what} {len(claims)} tracked file(s), and this rule is '
+            f'FIRST for NONE of them — [verify.narrow] #{winner[example]} '
+            f'claims {example!r} already, and the first matching rule wins per '
+            f'path, so this rule can never run for any diff. Same rot as a rule '
+            f'pointed at a path that was renamed away, arriving by the likelier '
+            f'route: nobody re-adds a rule for a path they renamed away, and '
+            f'everybody adds a specific rule under a general one. Move it above '
+            f'the rule that shadows it, or delete it')
+
+
 def _check(ruleset: RuleSet, root: Path) -> int:
     """Every rule and every rung, held against the tree. Findings are exit 1.
 
     A `--check` that reports OK over a rule set it did not actually RESOLVE is
-    this package's cardinal sin, so the census prints on the pass too: how many
-    rules, and how many tracked files they matched between them.
+    this package's cardinal sin, so the census prints on the pass too — and
+    every number in it is in ONE unit, DISTINCT TRACKED FILES, which is finding
+    S2's fix. It used to sum each rule's own match count and render that with a
+    noun meaning distinct files, against a denominator that was distinct files:
+    six rules all naming `src/a.py` in a repo tracking three files printed
+    `6 matched file(s) scanned of 3 tracked`. A census that can EXCEED its own
+    denominator is not counting what it scanned (hard rule 4), and this is the
+    line a consumer reads to decide whether the gate looked at anything.
+
+    The union is counted rather than the column renamed, because the union is
+    the number a reader was already trying to get out of the line — how much of
+    the tree a rule covers — and because `_first_claims` has to compute the
+    same selection anyway for S1. It is exact, not an approximation: a path is
+    claimed by SOME rule exactly when it is claimed by its FIRST one, so
+    `len(winner)` is both, and `len(winner) + len(unclaimed) == len(files)`.
     """
     files = tracked(root)
     targets, makefile = make_targets(root)
@@ -652,26 +752,36 @@ def _check(ruleset: RuleSet, root: Path) -> int:
                 f'[verify] {name}: {command!r} names make target {target!r}, '
                 f'which {makefile} does not declare')
 
-    matched_total = 0
     scans = _scans(ruleset, root, files)
+    resolver = _resolver(scans)
+    winner = _first_claims(ruleset, files, resolver)
+    first_for = set(winner.values())
+    unvalidated = 0
+
     for rule in ruleset.narrow:
         where = f'[verify.narrow] #{rule.index}'
         target = _target_of(rule.run)
-        if target and targets and target not in targets:
+        if target is None:
+            # S3, ruled in the module docstring: a `run` that is not
+            # `make <target>` is counted and named, never validated. Whether it
+            # is runnable is a fact about the machine, and the cheap spelling
+            # (`which` on the first word) passes the only case we have measured.
+            unvalidated += 1
+        elif targets and target not in targets:
             findings.append(
                 f'{where}: run {rule.run!r} names make target {target!r}, '
                 f'which {makefile} does not declare')
         if rule.kind == FORWARD:
-            hits = sum(1 for path in files if rule.pattern.fullmatch(path))
-            matched_total += hits
-            if hits == 0:
+            claims = [path for path in files if rule.pattern.fullmatch(path)]
+            if not claims:
                 findings.append(
                     f'{where}: paths {rule.glob!r} matches ZERO tracked files '
                     f'— a rule pointed at a path that was renamed away rots '
                     f'into a rule that quietly matches nothing, forever')
+            elif rule.index not in first_for:
+                findings.append(_shadowed(where, rule, claims, winner))
             continue
         found = next(one for one in scans if one.index == rule.index)
-        matched_total += found.scanned
         findings.extend(found.findings)
         if found.empty_scan:
             findings.append(
@@ -682,11 +792,39 @@ def _check(ruleset: RuleSet, root: Path) -> int:
                 f'{where}: scan {rule.glob!r} matched {found.scanned} file(s) '
                 f'and NONE declares {rule.declares!r} — a corpus that has '
                 f'drifted away from the rule reading it')
+        elif rule.index not in first_for:
+            # The reverse direction reaches S1's question by two routes: every
+            # path its declarations cover is claimed above it (shadowed), or
+            # they cover nothing that is tracked at all — a scanned corpus that
+            # declares only paths the tree no longer has. Both are "this rule
+            # can never be selected"; only the first has a rule to name.
+            claims = [path for path in files
+                      if declares.resolve(scans, rule, path) is not None]
+            if claims:
+                findings.append(_shadowed(where, rule, claims, winner))
+            else:
+                findings.append(
+                    f'{where}: scan {rule.glob!r} matched {found.scanned} '
+                    f'file(s) declaring {rule.declares!r}, and NONE of what '
+                    f'they declare is a tracked path — the declarations name a '
+                    f'tree that has moved on, so this rule can never select '
+                    f'anything')
 
     for finding in findings:
         print(f'  DRIFT  {finding}')
-    census = (f'{len(ruleset.narrow)} rule(s), {matched_total} matched file(s) '
-              f'scanned of {len(files)} tracked')
+    if unvalidated:
+        # NOTE, not DRIFT: rule 9 — it reports the fact and the caller decides.
+        # A finding here would redden every repo whose narrow rules are a real
+        # command line (this one's are), and a gate nobody can pass is a gate
+        # that gets turned off.
+        print(f'  NOTE   {unvalidated} rule(s) name a `run` that is not '
+              f'`{MAKE_PROGRAM} <target>`; this gate holds a make target to '
+              f'{makefile or MAKEFILE} and asks nothing else of a command — '
+              f'whether one is runnable is a fact about the machine, not about '
+              f'this checkout, and answering it would mean booting something')
+    census = (f'{len(ruleset.narrow)} rule(s), {len(winner)} of {len(files)} '
+              f'tracked file(s) matched by a rule, {unvalidated} run(s) '
+              f'unvalidated')
     if findings:
         print(f'[verify:check] FAIL — {len(findings)} finding(s); {census}')
         return EXIT_FINDINGS

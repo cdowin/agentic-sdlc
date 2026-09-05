@@ -48,6 +48,24 @@ should release on a red tree if I want (we mostly wouldn't but why stop someone?
   `install.PLANS`, both directions.
 - `agentic-sdlc version` is documented. It was routed and named in no `--help` line.
 
+### `verify --check` asks whether a rule can ever fire
+
+- **A rule shadowed by an earlier one is now a finding.** `--check` asked each rule's glob
+  whether it matched anything; it now asks the SELECTOR whether the rule is ever FIRST for
+  a path. A rule with matches but no first-match is dead config — it is named, together
+  with the rule that claims one of its paths and the path itself. (Rules whose `run` lines
+  substitute to the same command are *not* shadowing each other: `select` deduplicates by
+  command, and a check that read that as drift would have filed four false findings against
+  this repo's own twenty rules.)
+- **The census counts the UNION of matched paths.** It summed per-rule matches, so six rules
+  over one file in a three-file repo reported *"6 matched file(s) scanned of 3 tracked"* —
+  a census reporting more files than the tree holds. **Output shape changed** (rule 6):
+  `N rule(s), M of T tracked file(s) matched by a rule, K run(s) unvalidated`.
+- **A `run` line that is not `make <target>` is counted rather than validated, and the
+  ruling is printed.** Whether `uv run … pytest` is runnable is a fact about the machine,
+  not about the checkout, and a gate whose verdict moves with `PATH` answers differently in
+  CI than on a laptop. The silence is what went: `K run(s) unvalidated` plus a `NOTE` line.
+
 ### The extraction finishes
 
 - **A stock consumer's `check all` exited 2.** `KNOWN_GATES` named thirteen gates and five

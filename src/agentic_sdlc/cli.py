@@ -61,8 +61,12 @@ scope per operation, and none of them is "run the biggest thing"):
                                     # cost from the ledger, and run nothing —
                                     # what a dispatch author asks instead of
                                     # guessing which command is the loop
-    agentic-sdlc verify --check     # a rule matching zero tracked files, or
-                                    # naming a make target that does not exist
+    agentic-sdlc verify --check     # a rule matching zero tracked files; a
+                                    # rule that can never be FIRST because an
+                                    # earlier one claims all its paths; a rule
+                                    # naming a make target that does not
+                                    # exist; and a count of the `run` lines
+                                    # this checkout cannot validate
     (`verify --help` is the ladder, the exit codes and the refusal matrix.)
 
 This package's own version, which a consumer's adopt step and every bug report

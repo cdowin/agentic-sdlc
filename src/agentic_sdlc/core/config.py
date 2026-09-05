@@ -86,6 +86,42 @@ def table(sect: dict, name: str, key: str, fallback: dict) -> dict:
     return value
 
 
+def table_array(sect: dict, name: str, key: str,
+                fallback: tuple[dict, ...] = ()) -> tuple[dict, ...]:
+    """An ARRAY OF TABLES setting — TOML's `[[section.key]]`, ordered.
+
+    The list form of `table`, and the same refusals one dimension up. A bare
+    string is the dangerous spelling: `narrow = "paths = x"` is what an author
+    writes when they forget the double brackets, and iterating it yields its
+    CHARACTERS — the v0.9.0 shape this module exists to prevent, which would
+    here become one unusable "rule" per letter. Refused whole, never walked.
+
+    Order is preserved and every element keeps its 1-based DECLARATION index,
+    because the caller's error messages have to name the entry the author
+    wrote: a rule silently dropped from a list is worse than a refusal.
+
+    Absent takes the fallback; an empty list is refused, for `str_tuple`'s
+    reason — an empty list reads as "nothing" and downstream usually means the
+    opposite of nothing.
+    """
+    value = sect.get(key)
+    if value is None:
+        return tuple(fallback)
+    if not isinstance(value, list):
+        raise ConfigError(
+            f'[{name}] {key} must be an array of tables — write '
+            f'[[{name}.{key}]] blocks, got {value!r}')
+    if not value:
+        raise ConfigError(
+            f'[{name}] {key} is empty — remove the key (or the whole [{name}] '
+            f'section) rather than declaring nothing')
+    for index, entry in enumerate(value, start=1):
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f'[{name}.{key}] #{index} must be a table, got {entry!r}')
+    return tuple(value)
+
+
 def str_tuple_table(sect: dict, name: str, key: str,
                     fallback: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
     """A table mapping names to lists of strings — `str_tuple`, one level down.

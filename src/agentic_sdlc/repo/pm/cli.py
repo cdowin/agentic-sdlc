@@ -96,6 +96,17 @@ USAGE = """usage: agentic-sdlc pm <command>
                                           (hand entry for a dispatch no hook
                                            saw; a number not given is a key the
                                            row does not carry, never a zero)
+  ledger record --gate <name> --verdict PASS|FAIL|HANG|SKIP --duration-ms <n>
+                [--census <n>]
+                                          (what ONE gate run cost: the make
+                                           target's name, how it went, its wall
+                                           seconds, and the corpus it walked.
+                                           --census is OPTIONAL and an omitted
+                                           one is an absent key, never a zero —
+                                           a duration without a census is not
+                                           comparable across trees. Refuses
+                                           rather than filing a row with no
+                                           duration)
   ledger show <grain-id> [--json]         (that grain's rows oldest first, with
                                            the seconds since the previous status
                                            row; --json prints the raw lines)
@@ -1422,7 +1433,17 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
 # building. It says so and stops rather than picking.
 LEDGER_FLAGS = ('--from-transcript', '--event', '--agent-id', '--agent-type',
                 '--session-id', '--grain', '--tokens-in', '--tokens-out',
-                '--tool-calls', '--duration-s')
+                '--tool-calls', '--duration-s', '--duration-ms',
+                '--gate', '--verdict',
+                '--census')
+
+# The three record FORMS, by the flag that opens each, and the flags each one
+# accepts. Named as a table rather than checked ad hoc because the failure this
+# prevents is silent: a `--census` on the transcript form, or a `--tokens-in`
+# on the gate form, would be parsed and then dropped, and a flag a caller wrote
+# that changed nothing is the write-side sin with a shrug on it.
+GATE_FLAGS = ('--gate', '--verdict', '--duration-ms', '--census')
+GATE_ONLY_FLAGS = ('--verdict', '--census')
 
 DIGITS = frozenset('0123456789')
 
@@ -1541,20 +1562,33 @@ def cmd_ledger(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
-    """Append one `dispatch`/`session` row — from a transcript, or by hand.
+    """Append one row — a dispatch/session from a transcript or by hand, or a GATE.
 
-    The two forms are exclusive because they answer the same question from
-    different sources, and a run naming both would leave which one won as an
+    The forms are exclusive because they answer different questions from
+    different sources, and a run naming two would leave which one won as an
     implementation detail sitting in a durable log.
 
     Every number in the hand form is OPTIONAL and an omitted one is an omitted
     KEY, never a zero — `--tool-calls` unset means nobody counted, and a `0` in
-    that slot would read forever after as a dispatch that called no tool.
+    that slot would read forever after as a dispatch that called no tool. The
+    gate form keeps that rule for `--census` and breaks it for `--duration-ms`
+    on purpose: a gate row with no duration is the write-only column this
+    feature's own risk register condemns, so it refuses instead.
     """
     pairs, rest = _take_flags(args, LEDGER_FLAGS, noun='a value')
     if rest:
         raise Usage(f'ledger record takes flags only, not {" ".join(rest)!r}')
     flags = dict(pairs)
+    # Presence, not truth: `--gate=''` names the form and is refused BY the
+    # form, rather than falling through to "needs --from-transcript".
+    if '--gate' in flags:
+        return _record_gate(cfg, flags)
+    stray = [flag for flag in GATE_ONLY_FLAGS if flag in flags]
+    if stray:
+        raise Usage(f'{" ".join(stray)} belongs to the gate form — name '
+                    f'--gate <name> as well, or drop it: a flag this run '
+                    f'parsed and dropped would change nothing and say so '
+                    f'nowhere')
     source, grain = flags.get('--from-transcript'), flags.get('--grain')
     if source and grain:
         raise Usage('--from-transcript and --grain are exclusive: one row has '
@@ -1587,6 +1621,110 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
     _ok(f'ledger {kind} row appended to '
         f'{cfg.rel(ledger.ledger_path(mdir))}')
     return 0
+
+
+def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
+    """The gate form: what ONE gate run cost, as one row.
+
+    The caller is a shell wrapper on the path of every gate in every consumer,
+    and it DISCARDS this exit code — a ledger that cannot be written is never a
+    gate failure. That is exactly why nothing here may exit 0 having written
+    nothing: a verb that lied about recording would make the discarded failure
+    unauditable, and the missing rows would read as gates that never ran.
+    """
+    for other in ('--from-transcript', '--grain'):
+        if other in flags:
+            raise Usage(f'--gate and {other} are exclusive: a gate run is not '
+                        f'a dispatch, and one row has one subject')
+    stray = sorted(flag for flag in flags if flag not in GATE_FLAGS)
+    if stray:
+        raise Usage(f'the gate form takes {" ".join(GATE_FLAGS)} only, not '
+                    f'{" ".join(stray)} — a gate run has no agent, no session '
+                    f'and no token count, and a flag parsed then dropped is a '
+                    f'caller told nothing')
+    gate = _gate_name(flags['--gate'])
+    verdict = _gate_verdict(flags)
+    if '--duration-ms' not in flags:
+        raise Usage('--duration-ms is required with --gate: a cost row with no '
+                    'cost is a column nothing can read, and the cost is the '
+                    'whole point of the row')
+    # MILLISECONDS here and SECONDS on the dispatch form above, deliberately.
+    # A dispatch is a model turn and is never sub-second; fourteen of twenty
+    # measured GATES are, and the narrow-vs-wide pair the story belt rests on
+    # is 0.9 s against 154 s — which an integer-second row records as 0 (ratio
+    # undefined) or rounds to 1 (154x for a measured 170x).
+    duration = _count_flag('--duration-ms', flags['--duration-ms'])
+    # ABSENT, never 0. The same gate is legitimately slower on a bigger tree,
+    # so the census is what stops a duration reading as a regression — and a
+    # `0` there is the zero-file census hard rule 4 calls a cardinal sin.
+    census = (_count_flag('--census', flags['--census'])
+              if '--census' in flags else None)
+    mdir = _gate_ledger_dir(cfg)
+    try:
+        ledger.append_row(mdir, ledger.gate_row(gate, verdict, duration,
+                                                census))
+    except OSError as err:
+        raise Usage(f'{cfg.rel(ledger.ledger_path(mdir))} could not be appended '
+                    f'to ({err}); no row was written') from err
+    _ok(f'ledger gate row appended to {cfg.rel(ledger.ledger_path(mdir))}')
+    return 0
+
+
+def _gate_name(raw: str) -> str:
+    """A make-target name, or exit 2 — the string story 03's report JOINS on.
+
+    `fullmatch`, never `match`: `$` matches BEFORE a trailing newline, so
+    `TARGET.match('check\\n')` SUCCEEDS, and a name carrying one would write a
+    forged second row into a file whose whole contract is one row per line.
+    """
+    if raw and len(raw) <= ledger.GATE_NAME_MAX and ledger.GATE_NAME.fullmatch(
+            raw):
+        return raw
+    raise Usage(f'--gate takes a make-target name '
+                f'([A-Za-z0-9][A-Za-z0-9._+-]*, at most '
+                f'{ledger.GATE_NAME_MAX} characters), not {raw!r}')
+
+
+def _gate_verdict(flags: dict[str, str]) -> str:
+    """One of the closed set, or exit 2.
+
+    A gate's console line is prose — `PASS (12 files)`, `FAIL — 3 findings` —
+    and a durable column is not: free text there gives one outcome five
+    spellings, and a report that groups by it counts none of them twice.
+    """
+    if '--verdict' not in flags:
+        raise Usage('--verdict is required with --gate '
+                    f'({" ".join(ledger.GATE_VERDICTS)})')
+    raw = flags['--verdict']
+    if raw not in ledger.GATE_VERDICTS:
+        raise Usage(f'--verdict is one of {" ".join(ledger.GATE_VERDICTS)}, '
+                    f'not {raw!r} — the summary line is prose, this column is '
+                    f'a vocabulary')
+    return raw
+
+
+def _gate_ledger_dir(cfg: model.PmConfig) -> Path:
+    """Where a gate row lands, or a REFUSAL naming which of the two it was.
+
+    Exit 1, not 2: neither of these is a bad argument. There is nothing to
+    record INTO, which is a precondition, and the caller (a gate) can tell a
+    "your tree has no milestone building" from a "you spelled that wrong"
+    without parsing either message. Two milestones building keeps
+    `_building_ledger_dir`'s own answer, so the ambiguity has ONE wording
+    wherever it is met.
+    """
+    if not cfg.roadmap.is_dir():
+        raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
+                      f'there is no ledger this gate row belongs to; no row '
+                      f'was written')
+    building = model.building_milestones(cfg)
+    if not building:
+        raise Refused(f'no milestone in {cfg.rel(cfg.roadmap)} is '
+                      f'`building`, so there is no ledger this gate row '
+                      f'belongs to; no row was written')
+    if len(building) > 1:
+        _building_ledger_dir(cfg, 'this gate row')
+    return building[0][2].parent
 
 
 def _required(flags: dict[str, str], name: str) -> str:

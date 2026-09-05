@@ -39,6 +39,8 @@ THE FIXTURES (tests/fixtures/transcripts/):
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -54,6 +56,10 @@ MAIN_SESSION = FIXTURES / 'main-session.jsonl'
 STORY = '0.1/alpha/s0'
 BUG = '0.1/bugs/b0'
 LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+
+# A stamp for the rows a case seeds by hand, and the stock gate-form argv.
+TS = '2026-09-03T10:00:00Z'
+GATE = ('--gate', 'check', '--verdict', 'PASS', '--duration-ms', '12')
 
 # The tree `support.pm.tree()` builds: one milestone `building`, one feature
 # `building`, and whatever story statuses the case asked for.
@@ -411,6 +417,281 @@ class HandEntry(unittest.TestCase):
             self.assertEqual(only_row(root)['kind'], 'session')
 
 
+class GateEntry(unittest.TestCase):
+    """`--gate`: one gate RUN's cost — the third record form.
+
+    The row shape is pinned by the story so story 02 (the shell caller) and
+    story 03 (the report) build against one contract:
+
+        {"ts":…,"kind":"gate","gate":"check","verdict":"PASS",
+         "duration_ms":12,"census":228}
+    """
+
+    def test_a_gate_row_round_trips_with_exactly_the_keys_given(self):
+        with tree() as root:
+            code, out = record(root, *GATE, '--census', '228')
+            self.assertEqual(code, 0, out)
+            row = only_row(root)
+        self.assertEqual(stamped(row), {
+            'kind': 'gate', 'gate': 'check', 'verdict': 'PASS',
+            'duration_ms': 12, 'census': 228,
+        })
+
+    def test_a_census_not_given_is_a_key_the_row_does_not_carry(self):
+        """The gate reported none; a `0` would say it walked nothing."""
+        with tree() as root:
+            self.assertEqual(record(root, *GATE)[0], 0)
+            row = only_row(root)
+        self.assertNotIn('census', row)
+        self.assertEqual(['duration_ms', 'gate', 'kind', 'ts', 'verdict'],
+                         sorted(row))
+
+    def test_a_census_of_zero_is_recorded_because_zero_is_a_measurement(self):
+        with tree() as root:
+            self.assertEqual(record(root, *GATE, '--census', '0')[0], 0)
+            self.assertEqual(only_row(root)['census'], 0)
+
+    def test_a_duration_of_zero_is_recorded_for_the_same_reason(self):
+        with tree() as root:
+            self.assertEqual(record(root, '--gate', 'z-layer-scan',
+                                    '--verdict', 'PASS',
+                                    '--duration-ms', '0')[0], 0)
+            self.assertEqual(only_row(root)['duration_ms'], 0)
+
+    def test_a_gate_row_carries_no_grain_and_no_tree_snapshot(self):
+        """A gate is not a grain: the spend table must not be able to bill one."""
+        with tree(story_statuses=('building',)) as root:
+            self.assertEqual(record(root, *GATE)[0], 0)
+            row = only_row(root)
+        self.assertNotIn('grain', row)
+        self.assertNotIn('tree', row)
+
+    def test_every_pre_existing_byte_survives_the_append(self):
+        """`append_row`'s append-only promise, byte-compared — not a line count."""
+        with tree() as root:
+            put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
+            before = (root / LEDGER_REL).read_bytes()
+            code, out = record(root, *GATE, '--census', '228')
+            self.assertEqual(code, 0, out)
+            after = (root / LEDGER_REL).read_bytes()
+        self.assertEqual(before, after[:len(before)])
+        self.assertEqual(2, len(after.decode('utf-8').splitlines()))
+
+    def test_every_verdict_in_the_closed_set_is_accepted(self):
+        for verdict in ledger.GATE_VERDICTS:
+            with self.subTest(verdict=verdict), tree() as root:
+                code, out = record(root, '--gate', 'check', '--verdict',
+                                   verdict, '--duration-ms', '3')
+                self.assertEqual(code, 0, out)
+                self.assertEqual(only_row(root)['verdict'], verdict)
+
+    def test_the_verb_says_which_ledger_it_wrote_to(self):
+        with tree() as root:
+            code, out = record(root, *GATE)
+        self.assertEqual(code, 0, out)
+        self.assertIn('gate row appended to', out)
+        self.assertIn(LEDGER_REL, out)
+
+    def test_two_runs_of_one_gate_are_two_rows(self):
+        """A gate's cost is a series, not a fact — the report needs both."""
+        with tree() as root:
+            self.assertEqual(record(root, *GATE)[0], 0)
+            self.assertEqual(record(root, '--gate', 'check', '--verdict',
+                                    'FAIL', '--duration-ms', '40')[0], 0)
+            rows = ledger_rows(root)
+        self.assertEqual([12, 40], [r['duration_ms'] for r in rows])
+
+    def test_the_narrow_and_the_wide_run_join_on_the_gate_name(self):
+        """Ship criterion 3 — the RATIO has to be derivable from the rows.
+
+        Two rows, two gate names, and the seconds beside the corpus each one
+        walked: 154 / 1 is the 170x measurement the dispatch bar rests on, and
+        the census is what stops a bigger tree reading as a slower gate.
+        """
+        with tree() as root:
+            self.assertEqual(record(root, '--gate', 'unit-module', '--verdict',
+                                    'PASS', '--duration-ms', '1',
+                                    '--census', '1')[0], 0)
+            self.assertEqual(record(root, '--gate', 'unit', '--verdict',
+                                    'PASS', '--duration-ms', '154',
+                                    '--census', '171')[0], 0)
+            by_gate = {r['gate']: r for r in ledger_rows(root)}
+        self.assertEqual(154, by_gate['unit']['duration_ms']
+                         // by_gate['unit-module']['duration_ms'])
+        self.assertEqual([1, 171], [by_gate['unit-module']['census'],
+                                    by_gate['unit']['census']])
+
+
+class GateLoudFailure(unittest.TestCase):
+    """It never exits 0 having written nothing (story criterion 3).
+
+    The FAIL-OPEN promise is the shell caller's — story 02 discards this exit
+    code so a ledger that cannot be written is never a gate failure. That is
+    exactly why this verb must not lie about having recorded: a silent success
+    would make the discarded failure unauditable.
+    """
+
+    def test_no_pm_tree_at_all_is_named_and_writes_nothing(self):
+        with tree() as root:
+            shutil.rmtree(root / 'pm')
+            code, out = record(root, *GATE)
+        self.assertEqual(code, 1, out)
+        self.assertIn('no PM tree', out)
+        self.assertEqual([], list(root.rglob('ledger.jsonl')))
+
+    def test_no_building_milestone_is_the_OTHER_message(self):
+        with tree(milestone_status='planning') as root:
+            code, out = record(root, *GATE)
+            self.assertEqual(code, 1, out)
+            self.assertIn('is `building`', out)
+            self.assertEqual([], list(root.rglob('ledger.jsonl')))
+
+    def test_two_building_milestones_are_named_never_chosen(self):
+        with tree() as root:
+            write(root / 'pm/roadmap/0.2-next/milestone.md',
+                  {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
+            code, out = record(root, *GATE)
+            self.assertEqual(code, 2, out)
+            self.assertIn('2 milestones are building', out)
+            self.assertEqual([], list(root.rglob('ledger.jsonl')))
+
+    def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed(self):
+        if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits
+            self.skipTest('running as root: a read-only file is still writable')
+        with tree() as root:
+            put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
+            path = root / LEDGER_REL
+            before = path.read_bytes()
+            path.chmod(0o444)
+            try:
+                code, out = record(root, *GATE)
+            finally:
+                path.chmod(0o644)
+            self.assertEqual(code, 2, out)
+            self.assertIn('could not be appended to', out)
+            self.assertEqual(before, path.read_bytes())
+
+
+class GateRefusals(unittest.TestCase):
+    """SDLC § 5's matrix for the new surface. Every case refuses WITHOUT a write.
+
+    A half-written ledger line is worse than a missing one: `records_of` then
+    reports a parse defect on a line nobody wrote. So each case asserts the
+    file's BYTES before and after, not just the exit code.
+    """
+
+    def refuses(self, root, *argv, needle: str = '') -> str:
+        before = ledger_lines(root)
+        code, out = record(root, *argv)
+        self.assertEqual(code, 2, out)
+        self.assertEqual(ledger_lines(root), before,
+                         f'a refusal wrote a row: {argv}')
+        if needle:
+            self.assertIn(needle, out)
+        return out
+
+    def test_the_gate_name_grammar(self):
+        hostile = (
+            '',                      # a row naming no gate is unattributable
+            'lint scan',             # whitespace: two goals wearing one name
+            'a;rm -rf /', 'a`id`', 'a$(id)', 'a|b', 'a&b',   # metacharacters
+            '../../etc/passwd', '/etc/passwd', 'a/b', '~/x',  # traversal
+            '-fake-flag',            # a leading `-` posing as a flag
+            '.', '..',               # dot segments
+            'x' * 65,                # over-long
+            'a b', 'a\nb', 'a\tb', 'a\x00b',   # line and field breakers
+            'a b', 'a b',            # what LINE_BREAKERS escapes
+            'chëck',                 # outside the make-target alphabet
+            'check\n',               # `$` matches BEFORE a trailing newline
+        )
+        with tree() as root:
+            put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
+            for name in hostile:
+                with self.subTest(gate=name):
+                    self.refuses(root, '--gate', name, '--verdict', 'PASS',
+                                 '--duration-ms', '12',
+                                 needle='make-target name')
+
+    def test_a_forged_second_row_never_reaches_the_escape(self):
+        """`LINE_BREAKERS` escapes U+2028/9 on WRITE; the name is refused first.
+
+        Both are asserted: the escape still works for the rows that legitimately
+        carry prose, and the gate name never gets there.
+        """
+        with tree() as root:
+            self.refuses(root, '--gate', 'a {"kind":"gate"}',
+                         '--verdict', 'PASS', '--duration-ms', '12')
+        line = ledger.dumps({'k': 'a b'})
+        self.assertNotIn(' ', line)
+        self.assertIn('\\u2028', line)
+
+    def test_a_flag_at_the_end_of_argv_never_adopts_the_next_token(self):
+        with tree() as root:
+            for flag in ('--gate', '--verdict', '--duration-ms', '--census'):
+                with self.subTest(flag=flag):
+                    self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                                 '--duration-ms', '12', flag,
+                                 needle=f'{flag} needs')
+
+    def test_the_verdict_is_a_closed_set(self):
+        hostile = ('', 'pass', 'PASS ', 'PASS\n{"kind":"gate"}', 'OK',
+                   'PASS (12 files)', 'x' * 257, 'PASS FAIL')
+        with tree() as root:
+            put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
+            for value in hostile:
+                with self.subTest(verdict=value):
+                    self.refuses(root, '--gate', 'check', '--verdict', value,
+                                 '--duration-ms', '12', needle='--verdict')
+
+    def test_the_numbers_are_non_negative_decimal_integers(self):
+        bad = ('-1', '1.5', '', '+5', '1e3', '0x10', ' 12 ', 'abc', '1_0', '٣')
+        with tree() as root:
+            put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
+            for value in bad:
+                with self.subTest(flag='--duration-ms', value=value):
+                    self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                                 f'--duration-ms={value}',
+                                 needle='non-negative integer')
+                with self.subTest(flag='--census', value=value):
+                    self.refuses(root, *GATE, f'--census={value}',
+                                 needle='non-negative integer')
+
+    def test_a_cost_row_with_no_cost_refuses_rather_than_writing_a_partial(self):
+        with tree() as root:
+            self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                         needle='--duration-ms')
+            self.refuses(root, '--gate', 'check', '--duration-ms', '12',
+                         needle='--verdict')
+
+    def test_two_record_forms_in_one_call(self):
+        with tree() as root:
+            self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                         '--duration-ms', '12', '--grain', STORY,
+                         needle='exclusive')
+            self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                         '--duration-ms', '12', '--from-transcript',
+                         str(SUBAGENT), '--event', 'Stop', needle='exclusive')
+
+    def test_a_gate_flag_without_the_gate_form_is_never_ignored(self):
+        """A flag silently dropped is the write-side sin with a shrug on it."""
+        with tree() as root:
+            self.refuses(root, '--grain', STORY, '--verdict', 'PASS',
+                         needle='--gate')
+            self.refuses(root, '--grain', STORY, '--census', '228',
+                         needle='--gate')
+
+    def test_a_dispatch_flag_on_the_gate_form_is_never_ignored(self):
+        with tree() as root:
+            for flag, value in (('--tokens-in', '5'), ('--tool-calls', '5'),
+                                ('--agent-type', 'developer'),
+                                ('--session-id', 'x'), ('--agent-id', 'y'),
+                                ('--event', 'Stop')):
+                with self.subTest(flag=flag):
+                    self.refuses(root, '--gate', 'check', '--verdict', 'PASS',
+                                 '--duration-ms', '12', flag, value,
+                                 needle=flag)
+
+
 class Show(unittest.TestCase):
     """`pm ledger show` — a subtraction over raw rows, and nothing more."""
 
@@ -506,7 +787,7 @@ class Show(unittest.TestCase):
                                    'done'))
             before = run_cli(root, 'ledger', 'show', STORY)[1]
             self.assertEqual(record(root, '--grain', STORY,
-                                    '--duration-s', '30')[0], 0)
+                                    '--duration-ms', '30')[0], 0)
             after = run_cli(root, 'ledger', 'show', STORY)[1]
         self.assertIn('first row → terminal row: 900s', before)
         self.assertIn('first row → terminal row: 900s', after)

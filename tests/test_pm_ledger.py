@@ -25,8 +25,10 @@ as the parse, because compactness and key order are half the shape.
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from support.pm import (
     damage,
@@ -41,6 +43,11 @@ from support.pm import (
 from agentic_sdlc.repo.pm import ledger, model
 
 BUG_ID = '0.1/bugs/b0'
+
+# A fixed stamp for the row-shape cases: `gate_row`'s own `ts` is asserted by
+# the CLI cases, and pinning it here keeps a key-set assertion from depending
+# on the clock.
+GATE_TS = '2026-09-05T14:02:11Z'
 
 
 def only_row(root) -> dict:
@@ -493,6 +500,103 @@ class MergeAttribute(unittest.TestCase):
             body = (root / '.gitattributes').read_text(encoding='utf-8')
         self.assertIn(f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union',
                       body)
+
+
+class GateRow(unittest.TestCase):
+    """The `gate` row — one gate RUN's cost, minted by `ledger.gate_row`.
+
+    Story 02 (the shell that calls the verb) and story 03 (the report that
+    prints it) both build against this exact key set, so every case here
+    asserts `sorted(row)` rather than membership: a membership check passes on
+    a row carrying a sixth key nobody agreed to.
+    """
+
+    def test_the_row_is_exactly_these_six_keys(self):
+        row = ledger.gate_row('check', 'PASS', 12, 228, ts=GATE_TS)
+        self.assertEqual(['census', 'duration_ms', 'gate', 'kind', 'ts',
+                          'verdict'], sorted(row))
+        self.assertEqual({'ts': GATE_TS, 'kind': 'gate', 'gate': 'check',
+                          'verdict': 'PASS', 'duration_ms': 12, 'census': 228},
+                         row)
+
+    def test_a_census_nobody_reported_is_an_absent_key_never_a_zero(self):
+        """A `0` census is this package's cardinal sin with a number on it —
+        indistinguishable afterwards from a gate that really walked nothing."""
+        row = ledger.gate_row('check', 'PASS', 12, None, ts=GATE_TS)
+        self.assertEqual(['duration_ms', 'gate', 'kind', 'ts', 'verdict'],
+                         sorted(row))
+
+    def test_a_census_of_zero_is_KEPT_because_zero_is_a_measurement(self):
+        row = ledger.gate_row('check', 'FAIL', 0, 0, ts=GATE_TS)
+        self.assertEqual(0, row['census'])
+        self.assertEqual(0, row['duration_ms'])
+
+    def test_a_gate_is_not_a_grain_and_carries_no_grain_key(self):
+        """Folding a gate into the spend table would make `pm ledger report`
+        attribute a gate's seconds to whatever grain was live at the time."""
+        row = ledger.gate_row('check', 'PASS', 12, 228, ts=GATE_TS)
+        self.assertNotIn('grain', row)
+        self.assertNotIn('tree', row)
+        self.assertEqual('gate', ledger.KIND_GATE)
+        self.assertNotIn(ledger.KIND_GATE,
+                         (ledger.KIND_STATUS, ledger.KIND_DECISION,
+                          ledger.KIND_DISPATCH, ledger.KIND_SESSION))
+
+    def test_one_row_is_one_compact_line(self):
+        line = ledger.dumps(ledger.gate_row('check', 'PASS', 12, 228,
+                                            ts=GATE_TS))
+        self.assertNotIn('\n', line)
+        self.assertNotIn(', ', line)
+        self.assertEqual(1, len(line.splitlines()))
+
+
+class AppendNeverJoinsALineItDidNotWrite(unittest.TestCase):
+    """`append_row`'s append-only promise, generated AGAINST its own docstring.
+
+    A ledger whose last line lost its newline — a killed writer, a hand edit, a
+    `merge=union` that landed a fragment — is the one shape where "open('a')
+    and write one line" produces `{…}{…}` on ONE line: two rows nobody can
+    read, one of them invalid, and `read_rows` reports a parse defect on a line
+    nobody wrote.
+    """
+
+    def ledger_dir(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return Path(tmp.name)
+
+    def test_a_torn_last_line_is_closed_rather_than_joined(self):
+        mdir = self.ledger_dir()
+        torn = ledger.dumps(ledger.status_row('0.1/a/s0', 'ready', 'building',
+                                              ts=GATE_TS))
+        ledger.ledger_path(mdir).write_text(torn, encoding='utf-8')
+        ledger.append_row(mdir, ledger.gate_row('check', 'PASS', 12, 228,
+                                                ts=GATE_TS))
+        raw = ledger.ledger_path(mdir).read_text(encoding='utf-8')
+        self.assertTrue(raw.startswith(torn), raw)
+        rows = ledger.read_rows(ledger.ledger_path(mdir))
+        self.assertEqual(['status', 'gate'], [r.data['kind'] for r in rows])
+
+    def test_a_row_of_an_unknown_future_kind_survives_byte_identical(self):
+        mdir = self.ledger_dir()
+        foreign = '{"ts":"2030-01-01T00:00:00Z","kind":"wombat","x":[1,2]}\n'
+        ledger.ledger_path(mdir).write_text(foreign, encoding='utf-8')
+        ledger.append_row(mdir, ledger.gate_row('check', 'PASS', 12, None,
+                                                ts=GATE_TS))
+        raw = ledger.ledger_path(mdir).read_bytes()
+        self.assertEqual(foreign.encode('utf-8'), raw[:len(foreign)])
+        self.assertEqual(2, len(ledger.read_rows(ledger.ledger_path(mdir))))
+
+    def test_a_well_formed_ledger_gains_exactly_one_line(self):
+        mdir = self.ledger_dir()
+        first = ledger.dumps(ledger.gate_row('check', 'PASS', 1, 1,
+                                             ts=GATE_TS)) + '\n'
+        ledger.ledger_path(mdir).write_text(first, encoding='utf-8')
+        ledger.append_row(mdir, ledger.gate_row('lint', 'FAIL', 2, 2,
+                                                ts=GATE_TS))
+        raw = ledger.ledger_path(mdir).read_text(encoding='utf-8')
+        self.assertEqual(2, len(raw.splitlines()))
+        self.assertTrue(raw.startswith(first), raw)
 
 
 def skills_attribute_line() -> str:

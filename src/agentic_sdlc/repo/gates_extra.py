@@ -58,6 +58,12 @@ Exit: 0 = printed (possibly nothing) | 2 = the value is not a usable roster."""
 # A make goal, and nothing that could be read as anything else. Anchored whole,
 # so every rejection below is a rejection of the WHOLE name rather than of a
 # suffix somebody could smuggle past.
+# `fullmatch`, and the `$` is redundant beside it ON PURPOSE — belt and braces
+# on the one line where a miss is a shell injection. `$` matches BEFORE a
+# trailing newline, so `TARGET.match("check\n")` succeeded and a `[gates] extra`
+# entry ending in a newline reached a make command line as two goals. Found
+# 2026-09-05 while building the gate-cost row's own name grammar, which uses
+# `fullmatch` and pins that exact string as a refusal.
 TARGET = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._+-]*$')
 # Long enough for any real target, short enough that a pasted paragraph or a
 # base64 blob is refused as the mistake it is.
@@ -72,7 +78,7 @@ def targets() -> tuple[str, ...]:
     """
     roster = str_tuple(config_section(SECTION), SECTION, KEY, ())
     bad = [name for name in roster
-           if not TARGET.match(name) or len(name) > MAX_LENGTH]
+           if not TARGET.fullmatch(name) or len(name) > MAX_LENGTH]
     if bad:
         raise ConfigError(
             f'[{SECTION}] {KEY} names {len(bad)} value(s) that are not make '

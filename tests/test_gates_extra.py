@@ -37,7 +37,6 @@ def repo_with(config: str | None):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         root.mkdir()
-        (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
         if config is not None:
             (root / 'devkit.toml').write_text(config, encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
@@ -187,3 +186,18 @@ def test_targets_raises_rather_than_returning_a_short_roster():
     with repo_with('[gates]\nextra = ["fine", "not fine"]\n'):
         with pytest.raises(ConfigError):
             gates_extra.targets()
+
+
+def test_a_target_name_ending_in_a_newline_is_refused():
+    """`$` matches BEFORE a trailing newline, so `.match` said yes to this.
+
+    Found 2026-09-05 while a sibling grammar was being written with `fullmatch`
+    and pinned this exact string. The value here is INTERPOLATED INTO A MAKE
+    COMMAND LINE, so `"check\\n"` reached it as two goals — which is the same
+    class as the whitespace case this module already refuses, arriving through
+    a character the refusal could not see.
+    """
+    with repo_with('[gates]\nextra = ["check\\n"]\n'):
+        code, out, err = run()
+    assert code == 2, out
+    assert 'extra' in err

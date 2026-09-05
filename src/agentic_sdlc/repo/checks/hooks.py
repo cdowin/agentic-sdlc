@@ -8,7 +8,7 @@ signal anywhere. This package told its consumers the corpus was self-hosted
 HERE while `core.hooksPath` was unset in every checkout of it, for two releases
 (0.24.0/bugs/self-hosting-has-no-arm-or-verify-target).
 
-Four questions, and the last two are the ones a path check alone gets wrong:
+Five questions, and the last three are the ones a path check alone gets wrong:
 
   ARMED       `core.hooksPath` resolves to this repo's `tools/hooks`.
   A FILE      the entry is a regular file at all. Git's hook universe is every
@@ -27,6 +27,37 @@ Four questions, and the last two are the ones a path check alone gets wrong:
               anything and exits 1 — where only exit 2 is a BLOCK. It is on
               disk, it is executable, it looks installed, and it stops nothing.
               A gate that asks only where a path points calls that tree armed.
+  STILL SAYS  a hook that ships its own block/allow corpus still returns the
+  NO          verdicts that corpus asserts. `--self-test` replays it, and the
+              hook prints `SELF-TEST OK` when every case came back the way the
+              corpus says it must.
+
+THE REPLAY IS HERE, not in each consumer's Makefile. This kit installs the
+corpus, so this kit owns the gate over it (0.2.0/D2's rule, one level up: the
+kit that owns the ARTIFACT owns the gate). It used to be twenty per-consumer
+make targets each repo had to remember to wire, and **a guard nobody wired is a
+guard that is not there** — the same failure this package already shipped once,
+with hooks that were installed, executable, and stopping nothing.
+
+It stayed part of THIS gate rather than becoming a second one. Both halves need
+the corpus on disk, both are wanted by exactly the repos that ran
+`install-hooks`, and both walk `tools/hooks/` — a second gate would be a second
+enumeration of one directory, which is the shape that lets two censuses of the
+same tree disagree. Two roster names that are on and off together are two names
+for one decision.
+
+WHICH HOOKS CARRY A CORPUS IS DERIVED, never a roster — a roster silently skips
+the hook added after it was written, which is exactly how `HOOKS_WITH_CORPUS`
+in one Makefile emptied out and kept passing. A hook is a CANDIDATE when its
+source names `--self-test` on a line that is not a comment; the candidate is
+then RUN, and only `SELF-TEST OK` on exit 0 is a pass. The text probe is
+deliberately generous because the run is the proof: a file that merely mentions
+the flag becomes a finding, never a silent green.
+
+**LOUD ON ZERO.** A corpus in which NOTHING declares a self-test is a finding,
+not a quiet pass: from here, an uninstalled tree and a passing one look
+identical, and `0 hook(s) SELF-TEST OK` printed as a PASS is the exact defect
+this package's own `make hooks-self-test` carried until 0.2.0.
 
 The RUNS probe is derived from each hook's SHAPE, never a roster — a roster
 silently skips the hook added after it was written:
@@ -46,9 +77,10 @@ shapes doctor.sh excludes, for the same reason: neither is a hook git runs.
 
 Deliberately NOT a second hook suite. Behaviour is proven by
 `tests/test_hooks_payloads.py`, and for the three hooks that ship one by their
-own `--self-test` corpus through `make hooks-self-test`. What is asked here is
-the question none of those can answer, because every one of them runs a COPY in
-a temp repo: is THIS checkout's corpus wired to git, and able to start.
+own `--self-test` corpus. What is asked here is the question none of those can
+answer, because every one of them runs a COPY in a temp repo: is THIS
+checkout's corpus wired to git, able to start, and still returning the verdicts
+its own corpus asserts.
 
 No devkit.toml section. `tools/hooks/` is where `install-hooks` puts the corpus
 in every consumer, so it is a fact about the package rather than a per-repo
@@ -57,6 +89,7 @@ choice, and a knob nobody sets is a knob that goes wrong unread.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -80,6 +113,21 @@ UNREADABLE_PAYLOAD = 'not json {{{'
 FAIL_OPEN = 0
 # The finding column, wide enough for the longest label.
 LABEL_WIDTH = len('NOT EXECUTABLE')
+
+# The self-test contract, as the shipped hooks spell it: the flag they answer,
+# and the one line that means every case in their corpus came back the way the
+# corpus says it must. The MARKER matters as much as the exit code — a hook fed
+# a flag it does not handle falls through to its ordinary path and can exit 0
+# without replaying anything, which would be a corpus reporting a pass it never
+# ran.
+SELF_TEST_FLAG = '--self-test'
+SELF_TEST_OK = 'SELF-TEST OK'
+# A non-comment line naming the flag. Generous on purpose: it only nominates a
+# CANDIDATE, and the run above is what proves one. The comment exclusion is not
+# cosmetic — every hook that ships a corpus documents it in a header block
+# first, and so do several that do not.
+SELF_TEST_DECL = re.compile(rf'^(?![ \t]*#).*{re.escape(SELF_TEST_FLAG)}',
+                            re.MULTILINE)
 
 
 def _entries(directory: Path) -> Walk:
@@ -143,6 +191,38 @@ def _runs(path: Path, root: Path) -> str:
     return ''
 
 
+def _source(path: Path) -> str:
+    """The hook's text, or '' when it cannot be read. An unreadable hook is
+    already a finding on another axis (`_runs` starts it), so this never
+    invents a second one — it simply nominates no corpus."""
+    try:
+        return path.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return ''
+
+
+def _self_test(path: Path, root: Path) -> str:
+    """'' when the hook's own corpus replayed clean; the finding text when not.
+
+    `input=''` is load-bearing: every `cc-*.sh` reads its payload from stdin, so
+    a candidate that does NOT actually handle the flag would otherwise block
+    forever on a terminal that never sends one, and a gate that hangs is worse
+    than a gate that fails.
+    """
+    done = subprocess.run(['bash', str(path), SELF_TEST_FLAG], input='',
+                          text=True, capture_output=True, cwd=root)
+    said = (done.stderr or done.stdout).strip().splitlines()
+    tail = f': {said[-1]}' if said else ''
+    if done.returncode != 0:
+        return (f'fails its own {SELF_TEST_FLAG} corpus (exit '
+                f'{done.returncode}){tail}')
+    if SELF_TEST_OK not in done.stdout:
+        return (f'names {SELF_TEST_FLAG} and does not answer it — exit 0 with '
+                f'no {SELF_TEST_OK!r} line, so nothing was replayed and the '
+                f'zero it reports is not a pass{tail}')
+    return ''
+
+
 def run() -> int:
     root = repo_root()
     hooks = root / HOOKS_DIR
@@ -184,7 +264,7 @@ def run() -> int:
               f'{census} can run')
         return 1
 
-    ran = parsed = 0
+    ran = parsed = replayed = 0
     for path in entries:
         rel = path.relative_to(root)
         if not path.is_file():
@@ -205,14 +285,35 @@ def run() -> int:
             continue
         broken = _runs(path, root)
         if broken:
+            # A hook that cannot start cannot replay a corpus either, and one
+            # finding per hook is the honest count — the second would be the
+            # same fact wearing a different label.
             findings.append(('DEAD', f'{rel} {broken}'))
-        elif path.name.startswith(CC_PREFIX):
+            continue
+        if path.name.startswith(CC_PREFIX):
             ran += 1
         else:
             parsed += 1
+        if SELF_TEST_DECL.search(_source(path)):
+            replayed += 1
+            failed = _self_test(path, root)
+            if failed:
+                findings.append(('SELF-TEST', f'{rel} {failed}'))
+
+    if not replayed:
+        # Rule 4, one axis down from the empty-corpus FAIL above: the directory
+        # holds hooks and not one of them replays anything. An uninstalled tree
+        # and a passing one are indistinguishable from here, so this can never
+        # be a quiet green.
+        findings.append((
+            'NO CORPUS',
+            f'not one hook under {HOOKS_DIR}/ declares a {SELF_TEST_FLAG} '
+            f'corpus, so nothing was replayed — an uninstalled corpus and a '
+            f'passing one print the same word from here'))
 
     scope = (f'{census}; {ran} fail open on a payload they cannot read, '
-             f'{parsed} parse')
+             f'{parsed} parse, {replayed} replay their own {SELF_TEST_FLAG} '
+             f'corpus')
     if findings:
         for label, said in findings:
             print(f'  {label:<{LABEL_WIDTH}} {said}')

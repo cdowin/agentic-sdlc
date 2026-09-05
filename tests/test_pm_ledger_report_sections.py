@@ -785,5 +785,216 @@ class Refusals(unittest.TestCase):
         self.assertEqual(out.count('no verdict block'), 2)
 
 
+
+# --- section 6: gate cost -----------------------------------------------------
+# The feature's own risk 3 is that telemetry nobody reads is cost with no
+# benefit, which is why this section is the feature's ship blocker rather than
+# its garnish. So the cases below pin the two ways the table could lie —
+# a gate omitted for having only one run, and a delta whose corpus moved
+# presented as a regression — and hard rule 4's read side: a row this section
+# cannot use is NAMED, never dropped into silence.
+GATES = 'gate cost'
+
+
+def gate_line(ts: str, gate: str, verdict: str = 'PASS',
+              duration_ms: int | None = 0, census: int | None = None) -> str:
+    from agentic_sdlc.repo.pm import ledger as _ledger
+    return _ledger.dumps(_ledger.gate_row(gate, verdict, duration_ms,
+                                          census=census, ts=ts))
+
+
+def gates_report(test, *lines: str, argv: tuple = ()) -> str:
+    """A tree whose ledger is exactly the gate rows a case cares about."""
+    with tree(story_statuses=('done', 'ready')) as root:
+        put_ledger(root, *lines)
+        code, out = report(root, '0.1', *argv)
+    test.assertEqual(code, 0, out)
+    return out
+
+
+THREE_PARSE_ONE_LINT = (
+    gate_line('2026-09-03T10:00:00Z', 'parse', duration_ms=8000),
+    gate_line('2026-09-03T10:05:00Z', 'lint', duration_ms=2000),
+    gate_line('2026-09-03T11:00:00Z', 'parse', duration_ms=12000),
+    gate_line('2026-09-03T12:00:00Z', 'parse', duration_ms=30000),
+)
+
+
+class GateCost(unittest.TestCase):
+    """One row per gate, and the signed number that answers what got slower."""
+
+    def test_the_seeded_gate_rows_print_this_exact_table(self):
+        out = gates_report(self, *THREE_PARSE_ONE_LINT)
+        self.assertEqual(section_of(out, GATES), """\
+[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), 1 delta(s) marked \
+* for a census that moved or is absent, 0 row(s) this section could not use
+
+-- gate (2)
+gate   runs  first_ms  last_ms  delta_ms  census
+parse     3      8000    30000   +22000*  -
+lint      1      2000     2000         -  -
+
+-- rows this section could not use (0)""")
+
+    def test_a_gate_with_one_run_still_appears_with_no_delta(self):
+        """A gate omitted for having too little data reads as a gate that
+        costs nothing — and the measurement that started this feature found
+        the gate suspected by NAME costing 0.2 s."""
+        row = row_of(gates_report(self, *THREE_PARSE_ONE_LINT),
+                     GATES, 'gate (2)', 'lint')
+        self.assertEqual(row, ['lint', '1', '2000', '2000', '-', '-'])
+
+    def test_the_slowest_latest_gate_is_first(self):
+        rows = block_rows(gates_report(self, *THREE_PARSE_ONE_LINT),
+                          GATES, 'gate (2)')
+        self.assertEqual([r[0] for r in rows], ['parse', 'lint'])
+
+    def test_a_gate_that_got_faster_carries_a_signed_negative_delta(self):
+        out = gates_report(
+            self,
+            gate_line('2026-09-03T10:00:00Z', 'pm-shape-scan',
+                      duration_ms=34800),
+            gate_line('2026-09-03T11:00:00Z', 'pm-shape-scan',
+                      duration_ms=900))
+        self.assertEqual(row_of(out, GATES, 'gate (1)', 'pm-shape-scan'),
+                         ['pm-shape-scan', '2', '34800', '900', '-33900*',
+                          '-'])
+
+
+class GateCensus(unittest.TestCase):
+    """A duration without its census invites the wrong conclusion (risk 2)."""
+
+    MOVED = (gate_line('2026-09-03T10:00:00Z', 'parse', duration_ms=8000,
+                       census=120),
+             gate_line('2026-09-03T11:00:00Z', 'parse', duration_ms=30000,
+                       census=900))
+
+    def test_a_census_that_held_still_is_printed_and_not_marked(self):
+        out = gates_report(
+            self,
+            gate_line('2026-09-03T10:00:00Z', 'parse', duration_ms=8000,
+                      census=120),
+            gate_line('2026-09-03T11:00:00Z', 'parse', duration_ms=9000,
+                      census=120))
+        self.assertEqual(row_of(out, GATES, 'gate (1)', 'parse'),
+                         ['parse', '2', '8000', '9000', '+1000', '120', '→',
+                          '120'])
+
+    def test_a_census_that_moved_marks_the_delta_and_the_heading_counts_it(self):
+        """The same gate is legitimately slower on a bigger tree. The number
+        is still printed — it was measured — but nothing may present it as a
+        regression."""
+        out = gates_report(self, *self.MOVED)
+        self.assertEqual(row_of(out, GATES, 'gate (1)', 'parse'),
+                         ['parse', '2', '8000', '30000', '+22000*', '120',
+                          '→', '900'])
+        self.assertIn('1 delta(s) marked * for a census that moved or is '
+                      'absent', section_of(out, GATES))
+
+    def test_an_absent_census_marks_the_delta_too(self):
+        """Half a pair is not half an answer: `120 → -` would read as a corpus
+        that shrank to nothing, and an unqualified delta reads as a fact."""
+        out = gates_report(
+            self,
+            gate_line('2026-09-03T10:00:00Z', 'parse', duration_ms=8000,
+                      census=120),
+            gate_line('2026-09-03T11:00:00Z', 'parse', duration_ms=30000))
+        self.assertEqual(row_of(out, GATES, 'gate (1)', 'parse'),
+                         ['parse', '2', '8000', '30000', '+22000*', '-'])
+
+    def test_a_single_run_is_never_marked_because_it_has_no_delta(self):
+        out = gates_report(self, gate_line('2026-09-03T10:00:00Z', 'parse',
+                                           duration_ms=8000))
+        self.assertIn('0 delta(s) marked', section_of(out, GATES))
+
+
+class GateRefusals(unittest.TestCase):
+    """Hard rule 4's read side: a row this section cannot use is NAMED."""
+
+    BROKEN = (
+        gate_line('2026-09-03T10:00:00Z', 'parse', duration_ms=8000),
+        # No duration at all — the CLI refuses to write one, so this is a row
+        # some other hand appended.
+        gate_line('2026-09-03T10:01:00Z', 'lint', duration_ms=None),
+        json.dumps({'ts': '2026-09-03T10:02:00Z', 'kind': 'gate',
+                    'gate': 'warnings', 'verdict': 'PASS',
+                    'duration_ms': '900'}),
+        json.dumps({'ts': '2026-09-03T10:03:00Z', 'kind': 'gate',
+                    'gate': 'unit', 'verdict': 'PASS', 'duration_ms': -5}),
+        json.dumps({'ts': '2026-09-03T10:04:00Z', 'kind': 'gate',
+                    'verdict': 'PASS', 'duration_ms': 400}),
+    )
+
+    def test_every_unusable_row_is_named_with_why_and_the_good_row_survives(self):
+        out = gates_report(self, *self.BROKEN)
+        self.assertEqual(section_of(out, GATES), """\
+[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), 0 delta(s) marked \
+* for a census that moved or is absent, 4 row(s) this section could not use
+
+-- gate (1)
+gate   runs  first_ms  last_ms  delta_ms  census
+parse     1      8000     8000         -  -
+
+-- rows this section could not use (4)
+gate      why                            ts
+lint      no duration_ms                 2026-09-03T10:01:00Z
+warnings  duration_ms is not an integer  2026-09-03T10:02:00Z
+unit      duration_ms is negative        2026-09-03T10:03:00Z
+-         no gate name                   2026-09-03T10:04:00Z""")
+
+    def test_a_bad_row_is_never_coerced_to_zero(self):
+        out = gates_report(self, *self.BROKEN)
+        self.assertNotIn('lint', block_rows(out, GATES, 'gate (1)')[0])
+
+
+class GateNoRows(unittest.TestCase):
+    """A missing section is indistinguishable from an empty one, and only
+    one of those is true."""
+
+    def test_a_ledger_with_no_gate_row_still_prints_the_section(self):
+        out = gates_report(
+            self,
+            status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
+            dispatch_line('2026-09-03T10:05:00Z', agent_type='developer'))
+        self.assertEqual(section_of(out, GATES), """\
+[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), 0 delta(s) marked \
+* for a census that moved or is absent, 0 row(s) this section could not use
+no data""")
+
+
+class GateJson(unittest.TestCase):
+    """`--json` carries the section under the same key with the same fields,
+    the incomparable mark included, so a caller need not re-derive it."""
+
+    def payload(self, *lines: str) -> dict:
+        return json.loads(gates_report(self, *lines, argv=('--json',)))['gates']
+
+    def test_the_json_section_carries_every_field_the_table_shows(self):
+        self.assertEqual(self.payload(*THREE_PARSE_ONE_LINT), {
+            'gates': [
+                {'gate': 'parse', 'runs': 3, 'first_ms': 8000,
+                 'last_ms': 30000, 'delta_ms': 22000, 'first_census': None,
+                 'last_census': None, 'comparable': False},
+                {'gate': 'lint', 'runs': 1, 'first_ms': 2000,
+                 'last_ms': 2000, 'delta_ms': None, 'first_census': None,
+                 'last_census': None, 'comparable': None},
+            ],
+            'unusable': [],
+            'totals': {'rows': 4, 'gates': 2, 'incomparable': 1,
+                       'unusable': 0}})
+
+    def test_the_json_names_what_it_could_not_use(self):
+        data = self.payload(*GateRefusals.BROKEN)
+        self.assertEqual(data['unusable'], [
+            {'gate': 'lint', 'why': 'no duration_ms',
+             'ts': '2026-09-03T10:01:00Z'},
+            {'gate': 'warnings', 'why': 'duration_ms is not an integer',
+             'ts': '2026-09-03T10:02:00Z'},
+            {'gate': 'unit', 'why': 'duration_ms is negative',
+             'ts': '2026-09-03T10:03:00Z'},
+            {'gate': None, 'why': 'no gate name',
+             'ts': '2026-09-03T10:04:00Z'}])
+
+
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()

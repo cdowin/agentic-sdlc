@@ -288,6 +288,113 @@ def test_sourced_libraries_and_local_dropins_are_not_hooks():
     assert '2 path(s) excluded from scope' in out, out
 
 
+# --- the corpus each hook ships, replayed ------------------------------------
+# The move story 02 is about: this kit installs the corpus, so this kit owns the
+# gate over it — instead of twenty per-consumer make targets each repo has to
+# remember to wire. A guard nobody wired is a guard that is not there.
+#
+# WHICH hooks carry one is DERIVED here as it is in the gate, from the installed
+# files, because a literal list in a test is the same defect the gate refuses:
+# `HOOKS_WITH_CORPUS` in one Makefile emptied out to nothing and kept passing.
+def corpus_hooks(root: Path) -> list[Path]:
+    return sorted(p for p in (root / HOOKS_DIR).iterdir()
+                  if p.is_file() and hooks.SELF_TEST_DECL.search(
+                      p.read_text(encoding='utf-8', errors='replace')))
+
+
+def edit_hook(path: Path, old: str, new: str) -> None:
+    body = path.read_text(encoding='utf-8')
+    assert old in body, f'{path.name} no longer contains {old!r}'
+    path.write_text(body.replace(old, new), encoding='utf-8')
+
+
+def test_the_verdict_counts_the_hooks_that_replayed_their_own_corpus():
+    """A census of what was actually asked. `bash -n` proves a file parses and
+    a fail-open payload proves it starts; neither replays a single case of the
+    block/allow corpus the hook ships, and the line must not let one read as
+    another."""
+    with hooked_repo(arm=True) as root:
+        carriers = corpus_hooks(root)
+        code, out = gate()
+    assert code == 0, out
+    assert carriers, 'the installed corpus ships no --self-test at all'
+    assert f'{len(carriers)} replay their own --self-test corpus' in out, out
+
+
+def test_a_corpus_in_which_NOTHING_replays_is_a_FAIL_not_a_PASS():
+    """The defect this package's own `make hooks-self-test` carried until
+    0.2.0: the list emptied out, `for h in <nothing>` ran zero corpora, exited
+    0, and the summary reported `0 hook(s) SELF-TEST OK` as a pass. From here
+    an uninstalled corpus and a passing one are the same picture."""
+    with hooked_repo(arm=True) as root:
+        for path in corpus_hooks(root):
+            edit_hook(path, hooks.SELF_TEST_FLAG, '--no-corpus-here')
+        assert not corpus_hooks(root)
+        code, out = gate()
+    assert code == 1, out
+    assert 'NO CORPUS' in out, out
+    assert '0 replay their own --self-test corpus' in out, out
+
+
+def test_a_hook_whose_own_corpus_now_disagrees_is_a_finding():
+    """The point of replaying at all: an edit to a guard must not be able to
+    quietly change a verdict its corpus asserts."""
+    with hooked_repo(arm=True) as root:
+        carrier = corpus_hooks(root)[0]
+        edit_hook(carrier, 'exit "$self_test_rc"', 'exit 3')
+        code, out = gate()
+    assert code == 1, out
+    assert 'SELF-TEST' in out and carrier.name in out, out
+    assert 'fails its own --self-test corpus (exit 3)' in out, out
+
+
+def test_a_hook_that_answers_the_flag_and_replays_nothing_is_not_a_pass():
+    """Exit 0 is not the contract; `SELF-TEST OK` is. A hook that took the flag
+    and returned without running a case would otherwise report a pass over a
+    corpus it never opened — the same zero, one level down."""
+    with hooked_repo(arm=True) as root:
+        carrier = corpus_hooks(root)[0]
+        body = carrier.read_text(encoding='utf-8')
+        line = next(ln for ln in body.splitlines()
+                    if hooks.SELF_TEST_OK in ln and ln.strip().startswith('echo'))
+        edit_hook(carrier, line, '\t\t:')
+        code, out = gate()
+    assert code == 1, out
+    assert 'SELF-TEST' in out and carrier.name in out, out
+    assert 'does not answer it' in out, out
+
+
+def test_mentioning_the_flag_is_not_the_same_as_shipping_a_corpus():
+    """The text probe that nominates a candidate is deliberately generous, so
+    the RUN has to be what proves one. A hook that merely names the flag is fed
+    it, falls through to its ordinary path, fails open at 0 and prints no
+    marker — a finding, never a silent green. (It also proves the replay cannot
+    HANG: every `cc-*.sh` reads its payload from stdin.)"""
+    with hooked_repo(arm=True) as root:
+        stray = root / HOOKS_DIR / A_CC_HOOK
+        assert stray not in corpus_hooks(root)
+        edit_hook(stray, 'set -eu\n',
+                  f'set -eu\nSELF_TEST_HINT="{hooks.SELF_TEST_FLAG}"\n')
+        code, out = gate()
+    assert code == 1, out
+    assert 'SELF-TEST' in out and A_CC_HOOK in out, out
+    assert 'does not answer it' in out, out
+
+
+def test_this_repos_makefile_names_the_same_corpus_the_gate_derives():
+    """`HOOKS_WITH_CORPUS` is a hand-maintained roster and the gate's set is
+    derived, so the two can disagree — and a roster that silently narrows is
+    exactly the failure D2 predicted when the corpus list shrank. Until the
+    target goes, this is what keeps the second scoreboard honest."""
+    makefile = (REPO_ROOT / 'Makefile').read_text(encoding='utf-8')
+    match = re.search(r'^HOOKS_WITH_CORPUS := (.*)$', makefile, re.M)
+    assert match, 'the Makefile no longer names a corpus list'
+    named = sorted(Path(p).name for p in match.group(1).split())
+    derived = sorted(p.name for p in corpus_hooks(REPO_ROOT))
+    assert named == derived, (
+        f'the Makefile replays {named} and the gate derives {derived}')
+
+
 # --- the wiring: the gate runs here, and the repair it names is the target ----
 def test_this_repo_runs_the_gate_in_its_own_aggregate():
     """A gate registered and never rostered is a gate that runs nowhere. This

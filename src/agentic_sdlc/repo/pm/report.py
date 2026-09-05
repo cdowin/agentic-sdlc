@@ -67,6 +67,8 @@ SECTION_ESCAPES = 'escapes'
 ESCAPES_TITLE = 'escapes'
 SECTION_OVERHEAD = 'overhead'
 OVERHEAD_TITLE = 'overhead shape'
+SECTION_GATES = 'gates'
+GATES_TITLE = 'gate cost'
 
 # Printed for a NUMBER nobody recorded. A blank cell would read as zero at a
 # glance and a `0` would BE a lie; `-` is the third thing, and it is the same
@@ -188,6 +190,29 @@ BEFORE_WRITE_TITLE = 'story'
 DECISION_COUNT_TITLE = 'decisions per grain'
 DECISION_GAP_TITLE = 'decision to next status row'
 SESSION_TITLE = 'session deltas'
+
+# Section 6's. Milliseconds throughout, because that is the unit the row
+# carries and a report that rounded it to seconds would print `0` for the
+# fourteen gates of twenty that finish inside one — the exact resolution the
+# row was made integer-millisecond to keep.
+GATE_KEY = 'gate'
+GATE_DURATION_KEY = 'duration_ms'
+GATE_CENSUS_KEY = 'census'
+GATE_COLUMN = 'gate'
+RUNS_COLUMN = 'runs'
+FIRST_MS_COLUMN = 'first_ms'
+LAST_MS_COLUMN = 'last_ms'
+DELTA_MS_COLUMN = 'delta_ms'
+CENSUS_COLUMN = 'census'
+WHY_COLUMN = 'why'
+GATE_COST_TITLE = 'gate'
+GATE_UNUSABLE_TITLE = 'rows this section could not use'
+# What a delta whose corpus MOVED carries. The number is still printed — it is
+# what was measured — but the same gate is legitimately slower on a bigger
+# tree, and an unmarked delta invites somebody to "optimise" a gate that is
+# simply doing more.
+INCOMPARABLE_MARK = '*'
+CENSUS_ARROW = ' → '
 
 LEFT, RIGHT = 'left', 'right'
 
@@ -1527,13 +1552,139 @@ def overhead_lines(cfg: model.PmConfig, data: dict) -> list[str]:
           (LEFT, LEFT, RIGHT, RIGHT), deltas)])
 
 
+# --- section 6: gate cost -----------------------------------------------------
+def _gate_unusable(row: dict) -> str | None:
+    """Why this `kind: gate` row cannot be counted, or None when it can.
+
+    Named rather than dropped. A report that quietly discards half its input
+    and prints a confident table is hard rule 4's read side with columns on it
+    — worse than one that crashes, because nothing downstream can tell it from
+    a report over clean data. So every refusal here has a WORD, and the word
+    goes in the table beside the row it refused.
+    """
+    name = row.get(GATE_KEY)
+    if not isinstance(name, str) or not name:
+        return 'no gate name'
+    duration = row.get(GATE_DURATION_KEY)
+    if duration is None:
+        return f'no {GATE_DURATION_KEY}'
+    if _int(duration) is None:
+        return f'{GATE_DURATION_KEY} is not an integer'
+    if duration < 0:
+        return f'{GATE_DURATION_KEY} is negative'
+    return None
+
+
+def gates_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+               rows: list) -> dict:
+    """Section 6 as data: what each gate cost, and which one got slower.
+
+    One entry per distinct `gate` string, slowest-latest first. `delta_ms` is
+    `last - first` and it is the column the section exists for: a one-off hand
+    measurement can tell you a gate is expensive and cannot tell you it got
+    that way, which is the whole reason the row is written on every run.
+
+    TWO WAYS THIS TABLE COULD LIE, AND WHAT STOPS EACH:
+
+      * a gate with ONE run still appears, with `-` for its delta. Omitting it
+        for having too little data would read as a gate that costs nothing —
+        and the measurement that started this feature found the gate suspected
+        by name costing 0.2 s while the unsuspected one ate 47 s;
+      * a delta whose CENSUS moved is not a regression, it is a bigger tree.
+        The number is still printed, because it was measured, but the row is
+        marked and the marked rows are counted in the heading. `comparable` is
+        None where there is no delta to qualify, False where there is one and
+        the corpus behind it moved or was never recorded, True otherwise.
+
+    Nothing here is a ceiling, a budget or a threshold. The feature is explicit
+    that this REPORTS; whether a gate is ever allowed to fail for its cost is a
+    separate decision with its own argument.
+    """
+    gate_rows = [r.data for r in rows
+                 if r.data.get('kind') == ledger.KIND_GATE]
+    unusable, runs_of = [], {}
+    for row in gate_rows:
+        why = _gate_unusable(row)
+        if why is not None:
+            name = row.get(GATE_KEY)
+            unusable.append({'gate': name if isinstance(name, str) and name
+                             else None, 'why': why,
+                             'ts': row.get('ts') if isinstance(row.get('ts'),
+                                                               str) else None})
+            continue
+        runs_of.setdefault(row[GATE_KEY], []).append(row)
+
+    entries = []
+    for name, runs in runs_of.items():
+        first, last = runs[0][GATE_DURATION_KEY], runs[-1][GATE_DURATION_KEY]
+        delta = last - first if len(runs) > 1 else None
+        censuses = (_int(runs[0].get(GATE_CENSUS_KEY)),
+                    _int(runs[-1].get(GATE_CENSUS_KEY)))
+        entries.append({
+            'gate': name, 'runs': len(runs),
+            'first_ms': first, 'last_ms': last, 'delta_ms': delta,
+            'first_census': censuses[0], 'last_census': censuses[1],
+            'comparable': None if delta is None else (
+                None not in censuses and censuses[0] == censuses[1])})
+    entries.sort(key=lambda e: (-e['last_ms'], e['gate']))
+    return {SECTION_GATES: {
+        'gates': entries, 'unusable': unusable,
+        'totals': {'rows': len(gate_rows), 'gates': len(entries),
+                   'incomparable': sum(1 for e in entries
+                                       if e['comparable'] is False),
+                   'unusable': len(unusable)}}}
+
+
+def _gate_census_cell(entry: dict) -> str:
+    """`first → last`, or `-` when either end was never recorded.
+
+    An absent census is an absent KEY on the row, so half of a pair is not
+    half an answer — it is no answer, and a `120 → -` would read as a corpus
+    that shrank to nothing.
+    """
+    first, last = entry['first_census'], entry['last_census']
+    return (DASH if first is None or last is None
+            else f'{first}{CENSUS_ARROW}{last}')
+
+
+def gates_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+    """Section 6 as lines: the cost table, then whatever it could not read."""
+    section = data[SECTION_GATES]
+    cost = []
+    for entry in section['gates']:
+        delta = (DASH if entry['delta_ms'] is None
+                 else f'{entry["delta_ms"]:+d}')
+        if entry['comparable'] is False:
+            delta += INCOMPARABLE_MARK
+        cost.append((entry['gate'], str(entry['runs']),
+                     _cell(entry['first_ms']), _cell(entry['last_ms']),
+                     delta, _gate_census_cell(entry)))
+    unusable = [(_cell(e['gate']), e['why'], _cell(e['ts']))
+                for e in section['unusable']]
+    totals = section['totals']
+    return _section(
+        heading_id(data), GATES_TITLE,
+        f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
+        f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for a '
+        f'census that moved or is absent, '
+        f'{totals["unusable"]} row(s) this section could not use',
+        [(f'{GATE_COST_TITLE} ({len(cost)})',
+          (GATE_COLUMN, RUNS_COLUMN, FIRST_MS_COLUMN, LAST_MS_COLUMN,
+           DELTA_MS_COLUMN, CENSUS_COLUMN),
+          (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost),
+         (f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
+          (GATE_COLUMN, WHY_COLUMN, TS_COLUMN),
+          (LEFT, LEFT, LEFT), unusable)])
+
+
 # The registry: one row per question, one pair of functions each. A section is
 # added HERE and nowhere else — never as another branch inside one of them.
 SECTIONS = (Section(SECTION_SPEND, spend_data, spend_lines),
             Section(SECTION_YIELD, yield_data, yield_lines),
             Section(SECTION_REWORK, rework_data, rework_lines),
             Section(SECTION_ESCAPES, escapes_data, escapes_lines),
-            Section(SECTION_OVERHEAD, overhead_data, overhead_lines))
+            Section(SECTION_OVERHEAD, overhead_data, overhead_lines),
+            Section(SECTION_GATES, gates_data, gates_lines))
 
 
 def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,

@@ -51,9 +51,13 @@ stay out of.
   fail at HEAD — the correct instinct — and stashed six other builders' uncommitted
   work with it, including deletions that were already staged. It popped cleanly and
   nothing was lost, which is the only reason this is a rule rather than an incident.
-  **To watch a test fail at HEAD, copy the file to a scratch path and edit the copy,
-  or use `git stash push -- <your own paths>`** — never the bare form. The
-  orchestrator, which owns the index, is the only one that touches it;
+  **To watch a test fail at HEAD, copy the file to a scratch path and edit the copy.**
+  Not `git stash push -- <your own paths>` either: this document said that for four
+  hours, and then the ORCHESTRATOR used it — push, read the file, pop, overwrite —
+  and destroyed its own edit, because the pathspec form is still a stash and the
+  window between push and pop is still a window. **Copy the file. There is no safe
+  git verb here.** The orchestrator, which owns the index, is the only one that
+  touches it;
 - never touch `pm/roadmap/`;
 - never edit shared docs — README / CHANGELOG wording is returned as
   **PROPOSED** text in the report, and the orchestrator applies it;

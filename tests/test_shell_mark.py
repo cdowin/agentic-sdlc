@@ -46,7 +46,12 @@ SUPPORT = TESTS / 'support'
 # summary) went with the code they read, and thirteen marked ones went with the
 # gates they spawned. What the census ASSERTS is unchanged — a module that
 # changes sides still has to change these two lines, in the open.
-MARKED_MODULES = 23
+# 0.2.0 added six spawning modules at once. Three are the conveyor's, and
+# they spawn because a step machine's questions are questions about a REAL
+# git tree: test_conveyor_steps.py and test_conveyor_skip.py build one per
+# test, test_install_sdlc.py installs into one. The other three arrived with
+# the belts and the verify family.
+MARKED_MODULES = 29
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -56,7 +61,9 @@ UNMARKED_MODULES = (
     'test_conveyor_state.py',
     'test_fuzz_markdown.py',
     'test_verdict.py',
+    'test_verify_declares.py',
     'test_verify_rules.py',
+    'test_verify_select.py',
     'test_wheel_payload.py',
 )
 

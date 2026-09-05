@@ -59,6 +59,12 @@ def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
     # stream passes VERBOSE='1' explicitly.
     for leaked in ('MAKELEVEL', 'MAKEFLAGS', 'MFLAGS', 'VERBOSE'):
         env.pop(leaked, None)
+    # The cost recorder is OFF unless a case asks for it. `make gates` files
+    # a real `kind: gate` row through `GDK_LEDGER_CMD`, and a suite that
+    # left it on would append one to this repo's own milestone ledger on
+    # every run — a test writing into the tree it grades. An EMPTY value
+    # is still a defined make variable, so the Makefile's `?=` keeps it.
+    env.setdefault('GDK_LEDGER_CMD', '')
     env.update(env_extra)
     return subprocess.run(['make', *args], cwd=REPO_ROOT, text=True,
                           capture_output=True, env=env)
@@ -97,6 +103,93 @@ def test_a_gate_prints_exactly_one_verdict_line_naming_its_log():
     assert log.exists(), 'the verdict named a log that was never written'
     assert '[check:doc]' in log.read_text(encoding='utf-8'), (
         'the transcript the verdict points at does not hold the run')
+
+
+# --- the cost row, on a REAL gate run through the real funnel -----------------
+# `make gates` is the one target here fast enough to run for real, and it is
+# also the whole end-to-end proof of the funnel: the Makefile exports
+# GDK_LEDGER_CMD, `gdk_gate_log` opens the slot, `gdk_gate_verdict` closes it,
+# and one row lands. The recorder is a STUB rather than the tracker, so the
+# case asserts the argv the funnel handed on and never touches this repo's own
+# milestone ledger (`make()` above keeps it off for every other case).
+RECORDER = """#!/usr/bin/env bash
+{ printf 'CALL'; for a in "$@"; do printf ' ARG[%s]' "$a"; done; printf '\\n'
+} >> "$GDK_TEST_ROWS"
+exit "${GDK_TEST_EXIT:-0}"
+"""
+
+
+@pytest.fixture()
+def recorder(tmp_path):
+    """A stub `GDK_LEDGER_CMD` and the file it files its argv into."""
+    script = tmp_path / 'recorder.sh'
+    script.write_text(RECORDER, encoding='utf-8')
+    rows = tmp_path / 'rows.txt'
+    rows.write_text('', encoding='utf-8')
+    return script, rows
+
+
+def test_a_real_gate_run_files_exactly_one_cost_row(recorder):
+    script, rows = recorder
+    done = make('gates', GDK_LEDGER_CMD=f'bash {script}',
+                GDK_TEST_ROWS=str(rows))
+    assert done.returncode == 0, done.stdout + done.stderr
+    filed = rows.read_text(encoding='utf-8').splitlines()
+    assert len(filed) == 1, filed
+    assert 'ARG[ledger] ARG[record]' in filed[0], filed[0]
+    assert 'ARG[--gate] ARG[gates]' in filed[0], filed[0]
+    assert 'ARG[--verdict] ARG[PASS]' in filed[0], filed[0]
+    assert re.search(r'ARG\[--duration-ms\] ARG\[[0-9]+\]', filed[0]), filed[0]
+    # No census was set by this gate, so the flag is OMITTED — never a `0`,
+    # which is a measurement and would read as a gate that scanned nothing.
+    assert 'ARG[--census]' not in filed[0], filed[0]
+
+
+def test_the_cost_row_never_reaches_the_verdict_stream(recorder):
+    """Hard rule 6: a consumer greps the `[TAG] … full log:` line. A chatty
+    recorder sitting in the middle of it is an output-format change nobody
+    asked for."""
+    script, rows = recorder
+    done = make('gates', GDK_LEDGER_CMD=f'bash {script}',
+                GDK_TEST_ROWS=str(rows))
+    lines = done.stdout.splitlines()
+    assert len(lines) == 1, done.stdout
+    assert VERDICT.match(lines[0]), lines[0]
+
+
+@pytest.mark.parametrize('broken', ['exits-nonzero', 'does-not-exist'])
+def test_a_broken_recorder_never_changes_the_gates_verdict(recorder, broken,
+                                                           tmp_path):
+    """Risk 1: this funnel is on the path of every gate in every consumer, so
+    a ledger that cannot be written is never a gate failure."""
+    script, rows = recorder
+    env = {'GDK_TEST_ROWS': str(rows)}
+    if broken == 'exits-nonzero':
+        env['GDK_LEDGER_CMD'] = f'bash {script}'
+        env['GDK_TEST_EXIT'] = '3'
+    else:
+        env['GDK_LEDGER_CMD'] = str(tmp_path / 'no-such-recorder')
+    done = make('gates', **env)
+    assert done.returncode == 0, done.stdout + done.stderr
+    lines = done.stdout.splitlines()
+    assert len(lines) == 1, done.stdout
+    assert VERDICT.match(lines[0]), lines[0]
+
+
+def test_an_unset_recorder_spawns_nothing_at_all(recorder):
+    """A consumer with no PM tree pays zero — no subprocess, no sentinel."""
+    script, rows = recorder
+    done = make('gates', GDK_TEST_ROWS=str(rows))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert rows.read_text(encoding='utf-8') == ''
+
+
+def test_the_makefile_bridges_the_ledger_command_to_the_sourced_library():
+    """A sourced shell library cannot see a make variable, so the export is
+    the whole bridge — and a gate library with no bridge records nothing,
+    silently, forever."""
+    body = MAKEFILE.read_text(encoding='utf-8')
+    assert 'export GDK_LEDGER_CMD ?= $(DEVKIT)' in body
 
 
 def test_an_ambient_verbose_does_not_turn_the_quiet_run_loud(monkeypatch):

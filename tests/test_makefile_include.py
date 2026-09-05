@@ -149,6 +149,12 @@ def make(root: Path, *args: str, **env_extra: str) -> subprocess.CompletedProces
     # stream passes VERBOSE='1' explicitly.
     for leaked in ('MAKELEVEL', 'MAKEFLAGS', 'MFLAGS', 'VERBOSE'):
         env.pop(leaked, None)
+    # The cost recorder is OFF unless a case asks for it. `make gates` files
+    # a real `kind: gate` row through `GDK_LEDGER_CMD`, and a suite that
+    # left it on would append one to this repo's own milestone ledger on
+    # every run — a test writing into the tree it grades. An EMPTY value
+    # is still a defined make variable, so the Makefile's `?=` keeps it.
+    env.setdefault('GDK_LEDGER_CMD', '')
     env.update(env_extra)
     return subprocess.run(['make', *args], cwd=root, text=True,
                           capture_output=True, env=env, timeout=120)

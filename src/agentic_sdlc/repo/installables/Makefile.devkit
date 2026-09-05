@@ -96,6 +96,12 @@ GDK_GATE_LIB ?= $(GDK_DEV_DIR)/gdk_gate.sh
 VERBOSE ?=
 export VERBOSE
 
+# How the gate library reaches the ledger. `gdk_gate.sh` is SOURCED, so it
+# cannot see a make variable at all — this one line is the whole bridge, and
+# every gate's cost row rides over it. Empty it (`make check GDK_LEDGER_CMD=`)
+# and nothing is recorded and nothing is spawned.
+export GDK_LEDGER_CMD ?= $(DEVKIT)
+
 # Arguments, overridden on the command line:
 #   ARGS — passthrough              make pm ARGS="story building <id>"
 ARGS ?=

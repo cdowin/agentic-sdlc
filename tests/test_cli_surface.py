@@ -30,10 +30,18 @@ def documented_verbs() -> set[str]:
 def routed_verbs() -> set[str]:
     """What `main()` dispatches, read off the router's own branches.
 
-    `install_commands()` is asked rather than listed, the way `main()` asks it —
-    so an installer added to `PLANS` is documented-or-flagged automatically.
+    The two ROSTERS are asked, never listed — `install_commands()` reads the
+    installer's `PLANS` and `conveyor_verbs()` reads the driver's `OPERATIONS`,
+    exactly as `main()` does. So a fifth installer or a third operation is
+    documented-or-flagged the moment it exists, with nothing to update here.
+
+    The four singletons below are the branches `main()` writes out longhand.
+    They are the one hand-maintained list in this file, and the test that keeps
+    them honest is `test_a_documented_verb_is_not_answered_with_unknown_command`,
+    which asks the router rather than this set.
     """
-    return {'pm', 'init', 'gates-extra', 'check', *cli.install_commands()}
+    return {'pm', 'init', 'gates-extra', 'check', 'verify',
+            *cli.install_commands(), *cli.conveyor_verbs()}
 
 
 class TestTheHelpDescribesWhatShips:

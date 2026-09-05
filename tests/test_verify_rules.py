@@ -28,19 +28,19 @@ from agentic_sdlc.repo.verify import rules
 
 RULES_SOURCE = REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'verify' / 'rules.py'
 
-WIDE = 'make check test'
+MILESTONE = 'make milestone'
 FORWARD = {'paths': 'src/agentic_sdlc/repo/pm/**',
            'run': 'python3 -m pytest tests/test_pm_*.py'}
 CAPTURED = {'paths': 'tests/test_<name>.py',
             'run': 'python3 -m pytest tests/test_<name>.py'}
 REVERSE = {'declares': '## covers:', 'scan': 'tests/integration/**',
            'run': 'make scenario NAME=<stem>'}
-GOOD = {'wide': WIDE, 'narrow': [dict(FORWARD), dict(CAPTURED), dict(REVERSE)]}
+GOOD = {'milestone': MILESTONE, 'narrow': [dict(FORWARD), dict(CAPTURED), dict(REVERSE)]}
 
 
 def one(**rule) -> dict:
     """A section whose only interesting part is the single rule under test."""
-    return {'wide': WIDE, 'narrow': [rule]}
+    return {'milestone': MILESTONE, 'narrow': [rule]}
 
 
 def forward(**overrides) -> dict:
@@ -80,7 +80,7 @@ class ValidRuleSet(Refuses):
 
     def test_a_mixed_rule_set_parses_in_declaration_order(self):
         parsed = rules.read(GOOD)
-        self.assertEqual(WIDE, parsed.wide)
+        self.assertEqual(MILESTONE, parsed.milestone)
         self.assertEqual(3, len(parsed.narrow))
         self.assertEqual((1, 2, 3), tuple(r.index for r in parsed.narrow))
         self.assertEqual(('forward', 'forward', 'reverse'),
@@ -94,11 +94,11 @@ class ValidRuleSet(Refuses):
         self.assertEqual(('stem',), parsed.narrow[2].captures,
                          'the reverse direction binds <stem>, derived not declared')
 
-    def test_a_wide_only_declaration_is_legal(self):
+    def test_a_milestone_only_declaration_is_legal(self):
         # Absent is not empty — `config.str_tuple`'s rule. `narrow = []` is the
         # refused one (see EmptyRuleList); leaving the key out declares a repo
         # whose close is its only command.
-        parsed = rules.read({'wide': WIDE})
+        parsed = rules.read({'milestone': MILESTONE})
         self.assertEqual((), parsed.narrow)
 
     def test_RULING_1_a_capture_stops_at_a_path_separator(self):
@@ -139,7 +139,7 @@ class TheBareStringTrap(Refuses):
     """v0.9.0's defect shape, pinned by name: a string is iterable."""
 
     def test_narrow_as_a_bare_string_is_refused_never_iterated(self):
-        message = self.assertRefuses({'wide': WIDE, 'narrow': 'paths = x'},
+        message = self.assertRefuses({'milestone': MILESTONE, 'narrow': 'paths = x'},
                                      'narrow', 'paths = x')
         self.assertNotIn("'p', 'a', 't'", message,
                          'a bare string walked character by character is the '
@@ -151,36 +151,76 @@ class TheBareStringTrap(Refuses):
     def test_run_as_a_list_is_refused(self):
         self.assertRefuses(forward(run=['make x']), '#1', 'run')
 
-    def test_wide_as_a_list_is_refused(self):
-        self.assertRefuses({'wide': [WIDE], 'narrow': [dict(FORWARD)]}, 'wide')
+    def test_milestone_as_a_list_is_refused(self):
+        self.assertRefuses({'milestone': [MILESTONE], 'narrow': [dict(FORWARD)]},
+                           'milestone')
 
-    def test_wide_as_a_number_is_refused(self):
-        self.assertRefuses({'wide': 7, 'narrow': [dict(FORWARD)]}, 'wide')
+    def test_milestone_as_a_number_is_refused(self):
+        self.assertRefuses({'milestone': 7, 'narrow': [dict(FORWARD)]},
+                           'milestone')
 
 
 class EmptyRuleList(Refuses):
     """An empty list reads as "nothing" and means the opposite downstream."""
 
     def test_an_empty_narrow_is_refused_and_says_to_remove_it(self):
-        self.assertRefuses({'wide': WIDE, 'narrow': []}, 'narrow', 'remove')
+        self.assertRefuses({'milestone': MILESTONE, 'narrow': []}, 'narrow',
+                           'remove')
 
 
-class WideIsRequired(Refuses):
-    """No wide is no close — falling back to "run nothing" is the silent pass."""
+class TheRungs(Refuses):
+    """D3: a rung NAMES a make target. `milestone` required, `feature` not."""
 
-    def test_wide_absent_is_refused(self):
-        self.assertRefuses({'narrow': [dict(FORWARD)]}, 'wide', 'required')
+    def test_milestone_absent_is_refused(self):
+        # No close is no verification, and falling back to "run nothing" is
+        # the silent zero-command pass the whole feature exists to prevent.
+        self.assertRefuses({'narrow': [dict(FORWARD)]}, 'milestone', 'required')
 
-    def test_wide_empty_is_refused(self):
-        self.assertRefuses({'wide': '', 'narrow': [dict(FORWARD)]}, 'wide')
+    def test_milestone_empty_is_refused(self):
+        self.assertRefuses({'milestone': '', 'narrow': [dict(FORWARD)]},
+                           'milestone')
 
-    def test_wide_takes_the_same_command_grammar_as_run(self):
-        for hostile in ('make a; rm -rf /', 'make a && make b', 'make `id`',
-                        'make $(id)', 'a | b', 'a > f', 'make a\nmake b',
-                        'make ' + 'x' * rules.MAX_RUN):
-            with self.subTest(wide=hostile[:24]):
-                self.assertRefuses({'wide': hostile,
-                                    'narrow': [dict(FORWARD)]}, 'wide')
+    def test_feature_absent_is_legal_and_reads_as_None(self):
+        # Absent is not the same as configured-to-run-nothing: the verb has to
+        # be able to NAME the rung as unconfigured rather than skip it, and ''
+        # could not be told apart from a rung that runs nothing.
+        parsed = rules.read({'milestone': MILESTONE})
+        self.assertIsNone(parsed.feature)
+        self.assertIsNone(parsed.rung(rules.FEATURE))
+        self.assertEqual(MILESTONE, parsed.rung(rules.MILESTONE))
+
+    def test_both_rungs_parse_and_yield_their_make_target(self):
+        parsed = rules.read({'milestone': MILESTONE,
+                             'feature': 'make precommit'})
+        self.assertEqual('make precommit', parsed.feature)
+        self.assertEqual('precommit', rules.rung_target(parsed.feature))
+        self.assertEqual('milestone', rules.rung_target(parsed.milestone))
+
+    def test_a_rung_carrying_its_own_command_string_is_refused(self):
+        # The shape D3 rejected, by name. `make check test` is TWO goals, and a
+        # rung that can spell any command line is a second answer to "did the
+        # full gate pass" — with CI running one and the dispatch quoting the
+        # other.
+        for hostile in ('make check test', 'make a; rm -rf /', 'make a && make b',
+                        'make `id`', 'make $(id)', 'a | b', 'a > f',
+                        'make a\nmake b', 'python3 -m pytest tests/',
+                        'make', 'make -j4', 'make x/y', 'make VAR=1',
+                        '  make milestone', 'make milestone ',
+                        'make ' + 'x' * (rules.gates_extra.MAX_LENGTH + 1)):
+            for key in rules.RUNGS:
+                with self.subTest(rung=key, value=hostile[:24]):
+                    section = {'milestone': MILESTONE, 'feature': 'make precommit',
+                               'narrow': [dict(FORWARD)]}
+                    section[key] = hostile
+                    self.assertRefuses(section, key, 'make <target>')
+
+    def test_the_retired_wide_key_is_refused_by_name(self):
+        # An author still spelling `wide` has declared no close at all. Falling
+        # through the generic unknown-key path would say "unknown key 'wide'"
+        # and leave them to find the new name themselves.
+        self.assertRefuses({'wide': 'make check test',
+                            'narrow': [dict(FORWARD)]},
+                           'wide', 'milestone', 'D3')
 
 
 class RunGrammar(Refuses):
@@ -330,24 +370,26 @@ class StructuralGrammar(Refuses):
         self.assertRefuses(one(path='src/**', run='make x'), '#1', 'path')
 
     def test_a_rule_that_is_not_a_table_is_refused(self):
-        self.assertRefuses({'wide': WIDE, 'narrow': ['paths = x']}, '#1')
-        self.assertRefuses({'wide': WIDE, 'narrow': [['paths', 'x']]}, '#1')
+        self.assertRefuses({'milestone': MILESTONE, 'narrow': ['paths = x']},
+                           '#1')
+        self.assertRefuses({'milestone': MILESTONE, 'narrow': [['paths', 'x']]},
+                           '#1')
 
     def test_a_verify_section_that_is_not_a_table_is_refused(self):
-        for value in ('wide = x', ['wide'], 7):
+        for value in ('milestone = x', ['milestone'], 7):
             with self.subTest(section=value):
                 self.assertRefuses(value, 'verify')
 
     def test_an_unknown_key_in_the_section_is_named(self):
-        self.assertRefuses({'wide': WIDE, 'wilde': WIDE,
-                            'narrow': [dict(FORWARD)]}, 'wilde')
+        self.assertRefuses({'milestone': MILESTONE, 'mileston': MILESTONE,
+                            'narrow': [dict(FORWARD)]}, 'mileston')
 
 
 class EveryRefusalNamesItsIndex(Refuses):
     """With only the first index named, an author fixes one and re-runs blind."""
 
     def test_a_second_and_a_fourth_bad_rule_are_both_named(self):
-        section = {'wide': WIDE, 'narrow': [
+        section = {'milestone': MILESTONE, 'narrow': [
             dict(FORWARD),
             {'paths': '../../etc/**', 'run': 'make x'},
             dict(CAPTURED),
@@ -358,14 +400,14 @@ class EveryRefusalNamesItsIndex(Refuses):
         self.assertNotIn('#3', message)
 
     def test_the_index_is_one_based_and_matches_declaration_order(self):
-        section = {'wide': WIDE,
+        section = {'milestone': MILESTONE,
                    'narrow': [dict(FORWARD), dict(REVERSE), {'run': ''}]}
         self.assertRefuses(section, '#3')
 
-    def test_a_bad_wide_and_a_bad_rule_are_reported_together(self):
-        section = {'wide': 'make a; make b',
+    def test_a_bad_rung_and_a_bad_rule_are_reported_together(self):
+        section = {'milestone': 'make a; make b',
                    'narrow': [dict(FORWARD), {'paths': '/etc/**', 'run': 'x'}]}
-        self.assertRefuses(section, 'wide', '#2')
+        self.assertRefuses(section, 'milestone', '#2')
 
 
 class ExitCodeIsTwo(Refuses):
@@ -373,15 +415,15 @@ class ExitCodeIsTwo(Refuses):
 
     def test_every_refusal_class_exits_two(self):
         cases = {
-            'bare string': {'wide': WIDE, 'narrow': 'paths = x'},
-            'empty list': {'wide': WIDE, 'narrow': []},
-            'wide absent': {'narrow': [dict(FORWARD)]},
+            'bare string': {'milestone': MILESTONE, 'narrow': 'paths = x'},
+            'empty list': {'milestone': MILESTONE, 'narrow': []},
+            'milestone absent': {'narrow': [dict(FORWARD)]},
             'run chaining': forward(run='a; b'),
             'glob traversal': forward(paths='../x/**'),
             'both directions': one(paths='src/**', declares='c', scan='t/**',
                                    run='make x'),
             'unknown key': one(path='src/**', run='make x'),
-            'not a table': 'wide = x',
+            'not a table': 'milestone = x',
         }
         for label, section in cases.items():
             with self.subTest(case=label):
@@ -408,8 +450,15 @@ class TheReaderDoesNoWork(unittest.TestCase):
         'open', 'read_text', 'read_bytes', 'write_text', 'glob', 'rglob',
         'iterdir', 'walk', 'listdir', 'load_config', 'config_section',
     })
+    # `agentic_sdlc.repo` is here for ONE name: `gates_extra`, for its make-goal
+    # regex and length cap, which the rung grammar (D3) and the ledger's `gate`
+    # rows share. `repo/pm/ledger.py` imports it the same way and for the same
+    # reason — a second spelling of one grammar is how two halves come to
+    # disagree about which target names exist. Importing it spawns nothing and
+    # reads nothing: its module body compiles a regex and defines two
+    # constants, and rules.py touches only those.
     ALLOWED_IMPORTS = frozenset({
-        're', 'dataclasses', 'agentic_sdlc.core.config'})
+        're', 'dataclasses', 'agentic_sdlc.core.config', 'agentic_sdlc.repo'})
 
     def _tree(self) -> ast.Module:
         return ast.parse(RULES_SOURCE.read_text(encoding='utf-8'))

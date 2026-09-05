@@ -17,6 +17,9 @@ So this composes, and re-implements nothing:
                       installing a hook is not ARMING it, and an unarmed hook
                       is a guard that is not there
     install-agents    the review/build contract + the base roster
+    install-sdlc      the SDLC document, RENDERED from the step lists — after
+                      the agents, because they cite it, and generated rather
+                      than shipped so it cannot drift from what runs
     install-ci        the three workflows
     .gitignore        the directory the gate library writes into
     CLAUDE.md         a skeleton naming the standard targets and the installed
@@ -101,7 +104,8 @@ SETUP_HOOKS = 'tools/setup-hooks.sh'
 # The delegated install verbs, in the order a fresh project needs them. Named
 # rather than derived from `install.PLANS`: the ORDER is init's contribution,
 # and a dict's insertion order is not a contract.
-VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-ci')
+VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-sdlc',
+         'install-ci')
 
 USAGE = """usage: agentic-sdlc init [--force] [--diff]
 
@@ -117,6 +121,8 @@ Stand a repo up on this toolkit. Writes, in order:
                      it                               (`install-hooks`)
   .claude/agents/    the review/build contract + the base roster
                                                       (`install-agents`)
+  docs/              the SDLC protocol, rendered from your step lists
+                                                      (`install-sdlc`)
   .github/workflows/ verify, semver-gate, auto-tag      (`install-ci`)
   .gitignore         the run-artifact directories, appended if absent
   CLAUDE.md          a skeleton naming the standard targets + installed rules

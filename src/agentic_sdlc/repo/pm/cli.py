@@ -64,6 +64,16 @@ USAGE = """usage: agentic-sdlc pm <command>
   list [--status <s>[,<s>…]] [--owner <name>] [--milestone <id>]
                                           (one tab-separated line per story:
                                            id, status, owner, feature)
+  ready-for feature|milestone|tag <id>    (the belt-entry condition below that
+                                           rung, as an EXIT CODE: 0 ready,
+                                           1 not ready — naming every blocker,
+                                           never a tally — 2 usage. feature:
+                                           every story at `reviewing`.
+                                           milestone: every feature done with a
+                                           non-empty review record. tag: every
+                                           finding in the records the milestone
+                                           points at at a disposition other
+                                           than `open`. Writes nothing)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field)
   templates [--force]                     (copy the templates into the project to edit)
@@ -2061,11 +2071,12 @@ def main(argv: list[str]) -> int:
         print(f'[pm] ERROR — {err}', file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
-    # Deferred: `skills` imports this module's shared vocabulary (Usage,
-    # Refused, _ok), so binding it at call time keeps the load order a
-    # non-question whichever module a caller imports first.
-    from agentic_sdlc.repo.pm import skills
+    # Deferred: `ready_for` and `skills` import this module's shared vocabulary
+    # (Usage, Refused, _ok, `_grain_file`), so binding them at call time keeps
+    # the load order a non-question whichever module a caller imports first.
+    from agentic_sdlc.repo.pm import ready_for, skills
     table = {
+        'ready-for': ready_for.cmd_ready_for,
         'story': cmd_story, 'bug': cmd_bug, 'feature': cmd_feature,
         'milestone': cmd_milestone, 'retire': cmd_retire, 'move': cmd_move,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,

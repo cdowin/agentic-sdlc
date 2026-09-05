@@ -188,3 +188,22 @@ run   = "make gates"
 [[verify.narrow]]
 paths = ".gitignore"
 run   = "python3 -m pytest tests/test_init_verb.py -q"
+
+# --- the release conveyor -----------------------------------------------------
+# The step list is the SHIPPED default, so it is not restated here — a list
+# copied into config is a list that stops tracking the registry. What IS here is
+# the two facts that are this repo's and nobody else's.
+
+[release.version_files]
+# Hard rule 7: `__version__` and `version` move together, ALWAYS. This package
+# carries the number in two files, so `version-sync` is asked about both — the
+# default is `[pm] version_file` alone, which would have checked one of them and
+# reported the pair in sync while they were not. That is the rule this repo
+# wrote for itself being enforced on itself for the first time.
+"pyproject.toml" = '^version = "(.*)"$'
+"src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
+
+[release.commands]
+# `prove-artifact` ships with NO default, because the proof names a git URL and
+# a URL is a project's fact, not this package's (rule 8). Ours:
+prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"

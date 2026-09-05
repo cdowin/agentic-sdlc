@@ -58,7 +58,7 @@ invisible deviation does not. `--status` prints what has been recorded.
 | 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the run refuses to advance. |
 | 19 | `merge` | JUDGEMENT | — *(operator)* | the mainline contains this branch's tip. |
 | 20 | `tag` | AUTOMATIC | — | the tag exists locally AND on the remote. It is never force-moved. |
-| 21 | `prove-artifact` | JUDGEMENT | — *(operator)* | the configured `prove-artifact` command exits 0. This package ships no default: the proof names a git URL, and a URL is the project's own fact (hard rule 8). |
+| 21 | `prove-artifact` | JUDGEMENT | `uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version` | the configured `prove-artifact` command exits 0. This package ships no default: the proof names a git URL, and a URL is the project's own fact (hard rule 8). |
 
 ## `adopt` — the ordered list
 

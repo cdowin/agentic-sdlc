@@ -148,26 +148,43 @@ is the standing floor beneath both: it holds the whole CLI to
 refuse-or-contained-write; the matrix pins the new surface's specifics on
 top of it.
 
-## Close protocol (ordered)
+## Close protocol — GENERATED, not written here
 
-Only once all features report and the tree is reconciled:
+**The ordered steps live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which
+`agentic-sdlc install-sdlc` RENDERS from `[release] steps` and the registry that
+walks them.** It is not hand-maintained and must not be edited: a document
+describing the steps is a second home for the protocol, and this package spent
+three incidents proving that a second home drifts. Run
+`agentic-sdlc release <version>`; it stops at the first step whose postcondition
+is not true and says what would make it true.
+
+What stays here is the part that is NOT a step — the judgement the machine
+cannot make and the rule that orders it:
 
 1. **Cross-cutting review** — a fresh strong reviewer over the milestone's
-   whole commit range (adversarial input, RUN — never diff-reading).
+   whole commit range (adversarial input, RUN — never diff-reading). The
+   conveyor's `review-landed` step reads the ARTIFACT of that review; it cannot
+   perform it, and it refuses to advance until the artifact exists.
 2. **Land every finding** it raised, or defer each one explicitly and in
-   writing.
-3. **Full gate** — `make milestone` (gates + hooks-self-test + matrix),
-   orchestrator's own run, and **it goes LAST**. A gate that runs before the
-   review answers for a tree nobody will ship: every fix landed afterwards
-   voids it, and it reads as readiness while doing so. Chris, 2026-09-04, after
-   this exact inversion cost two full runs on 0.24.0: *"The make milestone with
-   the full test suite is the LAST thing before saying 'yeah, this is done'."*
-   **When a gate and a judgement both bear on one decision, the judgement runs
-   first and the gate answers for its result.**
-4. **Docs + changelog** — sync drifted docs; retitle `CHANGELOG.md`'s
-   Unreleased section per the release skill.
-5. **Resolve findings** — every `docs/reviews/` doc for the milestone
-   resolved and deleted (create → resolve → delete).
-6. **Bump + merge + tag** — version bump (`__init__.py` and `pyproject.toml`
-   together), merge-commit to `main`, tag via the `/release` skill, consumer
-   pins reminded.
+   writing. `review-landed` passes only when no finding sits at
+   `disposition: open`.
+3. **When a gate and a judgement both bear on one decision, the judgement runs
+   first and the gate answers for its result.** Chris, 2026-09-04, after this
+   exact inversion cost two full runs on 0.24.0: *"The make milestone with the
+   full test suite is the LAST thing before saying 'yeah, this is done'."* A
+   gate that runs before the review answers for a tree nobody will ship: every
+   fix landed afterwards voids it, and it reads as readiness while doing so.
+
+   **That ordering is now structural rather than remembered** — `review-landed`
+   precedes `gate` in the shipped step list, and a registry that omits the
+   dependency is a test failure, watched failing: with the list `('gate',)` the
+   recorder file the gate touches exists; with `('review-landed', 'gate')` it
+   does not.
+4. **The semver call** — patch, minor or major (hard rule 7). Code cannot make
+   it; `version-sync` only checks that the number you chose is written in every
+   place that carries it.
+
+Everything else in the old numbered list — the tree checks, the changelog
+retitle, the version sync, the status flips, the push, the merge, the tag, the
+artifact proof — is a step in the generated document, with its own
+postcondition, and re-stating it here is exactly what this milestone removed.

@@ -161,8 +161,18 @@ def _pm_cfg(ctx: Context) -> 'model.PmConfig':
     return replace(model.load(), root=ctx.root)
 
 
-def _git(ctx: Context, *args: str) -> tuple[int, str]:
-    """`git` in the checkout. A missing git is an exit code, never a crash."""
+def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
+    """`git` in the checkout. A missing git is an exit code, never a crash.
+
+    `strip=False` for any porcelain format whose COLUMNS carry meaning.
+    `git status --porcelain` writes `XY<space>PATH`, and X is a space for a
+    worktree-only change — so a blanket `.strip()` ate one character off the
+    FIRST line and only the first: `SDLC.md` was reported as `DLC.md` while
+    every path below it was right. Found 2026-09-05 by running the conveyor on
+    this repo. A path that is wrong by one character sends an operator looking
+    for a file that does not exist, and it is wrong in the direction that looks
+    plausible.
+    """
     try:
         done = subprocess.run(('git',) + args, cwd=str(ctx.root),
                               capture_output=True, text=True, timeout=120)
@@ -172,7 +182,8 @@ def _git(ctx: Context, *args: str) -> tuple[int, str]:
         return 124, 'git timed out'
     except OSError as err:
         return 126, str(err)
-    return done.returncode, (done.stdout + done.stderr).strip()
+    out = done.stdout + done.stderr
+    return done.returncode, out.strip() if strip else out.rstrip('\n')
 
 
 def _branch(ctx: Context) -> str:
@@ -521,10 +532,12 @@ def _status_at_or_past(ctx: Context, wanted: str) -> Answer:
 
 # --- the steps ----------------------------------------------------------------
 def check_tree_clean(ctx: Context) -> Answer:
-    code, out = _git(ctx, 'status', '--porcelain')
+    # `strip=False`: column 0 is a space for a worktree-only change, and a
+    # stripped first line loses it — see `_git`.
+    code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
         return Answer.unverifiable(f'git status failed: {_clip(out)}')
-    if not out:
+    if not out.strip():
         return Answer.yes('no modified paths')
     paths = [line[3:] for line in out.split('\n') if len(line) > 3]
     return Answer.no(f'{len(paths)} modified path(s): {_clip(", ".join(paths))}')

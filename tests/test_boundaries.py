@@ -491,33 +491,19 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     'repo/checks/repo_hygiene.py',
     'repo/checks/shell.py',
     'repo/gates_extra.py',
-    'godot/checks/defaults.py',
-    'godot/checks/props.py',
-    'godot/checks/rng.py',
-    'godot/checks/test_shape.py',
-    'godot/checks/tres.py',
-    'godot/checks/tres_comment.py',
-    'godot/checks/uid.py',
-    'godot/checks/unit_disk.py',
-    'godot/read/autoloads.py',
-    'godot/read/orphans.py',
-    'godot/read/refs.py',
 ))
 # Calls that build a collection straight from an unguarded value.
 COLLECTORS = ('tuple', 'set', 'list', 'frozenset')
 # --- primitive 4: import layering ----------------------------------------------
 # (directory prefix, module prefixes it must NEVER import, census floor).
-# format/ is the floor of godot/ (the one upward edge there ever was —
-# `_uid_of` importing `uid_index` — is now an injected resolver); index/ sits
-# on format/ only; repo/ has no Godot in it, which is what keeps CLAUDE.md
-# rule 2's exit clause real; core/ knows about neither family.
+# `core/` is the floor — the walk, the writer, the config guards, the markdown
+# reader — and it knows about nothing above it; `repo/` sits on `core/` and is
+# reached only from the CLI, never the other way round. Two rows because the
+# package is two layers deep: an upward import is the architecture running
+# backwards, however locally convenient.
 LAYER_RULES = (
-    ('core/', ('agentic_sdlc.godot', 'agentic_sdlc.repo'), 4),
-    ('godot/format/', ('agentic_sdlc.godot.index', 'agentic_sdlc.godot.read',
-                       'agentic_sdlc.godot.write', 'agentic_sdlc.godot.checks'), 4),
-    ('godot/index/', ('agentic_sdlc.godot.read', 'agentic_sdlc.godot.write',
-                      'agentic_sdlc.godot.checks'), 4),
-    ('repo/', ('agentic_sdlc.godot',), 4),
+    ('core/', ('agentic_sdlc.repo', 'agentic_sdlc.cli'), 4),
+    ('repo/', ('agentic_sdlc.cli',), 4),
 )
 PACKAGE = 'agentic_sdlc'
 
@@ -615,7 +601,7 @@ class ConfigGoesThroughTheGuards(unittest.TestCase):
             'iterable:\n  ' + '\n  '.join(offenders))
         # The allowlist must not be vacuously satisfied: most of its members
         # really do import a config read today.
-        self.assertGreaterEqual(importers, 10, 'config-importer census collapsed')
+        self.assertGreaterEqual(importers, 6, 'config-importer census collapsed')
 
     def test_no_collection_is_built_from_an_unguarded_lookup(self):
         offenders: list[str] = []
@@ -681,9 +667,9 @@ class NoImportIsDead(unittest.TestCase):
 
 
 class LayersPointDownward(unittest.TestCase):
-    """PRIMITIVE 4b — format/ -> index/ -> read/+write/ -> checks/; repo/ has
-    no Godot in it; core/ knows about neither family. An upward import is the
-    architecture running backwards, however locally convenient."""
+    """PRIMITIVE 4b — core/ -> repo/ -> cli.py, downward only. An upward
+    import is the architecture running backwards, however locally
+    convenient."""
 
     def test_no_layer_imports_upward(self):
         sources = _sources()
@@ -703,8 +689,8 @@ class LayersPointDownward(unittest.TestCase):
         self.assertEqual(
             [], offenders,
             'an import against the layering. A layer imports DOWNWARD only '
-            '(format -> index -> read/write -> checks; repo/ never godot/; '
-            'core/ neither family):\n  ' + '\n  '.join(offenders))
+            '(core/ -> repo/ -> cli.py; nothing below reaches up):\n  '
+            + '\n  '.join(offenders))
 
 
 if __name__ == '__main__':

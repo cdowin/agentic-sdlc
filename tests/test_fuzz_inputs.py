@@ -11,18 +11,19 @@ docstring. This harness is the standing adversarial stage: a seeded mangler
 composes hostile ids/paths (traversal, empty and dot segments, backslashes,
 globs, absolute paths, URL-ish schemes, whitespace, newlines, quotes, unicode
 confusables, over-long strings) and drives them through the REAL CLI against a
-scratch tree, asserting two properties the docstrings claim:
+scratch tree, asserting the property the docstrings claim:
 
   GRAIN CONTAINMENT (pm) — for every id fed to status verbs / set / get /
   move / decide: either the command refuses (exit 1/2, whole scratch tree
   byte-identical, proven by snapshot), or every file it touched realpaths
-  INSIDE pm/roadmap/<milestone>/ in the slot the verb's grain kind owns.
+  INSIDE pm/roadmap/<milestone>/ in the slot the verb's grain kind owns. Never
+  an exception escaping `cli.main` (the real CLI's traceback), and never a
+  write to a file the command did not name.
 
-  VERB REFUSAL TOTALITY (scene / refs --retarget) — for every mangled node
-  path / sub_resource id / res:// path: exit 0 with the edit confined to the
-  file the command named, or a refusal with the tree byte-identical — never an
-  exception escaping `cli.main` (the real CLI's traceback), never a write to a
-  file the command did not name.
+A second property — VERB REFUSAL TOTALITY over `scene` / `refs --retarget` —
+ran here until those verbs left this package with the rest of the scene plane.
+The mangler is unchanged: it composes ids and paths, not scenes, and the same
+hostile classes are what the pm surface is attacked with.
 
 TEETH — proven against the pre-fix code, not assumed
 The pre-fix package (commit 76e28fb~1, the code the v0.16.0 release review
@@ -42,11 +43,12 @@ committed floor beneath that one-time run is
 `test_the_corpus_separates_the_pre_fix_resolver`, which keeps a transcription
 of the rejected resolver in-tree and proves the corpus still reaches it.
 
-The three findings this harness caught on its first run (decide dot-segment
-traversal, the absolute-milestone-id NotImplementedError, the overlong scene
-path OSError) were pinned as known findings, fixed in 0.17.0, and their pins
-replaced by the explicit refusal tests at the bottom of this file — both
-properties now run at full strength with no judge carve-outs.
+Two of the three findings this harness caught on its first run (decide
+dot-segment traversal, the absolute-milestone-id NotImplementedError; the
+third was an overlong scene path, on the plane that has since left) were
+pinned as known findings, fixed in 0.17.0, and their pins replaced by the
+explicit refusal tests at the bottom of this file — the property runs at full
+strength with no judge carve-outs.
 """
 from __future__ import annotations
 
@@ -56,7 +58,6 @@ import io
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,7 +67,10 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from support import FIXTURES  # noqa: E402
+import support  # noqa: E402,F401 — imported for the side effect it owns: the
+# support package is what puts src/ on sys.path, and this module imports the
+# package below. It held `FIXTURES` too until the scene corpus left; the path
+# setup did not leave with it.
 
 # Teeth-proof overlay: point the harness at another src tree (see docstring).
 # Purging agentic_sdlc from sys.modules makes the overlay win even when another
@@ -88,8 +92,6 @@ pytestmark = pytest.mark.fuzz
 # covered, so it moves only with a recorded reason.
 SEED = 20260830
 PM_CASES = 320
-SCENE_CASES = 320
-RETARGET_CASES = 100
 
 
 # --- the mangler --------------------------------------------------------------
@@ -417,175 +419,47 @@ def test_grain_containment_under_mangled_ids():
         + '\n\n'.join(violations[:8]))
 
 
-# --- property (b): verb refusal totality --------------------------------------
-_NODE_BASES = ('.', 'Inner', 'Footer', 'Panel/Inner')
-_SUB_BASES = ('1_abc', 'StyleBoxFlat_1')
-_SCENE = 'scenes/panel.tscn'
-_FILE_BASES = ('scenes/panel.tscn', 'scenes/referrer.tscn')
-
-
-def _build_scene(outer: Path, root: Path) -> None:
-    shutil.copytree(FIXTURES / 'canon_repo', root)
-    (outer / 'outside.tscn').write_text(
-        '[gd_scene format=3]\n\n[node name="Decoy" type="Node"]\n',
-        encoding='utf-8')
-
-
-def _scene_argv(rng: random.Random) -> tuple[str, ...]:
-    file = _SCENE if rng.random() < 0.8 else _mangle(rng, _FILE_BASES)
-    np = _mangle(rng, _NODE_BASES)
-    kind = rng.choice(('set', 'set', 'sub', 'rm', 'rename', 'add', 'script',
-                       'connect'))
-    if kind == 'set':
-        value = '"fuzz"' if rng.random() < 0.7 else _mangle(rng, ('true',))
-        prop = 'text' if rng.random() < 0.7 else _mangle(rng, ('text',))
-        return 'scene', 'set', file, np, prop, value
-    if kind == 'sub':
-        return ('scene', 'set', file, '--sub-resource',
-                _mangle(rng, _SUB_BASES), 'bg_color', '"red"')
-    if kind == 'rm':
-        return 'scene', 'rm', file, np
-    if kind == 'rename':
-        return 'scene', 'rename', file, np, _mangle(rng, ('Renamed',))
-    if kind == 'add':
-        return 'scene', 'add', file, np, _mangle(rng, ('Fresh',)), 'Node2D'
-    if kind == 'script':
-        return ('scene', 'add', file, '.', 'Scripted', 'Node2D', '--script',
-                _mangle(rng, ('res://systems/logic.gd',)))
-    return ('scene', 'connect', file, _mangle(rng, ('pressed',)), np,
-            _mangle(rng, _NODE_BASES), 'on_fuzz')
-
-
-def _named_file(argv: tuple[str, ...], root: Path) -> Path | None:
-    try:
-        return (root / argv[2]).resolve()
-    except (OSError, ValueError):
-        return None
-
-
-def _judge_scene(argv, code, out, escaped, delta, outer, root) -> str | None:
-    where = f'{argv!r} -> code={code} delta={delta} out={out[:160]!r}'
-    if escaped is not None:
-        return f'TRACEBACK {type(escaped).__name__}: {escaped!r} on {where}'
-    if code not in (0, 1, 2):
-        return f'EXIT CODE outside the contract on {where}'
-    if code != 0 and delta:
-        return f'REFUSAL WROTE on {where}'
-    if code == 0 and delta:
-        named = _named_file(argv, root)
-        for rel in delta:
-            if (outer / rel).resolve() != named:
-                return f'WROTE AN UNNAMED FILE: {rel} on {where}'
-    return None
-
-
-@functools.lru_cache(maxsize=1)
-def _scene_results() -> tuple[tuple[str, ...], dict]:
-    rng = random.Random(SEED + 1)
-    violations: list[str] = []
-    census: Counter = Counter()
-    with _scratch(_build_scene) as (outer, root):
-        base = _snap(outer)
-        for _ in range(SCENE_CASES):
-            argv = _scene_argv(rng)
-            code, out, escaped = _run(argv)
-            delta = _delta(base, _snap(outer))
-            verdict = _judge_scene(argv, code, out, escaped, delta, outer, root)
-            if verdict:
-                violations.append(verdict)
-            census['refused'] += 1 if code in (1, 2) else 0
-            census['accepted-write'] += 1 if code == 0 and delta else 0
-            if delta:
-                _restore(outer, base)
-    return tuple(violations), dict(census)
-
-
-def test_scene_verbs_refuse_or_edit_only_the_named_file():
-    violations, _ = _scene_results()
-    assert not violations, (
-        f'{len(violations)} totality violations (seed {SEED + 1}):\n\n'
-        + '\n\n'.join(violations[:8]))
-
-
-_OLD = 'res://scripts/old_helper.gd'
-_NEW = 'res://scripts/new_helper.gd'
-_SOURCE_SUFFIXES = ('.tscn', '.tres', '.gd')
-
-
-def _build_retarget(outer: Path, root: Path) -> None:
-    shutil.copytree(FIXTURES / 'retarget_repo', root)
-    (outer / 'outside.tscn').write_text(
-        '[gd_scene load_steps=2 format=3]\n\n'
-        f'[ext_resource type="Script" path="{_OLD}" id="1_h"]\n',
-        encoding='utf-8')
-
-
-@functools.lru_cache(maxsize=1)
-def _retarget_results() -> tuple[tuple[str, ...], dict]:
-    rng = random.Random(SEED + 2)
-    violations: list[str] = []
-    census: Counter = Counter()
-    with _scratch(_build_retarget) as (outer, root):
-        base = _snap(outer)
-        for _ in range(RETARGET_CASES):
-            old = _OLD if rng.random() < 0.4 else _mangle(rng, (_OLD,))
-            new = _NEW if rng.random() < 0.4 else _mangle(rng, (_NEW,))
-            argv = ('refs', '--retarget', old, new)
-            code, out, escaped = _run(argv)
-            delta = _delta(base, _snap(outer))
-            where = f'{argv!r} -> code={code} delta={delta} out={out[:160]!r}'
-            if escaped is not None:
-                violations.append(f'TRACEBACK {type(escaped).__name__}: '
-                                  f'{escaped!r} on {where}')
-            elif code not in (0, 1, 2):
-                violations.append(f'EXIT CODE outside the contract on {where}')
-            elif code == 2 and delta:
-                violations.append(f'USAGE ERROR WROTE on {where}')
-            else:
-                # exit 1 with rewrites is contractual here: a skip is loud
-                # (exit 1) while provable refs are still rewritten.
-                for rel in delta:
-                    inside = (outer / rel).resolve().is_relative_to(
-                        root.resolve())
-                    if not inside or not rel.endswith(_SOURCE_SUFFIXES):
-                        violations.append(
-                            f'WROTE OUTSIDE THE SWEEP: {rel} on {where}')
-            census['refused'] += 1 if code in (1, 2) and not delta else 0
-            census['accepted-write'] += 1 if delta else 0
-            if delta:
-                _restore(outer, base)
-    return tuple(violations), dict(census)
-
-
-def test_retarget_refuses_or_sweeps_only_source_files_in_repo():
-    violations, _ = _retarget_results()
-    assert not violations, (
-        f'{len(violations)} retarget violations (seed {SEED + 2}):\n\n'
-        + '\n\n'.join(violations[:8]))
-
-
 # --- the teeth ----------------------------------------------------------------
+# Every hostile class the module docstring advertises. Named here rather than
+# inline so the census and the prose cannot drift: a class dropped from the
+# generator has to be dropped from this tuple, in the open.
+HOSTILE_CLASSES = ('dot-segment', 'empty-segment', 'backslash', 'glob',
+                   'absolute', 'scheme', 'whitespace', 'newline', 'quote',
+                   'confusable', 'overlong', 'dash')
+
+
 def test_the_corpus_actually_exercises_every_hostile_class_and_both_verdicts():
     """A fuzz whose corpus is all one answer proves nothing.
 
     Two censuses, asserted rather than trusted: the generator must still emit
-    every hostile input class it advertises, and the runs must contain both
+    every hostile input class it advertises, and the run must contain both
     refusals AND accepted writes — a corpus the CLI always refuses would let
     the containment clauses rot unexercised.
+
+    It covered three verb families until the scene/retarget half of the CLI
+    left this package; the classes are unchanged (they are the MANGLER's, not
+    a verb's) and the verdict floors are now the pm run's alone. A census whose
+    subject shrank is still a census — one whose subject was deleted is not.
     """
     _, pm = _pm_results()
-    _, scene = _scene_results()
-    _, retarget = _retarget_results()
-    for cls in ('dot-segment', 'empty-segment', 'backslash', 'glob',
-                'absolute', 'scheme', 'whitespace', 'newline', 'quote',
-                'confusable', 'overlong', 'dash'):
+    for cls in HOSTILE_CLASSES:
         assert pm.get(f'class:{cls}', 0) >= 8, (cls, pm)
     assert pm['refused'] >= 150, pm
     assert pm['accepted-write'] >= 5, pm
-    assert scene['refused'] >= 100, scene
-    assert scene['accepted-write'] >= 5, scene
-    assert retarget['refused'] >= 30, retarget
-    assert retarget['accepted-write'] >= 3, retarget
+
+
+def test_the_census_names_every_class_the_mangler_can_emit():
+    """The other direction, and the one a shrinking census needs: a class the
+    generator produces but the roster above forgot would go unasserted for
+    ever. `_classes_of` is the closed vocabulary, so the two must agree
+    exactly."""
+    import inspect
+    emitted = {line.split("add('")[1].split("')")[0]
+               for line in inspect.getsource(_classes_of).splitlines()
+               if '.add(' in line}
+    assert emitted == set(HOSTILE_CLASSES), (
+        f'the classifier emits {sorted(emitted)} and the census asserts '
+        f'{sorted(HOSTILE_CLASSES)} — one of them was narrowed alone')
 
 
 def _pre_fix_bug_resolver(mdir: Path, gid: str) -> Path | None:

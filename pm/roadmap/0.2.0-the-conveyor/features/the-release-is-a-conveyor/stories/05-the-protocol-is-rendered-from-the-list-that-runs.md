@@ -3,7 +3,7 @@ id: 0.2.0/the-release-is-a-conveyor/05-the-protocol-is-rendered-from-the-list-th
 feature: 0.2.0/the-release-is-a-conveyor
 milestone: "0.2.0"
 name: The protocol a consumer reads is rendered from the list that runs
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-release-is-a-conveyor/02-the-step-list-is-the-projects", "0.2.0/the-release-is-a-conveyor/03-the-gate-cannot-run-before-the-review-landed"]
 ---

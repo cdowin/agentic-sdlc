@@ -3,7 +3,7 @@ id: 0.2.0/the-belts-refuse-to-advance/02-ready-for-milestone-names-the-features-
 feature: 0.2.0/the-belts-refuse-to-advance
 milestone: "0.2.0"
 name: ready-for milestone names every feature that is not done with a record
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-belts-refuse-to-advance/01-ready-for-feature-names-the-stories-that-block-it"]
 ---

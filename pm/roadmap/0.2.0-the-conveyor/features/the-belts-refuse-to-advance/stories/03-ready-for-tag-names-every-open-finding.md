@@ -3,7 +3,7 @@ id: 0.2.0/the-belts-refuse-to-advance/03-ready-for-tag-names-every-open-finding
 feature: 0.2.0/the-belts-refuse-to-advance
 milestone: "0.2.0"
 name: ready-for tag names every finding still at open
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-belts-refuse-to-advance/02-ready-for-milestone-names-the-features-that-block-it"]
 ---

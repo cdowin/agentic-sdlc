@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit/05-every-operation-has-on
 feature: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: The ladder has three rungs and each names the composition that is it
-status: planning
+status: reviewing
 owner:
 depends_on: []
 ---

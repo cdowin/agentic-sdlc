@@ -90,6 +90,52 @@
   `run`) rules for the story rung, plus `feature` and `milestone` naming the make targets that ARE
   the wider rungs. A capture never spans `/`, a rule is forward XOR reverse, and a malformed rule
   set exits 2 naming every bad rule's own index rather than dropping it in silence.
+- **`agentic-sdlc verify --story | --feature | --milestone`** — the ladder, one verb and one
+  scope per operation. `--plan` prints all three rungs with their **measured** cost from the
+  ledger's `gate` rows and the word `unknown` where none exists; it never estimates, because a
+  fabricated ratio is worse than none — it gets quoted. `--check` fails a rule whose glob matches
+  zero tracked files or whose `run` names a target that does not exist, each naming the rule's own
+  index. **A changed path matching no rule is NAMED and the widest rung runs**: a narrow verifier
+  that matches nothing and exits 0 reports success for work it never checked.
+- **`agentic-sdlc pm ready-for feature|milestone|tag <id>`** — the belt entry conditions as exit
+  codes (0 ready, 1 not, 2 usage/config). Exit 1 **names** every blocker — the stories not at
+  `reviewing`, the features not `done` or without a record, the findings still `open` and the
+  record each came from — and never prints a tally. A verdict block that does not parse is
+  UNVERIFIABLE, never a pass.
+- **`gdk_gate.sh` files one cost row per gate RUN**, through the pair `gdk_gate_log` (opens the
+  slot) → the first `gdk_gate_verdict` naming it (closes it), so a runner with five alternative
+  exits files one row and not five. Entirely OFF until `GDK_LEDGER_CMD` is set, and it **fails
+  open**: an unset, missing, failing, chatty, hanging or unwritable recorder never changes a
+  gate's exit code or its verdict line. `Makefile.devkit` exports the one line that bridges it,
+  because a sourced shell library cannot see a make variable.
+- **`pm ledger report` grows a `gate cost` section** — runs, first/last milliseconds, a signed
+  delta, and the census beside it. A delta whose census moved or is absent is starred and counted
+  in the heading, because the same gate is legitimately slower on a bigger tree.
+- **`check grain-shape`** — the prose cap over grain documents, owned by the kit that defines the
+  grain schema. One in-process pass, no subprocess per file. Caps are `[grain_shape] caps` with
+  shipped defaults, merged over rather than replacing, so naming one kind never un-caps the other
+  five. A repo with no PM tree, or with a tree holding no grain yet, is a **no-op that says so** —
+  `check pm` is the gate with an opinion about a PM tree being there.
+- `check hooks` now replays each installed hook's own `--self-test` corpus, and a corpus list that
+  empties out **fails** rather than reporting `0 hook(s) OK` as a pass.
+- **`agentic-sdlc release <version>` and `agentic-sdlc adopt`** — a resumable step machine over
+  `[release] steps` / `[adopt] steps` that **refuses to advance** past a step whose postcondition
+  is not true. Three kinds: `AUTOMATIC` (code does it, then re-asks — `do()` never decides its own
+  outcome), `GATE` (a command, exit 0), and `JUDGEMENT` (code cannot perform it; it reads the
+  artifact, or a `[release.commands]` command the project supplies, and with neither answers
+  UNVERIFIABLE, which is a refusal). `pr-open`, `ci-green` and `prove-artifact` ship with **no**
+  default command — stdlib only, forever, so this package will not reach for `gh` or a URL.
+  Position lives in `.agentic-sdlc/run/<operation>.json`, gitignored, as a **cache of `check()`
+  answers and never the authority**: a step the file calls done is re-checked, the tree wins any
+  disagreement, and the correction is printed.
+- **`--skip <step> --reason "…"` writes a `deviation` ledger row.** Deviation stays possible;
+  invisible deviation does not.
+- **`install-sdlc`** renders your release protocol from your own step list, so the protocol a
+  human reads and the protocol that runs cannot drift. `agentic-sdlc init` composes it, after
+  `install-agents`, because the agents cite it.
+- `[doc] scope` and `[doc] ephemeral` were bound at IMPORT, so a malformed section stopped exiting
+  2 once the module was loaded — findings, or none, where the contract says 2. Config is read per
+  run now, and a boundary test holds every module in the package to it.
 
 - **This repo is the agentic half of `godot-devkit`, extracted at that project's `v0.24.0`.** SDLC, CI,
   hooks, the PM tree, installables and release automation; no Godot knowledge of any kind. The split was

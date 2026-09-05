@@ -890,6 +890,22 @@ def record_resolves(path: Path) -> bool:
     return path.is_file()
 
 
+def _pointer_escapes(pointer: str) -> bool:
+    """Does a `reviewed:` pointer name somewhere outside the checkout?
+
+    The same shapes `core.config.relpath` refuses for a config VALUE, asked of
+    a document FIELD. Not shared with it: that one raises `ConfigError` and
+    exits 2, which is right for a devkit.toml mistake and wrong for a grain
+    file — a bad pointer in one feature is a FINDING about that feature (D1
+    reports it), not a config error that stops the whole gate. Same shapes,
+    different consequence, so the same answer arrives through a predicate
+    rather than an exception.
+    """
+    return (pointer.startswith(('/', '~', '\\'))
+            or ':' in pointer.split('/', 1)[0]
+            or '..' in Path(pointer).parts)
+
+
 def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     """The feature's resolved review record, or None if it has none.
 
@@ -904,8 +920,19 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
         return None
     pointer = unquote(field_of(ffile, 'reviewed'))
     if pointer and pointer != 'null':
-        target = Path(pointer) if pointer.startswith('/') else cfg.root / pointer
-        if record_resolves(target):
+        # REPO-RELATIVE, ALWAYS. An absolute pointer used to be followed here
+        # (`Path(pointer) if pointer.startswith('/')`), so D1 called a feature
+        # reviewed on the strength of a file outside the checkout — while
+        # `pm ready-for tag`, reading the same bytes, refused it by shape.
+        # Two readers, one field, opposite answers, and the permissive one was
+        # the gate. Found by the 0.2.0 release review (M3's neighbourhood).
+        #
+        # Rule 8 settles it rather than taste: a review record this repo cannot
+        # show you is a record nobody reviewing this repo can read, and a
+        # release gate satisfied by one is satisfied by nothing.
+        if _pointer_escapes(pointer):
+            return None
+        if record_resolves(cfg.root / pointer):
             return pointer
     if cfg.review_slug_fallback:
         slug = fid.partition('/')[2]

@@ -107,6 +107,32 @@ def test_the_library_corpus_FAILS_when_capture_stops_reading_PIPESTATUS(tmp_path
     assert 'capture reports the command exit code' in done.stderr, done.stderr
 
 
+def test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe(tmp_path):
+    """The recorder bound, held to being able to go red ON TIME.
+
+    Twelve hostile `GDK_LEDGER_CMD` values in the 0.2.0 review moved neither
+    the verdict line nor the exit code — fail-open on OUTCOME was proven. Two
+    of them cost 120 s against a 3 s bound anyway, because the output was read
+    through `$( )` and a recorder that backgrounds anything leaves the
+    substitution's pipe open behind it. `timeout` never saw a deadline to fire:
+    its direct child exited 0 immediately.
+
+    So this mutant restores exactly that one line. An output-only corpus cannot
+    tell the two libraries apart — the mutant prints every verdict this one
+    does — and the case it must redden is the wall-clock one.
+    """
+    mutant = tmp_path / LIBRARY.name
+    source = LIBRARY.read_text(encoding='utf-8')
+    piped = '\t\tsaid="$(_gdk_ledger_run "${prefix[@]}" "${argv[@]}" 2>&1)" || rc=$?'
+    redirected = ('\t\t_gdk_ledger_run "${prefix[@]}" "${argv[@]}" '
+                  '> "$scratch" 2>&1 || rc=$?')
+    assert source.count(redirected) == 1, 'the redirect this mutant reverts moved'
+    mutant.write_text(source.replace(redirected, piped), encoding='utf-8')
+    done = run(str(mutant), '--self-test')
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert 'does not hold the gate open' in done.stderr, done.stderr
+
+
 # --- the verdict line and its log, end to end --------------------------------
 def test_a_gate_prints_one_verdict_line_naming_a_log_that_holds_the_stream(tmp_path):
     script = tmp_path / 'gate.sh'

@@ -164,3 +164,9 @@ adopt story adds none.
   list; who supplies them is not this story's question.
 - `--skip` — story 04. The flag is parsed as unknown here and exits 2 until that story lands.
 - Any change to `verdict.py`, `checks/pm.py`, or the pm state vocabulary.
+
+## Close
+
+done: 6e9388d — the driver, three step kinds, run state as a CACHE of check() answers and
+never the authority. A lying do() cannot advance the machine — that test is the feature, and
+it was watched failing with the following step having run.

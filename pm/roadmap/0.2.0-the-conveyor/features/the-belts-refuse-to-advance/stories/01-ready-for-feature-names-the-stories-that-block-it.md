@@ -115,3 +115,9 @@ capped and explicitly truncated with a count of the remainder, never silently sh
   codes.
 - Any change to `check pm`'s rules, to `pm status`, or to any status vocabulary.
 - Wiring the verb into a gate or a hook.
+
+## Close
+
+done: 6e9388d f7465c2 — pm ready-for feature, naming every blocker rather than counting.
+f7465c2 changed the predicate from `reviewing` to `done` on Chris's ruling — the stricter
+question, which is the tell it was the right one.

@@ -51,3 +51,10 @@ Touch: `src/agentic_sdlc/repo/checks/grain_shape.py` (new), `src/agentic_sdlc/cl
 (`_check_module` + `KNOWN_GATES`), `tests/`, `README.md` table row, `CHANGELOG.md`.
 **Depends on `0.2.0/the-extraction-finishes` story 01** — the roster census must exist before
 the roster grows through it.
+
+## Close
+
+done: 6e9388d 14dca39 — check grain-shape, one in-process pass: 44 documents in 0.09 s here
+against 34.8 s for the consumer-authored script over 683. Release review M1/M2 landed in
+14dca39: the census goes in both verdict lines, and a walk that kept nothing while leaving
+something UNEXAMINED is loud.

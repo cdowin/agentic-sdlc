@@ -133,3 +133,9 @@ which lands first.** Rebase onto its shape rather than reverting it.
   `every-gate-reports-its-cost`'s territory; this story only guarantees the rows do not break it.
 - `--skip` for `adopt` — the flag is operation-generic here, so the adopt feature inherits it
   and adds nothing.
+
+## Close
+
+done: 6e9388d — --skip <step> --reason writes a `deviation` row. Skips ONLY: the ledger is
+tracked, so a row per completed step would dirty the tree and falsify tree-clean — the
+machine making its own precondition false.

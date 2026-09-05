@@ -38,3 +38,8 @@ than a bare error, because it reads as documentation.
 ## Files
 Touch: `src/agentic_sdlc/cli.py` (docstring only), `tests/`.
 Stay out of: everything story 01 touches in the same file — land 01 first.
+
+## Close
+
+done: 268fa44 — the ~14 absent scene verbs left --help; tests/test_cli_surface.py parses the
+verb list back out of the docstring and asserts both directions. 3 of 7 fail at HEAD.

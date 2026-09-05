@@ -40,3 +40,10 @@ wheel root, so it ships. `cli.py:121` `RETARGET_FLAG` has zero readers.
 ## Files
 Touch: `src/agentic_sdlc/data/` (delete), `pyproject.toml`, `tests/fixtures/*.tscn` (delete),
 `tests/test_shell_mark.py`, `tests/support/__init__.py`, one line of `src/agentic_sdlc/cli.py`.
+
+## Close
+
+done: 268fa44 — data/classdb.json (129,490 bytes, zero readers), RETARGET_FLAG, two orphan
+.tscn fixtures and support.temp_repo removed; test_wheel_payload.py holds the tree to
+"everything here ships, so everything here needs a reader". Wheel proven: 84 entries, no
+engine payload.

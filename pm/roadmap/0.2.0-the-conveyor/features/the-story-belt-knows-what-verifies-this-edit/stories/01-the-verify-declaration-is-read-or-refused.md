@@ -141,3 +141,10 @@ present but not a table.
 - The verb, its flags, its exit codes, or the ratio — story 04.
 - Validating that a `run` names a target that EXISTS. That is `verify --check`, story 04:
   it needs the make/target world, and this module deliberately never spawns.
+
+## Close
+
+done: 6afa35d — [verify] read through one coercion in core/config.py; 112 hostile inputs;
+every malformed rule reported at once naming its own index, because a rule dropped in silence
+is a caller verifying less than it thinks. Seven mutations run to prove the matrix bites; the
+first probe did not, and was rewritten until it did.

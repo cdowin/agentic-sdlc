@@ -114,3 +114,9 @@ regex (`## covers.*:`) against a file containing `## coversXYZ:`, which must NOT
 - Turning a stale rule into a gate finding — that is `verify --check`, story 04. This story
   ships the numbers that make it possible.
 - Any change to how `pm-shape-scan` or any existing gate reads files.
+
+## Close
+
+done: 6e9388d — the reverse direction: a test declaring its own coverage is selected by a
+changed path. Segment-bounded, because an unbounded prefix is the off-by-one that silently
+over-selects.

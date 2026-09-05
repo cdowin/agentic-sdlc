@@ -57,3 +57,8 @@ milestone: check $(GDK_MILESTONE_TIERS)
 ## Files
 Touch: `src/agentic_sdlc/repo/installables/Makefile.devkit`, `tests/test_makefile_include.py`.
 Stay out of: `src/agentic_sdlc/repo/gates_extra.py`, `devkit.toml`, the repo's own `Makefile`.
+
+## Close
+
+done: b9cf082 — Makefile.devkit 314->243 lines, no language target; precommit/milestone
+compose from GDK_*_TIERS via -include. 13 tests watched failing against the pre-change file.

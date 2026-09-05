@@ -49,3 +49,10 @@ Each is verified present at `29bc4b7`:
 ## Files
 Touch: `README.md`, `CLAUDE.md`, `devkit.toml`.
 Stay out of: `src/`, `tests/`, `pm/`.
+
+## Close
+
+done: 69df2df — README's install pin said @v0.24.0, another package's tag on a copy-pasteable
+line. CLAUDE.md rule 2's "if that stops being true, it leaves" clause is quoted with the
+outcome attached rather than deleted. devkit.toml drops [uid]/[tres]/[props].
+finding: 650dc45 — the stock init's own first `check shell` named the wrong cause.

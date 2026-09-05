@@ -110,3 +110,7 @@ the key and the offending value, and runs **no step**.
 - Running a configured command. `commands_for` returns strings; the driver executes them.
 - `[adopt]`'s own default list — `0.2.0/adopt-is-a-conveyor/01`. This story only makes the
   reader operation-generic.
+
+## Close
+
+done: 6e9388d — [release] steps and [release.commands] as config, 23 refusal rows.

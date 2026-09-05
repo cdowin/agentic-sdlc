@@ -1,12 +1,12 @@
 ---
-id: 0.3.0/the-belts-report-they-do-not-refuse
-milestone: "0.3.0"
+id: 0.2.0/the-belts-report-they-do-not-refuse
+milestone: "0.2.0"
 name: A belt moves, warns, and finishes — the caller decides
 status: planning
 reviewed:
-phase: 1
+phase: 6
 depends_on: []
-consumed_by: ["0.3.0/states-are-categories-not-words"]
+consumed_by: []
 risk: medium
 size: m
 labels: ["conveyor", "sdlc", "subtraction"]

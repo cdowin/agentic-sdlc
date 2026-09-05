@@ -1,10 +1,10 @@
 ---
-id: 0.3.0/the-transitions-table-is-published-vocabulary
-milestone: "0.3.0"
+id: 0.2.0/the-transitions-table-is-published-vocabulary
+milestone: "0.2.0"
 name: The step registry is this package's vocabulary, read at a pin bump
 status: planning
 reviewed:
-phase: 1
+phase: 6
 depends_on: []
 consumed_by: []
 risk: medium

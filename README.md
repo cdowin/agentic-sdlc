@@ -345,8 +345,18 @@ belongs at milestone close, because it hits the network and judges the state a c
 
 ## Northstar
 
+> **A simple local Jira** — it creates the work, moves it, expresses what the states are and what
+> the flow is, and it **infers nothing**.
+>
 > **Anything a project checks, scaffolds or tracks by hand should be one deterministic command that
 > touches nothing else — and provable without reading the tree.**
+
+Expressing the flow is the power. *Deciding what it means to move through the flow is a separate
+problem*, and it belongs to whatever is running the flow — an agent with a dispatch, a reviewer, a
+person who can be asked. So the engine has two verbs: **move a grain, if the transition is
+declared**, and **ask which grains are in a category, and name the ones that are not.** Your
+states, your transitions, your flow; `init` writes them into `devkit.toml`, every run reads them,
+and nothing here has an opinion about your words (hard rule 9).
 
 For a **human**, the ritual stops being a thing to remember and the diffs stay reviewable. For an
 **LLM**: a small stable vocabulary of verbs to compose instead of inventing a bespoke `sed`;
@@ -365,6 +375,10 @@ incident, not a nice-to-have:
 - **Encode the footguns as gates,** so the knowledge lives in a gate instead of in a person or prompt.
 - **Versioned, not vendored.** Consumers pin a tag in one Makefile variable and put project variation
   in `devkit.toml`, so there is no fork-drift to police.
+- **Report, do not refuse — about your tree.** Closing a feature with open stories gets you a
+  warning naming them, not a wall. A tool that refuses gets worked around invisibly, and then the
+  protocol teaches nothing. A malformed *declaration* is still refused at exit 2: that is reading,
+  not deciding.
 
 **Scope boundary.** This is not a linter, a test runner or a build system, and it does not want to
 be: it owns the **discipline around** the code — the work tree, the always-loaded agent docs, the

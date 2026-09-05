@@ -184,7 +184,7 @@ Reviewer's token cost: ~120k across all three feature records.
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| S1 | MAJOR | landed 3935205: `--check` asks the SELECTOR whether a rule is ever first |
-| S2 | MAJOR | landed 3935205: the census counts the union of matched paths |
-| S3 | MINOR | landed 3935205: ruled NO with a count — `K run(s) unvalidated` plus the reasoning |
+| S1 | MAJOR | landed 3935205 |
+| S2 | MAJOR | landed 3935205 |
+| S3 | MINOR | landed 3935205 |
 ```

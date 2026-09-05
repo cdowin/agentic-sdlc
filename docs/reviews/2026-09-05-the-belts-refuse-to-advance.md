@@ -171,8 +171,8 @@ Reviewer's token cost: ~120k across all three feature records.
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| B1 | MAJOR | landed f4a9d6a: `--help`, the README ladder and the advisory all ask `model.is_terminal` |
+| B1 | MAJOR | landed f4a9d6a |
 | B2 | MAJOR | landed f4a9d6a |
-| B3 | MINOR | landed f4a9d6a: the advisory asked a THIRD question; all three now ask one |
+| B3 | MINOR | landed f4a9d6a |
 | B4 | MINOR | landed f4a9d6a |
 ```

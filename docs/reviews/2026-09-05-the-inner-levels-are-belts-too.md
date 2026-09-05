@@ -239,8 +239,8 @@ Reviewer's token cost: ~148k (shared across all three feature records).
 ```
 verdict: HOLD
 | id | severity | disposition |
-| I1 | BLOCKER | landed 2b29b7b: the rung scans the story RANGE from the author's own `done:` line, and a census of zero is UNVERIFIABLE |
+| I1 | BLOCKER | landed 2b29b7b |
 | I2 | BLOCKER | open: the 26 parked stories close through the belts in phase 5 |
-| I3 | MINOR | landed 2b29b7b: `verify --story --ignore <path>`, so the belt's own writes are not the operator's edit |
+| I3 | MINOR | landed 2b29b7b |
 | I4 | NIT | landed 52a4d8e |
 ```

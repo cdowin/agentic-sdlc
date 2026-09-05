@@ -214,7 +214,7 @@ Reviewer's token cost: ~100k for the three-feature pass, of which this record is
 ```
 verdict: HOLD
 | id | severity | disposition |
-| K1 | BLOCKER | landed 2a23d84: SkipReason.UNREADABLE_DIR, re-measured on a mode-000 directory |
-| K2 | MINOR | landed 52a4d8e: the Close credits cc0569d, and the release review's M1 row with it |
-| K3 | MINOR | landed 52a4d8e: reporting how few can BLOCK, not refusing (D2 accepted the small corpus) |
+| K1 | BLOCKER | landed 2a23d84 |
+| K2 | MINOR | landed 52a4d8e |
+| K3 | MINOR | landed 52a4d8e |
 ```

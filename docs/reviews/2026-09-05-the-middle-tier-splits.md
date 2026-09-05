@@ -206,8 +206,8 @@ Reviewer's token cost: ~100k for the three-feature pass, of which this record is
 ```
 verdict: HOLD
 | id | severity | disposition |
-| T1 | BLOCKER | landed 2a23d84; the BEHAVIOURAL test it never had landed 52a4d8e, with a probe that reproduces the defect |
-| T2 | MINOR | landed 52a4d8e, plus a sweep of all 26 paths CLAUDE.md names |
+| T1 | BLOCKER | landed 2a23d84 |
+| T2 | MINOR | landed 52a4d8e |
 | T3 | MINOR | landed 50cc01d |
-| T4 | MINOR | landed 52a4d8e: the rename is 8f4e9c1; f504ab5 touches neither file |
+| T4 | MINOR | landed 52a4d8e |
 ```

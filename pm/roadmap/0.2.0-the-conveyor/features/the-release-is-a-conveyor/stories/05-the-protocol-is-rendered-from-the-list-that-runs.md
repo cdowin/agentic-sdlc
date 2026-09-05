@@ -129,3 +129,10 @@ this story READS the registry and must not edit it, `conveyor/skip.py` and
 - A `--check` mode that fails a gate when the document is stale. That is a real want and it is
   a `check doc` rule, filed against a later milestone — not smuggled in here.
 - Rendering anything from `[checks] all` or `[gates] extra`.
+
+## Close
+
+done: 6e9388d 8c1ba41 cc0569d — install-sdlc renders the protocol from the step lists, and
+SDLC.md's Close protocol section is gone: it enumerated the steps, so the protocol had two
+homes inside the document describing the milestone that exists to end that. All four lists
+render since cc0569d.

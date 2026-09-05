@@ -64,3 +64,9 @@ of the true one is the second scoreboard this repo bans.
 Touch: `src/agentic_sdlc/repo/checks/`, `src/agentic_sdlc/cli.py`, `devkit.toml`, `Makefile`,
 `tests/`, `README.md`, `CHANGELOG.md`.
 Depends on story 01 and on `0.2.0/the-middle-tier-splits` story 03.
+
+## Close
+
+done: 6e9388d — check hooks replays each installed hook's own corpus, and an empty corpus
+list FAILS. Two roster moves, not the four planned: hermetic-scan and runners-self-test act
+on engine artifacts and left under D2. Reported the true number, not the planned one.

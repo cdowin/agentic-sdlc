@@ -132,3 +132,9 @@ pass on the strength of block one).
   reimplementing it.
 - `--json`, and any flag.
 - Reading `docs/reviews/` as a directory. The pointers are the record set (ruled above).
+
+## Close
+
+done: 6e9388d — reads the review record's verdict block and names every finding still at
+`disposition: open`. Proven on this milestone: it named all ten and the conveyor refused.
+13 hostile records probed; nothing got past it, malformed ones UNVERIFIABLE with line numbers.

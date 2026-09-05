@@ -78,3 +78,10 @@ edit its grammar from here.
 Touch: `src/agentic_sdlc/repo/verify/main.py`, `devkit.toml` (this repo self-hosts the three
 rungs), `tests/test_verify_main.py`, `README.md` table (PROPOSED to the orchestrator).
 Depends on stories 01–04 of this feature.
+
+## Close
+
+done: fb8fa2a 6e9388d — D3's ladder, and README carries the table. [verify] names WHICH RUNG
+a composition is; the Makefile stays the authority on what it runs.
+finding: cc0569d — 15 narrow rules named `python3 -m pytest` and bare python3 here has no
+pytest. verify --check passed them; `close story` found it.

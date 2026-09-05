@@ -133,3 +133,9 @@ template.
 - The report — story 03.
 - Any edit to a language runner, or to the `gdk_gate` define in `Makefile.devkit`.
 - Naming any consuming project (hard rule 8). Fixtures stay under `tests/fixtures/`.
+
+## Close
+
+done: 6e9388d — the funnel is the PAIR gdk_gate_log -> gdk_gate_verdict, keyed on the log
+slot, so a runner with five alternative exits files one row. Fails open six ways, each proven
+with the gate's exit code before and after. `make gates` writes a real row.

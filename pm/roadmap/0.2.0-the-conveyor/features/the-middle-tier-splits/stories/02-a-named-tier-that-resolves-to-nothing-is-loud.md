@@ -42,3 +42,9 @@ fine and expected. A NAMED tier that does not exist is not.
 ## Files
 Touch: `src/agentic_sdlc/repo/installables/Makefile.devkit`, `tests/test_makefile_include.py`.
 Depends on story 01 landing first — same file.
+
+## Close
+
+done: b9cf082 — an EMPTY tier list is quiet and announces itself; a NAMED tier that resolves
+to nothing stops at parse time naming both the tier and the variable, before .gate-reports/
+exists. Telling those two apart is the story.

@@ -113,3 +113,10 @@ finding filed against that feature, not a patch made here.
 - Any change to the driver, the kinds, the state file format, or the skip contract.
 - The generated document's adopt section — `the-release-is-a-conveyor/05` renders it from
   `[adopt] steps`; this story only makes that list exist.
+
+## Close
+
+done: 4de8f9e — eight steps on the release driver, whole list answering in ~3 s.
+runner-targets-resolve asks make rather than the filesystem, so -include's silence is
+unreachable as a pass.
+finding: installables-diffed found real self-hosting drift on its first run.

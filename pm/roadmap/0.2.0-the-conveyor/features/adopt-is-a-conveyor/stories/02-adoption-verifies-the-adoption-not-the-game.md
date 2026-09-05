@@ -111,3 +111,9 @@ phase 2 — this story READS the seam it left and must not move it).
   `0.2.0/the-story-belt-knows-what-verifies-this-edit`.
 - Installing anything. `adopt` diffs and decides; the `install-*` verbs write.
 - Any change to `check all`'s roster or to `[gates] extra`.
+
+## Close
+
+done: 4de8f9e — checks-pass runs this package's `check all`, never the consumer's `make
+check`. Two tests hold the line, one asserting the recorded argv and one asserting the
+consumer's own gate sentinels do not exist AND that the step actually ran.

@@ -48,3 +48,9 @@ removal.
 ## Files
 Touch: `src/agentic_sdlc/cli.py`, `tests/` (a new or extended module for the census).
 Stay out of: `devkit.toml`, `README.md`, `CLAUDE.md`, `src/agentic_sdlc/repo/**`.
+
+## Close
+
+done: 268fa44 — KNOWN_GATES pruned 13->5; _check_module DERIVED from it so the two cannot
+disagree; tests/test_gate_roster.py asserts roster == dispatchable by asking the function.
+5 of its 6 cases fail with one phantom re-introduced.

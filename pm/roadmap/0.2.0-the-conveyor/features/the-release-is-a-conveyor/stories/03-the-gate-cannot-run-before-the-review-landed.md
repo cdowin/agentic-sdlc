@@ -150,3 +150,10 @@ and `src/agentic_sdlc/repo/pm/ledger.py` (04), `conveyor/render.py`,
   wrong, that is a finding against `the-belts-refuse-to-advance`, filed — not patched here.
 - The `adopt` registry — `0.2.0/adopt-is-a-conveyor/02`.
 - Rendering any of this table into prose — story 05 reads the registry.
+
+## Close
+
+done: 6e9388d — review-landed precedes gate in the shipped list, and a registry omitting the
+dependency is a test failure watched failing with the gate's recorder file present. The
+ordering that cost 0.24.0 two void gate runs is structural now.
+The list is 21, not the planned 20: SDLC.md's resolve-the-findings step had none.

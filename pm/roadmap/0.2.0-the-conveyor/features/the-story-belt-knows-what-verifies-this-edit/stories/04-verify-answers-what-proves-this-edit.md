@@ -118,3 +118,9 @@ read-only checkout, which must not attempt a write anywhere.
   separate decision with its own argument.
 - Editing the stock agent definitions to name the verb — that is
   `0.2.0/every-gate-reports-its-cost/04-a-dispatch-names-both-commands`.
+
+## Close
+
+done: 6e9388d — verify --story/--feature/--milestone/--plan/--check. --plan prints measured
+cost from the ledger and the word `unknown` where none exists, never an estimate: a
+fabricated ratio is worse than none because it gets quoted.

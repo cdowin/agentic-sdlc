@@ -77,3 +77,9 @@ Each is the same rule with a different file in front of it, and none was in the 
 Ordering note: (3) edits `model.py`, which `bugs/the-deprecation-window-must-close` is also
 rewriting. **The bug lands first**; this story's one-line default change goes after it.
 
+## Close
+
+done: b9cf082 f504ab5 — install-runners became install-gates; gdk_runners.sh split 881->405
+with gdk_gate_capture moved byte-for-byte; init stopped refusing every engine-less repo.
+test_consumer_independence.py bans OPERATIVE TOKENS, never the word, and its tombstone dict
+ships EMPTY — that is the assertion.

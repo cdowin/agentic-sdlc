@@ -97,3 +97,9 @@ diverge. One row per distinct `gate` value, ordered slowest-latest first:
 - Trend statistics beyond first/last — median, regression lines, sparklines. Two points and a
   signed delta answer the question that was asked.
 - `pm ledger show`.
+
+## Close
+
+done: 6e9388d — pm ledger report's sixth section: runs, first/last ms, signed delta, census
+beside it. A delta whose census moved is starred, because the same gate is legitimately
+slower on a bigger tree.

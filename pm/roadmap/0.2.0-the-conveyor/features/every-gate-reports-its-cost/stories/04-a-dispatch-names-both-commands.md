@@ -86,3 +86,9 @@ whether that section grows a pointer is the orchestrator's edit, not this story'
 - Adding a new agent to the roster.
 - Editing `project-CLAUDE.md`, which is the consumer's own file rather than an agent
   definition.
+
+## Close
+
+done: 6e9388d — the stock agent roster names the narrow command and the wide one. The rule
+this encodes cost 31 minutes to do 13 seconds of checking, because a dispatch named one
+command and never mentioned there was another.

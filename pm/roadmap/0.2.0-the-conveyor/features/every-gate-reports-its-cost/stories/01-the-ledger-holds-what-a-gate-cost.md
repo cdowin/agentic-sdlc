@@ -121,3 +121,10 @@ path rather than swallowed).
 - Ceilings, budgets, or a gate that reds on duration. The feature file is explicit: this
   REPORTS.
 - A new `[ledger]` config section. Nothing here is configurable.
+
+## Close
+
+done: 6afa35d — the gate row, 68 refusal cases each asserting the ledger's bytes before and
+after. MILLISECONDS, widened from seconds: 14 of 20 measured gates are sub-second, so an
+integer-second row cannot resolve the cheap half of its own headline comparison.
+finding: append_row joined a torn last line into one unparseable row. Fixed here.

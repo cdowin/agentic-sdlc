@@ -110,3 +110,8 @@ contains a file shaped exactly like a feature must still not be counted.
 - Changing `check pm` D1, or adding a D-rule for the empty-record case. If D1 should tighten,
   say so in the report; the gate is a different surface with different consumers.
 - `--json`, and any flag.
+
+## Close
+
+done: 6e9388d — names each feature and its state. Bugs do not block a milestone; a milestone
+with zero features is LOUD, since that is likelier a mistyped id than a real state.

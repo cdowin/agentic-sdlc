@@ -119,3 +119,9 @@ executed it (assert nothing is spawned — patch the spawn surface and assert ze
   passes reverse rules through untouched.
 - Running any command, reading git, printing anything, or exit codes — story 04.
 - The ratio.
+
+## Close
+
+done: 6e9388d — five files under one capture select one command, proven end-to-end through
+the verb and not only in the selector. A path matching no rule is NAMED and the widest rung
+runs: a narrow verifier that matches nothing and exits 0 is the most dangerous failure here.

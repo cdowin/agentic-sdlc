@@ -3,7 +3,18 @@
 **Written 2026-09-04.** The end state Chris asked for: *"Two repos. Fully released 24, fresh pins. All
 committed/pushed and ready for handoff to a fresh agent."*
 
-Four repos: `~/workspace/{godot-devkit, agentic-sdlc, nullbound, trail}`.
+Four repos, checked out side by side in one workspace directory:
+`godot-devkit`, `agentic-sdlc`, `nullbound`, `trail`.
+
+<!-- rule-8: migration document. This file names the four repos on purpose — it is the
+     record of a migration BETWEEN them, and a plan that cannot say which repo a step
+     happens in is not a plan. It is exempt from the CONSUMER-NAME clause of the rule-8
+     gate and from nothing else; the exemption is one exact path, declared in
+     tests/test_consumer_independence.py (MIGRATION_DOC) and again here, so it cannot be
+     taken without editing both sides. When the migration lands, delete this file AND
+     that entry — the gate fails if the entry outlives the file, or the file stops
+     needing it. Nothing in src/, tools/, .github/ or an installable may name a repo,
+     and this exemption cannot reach any of them: it is a single top-level .md. -->
 
 ## Where things stand
 

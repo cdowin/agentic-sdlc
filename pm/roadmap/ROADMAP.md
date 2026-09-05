@@ -6,4 +6,3 @@ the tree.
 
 | Version | Name | Delivered | What shipped |
 |---|---|---|---|
-| 0.18.1 | hook-quoting-upstream | 2026-09-02 | folded into 0.19.0 — never tagged |

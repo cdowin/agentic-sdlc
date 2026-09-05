@@ -198,6 +198,25 @@ class PmConfig:
     feature_states: tuple[str, ...] = DEFAULT_FEATURE_STATES
     story_states: tuple[str, ...] = DEFAULT_STORY_STATES
     bug_states: tuple[str, ...] = DEFAULT_BUG_STATES
+    # MORE WORDS THAT MEAN FINISHED. `obe`, `wontfix`, `duplicate`,
+    # `cancelled` — a grain that will never reach the last state and is not
+    # going to be worked on either. Empty by default, so a tree declaring
+    # nothing behaves exactly as it did.
+    #
+    # It is the `done` CATEGORY with its members enumerated by hand, and that
+    # is the whole of what it is. Every question of the shape "is this grain
+    # finished" should ask a category; in 0.2.0 the engine has no categories,
+    # so it asks a list. `docs/design/state-categories.md` is the model —
+    # three categories, hard, with the states and their mapping configurable —
+    # and 0.3.0 builds it. When `[pm.states.<kind>] done = [...]` lands, this
+    # key is read into it and deleted.
+    #
+    # Why it could not wait: `ready-for feature` asked for the bare word
+    # `done`, so a story at `obe` held its feature open FOREVER. Jira ships
+    # that exact mistake as a documented training problem — `status = Done`
+    # returns one issue where `statusCategory = Done` returns every issue that
+    # finished. The answer there is not a better word either.
+    also_done: tuple[str, ...] = ()
     checks: tuple[str, ...] = DEFAULT_CHECKS
     # D8 only: where the shipped version lives, and the line that carries it.
     #
@@ -279,6 +298,12 @@ def load() -> PmConfig:
         feature_states=tup('feature_states', DEFAULT_FEATURE_STATES),
         story_states=tup('story_states', DEFAULT_STORY_STATES),
         bug_states=tup('bug_states', DEFAULT_BUG_STATES),
+        # NOT through `tup`: its rule is "absent is not empty", and here the
+        # DEFAULT is empty — a project that drops nothing declares nothing.
+        # Read only when the key is present, so `also_done = []` is still
+        # the refusal `tup` makes it everywhere else.
+        also_done=(tup('also_done', ('obe',))
+                        if 'also_done' in sect else ()),
         checks=checks,
         template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
@@ -888,6 +913,23 @@ def record_resolves(path: Path) -> bool:
     much a reviewer needed to write is not a fact about anything.
     """
     return path.is_file()
+
+
+def is_terminal(cfg: 'PmConfig', status: str, states: tuple[str, ...]) -> bool:
+    """Is this grain FINISHED — by any route?
+
+    The last declared state, or anything in `[pm] also_done`. Two routes,
+    one question, and keeping them apart is the point: `done` is *finished and
+    delivered*, `dropped` is *finished and not delivered*, and a rollup that
+    counts them together reports a milestone fully shipped when a third of it
+    was abandoned.
+
+    This is what every "is the parent unblocked" question should ask, and in
+    0.2.0 only `pm ready-for feature` and the conveyor's `stories-done` do.
+    `docs/design/state-categories.md` has the rest, and 0.3.0 makes every
+    engine question a category question rather than a word one.
+    """
+    return bool(states) and (status == states[-1] or status in cfg.also_done)
 
 
 def _pointer_escapes(pointer: str) -> bool:

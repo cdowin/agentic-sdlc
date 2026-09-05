@@ -299,10 +299,14 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
 
 # --- story -> feature ---------------------------------------------------------
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
-    """Is every story under this feature `done`?
+    """Is every story under this feature FINISHED — by any route?
 
-    `done`, not `reviewing` — see the module docstring for the day that changed
-    and why the stricter question was the right one.
+    `done`, or anything in `[pm] also_done`. Not `reviewing` — see the
+    module docstring for the day that changed and why the stricter question was
+    the right one, and `docs/design/state-categories.md` for why asking about a
+    WORD at all is the next thing to go: a story at `obe` is finished and is
+    never going to be `done`, and under a bare-word predicate it holds its
+    feature open forever.
 
     Exit 1 names each story that is not, with the status word the file
     ACTUALLY holds — including one outside the vocabulary (the D4 drift
@@ -319,7 +323,7 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     blockers = []
     for sfile in walk.kept:
         status = model.field_of(sfile, 'status') or '(no status:)'
-        if status != DONE:
+        if not model.is_terminal(cfg, status, cfg.story_states):
             sid = model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile)
             blockers.append(f'{sid} is {status}')
     census = walk.census('story/ies')
@@ -327,7 +331,8 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
         census += (f' — {VACUOUS}: an empty set is satisfied, and refusing it '
                    f'would make this verb unusable on a doc-only feature')
     elif not blockers:
-        census += f', all {DONE}'
+        census += (f', all {DONE}' if not cfg.also_done
+                   else f', all finished ({DONE} or dropped)')
     return _answer(f'{FEATURE} {fid}', blockers, census)
 
 
@@ -370,7 +375,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     blockers = []
     for fid, ffile in features:
         status = model.field_of(ffile, 'status') or '(no status:)'
-        if status != DONE:
+        if not model.is_terminal(cfg, status, cfg.story_states):
             blockers.append(f'{fid} is {status}')
             continue
         _, defect = _record(cfg, model.unquote(model.field_of(ffile, 'reviewed')))

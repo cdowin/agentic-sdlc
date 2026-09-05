@@ -122,13 +122,14 @@ the milestone says why it is not", which no tree can be measured against.
    never 2** — and a test asserts the declared roster equals the set that actually dispatches.
 2. **`Makefile.devkit` names no Godot target**, `precommit`/`milestone` compose from
    `GDK_*_TIERS`, and the rule-8 gate asserts it. No "or".
-3. **`release` and `adopt` both run as step lists whose ORDER is enforced and whose findings are
-   REPORTED** — every fact about the tree is a named warning, the walk continues, and the final
-   line counts the warnings. *(Rewritten 2026-09-05. It read "refuse to advance … and a skip is a
-   ledger row" — written before the report-never-refuse ruling, and asserting the premise the
-   collapse rejected. That is P1's shape recurring in the document that absorbed P1's ruling. The
-   ORDER was always the deliverable; refusal was belt-and-braces added on top, and `check pm` is
-   still the gate.)*
+3. **Every step is a check, every check reports, and the walk always finishes** — `release` and
+   `adopt` run their step lists to the end regardless of what any check said, and the final line
+   is a scoreboard naming every step that is not true. **A release over a red `make gates` reaches
+   `tag`**, and a test asserts it. *(Rewritten 2026-09-05 under D8. It read "refuse to advance …
+   and a skip is a ledger row" — written before the ruling, asserting the premise the collapse
+   rejected, which is P1's shape recurring in the document that absorbed P1's ruling. Chris:*
+   "Everything is just a check. `release` should release on a red tree if I want — why stop
+   someone?"*. The ORDER was always the deliverable; `check pm` is still the gate.)*
 4. The SDLC document a consumer reads is GENERATED from its own step list — `install-sdlc`
    beside `install-agents` — so it cannot drift from what runs.
 5. Every gate records name, duration, verdict and census through **one funnel**, failing open,

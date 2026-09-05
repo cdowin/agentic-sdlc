@@ -170,7 +170,7 @@ Reviewer's token cost: ~148k (shared across all three feature records).
 ```
 verdict: HOLD
 | id | severity | disposition |
-| A1 | BLOCKER | open: config-updated passes over four sections it names and never asks |
-| A2 | MINOR | open: a decision line matches a drifted path by substring |
-| A3 | NIT | open: _configured re-validates the whole operation config per step |
+| A1 | BLOCKER | landed 274e18c: the census IS the reader list, and the four unasked sections have readers |
+| A2 | MINOR | landed 274e18c |
+| A3 | NIT | landed 274e18c |
 ```

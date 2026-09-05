@@ -171,8 +171,8 @@ Reviewer's token cost: ~120k across all three feature records.
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| B1 | MAJOR | open: cli.py:71 still documents `every story at reviewing` for a verb that asks `done` |
-| B2 | MAJOR | open: README.md:103's ladder row asks the superseded question |
-| B3 | MINOR | open: cli.py:414's advisory reports the pre-f7465c2 set and is silent where the belt blocks |
-| B4 | MINOR | open: key the record dedupe on the realpath _record already computes |
+| B1 | MAJOR | landed f4a9d6a: `--help`, the README ladder and the advisory all ask `model.is_terminal` |
+| B2 | MAJOR | landed f4a9d6a |
+| B3 | MINOR | landed f4a9d6a: the advisory asked a THIRD question; all three now ask one |
+| B4 | MINOR | landed f4a9d6a |
 ```

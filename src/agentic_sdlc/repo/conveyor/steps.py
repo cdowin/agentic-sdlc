@@ -1283,38 +1283,46 @@ def do_changelog_retitle(ctx: Context) -> str:
 
 
 def check_findings_resolved(ctx: Context) -> Answer:
-    """SDLC.md close protocol step 5: every `docs/reviews/` record for this
-    milestone RESOLVED AND DELETED. It had no step in the planned list, so the
-    machine would have shipped a protocol shorter than the prose it replaces.
+    """Every finding in every record this milestone POINTS AT is dispositioned.
+
+    R1 AND R2 ARE ONE FINDING READ FROM TWO ENDS, and this is the fix for both.
+
+    This step used to require every review record naming the version to be
+    **deleted**, and it decided by matching the version as a SUBSTRING of the
+    filename or the body (R2). Two consequences, and the second is the one that
+    survived the walk no longer halting:
+
+    * `review-landed` and `features-done` call `pm ready-for`, which reads each
+      feature's `reviewed:` pointer and reports when it names no file. So the
+      two could not both hold, and a release could not be resumed past this
+      step (R1). D8 removed the halt, which is why the seven steps after this
+      one are reachable again — but a halt was never the whole defect.
+    * **Performing it left `check pm` permanently RED on D1**, because the
+      `reviewed:` pointers then resolve to nothing. `check pm` is in
+      `[checks] all`. A step whose postcondition reddens a shipped gate is
+      wrong whether or not it halts: removing the halt changes what a false
+      postcondition COSTS, it does not make the postcondition true.
+
+    So the question is the one `pm ready-for tag` already answers: **is every
+    finding in the records this milestone points at at a disposition other than
+    `open`?** Asked of the verb rather than re-implemented — a second reader of
+    "are the findings resolved" answers identically on the day it is written
+    and differently on some later one, and this file has `ready_for` for
+    exactly this.
+
+    The RECORD STAYS. It is the durable evidence that the review happened, it
+    is what `reviewed:` points at, and deleting it to satisfy a step is
+    destroying the artifact the release is supposed to prove exists.
     """
-    cfg = _pm_cfg(ctx)
-    base = ctx.root / cfg.review_dir
-    if not base.is_dir():
-        return Answer.yes(f'{cfg.review_dir}/ holds no review record')
-    # `core.walk`, not `rglob`: a walk that returns one list has nowhere to put
-    # what it DROPPED, and this step's whole job is to notice a record that is
-    # still there. `.md` is a UNIVERSE declaration here, so `<REPORT>.MD` is
-    # seen — a review record nobody's glob matched is exactly the finding this
-    # would otherwise report as resolved.
-    found = walk.descendants(base, walk.Kind.FILE, suffix='.md')
-    naming: list[str] = []
-    for path in found:
-        try:
-            text = _read(path)
-        except (OSError, UnicodeDecodeError):
-            return Answer.unverifiable(f'{cfg.rel(path)} could not be read')
-        if ctx.version in path.name or ctx.version in text:
-            naming.append(cfg.rel(path))
-    if naming:
-        return Answer.no(f'{len(naming)} review record(s) still name '
-                         f'{ctx.version}: {_clip(", ".join(naming))}')
-    return Answer.yes(f'no record under {cfg.review_dir}/ names {ctx.version}')
+    return ready_for(ctx, 'tag')
 
 
 def do_findings_resolved(ctx: Context) -> str:
-    return ('resolve each record and DELETE it (create → resolve → delete) — '
-            'the resolution belongs in the grain\'s decisions.md, and a '
-            'review doc left behind outlives the milestone it answered')
+    return ('give every finding a disposition other than `open` in the record '
+            'its grain points at — landed <hash>, deferred to <a filed bug>, '
+            'or rejected with the reason. The RECORD stays: it is what '
+            '`reviewed:` points at, and a release that deleted its own review '
+            'evidence would leave `check pm` D1 red on every run afterwards')
 
 
 def check_push_branch(ctx: Context) -> Answer:

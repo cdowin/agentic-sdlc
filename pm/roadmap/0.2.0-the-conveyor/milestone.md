@@ -1,9 +1,9 @@
 ---
 id: "0.2.0"
 name: the conveyor
-status: planning
+status: building
 depends_on: []
-branch:
+branch: milestone/0.2.0-the-conveyor
 ---
 
 # 0.2.0 — the conveyor

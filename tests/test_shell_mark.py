@@ -56,7 +56,13 @@ SUPPORT = TESTS / 'support'
 # The thirty-first is test_conveyor_close.py, the two inner belts: a story
 # close asks git what is uncommitted and shells out to the narrow rung, so
 # every one of its trees is a real repo with a real commit in it.
-MARKED_MODULES = 31
+# The thirty-second is test_pm_flow.py, the project's declared states: every
+# case loads config through `core.project`, which finds the repo root from
+# git, so each one builds a real repo. It could have been written against a
+# dict and was not, deliberately — the thing under test is what a devkit.toml
+# on disk makes the reader do, and a fixture that skipped the file would be
+# proving the parser rather than the contract.
+MARKED_MODULES = 32
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

@@ -167,7 +167,7 @@ for key in sys.argv[1:]:
 # `bash tools/hooks/cc-ledger-session.sh --self-test` replays the fail-open
 # matrix and one recording case through this same file and checks what came
 # out; exit 0 means every case landed where it should. Wire it into your static
-# gate beside cc-godot-sandbox.sh's — a hook nobody can see fire is a hook
+# gate beside your other hooks' — a hook nobody can see fire is a hook
 # whose silence has to be provable.
 #
 # The recording case runs the vehicle against a STUB `pm` target that prints

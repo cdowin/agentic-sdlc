@@ -15,8 +15,7 @@ A hook can also be dead before the exec bit is ever asked about. Git's hook
 universe is every ENTRY in the directory, so a broken symlink or a directory
 holding a hook's name is a name git tries and cannot start — and enumerating
 only regular files does not miss it, it SUBTRACTS it: the census reads smaller
-than the directory and no line says why. `NOT A FILE` is that case, in both
-shipped surfaces (`doctor.sh` carried the same `-f` skip).
+than the directory and no line says why. `NOT A FILE` is that case.
 
 The sharp case is `test_a_hook_that_starts_and_dies_...`: armed, executable,
 byte-present, and dead. It is the shape the installer measured on this
@@ -46,7 +45,7 @@ from agentic_sdlc.repo import install                           # noqa: E402
 from agentic_sdlc.repo.checks import hooks                      # noqa: E402
 
 HOOKS_DIR = hooks.HOOKS_DIR
-A_CC_HOOK = 'cc-godot-sandbox.sh'
+A_CC_HOOK = 'cc-commit-pathspec.sh'
 A_GIT_HOOK = 'pre-push'
 # Six `cc-*.sh` and two git hooks — asked of the plan, never restated, so the
 # next hook to ship does not need this file edited.
@@ -310,10 +309,3 @@ def test_the_repair_the_gate_names_is_runnable_by_a_CONSUMER():
     install = (REPO_ROOT / 'src/agentic_sdlc/repo/install.py').read_text(encoding='utf-8')
     assert "'tools/setup-hooks.sh'" in install, 'the arm script must be an installable'
 
-
-def test_the_two_shipped_surfaces_name_the_SAME_repair():
-    """`check hooks` and `doctor.sh` both tell an operator how to arm the corpus.
-    Two surfaces disagreeing is how a consumer learns to trust neither."""
-    doctor = (REPO_ROOT / 'src/agentic_sdlc/repo/installables/doctor.sh').read_text(encoding='utf-8')
-    assert 'tools/setup-hooks.sh' in doctor
-    assert 'make hooks' not in doctor

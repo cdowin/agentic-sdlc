@@ -2,7 +2,7 @@
 
 The devkit is the first consumer of the library it ships: every gate-shaped
 target in the Makefile routes through `gdk_gate_capture` / `gdk_gate_verdict`
-out of `installables/gdk_runners.sh`, so the default output is ONE verdict line
+out of `installables/gdk_gate.sh`, so the default output is ONE verdict line
 naming `.gate-reports/<target>.log`.
 
 That is a contract, not a preference. Before it, an agent running the full gate
@@ -158,8 +158,8 @@ def test_the_makefile_sources_the_shipped_library_not_a_copy():
     """Self-hosting is the point — a local fork of the helpers would let the
     shipped ones regress with this repo's own targets still green."""
     text = MAKEFILE.read_text(encoding='utf-8')
-    assert 'src/agentic_sdlc/repo/installables/gdk_runners.sh' in text
-    assert (REPO_ROOT / 'src/agentic_sdlc/repo/installables/gdk_runners.sh').exists()
+    assert 'src/agentic_sdlc/repo/installables/gdk_gate.sh' in text
+    assert (REPO_ROOT / 'src/agentic_sdlc/repo/installables/gdk_gate.sh').exists()
 
 
 # --- the matrix: which interpreter was handed which command ------------------

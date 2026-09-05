@@ -87,6 +87,40 @@ design.
 | 4 | `install-hooks` → `bash tools/setup-hooks.sh` → `check hooks` | Red until arming: installing a hook corpus is not arming it, and `core.hooksPath` is what git actually reads. |
 | 5 | Wire `check all` and name your roster in `[checks] all` | Green. |
 
+## Every operation has one verb and one scope
+
+The failure this exists to end is measured: an agent doing STORY-layer work verified it at
+MILESTONE-layer scope. A full suite is **154 s**, a single module **0.9 s** — **170x** — and
+eleven story-layer fixes verified at milestone scope cost **31 minutes**. Re-checking the same five
+modules at story scope took **13 seconds**. The agent was not careless; its dispatch named one
+command and never mentioned there was another.
+
+So none of these rungs is "run the biggest thing", and a belt never runs a belt above it:
+
+| You are doing | Verb | Scope |
+|---|---|---|
+| editing — the inner loop | `verify --changed` | only the paths you touched. Seconds |
+| closing a story | `pm ready-for feature <fid>` | are this feature's sibling stories at `reviewing`? |
+| closing a feature | `verify --feature` | the composition your `[verify] feature` names. Tens of seconds |
+| closing a milestone | `verify --milestone` | everything, every interpreter. Minutes, paid **once** |
+| tagging | `pm ready-for tag <mid>` | is every review finding at a disposition other than `open`? |
+| bumping your devkit pin | `adopt` | the adoption — **never** your project's own gates |
+
+**`verify --plan` prints all three rungs with their measured costs**, read from the `gate` rows in
+your ledger, so a dispatch can carry real numbers instead of an author's guess. Where no run has
+been recorded the cost is the word `unknown` — never an estimate, because a fabricated ratio is
+worse than none: it gets quoted.
+
+**`adopt` is deliberately not a rung.** It is an operation on the toolchain rather than a grain, and
+its `checks-pass` step runs *this package's* `check all` — not your `make check`. A version bump
+here cannot change your own gates' verdict, so running them during adoption re-verifies your
+project, not your adoption. That subtraction is most of what makes a pin bump cheap.
+
+**`[verify] feature` and `[verify] milestone` name a make TARGET you already have**, not a second
+command string. The Makefile stays the authority on what a target runs; `[verify]` is the authority
+on which rung it is. One fact each — a `wide` that drifts from the `make milestone` CI actually runs
+is two answers to "did the full gate pass".
+
 ## Reading a gate failure
 
 Every gate prints a **census** of what it scanned, then a verdict — on the FAIL line as much as the
@@ -174,20 +208,13 @@ including a hand-edited `status: wombat`, which it prints as `wombat -> done` an
 transition graph and nothing checks an EDGE; a graph would only tax whoever used the sanctioned tool
 while a `sed` of the same line reached the state it refused.
 
-**A deprecation window, inherited and still open.** The stock set additionally READS the four words this
-vocabulary replaced — `todo` (→ `ready`), `wip` (→ `building`), `blocked` (REMOVED — nothing replaces it; record what is blocking the work in the grain and leave the status at `building`) and
-`review` (→ `reviewing`) — so a tree that already holds one keeps a green `check pm` through the
-pin bump instead of turning every such grain into a D4 finding on upgrade day. It is a window, not
-a second vocabulary: the verbs REFUSE to write a retired word and name its replacement, `check pm`
-prints a one-line census of how many grains still hold one, `pm vocabulary` marks them, and **a
-release named in the CHANGELOG removes them**. Rewrite them before that bump — a project that
-declares its OWN `story_states` containing `todo` is not in the window and is untouched by any of
-this.
-**Run `agentic-sdlc check pm` by hand once while the window is open and read its NOTE**: `make check`
-summarises this gate as a PASS *count*, so the census line lands in the transcript under
-`.gate-reports/` and never on your console (`VERBOSE=1` streams it), and a project that stays green
-through the window without ever reading it meets the removal red with no warning shot.
-**The verbs report what they noticed and
+**The deprecation window is closed.** `todo`, `wip`, `blocked` and `review` — the words this
+vocabulary replaced — rode in the stock set for one release so that no tree turned red on the pin
+bump alone; 0.2.0 trims them, and a grain still holding one is now a D4 finding naming the seven
+words above. Rewrite `todo` → `ready`, `wip` → `building`, `review` → `reviewing`, and `blocked`
+→ `building` (nothing replaces `blocked`: record what is blocking the work in the grain itself).
+A project that declares its OWN `story_states` containing `todo` was never in the window and is
+untouched by any of this. **The verbs report what they noticed and
 refuse nothing on process** — stories not at `reviewing`, features not done, named in the output.
 `check pm` catches an invalid state from any route, hand-edit included.
 

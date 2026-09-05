@@ -2,7 +2,7 @@
 id: 0.2.0/the-extraction-finishes
 milestone: "0.2.0"
 name: The extraction finishes — a stock consumer gets a kit that works and describes itself
-status: planning
+status: building
 reviewed:
 risk: medium
 size: m

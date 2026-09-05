@@ -46,22 +46,27 @@ SUPPORT = TESTS / 'support'
 # summary) went with the code they read, and thirteen marked ones went with the
 # gates they spawned. What the census ASSERTS is unchanged — a module that
 # changes sides still has to change these two lines, in the open.
-MARKED_MODULES = 23
+MARKED_MODULES = 24
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
+    'test_cli_surface.py',
     'test_consumer_independence.py',
     'test_fuzz_markdown.py',
     'test_verdict.py',
+    'test_wheel_payload.py',
 )
 
-# The `tests/support` names whose use means a spawn. Five of the package's 23
-# helpers: `temp_repo` and `tree` (`git init` a scratch repo), `git`, and
-# `commit`/`porcelain`, which reach it through `git`. The other eighteen —
+# The `tests/support` names whose use means a spawn. Four of the package's 22
+# helpers: `tree` (`git init` a scratch repo), `git`, and `commit`/`porcelain`,
+# which reach it through `git`. `temp_repo` was a fifth until 0.2.0, when it
+# turned out to have zero callers and to be held alive by this census alone —
+# the census is the derivation's ground truth, so a helper listed here is a
+# helper that cannot rot quietly, and it did not. The other eighteen —
 # `run_check`, `run_cli`, `run_gate`, the ledger line builders — run in
 # process, which is exactly why the derivation reads the call graph instead of
 # the module's import list.
-SPAWNING_HELPERS = frozenset({'commit', 'git', 'porcelain', 'temp_repo', 'tree'})
+SPAWNING_HELPERS = frozenset({'commit', 'git', 'porcelain', 'tree'})
 
 # A broken SUPPORT path makes `support_spawn_names()` empty and silently
 # unmarks a third of the suite, so the census asserts the package was found at

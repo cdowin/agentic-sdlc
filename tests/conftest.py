@@ -15,7 +15,7 @@ across on the next collection rather than on the next audit.
 Deliberately AST, not grep. `grep -l subprocess tests/test_*.py` gets both ends
 of the census wrong: it counts `test_boundaries.py`, which spells
 `subprocess.run` in a docstring and spawns nothing, and it misses every module
-that shells out only through `temp_repo()` or `tree()` — which is most of the
+that shells out only through `tree()` or `commit()` — which is most of the
 pm suite, and the bulk of the seconds this mark exists to move.
 
 The mark is a fact, so no module gets to assert it: an item that reaches this

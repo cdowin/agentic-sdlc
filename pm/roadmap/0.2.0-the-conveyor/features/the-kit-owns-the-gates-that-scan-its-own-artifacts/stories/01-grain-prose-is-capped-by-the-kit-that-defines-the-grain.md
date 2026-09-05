@@ -54,7 +54,10 @@ the roster grows through it.
 
 ## Close
 
-done: 6e9388d 14dca39 — check grain-shape, one in-process pass: 44 documents in 0.09 s here
-against 34.8 s for the consumer-authored script over 683. Release review M1/M2 landed in
-14dca39: the census goes in both verdict lines, and a walk that kept nothing while leaving
-something UNEXAMINED is loud.
+done: 6e9388d cc0569d 14dca39 — check grain-shape, one in-process pass: 44 documents in 0.09 s
+here against 34.8 s for the consumer-authored script over 683.
+M1 landed in cc0569d, not 14dca39 (K2): the census in both verdict lines and the kept-nothing-
+while-unexamined FAIL are grain_shape.py, and `git log -- .../grain_shape.py` is 6e9388d +
+cc0569d only. 14dca39 is walk.py — M2, the symlinked dir a walk never said it skipped.
+K1 landed later in 2a23d84: an UNREADABLE dir now records a Skip too, so a mode-000 subtree
+FAILs on a zero census instead of PASSing over it.

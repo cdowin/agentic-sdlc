@@ -206,8 +206,8 @@ Reviewer's token cost: ~100k for the three-feature pass, of which this record is
 ```
 verdict: HOLD
 | id | severity | disposition |
-| T1 | BLOCKER | open: Makefile.devkit:218-227 — a declared tier shadowed by a same-named file or directory is skipped at exit 0 with no output |
-| T2 | MINOR | open: CLAUDE.md:106 names installables/gdk_runners.sh, which does not exist |
+| T1 | BLOCKER | landed 2a23d84 — `.PHONY: $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS)` at Makefile.devkit:247, under a comment naming it as a gate rather than a tidiness. Re-measured behaviourally: a scratch consumer with `GDK_PRECOMMIT_TIERS := kit-parse`, a tier file declaring NO `.PHONY` of its own, and a `kit-parse/` DIRECTORY shadowing it → `make precommit` ran the tier (`[KIT-PARSE] PASS`), EXIT=0. **The test gap is only half closed**: `tests/test_makefile_include.py:508` is a TEXT assertion that the two variables appear on a `.PHONY:` line — no behavioural case builds a shadowed tier, so the braces are pinned and the belt is not. See the report note; that file was outside the fixing session's scope |
+| T2 | MINOR | landed — CLAUDE.md (now line 111, the file has grown) names `installables/gdk_gate.sh`. Every other path and filename in CLAUDE.md was swept against the tree the same run — 25 of 26 already resolved, this was the only miss |
 | T3 | MINOR | open: README.md:169 documents install-runners, which now exits 2; install-gates is undocumented |
-| T4 | MINOR | open: story 03's Close credits b9cf082/f504ab5 with the gdk_runners.sh split, which is in 8f4e9c1 |
+| T4 | MINOR | landed — the Close block is corrected in place and now names three hashes against what each carries. Verified: `git log --all -- …/gdk_runners.sh` is a76b7c0 + 8f4e9c1, and `git show --name-status -M 8f4e9c1` is `A gdk_gate.sh` / `D gdk_runners.sh`; b9cf082 carries the `install-runners → install-gates` rename (install.py, cli.py), init.py and test_consumer_independence.py; f504ab5 touches only installable markdown, two CI yml and two tests. f504ab5's own commit MESSAGE narrates the split at length, which is where the mis-attribution came from — the file list is the authority and the Close now says so |
 ```

@@ -79,7 +79,10 @@ rewriting. **The bug lands first**; this story's one-line default change goes af
 
 ## Close
 
-done: b9cf082 f504ab5 — install-runners became install-gates; gdk_runners.sh split 881->405
-with gdk_gate_capture moved byte-for-byte; init stopped refusing every engine-less repo.
-test_consumer_independence.py bans OPERATIVE TOKENS, never the word, and its tombstone dict
-ships EMPTY — that is the assertion.
+done: 8f4e9c1 b9cf082 f504ab5, each hash against what it actually carries (T4 corrected the
+first line, which credited the split to two commits touching neither file).
+- 8f4e9c1 — gdk_runners.sh split 881->405 into gdk_gate.sh, gdk_gate_capture byte-for-byte.
+- b9cf082 — install-runners became install-gates; init stopped refusing every engine-less repo;
+  test_consumer_independence.py bans OPERATIVE TOKENS, never the word, tombstone dict EMPTY.
+- f504ab5 — the installable prose stops describing one engine. Its MESSAGE narrates the split
+  too, which is where the wrong attribution came from; `git show --name-status` is the authority.

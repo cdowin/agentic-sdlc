@@ -18,8 +18,27 @@ import sys
 from pathlib import Path
 
 from agentic_sdlc import cli
+from agentic_sdlc.repo import checks as checks_pkg
 
 REPO = Path(__file__).resolve().parents[1]
+
+# The gate modules AS SHIPPED, asked of the installed package rather than of
+# `src/` — a wheel is what a consumer runs, and a module that reaches the wheel
+# and no roster is the case this census exists for.
+CHECKS_DIR = Path(checks_pkg.__file__).resolve().parent
+
+
+def shipped_check_modules() -> set[str]:
+    """Every gate module under `repo/checks/`, spelled as a roster key.
+
+    `_check_module` maps `x-y` -> `x_y`, so this inverts that one mapping and
+    nothing else. `__init__.py` is the package, and a `_`-prefixed module is a
+    shared helper by the same convention `check hooks` uses for `tools/hooks/_*`
+    — neither is a gate. Anything else here IS one, whether a roster says so or
+    not, which is the whole point.
+    """
+    return {path.stem.replace('_', '-') for path in CHECKS_DIR.glob('*.py')
+            if not path.name.startswith('_')}
 
 
 class TestRosterEqualsDispatchable:
@@ -48,6 +67,35 @@ class TestRosterEqualsDispatchable:
             module = cli._check_module(name)
             assert callable(getattr(module, 'run', None)), (
                 f'gate {name!r} resolves to {module!r}, which has no run()')
+
+    def test_every_shipped_check_module_is_in_the_roster(self):
+        """E3 — the direction nothing asserted: a gate with no roster entry.
+
+        The two tests above close roster -> module. This closes module ->
+        roster, and it is the half CLAUDE.md's own recipe puts a gate on
+        (*"New check = module in `repo/checks/` + a key in `cli.py`'s
+        KNOWN_GATES"*). Miss it and a gate is authored, reviewed, shipped in the
+        wheel and dispatched by nobody: `_check_module` refuses any name outside
+        the roster, so an unrostered module cannot be reached even by spelling
+        it on the command line. That is the same shape as the eight phantom
+        names this file was written for, walked the other way — and half a
+        census is what let those live for two releases.
+        """
+        unrostered = sorted(shipped_check_modules() - set(cli.KNOWN_GATES))
+        assert unrostered == [], (
+            f'{unrostered} ship under {CHECKS_DIR.name}/ and are in no '
+            f'KNOWN_GATES entry, so nothing can dispatch them — add the key '
+            f'(and a README row and a CHANGELOG line), or `_`-prefix the '
+            f'module if it is a helper rather than a gate')
+
+    def test_the_roster_and_the_shipped_modules_are_the_same_set(self):
+        """Both directions in one assertion, stated as the invariant.
+
+        Redundant with the two halves on purpose: they fail with the diagnosis
+        (which name, which way), this one fails with the sentence. A future
+        edit that weakens either half still has to get past the equality.
+        """
+        assert shipped_check_modules() == set(cli.KNOWN_GATES)
 
     def test_a_name_outside_the_roster_resolves_to_nothing(self):
         """The refusal, and it is the one that keeps a derived import safe.

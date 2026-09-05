@@ -45,6 +45,15 @@ stay out of.
 **Builders:**
 
 - never commit — they write, verify their slice, and report;
+- **never run a repo-wide git command.** `git stash`, `git checkout -- .`, `git restore`,
+  `git reset` and `git clean` act on the WHOLE worktree, and phased parallel dispatch
+  puts N builders in one. Measured 2026-09-05: one builder stashed to watch a test
+  fail at HEAD — the correct instinct — and stashed six other builders' uncommitted
+  work with it, including deletions that were already staged. It popped cleanly and
+  nothing was lost, which is the only reason this is a rule rather than an incident.
+  **To watch a test fail at HEAD, copy the file to a scratch path and edit the copy,
+  or use `git stash push -- <your own paths>`** — never the bare form. The
+  orchestrator, which owns the index, is the only one that touches it;
 - never touch `pm/roadmap/`;
 - never edit shared docs — README / CHANGELOG wording is returned as
   **PROPOSED** text in the report, and the orchestrator applies it;

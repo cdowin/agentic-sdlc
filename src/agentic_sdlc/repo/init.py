@@ -1,4 +1,4 @@
-"""init.py — `agentic-sdlc init`: a blank Godot 4 project, wired in one command.
+"""init.py — `agentic-sdlc init`: a repo wired for this toolkit, in one command.
 
 Every piece this writes already existed as a verb. What did not exist was the
 ORDER, and the two files nobody wrote: `devkit.toml` and the project's own
@@ -12,13 +12,13 @@ So this composes, and re-implements nothing:
                       every one commented out at its stock default
     pm init           the PM tree + the execution rule + the operations skill
     Makefile          two lines: the pin, and the include
-    install-runners   Makefile.devkit + the shell library + the runners
+    install-gates     Makefile.devkit + the gate library it sources
     install-hooks     the guard corpus, then `bash tools/setup-hooks.sh` —
                       installing a hook is not ARMING it, and an unarmed hook
                       is a guard that is not there
     install-agents    the review/build contract + the base roster
-    install-ci        the four workflows
-    .gitignore        the four directories the runners write into
+    install-ci        the three workflows
+    .gitignore        the directory the gate library writes into
     CLAUDE.md         a skeleton naming the standard targets and the installed
                       rules, for the first agent to open the repo
 
@@ -37,18 +37,24 @@ remedy.
 INIT IS A COMPOSITION, SO ITS ATOMICITY IS PER-VERB. Each verb it calls decides
 its whole plan before writing a byte and either lands or refuses whole; init
 runs them in order and reports each. It does NOT stop at the first refusal,
-because a collision under `install-runners` says nothing about whether the
+because a collision under `install-gates` says nothing about whether the
 agents are installed — one run naming every refusal beats four re-runs that
 each find the next one. The summary says which verbs refused and that `--force`
 is the answer, and the exit code is 1 if any did.
 
-TWO REFUSALS, BOTH DECIDED BEFORE THE FIRST BYTE. No `project.godot` at the
-repo root: this writes a Godot project's scaffolding, and a directory that is
-not one would get a Makefile whose every runner target has nothing to run. Not
-a git repo: five of the gates resolve their scope through `git ls-files` (a
-0-file census reddens each), and `setup-hooks.sh` has no git to point at the
-hooks — so an init there would report success over a tree where nothing it
-installed works.
+ONE REFUSAL, DECIDED BEFORE THE FIRST BYTE: not a git repo. Every gate resolves
+its scope through `git ls-files` (a 0-file census reddens each), and
+`setup-hooks.sh` has no git to point at the hooks — so an init there would
+report success over a tree where nothing it installed works.
+
+THERE WERE TWO. The second refused a root holding no ENGINE PROJECT FILE, on
+the reasoning that this wrote a game project's scaffolding and a directory that
+was not one would get a Makefile with nothing behind it. That reasoning left
+with the runners in 0.2.0, and by then it had become the sharpest thing in the
+package: an engine-less kit whose `init` verb refused every engine-less repo —
+the verb that exists to stand a project up, declining to. What this writes now
+is a PM tree, a gate roster and a guard corpus, none of which has ever needed
+an engine.
 """
 from __future__ import annotations
 
@@ -73,21 +79,21 @@ SEED_MAKEFILE = ('project-Makefile', 'Makefile')
 SEED_CLAUDE = ('project-CLAUDE.md', 'CLAUDE.md')
 SEEDS = (SEED_CONFIG, SEED_MAKEFILE, SEED_CLAUDE)
 
-# What a Godot project is, and what a repo is. Both are refusals, not warnings.
-PROJECT_FILE = 'project.godot'
+# What a repo is. A refusal, not a warning.
 GIT_DIR = '.git'
 
 GITIGNORE = '.gitignore'
 GITIGNORE_HEADER = '# agentic-sdlc run artifacts (agentic-sdlc init)'
-# The four directories the installed runners write into, each named here as the
-# runner's own default. A test pins every one of these against the `GDK_*`
-# default in the runner that owns it, so the two cannot drift in silence — a
-# shell default is not readable from Python, but it is greppable from a test.
+# What the installed gate library writes into, named here as the library's own
+# default. A test pins this against the `GDK_*` default in the file that owns
+# it, so the two cannot drift in silence — a shell default is not readable from
+# Python, but it is greppable from a test.
+#
+# It was four entries until 0.2.0; three named directories only the engine
+# runners wrote into, and they left with them. A language kit's own installer
+# appends its own.
 IGNORED = (
-    '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_runners.sh)
-    '.headless-userdata/',  # GDK_SANDBOX_DIRNAME      (gdk_runners.sh)
-    '.scenario-reports/',   # GDK_SCENARIO_REPORT_DIR  (scenario.sh)
-    '.capture-reports/',    # GDK_CAPTURE_REPORT_DIR   (capture.sh)
+    '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_gate.sh)
 )
 
 SETUP_HOOKS = 'tools/setup-hooks.sh'
@@ -95,23 +101,23 @@ SETUP_HOOKS = 'tools/setup-hooks.sh'
 # The delegated install verbs, in the order a fresh project needs them. Named
 # rather than derived from `install.PLANS`: the ORDER is init's contribution,
 # and a dict's insertion order is not a contract.
-VERBS = ('install-runners', 'install-hooks', 'install-agents', 'install-ci')
+VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-ci')
 
 USAGE = """usage: agentic-sdlc init [--force] [--diff]
 
-Stand a blank Godot 4 project up on this toolkit. Writes, in order:
+Stand a repo up on this toolkit. Writes, in order:
 
   devkit.toml        every [section] the gates read, commented at its default
   pm/roadmap/        the PM tree, plus the execution rule and the operations
                      skill (`pm init`)
   Makefile           two lines — the DEVKIT_VERSION pin, and the include
-  Makefile.devkit    the standard target set, plus tools/dev/gdk_runners.sh
-  + tools/dev/       and the runners that source it   (`install-runners`)
+  Makefile.devkit    the standard target set, plus the gate library it
+  + tools/dev/       sources                          (`install-gates`)
   tools/hooks/       the guard corpus, then `bash tools/setup-hooks.sh` to arm
                      it                               (`install-hooks`)
   .claude/agents/    the review/build contract + the base roster
                                                       (`install-agents`)
-  .github/workflows/ verify, uid-guard, semver-gate, auto-tag  (`install-ci`)
+  .github/workflows/ verify, semver-gate, auto-tag      (`install-ci`)
   .gitignore         the run-artifact directories, appended if absent
   CLAUDE.md          a skeleton naming the standard targets + installed rules
 
@@ -121,8 +127,7 @@ Run it again any time: it fills what is missing and reports the rest.
         Makefile, CLAUDE.md and the PM tree are the project's from the first
         write, and --force does not touch them.
 
-Refuses, before writing anything: a root with no project.godot (not a Godot
-project), and a root that is not a git repository."""
+Refuses, before writing anything: a root that is not a git repository."""
 
 
 def seed_body(name: str) -> str:
@@ -136,12 +141,6 @@ def _say(message: str) -> None:
 
 def _preflight(root: Path) -> str:
     """'' when this root can be initialized, else why it cannot."""
-    if not (root / PROJECT_FILE).is_file():
-        return (f'{root}/{PROJECT_FILE} does not exist — this writes a Godot '
-                f'project\'s scaffolding (runners that boot the engine, gates '
-                f'that read .tscn/.tres), and a directory that is not one gets '
-                f'a Makefile with nothing behind it. Create the project in '
-                f'Godot first, then re-run here.')
     if not (root / GIT_DIR).exists():
         return (f'{root} is not a git repository — every gate resolves its '
                 f'scope through `git ls-files` (a 0-file census reddens each '

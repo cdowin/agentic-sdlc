@@ -38,8 +38,9 @@ Installers (write the file once; after that it is the repo's):
                                     # does)
     agentic-sdlc install-hooks      # the agent-workflow guard corpus and
                                     # setup-hooks.sh
-    agentic-sdlc install-runners    # the sandboxed headless-run shell library
-                                    # and the standard target set that calls it
+    agentic-sdlc install-gates      # the gate framework: the shell library that
+                                    # gives every gate one verdict line, and the
+                                    # standard target set that calls it
     (each takes --force to overwrite a differing destination, and --diff to
      print what would change without writing. `install-<what> --help` is that
      installer's plan.)

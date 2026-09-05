@@ -122,8 +122,19 @@ def is_allowed(line: str) -> bool:
     return ALLOW_MARKER in line
 
 
+# A `<scheme>://` prefix on a doc link names a RESOURCE, not a repo path, and
+# the part after it is the path inside whatever that scheme addresses. Written
+# generically since 0.2.0: it stripped ONE game engine's resource scheme, by
+# name, from inside a gate that reads markdown — exactly the shape decision D2
+# rules against, and the reason that engine's scheme is not spelled here now. `URL_PREFIXES` above has already taken the
+# external schemes out of the caller's hands, so anything reaching here with a
+# scheme is a project-local resource URI and the path after `://` is the thing
+# to look for on disk.
+_SCHEME = re.compile(r'^[a-z][a-z0-9+.-]*://')
+
+
 def resolve_path(candidate: str, relative_to: Path) -> bool:
-    candidate = candidate.removeprefix('res://')
+    candidate = _SCHEME.sub('', candidate, count=1)
     if candidate.startswith(EPHEMERAL_DIRS):
         return True
     if (relative_to.parent / candidate).exists():

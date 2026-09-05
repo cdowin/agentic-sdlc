@@ -15,7 +15,7 @@ import subprocess
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
-from agentic_sdlc.core.config import config_section, str_tuple
+from agentic_sdlc.core.config import config_section, relpath_tuple
 
 DEFAULT_ROOTS = ('tools',)
 SHEBANGS = ('#!/usr/bin/env bash', '#!/bin/bash', '#!/usr/bin/env sh', '#!/bin/sh')
@@ -47,7 +47,8 @@ def run() -> int:
         print('[check:shell] SKIP — shellcheck not on PATH (install it to enable this gate)')
         return 0
     root = repo_root()
-    roots = str_tuple(config_section('shell'), 'shell', 'roots', DEFAULT_ROOTS)
+    roots = relpath_tuple(config_section('shell'), 'shell', 'roots',
+                          DEFAULT_ROOTS)
     targets = []
     for rel in git_lines('ls-files', *roots):
         path = root / rel

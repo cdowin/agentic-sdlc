@@ -132,6 +132,32 @@ def relpath(sect: dict, name: str, key: str, fallback: str) -> str:
     return value
 
 
+def relpath_tuple(sect: dict, name: str, key: str,
+                  fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """`str_tuple`, plus "and every one is inside this checkout".
+
+    The list-valued half of `relpath`, and it exists because the same defect
+    was in two more keys the first sweep could not reach. Measured 2026-09-05,
+    after `relpath` landed: `[doc] scope = ["/etc/hosts"]` scanned and reported
+    that file as `1 doc(s)` at exit **0**; an absolute GLOB (`/etc/*.conf`) was
+    a `NotImplementedError` traceback at exit **1**; and `[shell] roots =
+    ["../out/tools"]` linted a directory outside the checkout and named the
+    file it found there.
+
+    Every entry is refused on its own and the message names WHICH one — a list
+    key that failed without saying which element was wrong would send a
+    consumer reading a four-entry scope one line at a time.
+    """
+    values = str_tuple(sect, name, key, fallback)
+    for index, value in enumerate(values, start=1):
+        defect = _escapes_checkout(value)
+        if defect is not None:
+            raise ConfigError(
+                f'[{name}] {key} entry {index} of {len(values)} must name a '
+                f'path inside this checkout, got {value!r} — it {defect}')
+    return values
+
+
 def flag(sect: dict, name: str, key: str, fallback: bool) -> bool:
     value = sect.get(key, fallback)
     if not isinstance(value, bool):

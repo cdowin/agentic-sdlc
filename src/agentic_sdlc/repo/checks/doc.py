@@ -31,7 +31,7 @@ from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import repo_root
-from agentic_sdlc.core.config import config_section, str_tuple
+from agentic_sdlc.core.config import config_section, relpath_tuple, str_tuple
 
 REPO_ROOT = repo_root()
 # READ PER RUN, NEVER AT IMPORT. These were module-level constants until
@@ -49,7 +49,7 @@ REPO_ROOT = repo_root()
 # `tests/test_boundaries.py` holds every module in `src/` to it.
 DEFAULT_SCOPE = ('CLAUDE.md', '.claude/rules/*.md', '.claude/agents/*.md')
 def scope_globs() -> tuple[str, ...]:
-    return str_tuple(config_section('doc'), 'doc', 'scope', DEFAULT_SCOPE)
+    return relpath_tuple(config_section('doc'), 'doc', 'scope', DEFAULT_SCOPE)
 MAKEFILE = REPO_ROOT / 'Makefile'
 ALLOW_MARKER = 'doc-scan:allow'
 # A skill is a DIRECTORY holding SKILL.md. A flat `.claude/skills/<name>.md`

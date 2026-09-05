@@ -56,6 +56,24 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo.pm import model  # noqa: E402
 
+# --- these tests share ONE mutable thing: this repo ----------------------------
+# Every case here spawns `make` against REPO_ROOT rather than a scratch tree,
+# because what it is testing IS this repo's Makefile and the gate library it
+# sources. That makes them the only tests in the suite that are not fully
+# encapsulated: two of them running at once write the same `.gate-reports/`
+# logs and the same ledger, and the loser sees the winner's row.
+#
+# xdist found it the hour parallelism landed — they pass alone and fail
+# together, which is the shape a suite hides until it is run in parallel.
+#
+# `xdist_group` is the DECLARATION that fixes it: every test carrying this name
+# is dispatched to the same worker, so they serialise against each other and
+# against nothing else. It costs the suite nothing — the group runs while seven
+# other workers run everything else — and it says out loud what is shared,
+# which a `-p no:randomly` or a `--dist loadfile` would only work around.
+pytestmark = pytest.mark.xdist_group(name='the-real-repo')
+
+
 
 @contextlib.contextmanager
 def _support_pm_tree():

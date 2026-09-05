@@ -178,6 +178,13 @@ HELP_FLAGS = ('-h', '--help')
 KNOWN_GATES = {
     'doc': True, 'shell': True, 'grain-shape': True,
     'repo-hygiene': False, 'pm': False, 'hooks': False,
+    # OFF by default and config-ceilinged, which is the posture milestone risk
+    # 2 names: a gate landing in the default roster reds every consumer at
+    # once. `budget` has no stock ceiling to ship — "ten seconds" is a claim
+    # about a machine, and this package knows nothing about its consumers
+    # (rule 8) — so a tree that declares no `[tests] budget` gets the measured
+    # numbers reported and exit 0. The mechanism is ours; the number is theirs.
+    'budget': False,
 }
 
 # The gates that accept `--fix`. Empty since 0.2.0 — `uid` was the only one and

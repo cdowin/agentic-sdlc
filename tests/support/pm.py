@@ -120,28 +120,28 @@ def write_config(root: Path, config: str = '') -> Path:
     return path
 
 
-def _mark_or_init(root: Path, git_repo: bool) -> None:
-    """Make `root` findable — as a MARKER by default, as a real repo on ask.
+def _mark(root: Path) -> None:
+    """Make `root` findable without spawning anything.
 
     `core.project.repo_root` walks up for `.git` and no longer shells out to
     `git rev-parse --show-toplevel`, so a tree only has to be MARKED to be
-    found. `mkdir` costs microseconds; `git init` costs a process, and this
-    helper is entered once per TEST across most of the suite.
+    found. `mkdir` costs microseconds; `git init` costs a process, and a tree
+    builder is entered once per TEST across most of this suite.
 
-    `git_repo=True` is for the cases that ask git a real question — what
-    changed, what is staged, what a rev resolves to. Those are integration
-    tests, and they now say so by asking for the thing that makes them one.
+    **This function must never spawn, and that is load-bearing rather than
+    tidy.** `conftest.py` derives the `shell` mark by walking `tests/support`'s
+    call graph, so anything `tree` reaches decides the TIER of every module
+    that uses it. While the init lived here behind a flag, 1430 tests were
+    marked integration for a branch they never took — source cannot see which
+    side of an `if` runs, and one helper dragged three hundred cheap cases
+    across with it. The two builders are separate functions for that reason.
     """
-    if not git_repo:
-        (root / '.git').mkdir(exist_ok=True)
-        return
-    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    (root / '.git').mkdir(exist_ok=True)
 
 
 @contextlib.contextmanager
 def tree(milestone_status='building', feature_status='building',
-         story_statuses=('ready',), with_record=True, config='',
-         git_repo=False):
+         story_statuses=('ready',), with_record=True, config=''):
     """A one-milestone/one-feature/N-story repo, cwd'd into.
 
     `config` is the tree's `devkit.toml` MINUS the flow declaration, which is
@@ -149,9 +149,12 @@ def tree(milestone_status='building', feature_status='building',
     after the tree is standing calls `write_config(root, …)` rather than
     writing the file, for the same reason.
 
-    `git_repo=False` by default: the tree is MARKED rather than initialised,
-    because `repo_root` walks for `.git` and almost nothing here asks git a
-    question. Pass `git_repo=True` when the test genuinely needs a repository.
+    **This builder never spawns**, and `git_tree` below is the one that does.
+    They are two functions rather than one with a flag because `conftest.py`
+    derives the `shell` mark from `tests/support`'s CALL GRAPH — source cannot
+    see which side of an `if` runs, so a single builder with a `git_repo=`
+    branch marked every module that used it as integration, including three
+    hundred cases that never took the branch.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
@@ -174,13 +177,31 @@ def tree(milestone_status='building', feature_status='building',
             write(fdir / 'stories' / f's{i}.md',
                   {'id': f'0.1/alpha/s{i}', 'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': f'S{i}', 'status': st})
-        _mark_or_init(root, git_repo)
+        _mark(root)
         previous = Path.cwd()
         os.chdir(root)
         try:
             yield root
         finally:
             os.chdir(previous)
+
+
+@contextlib.contextmanager
+def git_tree(**kwargs):
+    """`tree`, in a REAL repository — for cases that ask git a question.
+
+    What changed, what is staged, what a rev resolves to: those are questions
+    only git can answer, and a test asking one is an integration test. It says
+    so by reaching for this builder, and `conftest.py`'s derivation reads that
+    reach and marks the module.
+
+    **The declaration is the point.** The default is cheap and the exception is
+    visible, so a module that quietly grows a git dependency changes tier in
+    the census rather than in somebody's wall clock.
+    """
+    with tree(**kwargs) as root:
+        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        yield root
 
 
 def bug(root: Path, slug: str = 'crash', status: str = 'open',

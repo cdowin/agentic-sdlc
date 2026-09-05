@@ -329,3 +329,50 @@ economics argument is made from — 170x is quoted from a hand measurement rathe
 ledger this feature built. Named as the gap rather than faked: a ratio derived from an incomplete
 denominator would understate the wide half, which is the direction that makes the wrong decision
 look right.
+
+## D10 — 2026-09-05 — The test tier is the ladder's bottom rung, and a tier that got slower is a finding
+
+**Chris, 2026-09-05, on a 240-second suite:**
+
+> *"Testing should be DEAD SIMPLE. … An integration test that takes longer than maybe 30s is too
+> long. A unit suite should complete in seconds, it's just a code run. … I'm tired of waiting for
+> tests forever."*
+
+**The ruling: the `shell` mark IS the tier, `precommit` is the narrow rung, and a tier over its
+declared ceiling is a gate failure.**
+
+The mark already existed — derived at collection from what a module's source reaches — and it
+already had a job: letting `make matrix` skip spawning modules on three of four interpreters. What
+it never had was a TARGET, so the fast half of the suite was unreachable from the command line and
+`make precommit` ran all of it after every edit. That is this milestone's own 170x, in the file
+that names it.
+
+```
+make unit          no subprocess, one process, 7 s      <- after every edit
+make integration   a real repo, make, a hook corpus     <- at the close
+make test          both                                 <- and at the close
+make milestone     everything, every interpreter        <- once
+```
+
+**Rejected: a `[tests] tiers` key naming which modules are which.** D1 rejected that shape for the
+tier roster and the reasons carry unchanged — a list beside the thing it describes is a second
+source of truth, and a module listed in config and absent from the suite is a census that lies.
+The mark is DERIVED from source, so a module that starts spawning changes tier on the next
+collection rather than on the next audit.
+
+**Rejected: deleting the slow tests.** The conversion is narrow→cheap, never wide→gone. 419 tests
+moved back OUT of the slow tier during this work and the pass count never dropped; a speed-up that
+deletes coverage is the write-side cardinal sin wearing a stopwatch.
+
+**Rejected: `check budget` in `[checks] all`.** It grades the LAST recorded run of each tier, and
+`check all` is the per-change gate — it runs in `precommit`, in a pre-push hook, and inside
+`test_makefile_gates`, which spawns `make gates` against this very tree. Nine tests went red for a
+timing number that had nothing to do with what they assert. A gate that reddens on somebody else's
+clock is milestone risk 2 with a stopwatch, and it is the kind that gets deleted. It runs in
+`make milestone`, once, where a regression is a thing to act on.
+
+**The cost accepted, and it is real: the budget is always one run behind.** It reads a `gate` row
+rather than taking a measurement, so a tier's number is only as current as the last time somebody
+ran that tier. That is why the gate prints the AGE of every row it grades — `7.2s of 20s, measured
+12m ago` — because a ceiling reported against a row from last week is a ceiling reported against
+last week's code, and a number without its age reads as a fact about the tree in front of you.

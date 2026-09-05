@@ -60,6 +60,33 @@ checks = [
     "D9", "D10",
     "V1", "V2", "V3", "V4", "V5", "V6",
 ]
+
+[tests]
+# THE CEILINGS, and they are ours rather than the package's. `check budget`
+# ships with none — "twenty seconds" is a claim about a machine, and rule 8
+# says this package knows nothing about the machines its consumers run on — so
+# a tree that declares nothing gets its costs reported and exit 0.
+#
+# Measured 2026-09-05 on the floor interpreter, after the tier split:
+# unit 7.2 s in one process, integration ~64 s on eight workers, both ~62 s.
+# The ceilings are roughly 2x each, because a shared CI runner is not a laptop
+# and a gate that goes red on a busy afternoon is a gate somebody deletes.
+#
+# NOT IN `[checks] all`, and that is a ruling rather than an oversight.
+# `check all` is the PER-CHANGE gate: it runs in `precommit`, in a pre-push
+# hook, and inside `test_makefile_gates`, which spawns `make gates` against
+# this very tree. A budget gate there grades the LAST suite run, so one slow
+# afternoon reddens the next person's edit for a reason they cannot act on —
+# and it made nine tests fail for a timing number that had nothing to do with
+# what they assert. A gate that reddens on somebody else's clock is milestone
+# risk 2 with a stopwatch, and it is the kind that gets deleted.
+#
+# It runs in `make milestone`, once, where a regression is a thing to act on.
+#
+# They exist to catch a DOUBLING, not a wobble. The drift this is aimed at is
+# the one that already happened here: 240 s of suite, arrived at one honest
+# fixture at a time, with every gate green the whole way down.
+budget = { unit = 20, integration = 130, test = 150 }
 # V6 is named on purpose, and it is the one rule here that is NOT stock. This
 # tree keeps generated execution lists and is small enough for `pm sync` to be
 # cheap, so the gate holds the view to the tree. A project whose lists go stale

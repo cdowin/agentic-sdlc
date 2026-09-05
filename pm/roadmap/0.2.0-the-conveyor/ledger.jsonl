@@ -101,3 +101,15 @@
 {"ts":"2026-09-05T20:40:24Z","kind":"decision","grain":"0.2.0","entry":"D7","title":"The ledger keeps its frozen keys and gains category keys beside them"}
 {"ts":"2026-09-05T20:40:24Z","kind":"decision","grain":"0.2.0","entry":"D8","title":"Everything is just a check: no belt step ever halts, and exit 2 belongs to the reader"}
 {"ts":"2026-09-05T21:45:15Z","kind":"decision","grain":"0.2.0","entry":"D9","title":"A composition rung's cost is UNKNOWN until the composition opens its own slot, and the criterion says so"}
+{"ts":"2026-09-05T23:39:28Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7509}
+{"ts":"2026-09-05T23:39:30Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1854}
+{"ts":"2026-09-05T23:39:31Z","kind":"gate","gate":"hooks-self-test","verdict":"PASS","duration_ms":1013}
+{"ts":"2026-09-05T23:39:39Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7170}
+{"ts":"2026-09-05T23:45:07Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":60179}
+{"ts":"2026-09-05T23:46:07Z","kind":"gate","gate":"integration","verdict":"PASS","duration_ms":60107}
+{"ts":"2026-09-05T23:48:42Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":37069}
+{"ts":"2026-09-05T23:50:51Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":39854}
+{"ts":"2026-09-05T23:51:59Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":44601}
+{"ts":"2026-09-05T23:53:44Z","kind":"decision","grain":"0.2.0","entry":"D10","title":"The test tier is the ladder's bottom rung, and a tier that got slower is a finding"}
+{"ts":"2026-09-05T23:55:50Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":39405}
+{"ts":"2026-09-05T23:58:02Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":39613}

@@ -499,13 +499,21 @@ def test_nothing_reaches_for_a_path_outside_this_checkout():
 
 def test_the_full_gate_is_a_composition_of_self_contained_targets():
     """`make milestone` must not acquire a member that needs another repo. The
-    three it has all read this checkout alone, which is why CI and a laptop
-    reach the same verdict."""
+    four it has all read this checkout alone, which is why CI and a laptop
+    reach the same verdict.
+
+    `budget` joined them in 0.2.0 and is the interesting case: it reads the
+    milestone's own `ledger.jsonl` and nothing else, so it stays inside the
+    checkout — but it grades a number a MACHINE produced, and a ceiling is a
+    claim about a machine. That is why it ships with no stock ceiling (rule 8)
+    and why it is here rather than in `check all`: a per-change gate that
+    reddens over last night's timing is a gate somebody deletes.
+    """
     body = (REPO_ROOT / 'Makefile').read_text(encoding='utf-8')
     match = re.search(r'^milestone:(.*)$', body, re.M)
     assert match, 'the Makefile no longer declares a `milestone` target'
     members = match.group(1).split()
-    assert members == ['gates', 'hooks-self-test', 'matrix'], members
+    assert members == ['gates', 'hooks-self-test', 'matrix', 'budget'], members
     for member in members:
         recipe = re.search(rf'^{member}:.*?\n((?:\t.*\n|\n)*)', body, re.M)
         assert recipe, f'{member} has no recipe in this Makefile'

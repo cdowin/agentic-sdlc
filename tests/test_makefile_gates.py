@@ -30,9 +30,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
-pytestmark = pytest.mark.skipif(shutil.which('make') is None
-                                or shutil.which('bash') is None,
-                                reason='needs make and bash')
+pytestmark = [
+    pytest.mark.skipif(shutil.which('make') is None
+                       or shutil.which('bash') is None,
+                       reason='needs make and bash'),
+    # A LIST, because there were two of these and the second silently replaced
+    # the first — the module lost its `make`-is-missing skip the moment the
+    # group mark was added beside it. `pytestmark` is one name; two assignments
+    # is one assignment.
+    pytest.mark.xdist_group(name='the-real-repo'),
+]
 
 MAKEFILE = REPO_ROOT / 'Makefile'
 VERDICT = re.compile(r'^\[GATES\] .+ — full log: \.gate-reports/gates\.log$')
@@ -278,12 +285,30 @@ def test_the_makefile_sources_the_shipped_library_not_a_copy():
 # refusal rows below are the plausible MISTAKE (bumping one without the other,
 # a floor that is a prefix of a listed version), not shell injection through a
 # make variable, which no recipe in this file survives and none pretends to.
+# --- these tests share ONE mutable thing: this repo ----------------------------
+# Every case here spawns `make` against REPO_ROOT rather than a scratch tree,
+# because what it is testing IS this repo's Makefile and the gate library it
+# sources. That makes them the only tests in the suite that are not fully
+# encapsulated: two of them running at once write the same `.gate-reports/`
+# logs and the same ledger, and the loser sees the winner's row.
+#
+# xdist found it the hour parallelism landed — they pass alone and fail
+# together, which is the shape a suite hides until it is run in parallel.
+#
+# `xdist_group` is the DECLARATION that fixes it: every test carrying this name
+# is dispatched to the same worker, so they serialise against each other and
+# against nothing else. It costs the suite nothing — the group runs while seven
+# other workers run everything else — and it says out loud what is shared,
+# which a `-p no:randomly` or a `--dist loadfile` would only work around.
+
 UV_RECORDER = """\
 #!/usr/bin/env python3
 "a stand-in `uv`: record the argv, run nothing, exit 0."
 import json
 import os
 import sys
+
+
 
 with open(os.environ['GDK_ARGV_LOG'], 'a', encoding='utf-8') as handle:
     handle.write(json.dumps(sys.argv[1:]) + '\\n')

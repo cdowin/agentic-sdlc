@@ -491,6 +491,13 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     'repo/checks/grain_shape.py',
     'repo/checks/repo_hygiene.py',
     'repo/checks/shell.py',
+    # `[tests] budget` — a table of tier ceilings, read through `number_table`,
+    # which is the guard for exactly this shape. A bare `cfg.get('budget')`
+    # would hand back whatever TOML held, and a ceiling that is a STRING
+    # compares against a float in a way this gate would report as "under
+    # budget" forever: the read-side cardinal sin, in the gate whose whole job
+    # is to notice a number getting worse.
+    'repo/checks/budget.py',
     'repo/gates_extra.py',
     # The conveyor reads `[release] steps`, `[release.commands]` and
     # `[<op>.version_files]`, and every one of those values goes through a

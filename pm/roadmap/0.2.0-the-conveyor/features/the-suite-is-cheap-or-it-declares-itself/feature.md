@@ -138,3 +138,65 @@ not a ceiling — and the release gate may legitimately take minutes, because it
 4. **xdist makes an order-dependent test flake instead of fail.** `test_boundaries`'s
    `OneApply` case was already found order-dependent once (L2 of the release review). Parallelism
    will find the rest, and each one is a real finding.
+
+## Close
+
+**Measured, on the floor interpreter, before and after:**
+
+| | before | after |
+|---|---|---|
+| `make precommit` (per edit) | 240 s+ | **10.3 s** |
+| unit tier | did not exist as a target | **7.2 s**, 1112 tests, one process |
+| integration tier | — | **60 s**, 730 tests, 8 workers |
+| whole suite | 240 s | **39 s** |
+| CPU utilisation | 62% | **463%** |
+| modules carrying `shell` | 32 of ~46 | **19 of 46** |
+| tests | 1842 | **1853** |
+
+**The pass count went UP.** 419 tests came back out of the slow tier because they had been marked
+integration for a branch they never took, and eleven are the budget gate's own. Criterion 9 held:
+nothing was deleted to make a number smaller.
+
+### Where the time actually was
+
+Four things, and only the last was a test being wrong:
+
+1. **`repo_root` spawned `git rev-parse` on every config read** — one function, and the reason
+   1800 tests ran `git init`.
+2. **xdist was never used** on a suite that was 62% idle.
+3. **Two mutation cases in `test_gate_library` were 47 of 96 seconds**, waiting on a corpus that
+   slept 20 s against a 10000 ms ceiling. The proof is a RATIO, so it sleeps 3 s against 2000 ms
+   now — every margin still wide, `--self-test` still 62 cases.
+4. **A handful of tests spawn `make` against THIS repo** and collided under parallelism. They pass
+   alone and fail together, which is the shape a serial suite hides. `xdist_group` is the
+   declaration that fixes it, and it says out loud what they share.
+
+### Three findings this surfaced that were not about speed
+
+- **`test_verdict`'s shared-paragraph check built its reference and its subjects by DIFFERENT
+  rules** — subjects cut at the next `## `, the reference run to end of file. They agreed only
+  while `reviewer.md` happened to end with that section. The first block appended after it failed
+  all five cases against a paragraph that had not changed. One extractor now.
+- **`test_makefile_gates` had two `pytestmark` assignments**, and the second silently replaced the
+  first: the module lost its `make`-is-missing skip the moment a second mark was added beside it.
+- **A budget gate in `check all` is circular.** It grades the last recorded run, and `check all`
+  runs inside a test that spawns `make gates` against this tree — nine tests went red for a timing
+  number unrelated to what they assert. D10 carries the ruling.
+
+### What is encoded, so this is caught rather than re-discovered
+
+CLAUDE.md **hard rule 10** and its verification-loop section; `test-writer`, `developer`,
+`reviewer`, `simplifier` and `verification-reviewer`, so a consumer's roster inherits it;
+decision **D10**; and the telemetry — every tier files a `gate` row with its duration on every
+run, and `check budget` is what reads them.
+
+### Criterion 3, honestly: NOT met
+
+The integration tier is 60 s against a 30 s target and 730 tests against "tens". The tier is
+declared, counted and budgeted — but it is not yet SMALL. What remains is the conversion the
+feature names and did not finish: a pristine template built once per session and `shutil.copytree`
+per case, replacing the per-test `git init` in the modules that genuinely need a repository. The
+ceiling is set at 130 s so it cannot drift further while that work waits.
+
+done: in-place — the ladder, the budget gate, the rules and the roster. 1853 passed, 2 skipped,
+691 subtests; `check all` green.

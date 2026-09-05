@@ -19,6 +19,34 @@ branch:
 The design is `docs/design/state-categories.md`, written with the research behind it. This
 milestone builds it.
 
+## The engine has two verbs
+
+Chris, 2026-09-05: *"It's just a conveyor belt of moving action to action. It's not inference.
+The engine just says: okay, you wanna move something from one state to another? That's fine. You
+wanna check if all things are in a particular state? That's fine. **This is just Jira being built
+local.**"*
+
+```
+move(grain, to_state)          is this transition declared? then write it.
+holds(grains, category|state)  are they all there? yes or no, and name who is not.
+```
+
+**Seven places currently infer instead** — `STALLED_IF_ALL_STORIES_DONE`, D2's "advance it",
+`at_or_past(BUILDING)`, `terminal_state`, `feature done --cascade`, `review_slug_fallback`,
+`_kind_of`. None is a bug today; every one is a decision a project cannot see, change, or
+un-choose. The census and the reasoning are in `docs/design/state-categories.md` §6.
+
+## Hard rule 5 splits
+
+Its "works with no `devkit.toml`" half was written in `de548ce` — the FIRST CLAUDE.md — beside a
+rule reading *"Pure parse, read-only. The only writes ever performed are stdout/stderr."* It was
+written for a LINTER, where universal defaults are right and demanding config before linting
+would be worse. `pm` did not exist. The conveyor did not exist.
+
+Gates keep it. **The workflow does not**: states and transitions are the project's declaration,
+`init` writes them, and a tree without them is refused by name. A default nobody can see is the
+engine's opinion wearing the project's clothes.
+
 ## The one-sentence version
 
 **`[pm] story_states` is configurable and every question the engine asks about it is asked BY

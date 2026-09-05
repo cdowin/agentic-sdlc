@@ -176,7 +176,7 @@ invisible until this pass.
   above depends on a `pm/` count; the source and test files named were all read at HEAD with a
   clean `git status`.
 
-Reviewer's token cost: ~95k.
+Reviewer's token cost: ~100k for the three-feature pass, of which this record is one part.
 
 ```
 verdict: SHIP-WITH-FIXES

@@ -226,6 +226,26 @@ $(error GDK_MILESTONE_TIERS names a tier no makefile defines: [$(GDK_TIERS_ORPHA
 endif
 endif
 
+# EVERY DECLARED TIER IS PHONY, and this line is a gate rather than a tidiness.
+# A tier is an ACTION — a gate to run — and make treats a target with no
+# prerequisites as UP TO DATE when a file or directory of that name exists. So
+# `GDK_PRECOMMIT_TIERS := parse test` in a tree that also has a `test/`
+# directory ran `check` and `parse`, SKIPPED `test`, exited 0 and printed
+# nothing about it. The orphan check above cannot see that case: `test` IS a
+# defined target, so it is not an orphan — it is a defined target make decided
+# it did not need to build.
+#
+# Found 2026-09-05 by the feature review, and it inverted this feature's own
+# ship criterion 2 — "a tier that resolves to no target is a LOUD failure, not
+# a silently-shorter gate" — through the one door that criterion did not think
+# to look at. Every tier case in tests/test_makefile_include.py declared
+# `.PHONY` in its own tier file, so no test could reach it.
+#
+# A language kit's tier file should declare its own `.PHONY` too; this is the
+# belt AND the braces, because the cost of the braces is one line and the cost
+# of being wrong is a gate that reports success without running.
+.PHONY: $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS)
+
 # The empty case ANNOUNCES ITSELF. It is legitimate — a project with no
 # language kit gates on `check` alone — but it is one gate where a tiered
 # project runs five, and an operator who cannot tell the two runs apart from

@@ -81,6 +81,18 @@ class SkipReason(Enum):
     # census names it, an operator sees a directory the walk declined, and
     # nobody gets a smaller number with nothing said.
     SYMLINKED_DIR = '{n} symlinked dir(s) NOT descended (a symlink may leave the checkout)'
+    # THE THIRD MECHANISM OF THE SAME DEFECT, and the one that needed a
+    # reviewer to find. `rglob` swallows a per-directory OSError: a subtree
+    # this process cannot read yields NOTHING and raises NOTHING, so it
+    # reached neither `kept` nor `skipped` and `unexamined()` answered 0 —
+    # which is the number the zero-census guard trusts.
+    #
+    # Measured 2026-09-05 by the feature review: `pm/roadmap/0.1.0/stories/`
+    # at mode 000 holding a 901-line over-cap story produced
+    # `[check:grain-shape] PASS — 0 PM document(s)`, exit 0. Symlink,
+    # discarded census, unreadable directory — three ways to lose a subtree
+    # and say nothing, closed one at a time over one day.
+    UNREADABLE_DIR = '{n} dir(s) NOT READABLE by this process and so not descended'
 
     @property
     def census(self) -> str | None:
@@ -105,7 +117,8 @@ class SkipReason(Enum):
         that kept nothing and left something UNEXAMINED cannot tell an empty
         tree from a scope that lost one, and rule 4 says that must be loud.
         """
-        return self in (SkipReason.EXCLUDED_PATH, SkipReason.SYMLINKED_DIR)
+        return self in (SkipReason.EXCLUDED_PATH, SkipReason.SYMLINKED_DIR,
+                        SkipReason.UNREADABLE_DIR)
 
 
 class Kind(Enum):
@@ -285,11 +298,20 @@ def descendants(path: Path, kind: Kind = Kind.ANY, suffix: str | None = None,
     # most. Asked with its own glob, and a failure to read is not fatal: a
     # census that cannot enumerate links is still better than one that pretends
     # there are none.
+    #
+    # An UNREADABLE directory is caught the same way and for the same reason:
+    # `rglob` skips it in silence, and the entry itself is still yielded by its
+    # readable parent — so the one place both are visible is a separate pass
+    # over the entries rather than over the result.
     links: list[Skip] = []
     try:
-        links = [Skip(entry, SkipReason.SYMLINKED_DIR)
-                 for entry in sorted(path.rglob('*'))
-                 if entry.is_symlink() and entry.is_dir()]
+        for entry in sorted(path.rglob('*')):
+            if not entry.is_dir():
+                continue
+            if entry.is_symlink():
+                links.append(Skip(entry, SkipReason.SYMLINKED_DIR))
+            elif not os.access(entry, os.R_OK | os.X_OK):
+                links.append(Skip(entry, SkipReason.UNREADABLE_DIR))
     except OSError:
         links = []
     walk = _classify(raw, kind)

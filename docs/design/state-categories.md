@@ -140,9 +140,16 @@ unless somebody asks for it with a question the three cannot answer.**
 ```toml
 [pm.states.story]
 todo        = ["planning", "ready"]
-in_progress = ["building", "reviewing"]
-done        = ["accepted", "packaging", "done", "obe"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
 ```
+
+**`accepted` and `packaging` are `in_progress`.** Chris, 2026-09-05, on the first draft, which
+had them in `done`: *"work isn't done if it's being packaged."* Obvious once said, and the draft
+had it wrong in the direction that costs something — `features-done` would have been satisfied by
+a feature still being packaged, which is the belt above starting while the belt below is still
+running. The rule that catches it: **a category is about whether WORK REMAINS, not about whether
+the outcome is decided.** An accepted feature has had its verdict; it still has work.
 
 Per grain kind, so a bug's vocabulary (`open` / `fixed` / `closed`) is declared the same way
 rather than being the special case it is today. **The shipped default maps exactly today's
@@ -160,6 +167,78 @@ The engine keeps three opinions and no more:
 Everything else — how many states, what they are called, which category each sits in, what order
 they appear in within it — is the project's.
 
+### The table is WRITTEN by `init` and READ every run — never assumed
+
+**Chris, 2026-09-05:**
+
+> *"The transitions table should come from code. That's the config that I'm talking about. So
+> when you init a project, it writes a config. That is the transition table, and that is what
+> should be read into code every single time. It should never assume."*
+
+Three roles, and keeping them apart is the design:
+
+| | where | what it is |
+|---|---|---|
+| **the seed** | code | the shipped default table — one source, versioned with the engine |
+| **the declaration** | the project's `devkit.toml`, written by `init` | what THIS project's states and transitions are |
+| **the reader** | every run | reads the declaration. **It does not fall back.** |
+
+**A runtime fallback is the engine keeping its opinion with extra steps.** If the table is
+invisible when absent, a project never learns it can change it, the shipped words persist by
+default forever, and the one thing this milestone exists to remove survives inside a
+default-argument.
+
+So `init` MATERIALIZES the seed into the project's config, where it is visible, diffable and
+editable, and the runtime reads what is there.
+
+#### Hard rule 5 is not an exception to make — it is a rule to split
+
+**Chris, 2026-09-05:** *"We can update that hard rule five. What was hard rule five trying to
+guard against? I'm actually not sure."*
+
+Neither was I, so I went and found it. `git log -S` on the clause: it lands in **`de548ce`, the
+FIRST CLAUDE.md this package ever had**, and the rule beside it at the time reads:
+
+> *"**Pure parse, read-only.** No tool boots Godot, writes into the consuming repo, or depends on
+> `.godot/` cache state. **The only writes ever performed are stdout/stderr.**"*
+
+That is what rule 5 was written for: **a linter you point at a repo.** In that package, "works
+with no config" was not a principle, it was a *property* — the defaults were things like *scan
+`tools/`* and *cap prose at N lines*, universal enough to be right anywhere, and a tool that
+demanded configuration before it would lint anything would be a worse linter.
+
+**The rule has two halves and only one of them was ever reasoned about:**
+
+| half | what it guards | verdict |
+|---|---|---|
+| *"per-project variation goes in a config section — never edit the tool"* | **forked tools.** Two consumers each carrying a patched copy that drifts. | **Keep. This is the whole rule.** |
+| *"a repo with NO `devkit.toml` behaves byte-identically to one declaring the defaults"* | nothing, once there is a declared workflow. It is a linter-era convenience. | **Scope it to the gates.** |
+
+`pm` did not exist when that sentence was written. The conveyor did not exist this morning. The
+second half is a property of gates with universal defaults being applied, unexamined, to a state
+machine that has no universal default — because **the states are the project's, and that is the
+entire point.**
+
+So rule 5 becomes:
+
+> **5. Config over forks.** Per-project variation goes in the consumer's `devkit.toml` section —
+> never "edit the tool". **A GATE works with stock defaults and a repo with no `devkit.toml`
+> runs every gate byte-identically to one declaring them.** The WORKFLOW does not: states and
+> transitions are the project's declaration of how it works, `init` writes them, and a tree
+> without them is refused by name. A default nobody can see is the engine's opinion wearing the
+> project's clothes.
+
+Not an exception bolted onto a rule — the rule saying which of the two things it is talking
+about, which it never had to before.
+
+#### And a pin bump is where this gets tested
+
+A release that adds a conveyor step adds a transition the consumer's config — written at THEIR
+init, at an older version — does not have. **`adopt`'s `config-updated` step owns that**, and it
+is the reason that step exists: it is the one place a version's declared surface is compared
+against what the tree declares. A new step with no transition must be a named finding there, with
+the seed value to paste, and not a crash three steps into a release.
+
 ### Ordering falls out, and it is only over categories
 
 D5's *"is the parent behind its children"* needs a partial order, and `todo < in_progress < done`
@@ -174,6 +253,7 @@ line that breaks the moment a project renames a word.
 | today | becomes |
 |---|---|
 | `pm ready-for feature` — every story `== 'done'` | every story in category `done` |
+| — | a story at `packaging` now BLOCKS, because packaging is work |
 | `check pm` D2 — `STALLED_IF_ALL_STORIES_DONE` | children all `done`, parent still `todo` |
 | `check pm` D5 — `at_or_past(BUILDING)` | child's category > parent's category |
 | `ledger.TERMINAL_STATE = 'done'` | the grain kind's `done` category |
@@ -217,3 +297,66 @@ stops being blocked by it forever.
 reordering, and `pm vocabulary`'s new shape. Each is a behaviour change a consumer would have to
 read about, and shipping them inside a release whose review has already closed would be exactly
 the ordering error this milestone made structural.
+
+---
+
+## 6. The engine has two verbs, and everything else is declaration
+
+**Chris, 2026-09-05:**
+
+> *"It's just a conveyor belt of moving action to action. It's not inference. And I think a lot
+> of inference is getting put in the middle here between all this. The engine just says: okay,
+> you wanna move something from one state to another? That's fine. You wanna check if all things
+> are in a particular state? That's fine. This is just Jira being built local."*
+
+That is the whole architecture, and it is smaller than what is currently here.
+
+```
+move(grain, to_state)          is this transition declared? then write it.
+holds(grains, category|state)  are they all there? yes or no, and name who is not.
+```
+
+Two verbs. Everything a belt does is a sequence of those plus commands the project named.
+**Anything else the engine does is inference, and inference is the thing to remove** — not
+because it is wrong today, but because it is the engine having an opinion that a project cannot
+see, cannot change, and did not choose.
+
+### The inference census, measured 2026-09-05
+
+| where | what it infers | becomes |
+|---|---|---|
+| `model.py:80` `STALLED_IF_ALL_STORIES_DONE` | *which states mean a feature has not advanced* — derived by slicing the LIFECYCLE tuple at `reviewing` | `holds(feature, todo)` |
+| `model.py:1066` D2's message | *"all stories done, feature still building — **advance it**"* — the engine saying what should happen next | report the fact; the belt owns what follows |
+| `model.py:~1030` `at_or_past(BUILDING)` | *ordering, by indexing a tuple of words* | category order, the only order there is |
+| `ledger.py:597` `terminal_state(cfg, kind)` | *which single state ends a grain* — and it special-cases bugs | `holds(grain, done)` |
+| `pm/cli.py` `feature done --cascade` | *which stories to move, and to what* — the engine picking grains to write | the `feature` belt's steps, declared |
+| `model.py:979` `review_slug_fallback` | *a review record, from a filename glob* | a pointer, or a finding |
+| `checks/grain_shape.py` `_kind_of` | *a grain's kind, from path shape* | already half-declared; finish it |
+
+Seven. None is a bug today. Every one is a place where a project that wanted to work differently
+would find the engine had already decided.
+
+### What this buys, and it is the durability argument
+
+**You can add a state without the engine changing.** Declare it, put it in a category, wire its
+transitions — the engine does not need to know it exists, because the engine never asks *which
+word*, only *which category* and *is this move declared*.
+
+That is the property Jira has and the reason its workflow engine outlived every opinion anyone
+built on top of it: **the engine is a graph walker over a declaration, and the declaration is the
+customer's.** A team adds `Blocked`, maps it to In Progress, wires it in and out — Atlassian
+ships nothing.
+
+### The line this does NOT cross
+
+The engine still refuses facts about the input, and that is not inference:
+
+- a state mapped to no category, or two;
+- a transition naming a state that is not declared;
+- a `move` the table does not permit;
+- a config value that is not the shape the key requires.
+
+**Refusing a malformed declaration is the engine reading, not deciding.** The distinction is
+whether the engine is answering a question about what the project SAID, or about what the
+project SHOULD DO. The first is its job. The second is the thing to keep taking out.
+

@@ -201,7 +201,7 @@ the risk nor the criterion anticipated: a named tier that **does** resolve, to n
 - The tree was live during this pass (other builders writing under `pm/roadmap/`), but every file
   named above was read at HEAD with a clean `git status`.
 
-Reviewer's token cost: ~95k.
+Reviewer's token cost: ~100k for the three-feature pass, of which this record is one part.
 
 ```
 verdict: HOLD

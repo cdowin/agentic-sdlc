@@ -2,7 +2,7 @@
 id: 0.2.0/the-belts-refuse-to-advance
 milestone: "0.2.0"
 name: Each belt's entry condition is a verb with an exit code
-status: planning
+status: building
 reviewed:
 risk: low
 size: s

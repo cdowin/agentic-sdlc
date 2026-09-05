@@ -2,7 +2,7 @@
 id: 0.2.0/every-gate-reports-its-cost
 milestone: "0.2.0"
 name: Every gate records what it cost, so the gate set can be argued from data
-status: planning
+status: building
 reviewed:
 risk: medium
 size: m

@@ -5,7 +5,7 @@ name: Closing a story and closing a feature are step lists, not prose
 status: planning
 reviewed:
 phase: 5
-depends_on: ["0.2.0/the-release-is-a-conveyor", "0.2.0/the-belts-refuse-to-advance", "0.2.0/the-story-belt-knows-what-verifies-this-edit"]
+depends_on: ["0.2.0/the-release-is-a-conveyor", "0.2.0/the-belts-refuse-to-advance", "0.2.0/the-story-belt-knows-what-verifies-this-edit", "0.2.0/the-belt-reports-and-finishes"]
 consumed_by: []
 risk: medium
 size: m
@@ -13,6 +13,14 @@ labels: ["belts", "conveyor", "sdlc"]
 ---
 
 # Closing a story and closing a feature are step lists, not prose
+
+> **RE-SCOPED 2026-09-05 by the plan audit (Q3). This feature is unbuilt, and it must not be built
+> until `0.2.0/the-belt-reports-and-finishes` has landed.** The record below — and its story 01 —
+> specify belts that REFUSE, because both were written before the report-never-refuse ruling. It
+> is the only unbuilt feature in the tree that would have to write the halt and then delete it,
+> and that is a feature's worth of code and tests rather than a finding. **The ORDER is still the
+> whole deliverable**; nothing else about this feature changes. Read every "refuses" below as
+> "warns, names what is open, and finishes."
 
 **Chris, 2026-09-05, on being shown the three levels written up as doctrine:**
 

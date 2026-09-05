@@ -216,3 +216,13 @@ run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_init_ver
 # `prove-artifact` ships with NO default, because the proof names a git URL and
 # a URL is a project's fact, not this package's (rule 8). Ours:
 prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
+
+# More words that mean FINISHED, beyond the last state in each grain's list.
+# Empty by default and empty here — this tree abandons nothing yet — but the
+# key is declared in the shipped project-devkit.toml template so a consumer
+# meets it before it bites them.
+#
+# It is the `done` CATEGORY with its members enumerated by hand.
+# docs/design/state-categories.md is the model: three categories (todo,
+# in_progress, done), hard, with the states inside them and their mapping
+# configurable. 0.3.0 builds it and reads this key into it.

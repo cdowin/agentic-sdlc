@@ -12,3 +12,9 @@
 {"ts":"2026-09-05T16:07:45Z","kind":"status","grain":"0.2.0/bugs/the-deprecation-window-must-close","from":"open","to":"fixed"}
 {"ts":"2026-09-05T16:07:45Z","kind":"status","grain":"0.2.0/the-middle-tier-splits","from":"planning","to":"building"}
 {"ts":"2026-09-05T16:09:27Z","kind":"decision","grain":"0.2.0","entry":"D3","title":"One ladder: [verify] names which rung each composition is, rather than a second set of commands"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-middle-tier-splits/01-the-framework-composes-from-declared-tiers","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-middle-tier-splits/02-a-named-tier-that-resolves-to-nothing-is-loud","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-middle-tier-splits/03-the-godot-roster-leaves","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/every-gate-reports-its-cost/01-the-ledger-holds-what-a-gate-cost","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/01-the-verify-declaration-is-read-or-refused","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance","from":"planning","to":"reviewing"}

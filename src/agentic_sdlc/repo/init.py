@@ -269,10 +269,10 @@ def _arm_hooks(root: Path) -> int:
 def _stand_up_pm_tree(cfg) -> int:
     """`pm init`, minus the four next-steps it prints for a bare repo.
 
-    Two of those four are already done here — the `pm-scan` target ships in
-    Makefile.devkit, and devkit.toml is written above with its `[pm]` block —
-    so printing them would send an operator to wire what init just wired. The
-    tree and the guidance install are the same two functions `pm init` calls.
+    One of those four is already done here — devkit.toml is written above with
+    its `[pm]` block — so printing it would send an operator to wire what init
+    just wired. The tree and the guidance install are the same two functions
+    `pm init` calls.
     """
     from agentic_sdlc.repo.pm import skills
     for made in skills.stand_up_tree(cfg):
@@ -377,12 +377,20 @@ def main(argv: list[str]) -> int:
     print('  4. Every file under .claude/agents/ and tools/ opens with a '
           'project-config')
     print('     section carrying stock values — edit them to your spellings.')
-    print('  5. .github/workflows/: uid-guard.yml names its branches '
-          'literally (an `on:`')
-    print('     filter takes no variable), and auto-tag.yml dispatches '
-          'RELEASE_WORKFLOW —')
-    print('     leave that alone if you have no release pipeline; the step is '
-          'a no-op then.')
-    print('  6. `agentic-sdlc pm new milestone 0.1 "First Milestone"`, then '
-          '`make pm-scan`.')
+    print('  5. .github/workflows/: semver-gate.yml and auto-tag.yml name '
+          'their branches')
+    print('     literally (an `on:` filter takes no variable) and read your '
+          'version through')
+    print('     VERSION_FILE/VERSION_PATTERN at the head of each file. '
+          'auto-tag.yml dispatches')
+    print('     RELEASE_WORKFLOW — leave that alone if you have no release '
+          'pipeline; the')
+    print('     step is a no-op then.')
+    print('  6. Your language kit installs Makefile.tiers, which is where '
+          '`make precommit`')
+    print('     and `make milestone` get their tiers. Without one they are '
+          '`check` alone,')
+    print('     and they say so.')
+    print('  7. `agentic-sdlc pm new milestone 0.1 "First Milestone"`, then '
+          '`agentic-sdlc check pm`.')
     return 0

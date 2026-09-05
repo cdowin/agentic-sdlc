@@ -1,4 +1,4 @@
-"""test_init_verb.py — `agentic-sdlc init` on a blank Godot 4 project.
+"""test_init_verb.py — `agentic-sdlc init` on a fresh repo.
 
 The verb is a COMPOSITION, so the contract under test is what a composition
 can get wrong:
@@ -12,18 +12,28 @@ can get wrong:
     project-owned seed) and writes nothing;
   * `--force` respects the ownership split: it overwrites the installed files
     and does not touch devkit.toml / Makefile / CLAUDE.md / the PM tree;
-  * the refusals are decided BEFORE the first byte — a directory that is not a
-    Godot project, and one that is not a git repo, leave it empty.
+  * THERE IS ONE REFUSAL, and it is decided BEFORE the first byte: a directory
+    that is not a git repo is left as it was found. There were two through
+    0.1.0 — the second declined a root holding no engine project file, and it
+    left with the engine half in 0.2.0. A removal that is merely absent from a
+    suite is a removal nothing holds, so the case that used to prove that
+    refusal now proves it is GONE: an engine-less repo is INITIALIZED, whole.
 
-Nothing here boots Godot. `init` runs OUT OF PROCESS, because it resolves the
-repo root and the config through module-level caches that a same-process run
-would leave pointing at a deleted temp directory.
+The fixture keeps a `project.godot` and an icon because a fresh repo with two
+files of its own is the realistic shape, not because `init` reads either one —
+`test_a_git_repo_with_no_engine_project_file_is_initialized_whole` is the case
+that says so. Nothing here boots anything. `init` runs OUT OF PROCESS, because
+it resolves the repo root and the config through module-level caches that a
+same-process run would leave pointing at a deleted temp directory.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import hashlib
+import inspect
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -45,6 +55,20 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 # THE ROSTER. Spelled out so this file states the contract; cross-checked
 # against the verbs' own tables below so it cannot become a second list that
 # quietly disagrees with what ships.
+#
+# IT SHRANK FROM 49 TO 34 IN 0.2.0, and the fifteen that left are named here
+# rather than simply deleted, because a roster that only ever gets shorter is
+# how a census stops being one. Decision D2 — an installable belongs to the kit
+# whose ARTIFACT it acts on: the twelve engine runners under
+# `tools/dev/runners/` (`parse.sh`, `lint.sh`, `unit.sh`, `integration.sh`,
+# `scenario.sh`, `warnings.sh`, `capture.sh`, `import_cache.sh`,
+# `hermetic_run_scan.sh`, `compile_sweep.gd` + its `.uid`), the engine-boot
+# guard hook `cc-godot-sandbox.sh`, and `tools/dev/checks/doctor.sh` all went
+# to the language kit; `.github/workflows/uid-guard.yml` guarded an engine
+# artifact and went with them; and `gdk_runners.sh` became `gdk_gate.sh` when
+# the verb that writes it became `install-gates`. Nothing on this list is
+# optional, and `test_the_roster_above_is_what_the_verbs_actually_carry` is
+# what stops the number moving again without a line moving here.
 WRITES = (
     'devkit.toml',
     'pm/roadmap/ROADMAP.md',
@@ -52,20 +76,8 @@ WRITES = (
     '.claude/skills/pm-operations/SKILL.md',
     'Makefile',
     'Makefile.devkit',
-    'tools/dev/gdk_runners.sh',
-    'tools/dev/runners/import_cache.sh',
-    'tools/dev/runners/parse.sh',
-    'tools/dev/runners/compile_sweep.gd',
-    'tools/dev/runners/compile_sweep.gd.uid',
-    'tools/dev/runners/lint.sh',
-    'tools/dev/runners/warnings.sh',
-    'tools/dev/runners/unit.sh',
-    'tools/dev/runners/scenario.sh',
-    'tools/dev/runners/integration.sh',
-    'tools/dev/runners/capture.sh',
-    'tools/dev/runners/hermetic_run_scan.sh',
+    'tools/dev/gdk_gate.sh',
     'tools/hooks/cc-commit-pathspec.sh',
-    'tools/hooks/cc-godot-sandbox.sh',
     'tools/hooks/cc-stop-gate.sh',
     'tools/hooks/cc-write-confine.sh',
     'tools/hooks/cc-ledger-subagent.sh',
@@ -73,7 +85,6 @@ WRITES = (
     'tools/hooks/pre-push',
     'tools/hooks/prepare-commit-msg',
     'tools/dev/agent-worktree.sh',
-    'tools/dev/checks/doctor.sh',
     'tools/setup-hooks.sh',
     '.claude/agents/verification-reviewer.md',
     '.claude/agents/verification-builder.md',
@@ -89,12 +100,18 @@ WRITES = (
     '.claude/agents/doc-hygiene.md',
     '.claude/agents/pm-operator.md',
     '.github/workflows/verify.yml',
-    '.github/workflows/uid-guard.yml',
     '.github/workflows/semver-gate.yml',
     '.github/workflows/auto-tag.yml',
     '.gitignore',
     'CLAUDE.md',
 )
+# Rule 4: the roster above must not be able to collapse and still pass. 34 is
+# what ships today; the floor is what a composition of four install verbs plus
+# four owned writes cannot go under without a verb having silently stopped
+# firing, and it is asserted rather than trusted.
+ROSTER_FLOOR = 20
+assert len(WRITES) == len(set(WRITES)) >= ROSTER_FLOOR, WRITES
+
 # What the fixture starts with — everything else present afterwards is init's.
 PRE_EXISTING = ('project.godot', 'icon.svg')
 
@@ -172,30 +189,46 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
     assert init.VERSION_PLACEHOLDER not in body, 'the pin was never substituted'
 
 
+# Every [section] the seed devkit.toml offers. It was SEVENTEEN through 0.1.0;
+# the eleven engine-gate sections (`uid`, `tres`, `props`, `defaults`,
+# `autoloads`, `refs`, `orphans`, `rng`, `tres_comment`, `unit_disk`,
+# `test_shape`) left with the gates that read them in 0.2.0. Asserted as an
+# EQUALITY rather than as a floor, which is the direction that got stronger: a
+# section ADDED to the template without a line here now fails too, where the
+# old `in` loop would have let one arrive unmentioned.
+CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'repo_hygiene', 'pm')
+
+
 def test_the_config_template_carries_every_section_the_gates_read():
     """Commented out, at the stock default — a repo with no devkit.toml must
     behave byte-identically to one declaring the defaults, so the template
     starts inert and is a menu rather than an opinion."""
     body = init.seed_body(init.SEED_CONFIG[0])
-    for section in ('checks', 'gates', 'uid', 'tres', 'props', 'defaults',
-                    'doc', 'shell', 'repo_hygiene', 'pm', 'autoloads', 'refs',
-                    'orphans', 'rng', 'tres_comment', 'unit_disk',
-                    'test_shape'):
-        assert f'# [{section}]' in body, f'[{section}] is not in the template'
+    offered = re.findall(r'^# \[([a-z_]+)\]$', body, re.MULTILINE)
+    assert offered, 'the template offers no section at all'
+    assert sorted(offered) == sorted(CONFIG_SECTIONS), (
+        f'template drift: {sorted(set(offered) ^ set(CONFIG_SECTIONS))}')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
     assert live == [], f'the template declares something: {live}'
 
 
-def test_the_gitignore_entries_are_the_runners_own_defaults():
+def test_the_gitignore_entries_are_the_gate_librarys_own_defaults():
     """A shell default is not readable from Python, so it is PINNED here: each
-    ignored directory must be the `GDK_*` default of the runner that writes
-    it. A rename on either side fails this rather than silently committing a
-    consumer's gate transcripts."""
-    owners = {'.gate-reports/': ('gdk_runners.sh', 'GDK_GATE_REPORT_DIR'),
-              '.headless-userdata/': ('gdk_runners.sh', 'GDK_SANDBOX_DIRNAME'),
-              '.scenario-reports/': ('scenario.sh', 'GDK_SCENARIO_REPORT_DIR'),
-              '.capture-reports/': ('capture.sh', 'GDK_CAPTURE_REPORT_DIR')}
+    ignored directory must be the `GDK_*` default of the shipped file that
+    writes it. A rename on either side fails this rather than silently
+    committing a consumer's gate transcripts.
+
+    ONE ENTRY, DOWN FROM FOUR. `.headless-userdata/`, `.scenario-reports/` and
+    `.capture-reports/` were written only by the engine runners and left with
+    them in 0.2.0 (decision D2); a language kit's own installer appends its
+    own. The floor this census stands on is that it is not EMPTY — an `IGNORED`
+    that emptied out would have every consumer committing its gate transcripts
+    while this test passed over nothing, so emptiness is a failure here before
+    the equality below is even asked.
+    """
+    owners = {'.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR')}
+    assert init.IGNORED, 'init.IGNORED is empty — this test would prove nothing'
     assert set(init.IGNORED) == set(owners)
     for entry, (runner, variable) in owners.items():
         body = install.body_of(runner)
@@ -231,10 +264,16 @@ def test_a_second_run_does_not_duplicate_the_gitignore_entries():
 
 
 # --- --diff -------------------------------------------------------------------
+# The devkit-owned file the ownership cases below drift, in place of
+# `tools/dev/checks/doctor.sh`, which left with the engine half in 0.2.0. A
+# hook, so the refusal case can still name the verb that owns it.
+DEVKIT_OWNED = 'tools/hooks/cc-stop-gate.sh'
+
+
 def test_diff_names_drift_on_both_ownerships_and_writes_nothing():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        (root / 'tools/dev/checks/doctor.sh').write_text(
+        (root / DEVKIT_OWNED).write_text(
             '#!/usr/bin/env bash\necho mine\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text('# mine\n', encoding='utf-8')
         before = census(root)
@@ -242,7 +281,7 @@ def test_diff_names_drift_on_both_ownerships_and_writes_nothing():
         after = census(root)
     assert done.returncode == 0, done.stdout + done.stderr
     assert before == after, '--diff wrote something'
-    assert 'a/tools/dev/checks/doctor.sh' in done.stdout, done.stdout
+    assert f'a/{DEVKIT_OWNED}' in done.stdout, done.stdout
     assert 'a/CLAUDE.md' in done.stdout, done.stdout
     # Everything else is reported current, so the drift is what stands out.
     assert done.stdout.count('already current') >= len(WRITES) - 4, done.stdout
@@ -277,12 +316,11 @@ def test_a_differing_project_owned_file_is_reported_not_refused():
 def test_force_overwrites_the_installed_files_and_not_the_projects_own():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        stock = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
-        (root / 'tools/dev/checks/doctor.sh').write_text('# mine\n',
-                                                         encoding='utf-8')
+        stock = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
+        (root / DEVKIT_OWNED).write_text('# mine\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text('# mine\n', encoding='utf-8')
         done = devkit(root, 'init', '--force')
-        restored = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
+        restored = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
         claude = (root / 'CLAUDE.md').read_text(encoding='utf-8')
     assert done.returncode == 0, done.stdout + done.stderr
     assert restored == stock, '--force did not restore the devkit-owned file'
@@ -292,36 +330,67 @@ def test_force_overwrites_the_installed_files_and_not_the_projects_own():
 def test_a_differing_installed_file_refuses_and_names_force():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        (root / 'tools/dev/checks/doctor.sh').write_text('# mine\n',
-                                                         encoding='utf-8')
+        (root / DEVKIT_OWNED).write_text('# mine\n', encoding='utf-8')
         done = devkit(root, 'init')
-        kept = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
+        kept = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
     assert done.returncode == 1, done.stdout + done.stderr
     assert kept == '# mine\n', 'the refusal wrote anyway'
     assert '--force' in done.stderr + done.stdout
     assert 'REFUSED by install-hooks' in done.stdout, done.stdout
 
 
-# --- the refusal matrix -------------------------------------------------------
-def test_a_directory_that_is_not_a_godot_project_is_refused_whole():
+# --- the refusal matrix, and the refusal that was REMOVED ---------------------
+def test_a_git_repo_with_no_engine_project_file_is_initialized_whole():
+    """THE REMOVAL, HELD. This exact tree — `git init` and nothing else — was
+    refused at exit 2 through 0.1.0 for holding no `project.godot`, and this
+    case asserted the refusal. 0.2.0 took the engine half out and the refusal
+    went with it: an engine-less kit whose `init` declined every engine-less
+    repo was the sharpest thing left in the package.
+
+    So the case is INVERTED rather than deleted. A removal that is merely
+    absent from a suite is a removal nothing holds, and the way this one comes
+    back is a preflight quietly regaining an opinion — which would read as an
+    exit code nobody asserted. What is asked is the whole result, not the exit
+    code: the roster lands entire in a repo with no engine file anywhere in
+    it, and no output mentions one.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
         done = devkit(root, 'init')
-        left = set(census(root))
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert 'project.godot' in done.stderr
-    assert 'nothing was written' in done.stderr
-    assert left == set(), f'a refused init wrote: {sorted(left)}'
+        present = set(census(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'project.godot' not in done.stdout + done.stderr, (
+        f'init has an opinion about an engine project file again:\n'
+        f'{done.stdout}{done.stderr}')
+    assert present == set(WRITES), (
+        f'missing: {sorted(set(WRITES) - present)}; '
+        f'unexpected: {sorted(present - set(WRITES))}')
 
 
 def test_a_directory_that_is_not_a_git_repo_is_refused_whole():
+    """The ONE refusal left, and it still fires before the first byte: the
+    tree comes back holding exactly what it held going in."""
     with fresh_project(git=False) as root:
         done = devkit(root, 'init')
         left = set(census(root))
     assert done.returncode == 2, done.stdout + done.stderr
     assert 'not a git repository' in done.stderr
     assert left == set(PRE_EXISTING), f'a refused init wrote: {sorted(left)}'
+
+
+def test_the_preflight_carries_exactly_one_refusal():
+    """The other half of the inversion, asked of the code rather than of a run.
+    `_preflight` is the whole before-the-first-byte gate, and the case above
+    proves the engine one is gone by OBSERVING one tree; this proves there is
+    no third refusal waiting for a tree neither case builds."""
+    reasons = [node for node in ast.walk(ast.parse(
+        inspect.getsource(init._preflight)))
+        if isinstance(node, ast.Return) and not (
+            isinstance(node.value, ast.Constant) and node.value.value == '')]
+    assert len(reasons) == 1, (
+        f'`init` grew a refusal: _preflight has {len(reasons)} of them, and '
+        f'the suite asserts one — the git-repo check')
 
 
 @pytest.mark.parametrize('flag', ['--forse', '-f', 'install', '--diff=1', ''])

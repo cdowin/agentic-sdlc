@@ -18,7 +18,7 @@ tombstone. `tests/` is the harness, not the package — nothing shipped imports
 this — and a regression guard that cannot say what regressed cannot fire. Three
 narrower guards predate it and stay, because each also pins a claim of its own
 about the file set it reads: test_ci_workflows (workflows), test_makefile_include
-(the include), test_runners_installable and test_install (the installables).
+(the include), test_gate_library and test_install (the installables).
 This one is the whole-tree form.
 
 WHAT IS DELIBERATELY OUT OF SCOPE. `pm/`, `CHANGELOG.md` and `docs/reviews/` are
@@ -119,6 +119,11 @@ TOMBSTONES = {
     'tests/test_ci_workflows.py': 'guards the workflows against the same names',
     'tests/test_makefile_include.py': 'guards Makefile.devkit against them',
     'tests/test_install.py': 'guards every installed hook',
+    # Renamed from tests/test_runners_installable.py in 0.2.0, when
+    # `install-runners` became `install-gates` and the engine runners left: the
+    # module still guards the shipped gate library, so the exemption FOLLOWED
+    # the file rather than lapsing with the old name.
+    'tests/test_gate_library.py': 'guards the shipped gate library against them',
 }
 
 # The same discipline, for ENGINE_ARTIFACTS. Empty, and that is the assertion:

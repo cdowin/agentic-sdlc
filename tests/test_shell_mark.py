@@ -46,7 +46,7 @@ SUPPORT = TESTS / 'support'
 # summary) went with the code they read, and thirteen marked ones went with the
 # gates they spawned. What the census ASSERTS is unchanged — a module that
 # changes sides still has to change these two lines, in the open.
-MARKED_MODULES = 24
+MARKED_MODULES = 23
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

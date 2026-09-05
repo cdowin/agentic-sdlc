@@ -239,13 +239,84 @@ class Step:
 
 @dataclass(frozen=True)
 class Result:
-    """What one `walk` did. `lines` is the transcript in order, `done` the
-    steps `check()` proved true, `stopped` the one it stopped on."""
+    """What one `walk` did — a SCOREBOARD, because the walk always finishes.
+
+    D8, 2026-09-05. This used to carry `stopped: str | None`, the one step the
+    walk halted on, because there was only ever one: `_walk` returned at the
+    first step whose postcondition was not true. Chris: *"Everything is just a
+    check. `release` should release on a red tree if I want — why stop
+    someone?"* So there is no first one any more. Every step is asked, every
+    answer is recorded and printed, and what comes back is what is true and
+    what is not.
+
+    `not_true` and `unverifiable` are kept APART for the reason `Truth` is an
+    enum rather than a bool: UNVERIFIABLE is not "no", it is "this cannot be
+    decided", and a scoreboard that added them together would be printing one
+    number over two facts.
+    """
 
     lines: tuple[str, ...]
     done: tuple[str, ...]
-    stopped: str | None
+    not_true: tuple[str, ...]
+    unverifiable: tuple[str, ...]
     exit_code: int
+
+    @property
+    def stopped(self) -> str | None:
+        """The first step that is not true, or None.
+
+        Kept as a READ-ONLY view for callers that ask "did anything go wrong"
+        — it is no longer a control-flow fact, and nothing in this module
+        branches on it.
+        """
+        return self.not_true[0] if self.not_true else None
+
+
+def ask(step: Step, ctx: Context) -> Answer:
+    """`step.check(ctx)`, with an unexpected exception turned into an ANSWER.
+
+    New with D8, and it is not defensive padding — it is the consequence of no
+    longer halting. While the walk stopped at the first not-true step, a step
+    whose `check()` raised was usually never reached: the run had already
+    returned. Now every step is asked on every run, so a latent crash in step
+    19 surfaces on a tree where step 3 is red, and an uncaught exception is
+    exit 1 with a traceback — which hard rule 6 gives to FINDINGS, and which a
+    consumer's CI reads as drift. R4 is exactly that shape:
+    `_status_at_or_past` raising `ValueError: tuple.index(x): x not in tuple`
+    on a legal per-project `[pm] milestone_states`.
+
+    UNVERIFIABLE rather than FALSE, deliberately. A step that crashed did not
+    answer "no" — it failed to answer at all, and `Truth`'s three values exist
+    precisely so that "this cannot be decided" is not collapsed into either
+    one.
+
+    `ConfigError` is RE-RAISED and that is the D8 line: a malformed
+    declaration is the reader failing, not a check reporting, and it belongs
+    to exit 2 before the walk rather than to a row on the scoreboard.
+    """
+    try:
+        return step.check(ctx)
+    except ConfigError:
+        raise
+    except Exception as err:  # noqa: BLE001 — an answer, not a swallow
+        return Answer.unverifiable(
+            f'{type(err).__name__} while checking: {err}')
+
+
+def perform(step: Step, ctx: Context) -> str:
+    """`step.do(ctx)`, with an unexpected exception turned into ADVISORY TEXT.
+
+    Same reasoning as `ask`, on the other callable. A `do()` that raises is
+    reported on the transcript attributed to the step and the postcondition is
+    then re-asked — which answers the only question that matters, because
+    `do()`'s word for itself was never trusted (see `verify`).
+    """
+    try:
+        return str(step.do(ctx) or '') if step.do is not None else ''
+    except ConfigError:
+        raise
+    except Exception as err:  # noqa: BLE001 — reported, then re-checked
+        return f'{type(err).__name__} while performing: {err}'
 
 
 def verify(step: Step, ctx: Context) -> Answer:
@@ -257,7 +328,7 @@ def verify(step: Step, ctx: Context) -> Answer:
     be reporting a step's own claim about itself, which is the one source this
     package's SDLC refuses to trust.
     """
-    return step.check(ctx)
+    return ask(step, ctx)
 
 
 # --- the registry and the list ------------------------------------------------
@@ -339,11 +410,17 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
     """
     defect = plan_defect(registry, names)
     if defect:
-        return Result((f'[{ctx.operation}] REFUSED — {defect}',), (), None, 2)
+        # THE ONE EXIT 2, and it is not a step's answer — it is this module
+        # failing to READ its own declaration. D8's whole distinction: before
+        # the walk, a malformed plan means nothing walks; during the walk,
+        # every step is a check and every check reports.
+        return Result((f'[{ctx.operation}] REFUSED — {defect}',), (), (), (), 2)
 
     skipped_reasons = dict(skips or {})
     lines = [f'[{ctx.operation}] CORRECTED — {c}' for c in run.corrections]
     done: list[str] = []
+    not_true: list[str] = []
+    unverifiable: list[str] = []
     skipped: list[str] = []
     total = len(names)
     for index, name in enumerate(names, start=1):
@@ -356,7 +433,7 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
             skipped.append(name)
             continue
         remembered = run.answer_for(name)
-        answer = step.check(ctx)
+        answer = ask(step, ctx)
         if remembered == run_state.TRUE and not answer.is_true:
             # The tree wins. Always. The file is a cache, and a cache that
             # outranked the thing it caches would be the lie this feature ends.
@@ -372,22 +449,35 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
             # The return value is ADVISORY TEXT and nothing else. It is printed
             # attributed to the step ("SAID"), never as a verdict, and the
             # answer below comes from `verify`, not from here.
-            said = step.do(ctx)
+            said = perform(step, ctx)
             if said:
-                lines.append(_line(ctx, step, 'SAID', str(said)))
+                lines.append(_line(ctx, step, 'SAID', said))
             answer = verify(step, ctx)
         run.record(name, answer.truth.value, answer.detail)
         if answer.is_true:
             lines.append(_line(ctx, step, 'DONE', answer.detail))
             done.append(name)
             continue
-        verdict = ('UNVERIFIABLE' if answer.truth is Truth.UNVERIFIABLE
-                   else 'STOPPED')
-        lines.append(_line(ctx, step, verdict, answer.detail))
+        # D8: RECORD IT AND KEEP WALKING. This used to return here, which made
+        # the seven steps after `findings-resolved` — `milestone-done`,
+        # `push-branch`, `pr-open`, `ci-green`, `merge`, `tag`,
+        # `prove-artifact` — unreachable on any resumed run, and they are
+        # exactly the ones a release most needs to resume into because
+        # `pr-open` -> `ci-green` -> `merge` spans a PR review and a CI wait
+        # (finding R1). The engine cannot know whether a not-true step is
+        # wrong. Descoped? A hotfix? Deliberate? The caller knows and the
+        # engine does not, and a machine that blocks on a question it cannot
+        # ask is asserting an answer.
+        if answer.truth is Truth.UNVERIFIABLE:
+            lines.append(_line(ctx, step, 'UNVERIFIABLE', answer.detail))
+            unverifiable.append(name)
+        else:
+            lines.append(_line(ctx, step, 'NOT-TRUE', answer.detail))
+            not_true.append(name)
         lines.append(
-            f'[{ctx.operation}] STOPPED — {name!r} ({step.kind.name}) at step '
-            f'{index}/{total}; what would make it true: {answer.detail}')
-        return Result(tuple(lines), tuple(done), name, 1)
+            f'[{ctx.operation}] step {index}/{total} {name!r} '
+            f'({step.kind.name}) is not true; what would make it true: '
+            f'{answer.detail}')
     if skipped:
         # Named, in the transcript, at the end — a run that deviated must not
         # read like one that did not.
@@ -400,8 +490,25 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
             f'[{ctx.operation}] WARNING — every step in the list ({total}) was '
             f'skipped; a conveyor nothing walks is not control, it is a '
             f'record of a release nobody ran')
-    lines.append(f'[{ctx.operation}] PASS — {len(done)}/{total} steps')
-    return Result(tuple(lines), tuple(done), None, 0)
+    # THE SCOREBOARD, and criterion 2 says it has to be good: a 21-step run
+    # now prints 21 lines where it used to print five, so this line is what a
+    # caller reads. A warning nobody reads is worse than a refusal (risk 1),
+    # and the mitigation is that the counts and the NAMES are both here.
+    if not not_true and not unverifiable:
+        lines.append(f'[{ctx.operation}] PASS — {len(done)}/{total} steps')
+        return Result(tuple(lines), tuple(done), (), (), 0)
+    parts = [f'{len(done)}/{total} true']
+    if not_true:
+        parts.append(f'{len(not_true)} not true: {", ".join(not_true)}')
+    if unverifiable:
+        parts.append(
+            f'{len(unverifiable)} unverifiable: {", ".join(unverifiable)}')
+    lines.append(f'[{ctx.operation}] {" · ".join(parts)}')
+    # Rule 6: 1 is findings. The run COMPLETED — that is what the transcript
+    # says — and one or more postconditions do not hold, which is a finding
+    # about the tree and not a usage error.
+    return Result(tuple(lines), tuple(done), tuple(not_true),
+                  tuple(unverifiable), 1)
 
 
 def _line(ctx: Context, step: Step, verdict: str, detail: str) -> str:

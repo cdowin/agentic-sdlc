@@ -2,7 +2,7 @@
 id: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: A changed path resolves to the command that proves it
-status: planning
+status: building
 reviewed:
 risk: high
 size: m

@@ -18,3 +18,8 @@
 {"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/every-gate-reports-its-cost/01-the-ledger-holds-what-a-gate-cost","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/01-the-verify-declaration-is-read-or-refused","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T16:21:53Z","kind":"status","grain":"0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/every-gate-reports-its-cost","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-release-is-a-conveyor","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-belts-refuse-to-advance","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts","from":"planning","to":"building"}

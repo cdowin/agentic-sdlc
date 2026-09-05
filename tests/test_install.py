@@ -1265,3 +1265,63 @@ class TestTheReadmeInstallerTableIsTheRoutedSet:
             f'README documents {stray}, which this version does not route. '
             f'A verb that left is worse than one never documented: a reader '
             f'runs it and gets exit 2.')
+
+
+# --- one wording, five files (0.2.0/every-gate-reports-its-cost story 04) ------
+class TestTheNameBothCommandsBlockIsOneWording:
+    """Five hand-maintained near-copies drift. This is what keeps them one.
+
+    The rule they carry cost 31 minutes to learn: a dispatch names BOTH the
+    narrow command and the wide one, with their measured costs, because an
+    agent given one command uses it as its inner loop — nothing told it there
+    was another. 154 s against 0.9 s is 170x, and it is the economics this
+    whole milestone exists to end.
+
+    **G4 is why this test exists rather than the block alone.** Story 04 filed
+    close evidence naming a commit that touched none of its five files, its
+    acceptance criterion 1 asked for exactly this assertion, and there was
+    none — so a reader of that `## Close` would have taken the criterion as
+    delivered. A test comparing the copies is the difference between a rule
+    that ships and a rule that was described.
+    """
+
+    CARRIERS = ('architect.md', 'po.md', 'developer.md',
+                'verification-builder.md', 'test-writer.md')
+    OPEN = '<!-- BEGIN name-both-commands -->'
+    CLOSE = '<!-- END name-both-commands -->'
+
+    def _block(self, name: str) -> str:
+        body = install.body_of(name)
+        assert self.OPEN in body and self.CLOSE in body, (
+            f'{name} carries no name-both-commands block')
+        start = body.index(self.OPEN) + len(self.OPEN)
+        return body[start:body.index(self.CLOSE)]
+
+    def test_the_five_carriers_are_byte_identical(self):
+        blocks = {name: self._block(name) for name in self.CARRIERS}
+        first = blocks[self.CARRIERS[0]]
+        drifted = [n for n, b in blocks.items() if b != first]
+        assert drifted == [], (
+            f'{drifted} carry a different wording from '
+            f'{self.CARRIERS[0]} — five near-copies is five chances to say '
+            f'something slightly different, and the differences are what get '
+            f'the whole block deleted')
+
+    def test_the_block_names_both_rungs_and_the_verb_that_answers(self):
+        block = self._block('developer.md')
+        for owed in ('narrow', 'wide', 'once', 'verify --plan'):
+            assert owed in block, (owed, block)
+
+    def test_it_does_not_claim_verify_plan_unconditionally(self):
+        """The story's own cross-feature caveat: the wording must read
+        correctly in a repo with no `[verify]` section, so this story never
+        blocked on the feature that ships `--plan`."""
+        assert 'Where the repo declares `[verify]`' in self._block('po.md')
+
+    def test_the_agents_whose_work_has_no_inner_loop_do_not_carry_it(self):
+        """A rule pasted where it does not apply is the noise that gets the
+        whole block deleted. `changelog-writer` and friends sync prose against
+        a known diff; there is no narrow command to name."""
+        for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
+                     'pm-operator.md'):
+            assert self.OPEN not in install.body_of(name), name

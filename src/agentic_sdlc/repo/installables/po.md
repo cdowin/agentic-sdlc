@@ -107,3 +107,24 @@ The architect sends you a shipped commit range + the story path(s) it covered.
 The developer is a senior engineer who owns the "how"; the reviewer is the
 back-end safety net. Surface only the load-bearing traps — the team prizes
 "output toward goal" over first-pass perfection.
+
+<!-- BEGIN name-both-commands -->
+## Name BOTH commands, and say which one is the loop
+
+A dispatch names the NARROW command and the WIDE one, each with its measured
+cost, and says which is which:
+
+- the **narrow** command is the inner loop — run it after every edit;
+- the **wide** command runs **once**, at the close.
+
+An agent given one command uses it as its inner loop, because nothing told it
+there was another. The shape this rule was learned from: a wide gate at 154 s
+and a narrow slice at 0.9 s — **170x** — run in a loop for 31 minutes to do 13
+seconds of checking.
+
+Where the repo declares `[verify]`, do not guess the narrow command: ask.
+`agentic-sdlc verify --plan` prints all three rungs with the cost each one
+actually took, read from the ledger, and runs nothing. A repo with no
+`[verify]` section answers differently, and that is the repo's answer rather
+than a default worth inventing.
+<!-- END name-both-commands -->

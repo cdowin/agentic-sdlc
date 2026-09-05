@@ -100,3 +100,4 @@
 {"ts":"2026-09-05T20:31:28Z","kind":"decision","grain":"0.2.0","entry":"D6","title":"The two engine verbs get built, and the inference census is their acceptance test"}
 {"ts":"2026-09-05T20:40:24Z","kind":"decision","grain":"0.2.0","entry":"D7","title":"The ledger keeps its frozen keys and gains category keys beside them"}
 {"ts":"2026-09-05T20:40:24Z","kind":"decision","grain":"0.2.0","entry":"D8","title":"Everything is just a check: no belt step ever halts, and exit 2 belongs to the reader"}
+{"ts":"2026-09-05T21:45:15Z","kind":"decision","grain":"0.2.0","entry":"D9","title":"A composition rung's cost is UNKNOWN until the composition opens its own slot, and the criterion says so"}

@@ -285,3 +285,47 @@ mitigation and it has to be good — a warning nobody reads is worse than a refu
 
 **And `--skip` goes.** It exists to escape a refusal; with nothing to escape it is ceremony. The
 ledger row it wrote was the honest half, and it becomes what a not-true step records.
+
+## D9 — 2026-09-05 — A composition rung's cost is UNKNOWN until the composition opens its own slot, and the criterion says so
+
+G3, from the `every-gate-reports-its-cost` feature review. `verify --plan` joins a rung's
+command to a ledger `gate` row **by make target name**, and `gate_costs` only ever holds names
+passed to `gdk_gate_log`. The wide rungs are prerequisite-only targets — `precommit: gates
+hooks-self-test test`, `milestone: gates hooks-self-test matrix` — with no recipe, so they never
+open a slot and `costs` can never carry a key `precommit` or `milestone`. `_ratio` needs both
+ends, so it answers `unknown` forever. Measured on this repo, with 47 gate rows across four gate
+names:
+
+```
+story      make gates      57 ms (FAIL)
+feature    make precommit  unknown
+milestone  make milestone  unknown
+ratio      unknown
+```
+
+**The ruling: the code is right and the CRITERION was wrong.** Criterion 3 read *"the row makes
+the narrow-vs-wide ratio derivable"*, and the join makes it underivable for the wide half in
+every configuration this package ships. `--plan` saying `unknown` rather than inventing a number
+is the behaviour this milestone's whole read side is built on, so the honest correction is to the
+sentence that overclaimed, not to the renderer that told the truth.
+
+Criterion 3 becomes: *every gate that OPENS A SLOT records name, duration, verdict and census
+through one funnel, and `--plan` reports a cost it does not have as `unknown` rather than
+deriving one.* The ratio is a follow-up with its own bug: `0.2.0/bugs/a-composition-has-no-slot`.
+
+**Rejected: sum the members' rows.** `precommit`'s members are a make prerequisite list, and this
+package would have to parse a Makefile or shell out to `make -p` to learn them — a build tool
+invoked to answer a question, in a package whose rule 2 says every gate reads git, markdown and
+shell as TEXT. Worse, summing by timestamp window guesses which rows belonged to which run, and a
+number assembled from a guess is exactly what `unknown` exists instead of.
+
+**Rejected: a `[gates] precommit` key listing the members.** D1 already rejected this shape for
+the tier roster and the reasons carry: a config list beside the Makefile is a second source of
+truth that can disagree with the first, and a member listed in config and absent from the target
+is a sum over a gate nobody ran.
+
+**The cost accepted:** the milestone ships with the ratio unmeasurable, which is the number the
+economics argument is made from — 170x is quoted from a hand measurement rather than from the
+ledger this feature built. Named as the gap rather than faked: a ratio derived from an incomplete
+denominator would understate the wide half, which is the direction that makes the wrong decision
+look right.

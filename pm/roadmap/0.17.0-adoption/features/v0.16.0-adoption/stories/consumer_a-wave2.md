@@ -1,0 +1,17 @@
+---
+id: 0.17.0/v0.16.0-adoption/consumer_a-wave2
+feature: 0.17.0/v0.16.0-adoption
+milestone: "0.17.0"
+name: Pin bump, install-* adoption, delete superseded checks, retarget/connect targets, D10 on
+status: done
+owner:
+depends_on: []
+---
+
+# Pin bump, install-* adoption, delete superseded checks, retarget/connect targets, D10 on
+
+<!-- What is observable when this ships. A story is an observation, not a task. -->
+
+## Acceptance criteria
+
+## Out of scope

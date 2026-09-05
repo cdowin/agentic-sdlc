@@ -59,6 +59,30 @@ not a quiet pass: from here, an uninstalled tree and a passing one look
 identical, and `0 hook(s) SELF-TEST OK` printed as a PASS is the exact defect
 this package's own `make hooks-self-test` carried until 0.2.0.
 
+**AND LOUD ON HOW FEW.** `2 replay their own --self-test corpus` is a true
+number that reads as coverage of the GUARDS, and in the shape this kit ships it
+is coverage of the two ledger COURIERS — which judge nothing and whose every
+path out is exit 0. The three hooks that actually say no
+(`cc-commit-pathspec.sh`, `cc-stop-gate.sh`, `cc-write-confine.sh`) declare no
+corpus, so the fifth question above has zero blocking coverage and the verdict
+line said nothing about it (K3, 0.2.0/the-kit-owns-the-gates review).
+
+That gap is ACCEPTED, not a finding: D2 ruled the engine-boot guard out of this
+kit and wrote down the cost — *"`make hooks-self-test` loses a corpus and this
+repo's `HOOKS_WITH_CORPUS` narrows to the two ledger couriers"* — with loudness
+on zero as the condition. Refusing here would be this package deciding that a
+consumer's corpus is too small, which is a judgement it cannot make and which
+hard rule 9 puts on the caller. So the line SPLITS the count instead: which
+hooks can BLOCK, and how many of those replay anything. An operator reading
+`NONE of the 3 that can BLOCK` knows what the number covers; an operator
+reading `2 replay` does not.
+
+WHICH HOOKS CAN BLOCK IS DERIVED FROM SHAPE, like everything else here — a
+non-comment `exit 2` line, `2` being the one exit git and Claude Code both read
+as a refusal. Generous in the same direction as the self-test probe: it
+over-nominates rather than under-nominates, because the failure this reports on
+is a count that reads bigger than the coverage it stands for.
+
 The RUNS probe is derived from each hook's SHAPE, never a roster — a roster
 silently skips the hook added after it was written:
 
@@ -128,6 +152,15 @@ SELF_TEST_OK = 'SELF-TEST OK'
 # first, and so do several that do not.
 SELF_TEST_DECL = re.compile(rf'^(?![ \t]*#).*{re.escape(SELF_TEST_FLAG)}',
                             re.MULTILINE)
+
+# A hook that can say NO. `2` is the refusal both git and Claude Code read, and
+# every shipped guard spells it as a bare `exit 2` statement — the couriers name
+# it only in prose, which is why the line must start with the statement rather
+# than merely contain the digits. Derived, never a roster: a roster silently
+# skips the guard added after it was written, and this count exists precisely to
+# stop a number reading as more coverage than it is (K3).
+BLOCK_EXIT = 2
+BLOCKS_DECL = re.compile(rf'^[ \t]*exit[ \t]+{BLOCK_EXIT}\b', re.MULTILINE)
 
 
 def _entries(directory: Path) -> Walk:
@@ -265,6 +298,11 @@ def run() -> int:
         return 1
 
     ran = parsed = replayed = 0
+    # K3's two columns: how many hooks can refuse, and how many of THOSE are
+    # covered by a replay. Counted only over hooks that started, like every
+    # other number in the verdict — a dead hook's source is not evidence of
+    # anything it does.
+    blockers = blockers_replayed = 0
     for path in entries:
         rel = path.relative_to(root)
         if not path.is_file():
@@ -294,8 +332,14 @@ def run() -> int:
             ran += 1
         else:
             parsed += 1
-        if SELF_TEST_DECL.search(_source(path)):
+        source = _source(path)
+        blocks = bool(BLOCKS_DECL.search(source))
+        if blocks:
+            blockers += 1
+        if SELF_TEST_DECL.search(source):
             replayed += 1
+            if blocks:
+                blockers_replayed += 1
             failed = _self_test(path, root)
             if failed:
                 findings.append(('SELF-TEST', f'{rel} {failed}'))
@@ -311,9 +355,21 @@ def run() -> int:
             f'corpus, so nothing was replayed — an uninstalled corpus and a '
             f'passing one print the same word from here'))
 
+    # The blocking split, spelled in WORDS on the two shapes a bare ratio reads
+    # wrong (K3). `0 of 3` is a number an eye slides over; `NONE of the 3 that
+    # can BLOCK` is the sentence an operator has to have read to have read the
+    # line. It rides on both the PASS and the FAIL verdict, because a run with
+    # findings elsewhere is exactly when the coverage question gets skipped.
+    if not blockers:
+        covered = f'no hook here can BLOCK at exit {BLOCK_EXIT}'
+    elif not blockers_replayed:
+        covered = (f'NONE of the {blockers} that can BLOCK (exit {BLOCK_EXIT}) '
+                   f'— the replay covers only hooks that always allow')
+    else:
+        covered = f'{blockers_replayed} of {blockers} that can BLOCK'
     scope = (f'{census}; {ran} fail open on a payload they cannot read, '
              f'{parsed} parse, {replayed} replay their own {SELF_TEST_FLAG} '
-             f'corpus')
+             f'corpus, {covered}')
     if findings:
         for label, said in findings:
             print(f'  {label:<{LABEL_WIDTH}} {said}')

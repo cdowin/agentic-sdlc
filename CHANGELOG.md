@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### The belts report, and the walk always finishes
+
+**Behaviour change, and it is the largest one in this release.** `release`, `adopt`,
+`close story` and `close feature` no longer stop at the first step whose postcondition
+is not true. Every step is a check, every check reports, and the run reaches its last
+step whatever any check said. Chris's ruling: *"Everything is just a check. `release`
+should release on a red tree if I want (we mostly wouldn't but why stop someone?)"*
+
+- **A release over a red `make gates` now reaches `tag`.** The engine cannot know whether
+  a not-true step is wrong — descoped? a hotfix? deliberate? — and a machine that blocks
+  on a question it cannot ask is asserting an answer. `agentic-sdlc check <gate>` is still
+  the thing that FAILS a tree, in CI and pre-push, with an exit-code contract for exactly
+  that. **`pm` moves and reports; `check` gates.**
+- **`--skip <step> --reason "<why>"` is REMOVED.** It existed to escape a refusal, and
+  nothing refuses. A script still passing it gets exit 2 naming the removal and the
+  replacement, rather than "unknown option". **The ledger row it wrote is now written by
+  the machine** — one `deviation` row per step that is not true, carrying the reason the
+  step itself gave. `deviation.outcome` widens from the constant `"skipped"` to
+  `"not-true"` / `"unverifiable"`; rows already carrying `"skipped"` stay readable.
+- **Output shapes changed** (rule 6): the per-step verdict `STOPPED` is now `NOT-TRUE`,
+  the `[op] STOPPED — …` summary is now `[op] step N/M 'name' (KIND) is not true; what
+  would make it true: …`, and the final line is a scoreboard —
+  `[release] 19/21 true · 1 not true: gate · 1 unverifiable: ci-green`. A fully-true run
+  still prints `[release] PASS — N/N steps`. Exit codes are unchanged: 0 everything holds,
+  1 one or more does not, 2 the declaration could not be read.
+- **A step whose `check()` or `do()` raises no longer tracebacks.** It becomes an
+  UNVERIFIABLE answer — not FALSE, because a step that crashed did not answer "no", it
+  failed to answer — so an unexpected exception can no longer reach a consumer's CI as
+  exit 1 with a stack trace. `ConfigError` is still re-raised: a malformed declaration is
+  the reader failing, which is exit 2 before the walk.
+- **`check hooks` prints a new clause** naming how many of the hooks that can BLOCK
+  (a non-comment `exit 2`) replay a `--self-test` corpus. Zero was already loud; *how few*
+  was not. Reporting only — refusing a consumer's corpus for being small would be this
+  package deciding rather than reading.
+- `pm ready-for feature`'s `--help` and `README.md`'s ladder row said *"every story at
+  `reviewing`"*; the verb has asked whether every story is FINISHED since `f7465c2`.
+  `pm feature reviewing`'s advisory asked a third question again — `not in (reviewing,
+  'done')` — so a feature whose stories were all at `reviewing` flipped with no advisory
+  and was then named by `ready-for`. All three ask `model.is_terminal` now.
+- `pm ready-for tag` counted one review record twice when two features spelled its path
+  differently. The census is what the verb prints as its proof of what it read.
+- `README.md`'s installer table documented `install-runners`, which left at 0.2.0, and had
+  no row for `install-gates` or `install-sdlc`. A test now asserts the table IS
+  `install.PLANS`, both directions.
+- `agentic-sdlc version` is documented. It was routed and named in no `--help` line.
+
 ### The extraction finishes
 
 - **A stock consumer's `check all` exited 2.** `KNOWN_GATES` named thirteen gates and five

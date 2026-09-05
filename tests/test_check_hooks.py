@@ -381,6 +381,62 @@ def test_mentioning_the_flag_is_not_the_same_as_shipping_a_corpus():
     assert 'does not answer it' in out, out
 
 
+# --- K3: what the replay count is a count OF ---------------------------------
+# `2 replay their own --self-test corpus` is true and reads as coverage of the
+# guards. In the shape this kit ships it is coverage of the two ledger couriers,
+# which judge nothing; the three hooks that say no carry no corpus at all. D2
+# accepted that cost, so the gate reports it rather than refusing it — and the
+# thing being tested is that the line cannot be read as more than it is.
+def blocking_hooks(root: Path) -> list[Path]:
+    return sorted(p for p in (root / HOOKS_DIR).iterdir()
+                  if p.is_file() and hooks.BLOCKS_DECL.search(
+                      p.read_text(encoding='utf-8', errors='replace')))
+
+
+def test_the_verdict_names_how_many_BLOCKING_hooks_the_replay_covers():
+    """The stock corpus, measured: every carrier is a courier and no blocker is
+    covered. The line has to say so in words — a reader who stops at `2 replay`
+    has been told the guards are exercised, and they are not."""
+    with hooked_repo(arm=True) as root:
+        blockers = blocking_hooks(root)
+        carriers = corpus_hooks(root)
+        code, out = gate()
+    assert code == 0, out
+    assert blockers, 'the installed corpus ships no hook that can block'
+    assert not set(blockers) & set(carriers), (
+        'a blocking hook now ships a corpus — good; this test and the K3 note '
+        'in hooks.py both describe the shape where none did')
+    assert f'NONE of the {len(blockers)} that can BLOCK' in out, out
+    assert f'exit {hooks.BLOCK_EXIT}' in out, out
+
+
+def test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one():
+    """The other direction, so the census cannot report NONE forever: give a
+    blocker the courier's corpus and the split must move. Without this, a
+    hardcoded `NONE` would pass every case above."""
+    with hooked_repo(arm=True) as root:
+        blocker = blocking_hooks(root)[0]
+        carrier = corpus_hooks(root)[0]
+        blocker.write_text(carrier.read_text(encoding='utf-8')
+                           + f'\nexit {hooks.BLOCK_EXIT}\n', encoding='utf-8')
+        blockers = blocking_hooks(root)
+        code, out = gate()
+    assert f'1 of {len(blockers)} that can BLOCK' in out, out
+
+
+def test_the_blocking_probe_reads_shape_not_prose():
+    """The couriers document `exit 2` in their headers and never take it. A
+    probe that matched the digits anywhere would count all seven hooks as
+    blockers and print a ratio that is coverage of nothing."""
+    with hooked_repo(arm=True) as root:
+        for carrier in corpus_hooks(root):
+            body = carrier.read_text(encoding='utf-8')
+            assert 'exit 2' in body, carrier.name
+            assert not hooks.BLOCKS_DECL.search(body), (
+                f'{carrier.name} names exit 2 in prose only and was counted as '
+                f'a hook that can block')
+
+
 def test_this_repos_makefile_names_the_same_corpus_the_gate_derives():
     """`HOOKS_WITH_CORPUS` is a hand-maintained roster and the gate's set is
     derived, so the two can disagree — and a roster that silently narrows is

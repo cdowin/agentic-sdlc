@@ -242,5 +242,5 @@ verdict: HOLD
 | I1 | BLOCKER | open: narrow-verified passes over a census of zero once the work is committed |
 | I2 | BLOCKER | open: criterion 6 — 2 of 28 stories closed through the belts, its own three at planning |
 | I3 | MINOR | open: the belt's roadmap writes drive verify --story to the milestone rung |
-| I4 | NIT | open: all three stories ship with empty acceptance-criteria sections |
+| I4 | NIT | landed — all three stories now carry acceptance criteria (7, 6 and 6 lines), sourced from each story's own title and Close block plus feature.md's numbered ship criteria and risks, each concrete and checkable. Written in the RE-SCOPED voice on purpose: feature.md's own banner rules that every "refuses" in that record reads "warns, names what is open, and finishes", so criteria in the old voice would have specified the halt this feature is being rebuilt to delete. `## Out of scope` is left empty in all three and says why in a comment — nothing in the bodies or in feature.md draws a boundary that could be written without inventing one, and a guessed exclusion is worse than an absent section |
 ```

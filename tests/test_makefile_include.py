@@ -571,3 +571,83 @@ def test_the_pin_is_the_projects_and_reaches_the_cli():
     with project() as root:
         done = make(root, '-n', 'pm')
     assert 'v0.0.0-fixture' in done.stdout, done.stdout
+
+
+# --- T1: a tier shadowed by a file or directory of the same name --------------
+# The BEHAVIOURAL half, and it is the one that was missing. `Makefile.devkit`
+# carries `.PHONY: $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS)`, and
+# `test_phony_lists_this_files_targets_AND_the_declared_tiers` asserts that
+# LINE is there — a text assertion, which stays green if make's behaviour and
+# the line ever part company.
+#
+# The defect it guards is not exotic. Make asks "is this prerequisite out of
+# date?", the orphan guard asks "is this name defined as a target?", and those
+# are different questions: a defined target whose name matches an existing file
+# or directory, with no `.PHONY`, is UP TO DATE — so make runs its recipe not
+# at all and says nothing. `test`, `docs`, `bin`, `lint`, `build` and `tools`
+# are all plausible tier names and all plausible directory names, and a
+# language kit writes the tier file FOR the consumer, so the consumer never
+# sees the `.PHONY` line it depends on.
+#
+# Exit 0, a shorter gate, and no line anywhere saying a gate was skipped. That
+# is rule 4 wearing a Makefile, and it is D1's accepted cost arriving exactly
+# as D1 said it would.
+#
+# EVERY OTHER TIER FIXTURE IN THIS FILE DECLARES ITS OWN `.PHONY`, which is
+# precisely the condition that made T1 invisible to the suite. These two do not.
+SHADOWABLE_TIERS = (
+    'GDK_PRECOMMIT_TIERS := kit-parse test\n'
+    'GDK_MILESTONE_TIERS := kit-parse test\n'
+    '\n'
+    'kit-parse: ## the kit\'s compile gate\n'
+    '\t@echo "[KIT-PARSE] PASS"\n'
+    'test: ## a tier whose name is also an ordinary directory name\n'
+    '\t@echo "[KIT-TEST] PASS"\n'
+)
+
+
+@pytest.mark.parametrize('shadow', ['dir', 'file'])
+@pytest.mark.parametrize('composition', ['precommit', 'milestone'])
+def test_a_tier_shadowed_by_a_same_named_path_still_runs(shadow, composition):
+    """The framework's `.PHONY` covers the tiers the kit declared, so a
+    `test/` directory beside a `test` tier cannot silently shorten the gate."""
+    with project(tiers=SHADOWABLE_TIERS) as root:
+        if shadow == 'dir':
+            (root / 'test').mkdir()
+        else:
+            (root / 'test').write_text('not a target\n', encoding='utf-8')
+        done = make(root, composition, stubbed(root))
+    output = done.stdout + done.stderr
+    assert done.returncode == 0, output
+    assert '[KIT-PARSE] PASS' in output, output
+    assert '[KIT-TEST] PASS' in output, (
+        f'the `test` tier was shadowed by a {shadow} of the same name and did '
+        f'not run — a gate list that quietly gets shorter is the one failure a '
+        f'gate must never have (T1)')
+
+
+def test_the_shadow_fixture_would_catch_a_missing_phony():
+    """The probe, so the test above cannot pass vacuously.
+
+    Same tier file, same shadowing directory, but the framework's `.PHONY` line
+    is REMOVED from the installed `Makefile.devkit` — which is the tree T1 was
+    measured on. If this does not go quiet, the test above is proving nothing.
+    """
+    with project(tiers=SHADOWABLE_TIERS) as root:
+        (root / 'test').mkdir()
+        devkit = root / 'Makefile.devkit'
+        text = devkit.read_text(encoding='utf-8')
+        stripped = text.replace(
+            '.PHONY: $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS)\n', '')
+        assert stripped != text, (
+            'the .PHONY-over-tiers line is gone from Makefile.devkit; this '
+            'probe and the test above are both about that line')
+        devkit.write_text(stripped, encoding='utf-8')
+        done = make(root, 'precommit', stubbed(root))
+    output = done.stdout + done.stderr
+    # THE DEFECT, reproduced: exit 0, a shorter gate, nothing said.
+    assert done.returncode == 0, output
+    assert '[KIT-PARSE] PASS' in output, output
+    assert '[KIT-TEST] PASS' not in output, (
+        'the shadowed tier ran without the .PHONY line, so this fixture does '
+        'not reproduce T1 and the test above proves nothing')

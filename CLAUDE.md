@@ -108,7 +108,7 @@ over a suite nothing ran. `make test` is unaffected — it runs everything.
 
 **Every gate prints ONE verdict line naming its full transcript under .gate-reports/;
 `VERBOSE=1` streams the whole thing.** A new target routes through the shipped
-`gdk_gate_capture` / `gdk_gate_verdict` (installables/gdk_runners.sh, sourced from
+`gdk_gate_capture` / `gdk_gate_verdict` (installables/gdk_gate.sh, sourced from
 source — this package is its own first consumer) like the rest; never ask an agent to
 grep a gate's output for its result. Enforced by `tests/test_makefile_gates.py`.
 

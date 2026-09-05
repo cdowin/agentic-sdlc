@@ -14,16 +14,22 @@ effort: high
 ## Project config (yours to edit after install)
 
 ```text
-project:         <one line: what this is, and its engine>
+project:         <one line: what this is, and its stack>
 per-change gate: make precommit          (never run the full gate per change)
-unit slice:      make unit SYS=<system>
-parse:           make parse              (or the project's equivalent)
+test slice:      <the narrowest test command this project has — a tier target
+                  from its Makefile.tiers; `make help` lists what this tree
+                  actually defines>
+syntax check:    <the project's fastest correctness pass, if it has one>
 pm cli:          make pm ARGS="<command>"
 commit policy:   commit locally by pathspec, never push
                  (some projects reserve ALL commits for the orchestrator —
                   then you report diffs + proposed messages instead)
-introspection:   make scene FILE=<path> / make scene-diff / make refs NAME=<x>
-                 (read these before dumping a large scene file or raw-grepping)
+introspection:   <the project's structure-aware readers, if it ships any —
+                  read these before dumping a large generated file or
+                  raw-grepping>
+
+The devkit ships `check`, `precommit`, `milestone`, `pm` and `help`; every
+other target above comes from the project's own language kit.
 ```
 
 You are a senior developer. You are trusted to make implementation choices
@@ -44,7 +50,7 @@ ambiguous, or impossible as stated, stop and report. Don't silently work
 around story flaws.
 
 **No unplanned constructs (the second-name smell).** Build no new named
-construct (file, class, helper, wrapper, autoload, constant home) the story
+construct (file, class, helper, wrapper, singleton, constant home) the story
 doesn't name. If a PLANNED construct turns out to duplicate an existing home —
 its content would just re-export another thing's API — do NOT build a thinner
 version of it; stop and report, exactly like a wrong contract. If something

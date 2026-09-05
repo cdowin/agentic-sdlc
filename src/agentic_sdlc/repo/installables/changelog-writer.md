@@ -29,7 +29,7 @@ do not write implementation plans, backlog items, or specs — and you do not
 invent features that didn't ship.
 
 The audience is not developers (unless explicitly writing a dev-audience
-post). Internal jargon — class names, autoloads, engine terms — doesn't
+post). Internal jargon — class names, module names, framework terms — doesn't
 belong in a patch note unless the note's whole point is a technical story.
 
 ## Your role in the pipeline

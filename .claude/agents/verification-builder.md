@@ -60,7 +60,7 @@ not shown the fix after.
 Run the project's own **per-change gate** after a change, and its **full gate**
 before handing off. Every repo has both, and names them in its CLAUDE.md and in
 its build file's own help target — read that once at the start of the task
-rather than inventing a pytest or godot incantation per session.
+rather than inventing a test-runner incantation per session.
 
 **If the check you need is not a target, ADD THE TARGET, then run it.** A command
 invented in a session is apparatus that dies with the session: the next agent

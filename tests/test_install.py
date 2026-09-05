@@ -76,11 +76,12 @@ def refuse(command: str, *argv: str) -> tuple[int, str]:
 
 
 WORKFLOW = '.github/workflows/verify.yml'
-# The set both consumers run on a push. verify.yml is the one this repo itself
-# carries; the other three read `config/version` out of a project.godot, which
-# a stdlib Python package does not have — see the self-hosting test below.
+# The set a project runs on a push. verify.yml is the one this repo itself
+# carries; the other two mint and gate a TAG, and this repo's release protocol
+# tags by hand — a second tagger on the same mainline is the reason those two
+# are installed everywhere and self-hosted nowhere. uid-guard.yml left in 0.2.0
+# with the gate it ran (decision D2).
 WORKFLOWS = (WORKFLOW,
-             '.github/workflows/uid-guard.yml',
              '.github/workflows/semver-gate.yml',
              '.github/workflows/auto-tag.yml')
 AGENTS = ('.claude/agents/verification-reviewer.md',
@@ -103,7 +104,6 @@ AGENTS = ('.claude/agents/verification-reviewer.md',
 # sentences, the roster tests pin the parameterization story.
 ROSTER = AGENTS[2:]
 HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
-         'tools/hooks/cc-godot-sandbox.sh',
          'tools/hooks/cc-stop-gate.sh',
          'tools/hooks/cc-write-confine.sh',
          # The two ledger couriers (0.22.0). They guard nothing; they carry a
@@ -113,25 +113,19 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          'tools/hooks/pre-push',
          'tools/hooks/prepare-commit-msg',
          'tools/dev/agent-worktree.sh',
-         'tools/dev/checks/doctor.sh',
          'tools/setup-hooks.sh')
-RUNNERS = ('tools/dev/gdk_runners.sh',
-           'tools/dev/runners/import_cache.sh',
-           'tools/dev/runners/parse.sh',
-           'tools/dev/runners/compile_sweep.gd',
-           'tools/dev/runners/compile_sweep.gd.uid',
-           'tools/dev/runners/lint.sh',
-           'tools/dev/runners/warnings.sh',
-           'tools/dev/runners/unit.sh',
-           'tools/dev/runners/scenario.sh',
-           'tools/dev/runners/integration.sh',
-           'tools/dev/runners/capture.sh',
-           'tools/dev/runners/hermetic_run_scan.sh',
-           'Makefile.devkit')
+# The gate FRAMEWORK, and the whole of it: the library that gives every gate one
+# verdict line, and the include that calls it. It was `install-runners` through
+# 0.1.0 and carried twelve engine runners besides — the gate framework and one
+# language's roster under one verb, which is what blocked splitting this package
+# in two (decision D2). A language kit installs its own runners and a
+# `Makefile.tiers` that hangs them off this include's `-include` seam.
+GATES = ('tools/dev/gdk_gate.sh',
+         'Makefile.devkit')
 DESTINATIONS = {'install-ci': WORKFLOWS,
                 'install-agents': AGENTS,
                 'install-hooks': HOOKS,
-                'install-runners': RUNNERS}
+                'install-gates': GATES}
 VERBS = tuple(DESTINATIONS)
 # The table above is spelled out so a test READS as the contract, but it is
 # not allowed to become a second roster: a verb added to PLANS and not here
@@ -507,7 +501,16 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
             for banned in ('trail_', 'TRAIL_', 'nullbound', 'NULLBOUND',
                            '_scope.sh', 'source "'):
                 assert banned not in body, f'{rel} carries {banned!r}'
-        for rel in HOOKS[:2]:
+        # A hook that parses the stdin event carries its parser INLINE — a
+        # hook that `source`s a library a fresh repo may not have fails OPEN.
+        # DERIVED, not listed: it was `HOOKS[:2]`, which meant "the two that
+        # parse a payload" until 0.2.0 moved one of them to the kit that owned
+        # the artifact it guarded. A slice cannot say which property it selects
+        # for, and a hand-written list here goes stale the same way.
+        parsers = [rel for rel in HOOKS
+                   if 'hook_json_field' in install.body_of(Path(rel).name)]
+        assert parsers, 'no installed hook parses its payload — census of zero'
+        for rel in parsers:
             assert 'hook_json_field() {' in (
                 root / rel).read_text(encoding='utf-8'), rel
 
@@ -517,8 +520,7 @@ CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
                  'tools/hooks/cc-ledger-session.sh',
                  'tools/hooks/pre-push',
                  'tools/hooks/prepare-commit-msg',
-                 'tools/dev/agent-worktree.sh',
-                 'tools/dev/checks/doctor.sh')
+                 'tools/dev/agent-worktree.sh')
 
 
 def test_the_corpus_files_carry_an_editable_config_header():
@@ -566,9 +568,6 @@ def test_the_installed_hooks_run_and_block_what_they_exist_to_block():
 
     with repo() as root:
         assert run('install-hooks')[0] == 0
-        sandbox = 'tools/hooks/cc-godot-sandbox.sh'
-        assert fire(sandbox, 'godot --headless --path .', root) == 2
-        assert fire(sandbox, 'make unit SYS=combat', root) == 0
         pathspec = 'tools/hooks/cc-commit-pathspec.sh'
         assert fire(pathspec, 'git commit -m "fix: a thing"', root) == 2
         assert fire(pathspec, 'git commit -m "fix: a thing" -- one.py',
@@ -597,8 +596,7 @@ def test_setup_hooks_arms_every_cc_hook_by_glob():
         # hooks (skipped by core.hooksPath in silence when unexecutable) and
         # the by-path tools.
         for rel in ('tools/hooks/pre-push', 'tools/hooks/prepare-commit-msg',
-                    'tools/dev/agent-worktree.sh',
-                    'tools/dev/checks/doctor.sh'):
+                    'tools/dev/agent-worktree.sh'):
             assert os.access(root / rel, os.X_OK), rel
         hooks_path = subprocess.run(
             ['git', 'config', 'core.hooksPath'], cwd=root,
@@ -734,11 +732,11 @@ def test_the_exec_bit_does_not_widen_who_may_read_the_file():
     already read the file — widening a 0600 destination to world-readable is a
     permission decision no install verb was asked to make."""
     with repo() as root:
-        target = root / 'tools/dev/runners/parse.sh'
+        target = root / 'tools/dev/gdk_gate.sh'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('stale\n', encoding='utf-8')
         target.chmod(0o600)
-        code, out = run('install-runners', '--force')
+        code, out = run('install-gates', '--force')
         assert code == 0, out
         assert _mode(target) == 0o700, oct(_mode(target))
 
@@ -748,28 +746,28 @@ def test_a_byte_current_script_missing_the_bit_is_repaired_not_reported_current(
     are byte-identical and 0644. A re-run that reported them `already current`
     would leave every one of them broken forever."""
     with repo() as root:
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
-        target = root / 'tools/dev/runners/scenario.sh'
+        target = root / 'tools/dev/gdk_gate.sh'
         target.chmod(0o644)
 
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
         assert os.access(target, os.X_OK), 'the re-run left it unrunnable'
-        assert 'wrote tools/dev/runners/scenario.sh' in out, out
+        assert 'wrote tools/dev/gdk_gate.sh' in out, out
 
         # …and it converges: the run after that has nothing left to do.
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
         assert 'already current' in out and 'wrote ' not in out, out
 
 
-def test_install_runners_next_step_no_longer_asks_for_a_chmod():
+def test_install_gates_next_step_no_longer_asks_for_a_chmod():
     """The 0.19.0 NIT was closed by DOCUMENTING the missing bit. It is closed
     now by writing it, and a paragraph still asking for the chmod would send an
     operator to repair something the verb just did."""
     with repo():
-        code, out = run('install-runners')
+        code, out = run('install-gates')
     assert code == 0, out
     assert 'chmod +x' not in out, out
     assert 'EXECUTABLE' in out, out
@@ -880,8 +878,7 @@ def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
     raise AssertionError('no project-config block to edit')
 
 
-HEADER_EDITED_HOOKS = ('tools/hooks/cc-godot-sandbox.sh',
-                       'tools/hooks/cc-stop-gate.sh',
+HEADER_EDITED_HOOKS = ('tools/hooks/cc-stop-gate.sh',
                        'tools/hooks/pre-push',
                        'tools/hooks/prepare-commit-msg')
 
@@ -1104,7 +1101,7 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
     """The grammar covers every block this package actually ships — shell and
     markdown — rather than the two files a test happened to pick."""
     checked = 0
-    for command in ('install-hooks', 'install-agents', 'install-runners'):
+    for command in ('install-hooks', 'install-agents', 'install-gates'):
         for name, rel in install.PLANS[command]:
             body = install.body_of(name)
             if install.config_block_span(body) is None:
@@ -1114,7 +1111,12 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
                 f'{rel} carries a block this cannot locate')
             assert not install.header_only_difference(body + 'trailing\n',
                                                       body), rel
-    assert checked >= 25, f'only {checked} config-headed installables scanned'
+    # A floor, not a count: it catches a census that COLLAPSES (a moved
+    # PLANS key, a broken `body_of`) without going stale every time the roster
+    # changes size. It was 25 when install-gates carried thirteen engine
+    # runners; the roster is 18 now and the floor moved with it, deliberately
+    # and in the open.
+    assert checked >= 15, f'only {checked} config-headed installables scanned'
 
 
 # --- the predicate, against hostile pairs ------------------------------------

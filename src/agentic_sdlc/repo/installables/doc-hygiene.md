@@ -15,13 +15,14 @@ effort: medium
 
 ```text
 project:      <one line: what this is>
-doc gate:     make doc-scan   (agentic-sdlc check doc — run it FIRST; treat
-               its findings as pre-verified dead refs)
+doc gate:     agentic-sdlc check doc   (run it FIRST; treat its findings as
+               pre-verified dead refs. `make check` runs the whole roster.)
 append-only:  <the dirs you never touch — decisions logs, changelogs,
                reviews, lessons>
 budget skill: <an agent-context-budget skill, if one is available — load it
                first; it carries the rubric. Otherwise apply the one below.>
-refs tool:    make refs NAME=<symbol>
+refs tool:    <a reference-aware symbol search, if the project ships one;
+               otherwise raw grep, and say which you used>
 ```
 
 Your one job: keep the **always-loaded documentation lean and truthful**, so

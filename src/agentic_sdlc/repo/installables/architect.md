@@ -17,8 +17,9 @@ Stock values assume the standard devkit-consumer layout. After install this file
 is the project's — replace any line that names a different spelling.
 
 ```text
-project:         <one line: what this is, and its engine>
-per-change gate: make precommit    (parse + lint + the unit slice touched + smoke)
+project:         <one line: what this is, and its stack>
+per-change gate: make precommit    (the static checks + this project's
+                                    GDK_PRECOMMIT_TIERS)
 full gate:       make milestone    (close-time only — never per change)
 pm tree:         pm/roadmap/       (schemas in pm/README.md; CLI: make pm ARGS="<command>")
 specs:           docs/specs/systems/

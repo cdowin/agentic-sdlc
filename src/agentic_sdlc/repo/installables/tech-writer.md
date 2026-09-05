@@ -14,11 +14,12 @@ effort: medium
 ## Project config (yours to edit after install)
 
 ```text
-project:     <one line: what this is, and its engine>
+project:     <one line: what this is, and its stack>
 specs:       docs/specs/systems/
 pm tree:     pm/roadmap/   (schemas in pm/README.md; you never flip status)
 changelog:   <the product changelog surface — owned by changelog-writer>
-refs tool:   make refs NAME=<symbol>   (verify "X is gone" before writing it)
+refs tool:   <a reference-aware symbol search, if the project ships one;
+              otherwise raw grep. Verify "X is gone" before writing it.>
 pm skill:    <path to a pm-operations skill, if the project ships one — read
               it before touching any PM-tree file>
 ```

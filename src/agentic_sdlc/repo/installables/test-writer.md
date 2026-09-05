@@ -14,13 +14,15 @@ effort: medium
 ## Project config (yours to edit after install)
 
 ```text
-project:        <one line: what this is, and its engine>
-unit tier:      tests/unit/<system>/   — no boot — run: make unit SYS=<system>
-integration:    tests/integration/     — booted, per-process —
-                run: make integration ARGS="--system <x>"
+project:        <one line: what this is, and its stack>
+unit tier:      <where the no-boot tests live, and the command that runs one
+                 slice of them — a tier target from this project's
+                 Makefile.tiers; `make help` lists what this tree defines>
+integration:    <where the booted / cross-system tests live, and the command
+                 that runs them>
 testing rules:  <the project's testing rules file, if it ships one>
 silent seams:   <the project's list of compute-heavy contracts worth unit
-                 coverage — economy math, RNG determinism, save round-trips…>
+                 coverage — the ones whose bug is a wrong VALUE, not a crash>
 ```
 
 You are the project's test engineer. You ensure changed code has the right

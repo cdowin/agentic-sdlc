@@ -226,7 +226,7 @@ verdict: HOLD
 | id | severity | disposition |
 | G1 | BLOCKER | landed 41944b0 |
 | G2 | BLOCKER | landed 41944b0 |
-| G3 | MAJOR | open: needs a ruling on how a composition rung gets a cost |
-| G4 | BLOCKER | open: story 04 — criterion 4 undelivered |
+| G3 | MAJOR | rejected: the code was right and the criterion overclaimed — D9 amends it; the ratio is 0.2.0/bugs/a-composition-has-no-slot |
+| G4 | BLOCKER | landed 4a351a4 |
 | G5 | NIT | rejected: --plan already marks the verdict beside the cost, which is the honest rendering |
 ```

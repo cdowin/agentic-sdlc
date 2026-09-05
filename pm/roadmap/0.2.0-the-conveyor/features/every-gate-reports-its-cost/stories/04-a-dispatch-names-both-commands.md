@@ -89,6 +89,19 @@ whether that section grows a pointer is the orchestrator's edit, not this story'
 
 ## Close
 
-done: 6e9388d — the stock agent roster names the narrow command and the wide one. The rule
-this encodes cost 31 minutes to do 13 seconds of checking, because a dispatch named one
-command and never mentioned there was another.
+**The first `## Close` block here was FALSE, and the feature review (G4) caught it.** It read
+`done: 6e9388d`, and `6e9388d` touches three files under `installables/` — `Makefile.devkit`,
+`gdk_gate.sh`, `sdlc-template.md` — and **no agent definition**. The five files this story
+names were last modified by `f504ab5`, which belongs to a different feature and predates the
+story. Acceptance criterion 1 asked for an assertion in `tests/test_install.py` comparing the
+five copies; there was none. A future session reading that block would have taken criterion 4
+as delivered.
+
+Recorded rather than quietly replaced: a close block that was wrong once is the reason the
+feature review exists, and deleting the evidence of it would be the same defect one level up.
+
+done: 4a351a4 — the five carriers (`architect`, `po`, `developer`, `verification-builder`,
+`test-writer`) carry the block; `TestTheNameBothCommandsBlockIsOneWording` asserts the five are
+byte-identical, that the wording names both rungs and `verify --plan`, that it does NOT claim
+`--plan` unconditionally, and that the four agents with no inner loop do not carry it.
+`.claude/agents/verification-builder.md` re-installed, byte-current.

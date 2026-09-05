@@ -130,7 +130,14 @@ Two things fall out for scope:
 2. `pm ledger report` grows the view that answers *what got slower*. This is a **blocker, not a
    nice-to-have**: risk 3 says telemetry nobody reads is cost with no benefit, and a feature
    whose own risk register condemns it shipping half-done should not ship half-done.
-3. The row makes the **narrow-vs-wide ratio derivable**, which is what
-   `0.2.0/the-story-belt-knows-what-verifies-this-edit` prints.
+3. Every gate that **opens a slot** records name, duration, verdict and census through the one
+   funnel, and `verify --plan` reports a cost it does not have as `unknown` rather than deriving
+   one. *(Amended 2026-09-05 by decision D9, from finding G3. It read "the row makes the
+   narrow-vs-wide ratio derivable", and it is not: `_cost_of` joins by make TARGET NAME, and the
+   wide rungs are prerequisite-only targets with no recipe, so they never open a slot and the
+   ratio's denominator is empty in every configuration this package ships. The code was right and
+   the criterion overclaimed — `--plan` saying `unknown` rather than inventing a number is the
+   behaviour this milestone's whole read side is built on. The ratio is
+   `0.2.0/bugs/a-composition-has-no-slot`.)*
 4. The stock agent definitions carry the name-both-commands rule, so a consumer's agents inherit
    it instead of each orchestrator re-learning it by burning half an hour.

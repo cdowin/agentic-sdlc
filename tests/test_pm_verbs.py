@@ -24,6 +24,7 @@ from support.pm import (
     run_gate,
     tree,
     write,
+    write_config,
 )
 
 from agentic_sdlc.repo.pm import cli, model, skills, templates
@@ -118,8 +119,7 @@ class StatusMoves(unittest.TestCase):
         # The other half of B3: `also_done` counts. A dropped story does not
         # keep the advisory talking, because it is finished.
         with tree(story_statuses=('done', 'obe')) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nalso_done = ["obe"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nalso_done = ["obe"]\n')
             code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertNotIn('not finished', out)
@@ -473,8 +473,7 @@ class FeatureClose(unittest.TestCase):
         # would break a consumer that had done nothing wrong.
         with tree(feature_status='reviewing', story_statuses=('reviewing',),
                   with_record=False) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nreview_dir = "docs/reviews"\n', encoding='utf-8')
+            write_config(root, '[pm]\nreview_dir = "docs/reviews"\n')
             record = root / 'docs' / 'reviews' / '0.1-alpha.md'
             record.parent.mkdir(parents=True)
             record.write_text('a durable review record with real content\n',
@@ -577,7 +576,13 @@ class ListFindsTheNail(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             (root / 'pm' / 'roadmap').mkdir(parents=True)
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
+            # (model.py:718), so this ad-hoc tree needs it for the same
+            # reason `support.pm.tree` does. It changes nothing this case
+            # asserts — devkit.toml sits at the repo root, not in the
+            # roadmap — see tests/support/pm.py `write_config`.
+            write_config(root)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:
@@ -843,8 +848,7 @@ class ExecutionList(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'sync')
             run_cli(root, 'new', 'feature', '0.1', 'newcomer', 'Newcomer')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["V6"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["V6"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('execution list is stale', out)
@@ -961,7 +965,13 @@ class TheShortestPathFromNothingToAClosedMilestone(unittest.TestCase):
             (root / 'docs' / 'reviews' / 'alpha.md').write_text(
                 'Reviewed, and it holds up under the cases that matter.\n',
                 encoding='utf-8')
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
+            # (model.py:718), so this ad-hoc tree needs it for the same
+            # reason `support.pm.tree` does. It changes nothing this case
+            # asserts — devkit.toml sits at the repo root, not in the
+            # roadmap — see tests/support/pm.py `write_config`.
+            write_config(root)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:
@@ -1019,18 +1029,23 @@ class Vocabulary(unittest.TestCase):
             # map, and that window closed in 0.2.0.
             for grain in data['grains'].values():
                 self.assertEqual(sorted(grain), ['flow', 'states'])
-            # This tree declares none, so the flow is the ABSENCE rather than
-            # the seed — a fallback here is the thing hard rule 5 forbids.
-            self.assertIs(data['flow_declared'], False)
-            self.assertIsNone(data['grains']['story']['flow'])
+            # This tree DECLARES its flow (tests/support/pm.py `FLOW_TOML`),
+            # so the payload carries it. The ABSENCE half — `flow_declared:
+            # false` and a null `flow` — is proven in tests/test_pm_flow.py
+            # `TestVocabularyWithNoFlow`, on a tree that declares nothing. That
+            # is now the ONLY fixture in the suite allowed to be flow-less:
+            # `flow_of` has no fallback behind it, so everywhere else a missing
+            # declaration is a refusal rather than a case.
+            self.assertIs(data['flow_declared'], True)
+            self.assertEqual(data['grains']['story']['flow']['order'],
+                             list(model.LIFECYCLE) + ['obe'])
             self.assertNotIn('deprecated', out)
             self.assertNotIn('->', out)
 
     def test_it_reads_the_projects_OWN_vocabulary_not_the_stock_one(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nstory_states = ["todo","wip","review","done","parked"]\n',
-                encoding='utf-8')
+            write_config(root,
+                '[pm]\nstory_states = ["todo","wip","review","done","parked"]\n')
             import json
             code, out = run_cli(root, 'vocabulary', '--json')
             self.assertEqual(code, 0, out)
@@ -1456,9 +1471,8 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
 
     def test_feature_done_refuses_when_the_vocabulary_excludes_done(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nfeature_states = ["todo", "building", "shipped"]\n',
-                encoding='utf-8')
+            write_config(root,
+                '[pm]\nfeature_states = ["todo", "building", "shipped"]\n')
             ffile = root / self.FFILE
             before = ffile.read_bytes()
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
@@ -1468,9 +1482,8 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
 
     def test_feature_reviewing_refuses_when_the_vocabulary_excludes_it(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nfeature_states = ["todo", "building", "shipped"]\n',
-                encoding='utf-8')
+            write_config(root,
+                '[pm]\nfeature_states = ["todo", "building", "shipped"]\n')
             ffile = root / self.FFILE
             before = ffile.read_bytes()
             code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
@@ -1480,9 +1493,8 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
 
     def test_cascade_refuses_when_story_states_exclude_done(self):
         with tree(story_statuses=('reviewing',)) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nstory_states = ["todo", "wip", "review", "shipped"]\n',
-                encoding='utf-8')
+            write_config(root,
+                '[pm]\nstory_states = ["todo", "wip", "review", "shipped"]\n')
             sfile, ffile = root / STORY_REL, root / self.FFILE
             s_before, f_before = sfile.read_bytes(), ffile.read_bytes()
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
@@ -1495,9 +1507,7 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
 
     def test_a_custom_vocabulary_that_keeps_done_still_closes(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nfeature_states = ["building", "done"]\n',
-                encoding='utf-8')
+            write_config(root, '[pm]\nfeature_states = ["building", "done"]\n')
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertEqual(model.field_of(root / self.FFILE, 'status'),
@@ -1710,7 +1720,13 @@ class Retire(unittest.TestCase):
                    'actual_date': '2026-01-02'})
             write(root / 'pm/roadmap/0.2-later/milestone.md',
                   {'id': '"0.2"', 'name': 'Later', 'status': 'building'})
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
+            # (model.py:718), so this ad-hoc tree needs it for the same
+            # reason `support.pm.tree` does. It changes nothing this case
+            # asserts — devkit.toml sits at the repo root, not in the
+            # roadmap — see tests/support/pm.py `write_config`.
+            write_config(root)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:

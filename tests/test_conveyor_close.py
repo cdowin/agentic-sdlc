@@ -33,6 +33,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli  # noqa: E402
@@ -102,14 +103,21 @@ DONE_LINE = 'done: 3a42f19ad0 — the belt walks\n'
 def tree(files: dict[str, str] | None = None, *, story: str = 'reviewing',
          evidence: str = DONE_LINE, feature: str = 'planning',
          reviewed: str = '', config: str = CONFIG):
-    """A scratch repo with a milestone, a feature and one story, entered."""
+    """A scratch repo with a milestone, a feature and one story, entered.
+
+    `config` is this tree's devkit.toml MINUS the flow declaration, which is
+    APPENDED for you — `[pm.states.*]` has no runtime fallback, so a case that
+    supplied its own `[release]` block and thereby dropped the flow would build
+    a tree `model.flow_of` refuses for a reason unrelated to what it asserts.
+    See tests/support/pm.py `with_flow`.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         payload = {
             f'{MDIR}/milestone.md': MILESTONE,
             FFILE: feature_doc(feature, reviewed),
             SFILE: story_doc(story, evidence),
-            'devkit.toml': config,
+            'devkit.toml': with_flow(config),
             'Makefile': MAKEFILE,
             'src/thing.py': 'x = 1\n',
         }

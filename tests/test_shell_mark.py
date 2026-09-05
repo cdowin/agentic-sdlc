@@ -62,7 +62,12 @@ SUPPORT = TESTS / 'support'
 # dict and was not, deliberately — the thing under test is what a devkit.toml
 # on disk makes the reader do, and a fixture that skipped the file would be
 # proving the parser rather than the contract.
-MARKED_MODULES = 32
+# The thirty-third is test_fixture_flows.py, the census of which fixture trees
+# declare `[pm.states.*]`. It spawns for two reasons and both are the point:
+# it drives the other modules' own builders, most of which `git init` a real
+# repo, and it asks THIS checkout's CLI whether the repo the suite runs in
+# declares — self-hosting is a fact about a process, not about an import.
+MARKED_MODULES = 33
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -87,7 +92,14 @@ UNMARKED_MODULES = (
 # `run_check`, `run_cli`, `run_gate`, the ledger line builders — run in
 # process, which is exactly why the derivation reads the call graph instead of
 # the module's import list.
-SPAWNING_HELPERS = frozenset({'commit', 'git', 'porcelain', 'tree'})
+# `_mark_or_init` is the newest member and it earns its place by being the one
+# helper that DOES BOTH: `git init` when a case asks for a real repository, a
+# `.git` mkdir when it does not. `tree` binds it, so `tree` still reads as
+# spawning — which is correct and is also the thing to fix next: a module whose
+# every case takes the cheap branch is marked for a process it never starts.
+# The derivation reads SOURCE, and source cannot see which branch runs.
+SPAWNING_HELPERS = frozenset({'_mark_or_init', 'commit', 'git', 'porcelain',
+                              'tree'})
 
 # A broken SUPPORT path makes `support_spawn_names()` empty and silently
 # unmarks a third of the suite, so the census asserts the package was found at

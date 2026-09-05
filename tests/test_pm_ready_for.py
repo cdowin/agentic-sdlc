@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import bug, run_cli, tree, write
+from support.pm import bug, run_cli, tree, write, write_config
 
 from agentic_sdlc.repo.pm import model, ready_for
 
@@ -634,9 +634,8 @@ class ConfigRefusals(unittest.TestCase):
 
     def test_a_story_vocabulary_without_done_refuses(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                self._with_states('story_states', '["todo", "shipped"]'),
-                encoding='utf-8')
+            write_config(root,
+                self._with_states('story_states', '["todo", "shipped"]'))
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
             self.assertEqual(code, 2, out)
             self.assertNotIn(UNROUTED, out)
@@ -644,9 +643,8 @@ class ConfigRefusals(unittest.TestCase):
 
     def test_a_feature_vocabulary_without_done_refuses(self):
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                self._with_states('feature_states', '["todo", "shipped"]'),
-                encoding='utf-8')
+            write_config(root,
+                self._with_states('feature_states', '["todo", "shipped"]'))
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
             self.assertEqual(code, 2, out)
             self.assertNotIn(UNROUTED, out)

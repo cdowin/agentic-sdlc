@@ -797,9 +797,18 @@ HANG_EOF
 	# A recorder that EXITS CLEANLY and leaves something behind it. The stock
 	# GDK_LEDGER_CMD is a `uvx` line, whose subprocess behaviour this package
 	# does not control, so this is not a hypothetical shape.
+	# THE SLEEP IS 3 s AND THE CEILING 2000 ms, AND THAT IS DELIBERATE.
+	# The proof is a RATIO — a recorder that outlives its bound reddens the
+	# mutant whether it outlives it by 3x or by 20x — and the suite pays the
+	# difference in wall clock on every run, forever. This corpus used
+	# `sleep 20` against a 10000 ms ceiling, and the two mutation tests that
+	# drive it were 24 s and 23 s: half the wall clock of a 96 s suite, in two
+	# cases, setting a floor no amount of parallelism could get under.
+	# A bound of 1000 ms, a sleep of 3 s and a ceiling of 2000 ms keeps every
+	# margin wide (3x over the bound, 1.5x over the ceiling) and costs 3 s.
 	cat > "$scratch/fork.sh" <<'FORK_EOF'
 #!/usr/bin/env bash
-sleep 20 &
+sleep 3 &
 exit 0
 FORK_EOF
 	: > "$GDK_ST_REC_LOG"
@@ -1021,7 +1030,7 @@ exit=7" "$body"
 exit=7" "$body"
 		if [ -n "$t0" ] && [ -n "$elapsed" ]; then
 			elapsed=$(( elapsed - t0 ))
-			status=0; [ "$elapsed" -lt 10000 ] || status=1
+			status=0; [ "$elapsed" -lt 2000 ] || status=1
 			_gdk_st_true \
 				"a recorder that forks does not hold the gate open (${elapsed} ms, bound 1000)" \
 				"$status"
@@ -1037,7 +1046,7 @@ exit=7" "$body"
 		# code were correct throughout, so nothing but the clock can see it.
 		export GDK_LEDGER_TIMEOUT=1
 		t0="$(_gdk_now_ms)"
-		body="$(_gdk_st_gate "$lib" "bash $scratch/rec.sh \$(sleep 20)" 7)"
+		body="$(_gdk_st_gate "$lib" "bash $scratch/rec.sh \$(sleep 3)" 7)"
 		elapsed="$(_gdk_now_ms)"
 		unset GDK_LEDGER_TIMEOUT
 		_gdk_st_eq 'a substituting recorder value still lets the gate report' \
@@ -1045,7 +1054,7 @@ exit=7" "$body"
 exit=7" "$body"
 		if [ -n "$t0" ] && [ -n "$elapsed" ]; then
 			elapsed=$(( elapsed - t0 ))
-			status=0; [ "$elapsed" -lt 10000 ] || status=1
+			status=0; [ "$elapsed" -lt 2000 ] || status=1
 			_gdk_st_true \
 				"a substitution in GDK_LEDGER_CMD is parsed UNDER the bound (${elapsed} ms, bound 1000)" \
 				"$status"

@@ -105,7 +105,7 @@ def test_the_verb_writes_the_whole_set_and_a_diff_round_trips_clean(tmp_path):
     root = tmp_path / 'game'
     root.mkdir()
     (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
-    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
     previous = Path.cwd()
     os.chdir(root)
     repo_root.cache_clear()

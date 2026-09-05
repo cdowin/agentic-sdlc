@@ -26,6 +26,7 @@ from support.pm import (
     run_gate,
     tree,
     write,
+    write_config,
 )
 
 from agentic_sdlc.repo.checks import pm as pm_check
@@ -77,7 +78,13 @@ class DriftGate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             (root / 'pm' / 'roadmap').mkdir(parents=True)
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
+            # (model.py:718), so this ad-hoc tree needs it for the same
+            # reason `support.pm.tree` does. It changes nothing this case
+            # asserts — devkit.toml sits at the repo root, not in the
+            # roadmap — see tests/support/pm.py `write_config`.
+            write_config(root)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:
@@ -148,8 +155,7 @@ class DriftGate(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertIn('all stories done, feature still planning', out)
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D1","D3","D4","D5","D6"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D1","D3","D4","D5","D6"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertNotIn('all stories done', out)
@@ -340,9 +346,9 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
         # `building`, D5 cannot place "at work" in it and reports NOTHING —
         # which must be said out loud rather than read as a clean tree.
         with tree(feature_status='planning', story_statuses=('done',)) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nstory_states = ["queued", "doing", "done"]\n'
-                'checks = ["D4","D5"]\n', encoding='utf-8')
+            write_config(root,
+                         '[pm]\nstory_states = ["queued", "doing", "done"]\n'
+                         'checks = ["D4","D5"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn(self.MSG, out)
@@ -351,9 +357,9 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
 
     def test_D5_reads_a_renamed_vocabulary_that_KEEPS_the_split(self):
         with tree(feature_status='planning', story_statuses=('done',)) as root:
-            (root / 'devkit.toml').write_text(
+            write_config(root,
                 '[pm]\nstory_states = ["queued", "building", "done"]\n'
-                'checks = ["D4","D5"]\n', encoding='utf-8')
+                'checks = ["D4","D5"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn(self.MSG, out)
@@ -386,7 +392,7 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
     def _gate_with(self, config, feature_status, story_statuses):
         with tree(milestone_status='building', feature_status=feature_status,
                   story_statuses=story_statuses) as root:
-            (root / 'devkit.toml').write_text(config, encoding='utf-8')
+            write_config(root, config)
             return run_gate(root)
 
     def test_one_word_on_both_sides_is_never_a_disagreement(self):
@@ -471,7 +477,7 @@ class ConfigValidation(unittest.TestCase):
                     'checks = 7', 'checks = []', 'checks = { a = 1 }'):
             with self.subTest(bad=bad), tree(story_statuses=('ready',)) as root:
                 self._drifted(root)
-                (root / 'devkit.toml').write_text(f'[pm]\n{bad}\n', encoding='utf-8')
+                write_config(root, f'[pm]\n{bad}\n')
                 code, _ = run_gate(root)
                 # 2 = config error. NEVER 0 — that is the rubber stamp.
                 self.assertEqual(code, 2, f'{bad!r} must not be accepted')
@@ -480,14 +486,13 @@ class ConfigValidation(unittest.TestCase):
         for bad in ('review_slug_fallback = "yes"',
                     'roadmap_dir = 3'):
             with self.subTest(bad=bad), tree() as root:
-                (root / 'devkit.toml').write_text(f'[pm]\n{bad}\n', encoding='utf-8')
+                write_config(root, f'[pm]\n{bad}\n')
                 self.assertEqual(run_gate(root)[0], 2)
 
     def test_a_valid_subset_still_narrows_correctly(self):
         with tree(story_statuses=('ready',)) as root:
             self._drifted(root)
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D1","D2"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D1","D2"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)   # D4 is off, so the bogus status is quiet
 
@@ -511,7 +516,7 @@ class AStaleRuleIdStopsTheGATE_NotTheReadVerbs(unittest.TestCase):
 
     def test_the_read_verbs_still_run(self):
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(self.STALE, encoding='utf-8')
+            write_config(root, self.STALE)
             for argv in (('status',), ('vocabulary', '--json'),
                          ('get', '0.1/alpha', 'status'),
                          ('new', 'story', '0.1/alpha', 's9', 'S9')):
@@ -522,13 +527,13 @@ class AStaleRuleIdStopsTheGATE_NotTheReadVerbs(unittest.TestCase):
 
     def test_a_write_verb_still_runs(self):
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(self.STALE, encoding='utf-8')
+            write_config(root, self.STALE)
             code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
             self.assertEqual(code, 0, out)
 
     def test_the_two_gates_refuse_loudly_and_name_the_id(self):
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(self.STALE, encoding='utf-8')
+            write_config(root, self.STALE)
             code, out = run_gate(root)
             self.assertEqual(code, 2, out)
             code, out = run_cli(root, 'validate')
@@ -560,7 +565,7 @@ class FlowChecks(unittest.TestCase):
     def test_d8_version_must_equal_the_building_milestone_id(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='staging', version='9.9.9')
-            (root / 'devkit.toml').write_text(self.ON, encoding='utf-8')
+            write_config(root, self.ON)
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertIn('does not match the building milestone', out)
@@ -568,14 +573,14 @@ class FlowChecks(unittest.TestCase):
     def test_d8_passes_on_an_exact_match(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='staging', version='0.1')
-            (root / 'devkit.toml').write_text(self.ON, encoding='utf-8')
+            write_config(root, self.ON)
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
     def test_d9_requires_a_branch_stamp(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, version='0.1')
-            (root / 'devkit.toml').write_text(self.ON, encoding='utf-8')
+            write_config(root, self.ON)
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertIn('declares no branch:', out)
@@ -609,8 +614,7 @@ class MainlineGuard(unittest.TestCase):
     def test_fires_on_a_building_milestone_stamped_onto_the_mainline(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='main')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D10"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D10"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('the mainline itself', out)
@@ -618,8 +622,7 @@ class MainlineGuard(unittest.TestCase):
     def test_fires_on_an_empty_branch_even_without_d9_named(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root)  # no branch: at all
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D10"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D10"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('needs a branch off the mainline', out)
@@ -627,8 +630,7 @@ class MainlineGuard(unittest.TestCase):
     def test_a_real_milestone_branch_passes(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='milestone/0.1-demo')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D10"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D10"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
@@ -640,9 +642,9 @@ class MainlineGuard(unittest.TestCase):
         # by accident on the untouched default.
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='trunk')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D10"]\n'
-                '[repo_hygiene]\nmainline = "origin/trunk"\n', encoding='utf-8')
+            write_config(root,
+                         '[pm]\nchecks = ["D10"]\n'
+                         '[repo_hygiene]\nmainline = "origin/trunk"\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn("'trunk'", out)
@@ -651,16 +653,14 @@ class MainlineGuard(unittest.TestCase):
         # The opt-in split, from the other side: D9 only requires SOME stamp.
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='main')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D9"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D9"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
     def test_d10_is_a_known_rule_not_a_config_error(self):
         with tree(story_statuses=('ready',)) as root:
             self._building(root, branch='milestone/0.1-demo')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D10"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D10"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('unknown rule', out)
@@ -707,7 +707,7 @@ class RetiredConfigIsRefusedByName(unittest.TestCase):
         # Reported where a stale rule id is — on the GATE, so a project can
         # still read its own tree while deciding what to do about the dead key.
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(self.ON, encoding='utf-8')
+            write_config(root, self.ON)
             code, out = self._gate(root)
             self.assertEqual(code, 2, out)
             self.assertIn('place_branch_on_building was retired', out)
@@ -721,14 +721,14 @@ class RetiredConfigIsRefusedByName(unittest.TestCase):
         for body in ('[agents]\nscope = [".claude/agents/*.md"]\n', '[agents]\n'):
             with self.subTest(body=body):
                 with tree(story_statuses=('ready',)) as root:
-                    (root / 'devkit.toml').write_text(body, encoding='utf-8')
+                    write_config(root, body)
                     code, out = self._gate(root)
                     self.assertEqual(code, 2, out)
                     self.assertIn('[agents] was retired', out)
 
     def test_pm_validate_names_it_too(self):
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(self.ON, encoding='utf-8')
+            write_config(root, self.ON)
             code, out = run_cli(root, 'validate')
             self.assertEqual(code, 2, out)
             self.assertIn('place_branch_on_building was retired', out)
@@ -833,7 +833,13 @@ class Validate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             (root / 'pm' / 'roadmap').mkdir(parents=True)
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
+            # (model.py:718), so this ad-hoc tree needs it for the same
+            # reason `support.pm.tree` does. It changes nothing this case
+            # asserts — devkit.toml sits at the repo root, not in the
+            # roadmap — see tests/support/pm.py `write_config`.
+            write_config(root)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:
@@ -1103,8 +1109,7 @@ class FlowRuleEdges(unittest.TestCase):
                             'branch', 'staging')
             (root / 'pyproject.toml').write_text(
                 '[project]\nversion = "0.1"\n', encoding='utf-8')
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D8"]\n', encoding='utf-8')
+            write_config(root, '[pm]\nchecks = ["D8"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertIn('milestones are building', out)
@@ -1120,7 +1125,7 @@ class FlowRuleEdges(unittest.TestCase):
               {'id': f'"{released}"', 'name': 'Old', 'status': 'done'})
         (root / 'pyproject.toml').write_text(
             f'[project]\nversion = "{version}"\n', encoding='utf-8')
-        (root / 'devkit.toml').write_text('[pm]\nchecks = ["D8"]\n', encoding='utf-8')
+        write_config(root, '[pm]\nchecks = ["D8"]\n')
         return ctx, root
 
     def test_d8_admits_a_hotfix_of_the_released_milestone(self):
@@ -1152,8 +1157,7 @@ class ConfigValueErrors(unittest.TestCase):
         for bad in ('version_pattern = "version = \\"(.*\\""',
                     'version_pattern = "^version = .*$"'):
             with self.subTest(bad=bad), tree() as root:
-                (root / 'devkit.toml').write_text(
-                    f'[pm]\nchecks = ["D8"]\n{bad}\n', encoding='utf-8')
+                write_config(root, f'[pm]\nchecks = ["D8"]\n{bad}\n')
                 self.assertEqual(run_gate(root)[0], 2)
 
     def test_a_path_key_outside_the_checkout_is_refused_not_followed(self):
@@ -1185,8 +1189,7 @@ class ConfigValueErrors(unittest.TestCase):
                 with self.subTest(key=key, value=value), tree() as root:
                     # A Python repr is a TOML LITERAL string, so a `\` in a
                     # value reaches the guard instead of the TOML parser.
-                    (root / 'devkit.toml').write_text(
-                        f'[pm]\n{key} = {value!r}\n', encoding='utf-8')
+                    write_config(root, f'[pm]\n{key} = {value!r}\n')
                     repo_root.cache_clear()
                     load_config.cache_clear()
                     buf = io.StringIO()
@@ -1207,8 +1210,7 @@ class ConfigValueErrors(unittest.TestCase):
         them would break a consumer at upgrade rather than at a wrong value."""
         for value in ('pm/roadmap', 'pm/roadmap/', './pm/roadmap'):
             with self.subTest(value=value), tree() as root:
-                (root / 'devkit.toml').write_text(
-                    f'[pm]\nroadmap_dir = {value!r}\n', encoding='utf-8')
+                write_config(root, f'[pm]\nroadmap_dir = {value!r}\n')
                 code, out = run_gate(root)
                 self.assertEqual(code, 0, f'{value!r}\n{out}')
 
@@ -1217,7 +1219,7 @@ class ConfigValueErrors(unittest.TestCase):
                     '[pm.scaffold.epic]\nx = "y"',
                     '[pm.scaffold.story]\ntags = ["a"]'):
             with self.subTest(bad=bad), tree() as root:
-                (root / 'devkit.toml').write_text(f'[pm]\n{bad}\n', encoding='utf-8')
+                write_config(root, f'[pm]\n{bad}\n')
                 self.assertEqual(run_gate(root)[0], 2)
 
 
@@ -1242,8 +1244,7 @@ class EveryConfigSection(unittest.TestCase):
         for section, key in self.SECTIONS:
             for bad in self.BAD:
                 with self.subTest(section=section, bad=bad), tree() as root:
-                    (root / 'devkit.toml').write_text(
-                        f'[{section}]\n{key} = {bad}\n', encoding='utf-8')
+                    write_config(root, f'[{section}]\n{key} = {bad}\n')
                     repo_root.cache_clear()
                     load_config.cache_clear()
                     buf = io.StringIO()
@@ -1258,7 +1259,15 @@ class EveryConfigSection(unittest.TestCase):
         from agentic_sdlc.core.project import load_config, repo_root
         for section, _ in self.SECTIONS:
             with self.subTest(section=section), tree() as root:
-                (root / 'devkit.toml').write_text(f'{section} = "nope"\n', encoding='utf-8')
+                # RAW, not `write_config`: the file under test IS the malformed
+                # one, and `[pm]` here is the scalar `"nope"` — appending
+                # `[pm.states.*]` under it is not valid TOML at all, so the
+                # refusal being proven (a non-table SECTION, refused by the
+                # reader at exit 2) would be replaced by a parse error raised
+                # one layer lower. A fixture that keeps declaring by corrupting
+                # the input it was built to reject proves nothing.
+                (root / 'devkit.toml').write_text(f'{section} = "nope"\n',
+                                                  encoding='utf-8')
                 repo_root.cache_clear()
                 load_config.cache_clear()
                 buf = io.StringIO()
@@ -1511,8 +1520,7 @@ class DamagedFrontmatter(unittest.TestCase):
         for form in DAMAGE_FORMS:
             with self.subTest(form=form):
                 with tree(milestone_status='building') as root:
-                    (root / 'devkit.toml').write_text(self.BUG_TOML,
-                                                      encoding='utf-8')
+                    write_config(root, self.BUG_TOML)
                     damage(self._bug(root, 'seed-is-zero', 'open'), form)
                     code, out = run_gate(root)
                     self.assertEqual(code, 1, out)
@@ -1528,8 +1536,7 @@ class DamagedFrontmatter(unittest.TestCase):
             with self.subTest(form=form):
                 with tree(milestone_status='done', feature_status='done',
                           story_statuses=('done',)) as root:
-                    (root / 'devkit.toml').write_text(self.BUG_TOML,
-                                                      encoding='utf-8')
+                    write_config(root, self.BUG_TOML)
                     damage(self._bug(root, 'leaky', 'open'), form)
                     code, out = run_gate(root)
                     self.assertEqual(code, 1, out)
@@ -1575,7 +1582,7 @@ class DamagedFrontmatter(unittest.TestCase):
     # --- the controls: a genuine note stays OUT --------------------------
     def test_a_readme_with_no_frontmatter_under_bugs_is_still_silent(self):
         with tree(milestone_status='building') as root:
-            (root / 'devkit.toml').write_text(self.BUG_TOML, encoding='utf-8')
+            write_config(root, self.BUG_TOML)
             (root / 'pm/roadmap/0.1-demo/bugs').mkdir(parents=True,
                                                       exist_ok=True)
             (root / 'pm/roadmap/0.1-demo/bugs/README.md').write_text(

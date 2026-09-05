@@ -44,6 +44,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import FLOW_TOML  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -65,11 +66,19 @@ ORDER = (TRUE.name, FALSE.name)
 
 @contextlib.contextmanager
 def tree():
+    """A one-milestone scratch repo, entered, DECLARING its flow.
+
+    The declaration is not optional scenery: `[pm.states.*]` has no runtime
+    fallback, so once the engine's questions route through `model.holds` a tree
+    without it is refused by name before any step runs. See tests/support/pm.py
+    `FLOW_TOML`.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         (root / MDIR).mkdir(parents=True)
         (root / MDIR / 'milestone.md').write_text(MILESTONE, encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()

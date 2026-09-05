@@ -39,7 +39,7 @@ def repo_with(config: str | None):
         root.mkdir()
         if config is not None:
             (root / 'devkit.toml').write_text(config, encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()

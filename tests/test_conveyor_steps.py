@@ -32,6 +32,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
@@ -52,14 +53,20 @@ branch: milestone/{VERSION}
 
 @contextlib.contextmanager
 def tree(files: dict[str, str] | None = None, config: str = ''):
-    """A scratch repo with a milestone directory, entered."""
+    """A scratch repo with a milestone directory, entered.
+
+    `config` is this tree's devkit.toml MINUS the flow declaration, which is
+    APPENDED for you — `[pm.states.*]` has no runtime fallback, so a case that
+    supplied its own `[release]` block and thereby dropped the flow would build
+    a tree `model.flow_of` refuses for a reason unrelated to what it asserts.
+    See tests/support/pm.py `with_flow`.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         (root / f'pm/roadmap/{VERSION}-scratch').mkdir(parents=True)
         (root / f'pm/roadmap/{VERSION}-scratch/milestone.md').write_text(
             MILESTONE, encoding='utf-8')
-        if config:
-            (root / 'devkit.toml').write_text(config, encoding='utf-8')
+        (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
         for rel, body in (files or {}).items():
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)

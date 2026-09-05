@@ -38,6 +38,7 @@ from support.pm import (
     run_gate,
     tree,
     write,
+    write_config,
 )
 
 from agentic_sdlc.repo.pm import ledger, model
@@ -494,8 +495,7 @@ class MergeAttribute(unittest.TestCase):
         """`[pm] roadmap_dir` is config, so the attribute cannot be a literal
         that is right only for the stock path."""
         with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nroadmap_dir = "planning/ms"\n', encoding='utf-8')
+            write_config(root, '[pm]\nroadmap_dir = "planning/ms"\n')
             self.assertEqual(run_cli(root, 'init')[0], 0)
             body = (root / '.gitattributes').read_text(encoding='utf-8')
         self.assertIn(f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union',

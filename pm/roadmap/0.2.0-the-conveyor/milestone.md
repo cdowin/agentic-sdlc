@@ -103,8 +103,13 @@ the milestone says why it is not", which no tree can be measured against.
 6. The four gates that scan this kit's own artifacts ship in `[checks] all`, and the tree that
    never had a prose-cap gate gains one.
 7. `verify --changed` answers *what proves this edit* from config, **names any path that matched
-   nothing**, and falls back to wide.
-8. **0.2.0 is released through `agentic-sdlc release 0.2.0`.** A conveyor whose first release is
+   nothing**, and falls back to the widest rung.
+8. **Every operation has exactly one verb and one scope, and none of them is "run the biggest
+   thing"** (decision D3). The ladder is three rungs — `verify --story | --feature | --milestone`
+   — plus `pm ready-for` between them and `adopt` beside them, and `README.md` carries the table.
+   The failure this closes: a story close reaching for `make milestone`, which is the measured
+   170x this milestone exists to end.
+9. **0.2.0 is released through `agentic-sdlc release 0.2.0`.** A conveyor whose first release is
    performed by hand has not been tested, and every step that had to be skipped is in the ledger
    with its reason.
 

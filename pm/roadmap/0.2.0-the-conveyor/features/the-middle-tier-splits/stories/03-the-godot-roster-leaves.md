@@ -57,3 +57,23 @@ The Godot runners (`parse.sh`, `lint.sh`, `unit.sh`, `integration.sh`, `scenario
 Touch: `src/agentic_sdlc/repo/installables/` (deletions), `src/agentic_sdlc/repo/install.py`,
 `src/agentic_sdlc/repo/pm/model.py` (one default), `tests/test_consumer_independence.py`,
 `tests/test_install.py`, `tests/test_runners_installable.py`, `Makefile`, `CHANGELOG.md`.
+
+## Three more, found 2026-09-05 while story 04 of the extraction was landing
+
+Each is the same rule with a different file in front of it, and none was in the plan:
+
+1. **`src/agentic_sdlc/repo/init.py` refuses in a directory with no `project.godot`**
+   (`init.py:45,77,124`). `README.md` documents that accurately, which means a Godot-less
+   consumer of a Godot-less package **cannot run `init` at all** — the verb that exists to
+   stand a project up. This is the worst of the three: it is not a stale word, it is a working
+   refusal pointed at the wrong fact.
+2. **`Makefile.devkit` ships `scene`, `scene-diff`, `refs`, `orphans`, `autoloads` and
+   `uid-scan` targets** that shell out to verbs `cli.py` no longer routes. Story 01 removes the
+   targets; naming them here so the count is not discovered twice.
+3. **`[pm] version_file` still defaults to `project.godot`** (`repo/pm/model.py:265,329`) — the
+   D8 rule's stock default names a Godot file. Already in this story's table; the line numbers
+   are here now.
+
+Ordering note: (3) edits `model.py`, which `bugs/the-deprecation-window-must-close` is also
+rewriting. **The bug lands first**; this story's one-line default change goes after it.
+

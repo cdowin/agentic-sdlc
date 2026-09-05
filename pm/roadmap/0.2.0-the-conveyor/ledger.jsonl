@@ -4,3 +4,11 @@
 {"ts":"2026-09-05T15:43:53Z","kind":"status","grain":"0.2.0/the-extraction-finishes","from":"planning","to":"building"}
 {"ts":"2026-09-05T15:44:04Z","kind":"status","grain":"0.2.0/the-extraction-finishes/01-roster-equals-dispatchable","from":"planning","to":"building"}
 {"ts":"2026-09-05T15:44:04Z","kind":"status","grain":"0.2.0/the-extraction-finishes/04-the-first-surfaces-describe-this-package","from":"planning","to":"building"}
+{"ts":"2026-09-05T15:54:25Z","kind":"status","grain":"0.2.0/the-extraction-finishes/01-roster-equals-dispatchable","from":"building","to":"reviewing"}
+{"ts":"2026-09-05T15:54:25Z","kind":"status","grain":"0.2.0/the-extraction-finishes/02-help-describes-what-ships","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T15:54:25Z","kind":"status","grain":"0.2.0/the-extraction-finishes/03-the-wheel-carries-only-what-has-a-reader","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T15:54:25Z","kind":"status","grain":"0.2.0/the-extraction-finishes/04-the-first-surfaces-describe-this-package","from":"building","to":"reviewing"}
+{"ts":"2026-09-05T16:07:45Z","kind":"status","grain":"0.2.0/the-extraction-finishes","from":"building","to":"reviewing"}
+{"ts":"2026-09-05T16:07:45Z","kind":"status","grain":"0.2.0/bugs/the-deprecation-window-must-close","from":"open","to":"fixed"}
+{"ts":"2026-09-05T16:07:45Z","kind":"status","grain":"0.2.0/the-middle-tier-splits","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:09:27Z","kind":"decision","grain":"0.2.0","entry":"D3","title":"One ladder: [verify] names which rung each composition is, rather than a second set of commands"}

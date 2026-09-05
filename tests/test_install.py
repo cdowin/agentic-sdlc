@@ -122,10 +122,15 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
 # `Makefile.tiers` that hangs them off this include's `-include` seam.
 GATES = ('tools/dev/gdk_gate.sh',
          'Makefile.devkit')
+# The fifth verb, and the only one whose body is GENERATED: the release
+# protocol rendered from `[release] steps` and the registry that walks them.
+# One destination, so it is never a whole-set `--force` story.
+SDLC = ('docs/sdlc-protocol.md',)
 DESTINATIONS = {'install-ci': WORKFLOWS,
                 'install-agents': AGENTS,
                 'install-hooks': HOOKS,
-                'install-gates': GATES}
+                'install-gates': GATES,
+                'install-sdlc': SDLC}
 VERBS = tuple(DESTINATIONS)
 # The table above is spelled out so a test READS as the contract, but it is
 # not allowed to become a second roster: a verb added to PLANS and not here
@@ -173,8 +178,11 @@ def test_force_overwrites_every_entry(command):
         code, out = run(command, '--force')
         assert code == 0, out
         for name, rel in install.PLANS[command]:
+            # `resolve_body`, not `body_of`: one entry's body is RENDERED, and
+            # asking the wrong one would compare the destination against a
+            # template nobody installs.
             assert ((root / rel).read_text(encoding='utf-8')
-                    == install.body_of(name)), rel
+                    == install.resolve_body(name, rel)), rel
 
 
 # --- what a release is allowed to TELL a consumer to do -----------------------

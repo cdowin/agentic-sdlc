@@ -103,6 +103,7 @@ from importlib import resources
 from pathlib import Path
 
 from agentic_sdlc.core import apply
+from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 
 PACKAGE = 'agentic_sdlc.repo.installables'
@@ -173,12 +174,35 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('gdk_gate.sh', 'tools/dev/gdk_gate.sh'),
         ('Makefile.devkit', 'Makefile.devkit'),
     ),
+    'install-sdlc': (
+        # The one plan entry whose body is RENDERED rather than copied. The
+        # source name is the template the renderer fills; `resolve_body` is
+        # the seam, and `body_of` stays exactly what its docstring says it is.
+        ('sdlc-template.md', 'docs/sdlc-protocol.md'),
+    ),
 }
+
+# Destinations whose body is PRODUCED rather than read verbatim. Keyed by
+# DESTINATION, not by source, because the thing being produced is the file the
+# consumer ends up with.
+#
+# `body_of` is verbatim by contract — "no substitution and no template" — and
+# every static verb depends on that being literally true. So the resolver is a
+# separate function and `body_of` is not weakened: a generated body names a
+# PRODUCER here, and a static one never reaches this table at all.
+#
+# The producer is imported lazily. `conveyor.sdlc_doc` reads devkit.toml and
+# imports the step registry; binding it at module import would make every
+# install verb pay for the one that needs it, and would put a config read on
+# the import path of a module that must be importable in a repo with no config.
+BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
+                          'agentic_sdlc.repo.conveyor.sdlc_doc:render'}
 
 USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff]
        agentic-sdlc install-agents  [--force] [--diff]
        agentic-sdlc install-hooks   [--force] [--diff]
        agentic-sdlc install-gates   [--force] [--diff]
+       agentic-sdlc install-sdlc    [--force] [--diff]
 
 install-ci      three workflows under .github/workflows/: verify.yml
                 (checkout, uv, `make milestone`, which it ASSUMES is your full
@@ -219,6 +243,12 @@ install-gates   tools/dev/gdk_gate.sh — the shell library your gate targets
                 Makefile.tiers this include `-include`s. With no such file a
                 project gets `check` alone, and says so. Both files carry
                 --help and --self-test.
+install-sdlc    docs/sdlc-protocol.md — YOUR release protocol, rendered from
+                `[release] steps` (and `[adopt] steps`) in your devkit.toml
+                and from the registry that walks them. It is the document for
+                the list `agentic-sdlc release` actually runs, so it cannot
+                drift from it: change the config, re-run this verb. The only
+                install verb whose body is GENERATED rather than copied.
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
@@ -300,6 +330,21 @@ _NEXT_STEP = {
                      'that applies, so a target may call the library either '
                      'way — the stock recipes source it. Then edit the '
                      '`project config` header: the files are yours now.',
+    'install-sdlc': 'docs/sdlc-protocol.md is GENERATED — it is the one '
+                    'installed file you do not edit. Its ordered lists come '
+                    'from `[release] steps` in devkit.toml and from the step '
+                    'registry that walks them, so the way to change the '
+                    'protocol is to change the config (or a step) and re-run '
+                    'this verb with --force. Link to it from your own SDLC '
+                    'document rather than restating the steps there: a second '
+                    'copy of an ordered list is the drift this verb exists to '
+                    'end. Then run `agentic-sdlc release <version>` — it '
+                    'stops at the first step whose postcondition is not true '
+                    'and says what would make it true. Steps that need a tool '
+                    'this package will never ship (a GitHub client, your '
+                    'artifact proof) are yours to name in '
+                    '`[release.commands]`; with none they refuse to advance '
+                    'rather than pass.',
 }
 
 # The `.claude/settings.json` entries that FIRE the Claude Code half of the
@@ -571,6 +616,23 @@ def body_of(name: str) -> str:
     return resources.files(PACKAGE).joinpath(name).read_text(encoding='utf-8')
 
 
+def resolve_body(name: str, rel: str) -> str:
+    """What this plan entry WRITES: `body_of(name)`, or the producer's output.
+
+    The seam, and deliberately a separate function from `body_of`. A resolver
+    folded into `body_of` would make "verbatim, no substitution, no template"
+    false of the four static verbs that depend on it being true — and the day
+    it is false somewhere is the day nobody can tell which files a `--diff` is
+    honest about.
+    """
+    producer = BODIES.get(rel)
+    if producer is None:
+        return body_of(name)
+    module_name, function = producer.split(':')
+    from importlib import import_module
+    return getattr(import_module(module_name), function)()
+
+
 def print_diff(rel: str, target: Path, body: str) -> None:
     """What an install WOULD change, as a unified diff. Writes nothing."""
     if not target.is_file():
@@ -634,8 +696,15 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             return 2
 
     root = repo_root()
-    entries = [(root / rel, rel, body_of(name))
-               for name, rel in PLANS[command]]
+    try:
+        entries = [(root / rel, rel, resolve_body(name, rel))
+                   for name, rel in PLANS[command]]
+    except ConfigError as err:
+        # A generated body reads the project's own config, and a bad value
+        # there is exit 2 — a typo is not a finding. Raised BEFORE the plan is
+        # decided, so nothing was written.
+        print(f'agentic-sdlc {command}: {err}', file=sys.stderr)
+        return 2
 
     # --diff reads and prints. It is never combined with a write, so it is
     # answered before the plan is decided rather than inside it.

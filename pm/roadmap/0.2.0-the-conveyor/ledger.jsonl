@@ -23,3 +23,5 @@
 {"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit","from":"planning","to":"building"}
 {"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-belts-refuse-to-advance","from":"planning","to":"building"}
 {"ts":"2026-09-05T16:25:41Z","kind":"status","grain":"0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts","from":"planning","to":"building"}
+{"ts":"2026-09-05T16:29:32Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":840}
+{"ts":"2026-09-05T16:34:49Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1713}

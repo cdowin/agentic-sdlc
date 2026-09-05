@@ -145,6 +145,74 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
     return row
 
 
+# --- the deviation row --------------------------------------------------------
+# One step of a conveyor run (`agentic-sdlc release` / `adopt`) that was
+# SKIPPED, and why. Minted here for `gate_row`'s reason: this module owns
+# `dumps`, `TS_FORMAT` and `LINE_BREAKERS`, and a second module writing JSONL
+# by hand would be a second serialisation contract.
+#
+# Only DEVIATIONS are rows. A row per completed step was the first draft and it
+# defeats the machine: the ledger is TRACKED, in the milestone directory, so
+# writing a row after step 1 (`tree-clean`) makes the tree dirty — the run
+# falsifying its own first postcondition, which is exactly the argument
+# `conveyor/state.py` makes for gitignoring the run state. The completed half
+# of a run lives in that gitignored cache; the DURABLE record is what somebody
+# decided to do differently, because that is the half nobody can reconstruct
+# from the tree afterwards.
+#
+# Chris, 2026-09-04: *steps are skippable, and a skip is RECORDED.* Deviation
+# stays possible; invisible deviation does not.
+KIND_DEVIATION = 'deviation'
+
+# A durable log is not a paste buffer. The cap is on the REASON because it is
+# the only free-text field, and a row is one line.
+REASON_MAX = 1024
+
+
+def reason_defect(reason: object) -> str:
+    """'' when `reason` may be a deviation's reason, else why not.
+
+    A skip with no reason is the silence this row exists to end, so an empty
+    one cannot be minted at all — not defaulted, not stamped `unknown`. That is
+    `COPY WHAT THE RUN DID, OMIT WHAT IT LACKS, INVENT NOTHING`, applied to the
+    one field whose absence is the whole defect.
+    """
+    if not isinstance(reason, str):
+        return f'a reason must be a string, got {reason!r}'
+    if not reason.strip():
+        return 'a reason that is empty or whitespace is not a reason'
+    if not any(ch.isalnum() for ch in reason):
+        return (f'{reason!r} carries no letter or digit — punctuation is not '
+                f'a reason')
+    if len(reason) > REASON_MAX:
+        return (f'the reason is {len(reason)} characters; the limit is '
+                f'{REASON_MAX} — a durable log is not a paste buffer')
+    # U+2028 / U+2029 are NOT refused: `LINE_BREAKERS` escapes them, so a
+    # reason carrying one still reads back as exactly one row. `\n`, `\r` and
+    # `\x00` have no such escape here and one row is one line.
+    for char, spelling in (('\n', r'\n'), ('\r', r'\r'), ('\x00', r'\x00')):
+        if char in reason:
+            return f'a reason carrying {spelling} would not be one row'
+    return ''
+
+
+def deviation_row(grain_id: str, operation: str, step: str, reason: str,
+                  ts: str = '') -> dict:
+    """One SKIPPED step of a conveyor run: who ran what, and why they did not.
+
+    `reason` is validated HERE rather than by the caller, so a row without one
+    cannot be minted through any path. A caller that wants a friendlier
+    refusal asks `reason_defect` first and never gets a different answer.
+    """
+    defect = reason_defect(reason)
+    if defect:
+        raise ValueError(f'refusing to mint a {KIND_DEVIATION} row for '
+                         f'{step!r}: {defect}')
+    return {'ts': ts or utc_now(), 'kind': KIND_DEVIATION, 'grain': grain_id,
+            'operation': operation, 'step': step, 'outcome': 'skipped',
+            'reason': reason}
+
+
 def ledger_path(milestone_dir: Path) -> Path:
     """Where one milestone's ledger lives. The only place this name is joined."""
     return milestone_dir / LEDGER_FILE_NAME

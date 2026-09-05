@@ -546,8 +546,8 @@ class FlowChecks(unittest.TestCase):
         if branch:
             model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md', 'branch', branch)
         if version:
-            (root / 'project.godot').write_text(
-                f'[application]\nconfig/version="{version}"\n', encoding='utf-8')
+            (root / 'pyproject.toml').write_text(
+                f'[project]\nversion = "{version}"\n', encoding='utf-8')
 
     def test_off_by_default(self):
         # A project bumping at close is running a different valid flow, not
@@ -594,8 +594,8 @@ class MainlineGuard(unittest.TestCase):
         if branch:
             model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md', 'branch', branch)
         if version:
-            (root / 'project.godot').write_text(
-                f'[application]\nconfig/version="{version}"\n', encoding='utf-8')
+            (root / 'pyproject.toml').write_text(
+                f'[project]\nversion = "{version}"\n', encoding='utf-8')
 
     def test_off_by_default(self):
         # Same shape as D8/D9's off-by-default case, but proved on the exact
@@ -1101,8 +1101,8 @@ class FlowRuleEdges(unittest.TestCase):
                    'branch': 'staging'})
             model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
                             'branch', 'staging')
-            (root / 'project.godot').write_text(
-                '[application]\nconfig/version="0.1"\n', encoding='utf-8')
+            (root / 'pyproject.toml').write_text(
+                '[project]\nversion = "0.1"\n', encoding='utf-8')
             (root / 'devkit.toml').write_text(
                 '[pm]\nchecks = ["D8"]\n', encoding='utf-8')
             code, out = run_gate(root)
@@ -1118,8 +1118,8 @@ class FlowRuleEdges(unittest.TestCase):
         model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md', 'branch', 'staging')
         write(root / f'pm/roadmap/{released}-old/milestone.md',
               {'id': f'"{released}"', 'name': 'Old', 'status': 'done'})
-        (root / 'project.godot').write_text(
-            f'[application]\nconfig/version="{version}"\n', encoding='utf-8')
+        (root / 'pyproject.toml').write_text(
+            f'[project]\nversion = "{version}"\n', encoding='utf-8')
         (root / 'devkit.toml').write_text('[pm]\nchecks = ["D8"]\n', encoding='utf-8')
         return ctx, root
 
@@ -1149,8 +1149,8 @@ class FlowRuleEdges(unittest.TestCase):
 
 class ConfigValueErrors(unittest.TestCase):
     def test_a_bad_version_pattern_is_exit_2_not_a_finding(self):
-        for bad in ('version_pattern = "config/version=\\"(.*\\""',
-                    'version_pattern = "^config/version=.*$"'):
+        for bad in ('version_pattern = "version = \\"(.*\\""',
+                    'version_pattern = "^version = .*$"'):
             with self.subTest(bad=bad), tree() as root:
                 (root / 'devkit.toml').write_text(
                     f'[pm]\nchecks = ["D8"]\n{bad}\n', encoding='utf-8')

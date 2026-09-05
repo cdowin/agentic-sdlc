@@ -41,9 +41,29 @@ Installers (write the file once; after that it is the repo's):
     agentic-sdlc install-gates      # the gate framework: the shell library that
                                     # gives every gate one verdict line, and the
                                     # standard target set that calls it
+    agentic-sdlc install-sdlc       # the SDLC document, RENDERED from your own
+                                    # [release]/[adopt] step lists — so the
+                                    # protocol a human reads and the protocol
+                                    # that runs cannot drift apart
     (each takes --force to overwrite a differing destination, and --diff to
      print what would change without writing. `install-<what> --help` is that
      installer's plan.)
+
+The verification ladder (`[verify]` in devkit.toml; decision D3 — one verb, one
+scope per operation, and none of them is "run the biggest thing"):
+    agentic-sdlc verify --story [--ref <rev>]  # what proves the changed paths
+                                    # — the inner loop, seconds. `--changed` is
+                                    # the alias. A path matching no rule is
+                                    # NAMED and the milestone rung runs
+    agentic-sdlc verify --feature   # the range rung, one step wider
+    agentic-sdlc verify --milestone # everything, once
+    agentic-sdlc verify --plan      # print all three rungs with their MEASURED
+                                    # cost from the ledger, and run nothing —
+                                    # what a dispatch author asks instead of
+                                    # guessing which command is the loop
+    agentic-sdlc verify --check     # a rule matching zero tracked files, or
+                                    # naming a make target that does not exist
+    (`verify --help` is the ladder, the exit codes and the refusal matrix.)
 
 Static gates (exit 1 on findings; run from anywhere inside the repo):
     agentic-sdlc check doc | shell | repo-hygiene | pm | hooks
@@ -59,6 +79,20 @@ Static gates (exit 1 on findings; run from anywhere inside the repo):
                                     # devkit ones. The include shells out to
                                     # this rather than parsing TOML in make.
 
+The conveyors (`[release]` / `[adopt]` in devkit.toml) — a step list that
+REFUSES TO ADVANCE, so the position lives on disk instead of in an operator's
+head and survives a context clear, an interruption or a handoff:
+    agentic-sdlc release <version>  # the milestone belt's tail: tree, review,
+                                    # gate, changelog, bump, merge, tag, and
+                                    # the artifact proven from a cold cache
+    agentic-sdlc adopt              # a devkit pin bump, scoped to the
+                                    # ADOPTION — this package's checks, the
+                                    # installable diffs, the hook corpus — and
+                                    # never the project's own gate set, which a
+                                    # version bump here cannot change
+    (both take --skip <step> --reason "…", which RECORDS the deviation as a
+     ledger row. Deviation stays possible; invisible deviation does not.)
+
 Per-project config: devkit.toml at the consuming repo root (see each tool's
 module docstring for its section).
 """
@@ -67,7 +101,8 @@ from __future__ import annotations
 import sys
 
 from agentic_sdlc import __version__
-from agentic_sdlc.core.config import ConfigError, config_section, str_tuple
+from agentic_sdlc.core.config import (ConfigError, config_section,
+                                      section_declared, str_tuple)
 
 FIX_FLAG = '--fix'
 HELP_FLAGS = ('-h', '--help')
@@ -93,8 +128,33 @@ HELP_FLAGS = ('-h', '--help')
 # `install-hooks`, and arming is a decision a consumer makes once — the gate is
 # for a repo that HAS decided, and would otherwise be told so by a red run on
 # the day it upgraded.
+#
+# EVERY `True` HERE RUNS IN EVERY CONSUMER, so each one answers the ownership
+# test in writing — *does every consumer want it?* — and a sixth entry that
+# cannot answer it does not belong at `True`:
+#
+#   `doc` / `shell`  markdown and shell exist in any repo; the two that have
+#                    always been stock.
+#   `grain-shape`    YES. This package DEFINES the grain schema, mints the
+#                    documents from its own templates and documents their
+#                    shape, so the cap on one is this package's rule and every
+#                    consumer with a PM tree wants it enforced by the kit that
+#                    wrote it — today it is enforced in one consumer tree of
+#                    two, by a script that consumer authored, because that is
+#                    where the file happened to get written. A consumer with NO
+#                    PM tree is the case that would otherwise redden the whole
+#                    default roster, and the gate answers it as an explicit
+#                    no-op instead of a failure. Its caps come from
+#                    `[grain_shape] caps`, which is how a tree that never had a
+#                    prose cap adopts at its own pace.
+#
+# The hook corpus this kit installs is measured by `hooks`, which now replays
+# each hook's own `--self-test` corpus as well as asking whether git can start
+# it. It stayed one gate rather than becoming two: both halves need the corpus
+# on disk, both are wanted by exactly the repos that ran `install-hooks`, and
+# two roster names that are on and off together are two names for one decision.
 KNOWN_GATES = {
-    'doc': True, 'shell': True,
+    'doc': True, 'shell': True, 'grain-shape': True,
     'repo-hygiene': False, 'pm': False, 'hooks': False,
 }
 
@@ -141,6 +201,31 @@ def install_commands() -> tuple[str, ...]:
     """
     from agentic_sdlc.repo.install import PLANS
     return tuple(PLANS)
+
+
+# `[verify]`'s section name, spelled HERE because this is the module
+# `tests/test_boundaries.py` allowlists to import a raw config read.
+# `repo/verify/` is deliberately not on that list, so the section is read at
+# this edge and PASSED IN — which also lets the whole grammar be exercised
+# without a devkit.toml on disk. `tests/test_verify_main.py` asserts this
+# string equals `rules.SECTION`, because two spellings of one section name is
+# a verb that reads a table nobody wrote.
+VERIFY_SECTION = 'verify'
+
+
+def _verify_section() -> dict | None:
+    """The `[verify]` table, or None when devkit.toml declares no such section.
+
+    None and {} are different answers and the verb needs both: an ABSENT
+    section is "this repo has not said what proves a change" (exit 2), while a
+    section declared and empty is a rule set missing its required keys, which
+    the grammar refuses by name. `config_section` alone cannot tell them apart
+    — it returns {} for either — so `section_declared` answers the first
+    question and `config_section` the second.
+    """
+    if not section_declared(VERIFY_SECTION):
+        return None
+    return config_section(VERIFY_SECTION)
 
 
 def _usage() -> int:
@@ -234,6 +319,27 @@ def _dispatch_check(name: str, fix: bool = False) -> int:
     return module.run(fix=fix) if name in FIXABLE_CHECKS else module.run()
 
 
+# `release` and `adopt`, from the driver's own tuple rather than a second list
+# here — the same reason `install_commands()` asks `PLANS` instead of restating
+# it. A third operation is a row there and nothing here.
+def conveyor_verbs() -> tuple[str, ...]:
+    from agentic_sdlc.repo.conveyor import driver
+    return driver.OPERATIONS
+
+
+class _Lazy(tuple):
+    """The operation names, resolved on first membership test.
+
+    `main()` must not import the conveyor to answer `agentic-sdlc pm status`,
+    and the roster must not be a literal that can disagree with the driver.
+    """
+    def __contains__(self, item: object) -> bool:
+        return item in conveyor_verbs()
+
+
+CONVEYOR_VERBS = _Lazy()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
@@ -254,6 +360,15 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'gates-extra':
         from agentic_sdlc.repo import gates_extra
         return gates_extra.main(rest)
+    if cmd == 'verify':
+        from agentic_sdlc.repo.verify import main as verify_main
+        return verify_main.main(rest, _verify_section)
+    if cmd in CONVEYOR_VERBS:
+        # ONE driver, two operations. The verb IS the operation, so it is
+        # passed through rather than re-derived: a second name for the same
+        # fact is how a step list ends up walked under the wrong heading.
+        from agentic_sdlc.repo.conveyor import driver
+        return driver.main([cmd, *rest])
     if cmd in install_commands():
         from agentic_sdlc.repo import install
         return install.main(cmd, rest)

@@ -104,6 +104,7 @@ WRITES = (
     '.github/workflows/auto-tag.yml',
     '.gitignore',
     'CLAUDE.md',
+    'docs/sdlc-protocol.md',
 )
 # Rule 4: the roster above must not be able to collapse and still pass. 34 is
 # what ships today; the floor is what a composition of four install verbs plus

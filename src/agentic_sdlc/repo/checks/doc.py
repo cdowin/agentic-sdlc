@@ -34,9 +34,22 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import config_section, str_tuple
 
 REPO_ROOT = repo_root()
-_CFG = config_section('doc')
+# READ PER RUN, NEVER AT IMPORT. These were module-level constants until
+# 0.2.0, and that made a config error CONDITIONAL ON IMPORT ORDER: once
+# `doc.py` was in `sys.modules` — which `check all` does, and which any test
+# touching the gate roster does — a later run in a repo whose `[doc] scope` is
+# malformed used the FIRST repo's values and never raised. The gate then
+# reported findings, or none, instead of exit 2. That is rule 4's read-side sin
+# with a config file in front of it, and it was found by a test that passed
+# alone and failed after a peer module imported first.
+#
+# `config_section` and `load_config` are `lru_cache`d for the process and the
+# cwd never moves mid-run in production, so this costs one cached lookup per
+# run and buys the refusal being real every time rather than the first time.
+# `tests/test_boundaries.py` holds every module in `src/` to it.
 DEFAULT_SCOPE = ('CLAUDE.md', '.claude/rules/*.md', '.claude/agents/*.md')
-SCOPE_GLOBS = str_tuple(_CFG, 'doc', 'scope', DEFAULT_SCOPE)
+def scope_globs() -> tuple[str, ...]:
+    return str_tuple(config_section('doc'), 'doc', 'scope', DEFAULT_SCOPE)
 MAKEFILE = REPO_ROOT / 'Makefile'
 ALLOW_MARKER = 'doc-scan:allow'
 # A skill is a DIRECTORY holding SKILL.md. A flat `.claude/skills/<name>.md`
@@ -69,12 +82,14 @@ URL_PREFIXES = ('http://', 'https://', 'mailto:')
 # docs/reviews/ is create-resolve-DELETE by design (docs/reviews/README.md) — an
 # example filename cited there is expected to no longer exist, not a claim.
 DEFAULT_EPHEMERAL = ('docs/reviews/',)
-EPHEMERAL_DIRS = str_tuple(_CFG, 'doc', 'ephemeral', DEFAULT_EPHEMERAL)
+def ephemeral_dirs() -> tuple[str, ...]:
+    return str_tuple(config_section('doc'), 'doc', 'ephemeral',
+                     DEFAULT_EPHEMERAL)
 
 
 def scope_files() -> list[Path]:
     files: list[Path] = []
-    for pattern in SCOPE_GLOBS:
+    for pattern in scope_globs():
         if '*' in pattern:
             files.extend(walk.matching(REPO_ROOT, pattern, Kind.FILE).kept)
         else:
@@ -135,7 +150,7 @@ _SCHEME = re.compile(r'^[a-z][a-z0-9+.-]*://')
 
 def resolve_path(candidate: str, relative_to: Path) -> bool:
     candidate = _SCHEME.sub('', candidate, count=1)
-    if candidate.startswith(EPHEMERAL_DIRS):
+    if candidate.startswith(ephemeral_dirs()):
         return True
     if (relative_to.parent / candidate).exists():
         return True

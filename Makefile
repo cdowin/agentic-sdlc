@@ -54,6 +54,14 @@ GATE_LIB := src/agentic_sdlc/repo/installables/gdk_gate.sh
 VERBOSE ?= 0
 export VERBOSE
 
+# How the gate library reaches the ledger. `gdk_gate.sh` is SOURCED, so it
+# cannot see a make variable at all — this one line is the whole bridge, and
+# every gate's cost row rides over it. The same line Makefile.devkit gives a
+# consumer; self-hosting means it is spelled here too. Empty it
+# (`make gates GDK_LEDGER_CMD=`) and nothing is recorded and nothing is spawned
+# — which is what the suite does, so a test run never writes to the real tree.
+export GDK_LEDGER_CMD ?= $(DEVKIT)
+
 # What a FAILING run shows on the console before its verdict: the lines that
 # say what broke, in the tools this repo runs. Everything else stays in the log.
 GATE_FAIL_RE   := ^(FAILED|ERROR)|^E +|  DRIFT |\] FAIL|MATRIX FAIL|^  (MISS|FALSE POSITIVE)
@@ -62,7 +70,13 @@ GATE_FAIL_LINES := 20
 # Each target's one-line summary, read back out of its own transcript. The
 # leading `[tag]` a tool prints is stripped: the verdict line supplies the tag.
 SUM_PYTEST := grep -aoE '[0-9]+ (passed|failed)[^|]*' "$$log" | tail -1
-SUM_GATES  := printf '%s check(s) PASS' "$$(grep -acE '^\[check:[a-z]+\] PASS' "$$log")"
+# `[a-z-]`, not `[a-z]`: a HYPHENATED gate name is a real gate name — `check
+# grain-shape` (0.2.0) and `check repo-hygiene` both have one — and the old
+# class matched neither, so the verdict counted 4 of 5 PASS lines and reported
+# a green run as one gate smaller than it was. The shipped Makefile.devkit
+# already spelled it correctly; this copy had drifted, which is what a second
+# spelling of one fact does.
+SUM_GATES  := printf '%s check(s) PASS' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")"
 SUM_HOOKS  := printf '%s hook(s) SELF-TEST OK' "$$(grep -ac 'SELF-TEST OK' "$$log")"
 
 # $(call gate,<log slot>,<TAG>,<summary command>,<argv...>)
@@ -148,6 +162,18 @@ hooks:
 # and $(SUM_HOOKS) reported `0 hook(s) SELF-TEST OK` as a PASS. So the census
 # is counted BEFORE the loop and an empty one is a usage error (exit 2), not a
 # quiet green. Proven by `make hooks-self-test HOOKS_WITH_CORPUS=`.
+# SECOND SCOREBOARD, KNOWN AND PENDING (0.2.0, story 02): `check hooks` now
+# replays this same corpus, DERIVED from which hooks declare `--self-test`
+# rather than named here, and `check hooks` is in this repo's `[checks] all` —
+# so `make gates` already covers everything this target does. This target
+# cannot be deleted from the same change that made it redundant: `precommit`
+# and `milestone` name it, `tests/test_consumer_independence.py` asserts
+# `milestone`'s member list verbatim, and `tools/hooks/cc-stop-gate.sh` runs it
+# as its GATE_UNIT. Until those three move together, the list below is held
+# equal to the gate's derived set by
+# `tests/test_check_hooks.py::test_this_repos_makefile_names_the_same_corpus…`,
+# because a hand roster beside a derived one that nothing compares is how this
+# list emptied out and kept passing in the first place.
 HOOKS_WITH_CORPUS := tools/hooks/cc-ledger-subagent.sh tools/hooks/cc-ledger-session.sh
 hooks-self-test:
 	$(call gate,hooks-self-test,HOOKS,$(SUM_HOOKS),sh -c 'set -- $(HOOKS_WITH_CORPUS); if [ "$$#" -eq 0 ]; then echo "HOOKS_WITH_CORPUS names 0 hook(s) — a corpus that empties out must not pass"; exit 2; fi; for h in "$$@"; do bash "$$h" --self-test || exit 1; done')

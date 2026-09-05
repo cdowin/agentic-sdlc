@@ -110,7 +110,7 @@ dispatches  in  out  cache_create  cache_read  tool_calls  duration_s
 SPEND_TITLE = 'spend per grain'
 # Section 1's keys in `--json`, and the one key each later section adds.
 SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed', 'totals')
-SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead')
+SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead', 'gates')
 
 
 def blank_usage() -> dict:
@@ -130,8 +130,14 @@ class Table(unittest.TestCase):
         # end of this one, and it is what the slice stops at.
         self.assertEqual(section_of(out, SPEND_TITLE), TABLE)
 
-    def test_the_report_prints_the_five_sections_in_the_milestones_order(self):
-        """The five questions of milestone.md, once each, in its order."""
+    def test_the_report_prints_every_section_in_the_milestones_order(self):
+        """The five questions of milestone.md, then what the gates cost.
+
+        Gate cost is SIXTH and last on purpose: the five above it are the
+        milestone's own questions, in the order that document asks them, and a
+        new section wedged among them would move every heading a consumer
+        already slices on (hard rule 6).
+        """
         with tree(story_statuses=('done', 'ready')) as root:
             seeded(root)
             out = report(root, '0.1')[1]
@@ -140,7 +146,7 @@ class Table(unittest.TestCase):
                  and line.count(' — ') >= 2]
         self.assertEqual([h.split(' — ')[1] for h in heads],
                          [SPEND_TITLE, 'yield per review pass', 'rework',
-                          'escapes', 'overhead shape'])
+                          'escapes', 'overhead shape', 'gate cost'])
 
     def test_the_report_never_writes(self):
         with tree(story_statuses=('done', 'ready')) as root:

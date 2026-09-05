@@ -1,4 +1,4 @@
-"""steps.py — the release step list, as a registry the driver walks.
+"""steps.py — the release and adopt step lists, as registries the driver walks.
 
 `driver.py` is the machine; this is what it walks. Twenty-one steps, each with
 a `check()` that is a QUESTION ABOUT THE TREE and — where the kind allows one —
@@ -71,17 +71,49 @@ already makes about a second TOML reader. This module does not import
     "pyproject.toml"           = '^version = "(.*)"$'
     "src/pkg/__init__.py"      = "^__version__ = '(.*)'$"
 
+    [adopt]
+    steps          = [...]                 # default: DEFAULT_ADOPT_STEPS
+    pin_file       = "Makefile"            # where DEVKIT_VERSION lives
+    runner_targets = ["check", "precommit", "milestone"]
+
 Every refusal here exits 2 through `ConfigError`: a typo is a config mistake,
 not a finding, and a release list that quietly got shorter is the cardinal sin
 with a config file in front of it. The step that vanishes is `review-landed`.
+
+## `adopt` — the subtraction, which is the whole second list
+
+A pin bump is verified as a PIN BUMP. `checks-pass` runs **this package's**
+`check all` and never the consumer's `make check`: measured, `check all` is
+~1 s here and a consumer's `make check` also runs its own twenty gates, which
+verify the CONSUMER'S code against the CONSUMER'S rules — and a version bump in
+this package cannot change their verdict. Running them during adoption
+re-verifies the game, not the adoption. That is one line of code, it is easy to
+write correctly and easy to regress into `make check` by somebody being
+helpful, so `tests/test_conveyor_adopt.py::test_checks_pass_never_runs_make`
+names it with a command recorder AND a sentinel file.
+
+Hard rule 8 is the live hazard here rather than a background rule: `adopt` runs
+IN a consumer, on the consumer's own tree, which is fine and is the point. What
+it must never do is read a second repo or gate on one. Every step below is a
+question about the LOCAL tree — `pin-bumped` included, which compares the
+consumer's own `DEVKIT_VERSION` line to the version of the package that is
+RUNNING, needing no network and no second checkout.
+
+A step this package cannot perform states precisely what the operator must do
+and refuses to advance until its `check()` is true. `pin-bumped` edits nothing:
+the line it names is in a file this package does not own.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
+from agentic_sdlc import __version__
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.config import ConfigError, config_section
 from agentic_sdlc.repo.conveyor.driver import Answer, Context, Step, StepKind
@@ -112,6 +144,37 @@ DEFAULT_RELEASE_STEPS = (
     'prove-artifact',
 )
 
+# The adopt list. Eight steps, and two of them are here because a human list
+# keeps forgetting them and both have bitten this package:
+#
+#   `hooks-self-test`        `install-hooks` rewrites guard scripts, and a
+#                            guard that fails OPEN is not there. This package
+#                            has already shipped a hook that was installed,
+#                            executable, and stopping nothing — a config diff
+#                            cannot show that, and no amount of reading can.
+#   `runner-targets-resolve` `Makefile.devkit` `-include`s the tier file, and
+#                            an `-include` of a missing file is SILENT. A tier
+#                            named with no tier file must FAIL here rather than
+#                            yield a `precommit` that is quietly `check` alone.
+DEFAULT_ADOPT_STEPS = (
+    'pin-bumped',
+    'installables-diffed',
+    'installable-decisions-recorded',
+    'config-updated',
+    'hooks-self-test',
+    'runner-targets-resolve',
+    'checks-pass',
+    'pm-validates',
+)
+
+# One table rather than a branch per operation: an operation with no default
+# list answers `()`, and `plan_defect` then refuses to walk it, which is the
+# true sentence rather than a plausible one.
+DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
+    'release': DEFAULT_RELEASE_STEPS,
+    'adopt': DEFAULT_ADOPT_STEPS,
+}
+
 # The ONE command this package ships a default for. `make milestone` is the
 # target `install-gates` writes and `install-ci` runs, so a stock consumer's
 # gate step is answerable the day it installs. Everything else is the
@@ -135,6 +198,26 @@ STEP_NAME_MAX = 40
 # stdout must produce a bounded refusal, not a transcript.
 OUTPUT_LIMIT = 400
 DEFAULT_COMMAND_TIMEOUT = 1800
+
+# --- what the adopt steps look at, all of it inside the checkout ---------------
+DEFAULT_PIN_FILE = 'Makefile'
+DEFAULT_RUNNER_TARGETS = ('check', 'precommit', 'milestone')
+# `install-gates` writes this; `adopt` READS it and installs nothing.
+FRAMEWORK_MAKEFILE = 'Makefile.devkit'
+# Where `install-hooks` puts the corpus in every consumer.
+HOOKS_DIR = 'tools/hooks'
+# The drift report `installables-diffed` produces and
+# `installable-decisions-recorded` reads. It sits beside the run state, is
+# gitignored with it, and losing it costs one re-run.
+REPORT_REL = '.agentic-sdlc/run/adopt-installables.md'
+CENSUS_OPEN = '<!-- census -->'
+CENSUS_CLOSE = '<!-- /census -->'
+DECISIONS_HEADING = '## decisions'
+# `DEVKIT_VERSION := v1.2.3`, `=`, `?=` and `+=` included — it is somebody
+# else's makefile and this only ever READS the line.
+PIN_LINE = re.compile(r'^\s*DEVKIT_VERSION\s*[:?+]?=\s*(\S+)')
+# Enough of a file's bytes to notice it changed since the census was written.
+DIGEST_LENGTH = 12
 
 _SEMVER_TAG = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?')
 
@@ -191,6 +274,87 @@ def _branch(ctx: Context) -> str:
     return out if code == 0 else ''
 
 
+def _make(ctx: Context, *args: str) -> tuple[int, str]:
+    """`make` in the checkout. A missing make is an exit code, never a crash."""
+    try:
+        done = subprocess.run(('make',) + args, cwd=str(ctx.root),
+                              capture_output=True, text=True,
+                              timeout=_timeout(ctx.operation))
+    except FileNotFoundError:
+        return 127, 'make is not on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, 'make timed out'
+    except OSError as err:
+        return 126, str(err)
+    return done.returncode, (done.stdout + done.stderr).strip()
+
+
+def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
+    """This package's OWN verb, as a subprocess, in the checkout.
+
+    A subprocess and not an import: nothing under `repo/` may import
+    `agentic_sdlc.cli` — that is the layering primitive
+    `tests/test_boundaries.py` enforces — and a copy of `check all`'s roster
+    here would be a second answer to which gates run. `PYTHONPATH` names the
+    package that is RUNNING, so the answer comes from this build rather than
+    from whatever else happens to be installed on the box.
+
+    It returns the argv it ran, so a test can assert WHAT was run rather than
+    what the transcript says was run. `checks-pass` is one line that regresses
+    into `make check`, and a claim about output is not a claim about what ran.
+    """
+    import agentic_sdlc
+
+    parent = str(Path(agentic_sdlc.__file__).resolve().parent.parent)
+    env = dict(os.environ)
+    existing = env.get('PYTHONPATH')
+    env['PYTHONPATH'] = f'{parent}{os.pathsep}{existing}' if existing else parent
+    command = (sys.executable, '-m', 'agentic_sdlc.cli') + argv
+    try:
+        done = subprocess.run(command, cwd=str(ctx.root), capture_output=True,
+                              text=True, env=env,
+                              timeout=_timeout(ctx.operation))
+    except subprocess.TimeoutExpired:
+        return 124, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
+                     f'{_timeout(ctx.operation)}s'), argv
+    except OSError as err:
+        return 126, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
+    return done.returncode, _clip(done.stdout + done.stderr), argv
+
+
+def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
+    """One of this package's own gates, answered as a step.
+
+    Exit 2 is NOT exit 1: a config or usage error decided nothing, and saying
+    so with the same sentence as a finding is how an operator comes to fix the
+    wrong thing.
+    """
+    code, said, _ = _own_cli(ctx, *argv)
+    spoken = f'`agentic-sdlc {" ".join(argv)}`'
+    if code == 0:
+        return Answer.yes(f'{spoken} exited 0{f" — {found}" if found else ""}'
+                          + (f': {said}' if said else ''))
+    if code == 2:
+        return Answer.no(
+            f'{spoken} exited 2 — a CONFIG or usage error, not a finding, so '
+            f'nothing was decided: {said}')
+    return Answer.no(f'{spoken} exited {code}: {said}')
+
+
+def _pm_run(ctx: Context, *argv: str) -> tuple[int, str]:
+    """One `pm` verb, in process, with its exit code. `pm` is `repo/`, so it is
+    imported rather than spawned — the layering allows it and a spawn would pay
+    an interpreter for a question already in memory."""
+    import contextlib
+    import io
+
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+        code = pm_cli.main(list(argv))
+    return code, _clip(buffer.getvalue())
+
+
 # --- config -------------------------------------------------------------------
 def _section(operation: str) -> dict:
     return config_section(operation)
@@ -226,12 +390,10 @@ def steps_for(operation: str, registry: dict | None = None) -> tuple[str, ...]:
     known = registry_for(operation) if registry is None else registry
     raw = sect.get('steps')
     if raw is None:
-        if operation == 'release':
-            return DEFAULT_RELEASE_STEPS
         # No default list for an operation this package ships no registry for.
         # `plan_defect` then refuses "the list is empty" — which is the true
         # sentence, and better than inventing a plausible one.
-        return ()
+        return DEFAULT_STEPS.get(operation, ())
     if not isinstance(raw, list):
         raise ConfigError(
             f'[{operation}] steps must be a list of strings, got {raw!r}'
@@ -239,8 +401,8 @@ def steps_for(operation: str, registry: dict | None = None) -> tuple[str, ...]:
     if not raw:
         raise ConfigError(
             f'[{operation}] steps is empty — remove the key to take the '
-            f'default ({" ".join(DEFAULT_RELEASE_STEPS)}) rather than '
-            f'declaring nothing')
+            f'default ({" ".join(DEFAULT_STEPS.get(operation, ()))}) rather '
+            f'than declaring nothing')
     seen: list[str] = []
     duplicates: list[str] = []
     for index, value in enumerate(raw, start=1):
@@ -339,6 +501,10 @@ def validate_config(operation: str, names: tuple[str, ...],
         _pin_files_of(operation)
     if 'changelog-unreleased-nonempty' in names or 'changelog-retitle' in names:
         _changelog_of(operation)
+    if 'pin-bumped' in names:
+        _pin_file_of(operation)
+    if 'runner-targets-resolve' in names:
+        _runner_targets_of(operation)
 
 
 def _timeout(operation: str) -> int:
@@ -374,6 +540,28 @@ def _changelog_of(operation: str) -> str:
 
 def _changelog(ctx: Context) -> Path:
     return ctx.root / _changelog_of(ctx.operation)
+
+
+def _pin_file_of(operation: str) -> str:
+    """Where the consumer's `DEVKIT_VERSION` line lives. Its own file, in its
+    own repo, and this package reads it and never writes it."""
+    raw = _section(operation).get('pin_file', DEFAULT_PIN_FILE)
+    if not isinstance(raw, str) or not raw.strip():
+        raise ConfigError(
+            f'[{operation}] pin_file must be one path, got {raw!r}')
+    return raw
+
+
+def _runner_targets_of(operation: str) -> tuple[str, ...]:
+    """The make targets `runner-targets-resolve` asks make to compose."""
+    raw = _section(operation).get('runner_targets',
+                                  list(DEFAULT_RUNNER_TARGETS))
+    if (not isinstance(raw, list) or not raw
+            or not all(isinstance(v, str) and v.strip() for v in raw)):
+        raise ConfigError(
+            f'[{operation}] runner_targets must be a non-empty list of make '
+            f'targets, got {raw!r}')
+    return tuple(raw)
 
 
 def _version_files(ctx: Context) -> dict[str, str]:
@@ -1024,6 +1212,382 @@ def do_prove_artifact(ctx: Context) -> str:
             'cold cache')
 
 
+# --- the adopt steps ----------------------------------------------------------
+# Every one of these is a question about the LOCAL tree. Hard rule 8 is not
+# background here: `adopt` is the verb that RUNS in somebody else's repo, and
+# the temptation to read a second one is `pin-bumped`'s — answered by comparing
+# the consumer's own line to the version of the package that is running.
+def check_pin_bumped(ctx: Context) -> Answer:
+    rel = _pin_file_of(ctx.operation)
+    path = ctx.root / rel
+    want = f'v{__version__}'
+    if not path.is_file():
+        return Answer.unverifiable(
+            f'{rel} is not in this checkout, so there is no `DEVKIT_VERSION` '
+            f'line to read — this step never creates one; write '
+            f'`DEVKIT_VERSION := {want}` above `include {FRAMEWORK_MAKEFILE}`, '
+            f'or point [{ctx.operation}] pin_file at the file that carries it')
+    try:
+        text = _read(path)
+    except (OSError, UnicodeDecodeError):
+        return Answer.unverifiable(f'{rel} could not be read as text')
+    for number, line in enumerate(text.split('\n'), start=1):
+        match = PIN_LINE.match(line)
+        if not match:
+            continue
+        found = match.group(1).strip('"\'')
+        if found.lstrip('v') == __version__:
+            return Answer.yes(f'{rel}:{number} pins {found}, which is the '
+                              f'version running here')
+        return Answer.no(
+            f'{rel}:{number} pins {found}; the package running here is '
+            f'{__version__} — edit that ONE line to `DEVKIT_VERSION := {want}`. '
+            f'It is in a file this package does not own, so nothing here will '
+            f'write it')
+    return Answer.unverifiable(
+        f'{rel} carries no `DEVKIT_VERSION` line — this step reads the pin and '
+        f'does not add one')
+
+
+def do_pin_bumped(ctx: Context) -> str:
+    rel = _pin_file_of(ctx.operation)
+    return (f'edit `DEVKIT_VERSION` in {rel} to v{__version__} yourself — this '
+            f'package edits no file outside its own checkout, and the pin is '
+            f'the one line of yours it would have to touch')
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:DIGEST_LENGTH]
+
+
+def _installable_drift(ctx: Context) -> list[tuple[str, str, str, str]]:
+    """(verb, path, verdict, digest) for every file the `install-*` verbs write.
+
+    Asked of `install.PLANS` rather than of a list here: a second inventory of
+    the installables would be a second answer to what this version ships, and
+    the one that goes stale is this one. A file the consumer never installed is
+    `not-installed` and is NOT drift — `adopt` diffs and decides, it does not
+    install (that is what the `install-*` verbs are for).
+    """
+    from agentic_sdlc.repo import install
+
+    out: list[tuple[str, str, str, str]] = []
+    for verb, plan in install.PLANS.items():
+        for name, rel in plan:
+            target = ctx.root / rel
+            if not target.is_file():
+                out.append((verb, rel, 'not-installed', '-'))
+                continue
+            digest = _digest(target.read_bytes())
+            text, defect = install.read_destination(target)
+            try:
+                body = install.resolve_body(name, rel)
+            except (OSError, UnicodeDecodeError, ConfigError) as err:
+                out.append((verb, rel, f'unrenderable({_clip(str(err), 60)})',
+                            digest))
+                continue
+            if text is None:
+                out.append((verb, rel, 'unreadable', digest))
+                continue
+            if text == body:
+                out.append((verb, rel, 'current', digest))
+            elif install.header_only_difference(text, body):
+                # The operator's own project-config header, and the rest of the
+                # file byte-current. It is a difference and it is not one to
+                # decide about.
+                out.append((verb, rel, 'header-only', digest))
+            else:
+                out.append((verb, rel, 'differs', digest))
+    return out
+
+
+def _drifted(ctx: Context) -> list[str]:
+    return [rel for _, rel, verdict, _ in _installable_drift(ctx)
+            if verdict == 'differs' or verdict.startswith(
+                ('unreadable', 'unrenderable'))]
+
+
+def _census_block(ctx: Context) -> str:
+    rows = '\n'.join(f'- `{rel}` {verdict} {digest} ({verb})'
+                     for verb, rel, verdict, digest in _installable_drift(ctx))
+    return (f'{CENSUS_OPEN}\n'
+            f'installables of agentic-sdlc {__version__}\n\n{rows}\n'
+            f'{CENSUS_CLOSE}')
+
+
+def _report_path(ctx: Context) -> Path:
+    return ctx.root / REPORT_REL
+
+
+def _recorded_census(text: str) -> str:
+    if CENSUS_OPEN not in text or CENSUS_CLOSE not in text:
+        return ''
+    head, _, rest = text.partition(CENSUS_OPEN)
+    body, _, _ = rest.partition(CENSUS_CLOSE)
+    return f'{CENSUS_OPEN}{body}{CENSUS_CLOSE}'
+
+
+def check_installables_diffed(ctx: Context) -> Answer:
+    """The diff for THIS version has been produced, and it still describes the
+    tree.
+
+    The report is not a flag its own `do()` set — it carries the census, each
+    file with a digest of the bytes on disk, and this re-derives that census
+    and compares. A file edited after the diff was produced makes the report
+    STALE and this answers no, which is the whole difference between an
+    artifact and a memory.
+    """
+    path = _report_path(ctx)
+    if not path.is_file():
+        return Answer.no(
+            f'{REPORT_REL} has not been produced — the diff between what this '
+            f'version ships and what is installed here is what the next step '
+            f'decides about')
+    try:
+        text = _read(path)
+    except (OSError, UnicodeDecodeError):
+        return Answer.no(f'{REPORT_REL} could not be read as text')
+    fresh = _census_block(ctx)
+    if _recorded_census(text) != fresh:
+        return Answer.no(
+            f'{REPORT_REL} does not describe this tree — it was written for a '
+            f'different version or the files have changed since; the diff is '
+            f'produced again')
+    drift = _drifted(ctx)
+    return Answer.yes(
+        f'{REPORT_REL} holds the census for {__version__}: '
+        f'{len(drift)} file(s) differ from what this version ships')
+
+
+def do_installables_diffed(ctx: Context) -> str:
+    """PRINT the diff, and record the census beside the run state.
+
+    Everything from `## decisions` down is the OPERATOR'S and is preserved
+    byte-for-byte (rule 3): a regenerated census must not eat the decisions
+    somebody wrote under it.
+    """
+    from agentic_sdlc.repo import install
+
+    path = _report_path(ctx)
+    kept = ''
+    if path.is_file():
+        try:
+            existing = _read(path)
+        except (OSError, UnicodeDecodeError):
+            existing = ''
+        _, marker, tail = existing.partition(DECISIONS_HEADING)
+        if marker:
+            kept = marker + tail
+    if not kept:
+        kept = (f'{DECISIONS_HEADING}\n\n'
+                f'One line per file above marked `differs`, written by YOU:\n'
+                f'`<path>: take|hand-applied|keep — why`. `--force` is '
+                f'whole-set and has no per-file option, so which replacement '
+                f'to take is a decision this package cannot make for you.\n')
+    for verb, rel, verdict, _digest_of in _installable_drift(ctx):
+        if verdict in ('current', 'not-installed'):
+            continue
+        name = next(n for n, r in install.PLANS[verb] if r == rel)
+        install.print_diff(rel, ctx.root / rel, install.resolve_body(name, rel))
+    # The directory too, through the plan: nothing outside `core/apply.py`
+    # touches the filesystem, and a writer that decides as it goes lands half
+    # a plan when the third step refuses.
+    plan = apply.Plan()
+    if not path.parent.is_dir():
+        plan.make_dir(path.parent, label=str(path.parent.name))
+    plan.overwrite(path, f'{_census_block(ctx)}\n\n{kept}', newline=None,
+                   label=REPORT_REL).apply(decide=False)
+    return f'printed the diff and wrote the census to {REPORT_REL}'
+
+
+def check_installable_decisions_recorded(ctx: Context) -> Answer:
+    """Every file that differs is named in the run's record with a decision.
+
+    A JUDGEMENT because `--force` is whole-set (there is no per-file option),
+    so whether to take a replacement or hand-apply the diff is a call only the
+    consumer can make. What is checked is the ARTIFACT of that call.
+    """
+    drift = _drifted(ctx)
+    if not drift:
+        return Answer.yes(f'no installed file differs from what {__version__} '
+                          f'ships — there is nothing to decide')
+    path = _report_path(ctx)
+    if not path.is_file():
+        return Answer.no(
+            f'{len(drift)} file(s) differ and {REPORT_REL} is not there — the '
+            f'diff is produced first, then decided')
+    try:
+        _, _, decisions = _read(path).partition(DECISIONS_HEADING)
+    except (OSError, UnicodeDecodeError):
+        return Answer.no(f'{REPORT_REL} could not be read as text')
+    undecided = [rel for rel in drift
+                 if not any(rel in line and line.split(rel, 1)[1].strip(' :')
+                            for line in decisions.split('\n'))]
+    if undecided:
+        return Answer.no(
+            f'{len(undecided)} of {len(drift)} drifted file(s) carry no '
+            f'decision in {REPORT_REL}: {_clip(", ".join(undecided))}')
+    return Answer.yes(f'{len(drift)} drifted file(s), each decided in '
+                      f'{REPORT_REL}')
+
+
+def do_installable_decisions_recorded(ctx: Context) -> str:
+    return (f'write one line per drifted file under `{DECISIONS_HEADING}` in '
+            f'{REPORT_REL} — `<path>: take|hand-applied|keep — why`. Taking a '
+            f'replacement is `agentic-sdlc install-<verb> --force`, which is '
+            f'whole-set: the per-file call is yours')
+
+
+def _config_readers() -> tuple[tuple[str, object], ...]:
+    """The `devkit.toml` sections THIS version still reads, each with the
+    reader that refuses a value it cannot use.
+
+    There is deliberately no table of RETIRED keys. A section this package no
+    longer reads is either dead or another kit's — `[uid]` left with the Godot
+    half and that kit reads it now — and this package cannot tell those two
+    apart without knowing its consumers, which hard rule 8 forbids. What it CAN
+    ask is the question that actually breaks an adoption: does every value this
+    version still reads parse under this version?
+    """
+    from agentic_sdlc.repo import gates_extra
+
+    return (
+        ('[gates] extra', gates_extra.targets),
+        ('[pm]', model.load),
+        ('[release] steps / commands', lambda: _read_operation('release')),
+        ('[adopt] steps / commands', lambda: _read_operation('adopt')),
+    )
+
+
+def _read_operation(operation: str) -> None:
+    known = registry_for(operation)
+    names = steps_for(operation, known)
+    validate_config(operation, names, known)
+
+
+def check_config_updated(ctx: Context) -> Answer:
+    from agentic_sdlc.core.config import section_declared
+
+    asked = 0
+    for label, reader in _config_readers():
+        asked += 1
+        try:
+            reader()
+        except ConfigError as err:
+            return Answer.no(
+                f'{label} is not a value {__version__} accepts: {_clip(str(err))}')
+    declared = [name for name in ('checks', 'gates', 'pm', 'release', 'adopt',
+                                  'grain_shape', 'repo_hygiene', 'verify')
+                if section_declared(name)]
+    # Rule 4: the census is REPORTED. Zero declared sections is legitimate
+    # (rule 5 — a repo with no devkit.toml behaves identically) and it is said
+    # rather than passed over in silence.
+    return Answer.yes(
+        f'{asked} reader(s) accept this repo\'s devkit.toml; '
+        + (f'declared here: {", ".join(declared)}' if declared
+           else 'no section is declared here, which is the stock default'))
+
+
+def do_config_updated(ctx: Context) -> str:
+    return ('fix the key named above in devkit.toml — a value this version '
+            'refuses is exit 2 from every gate that reads it, not a finding')
+
+
+def check_hooks_self_test(ctx: Context) -> Answer:
+    """The installed guards still return the verdicts their own corpus asserts.
+
+    `install-hooks` rewrites guard scripts, and a guard that fails OPEN is not
+    there. This package has already shipped a hook that was installed,
+    executable and stopping nothing — a config diff cannot show that. `check
+    hooks` owns the replay (the kit that installs the corpus owns the gate over
+    it), so this asks it rather than enumerating `tools/hooks/` a second time.
+    """
+    command = _configured(ctx, 'hooks-self-test')
+    if command:
+        return run_command(ctx, 'hooks-self-test', command)
+    if not (ctx.root / HOOKS_DIR).is_dir():
+        return Answer.no(
+            f'{HOOKS_DIR}/ is not in this checkout — `install-hooks` writes the '
+            f'corpus and this step installs nothing; run the verb, or drop '
+            f'`hooks-self-test` from [{ctx.operation}] steps')
+    return _own_verdict(ctx, 'check', 'hooks',
+                        found=f'{HOOKS_DIR}/ replayed')
+
+
+def check_runner_targets_resolve(ctx: Context) -> Answer:
+    """Every composed gate target resolves in THIS repo's make.
+
+    `Makefile.devkit` `-include`s `$(GDK_TIERS_MK)`, and an `-include` of a
+    missing file is SILENT — which is what makes "no tiers at all" a supported
+    shape and is also how a typo'd tier file turns a five-gate `precommit` into
+    a one-gate one that exits 0. The two are held apart by make itself: a tier
+    NAMED with no tier file is a parse-time `$(error)` that names the file, and
+    an EMPTY tier list prints its `[TIERS] … is empty` line and resolves. This
+    step reports which of the two it saw, and never treats the silence as a
+    pass.
+    """
+    command = _configured(ctx, 'runner-targets-resolve')
+    if command:
+        return run_command(ctx, 'runner-targets-resolve', command)
+    if not (ctx.root / FRAMEWORK_MAKEFILE).is_file():
+        return Answer.no(
+            f'{FRAMEWORK_MAKEFILE} is not in this checkout — `install-gates` '
+            f'writes it and this step installs nothing; run the verb, or drop '
+            f'`runner-targets-resolve` from [{ctx.operation}] steps')
+    targets = _runner_targets_of(ctx.operation)
+    # `-n` composes everything and RUNS nothing: the framework spells its one
+    # sub-make `$${MAKE:-make}` precisely so a dry run keeps that promise.
+    code, out = _make(ctx, '-n', *targets)
+    if code == 127:
+        return Answer.unverifiable('make is not on PATH')
+    if code != 0:
+        return Answer.no(
+            f'`make -n {" ".join(targets)}` exited {code} — every later gate '
+            f'runs through these targets: {_clip(out)}')
+    empty = [line for line in out.split('\n') if '[TIERS]' in line]
+    if empty:
+        return Answer.yes(f'{len(targets)} target(s) resolve, and the tier '
+                          f'lists are empty: {_clip(" ".join(empty), 200)}')
+    return Answer.yes(f'{len(targets)} target(s) resolve with their tiers: '
+                      f'{", ".join(targets)}')
+
+
+def check_checks_pass(ctx: Context) -> Answer:
+    """THIS package's `check all` — never the consumer's `make check`.
+
+    The subtraction, and the whole feature. A consumer's `make check` also runs
+    its own twenty gates; they verify the CONSUMER'S code against the
+    CONSUMER'S rules and a version bump here cannot change their verdict, so
+    running them during adoption re-verifies the game rather than the adoption.
+    They run when the consumer changes its own code, which is what they are for.
+    """
+    command = _configured(ctx, 'checks-pass')
+    if command:
+        return run_command(ctx, 'checks-pass', command)
+    return _own_verdict(ctx, 'check', 'all',
+                        found='the roster this version ships')
+
+
+def check_pm_validates(ctx: Context) -> Answer:
+    """`pm validate` — the tree is still good against the new version."""
+    command = _configured(ctx, 'pm-validates')
+    if command:
+        return run_command(ctx, 'pm-validates', command)
+    cfg = _pm_cfg(ctx)
+    if not (ctx.root / cfg.roadmap_dir).is_dir():
+        return Answer.no(
+            f'{cfg.roadmap_dir}/ is not in this checkout — a repo with no PM '
+            f'tree is not vacuously fine here; scaffold one with `pm new`, or '
+            f'drop `pm-validates` from [{ctx.operation}] steps')
+    code, said = _pm_run(ctx, 'validate')
+    if code == 0:
+        return Answer.yes(said or '`pm validate` exited 0')
+    if code == 2:
+        return Answer.no(f'`pm validate` exited 2 — a usage or config error, '
+                         f'so nothing was decided: {said}')
+    return Answer.no(f'`pm validate` exited {code}: {said}')
+
+
 # --- the registry -------------------------------------------------------------
 _reviewing_check, _reviewing_do = _flip('reviewing')
 _accepted_check, _accepted_do = _flip('accepted')
@@ -1068,6 +1632,25 @@ RELEASE_STEPS: dict[str, Step] = {
         Step('tag', StepKind.AUTOMATIC, check_tag, do_tag),
         Step('prove-artifact', StepKind.JUDGEMENT, check_prove_artifact,
              do_prove_artifact),
+    )
+}
+
+ADOPT_STEPS: dict[str, Step] = {
+    step.name: step for step in (
+        Step('pin-bumped', StepKind.JUDGEMENT, check_pin_bumped,
+             do_pin_bumped),
+        Step('installables-diffed', StepKind.AUTOMATIC,
+             check_installables_diffed, do_installables_diffed),
+        Step('installable-decisions-recorded', StepKind.JUDGEMENT,
+             check_installable_decisions_recorded,
+             do_installable_decisions_recorded),
+        Step('config-updated', StepKind.JUDGEMENT, check_config_updated,
+             do_config_updated),
+        Step('hooks-self-test', StepKind.GATE, check_hooks_self_test),
+        Step('runner-targets-resolve', StepKind.GATE,
+             check_runner_targets_resolve),
+        Step('checks-pass', StepKind.GATE, check_checks_pass),
+        Step('pm-validates', StepKind.GATE, check_pm_validates),
     )
 }
 
@@ -1120,6 +1703,55 @@ STEP_DOC: dict[str, str] = {
         'the configured `prove-artifact` command exits 0. This package ships '
         'no default: the proof names a git URL, and a URL is the project\'s '
         'own fact (hard rule 8).',
+    # --- adopt ---
+    'pin-bumped':
+        'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
+        'version of the package that is running. It is a line in a file this '
+        'package does not own, so the step states the edit and writes nothing.',
+    'installables-diffed':
+        'the diff between what this version ships and what is installed here '
+        'has been produced, and the recorded census still describes the tree '
+        '(each file with a digest, so an edit made after the diff makes it '
+        'stale).',
+    'installable-decisions-recorded':
+        'every file that differs carries a decision in the run\'s record. '
+        '`--force` is whole-set and has no per-file option, so take / '
+        'hand-apply / keep is a call only the consumer can make.',
+    'config-updated':
+        'every devkit.toml section this version still READS accepts what this '
+        'repo declares. There is no retired-key table: a section this package '
+        'no longer reads may be another kit\'s, and telling those apart would '
+        'mean knowing the consumer (hard rule 8).',
+    'hooks-self-test':
+        '`check hooks` exits 0 — the installed guards are armed, executable, '
+        'still start, and still return the verdicts their own corpus asserts. '
+        'A guard that fails OPEN is not there, and a config diff cannot see it.',
+    'runner-targets-resolve':
+        'the composed gate targets resolve under `make -n`. A tier named with '
+        'no tier file FAILS here naming the file; an empty tier list passes '
+        'and SAYS it was empty — `-include`\'s silence is never a pass.',
+    'checks-pass':
+        'this package\'s `agentic-sdlc check all` exits 0. NOT `make check`, '
+        'not `make precommit`, not `[gates] extra`: those verify the '
+        'consumer\'s code against the consumer\'s rules, and a version bump '
+        'here cannot change their verdict.',
+    'pm-validates':
+        '`pm validate` exits 0 — the PM tree is still good against the new '
+        'version. A repo with no PM tree is refused, never vacuously fine.',
+}
+
+# What a step DOES when the project configures no command for it. Only the
+# steps that ship an action of their own are here: a step with no entry and no
+# configured command is the operator's, which is what the renderer says. It
+# lives beside the step for the same reason `STEP_DOC` does — the renderer
+# holds no per-step text — and `checks-pass` is the row a reader most needs,
+# because "this package's `check all`, not your `make check`" is the whole
+# subtraction and it belongs in the document the protocol is read from.
+SHIPPED_ACTION: dict[str, str] = {
+    'hooks-self-test': 'agentic-sdlc check hooks',
+    'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
+    'checks-pass': 'agentic-sdlc check all',
+    'pm-validates': 'agentic-sdlc pm validate',
 }
 
 # What is guidance rather than a step — rendered into the document beside the
@@ -1152,14 +1784,17 @@ GUIDANCE: tuple[tuple[str, str], ...] = (
      'the first commit. It is not a step: it needs a name only a human has.'),
 )
 
-REGISTRIES: dict[str, dict[str, Step]] = {'release': RELEASE_STEPS}
+REGISTRIES: dict[str, dict[str, Step]] = {'release': RELEASE_STEPS,
+                                          'adopt': ADOPT_STEPS}
 
 
 def registry_for(operation: str) -> dict[str, Step]:
     """The steps this package SHIPS for `operation`, by name.
 
-    `adopt` has its own feature and its own list; an operation with no registry
-    yet answers {} and `plan_defect` then refuses to walk it, which is the true
-    sentence rather than a plausible one.
+    The two registries are SEPARATE. `[adopt] steps = ["tag"]` is exit 2, not a
+    release step borrowed into an adoption: an operation whose list can name
+    another's steps has no shape at all, and the name in that list is a typo
+    every time. An operation with no registry answers {} and `plan_defect` then
+    refuses to walk it, which is the true sentence rather than a plausible one.
     """
     return dict(REGISTRIES.get(operation, {}))

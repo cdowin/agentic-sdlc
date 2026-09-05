@@ -91,14 +91,22 @@ def test_the_document_is_a_function_of_config_alone():
     assert stock != different, 'the config did not reach the document'
 
 
+def release_section(text: str) -> str:
+    """The `release` table alone. The document carries one table per
+    operation, so a claim about the release list is scoped to its section."""
+    return text.split('## `adopt` — the ordered list')[0]
+
+
 def test_every_configured_step_appears_in_order_and_nothing_else_does():
     with repo({'devkit.toml': SHORT}) as root:
         assert run()[0] == 0
-        assert listed((root / DEST).read_text(encoding='utf-8')) == [
+        assert listed(release_section(
+            (root / DEST).read_text(encoding='utf-8'))) == [
             'tree-clean', 'review-landed', 'gate']
     with repo() as root:
         assert run()[0] == 0
-        assert listed((root / DEST).read_text(encoding='utf-8')) == list(
+        assert listed(release_section(
+            (root / DEST).read_text(encoding='utf-8'))) == list(
             steps.DEFAULT_RELEASE_STEPS)
 
 
@@ -126,12 +134,21 @@ def test_the_renderer_holds_no_per_step_text_of_its_own():
         assert f"'{name}'" not in body and f'"{name}"' not in body, name
 
 
-def test_an_unconfigured_adopt_list_is_said_rather_than_left_empty():
+def test_the_adopt_list_renders_beside_the_release_list():
+    """`adopt-is-a-conveyor` ship criterion 4: one document, both lists, from
+    the same source. The renderer is this file's; what is asserted here is that
+    all eight adopt steps arrive with their kinds."""
     with repo() as root:
         run()
         text = (root / DEST).read_text(encoding='utf-8')
         assert '## `adopt` — the ordered list' in text
-        assert 'not configured' in text.split('`adopt`')[1][:400], text[-800:]
+        adopt = text.split('## `adopt` — the ordered list')[1]
+        assert 'not configured' not in adopt, adopt[:400]
+        for name, step in steps.ADOPT_STEPS.items():
+            row = next(line for line in adopt.split('\n')
+                       if line.startswith('| ') and f'| `{name}` |' in line)
+            assert step.kind.name in row, row
+        assert listed(adopt) == list(steps.DEFAULT_ADOPT_STEPS)
 
 
 def test_a_configured_command_is_shown_and_an_unconfigured_one_is_not():

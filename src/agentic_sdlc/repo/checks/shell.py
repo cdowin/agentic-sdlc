@@ -12,6 +12,8 @@ from __future__ import annotations
 import shutil
 import subprocess
 
+from agentic_sdlc.core import walk
+from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
 from agentic_sdlc.core.config import config_section, str_tuple
 
@@ -31,8 +33,12 @@ def _untracked_scripts(root, roots) -> list[str]:
         base = root / rel
         if not base.is_dir():
             continue
-        found.extend(
-            str(p.relative_to(root)) for p in sorted(base.rglob('*.sh')))
+        # `core.walk`, not `rglob` — boundaries primitive 4. A walk that
+        # returns one list has nowhere to put what it dropped, and this
+        # question is asked precisely when a census already came back empty,
+        # which is the worst moment to lose a second one silently.
+        found.extend(str(p.relative_to(root))
+                     for p in walk.descendants(base, Kind.FILE, suffix='.sh'))
     return found
 
 

@@ -145,8 +145,10 @@ def test_every_step_declares_a_kind_from_the_closed_set():
 
 def test_every_step_carries_a_postcondition_sentence_for_the_document():
     """Story 05 renders from here. A step with no sentence would render a row
-    with an empty cell — a protocol the reader cannot follow."""
-    assert set(steps.STEP_DOC) == set(steps.RELEASE_STEPS)
+    with an empty cell — a protocol the reader cannot follow. Both registries:
+    a second operation whose steps render blank cells is the same defect."""
+    assert set(steps.STEP_DOC) == set(steps.RELEASE_STEPS) | set(
+        steps.ADOPT_STEPS)
     assert all(v.strip() for v in steps.STEP_DOC.values())
 
 

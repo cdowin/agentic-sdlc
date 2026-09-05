@@ -251,7 +251,16 @@ def test_a_second_run_writes_nothing():
     assert not changed, f'a second run rewrote: {changed}'
     assert set(after) == set(before), (
         f'a second run added: {sorted(set(after) - set(before))}')
-    assert 'wrote' not in done.stdout, done.stdout
+    # The LINE SHAPE, not the word. `'wrote' not in stdout` was a false
+    # positive the moment init's own next-steps prose used the word — the third
+    # substring assertion in this milestone to catch prose instead of the thing
+    # it was aimed at ('DLC.md' is in 'SDLC.md' too). The two assertions above
+    # already prove no byte moved; this one exists to catch a verb that WRITES
+    # and reports itself as current, so it must match what the writer prints.
+    wrote = [line for line in done.stdout.splitlines()
+             if line.startswith(('[install] wrote ', '[init] wrote ',
+                                 '[pm] wrote '))]
+    assert wrote == [], done.stdout
 
 
 def test_a_second_run_does_not_duplicate_the_gitignore_entries():

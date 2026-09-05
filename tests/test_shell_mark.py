@@ -50,8 +50,10 @@ SUPPORT = TESTS / 'support'
 # they spawn because a step machine's questions are questions about a REAL
 # git tree: test_conveyor_steps.py and test_conveyor_skip.py build one per
 # test, test_install_sdlc.py installs into one. The other three arrived with
-# the belts and the verify family.
-MARKED_MODULES = 29
+# the belts and the verify family. The thirtieth is test_conveyor_adopt.py,
+# the adopt list: a pin bump is verified by asking make, git and this
+# package's own CLI about a real tree, so its tests build one per test.
+MARKED_MODULES = 30
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

@@ -3,7 +3,7 @@ id: 0.2.0/the-extraction-finishes/03-the-wheel-carries-only-what-has-a-reader
 feature: 0.2.0/the-extraction-finishes
 milestone: "0.2.0"
 name: Nothing ships in the wheel that no code reads
-status: planning
+status: reviewing
 owner:
 depends_on: []
 ---

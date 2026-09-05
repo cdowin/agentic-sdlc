@@ -57,3 +57,72 @@ rather than from a rule.
 `HOOKS_WITH_CORPUS` narrows to the two ledger couriers. A corpus list that empties out and
 still passes would be the exact failure this rule is supposed to prevent, so the census stays
 loud on zero.
+
+## D3 — 2026-09-05 — One ladder: [verify] names which rung each composition is, rather than a second set of commands
+
+**Chris, 2026-09-05, mid-milestone:**
+
+> *"There are some actions that are outside of 'dev work' like pinning a new version, but then
+> there's the SDLC along three levels. … finishing a story or adopting a new devkit version
+> shouldn't be a huge milestone check. The checks should all have their place."*
+
+Two gaps the plan had, found by asking that:
+
+**Gap 1 — the middle rung had no command.** `design-the-three-belts.md` names three belts, and
+`[verify]` as designed declared two levels: `narrow` (the edit) and `wide` (the close). The
+FEATURE belt — the feature's whole commit range, cross-story duplication, functions grown across
+edits — was described and unbuilt. A ladder with a hole in the middle is a ladder where a story
+close reaches for `make milestone`, which is the 170x this milestone exists to end.
+
+**Gap 2 — two mechanisms answered one question.** `[verify] narrow`/`wide` in `devkit.toml`, and
+`check` / `precommit` / `milestone` in `Makefile.devkit`. Nothing tied them, so they could
+disagree about what "wide" means. That is a second scoreboard, and `pm-execution.md` already
+rules that a second scoreboard lies.
+
+**The ruling — one ladder, three rungs, and `[verify]` NAMES the composition rather than
+replacing it:**
+
+```toml
+[verify]
+# story  — the inner loop. Rules, not a command: the paths decide.
+[[verify.narrow]]
+paths = "src/agentic_sdlc/repo/pm/**"
+run   = "python3 -m pytest tests/test_pm_*.py"
+
+[verify]
+feature   = "make precommit"     # the range, one step wider. Run once per feature.
+milestone = "make milestone"     # everything, every interpreter. Run once.
+```
+
+`feature` and `milestone` are **the names of existing make targets**, not new commands. The
+Makefile composition stays the authority on what a target RUNS; `[verify]` is the authority on
+which RUNG it is. One fact each, no overlap, and a project that renames a target changes one
+line.
+
+**Rejected: `[verify] wide` as a command string of its own**, which is how the feature was first
+written. It reads fine until a project's `wide` and its `make milestone` drift apart, and then
+two answers exist to "did the full gate pass" — with the CI workflow running one of them and the
+dispatch quoting the other.
+
+**Rejected: three more make targets (`verify-story`, `verify-feature`, `verify-milestone`).**
+That is a third naming of the same ladder, in the file that already has two of them, and it
+cannot express the story rung at all — the story rung is a FUNCTION of the changed paths, which
+make cannot compute.
+
+**What this closes, as a table.** Every operation now has exactly one verb and one scope, and
+none of them is "run the biggest thing":
+
+| doing | verb | scope |
+|---|---|---|
+| editing, inner loop | `verify --changed` | only the paths touched — seconds |
+| closing a story | `pm ready-for feature <fid>` | are the sibling stories at `reviewing` |
+| closing a feature | `verify --feature` | the feature's range — tens of seconds |
+| closing a milestone | `verify --milestone` | everything, once — minutes, paid once |
+| tagging | `pm ready-for tag <mid>` | every finding at a disposition other than `open` |
+| bumping a pin | `adopt` | the adoption, never the project's own gates |
+
+**The cost accepted:** `verify --feature` cannot, in 0.2.0, scope itself to the feature's commit
+RANGE the way `--changed` scopes to a diff — it runs the composition the project names. Scoping
+by range needs the feature's first commit, which is derivable from the ledger and is not derived
+today. Named as the gap rather than faked: a rung that claims to be range-scoped and is not
+would be a false narrowing, which is worse than an honest wide one.

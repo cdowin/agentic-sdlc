@@ -42,3 +42,8 @@
 {"ts":"2026-09-05T16:57:33Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/04-verify-answers-what-proves-this-edit","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T16:57:34Z","kind":"status","grain":"0.2.0/the-story-belt-knows-what-verifies-this-edit/05-every-operation-has-one-rung","from":"planning","to":"reviewing"}
 {"ts":"2026-09-05T17:16:17Z","kind":"gate","gate":"hooks-self-test","verdict":"PASS","duration_ms":980}
+{"ts":"2026-09-05T17:19:45Z","kind":"status","grain":"0.2.0/adopt-is-a-conveyor","from":"planning","to":"building"}
+{"ts":"2026-09-05T17:19:45Z","kind":"status","grain":"0.2.0/adopt-is-a-conveyor/01-adopt-walks-the-adoption","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T17:19:45Z","kind":"status","grain":"0.2.0/adopt-is-a-conveyor/02-adoption-verifies-the-adoption-not-the-game","from":"planning","to":"reviewing"}
+{"ts":"2026-09-05T17:22:09Z","kind":"status","grain":"0.2.0/the-extraction-finishes","from":"reviewing","to":"reviewing"}
+{"ts":"2026-09-05T17:22:09Z","kind":"status","grain":"0.2.0/the-middle-tier-splits","from":"building","to":"reviewing"}

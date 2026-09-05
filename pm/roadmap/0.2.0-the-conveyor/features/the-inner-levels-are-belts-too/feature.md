@@ -1,0 +1,89 @@
+---
+id: 0.2.0/the-inner-levels-are-belts-too
+milestone: "0.2.0"
+name: Closing a story and closing a feature are step lists, not prose
+status: planning
+reviewed:
+phase: 5
+depends_on: ["0.2.0/the-release-is-a-conveyor", "0.2.0/the-belts-refuse-to-advance", "0.2.0/the-story-belt-knows-what-verifies-this-edit"]
+consumed_by: []
+risk: medium
+size: m
+labels: ["belts", "conveyor", "sdlc"]
+---
+
+# Closing a story and closing a feature are step lists, not prose
+
+**Chris, 2026-09-05, on being shown the three levels written up as doctrine:**
+
+> *"I wanna make sure I'm not too loose there. If we can encode some of this in the conveyor
+> belt, we absolutely should."*
+
+He is right, and the omission is backwards in the most expensive direction. 0.2.0 shipped
+conveyors for `release` and `adopt` — the two OUTER operations, run weekly and on a pin bump —
+and left the two INNER levels as prose. **The story close runs dozens of times a day.** The
+level that runs most often is the one that got a paragraph.
+
+## What the omission cost, measured on this milestone
+
+The orchestrator building this feature parked **28 finished stories at `reviewing`** and then
+reviewed the whole milestone in one pass, skipping the feature level entirely — in the milestone
+that builds the levels. `pm ready-for milestone` had been answering NOT READY with all eight
+features named for hours, and prose is what it takes to notice a verb telling you that.
+
+That is not a mistake a step machine permits. `close story` cannot advance past
+`narrow-verified`; `close feature` cannot advance past `stories-done`.
+
+## Two more operations on the driver that already exists
+
+```toml
+[story]
+steps = ["claimed", "narrow-verified", "committed", "evidence-written", "story-done"]
+
+[feature]
+steps = ["stories-done", "feature-reviewing", "feature-verified",
+         "review-recorded", "findings-landed", "feature-done"]
+```
+
+`driver.OPERATIONS` grows from two to four. Nothing else about the machine changes: the same
+three step kinds, the same `do()`-never-decides rule, the same run-state cache under
+`.agentic-sdlc/run/<operation>.json`, the same `--skip <step> --reason` deviation row.
+
+**The belts wire to each other through the verbs that already exist.** `close feature`'s
+`stories-done` step IS `pm ready-for feature`; `release`'s `features-done` step IS
+`pm ready-for milestone`. No step re-implements a predicate that has a verb.
+
+## Where the line is, and it is Chris's line
+
+> *"We can't really enforce all of this perfectly through code, nor really should we, but we
+> should express it when the code pops back."*
+
+So: **the entry conditions are enforced, the judgement is expressed.** `stories-done` is a fact
+about the tree and it blocks. `review-recorded` can only check that a record EXISTS and parses —
+whether the review was any good is not a thing to encode, and a step that pretended to check it
+would be this package's cardinal sin wearing a protocol. Each JUDGEMENT step says, in its
+`do()`, what a human must do and why the machine is not doing it.
+
+## Ship criterion
+
+1. `agentic-sdlc close story <id>` and `close feature <id>` walk their lists, refuse to advance,
+   and are resumable — the same driver, proven by the same tests.
+2. **`close story` refuses while the story's own narrow check is red**, and the narrow command
+   comes from `[verify]` rather than being named in the step.
+3. **`close feature` refuses while any story is not `done`**, naming each — by calling
+   `pm ready-for feature`, never by re-implementing it.
+4. `close feature` refuses while its review record is absent, unparseable, or holds a finding at
+   `disposition: open`.
+5. `install-sdlc` renders all FOUR lists, so the generated protocol is the whole SDLC and not
+   just its outer half.
+6. **0.2.0's own 28 stories and 9 features close through these verbs.** Same bar as ship
+   criterion 9: a belt whose first run is performed by hand has not been tested.
+
+## Risks
+
+1. **Over-encoding, and this feature is where it would happen.** A step earns its place by
+   having a checkable postcondition. "The reviewer was thorough" does not have one and must not
+   become a step; it belongs in the `do()` text a human reads.
+2. **A story-close conveyor that is slower than closing by hand will be skipped**, and a skipped
+   conveyor is worse than none because it looks like control. The story list is five steps and
+   four of them are already-computed facts; if it is not under a second, it is wrong.

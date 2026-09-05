@@ -2,7 +2,7 @@
 id: 0.2.0/adopt-is-a-conveyor
 milestone: "0.2.0"
 name: A pin bump is a step list scoped to the adoption, not the project
-status: planning
+status: building
 reviewed:
 risk: low
 size: s

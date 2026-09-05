@@ -3,7 +3,7 @@ id: 0.2.0/adopt-is-a-conveyor/01-adopt-walks-the-adoption
 feature: 0.2.0/adopt-is-a-conveyor
 milestone: "0.2.0"
 name: A pin bump walks its own step list and refuses to advance
-status: planning
+status: reviewing
 owner:
 depends_on: ["0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance", "0.2.0/the-release-is-a-conveyor/02-the-step-list-is-the-projects"]
 ---

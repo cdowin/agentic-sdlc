@@ -8,6 +8,66 @@ roster that executes this SDLC in consumer repos is installed by
 `src/agentic_sdlc/repo/installables/`, and this repo self-hosts the pair it
 runs itself (partial-roster self-hosting — see `tests/test_install.py`).
 
+## 0. The three levels — read this first
+
+**Everything below assumes these three. Get them wrong and the rest reads as
+bureaucracy.** Written out on 2026-09-05 after an orchestrator ran this loop
+badly enough to need them: it parked twenty-eight finished stories at
+`reviewing` and then reviewed the whole milestone in one pass, skipping the
+feature level entirely — in the milestone that built the levels.
+
+| grain | you are | it ends when | what runs at the end |
+|---|---|---|---|
+| **story** | writing code | the work is done and its own narrow check is green | nothing. **Capture it: `done`.** |
+| **feature** | done writing; the stories are all `done` | a reviewer has looked at the whole feature and its findings are landed | the **feature review** → a review record → `done` |
+| **milestone** | done with features; they are all `done` | the cross-cutting review is landed and the FULL gate is green | the **milestone review**, then `make milestone` — in that order |
+
+### The intent, in four sentences
+
+1. **Rip through stories.** A story is done when its work is done and its unit
+   slice is green. Say `done` and move. Chris, 2026-09-05: *"We wanna capture
+   work. We want things to be DONE."*
+2. **`reviewing` at story grain is a hand-off, not a terminus.** It means a
+   builder is saying "look at this". A tree full of stories parked there is a
+   tree where finished work is described as waiting.
+3. **A feature flips to `reviewing` when every story under it is `done`** — and
+   THAT is when a reviewer runs, once, over the whole feature. Not per story.
+   Features go in parallel; each is captured on its own.
+4. **A milestone flips to `reviewing` when every feature is `done`** — and that
+   is where the cross-cutting review and the big integration checks live. One
+   full gate, at the end, paid once.
+
+### Why the levels are not the same review three times
+
+Each level asks a question the level below **cannot**:
+
+- a **story** cannot see duplication with its sibling — it was written alone;
+- a **feature** review reads the whole feature's commit range and sees a
+  function that grew across four stories, a contract two of them broke
+  differently, a name that means two things;
+- a **milestone** review sees what the features did to each other, and it is
+  the only level that can ask *"is this releasable"*.
+
+**A belt never runs a belt above it.** Reviewing a story at milestone scope is
+not thoroughness — it is the 170x, and it is measured: 154 s whole against
+0.9 s for the module the edit touched.
+
+### What the code does and does not enforce
+
+Not all of this can be enforced, and it should not be. What is enforced is the
+**entry condition to each level**, because that is a fact about the tree:
+
+```
+agentic-sdlc pm ready-for feature   <fid>    every story `done`?
+agentic-sdlc pm ready-for milestone <mid>    every feature `done`, each with a record?
+agentic-sdlc pm ready-for tag       <mid>    every finding at a disposition other than `open`?
+```
+
+Exit `0` ready · `1` not, **naming every blocker** · `2` usage or config. What
+those verbs will not tell you is whether the review was any good, whether the
+story was really finished, or whether `done` was honest. That is the judgement
+this document exists to describe and a machine cannot hold.
+
 ## 1. Milestone-branch SDLC
 
 - **Work happens on `milestone/<id>`.** The milestone's `branch:` frontmatter

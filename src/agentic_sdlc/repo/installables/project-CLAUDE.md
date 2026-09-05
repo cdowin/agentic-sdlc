@@ -13,9 +13,8 @@ would change in the installed files before you let it.
 
 ## What this project is
 
-*(One paragraph: what the game is, what the player does, what it is built in.
-An agent that has to infer this from the code infers it differently every
-time.)*
+*(One paragraph: what this is, who uses it, and what it is built in. An agent
+that has to infer this from the code infers it differently every time.)*
 
 ## Project structure
 
@@ -31,40 +30,41 @@ target, add the target.
 
 | When | Run |
 |---|---|
-| first thing on a cold machine | `make doctor` — the toolchain census, with a fix for anything missing |
-| per change | `make precommit` — `check` + `parse` + `lint` + `unit` + `integration-diff` (the scenarios whose `## covers:` header names what the change touched, plus smoke) |
-| slicing while you work | `make unit SYS="<system>"`, `make scenario NAME=<name>`, `make parse` |
+| per change | `make precommit` — `check` plus this project's `GDK_PRECOMMIT_TIERS` |
+| slicing while you work | *(the narrowest tier target that covers what you touched)* |
 | before a release | `make milestone` — the full gate, and what CI runs |
 
-The static gates are `make check` (the devkit roster plus this project's own,
-named in `devkit.toml` under `[gates] extra`), `make pm-scan`, `make uid-scan`,
-`make hermetic-scan`, `make hooks-self-test` and `make runners-self-test`. The
-Godot-booting ones are `make parse`, `make lint`, `make warnings`, `make unit`,
-`make integration`, `make integration-diff`, `make scenario`, `make smoke` and `make capture` — each
-runs sandboxed through `tools/dev/gdk_runners.sh`, which gives every headless
-run its own self-destroying HOME so a boot can never reach the real `user://`.
+**`make check` is the devkit's static roster** — `doc`, `shell`,
+`repo-hygiene`, `pm` and `hooks` — plus this project's own gate targets, named
+in `devkit.toml` under `[gates] extra`. Every one of them reads git, markdown
+and shell as text: nothing boots, so they are safe anywhere, in parallel.
 
-Reading a scene, a symbol or the autoload census without loading anything —
-all pure text parsing, none of it boots Godot:
-`make scene FILE=<path>` and `make scene-diff FILE=<path>` for one file,
-`make refs NAME=<symbol>` for every real use of a symbol,
-`make orphans` for files nothing references, and `make autoloads`.
+**Everything heavier than that is yours to supply, through the tier seam.**
+`make precommit` and `make milestone` are `check` plus the target lists
+`GDK_PRECOMMIT_TIERS` and `GDK_MILESTONE_TIERS`, which a language kit sets in
+`Makefile.tiers` — the file `Makefile.devkit` `-include`s. A tier list naming a
+target no makefile defines is a hard error at parse time, not a quietly shorter
+gate. With no tier file, both gates are `check` alone and say so out loud.
+
+*(List this project's tier targets here — what each one runs, and what it
+needs installed. A build toolchain, an engine, a linter and the readers that
+parse this project's own file formats all live on that side of the seam.)*
 
 ## How we work
 
 - **The PM tree is `pm/roadmap/`** — milestones, features, stories and bugs as
   markdown with frontmatter. Status moves through the CLI and never through a
-  hand edit (`make pm ARGS="story building <id>"`); `make pm-scan` is the drift
-  gate. The execution loop auto-loads from `.claude/rules/pm-execution.md`,
+  hand edit (`make pm ARGS="story building <id>"`); `agentic-sdlc check pm` is
+  the drift gate. The execution loop auto-loads from `.claude/rules/pm-execution.md`,
   and the operations manual is `.claude/skills/pm-operations/SKILL.md`.
 - **The agent roster is `.claude/agents/`.** Each file opens with a `Project
   config` section carrying stock values — edit them to this project's
   spellings, because the files are yours now.
 - **The guards are armed by `tools/setup-hooks.sh`**, which `init` already ran:
-  a `git commit` in a shared tree must name its own paths, a raw `godot` boot
-  against the real `user://` is blocked, and a push to a protected branch is
-  refused. `tools/hooks/cc-godot-sandbox.sh` replays its own block/allow corpus
-  under `make hooks-self-test`.
+  a `git commit` in a shared tree must name its own paths, a write outside the
+  agent's confined set is refused, and a push to a protected branch is blocked.
+  Each installed hook replays its own block/allow corpus; `agentic-sdlc check
+  hooks` reports whether this checkout is armed at all.
 - *(Your branching, review and release flow goes here — the installed files
   carry only what the tooling itself enforces.)*
 
@@ -76,8 +76,9 @@ that it is read.)*
 
 ## Don'ts
 
-- **Never invoke `godot --headless` directly.** The `make` targets sandbox
-  `user://` by overriding HOME; a raw boot does not, and the hook blocks it.
+- **Never hand-roll what a target already does.** The tier targets carry this
+  project's sandboxing, environment and arguments; a raw invocation carries
+  none of them and answers differently.
 - **Never skip verification before claiming done.** `make precommit` on any
   runtime-affecting change.
 - *(Add the footguns this project has actually hit. A rule nobody tripped over

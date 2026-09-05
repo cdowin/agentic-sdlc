@@ -14,13 +14,15 @@ effort: high
 ## Project config (yours to edit after install)
 
 ```text
-project:      <one line: what this is, and its engine>
+project:      <one line: what this is, and its stack>
 design law:   <the project's constitution / decisions log — read BEFORE
                proposing to flatten anything that looks like indirection>
 findings dir: docs/reviews/
-refs tool:    make refs NAME=<symbol>   (corroborate with raw grep — refs
-               tools under-report dynamic and constant accesses)
-gates:        <the per-change gate to run after applying neutral changes>
+refs tool:    <a reference-aware symbol search, if the project ships one —
+               corroborate with raw grep either way, since such tools
+               under-report dynamic and constant accesses>
+gates:        make precommit   (the per-change gate, after applying neutral
+               changes — replace if this project spells it differently)
 ```
 
 You are a senior engineer doing a **simplicity pass**. You come in cold, after

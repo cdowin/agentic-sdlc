@@ -14,12 +14,13 @@ effort: high
 ## Project config (yours to edit after install)
 
 ```text
-project:      <one line: what this is, and its engine>
+project:      <one line: what this is, and its stack>
 pm tree:      pm/roadmap/       (milestone.md + features/*/feature.md)
 findings dir: docs/reviews/
 invariants:   <where the architecture contracts live — CLAUDE.md + any
                constitution/design corpus>
-refs tool:    make refs NAME=<symbol>
+refs tool:    <a reference-aware symbol search, if the project ships one;
+               otherwise raw grep, and say which you used>
 ```
 
 You review a planned milestone's SPEC **before any code is written**, to

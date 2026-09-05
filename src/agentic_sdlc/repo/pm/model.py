@@ -32,7 +32,8 @@ from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
-                                       section_declared, flag, str_tuple, text)
+                                       section_declared, flag, str_tuple,
+                                       str_tuple_table, text)
 
 # --- stock policy -------------------------------------------------------------
 # ONE vocabulary, in order, for milestone / feature / story. There is still no
@@ -83,6 +84,186 @@ STALLED_IF_ALL_STORIES_DONE = LIFECYCLE[:LIFECYCLE.index(REVIEWING)]
 # a bug's status the way it covers every other grain's: a typo'd status is a
 # finding rather than a silent "closed" (rule 4).
 DEFAULT_BUG_STATES = ('open', 'fixed', 'closed')
+
+
+# --- the flow a project DECLARES ----------------------------------------------
+# THE CLOSED SET, and it is the engine's whole opinion about states.
+#
+# `docs/design/state-categories.md` §4. Three categories, ordered, and they do
+# not grow. Jira has had exactly these for twenty years under three names, and
+# the reason they generalise is that they are not a workflow — they are the
+# answer to "does work remain", which every workflow has.
+#
+#     todo         not started
+#     in_progress  started, not finished
+#     done         finished
+#
+# An n-category engine is an engine with no opinion at all, and then every
+# consumer invents its own lattice and nothing generalises — the failure mode
+# `[gates] extra` was designed against one layer down.
+#
+# WHY THIS SURVIVES HARD RULE 9, tested rather than assumed. Rule 9's edge is
+# *is this reading what the project declared, or deciding what the project
+# should do?* A category set is neither: `BUILDING = 'building'` is a VALUE the
+# engine asserts about the project's vocabulary, and a project contradicts it
+# by renaming a word. `todo | in_progress | done` is the DOMAIN the project's
+# own mapping is a function into, and a project satisfies it by mapping and can
+# never contradict it. Rule 9 already licenses exactly this: a config value of
+# the wrong shape is exit 2, always. A category set is the TYPE of the `states`
+# key.
+#
+# NOTE WHAT IS NOT HERE: a fourth category for `obe` / `wontfix` / `cancelled`.
+# The first draft of the design had one, on the argument that a rollup counting
+# them as delivered reports a milestone fully shipped when a third of it was
+# abandoned. The argument is right and the conclusion was wrong — that is a
+# DIFFERENT AXIS. Progress is todo -> in_progress -> done; whether the work
+# shipped or was abandoned is an OUTCOME, and folding an outcome into a
+# progress enum gives one field two meanings. Jira, which has the most mileage
+# on this, keeps `Won't Do` in the `Done` category and puts delivered-vs-not in
+# a separate `resolution` field. Azure and Linear went the other way, and the
+# tell that it cost them is what Azure then had to add: work items in `Removed`
+# are HIDDEN FROM BACKLOGS. A category that also means "do not display this" is
+# a display rule wearing a state's clothes.
+#
+# So `obe` is a `done` state. A feature whose stories are `done`, `done` and
+# `obe` is unblocked, because all three are finished.
+TODO = 'todo'
+IN_PROGRESS = 'in_progress'
+DONE_CATEGORY = 'done'
+CATEGORIES = (TODO, IN_PROGRESS, DONE_CATEGORY)
+
+# The grain kinds that have a flow. `bug` is in it, and that is the point of
+# doing this per KIND: a bug's `open`/`fixed`/`closed` stops being the special
+# case it is today and becomes one more declaration.
+FLOW_KINDS = ('milestone', 'feature', 'story', 'bug')
+
+
+@dataclass(frozen=True)
+class Flow:
+    """One grain kind's DECLARED states, their categories, and its transitions.
+
+    Read from `[pm.states.<kind>]` and `[pm.transitions.<kind>]` every run.
+    **There is no runtime fallback** — see `DEFAULT_FLOWS` for why the shipped
+    table is a SEED that `init` writes rather than a default the reader assumes.
+
+    `order` is the project's presentation order, derived from the declaration
+    rather than declared twice: the categories are ordered, and within a
+    category the project's own list order stands. Order WITHIN a category is
+    presentation and no gate keys on it (design §4: "whether `packaging`
+    precedes `done` is a project's business and no gate's").
+    """
+
+    kind: str
+    by_category: dict[str, tuple[str, ...]]
+    category_of: dict[str, str]
+    transitions: dict[str, str]
+
+    @property
+    def order(self) -> tuple[str, ...]:
+        return tuple(st for cat in CATEGORIES
+                     for st in self.by_category.get(cat, ()))
+
+    def category(self, status: str) -> str | None:
+        """This state's category, or None when the project never declared it.
+
+        None rather than a guess: an undeclared state in a grain FILE is the D4
+        drift `check pm` reports, and inventing a category for it would be the
+        engine deciding what a word it has never seen must mean.
+        """
+        return self.category_of.get(status)
+
+
+# THE SEED — the shipped default table, and it is not a fallback.
+#
+# `init` MATERIALISES this into the project's `devkit.toml`, where it is
+# visible, diffable and editable, and the runtime reads what is there. The
+# difference is the whole feature: if the table is invisible when absent, a
+# project never learns it can change it, the shipped words persist by default
+# forever, and the one thing this milestone exists to remove survives inside a
+# default argument.
+#
+# It reproduces 0.2.0's LIFECYCLE exactly, so a project that accepts what
+# `init` writes gets today's behaviour. `accepted` and `packaging` are
+# `in_progress` — Chris, on a draft that had them in `done`: *"work isn't done
+# if it's being packaged."* The rule that catches it: a category is about
+# whether WORK REMAINS, not about whether the outcome is decided. An accepted
+# feature has had its verdict; it still has work.
+_LIFECYCLE_CATEGORIES = {
+    TODO: ('planning', 'ready'),
+    IN_PROGRESS: ('building', 'reviewing', 'accepted', 'packaging'),
+    DONE_CATEGORY: ('done',),
+}
+
+DEFAULT_FLOWS: dict[str, dict[str, tuple[str, ...]]] = {
+    'milestone': dict(_LIFECYCLE_CATEGORIES),
+    'feature': dict(_LIFECYCLE_CATEGORIES),
+    'story': dict(_LIFECYCLE_CATEGORIES),
+    'bug': {TODO: ('open',), IN_PROGRESS: ('fixed',),
+            DONE_CATEGORY: ('closed',)},
+}
+
+
+def render_seed(flows=None) -> str:
+    """The seed, as the TOML `init` writes into a project's devkit.toml.
+
+    ONE renderer, so the section `init` creates in a fresh tree and the section
+    it appends to an existing one are the same bytes. Two renderers would be
+    two answers to "what does this version declare", and a consumer bumping a
+    pin would diff them.
+
+    LIVE TOML, not commentary. `installables/project-devkit.toml` has zero
+    uncommented lines — every other section it seeds is inert on arrival,
+    because a gate ships stock defaults and a commented default IS the default.
+    This section cannot be: there is no runtime fallback behind it, so a
+    commented one would leave the tree refused on its first `pm` call.
+    """
+    flows = DEFAULT_FLOWS if flows is None else flows
+    out: list[str] = []
+    for kind in FLOW_KINDS:
+        by_category = flows[kind]
+        out.append(f'[pm.states.{kind}]')
+        for category in CATEGORIES:
+            states = by_category.get(category, ())
+            rendered = ', '.join(f'"{st}"' for st in states)
+            out.append(f'{category:<11} = [{rendered}]')
+        out.append('')
+    return '\n'.join(out)
+
+
+def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]],
+                 transitions: dict[str, str]) -> str:
+    """'' when this declaration is readable, else why it is not.
+
+    Every branch is a fact about the INPUT, which rule 9 names as the one thing
+    this package is always allowed to refuse. It is exit 2, never a finding:
+    a malformed declaration is not drift in a tree, it is a file this reader
+    cannot read.
+    """
+    unknown = [c for c in by_category if c not in CATEGORIES]
+    if unknown:
+        return (f'[pm.states.{kind}] names categor(ies) '
+                f'{", ".join(sorted(unknown))} — the set is closed and is '
+                f'exactly {" ".join(CATEGORIES)}')
+    missing = [c for c in CATEGORIES if not by_category.get(c)]
+    if missing:
+        return (f'[pm.states.{kind}] declares no state in '
+                f'{", ".join(missing)} — every category needs at least one '
+                f'state, or a grain can never be in it')
+    seen: dict[str, str] = {}
+    for category in CATEGORIES:
+        for state in by_category.get(category, ()):
+            if state in seen:
+                return (f'[pm.states.{kind}] maps {state!r} to both '
+                        f'{seen[state]!r} and {category!r} — every state maps '
+                        f'to exactly one category')
+            seen[state] = category
+    for step, target in transitions.items():
+        if target not in seen:
+            return (f'[pm.transitions.{kind}] {step} = {target!r}, which '
+                    f'[pm.states.{kind}] does not declare — a transition to a '
+                    f'state that does not exist can never be taken')
+    return ''
+
 
 # D8/D9/D10 encode the branch-per-milestone / bump-at-start flow. They are OFF
 # by default: a project that ships from the trunk and bumps at close is not
@@ -231,6 +412,15 @@ class PmConfig:
     template_dir: str = ''
     version_file: str = 'pyproject.toml'
     version_pattern: str = r'^version = "(.*)"$'
+    # WHAT THE PROJECT DECLARED, per grain kind. Empty when `[pm.states.*]` is
+    # absent — and empty is not a default, it is the absence itself, which
+    # `flow_of` turns into a refusal that names the command that fixes it.
+    #
+    # Hard rule 5 as it now reads: a GATE ships stock defaults, a WORKFLOW does
+    # not. `init` writes the states and the transitions, every run reads them,
+    # and a tree without them is refused by name. A default nobody can see is
+    # the engine's opinion wearing the project's clothes.
+    flows: dict[str, Flow] = field(default_factory=dict)
 
     @property
     def roadmap(self) -> Path:
@@ -281,6 +471,8 @@ def load() -> PmConfig:
             'the markdown (a template can change a grain\'s whole shape, not '
             'just its frontmatter defaults)')
 
+    flows = _load_flows(sect)
+
     return PmConfig(
         root=repo_root(),
         # THE THREE PATH KEYS GO THROUGH `relpath`, NOT `text`. Each is joined
@@ -308,7 +500,227 @@ def load() -> PmConfig:
         template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
         version_pattern=version_pattern,
+        flows=flows,
     )
+
+
+def _load_flows(sect: dict) -> dict[str, Flow]:
+    """`[pm.states.<kind>]` and `[pm.transitions.<kind>]`, read and validated.
+
+    ABSENT IS ABSENT — an empty dict, never the seed. `DEFAULT_FLOWS` is what
+    `init` WRITES; a reader that fell back to it would make the shipped words
+    persist forever inside a default argument, invisible to the project whose
+    flow they claim to be.
+
+    Malformed is exit 2, before anything else happens. A category outside the
+    closed set, a state in two categories, a transition to a state nobody
+    declared: all facts about the INPUT, which rule 9 names as the one thing
+    this package is always allowed to refuse.
+    """
+    states = sect.get('states')
+    transitions = sect.get('transitions')
+    if states is None and transitions is None:
+        return {}
+    if states is None:
+        raise ConfigError(
+            '[pm.transitions.*] is declared and [pm.states.*] is not — a '
+            'transition names a state, so the states have to exist first')
+    if not isinstance(states, dict):
+        raise ConfigError(f'[pm.states] must be a table of grain kinds, got '
+                          f'{states!r}')
+    if transitions is not None and not isinstance(transitions, dict):
+        raise ConfigError(f'[pm.transitions] must be a table of grain kinds, '
+                          f'got {transitions!r}')
+
+    unknown = sorted(set(states) - set(FLOW_KINDS))
+    if unknown:
+        raise ConfigError(
+            f'[pm.states] names grain kind(s) {", ".join(unknown)} — this '
+            f'package knows {" ".join(FLOW_KINDS)}, and a flow for a kind it '
+            f'never walks would never be read')
+    unknown = sorted(set(transitions or {}) - set(FLOW_KINDS))
+    if unknown:
+        raise ConfigError(
+            f'[pm.transitions] names grain kind(s) {", ".join(unknown)} — '
+            f'this package knows {" ".join(FLOW_KINDS)}')
+
+    out: dict[str, Flow] = {}
+    for kind in FLOW_KINDS:
+        if kind not in states:
+            continue
+        by_category = str_tuple_table(states, 'pm.states', kind, {})
+        moves = {}
+        for step, target in (transitions or {}).get(kind, {}).items():
+            if not isinstance(target, str):
+                raise ConfigError(
+                    f'[pm.transitions.{kind}] {step} must be a state name, '
+                    f'got {target!r}')
+            moves[step] = target
+        defect = _flow_defect(kind, by_category, moves)
+        if defect:
+            raise ConfigError(defect)
+        category_of = {st: cat for cat, sts in by_category.items()
+                       for st in sts}
+        out[kind] = Flow(kind=kind, by_category=by_category,
+                         category_of=category_of, transitions=moves)
+    missing = [k for k in FLOW_KINDS if k not in out]
+    if missing:
+        raise ConfigError(
+            f'[pm.states] declares {", ".join(sorted(out))} and not '
+            f'{", ".join(missing)} — a partial flow is worse than none, '
+            f'because the kinds it omits fall back to words the project '
+            f'never chose. Run `agentic-sdlc pm init` to write the rest.')
+    return out
+
+
+# --- the engine's two verbs ---------------------------------------------------
+# `docs/design/state-categories.md` §6, and this is the whole architecture:
+#
+#     move(grain, to_state)     is this transition declared? then write it.
+#     holds(grains, category)   are they all there? yes or no, and name who is not.
+#
+# **Two verbs. Everything a belt does is a sequence of those plus commands the
+# project named.** Anything else the engine does is inference, and inference is
+# the thing to remove — not because it is wrong today, but because it is the
+# engine having an opinion that a project cannot see, cannot change, and did
+# not choose.
+#
+# WHY THEY EXIST AS FUNCTIONS rather than as a convention every caller follows.
+# The inference census names `holds(...)` as the destination for six of its ten
+# rows, and without a verb each of those becomes its own `category_of(status)`
+# lookup agreeing by convention to behave alike — a second scoreboard with ten
+# columns, which hard rule 4 is the reason this repo does not accept. It is not
+# hypothetical: the `also_done` shim landed in `ready_for.py` and not in
+# `model.py`'s `done_n`, so `pm ready-for feature` and `check pm` D2 disagreed
+# about whether an `obe` story was finished. One shim, two call sites, already
+# out of step. (Plan audit Q2; decision D6.)
+
+
+@dataclass(frozen=True)
+class Held:
+    """`holds`' answer: whether they are all there, and who is not.
+
+    NAMING WHO IS NOT is half the verb, and it is the half a caller actually
+    prints. `pm ready-for` has always answered this way — *"never a tally"* —
+    and this is that ruling as a return type rather than as a convention each
+    caller re-implements.
+    """
+
+    category: str
+    blockers: tuple[tuple[str, str], ...]
+    """(id, the status the file ACTUALLY holds), for everything not there."""
+    counted: int
+
+    def __bool__(self) -> bool:
+        return not self.blockers
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(f'{gid} is {status}' for gid, status in self.blockers)
+
+
+def category_of(cfg: PmConfig, kind: str, status: str) -> str | None:
+    """This status's category under the project's declaration, or None.
+
+    None means the project never declared that word — the D4 drift `check pm`
+    reports. It is not a category and it must not become one: guessing would be
+    the engine deciding what a word it has never seen must mean.
+    """
+    return flow_of(cfg, kind).category(status)
+
+
+def holds(cfg: PmConfig, kind: str, grains, category: str) -> Held:
+    """Are all these grains in `category`? And which are not?
+
+    `grains` is an iterable of `(id, status)`. The caller supplies the pairs
+    because WHICH grains to ask about is the caller's question — a story's
+    siblings, a milestone's features, one grain — and an engine that walked the
+    tree to find them would be deciding scope as well as answering.
+
+    A status the project never declared is a BLOCKER carrying the word the file
+    actually holds, never a silent pass. Rule 4: a gate that misses real drift
+    and prints PASS is the read-side cardinal sin, and an unrecognised word is
+    exactly the case where a permissive answer would be one.
+    """
+    if category not in CATEGORIES:
+        raise ConfigError(
+            f'{category!r} is not a category — the set is closed and is '
+            f'exactly {" ".join(CATEGORIES)}')
+    flow = flow_of(cfg, kind)
+    pairs = [(gid, status) for gid, status in grains]
+    blockers = [(gid, status) for gid, status in pairs
+                if flow.category(status) != category]
+    # THE CENSUS TRAVELS WITH THE ANSWER (rule 4). A caller printing "all
+    # done" has to be able to say all of HOW MANY, and a verb that returned
+    # only a boolean would make an empty set and a satisfied set print the
+    # same sentence.
+    return Held(category=category, blockers=tuple(blockers),
+                counted=len(pairs))
+
+
+def move_defect(cfg: PmConfig, kind: str, to_state: str) -> str:
+    """'' when this grain kind may be moved to `to_state`, else why not.
+
+    The engine's whole opinion about a move: **is the target a state this
+    project declared?** It has none about which state may follow which. There
+    is still no edge graph, and the reason has not changed — a `sed` of the
+    `status:` line reaches any state the CLI would have refused, so a graph
+    taxes whoever uses the sanctioned tool and stops nobody else. What IS
+    checked is END STATE, by D3/D4/D5, on the tree as it stands.
+
+    Refusing an undeclared target is READING (rule 9): the project said which
+    words exist, and this one is not among them.
+    """
+    flow = flow_of(cfg, kind)
+    if to_state in flow.category_of:
+        return ''
+    return (f'{to_state!r} is not a {kind} state — this project declares '
+            f'{", ".join(flow.order)} in [pm.states.{kind}]')
+
+
+def transition_target(cfg: PmConfig, kind: str, step: str) -> str | None:
+    """Which state this project's `[pm.transitions.<kind>]` maps `step` to.
+
+    ASK BY CATEGORY, WRITE BY NAME. A category holds several states, so a belt
+    step that wrote "the done category" would make the engine guess a member —
+    strictly worse than what it replaces. So a step declares the exact word.
+
+    The KEY SET is the engine's, and saying so is the honest version of this
+    table: the keys are step names shipped in `conveyor/steps.py`, a project
+    cannot invent one, and presented as pure project declaration that would be
+    the engine's opinion with a config file in front of it. **The step registry
+    is this package's published API surface, versioned like the CLI and read at
+    a pin bump through `pm vocabulary`** — the project declares its flow over a
+    vocabulary the engine publishes, which is exactly the shape a project
+    selecting and ordering `[release] steps` already works in.
+    """
+    return flow_of(cfg, kind).transitions.get(step)
+
+
+# THE REFUSAL, in ONE place, and it is a WORKFLOW refusal rather than a gate
+# one. `check doc`, `check shell` and `check repo-hygiene` never come through
+# here: hard rule 5 says a GATE ships stock defaults and a repo with no
+# devkit.toml runs every gate byte-identically to one declaring them. What is
+# refused is the flow — creating work, moving it, asking where it is — because
+# the states are the project's and that is the entire point.
+def flow_of(cfg: PmConfig, kind: str) -> Flow:
+    """This grain kind's declared flow, or exit 2 naming the fix.
+
+    The message prints the COMMAND rather than the seed to hand-paste. A
+    refusal that hands a reader forty lines of TOML to copy is a refusal that
+    gets copied wrong, and `init` can write it correctly into a config it did
+    not create (the append path).
+    """
+    flow = cfg.flows.get(kind)
+    if flow is None:
+        raise ConfigError(
+            f'this tree declares no flow: [pm.states.{kind}] is not in '
+            f'devkit.toml, and there is no default — the states and the '
+            f'transitions are how THIS project works, so the engine reads '
+            f'them and never assumes them (CLAUDE.md hard rule 5). Run '
+            f'`agentic-sdlc pm init` to write them; it appends to a '
+            f'devkit.toml it did not create and rewrites nothing.')
+    return flow
 
 
 # `[pm]` keys this package USED to honour. Named, because a key that silently

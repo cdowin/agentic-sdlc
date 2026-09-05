@@ -69,6 +69,50 @@ checks = [
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
 # says nothing about the length of anybody's markdown.
 
+# --- THE FLOW, and it is this project's rather than the engine's --------------
+# Written by `agentic-sdlc pm init`, read every run, never assumed. This is the
+# section hard rule 5 splits on: a GATE ships stock defaults and a repo with no
+# devkit.toml runs every gate byte-identically to one declaring them; a
+# WORKFLOW does not, because the states are the project's and that is the
+# entire point. A default nobody can see is the engine's opinion wearing the
+# project's clothes.
+#
+# The engine keeps three opinions and no more: the category set is
+# `todo`/`in_progress`/`done`, they are ordered that way, and every declared
+# state maps to exactly one. Everything below — how many states, what they are
+# called, which category each sits in, what order they appear in within it — is
+# ours, and changing a word here changes no code anywhere.
+#
+# The values reproduce 0.2.0's LIFECYCLE exactly, because this tree accepted
+# what `init` wrote. `accepted` and `packaging` are `in_progress`: a category
+# is about whether WORK REMAINS, not about whether the outcome is decided.
+#
+# `obe` is in `done` for every kind that can hold it. It is FINISHED and not
+# DELIVERED, and those are different axes — Jira keeps `Won't Do` in the Done
+# category and puts delivered-vs-not in a separate `resolution` field, which is
+# the side `docs/design/state-categories.md` §4 takes and why there is no
+# fourth category here.
+
+[pm.states.milestone]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.feature]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.story]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.bug]
+todo        = ["open"]
+in_progress = ["fixed"]
+done        = ["closed"]
+
 [verify]
 # The verification LADDER, self-hosted. Decision D3 (0.2.0): `[verify]` says
 # which RUNG a composition is; the Makefile stays the authority on what the

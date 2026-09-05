@@ -6,8 +6,8 @@ status: planning
 reviewed:
 risk: medium
 size: m
-phase: 1
-depends_on: []
+phase: 3
+depends_on: ["0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts"]
 consumed_by: ["0.2.0/the-release-is-a-conveyor"]
 labels: ["telemetry", "ledger", "gates", "performance"]
 ---
@@ -56,6 +56,16 @@ argument for putting it in the funnel rather than in each gate.
 
 The ledger is already shipped (`pm ledger record`, the two courier hooks, `pm ledger report`). A gate row
 is a new `kind`, not a new mechanism.
+
+**Correction, 2026-09-05 — `gdk_gate` is the common CALLER; `gdk_gate_verdict` is the funnel.**
+Traced against the file: every gate target in `Makefile.devkit` routes through the `gdk_gate`
+define **except** `runners-self-test`, which open-codes the same three calls (lines 180–196),
+and `parse`/`lint`/`warnings`/`unit`, which publish their own verdict from inside the runner and
+are deliberately not wrapped again. Instrumenting the `define` therefore misses five gates —
+including the 8-second one. **`gdk_gate_verdict` in `gdk_runners.sh` is the single line every
+one of those paths reaches**, and it already receives the tag, the summary and the log path.
+Duration is the one thing it does not have, so the timer opens in `gdk_gate_capture` and the row
+is written in `gdk_gate_verdict`.
 
 Record per run: gate name, wall duration, verdict, and enough tree identity to compare like with like
 (a gate's cost scales with the corpus it walks, so a duration without a census is not comparable across
@@ -111,3 +121,16 @@ Two things fall out for scope:
    is simply doing more.
 3. **Telemetry nobody reads is cost with no benefit.** If `pm ledger report` does not grow a view that
    answers "what got slower", this is a write-only table and should not ship.
+
+## Ship criterion
+
+1. A gate run through any of the paths above appends one row carrying **name, wall duration,
+   verdict and census**, through the one funnel, **failing open** — a ledger that cannot be
+   written is never a gate failure.
+2. `pm ledger report` grows the view that answers *what got slower*. This is a **blocker, not a
+   nice-to-have**: risk 3 says telemetry nobody reads is cost with no benefit, and a feature
+   whose own risk register condemns it shipping half-done should not ship half-done.
+3. The row makes the **narrow-vs-wide ratio derivable**, which is what
+   `0.2.0/the-story-belt-knows-what-verifies-this-edit` prints.
+4. The stock agent definitions carry the name-both-commands rule, so a consumer's agents inherit
+   it instead of each orchestrator re-learning it by burning half an hour.

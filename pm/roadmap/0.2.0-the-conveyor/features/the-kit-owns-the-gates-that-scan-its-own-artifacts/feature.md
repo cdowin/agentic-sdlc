@@ -6,8 +6,8 @@ status: planning
 reviewed:
 risk: medium
 size: m
-phase: 1
-depends_on: []
+phase: 2
+depends_on: ["0.2.0/the-middle-tier-splits"]
 consumed_by: ["0.2.0/every-gate-reports-its-cost"]
 labels: ["gates", "installables", "consumers", "subtraction"]
 ---

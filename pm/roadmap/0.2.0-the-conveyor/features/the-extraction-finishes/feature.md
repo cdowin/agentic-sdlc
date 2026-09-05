@@ -8,7 +8,7 @@ risk: medium
 size: m
 phase: 1
 depends_on: []
-consumed_by: []
+consumed_by: ["0.2.0/the-middle-tier-splits"]
 labels: ["extraction", "defect", "docs", "installables"]
 ---
 

@@ -40,9 +40,9 @@ planning ready todo building wip blocked reviewing review accepted packaging don
   word and what each becomes. Exit code untouched.
 - **Named by the tool.** `pm vocabulary` (both shapes) marks the four and says 0.25.0 removes them.
 
-## What 0.25.0 must do
+## What 0.2.0 must do  (the file paths below are this package's, corrected 2026-09-05)
 
-1. Delete `DEPRECATED_STATES` and the `STOCK_STATES` splice from `src/godot_devkit/repo/pm/model.py`;
+1. Delete `DEPRECATED_STATES` and the `STOCK_STATES` splice from `src/agentic_sdlc/repo/pm/model.py`;
    `DEFAULT_*_STATES` go back to `LIFECYCLE` and `STALLED_IF_ALL_STORIES_DONE` derives from it again.
 2. Delete `model.deprecated_write` and its three call sites in `cli.py` (`_refuse_deprecated`), the
    census in `checks/pm.py`'s `_drift_walk`, and the disclosure blocks in `cmd_vocabulary`.

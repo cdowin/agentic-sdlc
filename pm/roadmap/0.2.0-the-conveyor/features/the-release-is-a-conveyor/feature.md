@@ -5,10 +5,10 @@ name: The release protocol is a resumable step machine, not prose to follow corr
 status: planning
 reviewed:
 risk: high
-size: xl
-phase: 1
-depends_on: []
-consumed_by: []
+size: l
+phase: 4
+depends_on: ["0.2.0/the-belts-refuse-to-advance", "0.2.0/every-gate-reports-its-cost", "0.2.0/the-story-belt-knows-what-verifies-this-edit"]
+consumed_by: ["0.2.0/adopt-is-a-conveyor"]
 labels: ["release", "sdlc", "installable", "config", "subtraction"]
 ---
 
@@ -50,7 +50,7 @@ Missing: **a driver that walks the steps and refuses to advance.**
 
 ## The shape
 
-`godot-devkit release <version>` — a resumable step machine over a config'd list:
+`agentic-sdlc release <version>` — a resumable step machine over a config'd list:
 
 ```toml
 [release]
@@ -104,79 +104,43 @@ ordering error becomes structurally impossible rather than a thing to remember.
 | `.claude/skills/release/SKILL.md` | SHRINK | becomes "run this verb", not a protocol to follow |
 | `SDLC.md` § Close protocol | GENERATED | stops being hand-maintained prose that drifts |
 
-## A second conveyor: `adopt`
+## What moved out of this feature on 2026-09-05
 
-Chris, 2026-09-04, on what a pin bump actually costs a consumer:
+This was `size: xl` with four deliverables inside it, which is the shape of a feature that
+reports "still building" at close. Three of the four are now their own features and this one
+keeps the driver:
 
-> *"Pinning 24 should be simple. Upgrade the pin, inspect what new install verbs came in, decide what to
-> take, update/check configs, lint (to make sure the pm tree is still good against the new version) and
-> go. What am I missing?"*
+| was here | now |
+|---|---|
+| the `adopt` step list | `0.2.0/adopt-is-a-conveyor` — same driver, different operation |
+| the `change` pair | superseded by `design-the-three-belts.md` and built as `0.2.0/the-story-belt-knows-what-verifies-this-edit` |
+| the entry-condition verbs | `0.2.0/the-belts-refuse-to-advance` — `pm ready-for`, which `review-landed` then CALLS rather than re-implements |
 
-**Almost nothing — the list is right. What is missing is that nothing scopes verification to the
-operation.** Measured on the live consumers: this package's entire `check all` is **2.6 s** and
-`check pm` is **0.3 s**, while a consumer's `make check` also runs its OWN gates — twenty of them in one
-tree — and that is where the minutes go. Those gates verify the CONSUMER'S code against the CONSUMER'S
-rules; **a version bump here cannot change their verdict.** Running them during adoption re-verifies the
-game, not the adoption.
+What stays: **the step machine, its run state, the skip ledger, and `install-sdlc`.** The last
+one is not separable — a step machine whose documentation is hand-written is this feature's own
+risk 2, so generated docs ship with the driver or the driver ships a second home for the
+protocol.
 
-`make check` is one gate answering one question — *is everything fine?* — for every operation, so
-adoption, a one-line edit and a release all pay the price of the most expensive thing anyone might need.
-That is the same shape as the ordering incidents above: one blunt instrument standing in for several
-scoped ones.
+## The three steps that cannot be Python, and the ruling
 
-**So `adopt` is a step list too**, and its postconditions are the operation's, not the project's:
+`pr-open`, `ci-green` and `merge` in the default list all need GitHub. **Hard rule 1 is
+stdlib-only, forever** — no `gh`, no HTTP client, no transitive dep in a consumer's pre-push
+hook. So they are not automatic steps, and pretending otherwise would put a network dependency
+in the one package that promised never to have one.
 
-```toml
-[adopt]
-steps = ["pin-bumped", "installables-diffed", "installable-decisions-recorded",
-         "config-updated", "hooks-self-test", "runner-targets-resolve",
-         "checks-pass", "pm-validates"]
-```
-
-Two steps in there are ones a human list keeps forgetting, and both have bitten:
-
-- **`hooks-self-test`** — `install-hooks` rewrites guard scripts, and a guard that fails OPEN is not
-  there. This package has already shipped a hook that was installed, executable, and stopping nothing;
-  a config diff cannot show that.
-- **`runner-targets-resolve`** — `install-runners --force` rewrites `Makefile.devkit`, which defines the
-  targets every later gate runs through. Broken there, every subsequent gate fails for the wrong reason
-  and the operator debugs the wrong thing.
-
-**`checks-pass` means THIS package's checks, not the consumer's whole gate set** — that is the
-subtraction. On the numbers above the scoped set is seconds rather than minutes, and the consumer's own
-gates run when the consumer changes its own code, which is what they are for.
-
-## A third conveyor: `change` — the inner loop, which is where the time actually goes
-
-Chris, 2026-09-04, on the 31-minute greening:
-
-> *"That test suite should be literally built into the SDLC belt. Right?"*
-
-Right, and `release` and `adopt` do not reach it. Both are OUTER operations, run once. **The inner loop
-— edit, verify, edit — runs dozens of times per session, and it is where the hours go.** Measured that
-day: a full suite at 154 s against a single module at 0.9 s, run eleven times because the dispatch named
-only the wide command. 31 minutes to do 13 seconds of checking.
-
-So the belt needs a third list, and its shape is different from the other two:
+They are **judgement steps whose `check()` is a command the project configures**:
 
 ```toml
-[change]
-narrow = "what verifies THIS edit"     # the loop: seconds
-wide   = "what verifies the WHOLE"     # the close: run once, at the end
+[release]
+steps = ["...", "pr-open", "ci-green", "merge", "tag", "prove-artifact"]
+
+[release.commands]
+ci-green = "gh pr checks --required"      # the PROJECT supplies gh, not this package
 ```
 
-**`release` and `adopt` are sequences; `change` is a PAIR.** It does not walk steps — it answers one
-question, *"I touched X, what proves it?"*, and it answers with two commands and their measured costs so
-the caller can tell which is the loop and which is the close.
-
-The scoping mechanism already exists per-consumer and is not generalised: one tree slices unit tests by
-system (`unit SYS=<x>`) and picks integration scenarios by what they declare they cover
-(`integration-diff` reading a `## covers:` header). Those are the right idea invented twice, locally,
-with no way for a dispatch to discover them. The belt should be able to answer "what is the narrow
-command here" from config, the way it answers "what are the release steps".
-
-**This is the piece that makes the whole conveyor pay for itself.** A release happens weekly; the inner
-loop happens continuously, and it is the one an agent runs unattended.
+A judgement step with no configured command still works: it states what the operator must do,
+and refuses to advance until told the artifact exists. **That is the honest shape** — the
+machine's job is to refuse, not to pretend it can merge.
 
 ## The first slice, and why it is that one
 

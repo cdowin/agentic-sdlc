@@ -810,12 +810,13 @@ def state_columns(cfg: model.PmConfig, kind: str) -> tuple[str, ...]:
 
     EVERY one, not the ones before it in the tuple: a vocabulary is a closed
     SET with no transition graph, so its ORDER is a reading order and never a
-    claim about which states a grain passes through. Stock: `todo wip review
-    blocked` for a story, `planning ready building review` for a feature, `open
-    fixed` for a bug. Time stuck in `blocked` is the question this section
-    exists to answer (Chris, 2026-09-03: *"figure out which ones are taking the
-    most time"*), and it sits PAST `done` in the tuple — a column set cut at
-    the terminal state would have dropped exactly the number worth looking at.
+    claim about which states a grain passes through. Stock, for a story and a
+    feature alike: `planning ready building reviewing accepted packaging`;
+    `open fixed` for a bug. Which state a grain is stuck in is the question
+    this section exists to answer (Chris, 2026-09-03: *"figure out which ones
+    are taking the most time"*), so the columns are the whole vocabulary in
+    its reading order and not a prefix of it — a column set cut at the
+    terminal state's INDEX would drop every state that happens to sit after it.
 
     The terminal state alone has no column: it is where the grain ENDED, so
     the seconds after it are a running clock rather than a duration, and

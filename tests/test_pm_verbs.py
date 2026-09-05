@@ -200,74 +200,19 @@ class StatusVerbQuartet(unittest.TestCase):
             yield root
 
     def test_any_state_in_the_vocabulary_is_reachable(self):
-        """Every state a grain may HOLD is one the tool can write — except
-        the four the 0.24.0 window is carrying out, which the tree may hold
-        and the tool refuses (the test below is that half). Without the carve
-        the CLI would spend a release re-filling the trees the window exists
-        to empty; without this half a canonical word would be reachable only
-        by hand edit."""
+        """Every state a grain may HOLD is one the tool can write, with no
+        exceptions left: the 0.24.0 deprecation window was the one carve-out
+        (four words the tree could hold and the verbs refused) and it closed
+        in 0.2.0. A word in the set the tool refuses would be a state only a
+        hand edit could reach."""
         for kind, gid, rel, _, _ in self.GRAINS:
             for state in self._states(kind):
-                if model.deprecated_write(state, self._states(kind)):
-                    continue
                 with self.subTest(kind=kind, state=state), \
                         self._grain_tree(kind) as root:
                     code, out = run_cli(root, kind, state, gid)
                     self.assertEqual(code, 0, out)
                     self.assertEqual(
                         model.field_of(root / rel, 'status'), state)
-
-    def test_a_renamed_state_is_refused_and_names_the_word_that_replaced_it(self):
-        """The window READS. A tree already holding `wip` stays green, and the
-        tool asked to write another one exits 2 naming `building` — so the set
-        of files 0.25.0 needs rewritten only ever shrinks, and never by the
-        hand of the sanctioned tool. Bugs are a different machine and hold
-        none of these words.
-
-        The three words this covers were RENAMED. `blocked` was not, and it
-        gets its own refusal below."""
-        for kind, gid, rel, initial, _ in self.GRAINS:
-            for state, became in model.DEPRECATED_STATES.items():
-                if (not model.deprecated_write(state, self._states(kind))
-                        or state in model.REMOVED_STATES):
-                    continue
-                with self.subTest(kind=kind, state=state), \
-                        self._grain_tree(kind) as root:
-                    code, out = run_cli(root, kind, state, gid)
-                    self.assertEqual(code, 2, out)
-                    self.assertIn('retired', out)
-                    self.assertIn(f'pm {kind} {became} <id>', out)
-                    self.assertIn('the word that replaced it', out)
-                    self.assertEqual(
-                        model.field_of(root / rel, 'status'), initial)
-
-    def test_a_REMOVED_state_is_refused_without_naming_a_replacement(self):
-        """`blocked` is the one retired word that was removed, not renamed.
-
-        It was a first-class story state through v0.23.0 and this vocabulary
-        has nothing that means it — a blocked grain is not a grain being worked
-        on. Its entry in `DEPRECATED_STATES` is a POSITION, so that the read
-        side can place a tree still holding it; reusing that entry as a
-        replacement told the user their blocked story was in progress, which is
-        a different fact and the wrong one. The refusal here says the word is
-        gone and what to do instead, and `building` appears only as where to
-        leave the status — never as a synonym.
-        """
-        self.assertEqual(model.REMOVED_STATES, ('blocked',))
-        for state in model.REMOVED_STATES:
-            for kind, gid, rel, initial, _ in self.GRAINS:
-                if not model.deprecated_write(state, self._states(kind)):
-                    continue
-                with self.subTest(kind=kind, state=state), \
-                        self._grain_tree(kind) as root:
-                    code, out = run_cli(root, kind, state, gid)
-                    self.assertEqual(code, 2, out)
-                    self.assertIn('retired', out)
-                    self.assertIn(f'this vocabulary has no {state} state', out)
-                    self.assertIn('nothing replaces it', out)
-                    self.assertNotIn('the word that replaced it', out)
-                    self.assertEqual(
-                        model.field_of(root / rel, 'status'), initial)
 
     def test_a_state_outside_the_vocabulary_is_a_usage_error_naming_the_set(self):
         # The half that IS a fact: `banana` is not a status in any vocabulary.
@@ -279,6 +224,26 @@ class StatusVerbQuartet(unittest.TestCase):
                 for state in self._states(kind):
                     self.assertIn(state, out)
                 self.assertEqual(model.field_of(root / rel, 'status'), initial)
+
+    def test_a_retired_word_is_now_that_same_plain_usage_error(self):
+        """The window's close, from the write side. Through 0.24.0 `pm story
+        todo <id>` exited 2 with a message that named `ready` as the word
+        that replaced it — a refusal that TAUGHT the word by naming it. Now
+        `todo` is simply not a story status, and the message is the same one
+        `banana` gets: the set, and nothing about a replacement. A softened
+        close that kept the special message would keep the four words alive
+        in the tool's own help text for another release."""
+        for word in ('todo', 'wip', 'review', 'blocked'):
+            for kind, gid, rel, initial, _ in self.GRAINS:
+                with self.subTest(kind=kind, word=word), \
+                        self._grain_tree(kind) as root:
+                    code, out = run_cli(root, kind, word, gid)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(f'is not a {kind} status', out)
+                    self.assertNotIn('retired', out)
+                    self.assertNotIn('replaced it', out)
+                    self.assertEqual(
+                        model.field_of(root / rel, 'status'), initial)
 
     def test_idempotent_noop_succeeds(self):
         for kind, gid, _, initial, _ in self.GRAINS:
@@ -1012,18 +977,15 @@ class Vocabulary(unittest.TestCase):
             self.assertEqual(data['grains']['bug']['states'],
                              list(model.DEFAULT_BUG_STATES))
             self.assertEqual(data['checks'], list(model.KNOWN_CHECKS))
-            # The edge table is what died. Nothing may re-grow one here.
-            # `deprecated` is a RENAME map — which word took over from which,
-            # the window this release carries — and not a claim about which
-            # state may follow which; the arrow that spelled the edge table
-            # stays gone in both shapes.
+            # The edge table is what died. Nothing may re-grow one here, and
+            # neither may the `deprecated` rename map: it disclosed the 0.24.0
+            # window and the window closed in 0.2.0, so a grain carries its
+            # closed SET and nothing else.
             for grain in data['grains'].values():
-                self.assertEqual(list(grain), ['states', 'deprecated'])
+                self.assertEqual(list(grain), ['states'])
             self.assertNotIn('transitions', data['grains'])
+            self.assertNotIn('deprecated', out)
             self.assertNotIn('->', out)
-            self.assertEqual(data['grains']['story']['deprecated'],
-                             dict(model.DEPRECATED_STATES))
-            self.assertEqual(data['grains']['bug']['deprecated'], {})
 
     def test_it_reads_the_projects_OWN_vocabulary_not_the_stock_one(self):
         with tree() as root:
@@ -1044,13 +1006,15 @@ class Vocabulary(unittest.TestCase):
             self.assertIn('D9', out)
             self.assertIn('D10', out)
             self.assertNotIn('->', out)
-            # The window, where a consumer reads the vocabulary FROM THE TOOL.
-            # Eleven words printed flat would make the four that are leaving
-            # look like the seven that are staying, and the next grain gets
-            # authored at one of them.
-            self.assertIn('removed in 0.25.0', out)
-            for word, became in model.DEPRECATED_STATES.items():
-                self.assertRegex(out, rf'{word}\s+replaced by\s+{became}')
+            # The window's disclosure block, gone with the window. This verb
+            # is where a consumer reads the vocabulary FROM THE TOOL, so a
+            # leftover "removed in 0.25.0" paragraph here is the release note
+            # that outlives its release.
+            self.assertNotIn('removed in 0.25.0', out)
+            self.assertNotIn('replaced by', out)
+            for word in ('todo', 'wip', 'review', 'blocked'):
+                # Word-boundaried: `reviewing` legitimately contains `review`.
+                self.assertNotRegex(out, rf'\b{word}\b')
 
 
 class StoryResolution(unittest.TestCase):

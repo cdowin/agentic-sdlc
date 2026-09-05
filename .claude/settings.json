@@ -7,10 +7,6 @@
           {
             "type": "command",
             "command": "bash tools/hooks/cc-commit-pathspec.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash tools/hooks/cc-godot-sandbox.sh"
           }
         ]
       },

@@ -10,7 +10,7 @@
 # EVERY GATE PRINTS ONE LINE. The default output of a target here is its
 # verdict, naming the full transcript on disk; `VERBOSE=1` streams the whole
 # thing. That is not a local convention — it is `gdk_gate_capture` /
-# `gdk_gate_verdict` out of installables/gdk_runners.sh, the library this
+# `gdk_gate_verdict` out of installables/gdk_gate.sh, the library this
 # package ships to its consumers, sourced straight from the source tree. The
 # devkit is its own first consumer: an agent running `make milestone` here used
 # to pipe it through a hand-invented five-shape grep to find the verdicts, and
@@ -46,7 +46,7 @@ DEVKIT    ?= env PYTHONPATH=$(CURDIR)/src $(PY) -m agentic_sdlc.cli
 # The shipped library, sourced from source. Self-hosting, the same way
 # .github/workflows/verify.yml is installed rather than hand-written: if the
 # gate helpers regress, this repo's own targets are the first thing to notice.
-RUNNERS_LIB := src/agentic_sdlc/repo/installables/gdk_runners.sh
+GATE_LIB := src/agentic_sdlc/repo/installables/gdk_gate.sh
 
 # VERBOSE reaches the capture helper as an ENVIRONMENT variable, so exporting
 # it here is what makes `make gates VERBOSE=1` work as well as `VERBOSE=1 make
@@ -70,7 +70,7 @@ SUM_HOOKS  := printf '%s hook(s) SELF-TEST OK' "$$(grep -ac 'SELF-TEST OK' "$$lo
 # transcript on disk, one verdict line naming it, and the command's own exit
 # code preserved (the helper reads PIPESTATUS, so `$$?` would be the cap's).
 define gate
-@set -o pipefail; . $(RUNNERS_LIB); \
+@set -o pipefail; . $(GATE_LIB); \
 log="$$(gdk_gate_log $(1))"; \
 gdk_gate_capture "$$log" -- $(4); \
 status="$$GDK_GATE_EXIT"; \
@@ -94,7 +94,7 @@ help:
 	@echo '  make fuzz        the committed seeded harnesses (differential + replay)'
 	@echo '  make gates       agentic-sdlc check all, on this repo'
 	@echo '  make hooks       ARM this checkout: point git at tools/hooks/ and restore the exec bits'
-	@echo '  make hooks-self-test  the installed hooks that ship a corpus, replayed (sandbox + the two ledger couriers)'
+	@echo '  make hooks-self-test  the installed hooks that ship a corpus, replayed (the two ledger couriers)'
 	@echo
 	@echo '  make pm ARGS="…"  the pm tracker from SOURCE, never a cached wheel (the ledger couriers call this)'
 	@echo
@@ -138,12 +138,19 @@ hooks:
 	@bash tools/setup-hooks.sh
 
 # The hooks this repo self-hosts that ship their own block/allow corpus: the
-# raw-engine-boot guard and the two ledger couriers. Replayed here so an edit
-# to a guard cannot quietly change a verdict — the same wiring the README asks
-# of a consumer: a `hooks-self-test`-shaped target inside its own static gate.
-HOOKS_WITH_CORPUS := tools/hooks/cc-godot-sandbox.sh tools/hooks/cc-ledger-subagent.sh tools/hooks/cc-ledger-session.sh
+# two ledger couriers. Replayed here so an edit to a courier cannot quietly
+# change a verdict — the same wiring the README asks of a consumer: a
+# `hooks-self-test`-shaped target inside its own static gate.
+#
+# The list SHRANK in 0.2.0 (the engine-boot guard left with the language kit
+# it guards — decisions D2), and a shrinking census is exactly the shape rule 4
+# is about: the old recipe's `for h in <nothing>` ran zero corpora, exited 0,
+# and $(SUM_HOOKS) reported `0 hook(s) SELF-TEST OK` as a PASS. So the census
+# is counted BEFORE the loop and an empty one is a usage error (exit 2), not a
+# quiet green. Proven by `make hooks-self-test HOOKS_WITH_CORPUS=`.
+HOOKS_WITH_CORPUS := tools/hooks/cc-ledger-subagent.sh tools/hooks/cc-ledger-session.sh
 hooks-self-test:
-	$(call gate,hooks-self-test,HOOKS,$(SUM_HOOKS),sh -c 'for h in $(HOOKS_WITH_CORPUS); do bash "$$h" --self-test || exit 1; done')
+	$(call gate,hooks-self-test,HOOKS,$(SUM_HOOKS),sh -c 'set -- $(HOOKS_WITH_CORPUS); if [ "$$#" -eq 0 ]; then echo "HOOKS_WITH_CORPUS names 0 hook(s) — a corpus that empties out must not pass"; exit 2; fi; for h in "$$@"; do bash "$$h" --self-test || exit 1; done')
 
 # Every interpreter in one target, and it reports which one failed. A matrix
 # that stops at the first failure hides the difference between "3.14 only" and
@@ -169,7 +176,7 @@ hooks-self-test:
 # is against bumping one and not the other, not against shell injection
 # through a make variable.)
 matrix:
-	@set -o pipefail; . $(RUNNERS_LIB); \
+	@set -o pipefail; . $(GATE_LIB); \
 	log="$$(gdk_gate_log matrix)"; fail=''; floor=''; full=''; \
 	for v in $(PY_MATRIX); do [ "$$v" = "$(PY_FLOOR)" ] && floor="$$v"; done; \
 	if [ -z "$$floor" ]; then \

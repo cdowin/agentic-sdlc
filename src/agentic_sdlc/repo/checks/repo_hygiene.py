@@ -27,11 +27,32 @@ from agentic_sdlc.core.project import git_lines, repo_root
 from agentic_sdlc.core.config import config_section, pattern, text
 
 
-def run() -> int:
+def read_config() -> tuple[str, 're.Pattern[str]']:
+    """`[repo_hygiene]`'s two keys, read and refused without touching the tree.
+
+    PURE, and that is the whole reason it exists as a function. These two keys
+    used to be read inline at the top of `run()`, which then fetches from the
+    remote and walks the tree — so `adopt`'s `config-updated`, whose entire job
+    is asking whether every section this version still READS parses under this
+    version, had nowhere to call and spelled the two keys a second time
+    (A1, and `steps._read_repo_hygiene`'s own docstring named it as the one
+    second list in the package). One reader, called from both, and the second
+    list is gone rather than pinned by a test.
+
+    A malformed value raises `ConfigError` here, before `run()` prints its
+    first line — which is also the honest order: a config error is exit 2 and
+    it should not arrive after a gate has already announced itself.
+    """
     cfg = config_section('repo_hygiene')
-    mainline = text(cfg, 'repo_hygiene', 'mainline', 'origin/main')
-    protected = re.compile(
-        pattern(cfg, 'repo_hygiene', 'protected', r'^(main|staging|archive/.*)$'))
+    return (
+        text(cfg, 'repo_hygiene', 'mainline', 'origin/main'),
+        re.compile(pattern(cfg, 'repo_hygiene', 'protected',
+                           r'^(main|staging|archive/.*)$')),
+    )
+
+
+def run() -> int:
+    mainline, protected = read_config()
     hard = 0
     warn = 0
 

@@ -1,14 +1,19 @@
 """test_conveyor_steps.py — the release registry, and the ordering that is the
 whole point of it.
 
-The headline is `test_open_finding_stops_before_gate`: on a tree whose review
-has not landed, the conveyor never reaches `gate`. That is the 0.24.0 mistake —
-`make milestone` run twice before a reviewer that then asked for fixes, both
-runs void before the tag — made STRUCTURALLY IMPOSSIBLE rather than left as a
-paragraph somebody has to remember. It is asserted with a COMMAND RECORDER (a
-gate command that leaves a file on disk if it runs), never by reading the
-transcript: a transcript that does not mention the gate is not proof the gate
-did not run.
+The headline USED to be `test_open_finding_stops_before_gate`: on a tree whose
+review had not landed, the conveyor never reached `gate` — the 0.24.0 mistake
+(`make milestone` run twice before a reviewer that then asked for fixes, both
+runs void before the tag) made structurally impossible rather than left as a
+paragraph somebody has to remember. **D8 removed the halt**
+(`pm/roadmap/0.2.0-the-conveyor/decisions.md`): everything is just a check, no
+step blocks any later step, and a red gate reports red and the walk goes on.
+
+So the headline is now what SURVIVED that: every step is asked, every answer is
+reported by name, and the scoreboard is the deliverable. The gate case is still
+asserted with a COMMAND RECORDER (a gate command that leaves a file on disk if
+it runs), never by reading the transcript — in both directions, because a
+transcript is not proof of what ran.
 
 Every write-verb test here works on a scratch tree, never on a fixture in place.
 """
@@ -87,22 +92,33 @@ def walk(root: Path, names, **kw):
 
 
 # --- the ordering, which is the feature ---------------------------------------
-def test_open_finding_stops_before_gate(monkeypatch):
-    """`review-landed` refuses, and the gate command is never invoked.
+def test_an_open_finding_is_reported_and_the_walk_carries_on_to_the_gate(
+        monkeypatch):
+    """`review-landed` reports NOT-TRUE and the gate still runs — D8.
 
-    Proven by a RECORDER — the configured gate command creates a file — because
-    "the transcript does not mention gate" is a claim about output, and this
-    has to be a claim about what ran.
+    THIS TEST USED TO ASSERT THE OPPOSITE, and the inversion is the decision,
+    not a regression: it was `test_open_finding_stops_before_gate`, and it held
+    while `_walk` returned at the first step whose postcondition was not true.
+    D8 (`pm/roadmap/0.2.0-the-conveyor/decisions.md`) removed that halt whole —
+    *"Everything is just a check. `release` should release on a red tree if I
+    want"* — so no step guards any later step, and a gate running behind an
+    open finding is the operator's call with the finding printed above it.
+
+    What survives unchanged is the part that is still a claim about the tree:
+    the finding is REPORTED, by name, and the run exits 1. Still proven by a
+    RECORDER — the configured gate command creates a file — because "the
+    transcript mentions gate" is a claim about output, and this has to be a
+    claim about what ran.
     """
     monkeypatch.setattr(
         steps, 'ready_for',
         lambda c, target: driver.Answer.no('M1, M2 are at disposition: open'))
     with tree(config='[release.commands]\ngate = "touch GATE-RAN"\n') as root:
         result = walk(root, ('review-landed', 'gate'))
-        assert result.stopped == 'review-landed', result.lines
+        assert result.not_true[0] == 'review-landed', result.lines
         assert result.exit_code == 1
-        assert not (root / 'GATE-RAN').exists(), (
-            'the gate command RAN behind a review that had not landed')
+        assert (root / 'GATE-RAN').exists(), (
+            'D8: no step halts the walk, so the gate command runs and reports')
         assert 'M1, M2' in '\n'.join(result.lines), result.lines
 
 
@@ -391,16 +407,128 @@ def test_tag_will_not_guess_the_remote_from_the_local_ref():
         assert not answer.is_true
 
 
-def test_a_step_whose_check_raises_stops_the_run_and_names_it():
+# --- main-merged reads a REFRESHED ref (R7) -----------------------------------
+def _clone_with_a_moved_mainline(tmp_path: Path) -> Path:
+    """A clone whose `origin/main` is behind the remote's `main`.
+
+    The ordinary shape of a milestone branch that has been open for a day, and
+    the one this step used to answer TRUE over.
+    """
+    def git(cwd, *args):
+        subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                        *args], cwd=cwd, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    bare, source = tmp_path / 'remote.git', tmp_path / 'source'
+    bare.mkdir()
+    source.mkdir()
+    git(bare, 'init', '-q', '--bare', '-b', 'main', '.')
+    git(source, 'init', '-q', '-b', 'main', '.')
+    (source / 'f.txt').write_text('one\n', encoding='utf-8')
+    git(source, 'add', '-A')
+    git(source, 'commit', '-qm', 'one')
+    git(source, 'remote', 'add', 'origin', str(bare))
+    git(source, 'push', '-q', 'origin', 'main')
+
+    clone = tmp_path / 'clone'
+    git(tmp_path, 'clone', '-q', str(bare), str(clone))
+    git(clone, 'switch', '-q', '-c', 'milestone/9.9.9')
+    (clone / 'w.txt').write_text('work\n', encoding='utf-8')
+    git(clone, 'add', '-A')
+    git(clone, 'commit', '-qm', 'work')
+
+    # The mainline moves AFTER the clone, and nothing in the clone is told.
+    (source / 'f.txt').write_text('one\ntwo\n', encoding='utf-8')
+    git(source, 'commit', '-qam', 'two')
+    git(source, 'push', '-q', 'origin', 'main')
+    return clone
+
+
+def test_main_merged_refreshes_the_ref_before_it_answers(tmp_path):
+    """R7 — it read `origin/<mainline>` and never fetched.
+
+    Measured before the fix, on exactly this fixture:
+
+        local origin/main: 6c12867…   remote main: 041fc6e…
+        -> Answer(TRUE, 'origin/main is an ancestor of HEAD')
+
+    TRUE for "the mainline is in this tree" about a mainline that had moved on:
+    a gate that missed real drift and printed PASS, off a ref nothing updated.
+    Asserted on the ANSWER and on the REF, because "it called fetch" is a claim
+    about the transcript and this has to be a claim about what was read.
+    """
+    clone = _clone_with_a_moved_mainline(tmp_path)
+    before = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=clone,
+                            capture_output=True, text=True).stdout.strip()
+
+    answer = steps.check_main_merged(
+        driver.Context(root=clone, operation='release', version=VERSION))
+
+    after = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=clone,
+                           capture_output=True, text=True).stdout.strip()
+    assert before != after, 'origin/main was never refreshed'
+    assert not answer.is_true, answer
+    assert 'not an ancestor' in answer.detail, answer.detail
+
+
+def test_main_merged_will_not_answer_from_a_ref_it_could_not_refresh(tmp_path):
+    """An unreachable remote is UNVERIFIABLE, never a pass off the stale ref.
+
+    `check_tag` already rules this shape: what the remote holds is a fact about
+    the remote, and this will not guess it from the local copy. Without the
+    refusal the fetch would be decorative — a failed fetch would leave the old
+    read intact and R7 would reproduce on every offline run.
+    """
+    clone = _clone_with_a_moved_mainline(tmp_path)
+    subprocess.run(['git', 'remote', 'set-url', 'origin', str(tmp_path / 'no')],
+                   cwd=clone, check=True)
+
+    answer = steps.check_main_merged(
+        driver.Context(root=clone, operation='release', version=VERSION))
+
+    assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+    assert 'could not be refreshed' in answer.detail, answer.detail
+
+
+def test_a_repo_with_no_remote_still_answers_from_its_local_mainline():
+    """The fetch is not allowed to redden a repo that simply has no origin.
+
+    Rule 5's shape: a local-only checkout is a legitimate consumer, and a
+    refusal there would be the refresh deciding something it was not asked.
+    """
+    with tree() as root:
+        subprocess.run(['git', 'checkout', '-q', '-B', 'main'], cwd=root,
+                       check=True)
+        subprocess.run(['git', 'checkout', '-q', '-b', f'milestone/{VERSION}'],
+                       cwd=root, check=True)
+        answer = steps.check_main_merged(ctx(root))
+    assert answer.is_true, answer
+    assert answer.detail == 'main is an ancestor of HEAD', answer.detail
+
+
+def test_a_step_whose_check_raises_answers_unverifiable_and_names_the_crash():
+    """A crash is an ANSWER now, not an escape — D8, via `driver.ask`.
+
+    It used to propagate, and that was survivable only while the walk halted:
+    a latent crash in step 19 was usually never reached because the run had
+    already returned. With every step asked on every run it would surface as an
+    uncaught traceback and exit 1 — the code hard rule 6 gives to FINDINGS, and
+    the one a consumer's CI reads as drift. So it is UNVERIFIABLE (it did not
+    answer "no"; it failed to answer) and the exception type is in the line.
+    """
     def explode(_c):
         raise RuntimeError('boom')
 
     bad = driver.Step('gate', driver.StepKind.GATE, explode)
     with tree() as root:
         from agentic_sdlc.repo.conveyor import state as run_state
-        with pytest.raises(RuntimeError):
-            driver.walk({'gate': bad}, ('gate',), ctx(root),
-                        run_state.RunState('release', VERSION))
+        result = driver.walk({'gate': bad}, ('gate',), ctx(root),
+                             run_state.RunState('release', VERSION))
+    assert result.unverifiable == ('gate',), result.lines
+    assert result.not_true == (), result.lines
+    assert result.exit_code == 1
+    said = '\n'.join(result.lines)
+    assert 'RuntimeError' in said and 'boom' in said, said
 
 
 # --- the list as config -------------------------------------------------------
@@ -468,6 +596,61 @@ def test_tree_clean_is_the_defect_the_step_reports_not_a_crash():
         answer = steps.RELEASE_STEPS['tree-clean'].check(ctx(root))
         assert not answer.is_true
         assert 'dirty.txt' in answer.detail
+
+
+# --- tree-clean says whose path is whose (R6) ---------------------------------
+LEDGER_REL = f'pm/roadmap/{VERSION}-scratch/ledger.jsonl'
+
+
+def test_tree_clean_names_the_ledger_the_gate_step_dirtied_as_the_belts_own():
+    """R6 — `gate` dirties the TRACKED ledger, and the census blamed the operator.
+
+    Story 04's stated reason for writing only deviations is that *"the ledger
+    is tracked, so a row per completed step would dirty the tree and falsify
+    `tree-clean`"*. The driver honours it; step 10 does not — `gate` runs the
+    project's gate command and the shipped `gdk_gate.sh` files a cost row per
+    gate through `GDK_LEDGER_CMD` into that same tracked file. Measured on a
+    stock consumer with the milestone `building` and the ledger committed
+    clean:
+
+        $ make check
+        $ git status --porcelain
+         M pm/roadmap/1.0.0-m/ledger.jsonl
+
+    The write is not the finding — those rows are the record `pm ledger report`
+    is built on. The finding is the SENTENCE: the path was counted with the
+    operator's own and `do()` told them to "commit or stash your own paths"
+    about a file the belt wrote. So it is still counted (rule 4 — nothing is
+    excluded from the census) and it is now attributed.
+    """
+    with tree({LEDGER_REL: '{"kind":"status"}\n'}) as root:
+        (root / LEDGER_REL).write_text(
+            '{"kind":"status"}\n{"kind":"gate","gate":"check"}\n',
+            encoding='utf-8')
+        (root / 'mine.txt').write_text('x', encoding='utf-8')
+        answer = steps.RELEASE_STEPS['tree-clean'].check(ctx(root))
+        said = steps.RELEASE_STEPS['tree-clean'].do(ctx(root))
+    assert not answer.is_true, answer
+    # BOTH paths in the census — the attribution never subtracts one.
+    assert '2 modified path(s)' in answer.detail, answer.detail
+    assert 'mine.txt' in answer.detail and LEDGER_REL in answer.detail
+    assert "belt's OWN" in answer.detail, answer.detail
+    assert 'not one of yours' in said and LEDGER_REL in said, said
+
+
+def test_tree_clean_says_nothing_about_the_ledger_when_the_belt_did_not_write_it():
+    """The other direction, so the attribution above is not printed blind.
+
+    An attribution that appears whether or not the path is dirty is a sentence
+    the reader learns to ignore, and this step's whole subject is which paths
+    are whose.
+    """
+    with tree({LEDGER_REL: '{"kind":"status"}\n'}) as root:
+        (root / 'mine.txt').write_text('x', encoding='utf-8')
+        answer = steps.RELEASE_STEPS['tree-clean'].check(ctx(root))
+    assert not answer.is_true, answer
+    assert '1 modified path(s)' in answer.detail, answer.detail
+    assert "belt's OWN" not in answer.detail, answer.detail
 
 
 def test_the_first_modified_path_is_not_short_by_one_character(tmp_path):

@@ -87,16 +87,36 @@ GIT_DIR = '.git'
 
 GITIGNORE = '.gitignore'
 GITIGNORE_HEADER = '# agentic-sdlc run artifacts (agentic-sdlc init)'
-# What the installed gate library writes into, named here as the library's own
-# default. A test pins this against the `GDK_*` default in the file that owns
-# it, so the two cannot drift in silence — a shell default is not readable from
-# Python, but it is greppable from a test.
+# Every path THIS package's own files write into at run time, named here as the
+# writer's own default. A test pins each entry against the constant in the file
+# that owns it, so the two cannot drift in silence — a shell default is not
+# readable from Python, but it is greppable from a test.
 #
 # It was four entries until 0.2.0; three named directories only the engine
 # runners wrote into, and they left with them. A language kit's own installer
 # appends its own.
+#
+# R3 (docs/reviews/2026-09-05-the-release-is-a-conveyor.md) — it was ONE entry
+# and three run artifacts. `conveyor/state.py:11-13` names gitignoring as the
+# thing that keeps `tree-clean` answerable ("a TRACKED state file would be
+# dirtied by the very run that checks the tree is clean"), and the entry that
+# would have delivered that was never here: a stock `init` consumer's second
+# `release` run reported `tree-clean` NOT-TRUE naming `.agentic-sdlc/`, about a
+# file the machine itself wrote, under a `do()` telling the operator to "commit
+# or stash your own paths". Measured on a fresh init tree, run 2 of `release`:
+#
+#   [release] CORRECTED — the run state said 'tree-clean' was done; the tree
+#   says: 1 modified path(s): .agentic-sdlc/
+#
+# The same sweep found the two the worktree script writes — it plants its scope
+# marker in every tree it creates and its own line says `# repo-relative;
+# gitignore it` — both measured `??` in the same probe. A run artifact this
+# package writes and does not ignore is a `tree-clean` this package falsifies.
 IGNORED = (
     '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_gate.sh)
+    '.agentic-sdlc/',       # STATE_DIRNAME            (conveyor/state.py)
+    '.agent-scope',         # SCOPE_MARKER             (agent-worktree.sh)
+    '.claude/worktrees/',   # WORKTREE_PARENT          (agent-worktree.sh)
 )
 
 SETUP_HOOKS = 'tools/setup-hooks.sh'

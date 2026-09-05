@@ -737,8 +737,46 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
                      + (f' — {tail}' if tail else ''))
 
 
+# One walk's answer to `[<operation>.commands]`, keyed by the checkout, the
+# operation, and the BYTES of the devkit.toml it was derived from — see
+# `_configured`. Not an lru_cache: the key has to include the file's content or
+# the memo would outlive the config it caches, and a test that rewrites
+# devkit.toml under one root would then grade the next case against the last
+# one's answer.
+_COMMANDS_MEMO: dict[tuple[str, str, bytes | None], dict[str, str]] = {}
+
+
 def _configured(ctx: Context, step: str) -> str:
-    return commands_for(ctx.operation).get(step, '')
+    """`[<operation>.commands] <step>`, or '' — asked ONCE per run.
+
+    A3 (`docs/reviews/2026-09-05-adopt-is-a-conveyor.md`): this was
+    `commands_for(ctx.operation)` with no `names`, so every one of the ten
+    steps that asks it re-entered `steps_for` -> `registry_for` -> `_section`,
+    and `load_config` re-parses `devkit.toml` from disk on every call (it is
+    deliberately not cached — `tests/test_boundaries.py` primitive 6 refuses
+    config bound at import). The visible half was noise: a `[adopt] steps` list
+    with a duplicate name printed `steps names 'x' more than once — collapsed
+    in declaration order` once per asking step rather than once per run.
+
+    Memoised on the config's own bytes rather than passed down from
+    `validate_config`, which already computed it: the driver builds `Context`
+    frozen and empty (`driver.py:899`), so there is no seam to pass it through
+    without changing what every step is handed. The key makes the memo a
+    DERIVATION and not a memory — same checkout, same operation, same
+    devkit.toml bytes is the same answer by construction, and any of the three
+    changing re-derives it.
+    """
+    from agentic_sdlc.core.project import CONFIG_NAME, repo_root
+
+    path = repo_root() / CONFIG_NAME
+    try:
+        raw: bytes | None = path.read_bytes() if path.is_file() else None
+    except OSError:
+        raw = None
+    key = (str(ctx.root), ctx.operation, raw)
+    if key not in _COMMANDS_MEMO:
+        _COMMANDS_MEMO[key] = commands_for(ctx.operation)
+    return _COMMANDS_MEMO[key].get(step, '')
 
 
 def _judged_by_command(ctx: Context, step: str, must: str) -> Answer:
@@ -827,6 +865,36 @@ def _status_at_or_past(ctx: Context, wanted: str) -> Answer:
 
 
 # --- the steps ----------------------------------------------------------------
+def _belt_written(ctx: Context) -> str:
+    """The one TRACKED path a walk of this belt dirties by itself, or ''.
+
+    R6 (`docs/reviews/2026-09-05-the-release-is-a-conveyor.md`). Story 04's
+    reasoning — *"the ledger is tracked, so a row per completed step would
+    dirty the tree and falsify `tree-clean`"* — is why the driver writes only
+    deviations. The driver honours it; step 10 does not. `gate` runs the
+    project's gate command, the installed `gdk_gate.sh` recorder files a
+    `{"kind":"gate",…}` cost row per gate through `GDK_LEDGER_CMD`, and those
+    rows land in the same TRACKED `<milestone>/ledger.jsonl`. Measured on a
+    stock consumer with the milestone `building`, ledger committed clean:
+
+        $ make check           # one gate, through the shipped runner
+        $ git status --porcelain
+         M pm/roadmap/1.0.0-m/ledger.jsonl
+
+    Nothing here can stop that write, and nothing here should: the cost rows
+    are the record `pm ledger report` is built on. What it CAN stop is the
+    false attribution — `tree-clean` counted that path with the operator's own
+    and `do()` told them to "commit or stash your own paths" about a file the
+    belt wrote. The census is unchanged (rule 4: nothing is excluded, nothing
+    is un-counted); only the sentence knows whose path it is.
+    """
+    from agentic_sdlc.repo.pm import ledger
+
+    cfg = _pm_cfg(ctx)
+    path = model.milestone_file(cfg, ctx.version)
+    return '' if path is None else cfg.rel(ledger.ledger_path(path.parent))
+
+
 def check_tree_clean(ctx: Context) -> Answer:
     # `strip=False`: column 0 is a space for a worktree-only change, and a
     # stripped first line loses it — see `_git`.
@@ -836,13 +904,23 @@ def check_tree_clean(ctx: Context) -> Answer:
     if not out.strip():
         return Answer.yes('no modified paths')
     paths = [line[3:] for line in out.split('\n') if len(line) > 3]
-    return Answer.no(f'{len(paths)} modified path(s): {_clip(", ".join(paths))}')
+    mine = _belt_written(ctx)
+    said = f'{len(paths)} modified path(s): {_clip(", ".join(paths))}'
+    if mine and mine in paths:
+        # Named, never subtracted (R6): the count above still holds every path.
+        said += (f' — {mine} is the belt\'s OWN, the gate cost rows `gate` '
+                 f'filed on this run')
+    return Answer.no(said)
 
 
 def do_tree_clean(ctx: Context) -> str:
+    mine = _belt_written(ctx)
     return ('commit or stash your own paths — this machine never commits for '
             'you, and a release cut from a tree it changed is a release '
-            'nobody reviewed')
+            'nobody reviewed'
+            + (f'. {mine} is not one of yours: `gate` filed its cost rows '
+               f'there this run, and they are a record worth committing (R6)'
+               if mine else ''))
 
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
@@ -872,17 +950,58 @@ def do_on_milestone_branch(ctx: Context) -> str:
         else 'stamp `branch:` on the milestone document (D9), then re-run'
 
 
+def _refresh(ctx: Context, branch: str) -> str:
+    """'' when `origin/<branch>` now matches the remote, else why it does not.
+
+    A remote-tracking ref is a CACHE of somebody else's repository, and git
+    refreshes it only when asked. `check repo-hygiene`
+    (`repo/checks/repo_hygiene.py:39-44`) already opens with
+    `git fetch --prune origin --quiet` for exactly this reason, and it costs no
+    rule here: rule 2 forbids booting an engine and reading generated cache
+    state, not asking git a question — `check_tag` below already calls
+    `git ls-remote`.
+    """
+    code, out = _git(ctx, 'fetch', '--quiet', 'origin', branch)
+    return '' if code == 0 else (_clip(out, 120) or f'git fetch exited {code}')
+
+
 def check_main_merged(ctx: Context) -> Answer:
+    """The mainline is an ancestor of HEAD — asked of a REFRESHED ref.
+
+    R7 (`docs/reviews/2026-09-05-the-release-is-a-conveyor.md`): this read
+    `origin/<mainline>` and never fetched, while its own `do()` says
+    `git fetch origin && git merge origin/<mainline>`. Measured on a clone
+    whose `origin/main` was two commits behind the remote's `main`:
+
+        local origin/main: 6c12867…   remote main: 041fc6e…
+        -> Answer(TRUE, 'origin/main is an ancestor of HEAD')
+
+    TRUE for "the mainline is in this tree" about a mainline that had moved on
+    — a gate that missed real drift and printed PASS, off a ref nothing
+    updated. So the ref is refreshed first, and if it cannot be, the answer is
+    UNVERIFIABLE rather than a guess: `check_tag` (:1281-1284) already rules
+    that shape — what the remote holds is a fact about the remote and this will
+    not answer it from the local ref.
+    """
     mainline = model.mainline_branch()
+    stale = _refresh(ctx, mainline)
     for ref in (f'origin/{mainline}', mainline):
         code, _ = _git(ctx, 'rev-parse', '--verify', '--quiet', ref)
         if code != 0:
             continue
+        if stale and ref.startswith('origin/'):
+            return Answer.unverifiable(
+                f'{ref} could not be refreshed ({stale}) — what the mainline '
+                f'contains is a fact about the remote, and a remote-tracking '
+                f'ref nothing updated is a guess at it, not an answer')
         code, out = _git(ctx, 'merge-base', '--is-ancestor', ref, 'HEAD')
         if code == 0:
             return Answer.yes(f'{ref} is an ancestor of HEAD')
         return Answer.no(f'{ref} is not an ancestor of HEAD — merge it in '
                          f'before the release reads this tree')
+    # No `origin/<mainline>` AND no local `<mainline>`: a fetch failure here is
+    # the ordinary shape of a repo with no remote at all, so it is not the
+    # sentence — the missing ref is.
     return Answer.unverifiable(
         f'neither origin/{mainline} nor {mainline} resolves in this checkout')
 
@@ -1508,6 +1627,44 @@ def do_installables_diffed(ctx: Context) -> str:
     return f'printed the diff and wrote the census to {REPORT_REL}'
 
 
+# What may sit LEFT of the path on a decision line and still leave it a
+# decision for that path: list markers, quote markers, and the backtick the
+# `do()` sentence writes the shape in. Anything else means the path is being
+# mentioned inside prose rather than decided.
+_DECISION_LEAD = re.compile(r'^[\s>*+-]*`?')
+
+
+def _decides(line: str, rel: str) -> bool:
+    """Is this line a decision FOR `rel` — the whole path, then a verdict?
+
+    A2 (`docs/reviews/2026-09-05-adopt-is-a-conveyor.md`): the test was
+    `rel in line and line.split(rel, 1)[1].strip(' :')` — a SUBSTRING anywhere
+    on the line with any text after it. Measured on a scratch consumer with
+    `tools/hooks/pre-push` drifted and one line written under `## decisions`:
+
+        tools/hooks/pre-push-extra: keep — this is a DIFFERENT file
+        -> JUDGEMENT ALREADY-TRUE — 1 drifted file(s), each decided in …
+
+    A decision written for one file satisfied another, and any prose quoting a
+    path with a trailing word counted as a decision for it. `install.PLANS`
+    holds no substring pair TODAY, which is what kept this latent — and "no
+    two shipped paths are prefixes of each other" is not an invariant anything
+    asserts, so it goes live the first time a verb ships `a/b` beside `a/b.md`.
+
+    Anchored to the documented shape instead: the line STARTS with the path
+    (after a list/quote marker or the `do()` sentence's backtick), the path is
+    followed by `:`, and something non-empty follows that colon. Rule 4's
+    write-side twin — a record that looks like a decision and is not.
+    """
+    head = _DECISION_LEAD.sub('', line, count=1)
+    if not head.startswith(rel):
+        return False
+    rest = head[len(rel):].lstrip('`')
+    if not rest.startswith(':'):
+        return False
+    return bool(rest[1:].strip(' :'))
+
+
 def check_installable_decisions_recorded(ctx: Context) -> Answer:
     """Every file that differs is named in the run's record with a decision.
 
@@ -1529,7 +1686,7 @@ def check_installable_decisions_recorded(ctx: Context) -> Answer:
     except (OSError, UnicodeDecodeError):
         return Answer.no(f'{REPORT_REL} could not be read as text')
     undecided = [rel for rel in drift
-                 if not any(rel in line and line.split(rel, 1)[1].strip(' :')
+                 if not any(_decides(line, rel)
                             for line in decisions.split('\n'))]
     if undecided:
         return Answer.no(
@@ -1546,9 +1703,28 @@ def do_installable_decisions_recorded(ctx: Context) -> str:
             f'whole-set: the per-file call is yours')
 
 
-def _config_readers() -> tuple[tuple[str, object], ...]:
-    """The `devkit.toml` sections THIS version still reads, each with the
-    reader that refuses a value it cannot use.
+def _config_readers() -> tuple[tuple[str, str, object], ...]:
+    """The `devkit.toml` sections THIS version still reads: the section NAME
+    the census reports it under, the label a refusal is spoken under, and the
+    reader that refuses a value this version cannot use.
+
+    **ONE LIST.** A1 (`docs/reviews/2026-09-05-adopt-is-a-conveyor.md`): this
+    returned SIX readers and `check_config_updated` built its report line from
+    a SECOND, hand-written list of TEN section names eleven lines below, so
+    four sections it NAMED were never asked. Measured, one broken section per
+    scratch repo, all four reported `TRUE — 6 reader(s) accept this repo's
+    devkit.toml; declared here: <the broken section>`:
+
+        [checks] all = ["doc", "wombat"]     `check all`         exits 2
+        [verify] milestone = 42              `verify --check`    exits 2
+        [grain_shape] caps = "nonsense"      `check grain-shape` exits 2
+        [repo_hygiene] protected = "^(["     `check repo-hygiene` exits 2
+
+    Rule 4's read side with the broken section's own name printed under the
+    word "accept" — and the second-list defect CLAUDE.md names by hand. The
+    census is now DERIVED from this tuple, so the number in the line is the
+    number that was asked, and the next config section is named for free by
+    adding a row here.
 
     There is deliberately no table of RETIRED keys. A section this package no
     longer reads is either dead or another kit's — `[uid]` left with the Godot
@@ -1560,12 +1736,21 @@ def _config_readers() -> tuple[tuple[str, object], ...]:
     from agentic_sdlc.repo import gates_extra
 
     return (
-        ('[gates] extra', gates_extra.targets),
-        ('[pm]', model.load),
-        ('[release] steps / commands', lambda: _read_operation('release')),
-        ('[adopt] steps / commands', lambda: _read_operation('adopt')),
-        ('[story] steps / commands', lambda: _read_operation('story')),
-        ('[feature] steps / commands', lambda: _read_operation('feature')),
+        ('checks', '[checks] all', _read_checks),
+        ('gates', '[gates] extra', gates_extra.targets),
+        ('pm', '[pm]', model.load),
+        ('release', '[release] steps / commands',
+         lambda: _read_operation('release')),
+        ('adopt', '[adopt] steps / commands',
+         lambda: _read_operation('adopt')),
+        ('story', '[story] steps / commands',
+         lambda: _read_operation('story')),
+        ('feature', '[feature] steps / commands',
+         lambda: _read_operation('feature')),
+        ('grain_shape', '[grain_shape] caps', _read_grain_shape),
+        ('repo_hygiene', '[repo_hygiene] mainline / protected',
+         _read_repo_hygiene),
+        ('verify', '[verify] rungs / narrow rules', _read_verify),
     )
 
 
@@ -1575,26 +1760,138 @@ def _read_operation(operation: str) -> None:
     validate_config(operation, names, known)
 
 
+def gate_universe() -> frozenset[str]:
+    """Every gate name `check all` can dispatch, DERIVED from what ships.
+
+    `cli.all_roster()` is the authority and `repo/` may never import
+    `agentic_sdlc.cli` — `tests/test_boundaries.py` LAYER_RULES, and the same
+    edge `_own_cli` above spawns a subprocess to respect. So the universe is
+    derived from below, by the one mapping `cli._check_module` already applies
+    to the name it is handed (`x-y` -> `checks/x_y.py`), and a `_`-prefixed
+    module is a shared helper rather than a gate by the convention `check
+    hooks` already uses for `tools/hooks/_*`.
+
+    This is a DERIVATION, not a second roster: `tests/test_gate_roster.py`
+    asserts `shipped_check_modules() == set(cli.KNOWN_GATES)` as an equality in
+    both directions, so a module and a roster key that disagree fail there
+    before they can reach here and make this the permissive answer.
+    """
+    from agentic_sdlc.repo import checks as checks_pkg
+
+    # `core.walk`, not `glob` — `tests/test_boundaries.py` single-homes every
+    # enumeration there, because a walk that returns one list has nowhere to
+    # put what it DROPPED, and the `_`-prefix drop below is exactly that.
+    found = walk.matching(Path(checks_pkg.__file__).resolve().parent, '*.py',
+                          walk.Kind.FILE)
+    return frozenset(path.stem.replace('_', '-') for path in found
+                     if not path.name.startswith('_'))
+
+
+def _read_checks() -> None:
+    """`[checks] all` — the roster `check all` runs here, refused as it refuses.
+
+    Two refusals, both `cli.all_roster()`'s: the SHAPE goes through `str_tuple`
+    (a bare string is iterable, and iterating one is how seven gates shipped a
+    silent empty census in v0.9.0), and an unknown name is refused rather than
+    skipped, because a typo that narrowed the aggregate in silence is the
+    cardinal sin with a config file in front of it.
+
+    The fallback is `()` and not the shipped default roster: this asks whether
+    what the repo DECLARED parses, and an absent key declares nothing.
+    """
+    from agentic_sdlc.core.config import str_tuple
+
+    roster = str_tuple(config_section('checks'), 'checks', 'all', ())
+    known = gate_universe()
+    unknown = [name for name in roster if name not in known]
+    if unknown:
+        raise ConfigError(
+            f'[checks] all names unknown gate(s) {", ".join(unknown)} — '
+            f'known gates are {" ".join(sorted(known))}')
+
+
+def _read_grain_shape() -> None:
+    """`[grain_shape] caps`, through the gate's OWN reader.
+
+    `_caps` is private and it is still what is called: it holds four refusals
+    (`number_table`, an empty table, an unknown kind, a cap below 1) and a copy
+    of them here would be the second answer this whole function list exists to
+    end — the permissive one on the day they disagree.
+    """
+    from agentic_sdlc.repo.checks import grain_shape
+
+    grain_shape._caps()
+
+
+def _read_repo_hygiene() -> None:
+    """`[repo_hygiene] mainline / protected`, through the gate's own reader.
+
+    This spelled the two keys a SECOND TIME, because `repo_hygiene.py` read
+    them inline at the top of `run()` — which then fetches from the remote and
+    walks the tree, so there was nothing pure to call the way
+    `grain_shape._caps` is called above. A second list survives only while
+    something fails when it drifts, and a test that pins it is a worse answer
+    than not having one.
+
+    `repo_hygiene.read_config()` now exists for exactly this, and the keys are
+    spelled once, in the module that owns them.
+    """
+    from agentic_sdlc.repo.checks import repo_hygiene
+
+    repo_hygiene.read_config()
+
+
+def _read_verify() -> None:
+    """`[verify]`, through `verify/rules.py` — the grammar the verb itself reads.
+
+    An ABSENT `[verify]` is not refused here. `verify` itself exits 2 on one
+    (`repo/verify/main.py:316-325`) because a verb that printed nothing and
+    exited 0 would report success for work it never checked — but that is a
+    fact about running the verb, and this step asks the adoption question:
+    does what this repo DECLARED still parse under this version? Refusing the
+    absent section here would redden `config-updated` on every repo with no
+    devkit.toml, which is rule 5 exactly backwards.
+
+    The section is read HERE and passed IN, which is the boundary
+    `tests/test_boundaries.py` draws around `repo/verify/`: that package is off
+    the config-import allowlist on purpose, so its whole grammar can be
+    exercised without a devkit.toml on disk.
+    """
+    from agentic_sdlc.core.config import section_declared
+    from agentic_sdlc.repo.verify import rules
+
+    if not section_declared(rules.SECTION):
+        return
+    rules.read(config_section(rules.SECTION))
+
+
 def check_config_updated(ctx: Context) -> Answer:
     from agentic_sdlc.core.config import section_declared
 
-    asked = 0
-    for label, reader in _config_readers():
-        asked += 1
+    asked: list[str] = []
+    refused: list[str] = []
+    for name, label, reader in _config_readers():
+        asked.append(name)
         try:
             reader()
         except ConfigError as err:
-            return Answer.no(
-                f'{label} is not a value {__version__} accepts: {_clip(str(err))}')
-    declared = [name for name in ('checks', 'gates', 'pm', 'release', 'adopt',
-                                  'story', 'feature', 'grain_shape',
-                                  'repo_hygiene', 'verify')
-                if section_declared(name)]
-    # Rule 4: the census is REPORTED. Zero declared sections is legitimate
-    # (rule 5 — a repo with no devkit.toml behaves identically) and it is said
-    # rather than passed over in silence.
+            # EVERY reader is asked, and every refusal is reported (D8: a step
+            # is a check and a check reports). Returning at the first one would
+            # hand the operator one broken section per run of a step whose
+            # whole subject is "what does this version no longer accept".
+            refused.append(f'{label}: {_clip(str(err), 160)}')
+    if refused:
+        return Answer.no(
+            f'{len(refused)} of {len(asked)} section(s) hold a value '
+            f'{__version__} does not accept — {"; ".join(refused)}')
+    declared = [name for name in asked if section_declared(name)]
+    # Rule 4: the census is REPORTED, and it is the census that was ASKED —
+    # `asked` is the same list `declared` is filtered from, so the count and
+    # the names can no longer describe different sets (A1).
+    # Zero declared sections is legitimate (rule 5 — a repo with no devkit.toml
+    # behaves identically) and it is said rather than passed over in silence.
     return Answer.yes(
-        f'{asked} reader(s) accept this repo\'s devkit.toml; '
+        f'{len(asked)} reader(s) accept this repo\'s devkit.toml; '
         + (f'declared here: {", ".join(declared)}' if declared
            else 'no section is declared here, which is the stock default'))
 

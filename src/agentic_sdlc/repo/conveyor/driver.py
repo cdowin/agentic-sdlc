@@ -1,7 +1,8 @@
 """driver.py — the conveyor: a step machine that refuses to advance.
 
-`agentic-sdlc release <version>` and `agentic-sdlc adopt <version>` are the
-same machine over different step lists. An operator runs it, gets interrupted,
+`agentic-sdlc release <version>`, `agentic-sdlc adopt <version>`,
+`agentic-sdlc close story <id>` and `agentic-sdlc close feature <id>` are the
+same machine over four step lists. An operator runs it, gets interrupted,
 clears context, and runs it again from a fresh session: the second run reports
 the same position as the first, skips what is already true, and stops on the
 same step for the same reason. Nothing is carried in anyone's head.
@@ -50,6 +51,17 @@ SDLC document are each their own story. This is the shape they plug into:
 `walk()` takes a registry and a list because who supplies them is not this
 module's question.
 
+## The four operations, and why the inner two changed nothing
+
+`story` and `feature` (SDLC.md §0) are the levels that run CONSTANTLY, and
+they arrived on this driver as two more rows in a table: same three kinds, same
+`do()`-never-decides rule, same run-state cache, same `--skip … --reason` row.
+The only thing they needed was a SUBJECT of more than one path segment
+(`subject_defect`) and the ruling that a cached position belonging to a
+different story is stale rather than broken (`_load_run`). A belt whose
+addition had required a second machine would have been the argument against
+having a machine.
+
 Line shapes are contract (rule 6):
 
     [release:tree-clean] GATE ALREADY-TRUE — no modified paths
@@ -77,16 +89,46 @@ from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.repo.conveyor import state as run_state
 from agentic_sdlc.repo.pm import ledger, model
 
-# The operations this driver walks. `adopt` has its own step list and its own
-# state file; it needs no code of its own, which is the whole argument for one
-# driver over two.
-OPERATIONS = ('release', 'adopt')
+# The operations this driver walks. Each has its own step list and its own
+# state file; none needs code of its own, which is the whole argument for one
+# driver over four.
+#
+# `story` and `feature` are the two INNER levels (SDLC.md §0). They arrived
+# after `release` and `adopt` and changed nothing about the machine: same three
+# kinds, same `do()`-never-decides rule, same run-state cache, same `--skip`.
+# What they changed is the SUBJECT — a milestone id is one path segment and a
+# story id is three — which is why `subject_defect` exists below and
+# `version_defect` is what it delegates to for the outer two.
+CLOSE_VERB = 'close'
+CLOSE_OPERATIONS = ('story', 'feature')
+OPERATIONS = ('release', 'adopt', *CLOSE_OPERATIONS)
+
+# The VERBS `cli.py` routes, which is not the same list. `close story` and
+# `close feature` are one verb over two operations — `agentic-sdlc story` would
+# be a second spelling of `pm story` and mean something else entirely, so the
+# grain is a subcommand of `close` rather than a top-level verb of its own.
+VERBS = ('release', 'adopt', CLOSE_VERB)
+
+# How many `/`-separated segments each operation's subject carries, and what to
+# call it in a refusal. One table rather than a branch, for the same reason
+# `DEFAULT_STEPS` is one: an operation added with no row here is refused by
+# name instead of silently taking the milestone grammar.
+SUBJECT = {
+    'release': (1, 'version', '<version>'),
+    'adopt': (1, 'version', '<version>'),
+    'story': (3, 'story id', '<milestone>/<feature>/<story>'),
+    'feature': (2, 'feature id', '<milestone>/<feature>'),
+}
 
 # A milestone id is a path segment that gets joined onto `pm/roadmap/`, and the
 # pm tracker already owns that grammar (`model.segment_is_literal`). This
 # reuses it rather than inventing a second one: a second grammar is a second
 # answer to "is this an id", and the two will disagree.
 MAX_VERSION = 128
+# The same bound, per SEGMENT, for the multi-segment ids the close operations
+# take: three segments of a legal length is a legal id, and a cap on the whole
+# string would refuse a perfectly ordinary story for the sum of its parts.
+MAX_SUBJECT = MAX_VERSION * len(SUBJECT['story'][2].split('/'))
 # How much of a hostile argument is quoted back. A 4 KB version string in an
 # error message is a denial of service against the reader.
 QUOTE_LIMIT = 40
@@ -370,26 +412,89 @@ def _line(ctx: Context, step: Step, verdict: str, detail: str) -> str:
 # --- the verb -----------------------------------------------------------------
 
 USAGE = """\
-agentic-sdlc {op} <version> [--skip <step> --reason "<why>"]...
-agentic-sdlc {op} <version> --status
+agentic-sdlc {op} {subject} [--skip <step> --reason "<why>"]...
+agentic-sdlc {op} {subject} --status
 
-Walk the {op} step list for milestone <version>, stopping at the first step
-whose postcondition is not true. Resumable: the position lives in
-.agentic-sdlc/run/{op}.json (gitignored), and every step is re-checked against
-the tree on every run, so deleting that file costs nothing.
+Walk the {state} step list for {subject}, stopping at the first step whose
+postcondition is not true. Resumable: the position lives in
+.agentic-sdlc/run/{state}.json (gitignored), and every step is re-checked
+against the tree on every run, so deleting that file costs nothing.
 
-  <version>   a milestone id, e.g. 0.2.0 — the same grammar `pm` uses
+  {subject}
+              a grain id — the same grammar `pm` uses, segment for segment
   --skip      do not walk this step. Every --skip needs its own --reason
               immediately after it, and the pair is written to the milestone's
               ledger.jsonl as a `deviation` row. Deviation stays possible;
               INVISIBLE deviation does not.
   --reason    why this step is being skipped. Not optional, not empty, not
               punctuation, one line, at most 1024 characters.
-  --status    print this milestone's recorded deviations and the cached
-              position, and walk nothing.
+  --status    print this grain's recorded deviations and the cached position,
+              and walk nothing.
 
 Exit codes: 0 the run completed, 1 it stopped on a step, 2 usage or config.\
 """
+
+CLOSE_USAGE = f"""\
+agentic-sdlc {CLOSE_VERB} story   <milestone>/<feature>/<story>
+agentic-sdlc {CLOSE_VERB} feature <milestone>/<feature>
+
+The two INNER belts (SDLC.md §0). `close story` is the one that runs dozens of
+times a day: four of its five steps are already-computed facts, so it answers
+in well under a second and there is no reason to close by hand.
+
+  story    claimed, the narrow check green, the work committed, the evidence
+           written, `done`. It cannot advance past `narrow-verified`.
+  feature  every story `done` (asked of `pm ready-for feature`, never
+           re-implemented), reviewing, verified, a review record that PARSES,
+           no finding left at `disposition: open`, `done`.
+
+Both take the same flags as `release` and `adopt` — `--skip <step>
+--reason "<why>"` and `--status`. `agentic-sdlc {CLOSE_VERB} story --help`
+prints them.
+
+The belt ABOVE these two is `agentic-sdlc release <version>`; the belt below a
+story is the edit, and `agentic-sdlc verify --story` is what proves it.\
+"""
+
+
+def _spoken(operation: str) -> str:
+    """How this operation is INVOKED, which is not always its name.
+
+    `story` and `feature` are reached through `close`, so a refusal that told
+    the operator to run `agentic-sdlc story …` would be naming a verb that does
+    not exist — the exact defect `cli.py`'s docstring test exists to prevent,
+    one layer down.
+    """
+    return (f'{CLOSE_VERB} {operation}' if operation in CLOSE_OPERATIONS
+            else operation)
+
+
+def _load_run(root: Path, operation: str, version: str,
+              names: Sequence[str]) -> tuple['run_state.RunState', str]:
+    """(the cached position, '' or what was DISCARDED to get one).
+
+    One state file per operation (`state.py` point 4) and one `close story` run
+    per STORY — so the file left by the last story is about a different grain
+    every time, which `state.load` refuses as a mismatch. For the close
+    operations that refusal would make the belt unusable from its second run
+    onward, so a state file belonging to another grain is STALE rather than
+    broken: it is thrown away, a blank position is returned, and the discard is
+    PRINTED (state.py point 5 — losing it costs nothing, because every step is
+    a question about the tree and is re-asked regardless).
+
+    `release` and `adopt` keep the strict refusal. There the file describes the
+    one milestone being released, a mismatch means the operator is running the
+    wrong version, and starting fresh over it would hide that.
+    """
+    try:
+        return run_state.load(root, operation, version, names), ''
+    except run_state.StateDefect as err:
+        if operation not in CLOSE_OPERATIONS:
+            raise
+        run_state.clear(root, operation)
+        return (run_state.RunState(operation=operation, version=version),
+                f'the run state was discarded and this run starts from the '
+                f'tree: {err}')
 
 
 def parse_flags(rest: Sequence[str]) -> tuple[list[tuple[str, str]], bool,
@@ -477,6 +582,57 @@ def version_defect(value: str) -> str:
     return ''
 
 
+def subject_defect(operation: str, value: str) -> str:
+    """'' when `value` may be this operation's subject, else why not.
+
+    ONE grammar, applied per segment. A story id is three segments joined by
+    `/` and each of them is exactly what `version_defect` already rules on, so
+    a traversal, a glob, a backslash, a scheme, an absolute path or a `..` is
+    refused here for the same reason it is refused there rather than by a
+    second rule that can drift away from it.
+
+    The SEGMENT COUNT is checked and it is not a formality: `close story` given
+    a feature id would resolve to a real file and get the wrong question
+    answered about it, which is the quietest way this verb could lie —
+    `pm ready-for`'s `_grain` learned it first.
+    """
+    segments, noun, shape = SUBJECT.get(operation, SUBJECT['release'])
+    if segments == 1:
+        return version_defect(value)
+    if not value:
+        return f'the {noun} is empty'
+    if len(value) > MAX_SUBJECT:
+        return (f'the {noun} is too long ({len(value)} characters; the limit '
+                f'is {MAX_SUBJECT})')
+    if any(ch.isspace() for ch in value):
+        return f'{_quote(value)} carries whitespace, which no {noun} has'
+    parts = value.split('/')
+    if len(parts) != segments:
+        return (f'{_quote(value)} is not a {noun} — a {operation} id is '
+                f'{segments} segments, {shape}; this one has {len(parts)}')
+    for part in parts:
+        if len(part) > MAX_VERSION:
+            return (f'{_quote(value)}: one segment is {len(part)} characters; '
+                    f'the limit is {MAX_VERSION}')
+        if not model.segment_is_literal(part):
+            return (f'{_quote(value)} is not a {noun} — globs, path '
+                    f'separators, schemes, absolute paths and the "." / ".." '
+                    f'segments are all refused')
+    return ''
+
+
+def grain_path(cfg, operation: str, subject: str) -> Path | None:
+    """The file a close operation's subject names, or None.
+
+    `model`'s own resolvers, never a second walk: a story this returns and a
+    story `pm story done` writes to have to be the same file, and two resolvers
+    are two answers on the day a tree holds `s2.md` and `07-s2.md`.
+    """
+    if operation == 'story':
+        return model.story_file(cfg, subject)
+    return model.feature_file(cfg, subject)
+
+
 def _config(root: Path | None) -> 'model.PmConfig':
     """The pm config, optionally re-rooted at a scratch tree.
 
@@ -510,41 +666,83 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if operation in ('-h', '--help', 'help'):
         print(__doc__.strip())
         return 0
+    if operation == CLOSE_VERB:
+        # `close story <id>` / `close feature <id>`. The GRAIN is the operation
+        # from here down — one entry point, because a second `main` for the
+        # inner belts would be a second place for the contract to live.
+        if rest and rest[0] in ('-h', '--help', 'help'):
+            print(CLOSE_USAGE)
+            return 0
+        if not rest:
+            return _refuse(
+                f'{CLOSE_VERB} needs a grain '
+                f'(expected: {", ".join(CLOSE_OPERATIONS)})')
+        if rest[0] not in CLOSE_OPERATIONS:
+            return _refuse(
+                f'unknown grain {rest[0]!r} — `{CLOSE_VERB}` closes one of '
+                f'{", ".join(CLOSE_OPERATIONS)}. A milestone closes through '
+                f'`agentic-sdlc release <version>`, which is the belt above '
+                f'these two')
+        operation, rest = rest[0], rest[1:]
     if operation not in OPERATIONS:
         return _refuse(f'unknown operation {operation!r} '
                        f'(expected: {", ".join(OPERATIONS)})')
     if any(a in ('-h', '--help', 'help') for a in rest):
-        print(USAGE.format(op=operation))
+        print(USAGE.format(op=_spoken(operation), state=operation,
+                           subject=SUBJECT[operation][2]))
         return 0
 
     # An argument a verb does not understand is a usage error, not a
     # suggestion — the `_run_check` precedent.
     pairs, status, positional, flag_defect = parse_flags(rest)
+    spoken = _spoken(operation)
+    segments, noun, shape = SUBJECT[operation]
     if flag_defect:
-        return _refuse(f'{operation}: {flag_defect}')
+        return _refuse(f'{spoken}: {flag_defect}')
     if not positional:
-        return _refuse(f'{operation} needs a <version> — the milestone id to '
-                       f'{operation}, e.g. `agentic-sdlc {operation} 0.2.0`')
+        return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
+                       f'`agentic-sdlc {spoken} '
+                       f'{"0.2.0" if segments == 1 else shape}`')
     if len(positional) > 1:
-        return _refuse(f'{operation} takes exactly one <version>; got '
-                       f'{len(positional)} — one operation, one milestone')
+        return _refuse(f'{spoken} takes exactly one {shape}; got '
+                       f'{len(positional)} — one operation, one grain')
     version = positional[0]
-    defect = version_defect(version)
+    defect = subject_defect(operation, version)
     if defect:
-        return _refuse(f'{operation}: {defect}')
+        return _refuse(f'{spoken}: {defect}')
 
     # Everything above refused without touching the filesystem. From here the
     # tree is read — and still nothing is WRITTEN until a step has run.
     cfg = _config(root)
-    mdir = model.milestone_dir(cfg, version)
+    # The milestone segment, which is `version` itself for the outer two. The
+    # ledger row for a deviation goes under the MILESTONE directory whatever
+    # grain is being closed, so this resolves for all four.
+    mid = version.split('/')[0]
+    mdir = model.milestone_dir(cfg, mid)
     if mdir is None:
         # BEFORE any ledger row: the milestone directory is where the row goes,
         # so it has to resolve first. A `--skip` against an unresolvable
         # version writes nothing at all.
-        print(f'agentic-sdlc: {operation} {version}: no milestone directory '
-              f'{cfg.rel(cfg.roadmap)}/{version}-* — refused, and nothing was '
+        print(f'agentic-sdlc: {spoken} {version}: no milestone directory '
+              f'{cfg.rel(cfg.roadmap)}/{mid}-* — refused, and nothing was '
               f'created', file=sys.stderr)
         return 1
+    if operation in CLOSE_OPERATIONS:
+        # Same rule one grain down: the subject has to BE there before a step
+        # asks a question about it. A close aimed at a story nobody wrote
+        # otherwise walks a list of steps that each answer UNVERIFIABLE for the
+        # same reason, which buries the one fact the operator needs.
+        try:
+            grain = grain_path(cfg, operation, version)
+        except model.AmbiguousStory as err:
+            print(f'agentic-sdlc: {spoken} {version}: {err} — refused, and '
+                  f'nothing was written', file=sys.stderr)
+            return 1
+        if grain is None:
+            print(f'agentic-sdlc: {spoken} {version}: no {noun} resolves from '
+                  f'{version!r} (expected {shape}) — refused, and nothing was '
+                  f'written', file=sys.stderr)
+            return 1
 
     try:
         names = tuple(steps) if steps is not None else step_names(operation)
@@ -553,21 +751,21 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     except ConfigError as err:
         # A typo in the step list is a CONFIG mistake, not a finding: exit 2,
         # naming the key and the offending value, with no step run.
-        return _refuse(f'{operation}: {err}')
+        return _refuse(f'{spoken}: {err}')
     defect = plan_defect(known, names)
     if defect:
-        return _refuse(f'{operation}: {defect}')
+        return _refuse(f'{spoken}: {defect}')
 
     if status:
         return print_status(cfg, mdir, operation, version, names)
 
     skips, skip_defect = _skip_plan(pairs, names)
     if skip_defect:
-        return _refuse(f'{operation}: {skip_defect}')
+        return _refuse(f'{spoken}: {skip_defect}')
     if skips:
         blocked = _ledger_defect(mdir)
         if blocked:
-            return _refuse(f'{operation}: {blocked} — nothing was skipped, '
+            return _refuse(f'{spoken}: {blocked} — nothing was skipped, '
                            f'because the RECORD is the point')
 
     # The state destination is decided BEFORE the first step. A run that
@@ -575,9 +773,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     # the one promise this machine exists to keep.
     blocked = run_state.destination_defect(cfg.root, operation)
     if blocked:
-        return _refuse(f'{operation}: cannot write the run state: {blocked}')
+        return _refuse(f'{spoken}: cannot write the run state: {blocked}')
     try:
-        run = run_state.load(cfg.root, operation, version, names)
+        run, stale = _load_run(cfg.root, operation, version, names)
     except run_state.StateDefect as err:
         return _refuse(str(err))
 
@@ -588,12 +786,14 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if already:
         when = ', '.join(f'{n} (completed {run.records[n].at})'
                          for n in already)
-        return _refuse(f'{operation}: --skip names {when}; a skip cannot '
+        return _refuse(f'{spoken}: --skip names {when}; a skip cannot '
                        f'un-do a postcondition that holds')
 
     ctx = Context(root=cfg.root, operation=operation, version=version)
     recorder = _skip_recorder(mdir, operation, version)
     result = walk(known, names, ctx, run, skips=skips, record_skip=recorder)
+    if stale:
+        print(f'[{operation}] CORRECTED — {stale}')
     for line in result.lines:
         print(line)
     try:

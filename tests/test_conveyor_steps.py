@@ -147,14 +147,24 @@ def test_every_step_carries_a_postcondition_sentence_for_the_document():
     """Story 05 renders from here. A step with no sentence would render a row
     with an empty cell — a protocol the reader cannot follow. Both registries:
     a second operation whose steps render blank cells is the same defect."""
-    assert set(steps.STEP_DOC) == set(steps.RELEASE_STEPS) | set(
-        steps.ADOPT_STEPS)
+    every = set().union(*(set(r) for r in steps.REGISTRIES.values()))
+    assert set(steps.STEP_DOC) == every
     assert all(v.strip() for v in steps.STEP_DOC.values())
 
 
-def test_the_registry_does_not_import_verdict():
-    """Two readers of "is every finding dispositioned" are two answers, and
-    the second one is the permissive one on the day they disagree."""
+def test_the_registry_holds_no_second_reader_of_a_verdict_block():
+    """`pm/verdict.py` is the ONE parser, and this module reaches for it rather
+    than growing a cheaper copy.
+
+    The rule used to be "does not import verdict at all", which was right while
+    every finding question had a `pm ready-for` verb to ask. The feature belt
+    has none — `ready-for tag` asks about a whole milestone — so
+    `review-recorded` and `findings-landed` read the record here. What must
+    never appear is a SECOND reader: a regex over `| id | severity |
+    disposition |`, a `casefold() == 'open'` beside `verdict.OPEN`, a
+    hand-rolled fence walk. The second reader is the permissive one on the day
+    they disagree.
+    """
     source = (REPO_ROOT / 'src/agentic_sdlc/repo/conveyor/steps.py').read_text(
         encoding='utf-8')
     imported: set[str] = set()
@@ -164,7 +174,16 @@ def test_the_registry_does_not_import_verdict():
         elif isinstance(node, ast.ImportFrom):
             imported.add(node.module or '')
             imported.update(f'{node.module}.{a.name}' for a in node.names)
-    assert not any('verdict' in name for name in imported), sorted(imported)
+    assert any('verdict' in name for name in imported), sorted(imported)
+    # The disposition token and the block's columns are named in ONE place.
+    # Read off the code, not the comments: a paragraph explaining the rule is
+    # not a violation of it.
+    code = '\n'.join(line for line in source.split('\n')
+                     if not line.lstrip().startswith('#'))
+    for spelling in ("'open'", '"open"', 'severity', 'disposition |'):
+        assert spelling not in code, (
+            f'{spelling!r} is spelled in steps.py — the verdict vocabulary is '
+            f'verdict.py\'s, and a copy here is the second answer')
 
 
 def test_no_url_and_no_default_command_for_the_three_that_cannot_be_python():

@@ -82,7 +82,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.config import (ConfigError, config_section, number_table,
-                                      text)
+                                      relpath)
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 from agentic_sdlc.repo.pm import model
@@ -255,7 +255,17 @@ def run() -> int:
     # through the same guard rather than given a second spelling here, because
     # a gate looking somewhere else than the tracker does would answer about a
     # directory nobody maintains.
-    roadmap_dir = text(config_section('pm'), 'pm', 'roadmap_dir', 'pm/roadmap')
+    #
+    # `relpath`, not `text`, and it is the SAME call `repo/pm/model.load` makes
+    # — this key has two readers and they must not disagree about which trees
+    # exist. Until 0.2.0 `text` had no opinion about paths and both of rule 8's
+    # halves went through here: `roadmap_dir = "../tmp.XXXX"` printed OVER CAP
+    # findings about documents outside the checkout, and the absolute spelling
+    # reached `path.relative_to(root)` below and raised an uncaught ValueError
+    # at exit 1 — a traceback where rule 6 says exit 2, which a consumer's CI
+    # reads as drift found. The refusal is one layer down so it cannot be half
+    # applied; what is left here is the reason it is asked for.
+    roadmap_dir = relpath(config_section('pm'), 'pm', 'roadmap_dir', 'pm/roadmap')
     roadmap = root / roadmap_dir
 
     if not roadmap.is_dir():
@@ -272,28 +282,26 @@ def run() -> int:
     docs = list(found)
     census = found.census(f'PM document(s) under {roadmap_dir}/')
     if not docs:
-        # A roadmap that holds markdown this walk did not KEEP is a scope that
-        # lost files, and that is rule 4's zero census — it fails. A roadmap
-        # that holds nothing at all is a fresh `pm init`, and failing it would
-        # red the newest consumer in the world on its first `make check`.
-        # `found` carries both halves, so the two are told apart by measurement
-        # rather than by inference.
-        # NO ZERO-CENSUS FAILURE HERE, and that is a statement about this
-        # gate rather than a softening of rule 4. The rule fails a census that
-        # LOST files — a scope narrowed by a config value nobody re-read. This
-        # gate has no scope of its own to narrow: it measures every markdown
-        # document under `[pm] roadmap_dir`, the same directory the tracker
-        # uses, and the only skip it registers is NO_FRONTMATTER, which is a
-        # classification (`ROADMAP.md` is not a grain and never was) and not a
-        # loss. A test holds that: give this gate a scope key and the branch
-        # this comment replaces has to come back with it.
+        # THE CENSUS GOES IN BOTH LINES. It was computed here and dropped from
+        # the PASS, so a roadmap holding fourteen markdown files reported
+        # "holds no grain document yet" — true about grains, and silent about
+        # everything it had just walked past. A verdict that omits what it
+        # scanned is the half-truth rule 4 is about.
         #
-        # Whether the DIRECTORY is the right one is `check pm`'s question, and
-        # two gates over one tree must not both answer it or one fact yields
-        # two findings.
-        print(f'[check:grain-shape] PASS — {roadmap_dir}/ holds no grain '
-              f'document yet, so there is nothing to measure; `check pm` is '
-              f'the gate that has an opinion about a PM tree being there')
+        # UNEXAMINED, not merely skipped. A file opened and classified as a
+        # note IS examined — a fresh `pm init` writes exactly one of those and
+        # is honestly empty. A symlinked directory nobody descended, or a path
+        # config removed, was never looked at, and a walk that kept nothing
+        # while leaving something unlooked-at cannot tell an empty tree from a
+        # scope that lost one.
+        if found.unexamined():
+            print(f'[check:grain-shape] FAIL — {census}, and this kept nothing '
+                  f'while leaving {found.unexamined()} entr(ies) unexamined, so '
+                  f'it cannot tell an empty tree from a scope that lost one')
+            return 1
+        print(f'[check:grain-shape] PASS — {census}; {roadmap_dir}/ holds no '
+              f'grain document yet, so there is nothing to measure. `check pm` '
+              f'is the gate with an opinion about a PM tree being there')
         return 0
 
     findings: list[tuple[str, str]] = []

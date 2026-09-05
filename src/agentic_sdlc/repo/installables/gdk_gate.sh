@@ -288,6 +288,26 @@ _gdk_ledger_verdict() {
 # hangs would otherwise hang every gate in a consumer's pre-push hook, which is
 # the one failure mode worse than a missing row. With no timeout binary there
 # is no bound to give, so there is no row either — said out loud, once.
+#
+# THE BOUND IS ONLY HALF THE ANSWER, AND IT WAS THE HALF THAT ALREADY WORKED.
+# `timeout` bounds the recorder's own runtime; it does not bound how long this
+# library WAITS for it, and until 0.2.0 those were different numbers. The
+# caller read the recorder through `$( )`, whose pipe every grandchild
+# inherits, so a recorder that backgrounded anything held the gate open for as
+# long as the grandchild lived. Measured on the shipped file, GDK_LEDGER_TIMEOUT=3:
+#
+#   GDK_LEDGER_CMD="sh -c 'sleep 120 & exit 0'"   ->  120072 ms
+#
+# The deadline never even fired there. `timeout` returned 0 in under a
+# millisecond, because its direct child DID exit — isolated:
+#
+#   timeout 2 sh -c 'sleep 20 & exit 0'                    0 s
+#   out="$(timeout 2 sh -c 'sleep 20 & exit 0' 2>&1)"     20 s
+#   timeout 2 sh -c 'sleep 20 & exit 0' >"$f" 2>&1         0 s
+#
+# So killing the process group would have fixed nothing: there was no deadline
+# to fire and nothing to signal. The stall was the READER, and the fix is to
+# stop reading through a pipe — see `_gdk_ledger_record`.
 _gdk_ledger_run() {
 	if [ -z "$GDK_TIMEOUT" ]; then
 		return 1
@@ -295,9 +315,16 @@ _gdk_ledger_run() {
 	gdk_run_bounded "$GDK_LEDGER_TIMEOUT" -- "$@"
 }
 
-# _gdk_ledger_record <gate> <verdict> <duration_ms>
+# _gdk_ledger_record <gate> <verdict> <duration_ms> [scratch]
+#
+# `scratch` is where the recorder's output is parked while it runs. It is a
+# path, not a pipe, and that is the whole of the fix above: a file has no
+# writer to wait for, so this returns when `timeout` returns whatever the
+# recorder forked. Given empty (or a path that cannot be created), the output
+# goes to /dev/null instead — a row without its refusal message is a
+# degradation; a gate that will not return is not.
 _gdk_ledger_record() {
-	local said='' rc=0
+	local said='' rc=0 scratch="${4-}"
 	# GDK_LEDGER_CMD is a command STRING, and the stock spelling carries shell
 	# quoting (`uvx --from "git+https://…@$(DEVKIT_VERSION)" agentic-sdlc`), so
 	# a bare word split would hand `uvx` a spec with literal quote characters in
@@ -326,7 +353,23 @@ _gdk_ledger_record() {
 	# recorder would sit in the middle of it. What the recorder said is not
 	# thrown away, though — a refusal it printed is the one thing a consumer
 	# needs, so its first line rides out on the note.
-	said="$(_gdk_ledger_run "${prefix[@]}" "${argv[@]}" 2>&1)" || rc=$?
+	#
+	# TO A FILE. This was `said="$(_gdk_ledger_run … 2>&1)"` and that is the
+	# defect — see `_gdk_ledger_run`'s block above for the measurement. The
+	# probe is `: >"$scratch"`, run BEFORE the recorder: an unwritable report
+	# dir must degrade to /dev/null rather than turn a redirection failure into
+	# "the recorder exited 1", which would blame the recorder for the tree.
+	if [ -n "$scratch" ] && : 2>/dev/null > "$scratch"; then
+		_gdk_ledger_run "${prefix[@]}" "${argv[@]}" > "$scratch" 2>&1 || rc=$?
+		# One line is all the note carries, so one line is all that is read —
+		# a recorder that printed a megabyte does not become a shell variable.
+		IFS= read -r said < "$scratch" 2>/dev/null || said="${said-}"
+		# Unlinked immediately: anything the recorder forked still holds the
+		# fd and writes into an inode with no name, freed when it dies.
+		rm -f "$scratch" 2>/dev/null || true
+	else
+		_gdk_ledger_run "${prefix[@]}" "${argv[@]}" > /dev/null 2>&1 || rc=$?
+	fi
 	if [ "$rc" -ne 0 ]; then
 		_gdk_ledger_note "the recorder exited $rc: ${said%%$'\n'*}"
 	fi
@@ -354,7 +397,12 @@ _gdk_ledger_close() {
 		_gdk_ledger_note "gate \"$gate\" published no verdict this library can name (set GDK_GATE_VERDICT, or report through gdk_gate_capture)"
 		return 0
 	fi
-	_gdk_ledger_record "$gate" "$verdict" "$duration"
+	# The recorder's output is parked BESIDE the sidecar, which is the one
+	# directory this slot has already proved it can write to: no sidecar, no
+	# row (the guard above), so reaching here means `_gdk_ledger_open` created
+	# a file here. A `mktemp` would be a second spawn on the quiet path, and a
+	# fixed name under /tmp would be a shared-directory race.
+	_gdk_ledger_record "$gate" "$verdict" "$duration" "$side.out"
 	return 0
 }
 
@@ -507,7 +555,7 @@ _gdk_st_gate() {
 }
 
 _gdk_self_test() {
-	local scratch verdict log body status hung lib recorded ledger_case
+	local scratch verdict log body status hung lib recorded ledger_case t0 elapsed
 	# Resolved BEFORE the cd below: the sub-shell cases re-source the library
 	# from a different working directory.
 	lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -661,6 +709,14 @@ REC_EOF
 #!/usr/bin/env bash
 sleep 30
 HANG_EOF
+	# A recorder that EXITS CLEANLY and leaves something behind it. The stock
+	# GDK_LEDGER_CMD is a `uvx` line, whose subprocess behaviour this package
+	# does not control, so this is not a hypothetical shape.
+	cat > "$scratch/fork.sh" <<'FORK_EOF'
+#!/usr/bin/env bash
+sleep 20 &
+exit 0
+FORK_EOF
 	: > "$GDK_ST_REC_LOG"
 
 	# UNSET SPAWNS NOTHING. A consumer with no PM tree pays zero: no clock, no
@@ -804,6 +860,38 @@ exit=0" "$body"
 		_gdk_st_eq 'a recorder that hangs is bounded, and the gate still reports' \
 			"[STRICT] done — full log: $GDK_GATE_REPORT_DIR/strict.log
 exit=7" "$body"
+
+		# AND A RECORDER THAT FORKS. The case above bounds a recorder that
+		# HANGS, and it passed all along; it is not the same question. Here the
+		# recorder exits 0 immediately and the deadline never fires — what used
+		# to hold the gate was the `$( )` the output was read through, whose
+		# pipe the forked grandchild inherited. Measured on the shipped file at
+		# GDK_LEDGER_TIMEOUT=3, `sh -c 'sleep 120 & exit 0'` cost 120072 ms; the
+		# same probe after the fix cost 52 ms.
+		#
+		# The assertion is WALL CLOCK, because the verdict line and the exit
+		# code were already correct across twelve hostile recorders and stayed
+		# correct through this one — an output-only corpus cannot see this
+		# defect at all. The threshold is 10 s against a 20 s sleep and a 1 s
+		# bound: wide enough that a loaded machine cannot redden it, narrow
+		# enough that the defect cannot hide under it.
+		export GDK_LEDGER_TIMEOUT=1
+		t0="$(_gdk_now_ms)"
+		body="$(_gdk_st_gate "$lib" "bash $scratch/fork.sh" 7)"
+		elapsed="$(_gdk_now_ms)"
+		unset GDK_LEDGER_TIMEOUT
+		_gdk_st_eq 'a recorder that forks still lets the gate report' \
+			"[STRICT] done — full log: $GDK_GATE_REPORT_DIR/strict.log
+exit=7" "$body"
+		if [ -n "$t0" ] && [ -n "$elapsed" ]; then
+			elapsed=$(( elapsed - t0 ))
+			status=0; [ "$elapsed" -lt 10000 ] || status=1
+			_gdk_st_true \
+				"a recorder that forks does not hold the gate open (${elapsed} ms, bound 1000)" \
+				"$status"
+		else
+			echo '  SKIP — no millisecond clock; the forking-recorder bound was not timed' >&2
+		fi
 	else
 		echo '  SKIP — no timeout binary; the bounded-recorder case did not run' >&2
 	fi

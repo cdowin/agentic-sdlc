@@ -1156,6 +1156,62 @@ class ConfigValueErrors(unittest.TestCase):
                     f'[pm]\nchecks = ["D8"]\n{bad}\n', encoding='utf-8')
                 self.assertEqual(run_gate(root)[0], 2)
 
+    def test_a_path_key_outside_the_checkout_is_refused_not_followed(self):
+        """Hard rule 8, in the three `[pm]` keys that are joined onto the root.
+
+        `check grain-shape` was the reported violation, but `roadmap_dir` has a
+        second reader and the tracker had the SAME hole — measured on the
+        unfixed tracker, 2026-09-05, against a milestone in a sibling tempdir:
+
+            $ pm status                 # roadmap_dir = "<abs>"  and "../out"
+            milestone 0.1.0      [done]
+            EXIT=0
+            $ check pm                  # both spellings
+            [check:pm] scanning active PM tree (../out/, excluding zz_archive/)
+            [check:pm] PASS — no PM-tree status drift; scanned 1 milestone(s)…
+            EXIT=0
+
+        What it did NOT have is the gate's traceback: `PmConfig.rel` catches the
+        `ValueError` and falls back to the absolute path, so the tracker
+        reported serenely about a tree outside the checkout instead of crashing
+        over it. Quieter, same violation, and `template_dir` is the loudest of
+        the three because `pm templates` WRITES there — six files installed
+        outside the checkout, on the unfixed tracker, at exit 0.
+        """
+        from agentic_sdlc.core.project import load_config, repo_root
+        for key in ('roadmap_dir', 'review_dir', 'template_dir'):
+            for value in ('/tmp/elsewhere', '../outside', '~/elsewhere',
+                          'pm/../../outside'):
+                with self.subTest(key=key, value=value), tree() as root:
+                    # A Python repr is a TOML LITERAL string, so a `\` in a
+                    # value reaches the guard instead of the TOML parser.
+                    (root / 'devkit.toml').write_text(
+                        f'[pm]\n{key} = {value!r}\n', encoding='utf-8')
+                    repo_root.cache_clear()
+                    load_config.cache_clear()
+                    buf = io.StringIO()
+                    # BOTH streams: `check pm` prints its ERROR line to stderr,
+                    # and a stdout-only harness would assert against ''.
+                    with contextlib.redirect_stdout(buf), \
+                            contextlib.redirect_stderr(buf):
+                        code = pm_check.run()
+                    out = buf.getvalue()
+                    # 2, not 1: a devkit.toml mistake is not PM drift.
+                    self.assertEqual(code, 2, f'{key} = {value!r}\n{out}')
+                    self.assertIn(key, out)
+                    self.assertIn(value, out)
+
+    def test_a_path_key_inside_the_checkout_still_loads(self):
+        """The refusal's other half — rule 5. `pm/roadmap/` with a trailing
+        slash and `./pm/roadmap` both stay inside, and a guard that reddened
+        them would break a consumer at upgrade rather than at a wrong value."""
+        for value in ('pm/roadmap', 'pm/roadmap/', './pm/roadmap'):
+            with self.subTest(value=value), tree() as root:
+                (root / 'devkit.toml').write_text(
+                    f'[pm]\nroadmap_dir = {value!r}\n', encoding='utf-8')
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, f'{value!r}\n{out}')
+
     def test_scaffold_misconfiguration_is_refused_not_ignored(self):
         for bad in ('[pm.scaffold]\nmilestone = "theme,risk"',
                     '[pm.scaffold.epic]\nx = "y"',

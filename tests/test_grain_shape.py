@@ -240,6 +240,93 @@ def test_a_bad_value_in_this_gates_section_is_exit_2():
         assert 'grain_shape' in out, (line, out)
 
 
+def _outside_roadmap(root: Path) -> Path:
+    """A PM tree OUTSIDE the checkout, holding two documents over their caps.
+
+    Over their caps deliberately: a gate that refuses the config never opens
+    them, and a gate that does not refuse has findings to print. That is what
+    makes the assertion below about READING rather than about a message.
+    """
+    outside = root.parent / 'outside'
+    (outside / '0.1.0' / 'stories').mkdir(parents=True, exist_ok=True)
+    pmfx.write(outside / '0.1.0' / 'milestone.md',
+               {'id': '"0.1.0"', 'status': 'done'}, body(900))
+    pmfx.write(outside / '0.1.0' / 'stories' / 's1.md',
+               {'id': '0.1.0/s1', 'status': 'done'}, body(900))
+    return outside
+
+
+def test_a_roadmap_dir_outside_the_checkout_is_refused_at_exit_2():
+    """Hard rule 8 and hard rule 6, in the one key that broke both.
+
+    Measured on the unfixed gate, 2026-09-05, against exactly this tree:
+
+      * `roadmap_dir = "<abs>"` reached `path.relative_to(root)` and raised an
+        uncaught `ValueError` — a TRACEBACK at exit **1**, which a consumer's
+        CI reads as drift found and a human reads as a crash. Neither of those
+        is "your devkit.toml is wrong";
+      * `roadmap_dir = "../outside"` did not crash. It PASSED THROUGH and
+        printed `OVER CAP ../outside/0.1.0/milestone.md — 900 body line(s)`,
+        a stock-roster gate reporting findings about a tree that is not this
+        checkout.
+
+    So both halves are asserted, and the second assertion is the load-bearing
+    one: exit 2 with the outside tree still described would be the same
+    violation wearing the right exit code.
+    """
+    for spelling in ('absolute', 'dot-dot'):
+        with pmfx.tree() as root:
+            outside = _outside_roadmap(root)
+            value = str(outside) if spelling == 'absolute' else '../outside'
+            config(root, f'[pm]\nroadmap_dir = "{value}"\n')
+            code, out = cli(root)
+        assert code == 2, f'{spelling}: exited {code}, not 2\n{out}'
+        # Rule 6's other half: a config refusal is a MESSAGE, not a traceback.
+        assert 'Traceback' not in out, (spelling, out)
+        # It names the key and the value, so the fix is the next thing read.
+        assert 'roadmap_dir' in out and value in out, (spelling, out)
+        # And nothing out there was measured. `900` is the body length of both
+        # documents outside the checkout; it can only appear if one was opened.
+        assert 'OVER CAP' not in out and '900' not in out, (spelling, out)
+
+
+def test_every_path_shaped_spelling_that_leaves_the_checkout_is_refused():
+    """The shapes, not just the two that were reported.
+
+    A guard that refused `../x` and took `a/../../x`, or refused `/x` and took
+    `~/x`, would be a rule 8 claim with holes in it — and the holes are exactly
+    where the next value lands.
+    """
+    for value in ('/tmp/elsewhere', '/', '~/roadmap', '~', '../outside',
+                  'pm/../../outside', 'a/b/../../../c', 'C:/roadmap',
+                  '..\\outside', 'file:///tmp/roadmap',
+                  'https://example.invalid/roadmap'):
+        with pmfx.tree() as root:
+            # A TOML LITERAL string: `..\outside` in a basic string is a TOML
+            # parse error, and a case that never reached the guard would be a
+            # green assertion about nothing.
+            config(root, f"[pm]\nroadmap_dir = '{value}'\n")
+            code, out = cli(root)
+        assert code == 2, f'{value!r} exited {code}, not 2\n{out}'
+        assert 'roadmap_dir' in out, (value, out)
+
+
+def test_a_path_key_that_stays_inside_the_checkout_is_untouched():
+    """The other half of a refusal: what it must NOT refuse.
+
+    A `.` segment, a trailing slash and a nested directory all stay inside, and
+    every one is a spelling a consumer's devkit.toml may already carry. Rule 5
+    says a repo declaring the default behaves identically to one declaring
+    nothing — a guard that reddened `pm/roadmap/` would break that on the
+    upgrade rather than at the value that is wrong.
+    """
+    for value in ('pm/roadmap', 'pm/roadmap/', './pm/roadmap', 'pm/./roadmap'):
+        with pmfx.tree() as root:
+            config(root, f'[pm]\nroadmap_dir = "{value}"\n')
+            code, out = cli(root)
+        assert code == 0, f'{value!r} exited {code}, not 0\n{out}'
+
+
 def test_a_repo_with_no_config_behaves_identically_to_one_declaring_defaults():
     """Rule 5, asserted on the BYTES. A default that drifts from its documented
     spelling is a config file that lies about what it changed."""

@@ -31,7 +31,7 @@ from pathlib import Path
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 from agentic_sdlc.core.project import repo_root
-from agentic_sdlc.core.config import (ConfigError, config_section,
+from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
                                        section_declared, flag, str_tuple, text)
 
 # --- stock policy -------------------------------------------------------------
@@ -264,8 +264,15 @@ def load() -> PmConfig:
 
     return PmConfig(
         root=repo_root(),
-        roadmap_dir=text(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
-        review_dir=text(sect, 'pm', 'review_dir', 'docs/reviews'),
+        # THE THREE PATH KEYS GO THROUGH `relpath`, NOT `text`. Each is joined
+        # onto `root` and then read — or, for `template_dir`, WRITTEN to — so an
+        # absolute or `../` value moves this package's whole PM surface to a
+        # tree outside the checkout. Measured 2026-09-05: `pm status` and
+        # `check pm` both reported cleanly about a milestone in /tmp, and
+        # `pm templates` installed six files there. Hard rule 8, one `text()`
+        # deep, in the reader every other PM caller comes through.
+        roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
+        review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
         review_slug_fallback=flag(sect, 'pm', 'review_slug_fallback', False),
         story_ordinal_prefix=flag(sect, 'pm', 'story_ordinal_prefix', False),
         milestone_states=tup('milestone_states', DEFAULT_MILESTONE_STATES),
@@ -273,7 +280,7 @@ def load() -> PmConfig:
         story_states=tup('story_states', DEFAULT_STORY_STATES),
         bug_states=tup('bug_states', DEFAULT_BUG_STATES),
         checks=checks,
-        template_dir=text(sect, 'pm', 'template_dir', ''),
+        template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
         version_pattern=version_pattern,
     )

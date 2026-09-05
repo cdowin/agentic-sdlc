@@ -71,6 +71,67 @@ def text(sect: dict, name: str, key: str, fallback: str) -> str:
     return value
 
 
+def _escapes_checkout(value: str) -> str | None:
+    """Why this config value names a path outside the checkout, by SHAPE alone.
+
+    Decided before anything is opened, for `ready_for._pointer_defect`'s
+    reason: hard rule 8 is a claim about what this package READS, and a claim
+    tested by reading is not the claim. That function is the peer of this one
+    one layer up — it grades a `reviewed:` pointer written in a grain document
+    and answers with a BLOCKER string at exit 1, because a malformed document
+    is a finding. This grades a devkit.toml VALUE and answers with a
+    `ConfigError` at exit 2, because a malformed config is not a finding
+    (rule 6). Same shapes, two different verdicts, and the difference is which
+    of the two is a fact about the tree.
+
+    Only what actually leaves the checkout is refused. A `.` segment, a
+    trailing slash and a `*` all stay inside, and every one of them is a
+    spelling somebody's `devkit.toml` may already carry — refusing them would
+    break trees this package has no finding against.
+    """
+    if '://' in value or value.lower().startswith('file:'):
+        return 'is a URL, and nothing here is fetched'
+    if value.startswith('/'):
+        return 'is absolute; every path key is relative to the repo root'
+    if value.startswith('~'):
+        return 'is home-relative, and nothing here is expanded'
+    if '\\' in value:
+        return 'carries a backslash, which is not a path separator here'
+    if len(value) > 1 and value[1] == ':' and value[0].isalpha():
+        return 'names a drive; every path key is relative to the repo root'
+    if '..' in value.split('/'):
+        return 'climbs out with a `..` segment'
+    return None
+
+
+def relpath(sect: dict, name: str, key: str, fallback: str) -> str:
+    """A path setting: `text`, plus "and it is inside this checkout".
+
+    `text` has no opinion about paths, so every key naming one — `[pm]
+    roadmap_dir`, `review_dir`, `template_dir` — took an absolute or `../`
+    value and this package went and read there. Measured 2026-09-05:
+    `roadmap_dir = "../tmp.XXXX"` made `check grain-shape` report OVER CAP
+    findings about two documents outside the checkout, `check pm` PASS over a
+    tree in /tmp, and `template_dir = "../tmp.XXXX/tpl"` made `pm templates`
+    WRITE six files outside it. The absolute spelling of the same value did not
+    even get that far: it reached `Path.relative_to` and raised an uncaught
+    `ValueError` at exit **1**, which a consumer's CI reads as drift found.
+    Rule 8 and rule 6, from one unguarded `text()`.
+
+    ONE validator, called at each read site — the same shape `text` itself has.
+    A second implementation for the second reader of a key is a second answer,
+    and `roadmap_dir` has two readers (`repo/pm/model` and `checks/grain_shape`)
+    that must not disagree about which trees exist.
+    """
+    value = text(sect, name, key, fallback)
+    defect = _escapes_checkout(value)
+    if defect is not None:
+        raise ConfigError(
+            f'[{name}] {key} must name a path inside this checkout, got '
+            f'{value!r} — it {defect}')
+    return value
+
+
 def flag(sect: dict, name: str, key: str, fallback: bool) -> bool:
     value = sect.get(key, fallback)
     if not isinstance(value, bool):

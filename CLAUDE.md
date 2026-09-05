@@ -1,21 +1,22 @@
 # CLAUDE.md — agentic-sdlc
 
-Two families, consumed as a **pinned-tag Python package** by shipping game repos: **scene tooling**
-for Godot 4.x (introspection, surgery, the `.tscn`/`.tres` gates) and **repo discipline** that has
-nothing to do with Godot (`check doc`, `check shell`, `check repo-hygiene`, and `pm` — a
-markdown-and-frontmatter project tracker).
+**Repo discipline, consumed as a pinned-tag Python package**: the static gates (`check doc`,
+`check shell`, `check repo-hygiene`, `check pm`, `check hooks`), `pm` — a
+markdown-and-frontmatter project tracker with a ledger — and the `install-*` verbs that write a
+project's standard target set, runners, hook corpus, agent roster and CI. Extracted from
+`godot-devkit` at 0.2.0; the scene half stayed there.
 
-Consumed by game repos that pin `DEVKIT_VERSION` in their Makefile and route gates through `uvx`.
+Consumed by repos that pin `DEVKIT_VERSION` in their Makefile and route gates through `uvx`.
 Which repos those are is none of this package's business (hard rule 8). Public repo, MIT. **Every
 change here lands in other projects' commit gates — treat the CLI as a published API.**
 
-**The goal, the northstar, and the reasoning behind the rules below live in [`README.md`](README.md).** Read it once before your first change here; this file is the enforceable form, not a second copy of it. One line worth carrying in your head: *any change you can make to a scene by hand should be makeable through one deterministic command that touches nothing else — and provable without reading the file.* Two audiences, humans and LLMs; for the latter the deliverables are a stable verb vocabulary, determinism, and token reduction.
+**The goal, the northstar, and the reasoning behind the rules below live in [`README.md`](README.md).** Read it once before your first change here; this file is the enforceable form, not a second copy of it. One line worth carrying in your head: *anything a project checks or scaffolds by hand should be one deterministic command that touches nothing else — and provable without reading the tree.* Two audiences, humans and LLMs; for the latter the deliverables are a stable verb vocabulary, determinism, and token reduction.
 
 ## Hard rules
 
 1. **Stdlib only, forever.** No runtime dependencies. Python 3.11+ (`tomllib`). A consumer's pre-push hook must never break because of a transitive dep.
-2. **Pure parse — never boots Godot.** No tool starts the engine, runs an import, or depends on `.godot/` cache state. Safe anywhere, anytime, in parallel. A `.tscn` is text: the write verbs edit it without ever starting the engine. The `repo/` family does not touch a scene at all: it is here because this is the pinned-tag channel its consumers already share, not because PM tracking is Godot tooling. **If that stops being true, it leaves** — and the layout is what keeps that a real option rather than a sentiment.
-3. **A write verb touches only what it was asked to touch.** Parse → serialise with no mutation is **byte-identical**, proven against a corpus of real consumer scenes. A verb that cannot guarantee a correct result **refuses and says why** — it never edits partially and never reformats adjacent lines. Writes are idempotent: the same command twice is a no-op the second time.
+2. **Pure text — boots nothing.** No tool starts an engine, runs a build or an import, or depends on generated cache state. Every gate reads git, markdown and shell as text, so it is safe anywhere, anytime, in parallel. This rule used to carry an exit clause for the other half — *"the `repo/` family does not touch a scene at all: it is here because this is the pinned-tag channel its consumers already share… **if that stops being true, it leaves**"*. **It was exercised in 0.2.0, in the other direction: the scene half left and the repo family kept the channel.** The one-way layout is what made that a whole extraction rather than a negotiation, and it stays that way for whatever arrives next.
+3. **A write verb touches only what it was asked to touch.** `pm` rewrites ONE frontmatter line and preserves every other byte, including the file's line endings; an installer writes a whole file or refuses by path. A verb that cannot guarantee a correct result **refuses and says why** — it never edits partially and never reformats adjacent lines. Writes are idempotent: the same command twice is a no-op the second time.
 4. **Two cardinal sins, one shape.** Read side: a gate that misses real drift and prints PASS. Write side: a diff that looks legitimate and is not. Both are worse than a crash because both destroy the signal a consumer relies on. When scoping/globbing/excluding, prove the file census matches intent (count what you scanned; a gate scanning 0 files must say so, loudly). Loud failure is a feature — an LLM can recover from an error and cannot recover from a lie.
 5. **Config over forks.** Per-project variation goes in the consumer's `devkit.toml` section with a stock default — never "edit the tool". A repo with NO `devkit.toml` must behave byte-identically to one declaring the defaults.
 6. **Exit codes are contract:** 0 pass, 1 findings, 2 usage error. Output line shapes (`  DRIFT  …`, `[check:x] PASS — …`) are grepped by consumers — changing them is a **minor** bump at least.
@@ -24,34 +25,29 @@ change here lands in other projects' commit gates — treat the CLI as a publish
 
 ## Where things live
 
-Two families and a shared floor. The rule, not the inventory — `ls src/agentic_sdlc`
+One family and a shared floor. The rule, not the inventory — `ls src/agentic_sdlc`
 is the inventory, and it cannot go stale:
 
-- **`core/`** — infrastructure that knows about neither family. `project.py` finds the
+- **`core/`** — infrastructure that knows about no family at all. `project.py` finds the
   repo and loads config; `config.py` decides what a config VALUE may be. Nothing here
-  may import from `godot/` or `repo/`.
-- **`godot/`** — everything that knows what a `.tscn` is, layered `format/` → `index/`
-  → `read/`+`write/` → `checks/`. A layer may import downward, never up.
-- **`repo/`** — repo discipline with no Godot in it: the `pm` tracker and the gates
-  that read markdown, shell and git. **Nothing in `repo/` may import `godot/`.** That
-  is what keeps rule 2's exit clause real rather than sentimental — check it before
-  you add an import, because nothing else will.
+  may import from `repo/`.
+- **`repo/`** — the discipline itself: the `pm` tracker, the gates that read markdown,
+  shell and git, and the `install-*` verbs with the files they write. It may import
+  `core/`, never the reverse. That one-way edge is what let the other family leave
+  whole (rule 2) — check it before you add an import, because nothing else will.
 
-A module that fits neither family is a signal worth raising, not a placement problem
+A module that fits neither is a signal worth raising, not a placement problem
 to solve quietly. Tool modules own their behavior and expose `main(argv)` or `run()`;
 `cli.py` only routes.
 
-- **New check** = module in the right family's `checks/` + branch in `_dispatch_check` +
-  README table row + CHANGELOG line.
-- **New read verb** = module + `cli.py` route + README table row + CHANGELOG line.
-- **New WRITE verb**: the dominant case is a new **scene subverb** — a row in
-  `scene_edit.py`'s `VERBS` + `HANDLERS` tables plus `_build_parser`/`_check_usage`,
-  no new module and no `cli.py` edit. A new TOP-LEVEL verb is module + `cli.py`
-  route + README table row + CHANGELOG line. Either way, **plus** a round-trip fidelity case in the
-  corpus, an explicit refusal path with a test proving it declines rather than
-  mangles, and an idempotence test. Address nodes by PATH (`parent` + `name`) —
-  Godot addresses them that way; format-4 `unique_id` is not the addressing key.
-  Read output must be valid write input.
+- **New check** = module in `repo/checks/` + a key in `cli.py`'s `KNOWN_GATES` +
+  README table row + CHANGELOG line. `_check_module` DERIVES the import path from the
+  name, so there is no second list to update — and `tests/test_gate_roster.py` asserts
+  the roster equals what dispatches, because eight phantom gate names survived an
+  extraction that touched every other surface in that file.
+- **New verb** = module + `cli.py` route + README table row + CHANGELOG line. A verb
+  that WRITES additionally needs an explicit refusal path with a test proving it
+  declines rather than mangles, and an idempotence test.
 - **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never `tuple(cfg.get(...))` —
   a bare string is iterable, and that is how seven gates shipped a silent PASS over an
   empty census in v0.9.0.
@@ -64,10 +60,10 @@ to solve quietly. Tool modules own their behavior and expose `main(argv)` or `ru
   *contents*. Contents belong in the tree, in `--help`, or in the README. A CLAUDE.md
   that has to be edited whenever code moves is a manifest, and it will lie.
 - **The committed fixtures ARE the fixtures.** `tests/fixtures/` holds purpose-built
-  repos and a scrubbed real-world scene corpus, versioned with the code that reads
-  them; every read verb and every gate is proven against those. A check that wants
-  more realistic data vendors more data here (rule 8) — it never reaches for a tree
-  outside this checkout, which would answer differently on every machine.
+  repos, hook payloads and transcripts, versioned with the code that reads them; every
+  verb and every gate is proven against those. A check that wants more realistic data
+  vendors more data here (rule 8) — it never reaches for a tree outside this checkout,
+  which would answer differently on every machine.
 - **Verify against source, never a cached wheel.** `uvx --from <path>` caches by
   version, so an unchanged version number serves stale code and a fixed bug still
   reproduces. Use `PYTHONPATH=src python3 -m agentic_sdlc.cli …`.
@@ -112,14 +108,13 @@ source — this package is its own first consumer) like the rest; never ask an a
 grep a gate's output for its result. Enforced by `tests/test_makefile_gates.py`.
 
 - Behavior gate: `make gates` — `agentic-sdlc check all` over this repo's own tree,
-  which is a real Godot-less project with a real PM tree. Self-hosting is the behavior
-  proof: every check runs against something committed here.
+  which is a real project with a real PM tree and a real hook corpus. Self-hosting is
+  the behavior proof: every check runs against something committed here.
 - Differential + replay harnesses: `make fuzz`. Seeded, so a divergence reproduces
   exactly rather than being re-derived; `make test` runs them too.
 - **A write verb under test writes to scratch, never to a fixture in place.** Copy the
   file (or the tree) to a `tempfile` first; a fixture that a test run mutates is a
   fixture that grades the next run against the last one's output.
-- Round-trip fidelity is proven on a committed corpus of scrubbed real-world scenes (`tests/fixtures/corpus/` — census-floored and construct-guarded, so it runs everywhere including CI). Parse → serialise with no mutation, byte-compared; `load()`/`save()` proven on the same corpus. This is the test that makes every write verb safe, and it is not optional. If the corpus lacks a construct, VENDOR a scrubbed scene carrying it — the corpus is how coverage grows.
 - A gate-semantics change additionally needs a deliberately-broken probe: introduce the drift class in a scratch copy of a fixture repo and confirm the gate FAILS (rule 4). Prove the **config** path too: a bad value for that gate's section must exit 2, and a zero-file census must FAIL rather than pass.
 - **Never verify through `uvx --from <path>`.** uv caches the built wheel by version, so an unchanged
   version number serves stale code and a fixed bug still reproduces. Run `PYTHONPATH=src python3 -m
@@ -140,7 +135,3 @@ This package runs its own tooling on its own tree, and that is a gate, not a dem
 ## Releases
 
 Use the `/release` skill — it owns the bump/tag/push sequence and the consumer-pin reminder. Never tag by hand; never let `__init__.py` and `pyproject.toml` versions diverge.
-
-## Known gaps
-
-The `refs` tool has a known blind spot: autoload NAMES (declared in `project.godot`, not via `class_name`) aren't indexed — fix upstream here, not in consumers.

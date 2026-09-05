@@ -1231,3 +1231,37 @@ def test_the_span_excludes_its_own_markers_and_stops_at_the_first_close():
         5, len(open_ended.splitlines()))
     assert install.config_block_span('') is None
     assert install.config_block_span('nothing in here\n') is None
+
+
+# --- the docs are a second list, so they are asserted rather than trusted ------
+class TestTheReadmeInstallerTableIsTheRoutedSet:
+    """E1 + T3, and the same shape as `test_gate_roster`: a table a human
+    maintains beside a dict a machine dispatches from is two lists, and the
+    second one lies. It already did — `install-runners` shipped the Godot
+    runners, left with them at 0.2.0, and stayed documented here for a release
+    afterwards, while `install-gates` (which replaced it) and `install-sdlc`
+    had no row at all.
+    """
+
+    README = REPO / 'README.md' if 'REPO' in dir() else None
+
+    def _rows(self) -> set[str]:
+        import re
+        from pathlib import Path
+        readme = Path(__file__).resolve().parents[1] / 'README.md'
+        text = readme.read_text(encoding='utf-8')
+        return {m.group(1) for m in
+                re.finditer(r'^\| `(install-[a-z-]+)` \|', text, re.M)}
+
+    def test_every_routed_installer_has_a_row(self):
+        missing = sorted(set(install.PLANS) - self._rows())
+        assert missing == [], (
+            f'{missing} are routed by `install.PLANS` and documented in no '
+            f"README row — a consumer cannot discover a verb that isn't there")
+
+    def test_every_row_names_a_routed_installer(self):
+        stray = sorted(self._rows() - set(install.PLANS))
+        assert stray == [], (
+            f'README documents {stray}, which this version does not route. '
+            f'A verb that left is worse than one never documented: a reader '
+            f'runs it and gets exit 2.')

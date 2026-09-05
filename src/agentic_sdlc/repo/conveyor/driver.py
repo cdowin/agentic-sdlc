@@ -1,10 +1,10 @@
-"""driver.py — the conveyor: a step machine that refuses to advance.
+"""driver.py — the conveyor: a step machine that walks, reports and finishes.
 
 `agentic-sdlc release <version>`, `agentic-sdlc adopt <version>`,
 `agentic-sdlc close story <id>` and `agentic-sdlc close feature <id>` are the
 same machine over four step lists. An operator runs it, gets interrupted,
 clears context, and runs it again from a fresh session: the second run reports
-the same position as the first, skips what is already true, and stops on the
+the same position as the first, skips what is already true, and reports the
 same step for the same reason. Nothing is carried in anyone's head.
 
 ## The three kinds, and why the third is not a hack
@@ -24,10 +24,33 @@ rather than an escape hatch bolted onto the automatic kind:
                 do:    state precisely what a human must do, and return NOT-DONE
 
 **A `JUDGEMENT` step with no artifact and no configured command is
-UNVERIFIABLE, which is a REFUSAL to advance — never a pass.** That is the whole
-difference between this machine and the prose it replaces. `repo/pm/verdict.py`
-already rules this way for a review record whose block does not parse; this
-inherits the ruling rather than inventing a softer one.
+UNVERIFIABLE — never a pass.** `repo/pm/verdict.py` already rules this way for
+a review record whose block does not parse; this inherits the ruling rather
+than inventing a softer one. It no longer REFUSES to advance (D8, below); it
+is counted in its own column and the run exits 1.
+
+## Nothing halts, and that is the whole of D8
+
+`.claude/rules/pm-execution.md` shipped before any of this:
+
+> *"`pm feature reviewing` and `pm milestone done` REPORT, never refuse.
+> Stories not at `reviewing`, features not done — the verb names them and does
+> what it was asked."*
+
+The PM CLI always worked that way and this driver was built to refuse, which
+is the rule broken by the module that most needed it. Chris, 2026-09-05:
+
+> *"I don't understand tree vs input. Everything is just a check. `release`
+> should release on a red tree if I want (we mostly wouldn't but why stop
+> someone?)"*
+
+There is exactly one exit 2 and it is not a step's answer — it is this module
+failing to READ its own declaration (`plan_defect`, `subject_defect`,
+`validate_config`), before the walk, with nothing walked. Everything during
+the walk is a check, and a check reports. The engine cannot know whether a
+not-true step is wrong: descoped? a hotfix? deliberate? **The caller knows and
+the engine does not**, and a machine that blocks on a question it cannot ask
+is asserting an answer.
 
 ## `do()` never decides its own outcome
 
@@ -45,7 +68,7 @@ favour of the tree, the file is corrected, and the line says so.
 
 ## What this module does NOT own
 
-The 21 real release steps, the step list as config, `--skip`, and the generated
+The 21 real release steps, the step list as config, and the generated
 SDLC document are each their own story. This is the shape they plug into:
 `registry_for()` and `step_names()` are the two seams, both empty here, and
 `walk()` takes a registry and a list because who supplies them is not this
@@ -55,7 +78,7 @@ module's question.
 
 `story` and `feature` (SDLC.md §0) are the levels that run CONSTANTLY, and
 they arrived on this driver as two more rows in a table: same three kinds, same
-`do()`-never-decides rule, same run-state cache, same `--skip … --reason` row.
+`do()`-never-decides rule, same run-state cache, same `deviation` row.
 The only thing they needed was a SUBJECT of more than one path segment
 (`subject_defect`) and the ruling that a cached position belonging to a
 different story is stale rather than broken (`_load_run`). A belt whose
@@ -95,7 +118,7 @@ from agentic_sdlc.repo.pm import ledger, model
 #
 # `story` and `feature` are the two INNER levels (SDLC.md §0). They arrived
 # after `release` and `adopt` and changed nothing about the machine: same three
-# kinds, same `do()`-never-decides rule, same run-state cache, same `--skip`.
+# kinds, same `do()`-never-decides rule, same run-state cache.
 # What they changed is the SUBJECT — a milestone id is one path segment and a
 # story id is three — which is why `subject_defect` exists below and
 # `version_defect` is what it delegates to for the outer two.
@@ -393,20 +416,27 @@ def plan_defect(registry: Mapping[str, Step], names: Sequence[str]) -> str:
 
 def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
          run: 'run_state.RunState',
-         skips: Mapping[str, str] | None = None,
-         record_skip: Callable[[str, str], bool] | None = None) -> Result:
-    """Walk `names` in order, stopping at the first step that is not true.
+         record: Callable[[str, str, str], bool] | None = None) -> Result:
+    """Walk `names` in order to the END, and return what is true and what is not.
 
     `run` is READ for what the last run answered and WRITTEN with what this one
-    answers — it is never consulted to decide whether to skip a step. Every
-    step is asked, every time; that is what makes a deleted state file cost
-    nothing and a stale one harmless.
+    answers — it is never consulted to decide whether to ask a step. Every step
+    is asked, every time; that is what makes a deleted state file cost nothing
+    and a stale one harmless.
 
-    `skips` maps a step name to the operator's REASON. A skipped step is not
-    checked and not recorded in the run state — it has no `check()` answer to
-    cache — and `record_skip` is what makes it durable: it returns True when it
-    wrote a new ledger row and False when the row was already there, which is
-    what makes a re-run with the same flags idempotent.
+    `record` is the DURABLE half. `--skip <step> --reason "<why>"` used to be
+    how a deviation reached the ledger, and D8 removed the flag: it existed to
+    escape a refusal, and with nothing to escape it is ceremony. **The ledger
+    row was always the honest part**, so it is now written by the machine
+    rather than typed by the operator — one row per step that is not true,
+    carrying the step's own `Answer.detail` as the reason. The callback returns
+    True when a new row landed and False when the row was already there, which
+    is what makes a re-run idempotent rather than a second row saying the same
+    thing.
+
+    That is strictly better than the flag was. A skip reason was the operator's
+    account of why they were stepping around the machine; this is the machine's
+    account of what it found, and nobody has to remember to type it.
     """
     defect = plan_defect(registry, names)
     if defect:
@@ -416,22 +446,13 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
         # every step is a check and every check reports.
         return Result((f'[{ctx.operation}] REFUSED — {defect}',), (), (), (), 2)
 
-    skipped_reasons = dict(skips or {})
     lines = [f'[{ctx.operation}] CORRECTED — {c}' for c in run.corrections]
     done: list[str] = []
     not_true: list[str] = []
     unverifiable: list[str] = []
-    skipped: list[str] = []
     total = len(names)
     for index, name in enumerate(names, start=1):
         step = registry[name]
-        if name in skipped_reasons:
-            reason = skipped_reasons[name]
-            fresh = True if record_skip is None else record_skip(name, reason)
-            verdict = 'SKIPPED' if fresh else 'ALREADY-SKIPPED'
-            lines.append(_line(ctx, step, verdict, reason))
-            skipped.append(name)
-            continue
         remembered = run.answer_for(name)
         answer = ask(step, ctx)
         if remembered == run_state.TRUE and not answer.is_true:
@@ -468,28 +489,23 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
         # wrong. Descoped? A hotfix? Deliberate? The caller knows and the
         # engine does not, and a machine that blocks on a question it cannot
         # ask is asserting an answer.
+        outcome = ('unverifiable' if answer.truth is Truth.UNVERIFIABLE
+                   else 'not-true')
         if answer.truth is Truth.UNVERIFIABLE:
             lines.append(_line(ctx, step, 'UNVERIFIABLE', answer.detail))
             unverifiable.append(name)
         else:
             lines.append(_line(ctx, step, 'NOT-TRUE', answer.detail))
             not_true.append(name)
+        # The durable row. The run cache is gitignored and disposable; THIS is
+        # the half nobody can reconstruct from the tree afterwards, which is
+        # the whole argument the `deviation` row was minted under.
+        if record is not None and answer.detail:
+            record(name, outcome, answer.detail)
         lines.append(
             f'[{ctx.operation}] step {index}/{total} {name!r} '
             f'({step.kind.name}) is not true; what would make it true: '
             f'{answer.detail}')
-    if skipped:
-        # Named, in the transcript, at the end — a run that deviated must not
-        # read like one that did not.
-        lines.append(f'[{ctx.operation}] DEVIATED — {len(skipped)} of {total} '
-                     f'steps skipped: {", ".join(skipped)}')
-    if skipped and len(skipped) == total:
-        # Risk 3, arriving: a conveyor that is always skipped is worse than
-        # none, because it LOOKS like control.
-        lines.append(
-            f'[{ctx.operation}] WARNING — every step in the list ({total}) was '
-            f'skipped; a conveyor nothing walks is not control, it is a '
-            f'record of a release nobody ran')
     # THE SCOREBOARD, and criterion 2 says it has to be good: a 21-step run
     # now prints 21 lines where it used to print five, so this line is what a
     # caller reads. A warning nobody reads is worse than a refusal (risk 1),
@@ -519,26 +535,36 @@ def _line(ctx: Context, step: Step, verdict: str, detail: str) -> str:
 # --- the verb -----------------------------------------------------------------
 
 USAGE = """\
-agentic-sdlc {op} {subject} [--skip <step> --reason "<why>"]...
+agentic-sdlc {op} {subject}
 agentic-sdlc {op} {subject} --status
 
-Walk the {state} step list for {subject}, stopping at the first step whose
-postcondition is not true. Resumable: the position lives in
-.agentic-sdlc/run/{state}.json (gitignored), and every step is re-checked
-against the tree on every run, so deleting that file costs nothing.
+Walk the {state} step list for {subject} TO THE END. Every step is a check,
+every check reports, and no step halts the walk — the ORDER is what this
+machine is for, and whether a step that is not true should stop you is your
+question, not its. `agentic-sdlc check <gate>` is the thing that FAILS a tree,
+in CI and pre-push, with an exit-code contract for exactly that.
+
+Resumable: the position lives in .agentic-sdlc/run/{state}.json (gitignored),
+and every step is re-checked against the tree on every run, so deleting that
+file costs nothing.
 
   {subject}
               a grain id — the same grammar `pm` uses, segment for segment
-  --skip      do not walk this step. Every --skip needs its own --reason
-              immediately after it, and the pair is written to the milestone's
-              ledger.jsonl as a `deviation` row. Deviation stays possible;
-              INVISIBLE deviation does not.
-  --reason    why this step is being skipped. Not optional, not empty, not
-              punctuation, one line, at most 1024 characters.
   --status    print this grain's recorded deviations and the cached position,
               and walk nothing.
 
-Exit codes: 0 the run completed, 1 it stopped on a step, 2 usage or config.\
+Every step that is not true becomes a `deviation` row in the milestone's
+ledger.jsonl, carrying the reason the step itself gave. `--skip <step>
+--reason "<why>"` was how that row used to be minted, and 0.2.0 removed it:
+it existed to escape a refusal, nothing refuses, and the row is now written
+without anyone having to remember to ask for it.
+
+The last line is a SCOREBOARD:
+
+    [release] 19/21 true · 1 not true: gate · 1 unverifiable: ci-green
+
+Exit codes: 0 every postcondition holds, 1 one or more does not, 2 the
+declaration could not be read.\
 """
 
 CLOSE_USAGE = f"""\
@@ -550,14 +576,15 @@ times a day: four of its five steps are already-computed facts, so it answers
 in well under a second and there is no reason to close by hand.
 
   story    claimed, the narrow check green, the work committed, the evidence
-           written, `done`. It cannot advance past `narrow-verified`.
-  feature  every story `done` (asked of `pm ready-for feature`, never
+           written, `done`.
+  feature  every story finished (asked of `pm ready-for feature`, never
            re-implemented), reviewing, verified, a review record that PARSES,
            no finding left at `disposition: open`, `done`.
 
-Both take the same flags as `release` and `adopt` — `--skip <step>
---reason "<why>"` and `--status`. `agentic-sdlc {CLOSE_VERB} story --help`
-prints them.
+Both take the same flags as `release` and `adopt` — just `--status`.
+`agentic-sdlc {CLOSE_VERB} story --help` prints it. Like every belt, they
+report and finish: a story whose narrow check is red still closes, and the red
+rung is named. What follows from that is yours.
 
 The belt ABOVE these two is `agentic-sdlc release <version>`; the belt below a
 story is the edit, and `agentic-sdlc verify --story` is what proves it.\
@@ -604,57 +631,35 @@ def _load_run(root: Path, operation: str, version: str,
                 f'tree: {err}')
 
 
-def parse_flags(rest: Sequence[str]) -> tuple[list[tuple[str, str]], bool,
-                                              list[str], str]:
-    """(skip/reason pairs, --status, positionals, '' or the usage defect).
+def parse_flags(rest: Sequence[str]) -> tuple[bool, list[str], str]:
+    """(--status, positionals, '' or the usage defect).
 
-    `--skip` and `--reason` are parsed as an ORDERED PAIR rather than as two
-    independent lists, so `--reason` with no `--skip` is a defect the grammar
-    catches rather than a value that silently attaches to nothing. Each value
-    is taken positionally, so a reason beginning with `-` is a reason.
+    `--skip <step> --reason "<why>"` used to be parsed here as an ordered pair.
+    D8 removed both: the flag existed to escape a refusal, and no step refuses
+    any more, so it was ceremony with a grammar. What it bought — the durable
+    ledger row — is now written by the machine for every step that is not true
+    (`walk`'s `record`), which is the same row minus the requirement that
+    somebody remember to ask for it.
     """
-    pairs: list[tuple[str, str]] = []
     status = False
     positional: list[str] = []
-    pending: str | None = None
-    index = 0
-    args = list(rest)
-    while index < len(args):
-        arg = args[index]
+    for arg in rest:
         if arg == '--status':
             status = True
-        elif arg == '--skip':
-            if pending is not None:
-                return [], False, [], (
-                    f'--skip {pending!r} has no --reason — a skip without a '
-                    f'reason is the silence the ledger row exists to end')
-            if index + 1 >= len(args):
-                return [], False, [], '--skip needs a step name'
-            index += 1
-            pending = args[index]
-        elif arg == '--reason':
-            if pending is None:
-                return [], False, [], (
-                    '--reason with no --skip before it is a reason for '
-                    'nothing')
-            if index + 1 >= len(args):
-                return [], False, [], '--reason needs a value'
-            index += 1
-            pairs.append((pending, args[index]))
-            pending = None
+        elif arg in ('--skip', '--reason'):
+            # Named rather than swept into `unknown option`, because a
+            # consumer's script may still carry it and "unknown option
+            # '--skip'" would send them looking for a typo.
+            return False, [], (
+                f'{arg} was removed in 0.2.0: no step refuses to advance any '
+                f'more, so there is nothing to skip. Every step that is not '
+                f'true is already a `deviation` row in the ledger with the '
+                f'reason the step itself gave — `--status` prints them')
         elif arg.startswith('-'):
-            return [], False, [], f'unknown option {arg!r}'
+            return False, [], f'unknown option {arg!r}'
         else:
             positional.append(arg)
-        index += 1
-    if pending is not None:
-        return [], False, [], (
-            f'--skip {pending!r} has no --reason — a skip without a reason is '
-            f'the silence the ledger row exists to end')
-    if status and pairs:
-        return [], False, [], (
-            '--status walks nothing, so it cannot be combined with --skip')
-    return pairs, status, positional, ''
+    return status, positional, ''
 
 
 def _refuse(message: str) -> int:
@@ -801,7 +806,7 @@ def main(argv: Sequence[str], *, root: Path | None = None,
 
     # An argument a verb does not understand is a usage error, not a
     # suggestion — the `_run_check` precedent.
-    pairs, status, positional, flag_defect = parse_flags(rest)
+    status, positional, flag_defect = parse_flags(rest)
     spoken = _spoken(operation)
     segments, noun, shape = SUBJECT[operation]
     if flag_defect:
@@ -828,8 +833,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     mdir = model.milestone_dir(cfg, mid)
     if mdir is None:
         # BEFORE any ledger row: the milestone directory is where the row goes,
-        # so it has to resolve first. A `--skip` against an unresolvable
-        # version writes nothing at all.
+        # so it has to resolve first. A run against an unresolvable version
+        # writes nothing at all.
         print(f'agentic-sdlc: {spoken} {version}: no milestone directory '
               f'{cfg.rel(cfg.roadmap)}/{mid}-* — refused, and nothing was '
               f'created', file=sys.stderr)
@@ -866,14 +871,15 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if status:
         return print_status(cfg, mdir, operation, version, names)
 
-    skips, skip_defect = _skip_plan(pairs, names)
-    if skip_defect:
-        return _refuse(f'{spoken}: {skip_defect}')
-    if skips:
-        blocked = _ledger_defect(mdir)
-        if blocked:
-            return _refuse(f'{spoken}: {blocked} — nothing was skipped, '
-                           f'because the RECORD is the point')
+    # Reported, never refused. A ledger this process cannot append to costs
+    # the run its DURABLE record of what was not true, and that is worth
+    # saying out loud — but a belt that declined to walk over its own
+    # bookkeeping would be the machine deciding that telemetry outranks the
+    # operator's release, which is the thing D8 took out.
+    blocked = _ledger_defect(mdir)
+    if blocked:
+        print(f'[{operation}] WARNING — {blocked}; this run walks, and the '
+              f'steps that are not true will NOT be recorded')
 
     # The state destination is decided BEFORE the first step. A run that
     # performs half a release and then cannot record where it got to has broken
@@ -886,19 +892,14 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     except run_state.StateDefect as err:
         return _refuse(str(err))
 
-    # A skip cannot un-do a postcondition that already holds. Asked of the run
-    # state rather than of the tree because the sentence is about THIS run.
-    already = [name for name in skips
-               if run.answer_for(name) == run_state.TRUE]
-    if already:
-        when = ', '.join(f'{n} (completed {run.records[n].at})'
-                         for n in already)
-        return _refuse(f'{spoken}: --skip names {when}; a skip cannot '
-                       f'un-do a postcondition that holds')
-
+    # R5 goes with `--skip`. The guard here asked the disposable run-state
+    # CACHE whether a skipped step's postcondition already held — a question
+    # about a file the docs say costs nothing to delete. It only existed to
+    # stop `--skip` un-doing a step that was already true, and there is no
+    # `--skip`.
     ctx = Context(root=cfg.root, operation=operation, version=version)
-    recorder = _skip_recorder(mdir, operation, version)
-    result = walk(known, names, ctx, run, skips=skips, record_skip=recorder)
+    recorder = _deviation_recorder(mdir, operation, version)
+    result = walk(known, names, ctx, run, record=recorder)
     if stale:
         print(f'[{operation}] CORRECTED — {stale}')
     for line in result.lines:
@@ -910,32 +911,7 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     return result.exit_code
 
 
-# --- the skip, and its ledger row ---------------------------------------------
-def _skip_plan(pairs: Sequence[tuple[str, str]],
-               names: Sequence[str]) -> tuple[dict[str, str], str]:
-    """({step: reason}, '' or why the request is refused).
-
-    Every refusal here is exit 2 and NO ROW IS WRITTEN. A `--skip` naming a
-    step that is not in the configured list is the same defect class as a
-    misspelled step in the list itself: the operator believes something about
-    this release that is not true.
-    """
-    plan: dict[str, str] = {}
-    for step, reason in pairs:
-        if step in plan:
-            return {}, (f'--skip names {step!r} twice — one decision per '
-                        f'step')
-        if step not in names:
-            return {}, (f'--skip names {step!r}, which is not in this '
-                        f'{"list" if names else "empty list"}: '
-                        f'{", ".join(names)}')
-        defect = ledger.reason_defect(reason)
-        if defect:
-            return {}, f'--reason for {step!r}: {defect}'
-        plan[step] = reason
-    return plan, ''
-
-
+# --- the durable row for a step that is not true -------------------------------
 def _ledger_defect(mdir: Path) -> str:
     """'' when a deviation row can be appended here, else why not."""
     path = ledger.ledger_path(mdir)
@@ -947,8 +923,7 @@ def _ledger_defect(mdir: Path) -> str:
     return ''
 
 
-def _recorded_skips(mdir: Path, operation: str,
-                    version: str) -> set[str]:
+def _recorded(mdir: Path, operation: str, version: str) -> set[str]:
     rows = ledger.read_rows(ledger.ledger_path(mdir))
     return {row.data.get('step') for row in rows
             if row.data.get('kind') == ledger.KIND_DEVIATION
@@ -957,16 +932,29 @@ def _recorded_skips(mdir: Path, operation: str,
             and isinstance(row.data.get('step'), str)}
 
 
-def _skip_recorder(mdir: Path, operation: str, version: str):
-    """The callback `walk` uses. True when a NEW row landed, False when the
-    deviation was already recorded — which is what makes a re-run with the
-    same flags idempotent rather than a second row saying the same thing."""
-    def record(step: str, reason: str) -> bool:
-        if step in _recorded_skips(mdir, operation, version):
+def _deviation_recorder(mdir: Path, operation: str, version: str):
+    """The callback `walk` uses for a step that is not true.
+
+    True when a NEW row landed, False when this step was already recorded —
+    which is what makes a re-run idempotent rather than a second row saying the
+    same thing. The run cache is gitignored and disposable; the ledger is the
+    durable record, and what belongs in it is what nobody can reconstruct from
+    the tree afterwards.
+
+    It FAILS OPEN, and that is deliberate: a ledger this process cannot append
+    to is a telemetry problem, and a belt that refused to walk over one would
+    be the machine deciding that its own bookkeeping outranks the operator's
+    release. The failure is reported by `_ledger_defect` before the walk.
+    """
+    def record(step: str, outcome: str, reason: str) -> bool:
+        try:
+            if step in _recorded(mdir, operation, version):
+                return False
+            ledger.append_row(mdir, ledger.deviation_row(
+                version, operation, step, reason, outcome=outcome))
+            return True
+        except (ledger.LedgerError, ValueError, OSError):
             return False
-        ledger.append_row(mdir, ledger.deviation_row(version, operation, step,
-                                                     reason))
-        return True
 
     return record
 

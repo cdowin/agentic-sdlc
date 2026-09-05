@@ -32,11 +32,21 @@ Three kinds of step, and the third one is the honest limit:
   made true by running it again.
 - **JUDGEMENT** — code cannot perform it. It reads the ARTIFACT of a judgement,
   or a command the project configures. With neither, it answers UNVERIFIABLE,
-  which is a refusal to advance and never a pass.
+  which is never a pass and is counted apart from a plain no.
 
-To deviate: `--skip <step> --reason "<why>"`. The pair is written to the
-milestone's `ledger.jsonl` as a `deviation` row. Deviation stays possible;
-invisible deviation does not. `--status` prints what has been recorded.
+**No step halts the walk.** Every step is a check, every check reports, the run
+reaches its last step whatever any check said, and the final line is a
+scoreboard: `19/21 true · 1 not true: gate`. Whether a not-true step should
+stop you is YOUR question — the engine cannot know whether it is wrong
+(descoped? a hotfix? deliberate?), and a machine that blocks on a question it
+cannot ask is asserting an answer. `agentic-sdlc check <gate>` is the thing
+that FAILS a tree, in CI and pre-push, with an exit-code contract for exactly
+that.
+
+Every step that is not true is written to the milestone's `ledger.jsonl` as a
+`deviation` row carrying the reason the step itself gave. Deviation stays
+possible; invisible deviation does not. `--status` prints what has been
+recorded.
 
 <!-- STEPS -->
 

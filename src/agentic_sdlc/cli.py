@@ -65,6 +65,10 @@ scope per operation, and none of them is "run the biggest thing"):
                                     # naming a make target that does not exist
     (`verify --help` is the ladder, the exit codes and the refusal matrix.)
 
+This package's own version, which a consumer's adopt step and every bug report
+asks for:
+    agentic-sdlc version            # also -V / --version
+
 Static gates (exit 1 on findings; run from anywhere inside the repo):
     agentic-sdlc check doc | shell | repo-hygiene | pm | hooks
     agentic-sdlc check <gate> --help  # that gate's contract, config and scope
@@ -95,13 +99,17 @@ head and survives a context clear, an interruption or a handoff:
                                     # is five steps and well under a second:
                                     # claimed, the narrow rung green, the work
                                     # committed, the `done:` evidence written,
-                                    # `done`. `close feature` cannot advance
-                                    # past `stories-done` — which IS `pm
-                                    # ready-for feature` — and refuses while
-                                    # the review record is absent, unparseable
-                                    # or holds a finding at `disposition: open`
-    (all four take --skip <step> --reason "…", which RECORDS the deviation as a
-     ledger row. Deviation stays possible; invisible deviation does not.)
+                                    # `done`. `close feature` names any story
+                                    # that is not finished (asked of `pm
+                                    # ready-for feature`), and any review
+                                    # record that is absent, unparseable or
+                                    # holds a finding at `disposition: open`
+    (EVERY STEP IS A CHECK and no belt halts: the walk finishes and the last
+     line is a scoreboard of what is true and what is not. Every step that is
+     not true becomes a `deviation` row in the milestone's ledger.jsonl,
+     carrying the reason the step gave; `--status` prints them. Whether a
+     not-true step should stop you is your question — `check <gate>` is the
+     thing that FAILS a tree, in CI and pre-push.)
 
 Per-project config: devkit.toml at the consuming repo root (see each tool's
 module docstring for its section).

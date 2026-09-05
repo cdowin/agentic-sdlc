@@ -531,14 +531,54 @@ def test_two_files_claiming_one_story_id_refuse_rather_than_pick_one(capsys):
         assert not (root / '.agentic-sdlc').exists()
 
 
-def test_a_skip_is_recorded_as_a_deviation_row_before_it_is_honoured():
-    """Inherited whole from the driver — deviation stays possible, INVISIBLE
-    deviation does not — and asserted here because the ledger row lands under
-    the MILESTONE directory whatever grain is being closed."""
+def test_a_step_that_is_not_true_is_recorded_as_a_deviation_row():
+    """Inherited whole from the driver — INVISIBLE deviation does not stay
+    possible — and asserted here because the ledger row lands under the
+    MILESTONE directory whatever grain is being closed.
+
+    D8 kept this row and changed who mints it. It used to take
+    `--skip evidence-written --reason "the story predates step 6"`: the
+    operator's account of why they were stepping around the machine. It is now
+    the MACHINE's account of what it found, written without anyone having to
+    remember to ask for it — which is strictly more of the thing the row was
+    minted for.
+    """
     with tree(evidence='') as root:
-        code = close('story', STORY_ID, '--skip', 'evidence-written',
-                     '--reason', 'the story predates step 6')
-        assert code == 0
+        code = close('story', STORY_ID)
+        assert code == 1
         rows = (root / f'{MDIR}/ledger.jsonl').read_text(encoding='utf-8')
         assert 'evidence-written' in rows and 'deviation' in rows
-        assert STORY_ID in rows, 'the row does not name the grain it skipped'
+        assert '"outcome":"not-true"' in rows, rows
+        assert STORY_ID in rows, 'the row does not name the grain it walked'
+
+
+def test_the_deviation_row_is_written_once_however_often_the_belt_reruns():
+    """Idempotence, which is what the callback's True/False is for. A re-run
+    finds the same step not true and must not append a second row saying so —
+    a durable log that grows on every read is a log nobody can count.
+
+    Counted per STEP rather than by comparing the file's bytes: a second run
+    legitimately discovers things the first one caused (the belt's own run
+    state under `.agentic-sdlc/`, which is what finding R3 is about), and this
+    test is about the row minter rather than about what else the tree grew.
+    """
+    def evidence_rows(root):
+        raw = (root / f'{MDIR}/ledger.jsonl').read_text(encoding='utf-8')
+        return [ln for ln in raw.splitlines()
+                if '"step":"evidence-written"' in ln]
+
+    with tree(evidence='') as root:
+        assert close('story', STORY_ID) == 1
+        assert len(evidence_rows(root)) == 1, evidence_rows(root)
+        assert close('story', STORY_ID) == 1
+        assert len(evidence_rows(root)) == 1, evidence_rows(root)
+
+
+def test_the_removed_skip_flag_is_named_rather_than_called_an_unknown_option():
+    """A consumer's script may still carry `--skip`, and "unknown option
+    '--skip'" would send them looking for a typo. Exit 2 with the reason and
+    the replacement."""
+    with tree() as root:
+        code = close('story', STORY_ID, '--skip', 'evidence-written',
+                     '--reason', 'whatever')
+        assert code == 2

@@ -35,12 +35,19 @@ def routed_verbs() -> set[str]:
     exactly as `main()` does. So a fifth installer or a third operation is
     documented-or-flagged the moment it exists, with nothing to update here.
 
-    The four singletons below are the branches `main()` writes out longhand.
-    They are the one hand-maintained list in this file, and the test that keeps
-    them honest is `test_a_documented_verb_is_not_answered_with_unknown_command`,
+    The singletons below are the branches `main()` writes out longhand. They
+    are the one hand-maintained list in this file, and the test that keeps them
+    honest is `test_a_documented_verb_is_not_answered_with_unknown_command`,
     which asks the router rather than this set.
+
+    `version` is here because of finding E2: it is routed at `cli.py`'s
+    `cmd in ('-V', '--version', 'version')` — a MEMBERSHIP test rather than an
+    equality branch, which is why the finding says *"routed_verbs() cannot see
+    it"* — and it was in no `--help` line at all. Documenting it without adding
+    it here would have turned a silent verb into a red build, which is the
+    finding's own point read backwards.
     """
-    return {'pm', 'init', 'gates-extra', 'check', 'verify',
+    return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
             *cli.install_commands(), *cli.conveyor_verbs()}
 
 

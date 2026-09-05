@@ -1,10 +1,25 @@
-"""test_conveyor_skip.py — `--skip <step> --reason "…"`, and the row it writes.
+"""test_conveyor_deviation.py — the row a step that is not true writes.
 
 Chris's ruling, 2026-09-04: *steps are skippable, and a skip is RECORDED.* A
 protocol nobody can deviate from gets worked around, and a worked-around
-protocol teaches nothing. So the flag exists — and every refusal below asserts
-the ledger is BYTE-IDENTICAL afterwards, because a rejected skip that left a
-row behind would be a record of a decision nobody made.
+protocol teaches nothing.
+
+**D8, 2026-09-05, kept the row and removed the flag.** `--skip <step>
+--reason "<why>"` existed to escape a REFUSAL, and no step refuses any more —
+so it was ceremony with a grammar. The row was always the honest half, and the
+driver now writes one for every step that is not true, carrying the reason the
+step itself gave. Strictly more of the thing the row was minted for: a skip
+reason was the operator's account of why they were stepping around the machine,
+and this is the machine's account of what it found, written without anyone
+having to remember to ask for it.
+
+So what this file asserts changed shape and not subject: one row per not-true
+step, written once however often the belt re-runs, `outcome` carrying the
+step's own verdict rather than the constant `'skipped'`, and the whole thing
+FAILING OPEN — a ledger this process cannot append to costs the run its durable
+record and does not stop the release, because a belt that declined to walk over
+its own bookkeeping would be the machine deciding that telemetry outranks the
+operator.
 
 **What is deliberately NOT here** (story 04's own trap): a test asserting this
 repo's 0.2.0 ledger holds a completed release run. It would be red for the
@@ -80,67 +95,75 @@ def rows(root: Path) -> list[dict]:
 
 
 # --- the row, and its idempotence ---------------------------------------------
-def test_a_skip_writes_exactly_one_row_and_advances_past_the_step():
+def test_a_not_true_step_writes_exactly_one_row_carrying_its_own_reason():
     with tree() as root:
-        code, out = run('--skip', FALSE.name, '--reason', 'deferred to 9.9.10')
-        assert code == 0, out
-        assert f'[release:{FALSE.name}] JUDGEMENT SKIPPED' in out, out
-        assert 'DEVIATED — 1 of 2' in out, out
+        code, out = run()
+        assert code == 1, out
+        assert f'[release:{FALSE.name}] JUDGEMENT NOT-TRUE' in out, out
         recorded = rows(root)
         assert len(recorded) == 1, recorded
         assert recorded[0] == {**recorded[0],
                                'kind': 'deviation', 'grain': VERSION,
                                'operation': 'release', 'step': FALSE.name,
-                               'outcome': 'skipped',
-                               'reason': 'deferred to 9.9.10'}
+                               'outcome': 'not-true',
+                               # THE REASON IS THE STEP'S OWN `Answer.detail`.
+                               # Nobody typed it, and nobody had to remember to.
+                               'reason': 'no'}
         assert set(recorded[0]) == {'ts', 'kind', 'grain', 'operation', 'step',
                                     'outcome', 'reason'}
 
 
-def test_re_running_the_same_skip_writes_no_second_row():
+def test_a_true_step_writes_no_row():
+    """The row is for what did NOT hold. A log that recorded every step would
+    be a second copy of the run cache, which is gitignored precisely because
+    it is reconstructible from the tree."""
     with tree() as root:
-        assert run('--skip', FALSE.name, '--reason', 'deferred')[0] == 0
+        run()
+        assert [r['step'] for r in rows(root)] == [FALSE.name]
+
+
+def test_re_walking_the_same_tree_writes_no_second_row():
+    """Idempotence, which is what the callback's True/False is for: a durable
+    log that grows on every read is a log nobody can count."""
+    with tree() as root:
+        assert run()[0] == 1
         first = (root / LEDGER).read_bytes()
-        code, out = run('--skip', FALSE.name, '--reason', 'deferred')
-        assert code == 0, out
-        assert 'ALREADY-SKIPPED' in out, out
+        code, out = run()
+        assert code == 1, out
         assert (root / LEDGER).read_bytes() == first
 
 
-def test_skipping_every_step_warns_by_count():
-    """Risk 3 arriving: a conveyor nothing walks looks like control."""
-    with tree():
-        code, out = run('--skip', TRUE.name, '--reason', 'a',
-                        '--skip', FALSE.name, '--reason', 'b')
-        assert code == 0, out
-        assert 'WARNING — every step in the list (2) was skipped' in out, out
+def test_an_unverifiable_step_records_its_own_outcome_word():
+    """UNVERIFIABLE is not "no" — it is "this cannot be decided" — and the
+    durable row keeps them apart for the same reason `Truth` is an enum."""
+    unknown = driver.Step('unknowable', driver.StepKind.JUDGEMENT,
+                          lambda c: driver.Answer.unverifiable('no artifact'),
+                          lambda c: 'say')
+    with tree() as root:
+        code, out = run(registry={unknown.name: unknown},
+                        steps=(unknown.name,))
+        assert code == 1, out
+        assert rows(root)[0]['outcome'] == 'unverifiable'
+        assert rows(root)[0]['reason'] == 'no artifact'
 
 
-def test_a_run_that_skipped_reports_fewer_than_total_steps():
+def test_a_run_where_something_is_not_true_reports_a_scoreboard():
     with tree():
-        _, out = run('--skip', FALSE.name, '--reason', 'deferred')
-        assert '[release] PASS — 1/2 steps' in out, out
+        _, out = run()
+        assert f'[release] 1/2 true · 1 not true: {FALSE.name}' in out, out
 
 
 # --- the refusal matrix: exit code AND a byte-identical ledger -----------------
 @pytest.mark.parametrize('argv,expected', [
-    (('--skip', 'no-such-step', '--reason', 'x'), 'not in this'),
-    (('--skip', FALSE.name), 'has no --reason'),
-    (('--skip',), 'needs a step name'),
-    (('--reason', 'x'), 'reason for nothing'),
-    (('--skip', FALSE.name, '--reason', ''), 'empty or whitespace'),
-    (('--skip', FALSE.name, '--reason', '   '), 'empty or whitespace'),
-    (('--skip', FALSE.name, '--reason', '!!! ...'), 'punctuation'),
-    (('--skip', FALSE.name, '--reason', 'x' * 1025), 'the limit is 1024'),
-    (('--skip', FALSE.name, '--reason', 'two\nlines'), r'\n'),
-    (('--skip', FALSE.name, '--reason', 'nul\x00here'), r'\x00'),
-    (('--skip', FALSE.name, '--reason', 'a',
-      '--skip', FALSE.name, '--reason', 'b'), 'twice'),
-    (('--skip', FALSE.name, '--reason', 'a', '--status'), 'cannot be combined'),
-    (('--skip', FALSE.name, '--reason'), 'needs a value'),
+    # The removed flag is NAMED rather than swept into `unknown option`: a
+    # consumer's script may still carry it, and "unknown option '--skip'"
+    # would send them looking for a typo.
+    (('--skip', FALSE.name, '--reason', 'x'), 'was removed in 0.2.0'),
+    (('--skip',), 'was removed in 0.2.0'),
+    (('--reason', 'x'), 'was removed in 0.2.0'),
     (('--nonsense',), 'unknown option'),
 ])
-def test_the_skip_refusal_matrix_is_exit_2_and_writes_no_row(argv, expected):
+def test_the_flag_refusal_matrix_is_exit_2_and_writes_no_row(argv, expected):
     with tree() as root:
         before = (root / LEDGER).exists()
         code, out = run(*argv)
@@ -149,48 +172,77 @@ def test_the_skip_refusal_matrix_is_exit_2_and_writes_no_row(argv, expected):
         assert (root / LEDGER).exists() == before, 'a refusal left a row'
 
 
-def test_a_skip_against_an_unresolvable_version_writes_nothing():
+def test_a_run_against_an_unresolvable_version_writes_nothing():
     with tree() as root:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            code = driver.main(['release', '0.0.0', '--skip', FALSE.name,
-                                '--reason', 'x'], registry=STUB, steps=ORDER)
+            code = driver.main(['release', '0.0.0'], registry=STUB,
+                               steps=ORDER)
         assert code == 1, buf.getvalue()
         assert not (root / LEDGER).exists()
 
 
-def test_a_skip_cannot_un_do_a_postcondition_that_already_holds():
+def test_a_ledger_that_is_a_directory_warns_and_the_walk_still_finishes():
+    """FAILING OPEN, and it is the ruling rather than an oversight. Losing the
+    durable row is a telemetry problem; a belt that refused to walk over one
+    would be the machine deciding its own bookkeeping outranks the operator's
+    release — which is what D8 took out."""
     with tree() as root:
-        assert run()[0] == 1        # walks; always-true is recorded TRUE
-        code, out = run('--skip', TRUE.name, '--reason', 'changed my mind')
-        assert code == 2, out
-        assert 'cannot un-do a postcondition that holds' in out, out
+        (root / LEDGER).mkdir()
+        code, out = run()
+        assert code == 1, out
+        assert 'is a directory' in out, out
+        assert 'this run walks' in out, out
+        # It WALKED: both steps were asked and the scoreboard is there.
+        assert '1/2 true' in out, out
+
+
+def test_u2028_in_a_step_detail_reads_back_as_one_row():
+    """`ledger.LINE_BREAKERS` escapes it, so the row is still one line — and
+    the detail now comes from a STEP rather than from an operator, so a step
+    whose message carries one must not split the log."""
+    odd = driver.Step('odd', driver.StepKind.GATE,
+                      lambda c: driver.Answer.no('a\u2028b'))
+    with tree() as root:
+        code, out = run(registry={'odd': odd}, steps=('odd',))
+        assert code == 1, out
+        raw = (root / LEDGER).read_text(encoding='utf-8')
+        assert len([line for line in raw.split('\n') if line.strip()]) == 1
+        assert rows(root)[0]['reason'] == 'a\u2028b'
+
+
+def test_a_step_that_answers_not_true_with_no_detail_writes_no_row():
+    """`Answer`'s own docstring: a step that answers no with an empty detail
+    has told the operator that something is wrong and nothing about what. The
+    row minter has always refused that, and the new caller hits the same wall
+    — so the run still walks and the silence is not laundered into a row."""
+    mute = driver.Step('mute', driver.StepKind.GATE,
+                       lambda c: driver.Answer.no(''))
+    with tree() as root:
+        code, out = run(registry={'mute': mute}, steps=('mute',))
+        assert code == 1, out
         assert not (root / LEDGER).exists()
 
 
-def test_a_ledger_that_is_a_directory_refuses_and_skips_nothing():
-    with tree() as root:
-        (root / LEDGER).mkdir()
-        code, out = run('--skip', FALSE.name, '--reason', 'x')
-        assert code == 2, out
-        assert 'is a directory' in out and 'RECORD is the point' in out, out
-
-
-def test_u2028_is_accepted_and_reads_back_as_one_row():
-    """`ledger.LINE_BREAKERS` escapes it, so the row is still one line."""
-    with tree() as root:
-        code, out = run('--skip', FALSE.name, '--reason', 'a b')
-        assert code == 0, out
-        raw = (root / LEDGER).read_text(encoding='utf-8')
-        assert len([line for line in raw.split('\n') if line.strip()]) == 1
-        assert rows(root)[0]['reason'] == 'a b'
-
-
 # --- the row minter -----------------------------------------------------------
-def test_a_skipped_row_without_a_reason_cannot_be_minted_at_all():
+def test_a_row_without_a_reason_cannot_be_minted_at_all():
     for bad in ('', '   ', '...', None, 3, 'x' * 2000, 'two\nlines'):
         with pytest.raises(ValueError):
             ledger.deviation_row(VERSION, 'release', 'gate', bad)
+
+
+def test_an_outcome_outside_the_closed_set_cannot_be_minted_either():
+    """`OUTCOMES` widened from the constant `'skipped'` to the step's own
+    verdict, and a closed set is what stops it widening again by accident.
+    `'skipped'` stays IN it: rows carrying it are already in every consumer's
+    ledger, and a reader that stopped understanding them would be rewriting
+    history — D7's reasoning, one file over."""
+    for good in ledger.OUTCOMES:
+        ledger.deviation_row(VERSION, 'release', 'gate', 'r', outcome=good)
+    for bad in ('wombat', '', None, 'NOT-TRUE'):
+        with pytest.raises(ValueError):
+            ledger.deviation_row(VERSION, 'release', 'gate', 'r',
+                                 outcome=bad)
 
 
 def test_the_row_kind_is_distinct_from_the_kinds_already_minted():
@@ -204,11 +256,11 @@ def test_the_row_kind_is_distinct_from_the_kinds_already_minted():
 # --- --status -----------------------------------------------------------------
 def test_status_prints_the_recorded_run_and_walks_nothing():
     with tree() as root:
-        run('--skip', FALSE.name, '--reason', 'deferred to 9.9.10')
+        run()
         before = (root / LEDGER).read_bytes()
         code, out = run('--status')
         assert code == 0, out
-        assert 'deferred to 9.9.10' in out and 'SKIPPED' in out, out
+        assert FALSE.name in out and 'NOT-TRUE' in out, out
         assert (root / LEDGER).read_bytes() == before
 
 
@@ -232,7 +284,7 @@ def well_formed(data: list[dict], names) -> list[str]:
             bad.append(f'{step!r} is not a step of {operation!r}')
         if ledger.reason_defect(row.get('reason', '')):
             bad.append(f'{step!r}: {ledger.reason_defect(row.get("reason"))}')
-        if row.get('outcome') != 'skipped':
+        if row.get('outcome') not in ledger.OUTCOMES:
             bad.append(f'{step!r} carries outcome {row.get("outcome")!r}')
         key = (str(operation), str(step))
         if key in seen:
@@ -243,7 +295,7 @@ def well_formed(data: list[dict], names) -> list[str]:
 
 def test_a_written_ledger_is_well_formed_and_round_trips():
     with tree() as root:
-        run('--skip', FALSE.name, '--reason', 'deferred')
+        run()
         data = rows(root)
         assert well_formed(data, ORDER) == []
         raw = (root / LEDGER).read_text(encoding='utf-8').strip().split('\n')
@@ -262,7 +314,7 @@ def test_the_report_does_not_redden_on_the_new_kind():
     never a parse error."""
     from agentic_sdlc.repo.pm import cli as pm_cli
     with tree() as root:
-        run('--skip', FALSE.name, '--reason', 'deferred')
+        run()
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             code = pm_cli.main(['ledger', 'report', VERSION])

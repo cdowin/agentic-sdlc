@@ -3,7 +3,7 @@ id: 0.2.0/adopt-is-a-conveyor/02-adoption-verifies-the-adoption-not-the-game
 feature: 0.2.0/adopt-is-a-conveyor
 milestone: "0.2.0"
 name: Adoption verifies the adoption, not the game
-status: reviewing
+status: done
 owner:
 depends_on: ["0.2.0/adopt-is-a-conveyor/01-adopt-walks-the-adoption"]
 ---

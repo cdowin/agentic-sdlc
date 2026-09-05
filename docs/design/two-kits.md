@@ -87,3 +87,41 @@ a consumer still proves its own integration when it bumps its pin.
 
 After the 0.24.0 tag, and probably after `0.25.0/the-release-is-a-conveyor` — the conveyor makes releases
 cheap and repeatable, which is worth having *before* there are two things to release rather than after.
+
+---
+
+## Who provides each piece of the SDLC
+
+**Moved here from `0.2.0/milestone.md` on 2026-09-05.** It is durable doctrine about the two kits
+rather than anything 0.2.0 decides, and a milestone document is not where a permanent table lives
+(`pm-execution.md`'s promotion test: *who needs it? → nobody in this grain → it moves*).
+
+Written 2026-09-04 when the package split in two. **The line: a thing belongs to the KIT whose
+artifact it scans, drives or installs.** Three providers, and the third is not a mistake — a
+project's own rules are its own.
+
+| phase | the piece | provider |
+|---|---|---|
+| **Plan** | grain schema, the state vocabulary, `pm` verbs, `check pm`, templates | **agentic-sdlc** |
+| | the milestones, features, stories and bugs themselves | **the project** |
+| **Claim** | agent definitions (stock roster) | **agentic-sdlc** |
+| | forked/configured agents, project-specific roles | **the project** |
+| **Build** | commit-pathspec, write-confine, stop-gate guards; worktree tooling | **agentic-sdlc** |
+| | language runners — parse, lint, unit, integration, scenario, capture | **godot-devkit** |
+| **Verify** | the gate FRAMEWORK — `gdk_gate`, `Makefile.devkit`, `[checks]`, `[gates] extra` | **agentic-sdlc** |
+| | checks over SDLC artifacts — grain prose, hooks, runners, sandbox | **agentic-sdlc** |
+| | checks over Godot artifacts — uid, tres, props, defaults, rng, test-shape, unit-disk | **godot-devkit** |
+| | the project's own architecture scans | **the project** |
+| **Review** | the review record, N-pass verdict parsing, reviewer agents | **agentic-sdlc** |
+| **Release** | the protocol, version sync, changelog discipline, tag | **agentic-sdlc** |
+| **Telemetry** | the ledger, the two couriers, `pm ledger report` | **agentic-sdlc** |
+| **Adopt** | `install-*` verbs and their installables | **each kit, for its own** |
+
+### The consumer's shape, in one line
+
+> A project pins **agentic-sdlc** for how it works, pins **godot-devkit** for what it builds with,
+> and owns its own rules about its own code.
+
+`godot-devkit` is itself a consumer of `agentic-sdlc` — that is dogfooding, and it is a CONSUMER
+PIN, never a library import. A scene parser must not drag in a PM tree.
+

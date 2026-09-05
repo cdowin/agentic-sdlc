@@ -126,3 +126,87 @@ RANGE the way `--changed` scopes to a diff — it runs the composition the proje
 by range needs the feature's first commit, which is derivable from the ledger and is not derived
 today. Named as the gap rather than faked: a rung that claims to be range-scoped and is not
 would be a false narrowing, which is worse than an honest wide one.
+
+## D4 — 2026-09-05 — The sequencing question is answered by dispositioning, not by choosing an order
+
+**The question, as posed:** phase 6 changes the state model underneath phases 3-5, so landing the
+36 open findings first means touching some of that code twice; the alternative is building the
+rebuild first and landing the findings onto the final shape.
+
+**The ruling: disposition all 36 against the rebuild BEFORE choosing an order, and the choice
+mostly evaporates.** The partition is in `docs/reviews/2026-09-05-0.2.0-plan-audit.md`:
+25 independent, 5 bookkeeping, 4 owned by the rebuild, 1 half-dissolving, **0 dissolving
+outright**. Thirty of thirty-six do not care which order is picked, and five of the independent
+25 are BLOCKERs — every one a hard rule 4 defect. **The order governs four findings**, and paying
+for that with thirty findings held open is the worse trade.
+
+**Rejected: build phase 6 first, land everything onto the final shape.** It is the right instinct
+about the wrong object. It buys the correct placement of four findings and costs six weeks of a
+tree carrying five rule-4 blockers — gates printing PASS over what they did not measure — which is
+the failure class this package's every release review has caught.
+
+**Rejected: land all 36 first, then rebuild.** It writes R4, B1, B2 and B3 against predicates the
+rebuild deletes, and it does nothing about the actual double-touch.
+
+**The actual double-touch is `the-inner-levels-are-belts-too`**, which nobody was looking at
+because it is a feature rather than a finding. It is `planning`, 0 of 3 stories built, and it
+specifies belts that REFUSE — written before the report-never-refuse ruling. Building it in place
+means writing the halt into two new belts and deleting it, which is a feature's worth of code and
+tests. `the-belt-reports-and-finishes` moves ahead of it in the same phase, declared through
+`depends_on`. That costs nothing.
+
+**The cost accepted:** four findings sit open until phase 7, and one of them (B1) is user-visible
+in `pm --help`. Fixing B1's help text early is a two-line change that the rebuild then rewrites —
+cheap enough that if it bothers anyone it should just be done twice.
+
+**And the test for every "dissolves" disposition, which R1 supplies:** removing the halt changes
+what a false postcondition COSTS; it does not make the postcondition true. R1's deadlock
+dissolves; step 14's demand that every review record be deleted still leaves `check pm`
+permanently RED on D1. R1 and R2 are one finding.
+
+## D5 — 2026-09-05 — D8/D9/D10 report over every in_progress milestone, rather than the engine picking one
+
+Under three hard categories, `in_progress` may hold several states **and several milestones**, so
+`model.py:995`'s `building_milestones` — one line serving D8, D9 and D10 — has no expression. P4
+of the plan review found it; no grain answered it.
+
+**The ruling: D8, D9 and D10 report over EVERY milestone whose status is in `in_progress`.** A
+tree with three milestones in progress gets three answers, which is a true statement about that
+tree. A project that wants exactly one narrows it by declaring one; the engine does not guess
+which. That is `holds(milestones, in_progress)` doing precisely its job, and it costs nothing.
+
+**Rejected: an `active: true` frontmatter field on the milestone.** It is a schema change, and it
+re-introduces the same class of engine opinion one level up — the engine would then know there is
+such a thing as "the active milestone" and require the project to nominate one, when a project
+running two release trains in parallel has two and is not wrong.
+
+**Rejected: keep `building` as a reserved word for this one case.** That is the milestone's whole
+premise surviving in the three rules nobody listed, which is how the census got short in the first
+place.
+
+**The cost accepted:** a tree with several `in_progress` milestones gets several D8/D9/D10 reports
+where it used to get one. That is louder, and it is louder about something true. If it turns out
+to be noise in practice, the answer is the project narrowing its own declaration — never the
+engine choosing.
+
+## D6 — 2026-09-05 — The two engine verbs get built, and the inference census is their acceptance test
+
+`state-categories.md` §6 states the architecture — `move(grain, to_state)` and
+`holds(grains, category|state)` — and `grep -rn "def move(\|def holds(" src/` finds one hit, which
+is `core/apply.py`'s file mover. **The architecture the milestone rests on has never been built**,
+and the census names `holds(...)` as the destination for six of its ten rows without a grain that
+creates it.
+
+**The ruling: the two verbs are `every-question-is-asked-of-a-category`'s deliverable, and the
+census is its acceptance test** — enumerated in a test that asserts no state literal survives
+outside the config reader, rather than carried as a to-do list in a feature record.
+
+**Rejected: let each call site read the category table directly.** That is ten private
+`category_of()` lookups agreeing by convention to behave alike, which is a second scoreboard with
+ten columns. It is not hypothetical: the `also_done` shim landed in `ready_for.py:304,334` and not
+in `model.py:1155`, so `pm ready-for feature` and `check pm` D2 disagree **today** about whether an
+`obe` story is finished. One shim, two call sites, already out of step.
+
+**The cost accepted:** a verb layer between `check pm` and the frontmatter is indirection that a
+reader of any single D-rule has to follow one hop further. Bought off by the hop being one
+function with one docstring, versus ten sites each restating the same reading of the same table.

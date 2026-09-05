@@ -1,7 +1,7 @@
 ---
 id: 0.2.0/the-belts-refuse-to-advance
 milestone: "0.2.0"
-name: Each belt's entry condition is a verb with an exit code
+name: Each belt's entry condition is a READ verb that names every blocker
 status: building
 reviewed:
 risk: low
@@ -13,6 +13,17 @@ labels: ["belts", "pm", "gates"]
 ---
 
 # Each belt's entry condition is a verb with an exit code
+
+> **The id is wrong and it stays.** Report-never-refuse (`state-categories.md` §7) rules that
+> `pm ready-for` is a READ verb whose exit code is information for a caller that wants it, not a
+> wall — and this feature's content survives that intact, because naming the blockers was always
+> the useful half. But `0.2.0/the-belts-refuse-to-advance` appears in eight `ledger.jsonl` rows,
+> in its own three stories' ids, and in two other features' `depends_on`. **The ledger is the
+> append-only durable record**, and rewriting those rows so a past status change reads differently
+> is falsifying history in the one file whose whole job is being history. The `name:` above is
+> prose and carries no history, so it changed; the id is fixed. **A grain's id is fixed the moment
+> it moves** — plan audit Q1.
+
 
 **Split out of `the-release-is-a-conveyor` on 2026-09-05**, from
 `design-the-three-belts.md` §2. Small, self-contained, and the conveyor's `review-landed` step

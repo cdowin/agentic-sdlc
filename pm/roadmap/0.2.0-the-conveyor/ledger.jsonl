@@ -95,3 +95,6 @@
 {"ts":"2026-09-05T18:42:07Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1498}
 {"ts":"2026-09-05T18:43:06Z","kind":"gate","gate":"matrix","verdict":"FAIL","duration_ms":226521}
 {"ts":"2026-09-05T18:46:11Z","kind":"gate","gate":"gates","verdict":"PASS","duration_ms":1721}
+{"ts":"2026-09-05T20:30:54Z","kind":"decision","grain":"0.2.0","entry":"D4","title":"The sequencing question is answered by dispositioning, not by choosing an order"}
+{"ts":"2026-09-05T20:31:28Z","kind":"decision","grain":"0.2.0","entry":"D5","title":"D8/D9/D10 report over every in_progress milestone, rather than the engine picking one"}
+{"ts":"2026-09-05T20:31:28Z","kind":"decision","grain":"0.2.0","entry":"D6","title":"The two engine verbs get built, and the inference census is their acceptance test"}

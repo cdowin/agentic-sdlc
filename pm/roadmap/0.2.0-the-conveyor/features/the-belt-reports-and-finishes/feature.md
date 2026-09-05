@@ -1,12 +1,12 @@
 ---
-id: 0.2.0/the-belts-report-they-do-not-refuse
+id: 0.2.0/the-belt-reports-and-finishes
 milestone: "0.2.0"
 name: A belt moves, warns, and finishes — the caller decides
 status: planning
 reviewed:
-phase: 6
+phase: 5
 depends_on: []
-consumed_by: []
+consumed_by: ["0.2.0/the-inner-levels-are-belts-too"]
 risk: medium
 size: m
 labels: ["conveyor", "sdlc", "subtraction"]
@@ -72,6 +72,28 @@ fixes the thing that actually broke, and `check pm` still fails a tree that lies
 the whole argument for `--skip --reason` writing a ledger row — the refusal admitting it should
 not have been one.
 
+## The 14 halting steps, and the two findings that come with them
+
+P5 of the 0.3.0 plan review is the sizing correction this feature has to absorb: *"feature 2 is
+sized `m` and labelled mostly subtraction. Deleting `Answer.no`/`UNVERIFIABLE` halting is
+subtraction. Re-ruling 14 halting steps is not."*
+
+The 14: `gate`, `ci-green`, `merge`, `tree-clean`, `main-merged`, `review-landed`, `pr-open`,
+`prove-artifact`, `hooks-self-test`, `checks-pass`, `pm-validates`, `runner-targets-resolve`,
+`config-updated`, `pin-bumped`. **Each gets an explicit input-or-tree ruling, in writing, in this
+feature** — and one of them is genuinely hard: is a **red `make gates`** a fact about the tree
+(report, proceed to `tag`) or about the input (refuse)? The edge table says tree, which means
+`agentic-sdlc release` will walk past a failing suite. That is the single most consequential
+consequence of this feature and it gets its own paragraph rather than one row in a table.
+
+**And removing the halt does not make a false postcondition true.** Plan audit Q5:
+`findings-resolved` (step 14) requires every review record for the milestone to be **deleted**,
+which leaves `check pm` permanently RED on D1 — a gate in `[checks] all`. Under report-never-refuse
+the run reaches step 21 instead of stopping at step 5, and still instructs the operator to break a
+shipped gate. R1 and R2 are one finding read from two sides, and **the fix is R2's**:
+`findings-resolved` reads the `reviewed:` pointers' dispositions rather than demanding the records'
+absence. It lands here, because this is the feature that re-rules step 14 anyway.
+
 ## Ship criterion
 
 1. No belt halts on a fact about the tree. Every such fact is a WARNING on the transcript, named,
@@ -84,6 +106,14 @@ not have been one.
    gate disagree**: the belt moved it, the gate reports it, and that is correct.
 5. `pm-execution.md`'s report-never-refuse rule is quoted in the driver's docstring, since the
    driver is what broke it.
+6. **All 14 halting steps carry a written input-or-tree ruling**, and the red-`make gates` one is
+   argued rather than tabulated.
+7. **R1/R2 close here**: `findings-resolved` asks the `reviewed:` pointers for a disposition other
+   than `open`, never for a record's absence, and a test asserts that performing step 14 leaves
+   `check pm` GREEN.
+8. **The 26 stories parked at `reviewing` are walked through `close story` for real**, and the
+   ledger holds their rows. That is I2, and it is the only way criterion 10 gets tested before the
+   release itself.
 
 ## Risks
 

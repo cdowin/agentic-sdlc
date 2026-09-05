@@ -13,7 +13,9 @@ Every write-verb test here works on a scratch tree, never on a fixture in place.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
+import inspect
 import os
 import subprocess
 import sys
@@ -411,6 +413,116 @@ def test_decisions_refuses_before_the_diff_has_been_produced():
         assert steps.REPORT_REL in answer.detail, answer.detail
 
 
+# A2 — lines that do NOT decide `tools/hooks/pre-push`, each one accepted by
+# the substring match this replaced. The first is the measured reproduction: a
+# decision written for a different, longer path.
+NOT_A_DECISION = [
+    'tools/hooks/pre-push-extra: keep — this is a DIFFERENT file',
+    'we took tools/hooks/pre-push upstream last week',
+    'see tools/hooks/pre-push for the shape',
+    'tools/hooks/pre-push',
+    'tools/hooks/pre-push:',
+    'tools/hooks/pre-push:   ',
+]
+# …and the spellings an operator actually writes, all of which must still count.
+IS_A_DECISION = [
+    'tools/hooks/pre-push: keep — the header is ours',
+    '- tools/hooks/pre-push: take — bumping',
+    '`tools/hooks/pre-push`: hand-applied — merged by hand',
+    '  tools/hooks/pre-push: take',
+]
+
+
+@pytest.mark.parametrize('line', NOT_A_DECISION)
+def test_a_line_that_is_not_a_decision_for_this_path_does_not_satisfy_it(line):
+    """A2 — the test was `rel in line`, a SUBSTRING anywhere on the line.
+
+    Measured on a scratch consumer with `tools/hooks/pre-push` drifted and the
+    first line above written under `## decisions`:
+
+        JUDGEMENT ALREADY-TRUE — 1 drifted file(s), each decided in …
+
+    A decision for one file satisfied another, and prose quoting a path with a
+    trailing word counted as a decision for it. `install.PLANS` holds no
+    substring pair today — which is what kept it latent — and "no two shipped
+    paths are prefixes of each other" is not an invariant anything asserts.
+    """
+    assert not steps._decides(line, 'tools/hooks/pre-push'), line
+
+
+@pytest.mark.parametrize('line', IS_A_DECISION)
+def test_the_spellings_an_operator_writes_still_count_as_a_decision(line):
+    """The other direction, and it is the half that makes the anchor a fix
+    rather than a refusal: a step that stopped accepting real decisions would
+    be unusable, and an operator would delete it from `[adopt] steps`."""
+    assert steps._decides(line, 'tools/hooks/pre-push'), line
+
+
+def test_a_decision_for_a_longer_path_does_not_satisfy_the_shorter_one():
+    """A2, end to end through the step rather than through the predicate.
+
+    The predicate cases above are the census; this is the shape a consumer
+    reaches, because a step that answers correctly in isolation and is called
+    wrongly is still a false pass.
+    """
+    rel, body = _installed('pre-push', 'tools/hooks/pre-push')
+    with tree({rel: body + '\n# a local edit\n'}) as root:
+        steps.ADOPT_STEPS['installables-diffed'].do(ctx(root))
+        report = root / steps.REPORT_REL
+        report.write_text(
+            report.read_text(encoding='utf-8')
+            + f'\n{rel}-extra: keep — a DIFFERENT file\n', encoding='utf-8')
+        answer = step('installable-decisions-recorded').check(ctx(root))
+        assert not answer.is_true, answer
+        assert rel in answer.detail, answer.detail
+        # And the real line still lands it.
+        report.write_text(report.read_text(encoding='utf-8')
+                          + f'{rel}: keep — ours\n', encoding='utf-8')
+        assert step('installable-decisions-recorded').check(ctx(root)).is_true
+
+
+# --- A3: the operation config is read once per run, not once per step ---------
+def test_a_duplicate_step_name_is_reported_once_per_run_not_once_per_step(
+        capsys):
+    """A3 — `_configured` re-entered `steps_for` for every step that asks it.
+
+    Ten steps call it, `load_config` re-parses `devkit.toml` on every call (it
+    is deliberately uncached — `tests/test_boundaries.py` primitive 6 refuses
+    config bound at import), and the visible half was the collapse notice
+    printed once per asking step. The list below names `checks-pass` twice and
+    holds four steps that ask, so the count is what separates a memo from no
+    memo — it does not grow with the list.
+    """
+    config = ('[adopt]\nsteps = ["hooks-self-test", "runner-targets-resolve", '
+              '"checks-pass", "pm-validates", "checks-pass"]\n')
+    with tree({'Makefile': PIN}, config=config) as root:
+        capsys.readouterr()
+        driver.main(['adopt', VERSION], root=root)
+        said = capsys.readouterr().out
+    notices = [ln for ln in said.split('\n')
+               if 'collapsed in declaration order' in ln]
+    # One from the pre-walk read that builds the plan, one from the memo fill.
+    # The number that matters is that it is CONSTANT: before the fix it was one
+    # per asking step, so it grew with the list.
+    assert len(notices) <= 2, notices
+
+
+def test_the_commands_memo_re_derives_when_devkit_toml_changes():
+    """The memo is a DERIVATION, not a memory — its key is the config's bytes.
+
+    A memo that outlived the file it cached would be a step answering from what
+    the config USED to say, which is the report-without-the-postcondition shape
+    this whole module is written against. Same process, same root, two configs.
+    """
+    with tree({'Makefile': PIN},
+              config='[adopt.commands]\npm-validates = "true"\n') as root:
+        assert steps._configured(ctx(root), 'pm-validates') == 'true'
+        (root / 'devkit.toml').write_text(
+            '[adopt.commands]\npm-validates = "false"\n', encoding='utf-8')
+        load_config.cache_clear()
+        assert steps._configured(ctx(root), 'pm-validates') == 'false'
+
+
 # --- config-updated -----------------------------------------------------------
 def test_config_updated_names_the_key_this_version_refuses():
     with tree(config='[gates]\nextra = "my-gate"\n') as root:
@@ -424,6 +536,181 @@ def test_config_updated_passes_a_stock_repo_and_reports_its_census():
         answer = step('config-updated').check(ctx(root))
         assert answer.is_true, answer
         assert any(ch.isdigit() for ch in answer.detail), answer.detail
+
+
+# A1 — one broken section per case, each paired with the gate that reads it and
+# exits 2 over exactly this value. These are the four `config-updated` NAMED in
+# its own pass line and never asked; the other six were already asked.
+BROKEN_SECTIONS = [
+    ('checks', '[checks]\nall = ["doc", "wombat"]\n', 'wombat'),
+    ('verify',
+     '[verify]\nmilestone = 42\n\n[[verify.narrow]]\npaths = ["a"]\nrun = 7\n',
+     'must be a string'),
+    ('grain_shape', '[grain_shape]\ncaps = "nonsense"\n', 'must be a table'),
+    ('repo_hygiene', '[repo_hygiene]\nprotected = "^(main|["\n',
+     'not a valid regex'),
+    ('gates', '[gates]\nextra = "my-gate"\n', 'gates'),
+    ('pm', '[pm]\nmilestone_states = "building"\n', 'pm'),
+    ('release', '[release]\nsteps = ["tree-clan"]\n', 'release'),
+]
+
+
+@pytest.mark.parametrize('section,config,expected', BROKEN_SECTIONS)
+def test_config_updated_refuses_every_section_it_names(section, config,
+                                                       expected):
+    """A1 — the step asked SIX readers and reported a census of TEN sections.
+
+    `checks`, `grain_shape`, `repo_hygiene` and `verify` were named in the pass
+    line and never asked, so each of these four `devkit.toml` files produced:
+
+        TRUE — 6 reader(s) accept this repo's devkit.toml; declared here: <it>
+
+    over a table that makes its own gate exit 2 (`check all`,
+    `check grain-shape`, `check repo-hygiene`, `verify --check` respectively —
+    all four measured). The detail line is what turned a gap into a lie: it
+    named the broken section under the word "accept".
+    """
+    with tree(config=config) as root:
+        answer = step('config-updated').check(ctx(root))
+    assert not answer.is_true, answer
+    assert section in answer.detail, answer.detail
+    assert expected in answer.detail, answer.detail
+
+
+# Every `devkit.toml` section this version reads, with a body the grammar
+# accepts — spelled LITERALLY so the assertion below is adversarial input and
+# not the step's own list handed back to it. `[verify]` needs its `milestone`
+# rung (a rule set without one falls back to running nothing and is refused by
+# name); the rest take their defaults.
+EVERY_SECTION = {
+    'checks': '', 'gates': '', 'pm': '', 'release': '', 'adopt': '',
+    'story': '', 'feature': '', 'grain_shape': '', 'repo_hygiene': '',
+    'verify': 'milestone = "make milestone"\n',
+}
+
+
+def test_every_section_the_census_can_name_is_a_section_a_reader_asked():
+    """A1, stated as the invariant: NAMED implies ASKED.
+
+    The defect was two lists eleven lines apart in one function — six readers
+    and a hand-written ten-name census — so four sections were named in the
+    pass line and never asked. This is the direct assertion, against a
+    devkit.toml declaring all ten: the "declared here:" names are exactly the
+    sections `_config_readers()` asked, and the count in the line is the count
+    it asked. A second list re-introduced anywhere between the two fails here
+    whichever way it drifts.
+    """
+    sections = [name for name, _label, _reader in steps._config_readers()]
+    assert len(sections) == len(set(sections)), sections
+    declared = '\n'.join(f'[{name}]\n{body}'
+                         for name, body in EVERY_SECTION.items())
+    with tree(config=declared) as root:
+        answer = step('config-updated').check(ctx(root))
+    assert answer.is_true, answer
+    assert f'{len(sections)} reader(s)' in answer.detail, answer.detail
+    named = answer.detail.split('declared here: ', 1)[1].split(', ')
+    unasked = sorted(set(named) - set(sections))
+    assert unasked == [], (
+        f'{unasked} are NAMED in the pass line and no reader asked about them '
+        f'— that is A1 exactly: a section reported as accepted, over a table '
+        f'that can make its own gate exit 2')
+    assert sorted(named) == sorted(EVERY_SECTION), (named, sorted(EVERY_SECTION))
+
+
+def test_a_new_config_section_is_named_by_adding_one_reader():
+    """The property A1's fix exists for: the next section costs one row.
+
+    A later phase adds two more `devkit.toml` sections, and the shape that
+    failed here is a section reaching the census without reaching a reader. So
+    this asserts the census IS the reader list, by construction, rather than
+    asserting today's ten names.
+    """
+    with tree() as root:
+        answer = step('config-updated').check(ctx(root))
+    asked = len(steps._config_readers())
+    assert answer.is_true, answer
+    assert answer.detail.startswith(f'{asked} reader(s) accept'), answer.detail
+
+
+def test_the_repo_hygiene_keys_are_spelled_once_in_the_module_that_owns_them():
+    """The second list is GONE rather than pinned, and this asserts the shape
+    that keeps it gone.
+
+    It used to be spelled twice: `repo_hygiene.run()` read its two keys inline
+    at the top, then fetched from the remote and walked the tree, so
+    `config-updated` had nothing pure to delegate to the way it delegates
+    `[grain_shape]` to `grain_shape._caps` — and it spelled them again. This
+    test was an AST pin over the two copies, which is survivable and is not the
+    fix; `repo_hygiene.read_config()` is.
+
+    So the assertion inverted: the STEP must spell no `[repo_hygiene]` key of
+    its own, and the gate must spell them all.
+    """
+    from agentic_sdlc.repo.checks import repo_hygiene
+
+    def keys_read_by(function) -> set[str]:
+        """Every `text(cfg,'repo_hygiene','<key>',…)`-shaped read in a source.
+
+        The guards in `core/config.py` all take `(sect, name, key, fallback)`,
+        so the third argument is the key by the package's own convention — and
+        `tests/test_boundaries.py` is what keeps every config value on that
+        path in the first place.
+        """
+        tree_ = ast.parse(inspect.getsource(function))
+        return {call.args[2].value
+                for call in ast.walk(tree_)
+                if isinstance(call, ast.Call) and len(call.args) >= 3
+                and isinstance(call.args[1], ast.Constant)
+                and call.args[1].value == 'repo_hygiene'
+                and isinstance(call.args[2], ast.Constant)}
+
+    owned = keys_read_by(repo_hygiene.read_config)
+    assert owned == {'mainline', 'protected'}, owned
+    assert keys_read_by(repo_hygiene.run) == set(), (
+        '`run()` reads a [repo_hygiene] key inline again; `read_config()` is '
+        'the one reader, and a key that skips it is invisible to '
+        "`adopt`'s config-updated")
+    assert keys_read_by(steps._read_repo_hygiene) == set(), (
+        '`config-updated` spells a [repo_hygiene] key of its own again — that '
+        'is the second list this delegation removed, and the failure it hides '
+        'is a key reported as accepted and never asked')
+
+
+def test_a_broken_repo_hygiene_section_is_refused_through_the_gates_reader():
+    """The delegation, end to end rather than by parsing source: a value the
+    GATE cannot use must make `config-updated` say so."""
+    with tree(config='[repo_hygiene]\nprotected = "(unclosed"\n') as root:
+        answer = step('config-updated').check(ctx(root))
+    assert not answer.is_true, answer
+    assert 'repo_hygiene' in answer.detail, answer.detail
+
+
+def test_an_absent_verify_section_is_not_a_refusal():
+    """Rule 5's direction: a stock repo declares no `[verify]` and still passes.
+
+    `verify` itself exits 2 on an absent section, and that is a fact about
+    running the verb. Reddening `config-updated` over it would redden every
+    repo with no devkit.toml, which is rule 5 exactly backwards.
+    """
+    with tree() as root:
+        answer = step('config-updated').check(ctx(root))
+        assert answer.is_true, answer
+        assert 'verify' not in answer.detail, answer.detail
+
+
+def test_the_gate_universe_config_updated_refuses_against_is_the_shipped_one():
+    """`repo/` may not import `cli`, so the roster is DERIVED — and pinned here.
+
+    `steps.gate_universe()` reproduces `cli._check_module`'s one mapping from
+    below because `tests/test_boundaries.py` forbids the upward import. That is
+    only safe while the derivation and the roster are the same set, which
+    `tests/test_gate_roster.py` asserts as an equality — this asserts the third
+    side of the triangle, so a divergence cannot land here as the permissive
+    answer.
+    """
+    from agentic_sdlc import cli
+
+    assert steps.gate_universe() == frozenset(cli.KNOWN_GATES)
 
 
 # --- pm-validates -------------------------------------------------------------
@@ -544,10 +831,21 @@ def test_the_verb_refusal_matrix(argv, expected, capsys):
     capsys.readouterr()
 
 
-def test_a_skip_writes_one_deviation_row_and_is_idempotent():
+def test_a_step_that_is_not_true_writes_one_deviation_row_and_is_idempotent():
+    """The ledger row survived `--skip`; the flag did not — D8.
+
+    This was `test_a_skip_writes_one_deviation_row_and_is_idempotent`, run
+    through `--skip hooks-self-test --reason "…"`. D8 deleted the flag ("it
+    exists to escape a refusal; with nothing to escape it is ceremony") and
+    kept the honest half: the machine writes the row itself, one per step that
+    is not true, carrying the step's own `Answer.detail` as the reason. The
+    refusal for the retired flag is asserted in the matrix above.
+
+    Idempotence is the assertion that matters: a re-run of a still-not-true
+    step must not file a second row saying the same thing.
+    """
     with tree({'Makefile': PIN}) as root:
-        argv = ['adopt', VERSION, '--skip', 'hooks-self-test', '--reason',
-                'this consumer arms no hooks']
+        argv = ['adopt', VERSION]
         driver.main(argv, root=root)
         ledger = root / f'pm/roadmap/{VERSION}-scratch/ledger.jsonl'
         assert ledger.is_file()

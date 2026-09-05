@@ -47,6 +47,7 @@ from support import REPO_ROOT  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.repo import init, install  # noqa: E402
+from agentic_sdlc.repo.pm import model  # noqa: E402
 
 PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/name="Fresh"\nconfig/version="0.1.0"\n')
@@ -202,8 +203,17 @@ CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'repo_hygiene', 'pm')
 
 def test_the_config_template_carries_every_section_the_gates_read():
     """Commented out, at the stock default — a repo with no devkit.toml must
-    behave byte-identically to one declaring the defaults, so the template
-    starts inert and is a menu rather than an opinion."""
+    behave byte-identically to one declaring the defaults, so the GATE half of
+    the template is a menu rather than an opinion.
+
+    THE FLOW IS THE EXCEPTION AND IT IS THE ONE LINE-ITEM HERE. Hard rule 5 as
+    it now reads: a GATE ships stock defaults, a WORKFLOW does not. There is no
+    runtime fallback behind `[pm.states.*]`, so a commented copy would leave a
+    freshly-initialised tree refused on its first `pm` call (plan review
+    finding P1). Every live line therefore has to belong to that one section —
+    asserted as an equality against `render_seed()`, which is also what
+    `test_pm_flow.py` pins the template's bytes to.
+    """
     body = init.seed_body(init.SEED_CONFIG[0])
     offered = re.findall(r'^# \[([a-z_]+)\]$', body, re.MULTILINE)
     assert offered, 'the template offers no section at all'
@@ -211,32 +221,90 @@ def test_the_config_template_carries_every_section_the_gates_read():
         f'template drift: {sorted(set(offered) ^ set(CONFIG_SECTIONS))}')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
-    assert live == [], f'the template declares something: {live}'
+    seeded = [ln for ln in model.render_seed().splitlines() if ln.strip()]
+    assert live == seeded, (
+        f'the template declares something outside the flow: '
+        f'{[ln for ln in live if ln not in seeded]}')
 
 
-def test_the_gitignore_entries_are_the_gate_librarys_own_defaults():
+# Each `IGNORED` entry, pinned to the constant in the file that WRITES it.
+# `(shipped shell file, variable)` for a shell default — not readable from
+# Python, but greppable — and `None` for the one whose writer is Python and can
+# simply be imported.
+IGNORE_OWNERS = {
+    '.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR'),
+    '.agent-scope': ('agent-worktree.sh', 'SCOPE_MARKER'),
+    '.claude/worktrees/': ('agent-worktree.sh', 'WORKTREE_PARENT'),
+    '.agentic-sdlc/': None,
+}
+
+
+def test_the_gitignore_entries_are_their_writers_own_defaults():
     """A shell default is not readable from Python, so it is PINNED here: each
-    ignored directory must be the `GDK_*` default of the shipped file that
-    writes it. A rename on either side fails this rather than silently
-    committing a consumer's gate transcripts.
+    ignored path must be the default of the shipped file that writes it. A
+    rename on either side fails this rather than silently committing a
+    consumer's run artifacts.
 
-    ONE ENTRY, DOWN FROM FOUR. `.headless-userdata/`, `.scenario-reports/` and
-    `.capture-reports/` were written only by the engine runners and left with
-    them in 0.2.0 (decision D2); a language kit's own installer appends its
-    own. The floor this census stands on is that it is not EMPTY — an `IGNORED`
-    that emptied out would have every consumer committing its gate transcripts
-    while this test passed over nothing, so emptiness is a failure here before
-    the equality below is even asked.
+    FOUR ENTRIES, UP FROM ONE (R3,
+    `docs/reviews/2026-09-05-the-release-is-a-conveyor.md`). It was
+    `.gate-reports/` alone while three other paths this package's own files
+    write were left tracked, and `.agentic-sdlc/` is the one that bit: the
+    conveyor's run state dirtied the tree the conveyor's own `tree-clean` step
+    measures. Measured on a stock `init` tree, run 2 of `release`:
+
+        [release] CORRECTED — the run state said 'tree-clean' was done; the
+        tree says: 1 modified path(s): .agentic-sdlc/
+
+    It went the other way in 0.2.0 too: `.headless-userdata/`,
+    `.scenario-reports/` and `.capture-reports/` were written only by the
+    engine runners and left with them (decision D2). The floor this census
+    stands on is that it is not EMPTY — an `IGNORED` that emptied out would
+    have every consumer committing its run artifacts while this test passed
+    over nothing, so emptiness is a failure here before the equality below is
+    even asked.
     """
-    owners = {'.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR')}
+    from agentic_sdlc.repo.conveyor import state as run_state
+
     assert init.IGNORED, 'init.IGNORED is empty — this test would prove nothing'
-    assert set(init.IGNORED) == set(owners)
-    for entry, (runner, variable) in owners.items():
-        body = install.body_of(runner)
-        expected = f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"'
-        assert expected in body, (
-            f'{runner} no longer defaults {variable} to {entry} '
-            f'(looked for {expected})')
+    assert set(init.IGNORED) == set(IGNORE_OWNERS)
+    for entry, owner in IGNORE_OWNERS.items():
+        if owner is None:
+            continue
+        shipped, variable = owner
+        body = install.body_of(shipped)
+        # Both spellings the shipped scripts use: a `${VAR:-default}` fallback
+        # and a plain assignment. Either one is the file DECLARING that path.
+        assert (f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"' in body
+                or f'{variable}="{entry.rstrip("/")}"' in body), (
+            f'{shipped} no longer defaults {variable} to {entry}')
+    assert run_state.STATE_DIRNAME == '.agentic-sdlc/'.rstrip('/'), (
+        'the conveyor writes its run state somewhere else now, and init '
+        'ignores a directory nothing writes')
+
+
+def test_every_run_artifact_this_package_writes_is_ignored():
+    """R3's second half: the SWEEP, not just the one entry that was found.
+
+    `state.py:11-13` says gitignoring is what keeps `tree-clean` answerable, so
+    a path this package's own files write and `init` does not ignore is a
+    `tree-clean` this package falsifies in every consumer. Asked of the
+    installables' own constants rather than restated, so a renamed marker fails
+    here instead of quietly re-opening the hole.
+    """
+    from agentic_sdlc.repo.conveyor import state as run_state
+
+    writes = {f'{run_state.STATE_DIRNAME}/'}
+    body = install.body_of('agent-worktree.sh')
+    for variable in ('SCOPE_MARKER', 'WORKTREE_PARENT'):
+        found = re.search(rf'^{variable}="([^"]+)"', body, re.MULTILINE)
+        assert found, f'agent-worktree.sh declares no {variable}'
+        writes.add(found.group(1))
+    ignored = {entry.rstrip('/') for entry in init.IGNORED}
+    missing = sorted(path for path in writes if path.rstrip('/') not in ignored)
+    assert missing == [], (
+        f'{missing} are written by files this package installs and are in no '
+        f'init.IGNORED entry — every one of them dirties the tree that '
+        f'`tree-clean` measures')
 
 
 # --- idempotence --------------------------------------------------------------

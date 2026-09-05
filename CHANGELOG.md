@@ -48,6 +48,40 @@ should release on a red tree if I want (we mostly wouldn't but why stop someone?
   `install.PLANS`, both directions.
 - `agentic-sdlc version` is documented. It was routed and named in no `--help` line.
 
+### The conveyor's steps stop reporting things they did not ask
+
+- **`adopt`'s `config-updated` asked six readers and reported over a hand-written list of
+  ten.** Four sections it NAMED — `[checks]`, `[grain_shape]`, `[repo_hygiene]`, `[verify]` —
+  were never asked, so it printed *"6 reader(s) accept this repo's devkit.toml; declared
+  here: verify"* over a `[verify]` table that made `verify --check` exit 2. The census is now
+  derived from the reader list, all ten sections have a reader, and every refused section is
+  reported rather than the first. **Output shape changed** (rule 6): the pass line reads
+  `N reader(s) accept …` where N is the number asked, and the failure names how many of how
+  many hold a value this version does not accept.
+- **`[repo_hygiene] mainline` / `protected` were spelled in two places.** The gate read them
+  inline at the top of `run()`, which then fetches and walks, so there was nothing pure for
+  `config-updated` to call. `repo_hygiene.read_config()` is now the one reader, and a
+  malformed value raises before the gate prints its first line rather than after.
+- **`init` gitignores three more run-artifact paths**: `.agentic-sdlc/` (the conveyor's own
+  run state, which falsified the `tree-clean` step it sits beside), `.agent-scope` and
+  `.claude/worktrees/` (both planted by `agent-worktree.sh`, whose own comment says to
+  gitignore the second). A tree initialised before this gets them on the next `init` — the
+  verb appends what is missing and rewrites nothing.
+- **`main-merged` fetches before it answers.** It read `origin/<mainline>` and never
+  refreshed it, so on a clone two commits behind it answered *"origin/main is an ancestor of
+  HEAD"* — TRUE, over a mainline that had moved. A remote-tracking ref is a cache of somebody
+  else's repository. It now refuses (UNVERIFIABLE) rather than answering off a ref it could
+  not refresh, which is `tag`'s existing ruling; a repo with no remote still answers from its
+  local mainline. **This adds one network round trip to a `release` run.**
+- **`tree-clean` names the ledger as the belt's own.** The `gate` step files its cost rows in
+  the tracked `ledger.jsonl`, so the belt dirtied the tree it later measured and then told
+  the operator to stash a file it had written itself. Nothing is subtracted from the count
+  (rule 4); the attribution is what was missing.
+- `adopt`'s `installable-decisions-recorded` accepted a decision line by path SUBSTRING, so
+  `tools/hooks/pre-push-extra: keep` satisfied a drifted `tools/hooks/pre-push`.
+- `[<operation>] steps` printed its duplicate-name notice once per asking step — five times on
+  one run. Memoised on the config file's own bytes, so a changed file re-derives.
+
 ### `verify --check` asks whether a rule can ever fire
 
 - **A rule shadowed by an earlier one is now a finding.** `--check` asked each rule's glob

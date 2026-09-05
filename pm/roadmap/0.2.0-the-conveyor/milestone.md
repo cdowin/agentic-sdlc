@@ -9,36 +9,40 @@ reviewed: docs/reviews/2026-09-05-0.2.0-release-review.md
 
 # 0.2.0 — the conveyor
 
-The SDLC stops being prose an operator follows correctly and becomes a step machine that
-refuses to advance.
+> ## Northstar: **a simple local Jira.**
+> *Chris, 2026-09-05.* It creates the work, moves it, expresses what the states are and what the
+> flow is — **and it infers nothing.** Expressing the flow is the power; deciding what it means to
+> move through the flow is a separate problem and belongs to whatever is running it.
 
-**Re-planned 2026-09-05** — `docs/reviews/2026-09-05-0.2.0-scope-audit.md` is the audit and
-every dispatch's reference. It found the diagnosis right and the decomposition wrong: ship
-criterion 5 was an escape hatch over the one deliverable `godot-devkit` is blocked on, one
-feature was `size: xl` carrying four unrelated things, and two features collided on the same
-file while both claiming phase 1. **Eight features and one bug now, in four phases.**
+**0.3.0 was collapsed into this milestone on 2026-09-05.** It had been opened that afternoon to
+rebuild the belts as reporting-not-refusing, over states declared by the project rather than
+named by the engine — and shipping a conveyor built on a premise already ruled against, in order
+to replace it one release later, is work nobody should do. Chris: *"The end-goal of 0.2.0 is to
+ship a working conveyor belt."*
 
-**`pm status 0.2.0` is the roster.** There was a table here, one row per feature, and it was a
-second scoreboard — the thing `.claude/rules/pm-execution.md` bans by name: *"Do not hand-maintain
-a story list in a feature file, or a feature list in a milestone file."* It went stale the moment
-a ninth feature was added mid-milestone, and the release reviewer filed it (L4) on a tree where
-the table and the directory had already disagreed. Written by the person who wrote the rule.
+So the belts land **once, correctly**, and this milestone ships when they do.
 
-What is NOT derivable, and so stays here, is the ORDERING and its reason:
+## The two rulings the whole thing now rests on
 
-- **Phase 1** is the floor — a stock consumer's `check all` exits 2 today, and everything else
-  builds on a kit that works.
-- **Phase 2** is what unblocks the other repo: the gate framework sheds its language roster. This
-  was ship criterion 5's "or".
-- **Phase 3** is the belts — the funnel, the 170x, and the entry conditions as exit codes.
-- **Phase 4** is the outer conveyors, `release` and `adopt`.
-- **Phase 5** was added mid-milestone: the levels that run *constantly* were the ones left as
-  prose, which is backwards in the most expensive direction.
+**Hard rule 9 — express, never infer.** The engine has two verbs: `move(grain, to_state)`, which
+asks whether the transition is declared, and `holds(grains, category)`, which names who is not
+there. Everything else is the project's declaration. `docs/design/state-categories.md` is the
+design; the inference census in §6 is nine items, one of which the plan review withdrew because I
+had attributed a **gate's** job to the engine.
 
-Phase 1 is serial before phase 2: `the-extraction-finishes` **prunes** `KNOWN_GATES` and ships
-`roster == dispatchable` as a test; `the-kit-owns-…` then **grows** it through that census.
-Run in parallel they collide on `src/agentic_sdlc/cli.py` and the second one has to rewrite the
-first one's guard.
+**It gates the SDLC; it does not run it.** A belt moves, warns and finishes — it does not refuse.
+Facts about the INPUT are refused at exit 2 (a state in no category, an undeclared transition, a
+malformed value: reading, not deciding). Facts about the TREE are reported and the walk continues,
+because the engine cannot know whether an open child is wrong — descoped? a hotfix? — and a
+machine that blocks on a question it cannot ask is asserting an answer. `check pm` is the gate.
+
+## What this changed about work already done
+
+Phases 1-5 shipped, reviewed, and carry **36 open findings** across nine feature records. Some are
+defects in code whose premise is sound and they land. **Others are defects in REFUSAL** — R1's
+deadlock between `findings-resolved` and `review-landed` is two contradictory postconditions in a
+machine that halts, and it dissolves when nothing halts. Each is dispositioned against the
+rebuild rather than fixed twice.
 
 ## ▶ The SDLC, and who provides each piece
 

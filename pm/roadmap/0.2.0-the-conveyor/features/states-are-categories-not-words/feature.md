@@ -1,10 +1,10 @@
 ---
-id: 0.3.0/states-are-categories-not-words
-milestone: "0.3.0"
+id: 0.2.0/states-are-categories-not-words
+milestone: "0.2.0"
 name: Every question the engine asks is asked of a category
 status: planning
 reviewed:
-phase: 1
+phase: 6
 depends_on: []
 consumed_by: []
 risk: high

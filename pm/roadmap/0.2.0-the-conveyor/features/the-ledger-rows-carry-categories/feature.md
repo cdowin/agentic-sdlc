@@ -1,10 +1,10 @@
 ---
-id: 0.3.0/the-ledger-rows-carry-categories
-milestone: "0.3.0"
+id: 0.2.0/the-ledger-rows-carry-categories
+milestone: "0.2.0"
 name: A renamed vocabulary does not silently empty the ledger
 status: planning
 reviewed:
-phase: 1
+phase: 6
 depends_on: []
 consumed_by: []
 risk: high

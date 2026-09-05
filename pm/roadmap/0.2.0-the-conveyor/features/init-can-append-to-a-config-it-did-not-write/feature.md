@@ -1,10 +1,10 @@
 ---
-id: 0.3.0/init-can-append-to-a-config-it-did-not-write
-milestone: "0.3.0"
+id: 0.2.0/init-can-append-to-a-config-it-did-not-write
+milestone: "0.2.0"
 name: An existing consumer gets the new section without losing its own
 status: planning
 reviewed:
-phase: 1
+phase: 6
 depends_on: []
 consumed_by: []
 risk: high

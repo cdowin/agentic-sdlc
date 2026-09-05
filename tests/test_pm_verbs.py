@@ -98,14 +98,43 @@ class StatusMoves(unittest.TestCase):
         # It used to refuse: "a feature cannot be under review while its own
         # work is unfinished" is a claim about how a team works. Which stories
         # are where is a fact, and it belongs in the output, not in a veto.
+        #
+        # B3: the advisory asks `model.is_terminal` — the SAME question
+        # `pm ready-for feature` asks — where it used to ask
+        # `not in (reviewing, 'done')`. A story AT `reviewing` is not finished,
+        # so it is named here too; it used to flip silently and then be named
+        # by `ready-for`, which is one question with two answers.
         with tree(story_statuses=('reviewing', 'building')) as root:
             code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
             self.assertEqual(code, 0, out)
-            self.assertIn('not at reviewing', out)
+            self.assertIn('not finished', out)
             self.assertIn('s1.md(building)', out)
+            self.assertIn('s0.md(reviewing)', out)
             self.assertEqual(
                 model.field_of(root / 'pm/roadmap/0.1-demo/features/alpha/feature.md',
                                'status'), 'reviewing')
+
+    def test_feature_review_advisory_is_silent_when_every_story_is_finished(self):
+        # The other half of B3: `also_done` counts. A dropped story does not
+        # keep the advisory talking, because it is finished.
+        with tree(story_statuses=('done', 'obe')) as root:
+            (root / 'devkit.toml').write_text(
+                '[pm]\nalso_done = ["obe"]\n', encoding='utf-8')
+            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('not finished', out)
+
+    def test_feature_review_advisory_names_a_dropped_story_without_also_done(self):
+        # And the shim is not assumed: with no `[pm] also_done` declared, `obe`
+        # is just a word, so the story is unfinished and the advisory says so.
+        # (The default `('obe',)` at model.py:305 applies only when the KEY is
+        # present — reading a default nobody declared is the thing 0.2.0 is
+        # removing.)
+        with tree(story_statuses=('done', 'obe')) as root:
+            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('not finished', out)
+            self.assertIn('s1.md(obe)', out)
 
     def test_milestone_done_REPORTS_live_features_and_still_moves(self):
         with tree(feature_status='building') as root:

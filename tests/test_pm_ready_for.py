@@ -475,6 +475,28 @@ class TagBelt(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('1 record(s), 3 finding(s)', out)
 
+    def test_one_record_reached_by_two_spellings_still_counts_once(self):
+        # B4: the dedupe used to key on the UNRESOLVED path, so one file
+        # reached by two spellings counted twice — and the census is what this
+        # verb prints as its proof of what it read, so an over-count is a false
+        # census (rule 4). `_record` already computes the realpath for the
+        # containment check; it is now what the dedupe keys on.
+        #
+        # A symlinked DIRECTORY rather than a case-insensitive filesystem: the
+        # file itself is not a symlink (those are refused by name), the two
+        # pointers differ as strings, and this reproduces on any POSIX tree
+        # rather than only on macOS, where the finding was measured.
+        with tree(feature_status='done') as root:
+            pointer = put_record(root, 'x.md', record(CLEAN_BLOCK))
+            (root / 'docs' / 'r').symlink_to('reviews', target_is_directory=True)
+            alias = pointer.replace('docs/reviews/', 'docs/r/')
+            self.assertNotEqual(alias, pointer)
+            feature(root, 'alpha', 'done', pointer)
+            feature(root, 'beta', 'done', alias)
+            code, out = run_cli(root, 'ready-for', 'tag', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('1 record(s), 3 finding(s)', out)
+
 
 # --- the input surface --------------------------------------------------------
 class ArgvRefusals(unittest.TestCase):

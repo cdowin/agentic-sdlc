@@ -210,3 +210,78 @@ in `model.py:1155`, so `pm ready-for feature` and `check pm` D2 disagree **today
 **The cost accepted:** a verb layer between `check pm` and the frontmatter is indirection that a
 reader of any single D-rule has to follow one hop further. Bought off by the hop being one
 function with one docstring, versus ten sites each restating the same reading of the same table.
+
+## D7 — 2026-09-05 — The ledger keeps its frozen keys and gains category keys beside them
+
+**Chris, 2026-09-05:** *"Keep and extend."*
+
+`pm/cli.py:1524-1557` freezes `building` and `reviewing` as literal bucket keys inside JSONL rows
+**already written in every consumer tree**, consumed downstream by `report.py:104-112`. Every other
+item in the inference census is a rendering or a predicate — change the code and the next run is
+right. This one is a data format.
+
+**The ruling: the frozen keys STAY and category keys land beside them.** Old rows stay readable by
+old readers, new rows carry both, and the frozen keys are marked deprecated in the row shape with
+removal at the next major — the same posture the 0.24.0 deprecation window took.
+
+**Rejected: migrate the keys to category names.** It leaves a reader that must understand two
+shapes forever, or requires a one-shot rewrite verb that every consumer runs — and hard rule 8 says
+this package cannot run a migration in somebody else's repo. A migration nobody can be made to run
+is a migration that never finishes.
+
+**Rejected: read old rows through the CURRENT declaration.** A row written when `building` meant
+something is not re-interpretable through a table written later; that is inventing history, and
+`pm ledger report`'s `reopens` column already sets the precedent of printing `-` rather than
+guessing.
+
+**The cost accepted:** the milestone that exists to remove hardcoded state opinions ships one, in a
+telemetry row, dated and deprecated. It is the honest version of the trade — the row is telemetry,
+not the engine, and every question the ENGINE asks is a category after phase 7.
+
+## D8 — 2026-09-05 — Everything is just a check: no belt step ever halts, and exit 2 belongs to the reader
+
+**Chris, 2026-09-05, on being shown the input-versus-tree edge:**
+
+> *"I don't understand tree vs input. Everything is just a check. `release` should release on a red
+> tree if I want (we mostly wouldn't but why stop someone?)"*
+
+**He is right and this is simpler than the design was.** `state-categories.md` §7 drew the edge
+between facts about the INPUT (refuse, exit 2) and facts about the TREE (report, proceed), and P5
+then sized the work as *"re-rule 14 halting steps, each under that edge"* — including the genuinely
+hard one, whether a red `make gates` is input or tree.
+
+**There is no such edge, because those are not two kinds of step outcome.** They are two different
+moments:
+
+| moment | what it is | answer |
+|---|---|---|
+| **before the walk** | the engine cannot READ its own declaration — a malformed id, an unknown step name, a config value of the wrong shape, an undeclared transition | **exit 2, and nothing walks.** `validate_config`, `plan_defect` and `subject_defect` already do this, before step 1. |
+| **during the walk** | a step's `check()` answered | **it is a check. It reports.** Every time, for every step, with no exceptions and no taxonomy. |
+
+So the 14-step re-ruling evaporates: there is nothing to re-rule, because no step decides whether
+to halt. **A red `make gates` reports red and the walk continues to `tag`** — and if you want to
+release on a red tree, you can, which is Chris's point. The gate told you. `check` is still the
+thing that FAILS in CI and pre-push with an exit-code contract for exactly that.
+
+**Rejected: keep the input/tree taxonomy as a per-step ruling.** Fourteen judgement calls is
+fourteen chances to draw the line differently, and the second one would be argued from the first
+rather than from a rule — D2's reasoning, applied here. It also puts the engine back in the
+business of deciding which facts are serious, which is rule 9's whole subject.
+
+**Rejected: halt on a failed AUTOMATIC step, since an action that did not happen is not a check.**
+Tempting, and wrong in the same way: a step's postcondition is a check whether the step tried to
+perform it or not. `version-sync` that did not write reports *"pyproject.toml still says 0.1.0"* and
+the walk continues; the operator reads the scoreboard. Special-casing one kind is the fourth
+StepKind arriving as an `if`.
+
+**What the machine becomes**, and it is smaller: `_walk` stops returning at the first non-true step.
+It records every answer, prints every line, walks to the end, and returns a **scoreboard**. Exit
+codes keep hard rule 6 exactly — `0` every postcondition holds, `1` one or more do not, `2` the
+declaration could not be read.
+
+**The cost accepted:** a long run now prints every step's line rather than stopping at the first
+problem, so the transcript is longer and the final scoreboard is doing real work. That line is the
+mitigation and it has to be good — a warning nobody reads is worse than a refusal.
+
+**And `--skip` goes.** It exists to escape a refusal; with nothing to escape it is ceremony. The
+ledger row it wrote was the honest half, and it becomes what a not-true step records.

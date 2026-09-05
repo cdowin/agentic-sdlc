@@ -68,7 +68,8 @@ USAGE = """usage: agentic-sdlc pm <command>
                                            rung, as an EXIT CODE: 0 ready,
                                            1 not ready — naming every blocker,
                                            never a tally — 2 usage. feature:
-                                           every story at `reviewing`.
+                                           every story finished — `done`, or
+                                           anything in `[pm] also_done`.
                                            milestone: every feature done with a
                                            non-empty review record. tag: every
                                            finding in the records the milestone
@@ -410,8 +411,15 @@ def cmd_feature_reviewing(cfg: model.PmConfig, args: list[str]) -> int:
         _ok(f'feature {fid} already {model.REVIEWING} (no-op)')
         _stamp_status(cfg, ff, cur, model.REVIEWING, fid)
         return 0
+    # B3: ONE question, asked once. `model.is_terminal` is what
+    # `pm ready-for feature` asks — `done`, or anything in `[pm] also_done` —
+    # and this advisory used to ask `not in (reviewing, 'done')` instead. Two
+    # surfaces answering "is this feature's work finished" with two different
+    # sets is a second scoreboard, and it showed: a feature whose stories were
+    # all at `reviewing` flipped with no advisory, and then `ready-for feature`
+    # named every one of them.
     pending = [f'{p.name}({st})' for p, st in _story_states(cfg, fid)
-               if st not in (model.REVIEWING, 'done')]
+               if not model.is_terminal(cfg, st, cfg.story_states)]
     _set_status(cfg, ff, model.REVIEWING)
     _ok(f'feature {fid}: {cur} -> {model.REVIEWING}')
     _stamp_status(cfg, ff, cur, model.REVIEWING, fid)
@@ -419,8 +427,7 @@ def cmd_feature_reviewing(cfg: model.PmConfig, args: list[str]) -> int:
     # work is unfinished" is a claim about how a team works; which stories are
     # where is a fact, and it is the caller's to act on.
     if pending:
-        _ok(f'  {len(pending)} story/ies not at {model.REVIEWING}: '
-            f'{" ".join(pending)}')
+        _ok(f'  {len(pending)} story/ies not finished: {" ".join(pending)}')
     return 0
 
 

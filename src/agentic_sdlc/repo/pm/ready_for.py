@@ -220,6 +220,12 @@ class Record:
     pointer: str
     path: Path
     text: str
+    real: Path
+    """`path` resolved. B4: the containment check already computes this, and
+    keying the dedupe on `path` counted one file twice when two features spelled
+    the pointer differently — `docs/reviews/r.md` and `docs/Reviews/r.md` on a
+    case-insensitive filesystem. The census is what the verb prints as its proof
+    of what it read, so an over-count is a false census (rule 4)."""
 
 
 def _pointer_defect(pointer: str) -> str | None:
@@ -273,7 +279,8 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
         return None, (f'reviewed: {pointer!r} is a symlink — it is not '
                       f'followed, because where it lands is not this tree')
     root = Path(os.path.realpath(cfg.root))
-    if not Path(os.path.realpath(target)).is_relative_to(root):
+    real = Path(os.path.realpath(target))
+    if not real.is_relative_to(root):
         return None, (f'reviewed: {pointer!r} resolves outside the checkout '
                       f'— nothing there is read')
     if not target.exists():
@@ -294,7 +301,7 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
     if not text.strip():
         return None, (f'reviewed: the record is empty ({pointer}) — a file '
                       f'that is there proves the pointer, not the review')
-    return Record(pointer, target, text), None
+    return Record(pointer, target, text, real), None
 
 
 # --- story -> feature ---------------------------------------------------------
@@ -428,7 +435,7 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
         if defect is not None:
             blockers.append(f'{owner}: {defect}')
         elif record is not None:
-            records.setdefault(record.path, record)
+            records.setdefault(record.real, record)
 
     findings = 0
     for record in records.values():

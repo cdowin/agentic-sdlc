@@ -46,18 +46,19 @@ answer is picked, because the two live answers have different sizes:
 | **migrate** | the keys become category names, and a reader understands two shapes forever — or a one-shot rewrite verb exists and every consumer runs it. Hard rule 8 says this package cannot run it in somebody else's repo. |
 | **keep and extend** | the frozen keys stay, category keys land beside them, old readers keep working, and the milestone ships with a named, dated, documented opinion in one telemetry row |
 
-**Recommended: keep and extend**, with the frozen keys marked deprecated in the row shape and
-removed at the next major. The row is telemetry, not the engine. A reader that must understand two
-shapes forever is a worse outcome than one deprecated key with a removal date, and it is the same
-posture the 0.24.0 deprecation window took.
+**RULED 2026-09-05 — keep and extend.** Chris: *"Keep and extend."* The frozen keys stay, category
+keys land beside them, old rows stay readable by old readers, and the frozen keys are deprecated in
+the row shape with removal at the next major — the posture the 0.24.0 deprecation window took. D7
+carries both rejected alternatives.
 
-**Chris's call, and it is criterion 0.** Nothing here is scoped until it is a `pm decide` entry.
+The milestone that exists to remove hardcoded state opinions therefore ships one, in a telemetry
+row, dated and deprecated. That is the honest version of the trade: the row is telemetry, and every
+question the ENGINE asks is a category after phase 7.
 
 ## Ship criterion
-
-0. **The answer is a `pm decide` entry with the rejected alternative recorded, before any story is
-   written.** The size above is provisional until then.
-1. The snapshot keys come from categories, not from two literals.
+1. Every dispatch snapshot row carries **category keys alongside** the frozen `stories_wip` /
+   `features_review` ones, and the frozen pair is marked deprecated where the row shape is
+   documented — never silently kept.
 2. **A row written before the migration is readable, or is disclosed as unreadable** — never
    silently counted as empty. Rule 4 over a data format rather than over a file census.
 3. `pm ledger report`'s dwell columns are per CATEGORY, so a twelve-state project gets three

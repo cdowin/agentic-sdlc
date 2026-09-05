@@ -100,7 +100,7 @@ So none of these rungs is "run the biggest thing", and a belt never runs a belt 
 | You are doing | Verb | Scope |
 |---|---|---|
 | editing — the inner loop | `verify --changed` | only the paths you touched. Seconds |
-| closing a story | `pm ready-for feature <fid>` | are this feature's sibling stories at `reviewing`? |
+| closing a story | `pm ready-for feature <fid>` | are this feature's sibling stories finished? |
 | closing a feature | `verify --feature` | the composition your `[verify] feature` names. Tens of seconds |
 | closing a milestone | `verify --milestone` | everything, every interpreter. Minutes, paid **once** |
 | tagging | `pm ready-for tag <mid>` | is every review finding at a disposition other than `open`? |

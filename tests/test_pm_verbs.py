@@ -993,6 +993,14 @@ class Vocabulary(unittest.TestCase):
     they have to be readable from the tool rather than scraped from a
     changelog — which is also why this verb keeps running when `[pm] checks`
     names an id the release retired.
+
+    PHASE 6 WIDENED WHAT "THE SHAPE" IS, and the two cases below were narrowed
+    to match rather than deleted. The verb now also prints the flow the project
+    declared and the conveyor step names a `[pm.transitions.<kind>]` table may
+    key on. What has NOT come back is an edge table: `[pm.transitions]` maps a
+    STEP to a state, never a state to a state. The flow half is proven in
+    `tests/test_pm_flow.py`; these keep the pin-bump surface this class was
+    written for.
     """
 
     def test_json_states_the_closed_sets_and_no_edges(self):
@@ -1006,13 +1014,15 @@ class Vocabulary(unittest.TestCase):
             self.assertEqual(data['grains']['bug']['states'],
                              list(model.DEFAULT_BUG_STATES))
             self.assertEqual(data['checks'], list(model.KNOWN_CHECKS))
-            # The edge table is what died. Nothing may re-grow one here, and
-            # neither may the `deprecated` rename map: it disclosed the 0.24.0
-            # window and the window closed in 0.2.0, so a grain carries its
-            # closed SET and nothing else.
+            # A grain carries its closed SET and its declared FLOW, and nothing
+            # else. `deprecated` may not come back: it was the 0.24.0 rename
+            # map, and that window closed in 0.2.0.
             for grain in data['grains'].values():
-                self.assertEqual(list(grain), ['states'])
-            self.assertNotIn('transitions', data['grains'])
+                self.assertEqual(sorted(grain), ['flow', 'states'])
+            # This tree declares none, so the flow is the ABSENCE rather than
+            # the seed — a fallback here is the thing hard rule 5 forbids.
+            self.assertIs(data['flow_declared'], False)
+            self.assertIsNone(data['grains']['story']['flow'])
             self.assertNotIn('deprecated', out)
             self.assertNotIn('->', out)
 
@@ -1041,9 +1051,16 @@ class Vocabulary(unittest.TestCase):
             # that outlives its release.
             self.assertNotIn('removed in 0.25.0', out)
             self.assertNotIn('replaced by', out)
+            # SCOPED TO THE VOCABULARY LINES, which is what this assertion was
+            # always about: the four retired words must not be in a set a grain
+            # may hold. It read the WHOLE transcript until phase 6 made `todo`
+            # a CATEGORY name — the category set is `todo in_progress done`,
+            # printed as prose, and a ban that cannot tell a category from a
+            # state would forbid the engine's own closed set.
+            sets = out.split('\n\n')[0]
             for word in ('todo', 'wip', 'review', 'blocked'):
                 # Word-boundaried: `reviewing` legitimately contains `review`.
-                self.assertNotRegex(out, rf'\b{word}\b')
+                self.assertNotRegex(sets, rf'\b{word}\b')
 
 
 class StoryResolution(unittest.TestCase):

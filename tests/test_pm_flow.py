@@ -19,6 +19,8 @@ the one thing this package is always allowed to refuse.
 from __future__ import annotations
 
 import contextlib
+import io
+import json
 import os
 import subprocess
 import sys
@@ -78,16 +80,32 @@ def test_the_seed_is_valid_under_the_rules_it_will_be_read_by():
     writes `render_seed()`, so it has to survive `load()`."""
     cfg = load(model.render_seed())
     assert sorted(cfg.flows) == sorted(model.FLOW_KINDS)
-    assert model.flow_of(cfg, 'story').order == model.LIFECYCLE
+    assert model.flow_of(cfg, 'story').order == model.LIFECYCLE + ('obe',)
 
 
-def test_the_seed_reproduces_todays_lifecycle_for_the_three_that_share_it():
+def test_the_seed_is_todays_lifecycle_plus_a_word_for_abandoned_work():
+    """`obe` is the ONE place the seed is not literally `LIFECYCLE`, and it is
+    deliberate.
+
+    Found by asking why a freshly-initialised tree had no word for abandoned
+    work while this repo's own devkit.toml had one: `also_done`'s live defect —
+    a story at `obe` holding its feature open forever — would have come
+    straight back for every new consumer. Shipping the fix as a repair a
+    project has to discover is shipping the bug.
+
+    It costs a tree that never types `obe` nothing, which is what makes it safe
+    to seed rather than a behaviour change: an unused state is an unused state.
+    """
     for kind in ('milestone', 'feature', 'story'):
         flow = model.Flow(kind, model.DEFAULT_FLOWS[kind],
                           {st: cat
                            for cat, sts in model.DEFAULT_FLOWS[kind].items()
                            for st in sts}, {})
-        assert flow.order == model.LIFECYCLE, kind
+        assert flow.order == model.LIFECYCLE + ('obe',), kind
+        assert flow.category('obe') == 'done', kind
+        # Every word LIFECYCLE has, in its order, is still here and still in
+        # the category it was in — that is the "no behaviour change" half.
+        assert flow.order[:len(model.LIFECYCLE)] == model.LIFECYCLE, kind
 
 
 def test_a_bugs_vocabulary_stops_being_a_special_case():
@@ -305,3 +323,275 @@ class TestTransitionTarget:
     def test_an_undeclared_step_is_None_rather_than_a_guess(self):
         cfg = load(FULL)
         assert model.transition_target(cfg, 'story', 'story-done') is None
+
+
+# --- `pm vocabulary` — the pin-bump verb --------------------------------------
+# It stopped being cosmetic in phase 6. Its docstring used to say "there are no
+# TRANSITIONS to print", which `[pm.transitions.<kind>]` falsifies, and it is
+# the one place a consumer can read what a VERSION's declared surface is
+# without scraping help text or a changelog (plan review finding P6).
+def vocab(*argv: str) -> tuple[int, str]:
+    """`pm vocabulary` in the tree the caller is already standing in."""
+    from agentic_sdlc.repo.pm import cli
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = cli.main(['vocabulary', *argv])
+    return code, buf.getvalue()
+
+
+# `FULL` ends on a value line with no trailing newline, so the join is
+# EXPLICIT: `FULL + TRANSITIONS` glued a `]` to a `[` and every case using it
+# failed as a TOML parse error rather than as the thing it was asserting.
+WITH_TRANSITIONS = FULL + ('\n[pm.transitions.story]\nclaimed = "building"\n'
+                           'story-done = "done"\n')
+
+
+class TestVocabulary:
+    def test_it_prints_the_categories_and_the_states_in_each(self):
+        with tree(FULL):
+            code, out = vocab()
+        assert code == 0
+        assert '[pm.states.story]' in out
+        for category in model.CATEGORIES:
+            assert category in out
+        # The states arrive UNDER their category, not as one flat list: the
+        # mapping is the whole thing phase 6 made declarable.
+        block = out.split('[pm.states.bug]')[1]
+        assert 'todo         open' in block
+        assert 'in_progress  fixed' in block
+        assert 'done         closed' in block
+
+    def test_it_prints_the_transitions_the_project_declared(self):
+        with tree(WITH_TRANSITIONS):
+            code, out = vocab()
+        assert code == 0
+        assert 'claimed -> building' in out
+        assert 'story-done -> done' in out
+        # And says so rather than printing a blank where a table would be.
+        assert '(this project declares none)' in out
+
+    def test_a_renamed_vocabulary_is_what_gets_printed(self):
+        """No engine word leaks into the flow block. If this ever prints
+        `building` for a project that never wrote it, the verb is reporting the
+        seed instead of the declaration."""
+        renamed = ('[pm.states.story]\ntodo = ["icebox"]\n'
+                   'in_progress = ["in-dev"]\ndone = ["shipped"]\n'
+                   + '\n'.join(
+                       f'[pm.states.{k}]\ntodo = ["a"]\nin_progress = ["b"]\n'
+                       f'done = ["c"]\n'
+                       for k in ('milestone', 'feature', 'bug')))
+        with tree(renamed):
+            _, out = vocab()
+        flow = out.split('[pm.states.milestone]')[1].split('published steps')[0]
+        assert 'in-dev' in flow and 'shipped' in flow
+        assert 'building' not in flow, (
+            'the verb printed the seed instead of what the project declared')
+
+    def test_the_published_step_names_come_from_the_conveyor_REGISTRY(self):
+        """Asserted against the registry itself, never a literal list here.
+
+        A literal would be a third spelling of `conveyor/steps.py` — the one
+        in the CLI, the one in this test, and the real one — and the first
+        release that adds a step would leave two of the three wrong while this
+        passed. So the census is derived, and the FLOOR is that it is not
+        empty: an emptied registry would satisfy a subset assertion in silence
+        (hard rule 4).
+        """
+        from agentic_sdlc.repo.conveyor import steps
+        with tree(FULL):
+            _, out = vocab()
+        published = {name for operation in steps.REGISTRIES
+                     for name in steps.registry_for(operation)}
+        assert published, 'the step registry is empty — nothing was censused'
+        # `textwrap` wraps the lists, so the whitespace is normalised before
+        # the membership question is asked; the names themselves are never
+        # broken (`break_on_hyphens=False`).
+        printed = set(out.split())
+        assert published <= printed, sorted(published - printed)
+        for operation in steps.REGISTRIES:
+            assert operation in out, operation
+
+    def test_it_says_whose_the_step_key_set_IS(self):
+        """P6's ruling, and it has to be VISIBLE in the output: the keys are
+        the engine's published vocabulary a project selects from. Presented as
+        pure project declaration, the table would be the engine's opinion with
+        a config file in front of it."""
+        with tree(FULL):
+            _, out = vocab()
+        assert 'ENGINE' in out
+        assert 'cannot invent one' in out
+
+    def test_it_prints_the_rule_ids_it_always_did(self):
+        with tree(FULL):
+            _, out = vocab()
+        assert f'rules  {" ".join(model.KNOWN_CHECKS)}' in out
+
+    def test_it_no_longer_claims_there_are_no_transitions(self):
+        """The sentence phase 6 falsified. It is asserted as an ABSENCE
+        because that is the defect: output that contradicts the config schema
+        the same release shipped."""
+        with tree(WITH_TRANSITIONS):
+            _, out = vocab()
+        assert 'there is no transition graph' not in out
+        assert 'no EDGE graph' in out, (
+            'the narrower true statement went with the false one')
+
+    def test_an_unknown_flag_is_still_a_usage_error(self):
+        with tree(FULL):
+            code, _ = vocab('--wombat')
+        assert code == 2
+
+
+class TestVocabularyWithNoFlow:
+    """The tree `flow_of` refuses is the tree this verb has to ANSWER.
+
+    `vocabulary` is what you run to find out what to declare; a discovery verb
+    that refuses until you have already discovered the answer is a closed loop.
+    Every other flow-reading verb refuses here, and that is correct — they
+    create, move or locate work over states the project never chose.
+    """
+
+    def test_it_does_not_crash(self):
+        with tree(''):
+            code, out = vocab()
+        assert code == 0, out
+
+    def test_it_reports_the_absence_by_name(self):
+        with tree(''):
+            _, out = vocab()
+        # WHITESPACE-NORMALISED: the paragraph is prose and its line breaks
+        # are not contract, unlike the `  DRIFT  ` / `[check:x] PASS` shapes
+        # consumers grep (hard rule 6). Asserting against the wrap made a
+        # re-flow of one sentence look like the absence going unreported.
+        prose = ' '.join(out.split())
+        assert '[pm.states.*] is not in devkit.toml' in prose
+        assert 'no default' in prose
+        assert 'agentic-sdlc pm init' in prose
+
+    def test_it_prints_what_init_would_write_and_it_is_the_SEED(self):
+        with tree(''):
+            _, out = vocab()
+        # Indented by two in the transcript, so a reader cannot mistake it for
+        # the tree's own config. Byte-identical once that indent is removed.
+        for line in model.render_seed().splitlines():
+            if line:
+                assert f'  {line}' in out, line
+
+    def test_what_it_prints_is_a_declaration_that_LOADS(self):
+        """The seed it hands a reader has to survive the reader it is pasted
+        into — otherwise the verb's whole answer is a config error."""
+        with tree(''):
+            _, out = vocab()
+        pasted = '\n'.join(
+            ln[2:] for ln in out.splitlines()
+            if ln.startswith('  [pm.states.') or ln.startswith('  todo')
+            or ln.startswith('  in_progress') or ln.startswith('  done'))
+        assert sorted(load(pasted).flows) == sorted(model.FLOW_KINDS)
+
+    def test_the_flat_sets_the_gate_still_measures_are_printed_anyway(self):
+        """Phase 6 changed no question the engine asks: `check pm` D4 still
+        measures a status against `[pm] <kind>_states`. Dropping those lines
+        would hide the set the gate actually runs on."""
+        with tree(''):
+            _, out = vocab()
+        assert 'bug        open fixed closed' in out
+
+    def test_the_json_payload_says_the_flow_is_absent_rather_than_omitting_it(
+            self):
+        """A consumer diffing two pins has to tell "this tree declares
+        nothing" from "this release dropped the field"."""
+        with tree(''):
+            _, out = vocab('--json')
+        payload = json.loads(out)
+        assert payload['flow_declared'] is False
+        assert payload['grains']['story']['flow'] is None
+        assert payload['seed'] == model.render_seed()
+
+
+class TestVocabularyJson:
+    def payload(self, config: str = WITH_TRANSITIONS) -> dict:
+        with tree(config):
+            code, out = vocab('--json')
+        assert code == 0, out
+        return json.loads(out)
+
+    def test_it_carries_the_categories_and_the_kinds(self):
+        payload = self.payload()
+        assert payload['categories'] == list(model.CATEGORIES)
+        assert payload['flow_kinds'] == list(model.FLOW_KINDS)
+        assert payload['flow_declared'] is True
+
+    def test_it_carries_the_flow_per_kind(self):
+        flow = self.payload()['grains']['story']['flow']
+        assert flow['categories']['in_progress'] == [
+            'building', 'reviewing', 'accepted', 'packaging']
+        # The seed's `done` carries `obe` beside `done`, so the order is
+        # LIFECYCLE plus the one word for abandoned work.
+        assert flow['order'] == list(model.LIFECYCLE) + ['obe']
+        assert flow['transitions'] == {'claimed': 'building',
+                                       'story-done': 'done'}
+
+    def test_it_carries_the_published_steps_from_the_registry(self):
+        from agentic_sdlc.repo.conveyor import steps
+        published = self.payload()['published_steps']
+        assert set(published) == set(steps.REGISTRIES)
+        for operation, names in published.items():
+            assert names == list(steps.registry_for(operation)), operation
+
+    def test_it_carries_the_rule_ids_and_the_flat_sets_it_always_did(self):
+        payload = self.payload()
+        assert payload['checks'] == list(model.KNOWN_CHECKS)
+        assert payload['grains']['bug']['states'] == list(
+            model.DEFAULT_BUG_STATES)
+
+    def test_it_carries_the_seed_in_every_payload(self):
+        """Declared, it is what a pin bump diffs a declaration against;
+        undeclared, it is what `init` would write. One key, both readings."""
+        assert self.payload()['seed'] == model.render_seed()
+
+    def test_the_note_that_says_whose_the_key_set_is_travels_in_json_too(self):
+        """A reader who only ever sees `--json` must still see P6's ruling."""
+        note = self.payload()['notes']['published_steps']
+        assert 'ENGINE' in note and 'cannot invent one' in note
+
+
+# --- the installable's LIVE section -------------------------------------------
+def test_the_seed_config_carries_render_seed_VERBATIM():
+    """P1: `installables/project-devkit.toml` had ZERO uncommented lines, and
+    every section it seeds is inert on arrival because a gate ships stock
+    defaults and a commented default IS the default. `[pm.states.*]` cannot be
+    — there is no runtime fallback behind it, so a commented one leaves a
+    freshly-initialised tree refused on its first `pm` call.
+
+    BYTE-IDENTICAL, not merely equivalent. A hand-copied table is a second
+    spelling of `DEFAULT_FLOWS`, and the copy nobody runs is the one that goes
+    stale; this test is what makes the file's live section and `render_seed()`
+    one table with two locations rather than two tables.
+    """
+    body = (REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
+            / 'project-devkit.toml').read_text(encoding='utf-8')
+    assert model.render_seed() in body, (
+        'the installable no longer carries render_seed() verbatim — the table '
+        'was hand-edited in one of its two locations')
+
+
+def test_the_seed_config_declares_the_flow_LIVE_and_nothing_else():
+    """The live lines are the flow's and no other section's. A default that
+    stops being commented is a gate acquiring an opinion the project cannot
+    see it did not choose (hard rule 5)."""
+    body = (REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
+            / 'project-devkit.toml').read_text(encoding='utf-8')
+    live = [ln for ln in body.splitlines()
+            if ln.strip() and not ln.lstrip().startswith('#')]
+    assert live == [ln for ln in model.render_seed().splitlines() if ln.strip()]
+
+
+def test_a_tree_seeded_with_the_installable_can_be_read_by_the_reader():
+    """The whole point of P1, end to end: the config `init` writes has to
+    satisfy `flow_of` on the tree's FIRST `pm` call. A commented section parses
+    and then refuses, which is the failure this proves is gone."""
+    body = (REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
+            / 'project-devkit.toml').read_text(encoding='utf-8')
+    cfg = load(body)
+    for kind in model.FLOW_KINDS:
+        assert model.flow_of(cfg, kind).order, kind

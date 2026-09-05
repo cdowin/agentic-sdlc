@@ -92,7 +92,9 @@ and it will lie.
   resolve, the feature graph is acyclic. A ref into a milestone no longer in the tree
   is UNVERIFIABLE, not a failure.
 - `check pm` — status drift and those same integrity rules, as a gate.
-- `pm vocabulary [--json]` — the closed state set per grain kind, and the rule ids
+- `pm vocabulary [--json]` — the closed CATEGORY set, the states and transitions
+  THIS project declared, the conveyor step names a `[pm.transitions.<kind>]`
+  table may key on, the state set per grain kind, and the rule ids
   `[pm] checks` may name. Read it after a devkit pin bump.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be

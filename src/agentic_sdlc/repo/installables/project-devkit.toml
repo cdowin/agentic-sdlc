@@ -4,11 +4,12 @@
 # with --force: the tool is pinned by DEVKIT_VERSION in the Makefile, and what
 # that tool should do HERE is the project's own statement.
 #
-# Every section below is COMMENTED OUT and carries the stock default. A repo
-# with no devkit.toml behaves byte-identically to one declaring every default,
-# so deleting a section is always safe — uncomment only where your layout
-# genuinely differs. `agentic-sdlc check <gate> --help` prints that gate's
-# contract, its section and its honest scope.
+# Every section below is COMMENTED OUT and carries the stock default, with ONE
+# exception — `[pm.states.*]`, which is LIVE and argued where it sits. A repo
+# with no devkit.toml behaves byte-identically to one declaring every commented
+# default, so deleting any of those is always safe — uncomment only where your
+# layout genuinely differs. `agentic-sdlc check <gate> --help` prints that
+# gate's contract, its section and its honest scope.
 #
 # A key this package no longer honours is NAMED at exit 2, never ignored; a
 # wrong-typed value (a bare string where a list belongs) is exit 2 as well,
@@ -105,6 +106,69 @@
 # recording what is blocking the work in the grain itself). Declaring your own
 # set that happens to use one of those words is your vocabulary, not the
 # window, and nothing here refuses it.
+
+# --- THE FLOW — the ONE LIVE SECTION in this file -----------------------------
+# Everything else here is commented at its stock default, because a GATE ships
+# stock defaults and a commented default IS the default: a repo with no
+# devkit.toml runs every gate byte-identically to one declaring them. **A
+# WORKFLOW does not** (CLAUDE.md hard rule 5). There is NO runtime fallback
+# behind the table below — the reader takes what is here and refuses BY NAME
+# when it is absent — so a commented copy of this section would leave this
+# freshly-initialised tree refused on its first `pm` call. That is the whole
+# reason it is live, and it is the only section that has one.
+#
+# YOURS, and changing a word here changes no code anywhere. The engine keeps
+# three opinions and no more: the category set is `todo` / `in_progress` /
+# `done`, they are ordered that way, and every declared state maps to exactly
+# one. How many states, what they are called, which category each sits in and
+# what order they appear in within it are all this project's. A state in no
+# category, or in two, is exit 2 — a fact about this file, not drift in a tree.
+#
+# The values reproduce the shipped lifecycle exactly, so a tree that accepts
+# what `init` wrote behaves the way it always did. `accepted` and `packaging`
+# are `in_progress`: a category is about whether WORK REMAINS, not about
+# whether the outcome is decided. A word that means FINISHED-BUT-NOT-DELIVERED
+# — `obe`, `wontfix`, `duplicate` — belongs in `done`, because finished and
+# delivered are different axes (`docs/design/state-categories.md` §4).
+#
+# THESE BYTES ARE `model.render_seed()` VERBATIM and a test holds them there.
+# Hand-copying the table would leave two spellings of it in this package, and
+# the copy nobody runs is the one that goes stale.
+
+[pm.states.milestone]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.feature]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.story]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.bug]
+todo        = ["open"]
+in_progress = ["fixed"]
+done        = ["closed"]
+
+# The other half of the flow, and it ships EMPTY rather than guessed: a
+# transition maps a conveyor STEP to the exact state that step writes.
+#
+#   [pm.transitions.story]
+#   claimed    = "building"
+#   story-done = "done"
+#
+# ASK BY CATEGORY, WRITE BY NAME — a category holds several states, so a step
+# that wrote "the done category" would make the engine guess a member. The KEYS
+# are the step names this package PUBLISHES; a project selects from them and
+# cannot invent one, exactly as `[<operation>] steps` already works. Run
+# `agentic-sdlc pm vocabulary` for the whole published set — that verb is what
+# a pin bump is read through, because a release that adds a step adds a key
+# this file does not have yet.
 
 # --- your own gates -----------------------------------------------------------
 # Everything heavier than the five gates above is this project's to supply, and

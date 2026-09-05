@@ -167,7 +167,13 @@ REV_MAX = 256
 USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
                           [--ref <rev>]
 
-  --story [--ref <rev>]   run what proves the changed paths (alias: --changed)
+  --story [--ref <rev>] [--ignore <path>]...
+                          run what proves the changed paths (alias: --changed).
+                          --ignore drops a path the CALLER wrote during this
+                          run, so a belt's own writes do not read as the
+                          operator's edit. It is not a claim that the path
+                          needs no verification — that is the project's, made
+                          by declaring a [[verify.narrow]] rule for it.
   --feature               run the `[verify] feature` rung
   --milestone             run the `[verify] milestone` rung
   --plan  [--ref <rev>]   print all three rungs and their measured cost; runs
@@ -186,6 +192,7 @@ class GitError(Exception):
 class Args:
     mode: str
     ref: str | None = None
+    ignore: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,7 +252,7 @@ def _dispatch(args: Args, ruleset: RuleSet, root: Path) -> int:
     if args.mode == 'check':
         return _check(ruleset, root)
     if args.mode == STORY:
-        return _run_story(ruleset, root, args.ref)
+        return _run_story(ruleset, root, args.ref, args.ignore)
     return _run_rung(ruleset, root, args.mode)
 
 
@@ -254,6 +261,7 @@ def _parse(argv: list[str]) -> Args:
     """One mode, an optional `--ref` for the two modes that read a diff."""
     modes: list[str] = []
     ref: str | None = None
+    ignore: list[str] = []
     seen_ref = False
     index = 0
     while index < len(argv):
@@ -277,6 +285,21 @@ def _parse(argv: list[str]) -> Args:
             if index >= len(argv):
                 raise ValueError('--ref needs a rev — a tag, a hash or a ref')
             ref = argv[index]
+        elif token == '--ignore':
+            index += 1
+            if index >= len(argv):
+                raise ValueError('--ignore needs a repo-relative path')
+            value = argv[index]
+            if value.startswith('-'):
+                raise ValueError(
+                    f'--ignore {value!r} starts with "-": position in argv is '
+                    f'the only thing between a value and this verb reading it '
+                    f'as a flag')
+            if value.startswith('/') or '..' in Path(value).parts:
+                raise ValueError(
+                    f'--ignore {value!r} is not repo-relative — this verb '
+                    f'reads no path outside the checkout (hard rule 8)')
+            ignore.append(value)
         elif token.startswith('-'):
             raise ValueError(
                 f'unknown flag {token!r} — a flag this verb does not know is '
@@ -305,7 +328,11 @@ def _parse(argv: list[str]) -> Args:
                 f'target the project names and reads no diff. Ignoring the '
                 f'flag would be a lie about the scope that ran')
         _check_rev(ref or '')
-    return Args(mode=mode, ref=ref)
+    if ignore and mode != STORY:
+        raise ValueError(
+            f'--ignore has no meaning with --{mode}: that rung runs the make '
+            f'target the project names and reads no diff')
+    return Args(mode=mode, ref=ref, ignore=tuple(ignore))
 
 
 def _check_rev(rev: str) -> None:
@@ -431,9 +458,33 @@ def _resolver(scans: Sequence[declares.Scan]) -> select.ReverseResolver | None:
     return lambda rule, path: declares.resolve(scans, rule, path)
 
 
-def plan_for(ruleset: RuleSet, root: Path, ref: str | None) -> select.Selection:
-    """The story rung's selection for the current diff."""
+def plan_for(ruleset: RuleSet, root: Path, ref: str | None,
+             ignore: Sequence[str] = ()) -> select.Selection:
+    """The story rung's selection for the current diff.
+
+    `ignore` is the CALLER's own writes — see the comment below.
+    """
     paths = changed(root, ref)
+    if ignore:
+        # THE CALLER'S OWN WRITES, and only a caller can know which those are.
+        #
+        # I3: `close story`'s first step moves a `status:` line inside
+        # `pm/roadmap/` and appends to the tracked `ledger.jsonl`, and its
+        # SECOND step is this rung — so the belt's own writes arrive here as
+        # changed paths, match no `[[verify.narrow]]` rule in a project that
+        # never wrote one for its PM tree, and send the story close to the
+        # MILESTONE rung. Measured on a fresh consumer: a full gate inside the
+        # step advertised as "four of its five steps are already-computed
+        # facts", which is risk 2 of that feature arriving by construction.
+        #
+        # This is NOT the verb deciding that a PM tree needs no verification —
+        # that is the project's call, made by declaring a narrow rule for it
+        # (rule 9). It is the verb letting a caller say which paths IT wrote
+        # during this run, which is exactly the ruling `check_committed`
+        # already makes one step later.
+        prefixes = tuple(p.rstrip('/') + '/' for p in ignore)
+        paths = [p for p in paths
+                 if not p.startswith(prefixes) and p not in ignore]
     scans = _scans(ruleset, root, tracked(root)) if paths else []
     return select.select(ruleset.narrow, paths, reverse=_resolver(scans))
 
@@ -466,8 +517,9 @@ def _run_all(commands: Sequence[str], root: Path) -> int:
     return EXIT_OK
 
 
-def _run_story(ruleset: RuleSet, root: Path, ref: str | None) -> int:
-    selection = plan_for(ruleset, root, ref)
+def _run_story(ruleset: RuleSet, root: Path, ref: str | None,
+               ignore: Sequence[str] = ()) -> int:
+    selection = plan_for(ruleset, root, ref, ignore=ignore)
     if not selection.matched and not selection.missed:
         print('verify --story: no changed paths against '
               f'{ref or "HEAD"} — nothing to verify')

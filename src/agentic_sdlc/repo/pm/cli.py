@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import sys
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -79,7 +80,13 @@ USAGE = """usage: agentic-sdlc pm <command>
   set <grain-id> <key> <value>            (write one frontmatter field)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
-  vocabulary [--json]                     (the closed state set + the rule ids)
+  vocabulary [--json]                     (this version's declared surface: the
+                                           closed state sets, the flow this
+                                           project declared, the conveyor step
+                                           names a [pm.transitions.<kind>] may
+                                           key on, and the rule ids. A tree
+                                           declaring no flow is REPORTED, with
+                                           the seed `init` would write)
   validate                                (structural + referential integrity)
   install-skills [--force] [--diff]       (write the shared rule + operations skill)
   init                                    (scaffold a fresh tree + install guidance)
@@ -1054,46 +1061,129 @@ def cmd_sync(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
+# The one line of prose that says whose the transitions KEY SET is. Spelled
+# once, printed by the plain renderer and carried by `--json`, because a reader
+# who only ever sees one of the two must still see it (plan review finding P6:
+# a table presented as pure project declaration would be the engine's opinion
+# with a config file in front of it — what makes it honest is that the keys are
+# a PUBLISHED vocabulary the project selects from).
+PUBLISHED_STEPS_NOTE = (
+    'the keys a [pm.transitions.<kind>] table may use. The key set is the '
+    'ENGINE\'s: these are the step names this package registers in '
+    'conveyor/steps.py, read from that registry rather than restated here, '
+    'and a project SELECTS from them and cannot invent one — the same shape '
+    '`[<operation>] steps` already works in')
+
+
+def _published_steps() -> dict[str, tuple[str, ...]]:
+    """Every conveyor step name this package registers, by operation.
+
+    READ FROM THE REGISTRY, never re-listed. A literal here would be a second
+    spelling of `conveyor/steps.py`'s `REGISTRIES`, and the whole value of
+    printing it at a pin bump is that it cannot disagree with what the belt
+    will actually accept. The registry dicts are insertion-ordered, so the
+    names come out in the order the shipped lists walk them.
+
+    Imported INSIDE the verb, like `execlist` and `validate` above: `pm` runs
+    dozens of times a day off the story belt, and `conveyor.steps` is the
+    largest module in the package. `conveyor.steps` imports `pm.model`, never
+    `pm.cli`, so there is no cycle — but a module-level import here would put
+    the belt's whole import cost on `pm set`.
+    """
+    from agentic_sdlc.repo.conveyor import steps as _steps
+    return {operation: tuple(_steps.registry_for(operation))
+            for operation in sorted(_steps.REGISTRIES)}
+
+
 def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
-    """Print the CLOSED sets this package knows, machine-readably with --json.
+    """Print what this version's declared surface IS, machine-readably too.
 
     Its audience is the pin bump. This toolkit ships a shape, a project bumps
-    its pin, and then has to see what changed and decide — so the set of states
-    a grain may hold, and the set of rule ids `[pm] checks` may name, have to be
-    readable FROM the tool rather than scraped out of help text or a changelog.
-    That is the same need `check pm`\'s roster refusal serves from the other
-    side, and the reason this verb keeps running when `[pm] checks` names an id
-    this release retired.
+    its pin, and then has to see what changed and decide — so the states a
+    grain may hold, the flow the project declared, the conveyor step names a
+    transitions table may key on, and the rule ids `[pm] checks` may name all
+    have to be readable FROM the tool rather than scraped out of help text or a
+    changelog. That is the same need `check pm`\'s roster refusal serves from
+    the other side, and the reason this verb keeps running when `[pm] checks`
+    names an id this release retired.
 
-    There are no TRANSITIONS to print. Any state in a grain\'s own set is
-    reachable directly; nothing here decides which may follow which, and
-    `check pm` reports a tree whose statuses contradict each other.
+    THIS DOCSTRING USED TO SAY "there are no TRANSITIONS to print". Phase 6
+    falsified it: `[pm.states.<kind>]` and `[pm.transitions.<kind>]` are read
+    every run (`model._load_flows`) and there is no fallback behind them. What
+    survives unchanged is the narrower true statement — there is no EDGE graph.
+    `[pm.transitions]` maps a conveyor STEP to a state, never a state to a
+    state, so nothing here decides which state may follow which and `check pm`
+    still reports an inconsistent END STATE. (Plan review finding P6.)
+
+    IT REPORTS AN ABSENT FLOW RATHER THAN REFUSING IT, which is why it reads
+    `cfg.flows` directly and never goes through `model.flow_of`. `flow_of` is
+    the WORKFLOW refusal — a verb that creates, moves or locates work cannot
+    proceed on states the project never declared. This verb is the one you run
+    to find out WHAT TO DECLARE, and a discovery verb that refuses until you
+    have already discovered the answer is a closed loop. So an undeclared tree
+    gets the absence named and the exact bytes `init` would write.
     """
     as_json = '--json' in args
     for a in args:
         if a != '--json':
             raise Usage(f'unknown flag {a!r}')
+    # THE FLAT SETS STAY, and the lines they print are unchanged (hard rule 6).
+    # They are not a duplicate of the flow below: `[pm] <kind>_states` is what
+    # `check pm` D4 measures a grain's status against TODAY, and phase 6
+    # changed no question the engine asks. Dropping them here would hide the
+    # set the gate actually runs on, which is the same class of lie the
+    # docstring above just stopped telling.
     grains = {
         'milestone': cfg.milestone_states,
         'feature': cfg.feature_states,
         'story': cfg.story_states,
         'bug': cfg.bug_states,
     }
+    published = _published_steps()
+    cascade_note = ('the story cascade is OPT-IN: `pm feature done <id>` '
+                    'touches the feature only, and `--cascade` additionally '
+                    'moves that feature\'s stories at `reviewing` to `done`. '
+                    'Either way the stories it did not touch are reported, '
+                    'never refused')
+    transitions_note = ('there is no EDGE graph — any state in a grain\'s own '
+                        'set is reachable directly, and `check pm` reports an '
+                        'inconsistent END STATE. [pm.transitions.<kind>] maps '
+                        'a conveyor STEP to the exact state that step writes, '
+                        'never a state to a state')
     if as_json:
-        import json
         print(json.dumps({
-            'grains': {g: {'states': list(states)}
-                       for g, states in grains.items()},
+            'categories': list(model.CATEGORIES),
+            'flow_kinds': list(model.FLOW_KINDS),
+            # The absence is a VALUE in the payload, not a missing key: a
+            # consumer diffing two pin versions has to be able to tell "this
+            # tree declares nothing" from "this release dropped the field".
+            'flow_declared': bool(cfg.flows),
+            'grains': {
+                g: {
+                    'states': list(states),
+                    'flow': (None if g not in cfg.flows else {
+                        'categories': {
+                            cat: list(cfg.flows[g].by_category.get(cat, ()))
+                            for cat in model.CATEGORIES},
+                        'order': list(cfg.flows[g].order),
+                        'transitions': dict(cfg.flows[g].transitions),
+                    }),
+                }
+                for g, states in grains.items()},
+            'published_steps': {op: list(names)
+                                for op, names in published.items()},
+            # The seed travels in EVERY payload, declared or not. Declared, it
+            # is what a pin bump diffs its own declaration against; undeclared,
+            # it is what `init` would write. One key, both readings.
+            'seed': model.render_seed(),
             'notes': {
-                'transitions': 'there is no transition graph — any state in a '
-                               'grain\'s own set is reachable directly, and '
-                               '`check pm` reports an inconsistent END STATE',
-                'feature_done': 'the story cascade is OPT-IN: `pm feature '
-                                'done <id>` touches the feature only, and '
-                                '`--cascade` additionally moves that feature\'s '
-                                'stories at `reviewing` to `done`. Either '
-                                'way the stories it did not touch are '
-                                'reported, never refused',
+                'transitions': transitions_note,
+                'published_steps': PUBLISHED_STEPS_NOTE,
+                'states': 'the flat per-kind `states` list is [pm] '
+                          '<kind>_states, which is what `check pm` D4 measures '
+                          'a grain\'s status against; `flow` is what the '
+                          'project declared in [pm.states.<kind>]',
+                'feature_done': cascade_note,
             },
             'checks': list(model.KNOWN_CHECKS),
         }, indent=2))
@@ -1102,12 +1192,63 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
     for g, states in grains.items():
         print(f'{g:<{width}}  {" ".join(states)}')
     print()
-    print('Any state in a grain\'s own set is reachable directly — there is no')
-    print('transition graph. The story cascade is OPT-IN: `pm feature done <id>`')
-    print('touches the feature only, and `--cascade` additionally moves that')
-    print('feature\'s stories at `reviewing` to `done`. Either way the')
-    print('stories it did not touch are reported, never refused. A tree whose')
-    print('statuses contradict each other is what `check pm` reports.')
+    print('Those are the sets `check pm` D4 measures a grain\'s status against')
+    print('([pm] <kind>_states). Below is the FLOW this project declared — the')
+    print('categories every state maps into, and the transitions a conveyor')
+    print('step reads. The category set is closed and is exactly')
+    print(f'{" ".join(model.CATEGORIES)}.')
+    print()
+    if not cfg.flows:
+        print('This tree declares NO flow: [pm.states.*] is not in')
+        print('devkit.toml, and there is no default behind it — the states and')
+        print('the transitions are how THIS project works (hard rule 5).')
+        print('Every verb that creates, moves or locates work refuses by name')
+        print('until it is there. `agentic-sdlc pm init` writes exactly this,')
+        print('appending to a devkit.toml it did not create:')
+        print()
+        # INDENTED by two, so nothing here is mistaken for the tree's own
+        # config, and `render_seed()` is the ONLY source of the bytes — the
+        # verb that tells you what to declare cannot show you a table the
+        # writer does not write.
+        for line in model.render_seed().splitlines():
+            print(f'  {line}' if line else '')
+        print()
+    else:
+        cat_width = max(len(c) for c in model.CATEGORIES)
+        for kind in model.FLOW_KINDS:
+            # Indexed, never `.get`: `_load_flows` refuses a PARTIAL
+            # declaration by name, so `cfg.flows` is all four kinds or none.
+            # A defensive default here would print an empty flow for a tree
+            # the reader had already decided it could not read.
+            flow = cfg.flows[kind]
+            print(f'[pm.states.{kind}]')
+            for category in model.CATEGORIES:
+                states = flow.by_category.get(category, ())
+                print(f'  {category:<{cat_width}}  {" ".join(states)}')
+            print(f'[pm.transitions.{kind}]')
+            if not flow.transitions:
+                print('  (this project declares none)')
+            for step, target in flow.transitions.items():
+                print(f'  {step} -> {target}')
+            print()
+    # WRAPPED, not re-spelled. The three notes are single strings so that the
+    # plain renderer and `--json` cannot say different things; `textwrap` is
+    # what keeps that from printing a 300-column line (stdlib, rule 1).
+    step_width = max(len(op) for op in published)
+    print(textwrap.fill(f'published steps — {PUBLISHED_STEPS_NOTE}.', width=76))
+    for operation, names in published.items():
+        # `release` ships 21 names; unwrapped that is a 280-column line, and a
+        # reader who has to scroll sideways to see the key set does not read it.
+        # `break_on_hyphens=False` because every step name IS hyphenated:
+        # the default split `changelog-unreleased-nonempty` across two lines,
+        # which is a name a reader cannot paste into `[pm.transitions.*]`.
+        print(textwrap.fill(' '.join(names), width=76,
+                            break_on_hyphens=False, break_long_words=False,
+                            initial_indent=f'  {operation:<{step_width}}  ',
+                            subsequent_indent=' ' * (step_width + 4)))
+    print()
+    for note in (transitions_note, cascade_note):
+        print(textwrap.fill(f'{note[0].upper()}{note[1:]}.', width=76))
     print()
     print(f'rules  {" ".join(model.KNOWN_CHECKS)}')
     return 0

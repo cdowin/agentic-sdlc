@@ -188,10 +188,22 @@ class Flow:
 # if it's being packaged."* The rule that catches it: a category is about
 # whether WORK REMAINS, not about whether the outcome is decided. An accepted
 # feature has had its verdict; it still has work.
+#
+# `obe` IS IN THE SEED, and it is the one place the seed is not literally
+# `LIFECYCLE`. Found by asking why a freshly-initialised tree had no word for
+# abandoned work while this repo's own devkit.toml had one: `also_done`'s live
+# defect — a story at `obe` holding its feature open forever — would have come
+# straight back for every new consumer, and shipping the fix as a repair a
+# project has to discover is shipping the bug.
+#
+# It costs a tree that never types the word `obe` nothing, which is what makes
+# it safe to seed rather than a behaviour change: an unused state is an unused
+# state. §4's ruling is that `obe` is a `done` state — finished, not
+# delivered — and delivered-vs-not is an outcome on a different axis.
 _LIFECYCLE_CATEGORIES = {
     TODO: ('planning', 'ready'),
     IN_PROGRESS: ('building', 'reviewing', 'accepted', 'packaging'),
-    DONE_CATEGORY: ('done',),
+    DONE_CATEGORY: ('done', 'obe'),
 }
 
 DEFAULT_FLOWS: dict[str, dict[str, tuple[str, ...]]] = {

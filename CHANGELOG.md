@@ -48,6 +48,53 @@ should release on a red tree if I want (we mostly wouldn't but why stop someone?
   `install.PLANS`, both directions.
 - `agentic-sdlc version` is documented. It was routed and named in no `--help` line.
 
+### The project declares its flow
+
+**New config, and it is the one section that ships LIVE rather than commented.** `[pm.states.<kind>]`
+maps every state this project uses into one of three categories — `todo`, `in_progress`, `done` —
+and `[pm.transitions.<kind>]` maps a conveyor step to the exact state it writes. `init` writes both;
+the runtime reads them every run and **does not fall back**. Hard rule 5 now says why: a GATE ships
+stock defaults and a repo with no `devkit.toml` runs every gate byte-identically to one declaring
+them; a WORKFLOW does not, because a default nobody can see is the engine's opinion wearing the
+project's clothes.
+
+- **This release adds the section and changes no question the engine asks.** Every predicate still
+  asks by name. Only the workflow verbs refuse a tree that has not declared a flow — `check doc`,
+  `check shell` and `check repo-hygiene` are untouched — and the refusal names
+  `agentic-sdlc pm init` rather than pasting the table for you to copy wrong.
+- **The engine gets two verbs**, which the design has specified since it was written and nothing had
+  built: `move(grain, to_state)` asks whether the target is a state this project declared, and
+  `holds(grains, category)` answers whether they are all there **and names who is not**. A status the
+  project never declared blocks rather than passes.
+- **A state mapped to no category or to two, a transition to a state nobody declared, a category
+  outside the closed set, or a partial declaration is exit 2** naming the key. Refusing a malformed
+  declaration is the engine READING, which is the one thing it is always allowed to do.
+- **The seed carries `obe` in `done`.** It is the one place the seed is not literally the old
+  `LIFECYCLE`, and it is deliberate: without it a freshly-initialised tree has no word for abandoned
+  work, and `[pm] also_done`'s live defect — a story at `obe` holding its feature open forever —
+  comes straight back for every new consumer. A tree that never types `obe` is unaffected.
+- **`pm vocabulary` is the pin-bump verb and it stopped saying there are no transitions to print.**
+  It now prints the categories, your declared flow, and the conveyor step names a transitions table
+  may key on — read from the registry, because that key set is the ENGINE's: a project selects from
+  a published vocabulary and cannot invent a step, which is the same shape `[<operation>] steps`
+  already works in. `--json` is additive; every existing key keeps its meaning.
+
+### The story belt verifies the story rather than the moment
+
+- **`close story`'s narrow rung used to pass over a census of zero.** `verify --story` reads the diff
+  against HEAD, and by the time a story is closeable its work is committed — which is the ordering
+  the belt itself requires, since `evidence-written` demands a `done:` line naming a real commit. So
+  the step reported `ALREADY-TRUE — no changed paths` inside `PASS — 5/5 steps`. **Measured: a story
+  closed `done` with its narrow check red and the check never run.**
+  It now scans the story's own RANGE, taken from the base the author already wrote down — the
+  hashes in the `done:` line — and answers **UNVERIFIABLE** when there is nothing to scan.
+- **`verify --story` takes `--ignore <path>`**, so a caller can name the paths IT wrote during this
+  run. `close story`'s first step moves a `status:` line inside `pm/roadmap/`, which arrived at the
+  narrow rung as a changed path, matched no rule in a project that never declared one for its PM
+  tree, and sent the story close to the **milestone** rung — a full gate inside the step advertised
+  as four already-computed facts. It is not a claim that a PM tree needs no verification; that is
+  the project's call, made by declaring a rule.
+
 ### The conveyor's steps stop reporting things they did not ask
 
 - **`adopt`'s `config-updated` asked six readers and reported over a hand-written list of

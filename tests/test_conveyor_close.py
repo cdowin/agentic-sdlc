@@ -119,10 +119,34 @@ def tree(files: dict[str, str] | None = None, *, story: str = 'reviewing',
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
-        subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
-        subprocess.run(['git', '-c', 'user.email=t@example.invalid',
-                        '-c', 'user.name=t', 'commit', '-qm', 'scratch'],
-                       cwd=root, check=True)
+
+        def commit(message: str) -> str:
+            subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
+            subprocess.run(['git', '-c', 'user.email=t@example.invalid',
+                            '-c', 'user.name=t', 'commit', '-qm', message],
+                           cwd=root, check=True)
+            return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root,
+                                  capture_output=True, text=True,
+                                  check=True).stdout.strip()
+
+        # THREE COMMITS, and the shape is the finding rather than ceremony.
+        #
+        # I1: `narrow-verified` points the rung at the STORY's own range, and
+        # the base comes from the author's `done:` line — so a fixture whose
+        # evidence names an invented hash exercises the no-base path on every
+        # test and never the real one. The story's work therefore lands in a
+        # commit of its own, and its evidence names that commit, which is what
+        # a real close looks like: base, then work, then the `done:` line the
+        # author writes about it.
+        commit('base')
+        work = root / 'src/thing.py'
+        work.write_text('x = 1  # the story\n', encoding='utf-8')
+        story_sha = commit('the story\'s work')
+        if evidence is DONE_LINE:
+            (root / SFILE).write_text(
+                story_doc(story, f'done: {story_sha[:10]} — the belt walks\n'),
+                encoding='utf-8')
+            commit('evidence')
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()
@@ -215,15 +239,68 @@ def test_a_clean_story_closes_well_under_a_second():
         assert elapsed < 1.0, f'the story belt took {elapsed:.2f}s'
 
 
-def test_the_narrow_rung_reports_that_it_verified_nothing_rather_than_passing(
-        capsys):
-    """A committed tree has no diff, so `verify --story` proves nothing — and
-    says so. The sentence is QUOTED into the line rather than summarised as a
-    pass, because a reader has to be able to see that nothing ran."""
-    with tree() as root:
-        close('story', STORY_ID)
+def test_the_narrow_rung_is_UNVERIFIABLE_when_it_has_nothing_to_scan(capsys):
+    """I1. A committed tree has no diff, so `verify --story` proves nothing —
+    and it used to exit 0, which the step counted as a pass and the driver
+    printed as `GATE ALREADY-TRUE` inside `PASS — 5/5 steps`.
+
+    Rule 4: a census of zero is REPORTED, loudly, rather than passed over.
+    `check_readme_pins` answers this exact question the same way eleven hundred
+    lines up, and two answers to "what does a scan of nothing mean" in one
+    file — with the permissive one on the belt that runs dozens of times a day
+    — is the disagreement rather than the ruling.
+    """
+    with tree(evidence='done: in-place — nothing committed\n') as root:
+        code = close('story', STORY_ID)
         out = capsys.readouterr().out
-        assert 'no changed paths' in out, out
+        assert code == 1, out
+        assert 'narrow-verified' in out and 'UNVERIFIABLE' in out, out
+        assert 'NOTHING to scan' in out, out
+        assert "names no commit to range from" in out, out
+
+
+def test_a_story_cannot_close_green_over_a_narrow_rung_that_never_ran(capsys):
+    """I1's measured scenario, end to end, and the one that says the criterion
+    was not met: a genuinely RED narrow rung, work committed first, and the
+    story closing `done` inside `PASS — 5/5 steps` with the check never run.
+
+    This is not an exotic ordering. It is the ordering the belt ITSELF
+    requires: `evidence-written` demands a `done:` line naming a real commit,
+    and `pm-execution.md` step 2 is "commit atomically" — so by the time a
+    story can satisfy step 4, its work is committed and step 2 has nothing to
+    scan. The single-run path is the canonical one, and on it the step was
+    structurally vacuous.
+    """
+    red = CONFIG.replace('run   = "true"', 'run   = "false"')
+    with tree(config=red) as root:
+        # Everything committed, which is the ordering the belt ITSELF requires
+        # and the one on which this step used to be structurally vacuous.
+        assert not porcelain(root), porcelain(root)
+        code = close('story', STORY_ID)
+        out = capsys.readouterr().out
+        assert code == 1, out
+        assert 'PASS — 5/5' not in out, out
+        # It RAN, against the story's own range, and it came back red. Before
+        # I1 it reported `GATE ALREADY-TRUE — no changed paths` and the story
+        # closed green with its narrow check never executed.
+        assert 'narrow-verified' in out and 'NOT-TRUE' in out, out
+
+
+def test_the_rung_scans_the_story_range_the_authors_own_done_line_names(
+        capsys):
+    """The other half of I1, and the one that keeps the step meaningful.
+
+    UNVERIFIABLE on every canonical close would be a step that always reports
+    the same thing — milestone risk 3 in a different costume. The base comes
+    from the `done:` line the author already wrote, so the rung scans the
+    story's work and its verdict means something.
+    """
+    with tree() as root:
+        code = close('story', STORY_ID)
+        out = capsys.readouterr().out
+        assert code == 0, out
+        assert '--ref' in out, out
+        assert 'UNVERIFIABLE' not in out, out
 
 
 # --- close story: it REPORTS, and it finishes ---------------------------------
@@ -321,12 +398,21 @@ def test_a_done_line_that_is_not_evidence_is_refused_by_name(line, why):
         assert code == 1, line
 
 
-def test_landed_in_place_is_evidence_because_verdict_py_already_ruled_so():
+def test_landed_in_place_is_evidence_because_verdict_py_already_ruled_so(
+        capsys):
     """Reviewers in this SDLC fix in place and never commit, so a hash-only
     rule would refuse the honest half of the corpus. The form is inherited
-    from `pm/verdict.py` rather than re-decided here."""
+    from `pm/verdict.py` rather than re-decided here.
+
+    `evidence-written` accepts it; `narrow-verified` cannot range from it, and
+    says so rather than passing over a census of zero (I1). Two steps, two
+    honest answers about the same line, which is what having two steps is for.
+    """
     with tree(evidence='done: in-place — the belt walks\n') as root:
-        assert close('story', STORY_ID) == 0
+        assert close('story', STORY_ID) == 1
+        out = capsys.readouterr().out
+        assert 'evidence-written' in out and 'NOT-TRUE' not in out.split(
+            'evidence-written')[1].split('\n')[0], out
         assert status_of(root, SFILE) == 'done'
 
 
@@ -430,7 +516,12 @@ def test_a_position_left_by_another_story_is_stale_rather_than_broken(capsys):
                                        ).replace('/s1', '/s2')}) as root:
         assert close('story', STORY_ID) == 0
         capsys.readouterr()
-        assert close('story', f'{FEATURE_ID}/s2') == 0
+        # s2's evidence names no commit of its own — only s1's `done:` line is
+        # rewritten to the real range (I1) — so its narrow rung is
+        # UNVERIFIABLE and the run exits 1. That is not what this test is
+        # about: the subject is the run STATE, and the assertion is that a
+        # position left by another story is corrected rather than refused.
+        assert close('story', f'{FEATURE_ID}/s2') == 1
         out = capsys.readouterr().out
         assert 'CORRECTED' in out, out
         assert status_of(root, second) == 'done'

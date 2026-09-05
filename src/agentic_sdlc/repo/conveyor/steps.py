@@ -2067,16 +2067,158 @@ def check_narrow_verified(ctx: Context) -> Answer:
     a step that hard-coded `pytest` would be a second answer to what proves an
     edit in a repo that may not be Python at all.
 
-    On a tree whose work is already committed the rung reports `no changed
-    paths` and exits 0. That is the verb's own honest answer and it is QUOTED
-    into the line rather than summarised as a pass — a reader who wants to know
-    whether anything ran can see that nothing did.
+    TWO FINDINGS AGAINST THIS ONE STEP, and they are the same sentence read
+    from either end: what the rung actually scanned.
+
+    **I1 — a census of zero is not a pass.** `verify --story` returns 0 on a
+    committed tree ("no changed paths — nothing to verify"), which is the
+    verb's own honest answer and was taken as proof. It is not proof, and this
+    is not an exotic ordering: it is the ordering the belt ITSELF requires.
+    `evidence-written`, two steps later, demands a `done:` line naming a real
+    commit, and `pm-execution.md` step 2 is *"commit atomically"* — so by the
+    time a story can satisfy step 4, its work is committed and this step has
+    nothing to scan. Measured end to end on a scratch consumer with a
+    genuinely red narrow rung: **the story closed `done` with its narrow check
+    red, and the check never ran.**
+
+    So an empty selection is **UNVERIFIABLE**. `check_readme_pins` answers this
+    exact question the same way eleven hundred lines up — *"rule 4: a census of
+    zero is REPORTED, loudly, rather than passed over"* — and two answers to
+    "what does a scan of nothing mean" in one file, with the permissive one on
+    the belt that runs dozens of times a day, is the disagreement rather than
+    the ruling.
+
+    **I3 — the belt's own writes are not the operator's edit.** `claimed`, the
+    step before this one, moves a `status:` line inside `pm/roadmap/` and
+    appends to the tracked `ledger.jsonl`. Those arrive here as changed paths,
+    match no `[[verify.narrow]]` rule in a project that never wrote one for its
+    PM tree, and send the story close to the MILESTONE rung — a full gate
+    inside the step advertised as *"four of its five steps are
+    already-computed facts"*, which is that feature's risk 2 arriving by
+    construction. `--ignore` names them, exactly as `check_committed` excludes
+    the same directory one step later. It is not a claim that a PM tree needs
+    no verification; a project that wants one declares a narrow rule, and this
+    repo does.
+
+    **And the range is what makes the answer worth having.** UNVERIFIABLE on
+    every canonical close would be a step that always reports the same thing,
+    which is milestone risk 3 in a different costume: a conveyor step that is
+    always the same is worse than none, because it looks like control. So the
+    rung is pointed at the STORY's own range, and the base comes from the one
+    place that already knows it — **the author's own `done:` line**, which
+    names the commits this story shipped. `evidence-written` reads that line
+    two steps later; this reads the same line with the same regex, so there is
+    no second grammar for what a commit reference looks like.
+
+    With a base, the rung scans the story's work and its verdict means
+    something. Without one — no `done:` line, or a line that names only
+    `in-place` — there is nothing to scan and the answer is UNVERIFIABLE,
+    which is also the right answer, because a story with no evidence is not
+    closeable anyway and `evidence-written` is about to say so.
+
+    The SELECTION is asked of the library and the RUN is still the verb, so
+    there is one answer to "what would this rung do" rather than two.
     """
     command = _configured(ctx, 'narrow-verified')
     if command:
         return run_command(ctx, 'narrow-verified', command)
-    return _own_verdict(ctx, 'verify', '--story',
+    ignore = _belt_written_paths(ctx)
+    base = _story_range_base(ctx)
+    empty, why = _narrow_selects_nothing(ctx, ignore, base)
+    if empty:
+        return Answer.unverifiable(why)
+    argv = ['verify', '--story']
+    if base:
+        argv += ['--ref', base]
+    for path in ignore:
+        argv += ['--ignore', path]
+    return _own_verdict(ctx, *argv,
                         found='the narrow rung [verify] names')
+
+
+def _story_range_base(ctx: Context) -> str:
+    """`<earliest hash in the story's `done:` line>^`, or '' when there is none.
+
+    THE AUTHOR ALREADY WROTE THE RANGE DOWN. `done: <hash(es)> — <what
+    shipped>` is pm-execution.md step 6, `evidence-written` reads it, and the
+    hashes in it are precisely the commits this story shipped — so the rung
+    that asks *what proves this edit* can be pointed at exactly that work
+    rather than at a diff which, by the time a story is closeable, is empty.
+
+    EVIDENCE_LINE and EVIDENCE_LANDED are reused rather than re-spelled: two
+    grammars for "what a commit reference looks like" would disagree on the
+    day somebody widens one.
+
+    `in-place` yields no base, and that is correct: work that was never
+    committed is still in the diff, so HEAD is already the right question.
+    A hash git cannot resolve yields no base either — this reads the tree and
+    does not decide what an unresolvable hash means; `evidence-written` is the
+    step that has an opinion about the line.
+    """
+    path = _grain_file(ctx)
+    if path is None:
+        return ''
+    try:
+        text = _read(path)
+    except (OSError, UnicodeDecodeError):
+        return ''
+    hashes: list[str] = []
+    for raw in text.split('\n'):
+        match = EVIDENCE_LINE.match(raw)
+        if match is None:
+            continue
+        for token in EVIDENCE_LANDED.findall(match.group('body')):
+            if token.lower() != IN_PLACE.lower():
+                hashes.append(token)
+    for candidate in hashes:
+        code, out = _git(ctx, 'rev-parse', '--verify', f'{candidate}^')
+        if code == 0 and out:
+            return out.split('\n')[0].strip()
+    return ''
+
+
+def _belt_written_paths(ctx: Context) -> tuple[str, ...]:
+    """What THIS belt wrote during THIS run: the PM tree and its ledger.
+
+    One list, so the exclusion this step passes to `verify` and the exclusion
+    `check_committed` applies cannot disagree about which paths are the belt's.
+    """
+    cfg = _pm_cfg(ctx)
+    return (cfg.roadmap_dir,)
+
+
+def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
+                            base: str = '') -> tuple[bool, str]:
+    """(is the narrow selection empty, the sentence saying why).
+
+    Asked of `verify`'s own library rather than by reading the verb's output.
+    CLAUDE.md: *never ask an agent to grep a gate's output for its result* —
+    and a step that parsed the sentence "no changed paths" would be a second
+    reader of a message that is prose, one release from being reworded.
+    """
+    from agentic_sdlc.repo.verify import main as verify_main
+    from agentic_sdlc.repo.verify import rules as verify_rules
+
+    try:
+        ruleset = verify_rules.read(config_section('verify'))
+        selection = verify_main.plan_for(ruleset, ctx.root, base or None,
+                                         ignore=list(ignore))
+    except Exception as err:  # noqa: BLE001 — an answer, not a swallow
+        # It could not decide. `_own_verdict` below would answer with the
+        # verb's own exit code, so say nothing here and let it.
+        return False, f'{type(err).__name__}: {err}'
+    if selection.matched or selection.missed:
+        return False, ''
+    excluded = ', '.join(ignore) or "the belt's own writes"
+    against = base or 'HEAD'
+    tail = ('' if base else
+            " — and this story's `done:` line names no commit to range from, "
+            'so there was nothing to point it at')
+    return True, (
+        f'`agentic-sdlc verify --story` has NOTHING to scan: no path changed '
+        f'against {against} outside {excluded}, so the narrow rung would exit '
+        f'0 over a census of zero{tail}. Rule 4 — a census of zero is '
+        f'reported, loudly, rather than passed over.')
 
 
 def check_committed(ctx: Context) -> Answer:

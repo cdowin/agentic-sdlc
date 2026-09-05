@@ -4,6 +4,7 @@ name: the conveyor
 status: building
 depends_on: []
 branch: milestone/0.2.0-the-conveyor
+reviewed: docs/reviews/2026-09-05-0.2.0-release-review.md
 ---
 
 # 0.2.0 — the conveyor
@@ -17,18 +18,22 @@ criterion 5 was an escape hatch over the one deliverable `godot-devkit` is block
 feature was `size: xl` carrying four unrelated things, and two features collided on the same
 file while both claiming phase 1. **Eight features and one bug now, in four phases.**
 
-| phase | feature | why here |
-|---|---|---|
-| 1 | `the-extraction-finishes` | a stock consumer's `check all` exits 2 today; everything else builds on a kit that works |
-| 1 | `bugs/the-deprecation-window-must-close` | a dated obligation whose window this release closes |
-| 2 | `the-middle-tier-splits` | **was ship criterion 5's "or"** — the gate framework sheds its Godot roster, which is what unblocks `godot-devkit` 0.25.0 |
-| 2 | `the-kit-owns-the-gates-that-scan-its-own-artifacts` | grows the roster the phase-1 census now guards |
-| 3 | `every-gate-reports-its-cost` | one funnel, every gate, failing open |
-| 3 | `the-story-belt-knows-what-verifies-this-edit` | the 170x, and the belt that runs continuously |
-| 3 | `the-belts-refuse-to-advance` | `pm ready-for` — the entry conditions as exit codes |
-| 4 | `the-release-is-a-conveyor` | the driver + `install-sdlc` |
-| 4 | `adopt-is-a-conveyor` | the same driver, scoped to the operation |
-| 5 | `the-inner-levels-are-belts-too` | **added mid-milestone** — `close story` / `close feature`, because the levels that run constantly were the ones left as prose |
+**`pm status 0.2.0` is the roster.** There was a table here, one row per feature, and it was a
+second scoreboard — the thing `.claude/rules/pm-execution.md` bans by name: *"Do not hand-maintain
+a story list in a feature file, or a feature list in a milestone file."* It went stale the moment
+a ninth feature was added mid-milestone, and the release reviewer filed it (L4) on a tree where
+the table and the directory had already disagreed. Written by the person who wrote the rule.
+
+What is NOT derivable, and so stays here, is the ORDERING and its reason:
+
+- **Phase 1** is the floor — a stock consumer's `check all` exits 2 today, and everything else
+  builds on a kit that works.
+- **Phase 2** is what unblocks the other repo: the gate framework sheds its language roster. This
+  was ship criterion 5's "or".
+- **Phase 3** is the belts — the funnel, the 170x, and the entry conditions as exit codes.
+- **Phase 4** is the outer conveyors, `release` and `adopt`.
+- **Phase 5** was added mid-milestone: the levels that run *constantly* were the ones left as
+  prose, which is backwards in the most expensive direction.
 
 Phase 1 is serial before phase 2: `the-extraction-finishes` **prunes** `KNOWN_GATES` and ships
 `roster == dispatchable` as a test; `the-kit-owns-…` then **grows** it through that census.

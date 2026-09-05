@@ -184,7 +184,7 @@ Reviewer's token cost: ~120k across all three feature records.
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| S1 | MAJOR | open: --check must ask whether a rule can ever be FIRST, not only whether its glob matches |
-| S2 | MAJOR | open: count the union of matched paths, or rename the column to say it is per-rule matches |
-| S3 | MINOR | open: decide whether --check validates a non-make run at all; story 05's Close records the same gap |
+| S1 | MAJOR | landed 3935205: `--check` asks the SELECTOR whether a rule is ever first |
+| S2 | MAJOR | landed 3935205: the census counts the union of matched paths |
+| S3 | MINOR | landed 3935205: ruled NO with a count — `K run(s) unvalidated` plus the reasoning |
 ```

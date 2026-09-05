@@ -226,7 +226,7 @@ verdict: HOLD
 | id | severity | disposition |
 | G1 | BLOCKER | landed 41944b0 — the parse moved INSIDE the bound (`_GDK_LEDGER_SHIM`, gdk_gate.sh:389), not a shape refusal, because `eval "prefix=(a); sleep 20; x=("` carries no `$(` and hangs just as long. Re-measured: `GDK_LEDGER_CMD='true $(sleep 20)'` at GDK_LEDGER_TIMEOUT=3 is **36 ms**, against the 20062 ms above |
 | G2 | BLOCKER | landed 41944b0 — the slot parks its FIRST non-zero capture in the sidecar (`_gdk_ledger_fault`, gdk_gate.sh:275-286) and `_gdk_ledger_verdict` prefers it over `GDK_GATE_EXIT` (:305-314), so a matrix failing on PY_FLOOR and passing last no longer files PASS. `GDK_GATE_EXIT` stays last-write-wins — published contract, pinned by a corpus case. `bash gdk_gate.sh --self-test` → SELF-TEST OK, 62 case(s) |
-| G3 | MAJOR | open: criterion 3 needs a ruling on how a composition rung gets a cost |
-| G4 | BLOCKER | open: story 04 never landed; criterion 4 undelivered and its Close evidence is false |
+| G3 | MAJOR | open: needs a ruling on how a composition rung gets a cost |
+| G4 | BLOCKER | open: story 04 — criterion 4 undelivered |
 | G5 | NIT | rejected: --plan already marks the verdict beside the cost, which is the honest rendering |
 ```

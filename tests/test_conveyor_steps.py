@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -378,14 +379,78 @@ def test_changelog_retitle_opens_a_fresh_empty_unreleased_above():
         assert step.check(ctx(root)).is_true
 
 
-def test_findings_resolved_names_the_record_that_is_still_there():
+RESOLVED_BLOCK = ('```\nverdict: SHIP\n| id | severity | disposition |\n'
+                  '| M1 | BLOCKER | landed abc1234 |\n```\n')
+OPEN_BLOCK = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
+              '| M1 | BLOCKER | open: not done |\n```\n')
+
+
+def _reviewed_feature(record: str) -> dict[str, str]:
+    """One `done` feature whose `reviewed:` points at `record`."""
+    return {f'pm/roadmap/{VERSION}-scratch/features/f1/feature.md':
+            f'---\nid: {VERSION}/f1\nmilestone: "{VERSION}"\nname: F\n'
+            f'status: done\nreviewed: {record}\n---\n\n# F\n'}
+
+
+def test_findings_resolved_names_a_finding_still_at_open():
+    """R1 + R2, and they are one finding read from two ends.
+
+    This step used to require the record to be DELETED, decided by matching the
+    version as a SUBSTRING of a filename or a body. Two things wrong with that,
+    and the second outlived the first:
+
+    * `review-landed` and `features-done` need the `reviewed:` pointer to
+      resolve, so the two could not both hold and a release could not resume
+      past this step (R1). D8 removed the halt.
+    * **Performing it left `check pm` permanently RED on D1**, because the
+      pointers then resolve to nothing — and `check pm` is in `[checks] all`.
+      A halt was never the whole defect: removing it changes what a false
+      postcondition costs, not whether it is false.
+    """
     record = f'docs/reviews/2026-01-01-{VERSION}-review.md'
-    with tree({record: f'# review of {VERSION}\n'}) as root:
+    files = {record: OPEN_BLOCK, **_reviewed_feature(record)}
+    with tree(files) as root:
         answer = steps.RELEASE_STEPS['findings-resolved'].check(ctx(root))
         assert not answer.is_true
-        assert record in answer.detail, answer.detail
-        (root / record).unlink()
+        assert 'M1' in answer.detail, answer.detail
+        # Dispositioned IN PLACE — the record stays.
+        (root / record).write_text(RESOLVED_BLOCK, encoding='utf-8')
         assert steps.RELEASE_STEPS['findings-resolved'].check(ctx(root)).is_true
+
+
+def test_a_performed_findings_resolved_leaves_check_pm_green():
+    """The postcondition that was wrong, asserted directly. Satisfying this
+    step must not redden a gate in the stock roster."""
+    from agentic_sdlc.repo.checks import pm as check_pm
+
+    record = f'docs/reviews/2026-01-01-{VERSION}-review.md'
+    files = {record: RESOLVED_BLOCK, **_reviewed_feature(record),
+             # `packaging`, which is where a release actually is by step 14 —
+             # `milestone-done` is step 15. At `building` with every feature
+             # done, D6 fires about the MILESTONE's own status, which is a
+             # true finding about this fixture and not the one under test.
+             f'pm/roadmap/{VERSION}-scratch/milestone.md':
+                 MILESTONE.replace('status: building', 'status: packaging')}
+    with tree(files) as root:
+        assert steps.RELEASE_STEPS['findings-resolved'].check(ctx(root)).is_true
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = check_pm.run()
+        assert code == 0, buffer.getvalue()
+
+
+def test_findings_resolved_does_not_ask_the_operator_to_delete_the_record():
+    """The `do()` used to say "create → resolve → delete". The record is the
+    durable evidence that the review happened and is what `reviewed:` points
+    at; a release that destroyed it would be deleting the artifact it exists
+    to prove."""
+    record = f'docs/reviews/2026-01-01-{VERSION}-review.md'
+    with tree({record: OPEN_BLOCK, **_reviewed_feature(record)}) as root:
+        said = steps.RELEASE_STEPS['findings-resolved'].do(ctx(root))
+    assert 'delete it' not in said.lower(), said
+    assert 'resolve and delete' not in said.lower(), said
+    assert 'The RECORD stays' in said, said
+    assert 'disposition' in said, said
 
 
 def test_push_branch_refuses_on_the_mainline_and_pushes_nothing():

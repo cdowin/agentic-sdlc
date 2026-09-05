@@ -181,8 +181,8 @@ Reviewer's token cost: ~100k for the three-feature pass, of which this record is
 ```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| E1 | MINOR | open: README.md:166,168 — the install-ci and install-hooks rows name workflows and hooks that no longer ship |
-| E2 | MINOR | open: `version` is routed at cli.py:368 and named in no --help line; routed_verbs() cannot see it |
-| E3 | MINOR | landed — `test_every_shipped_check_module_is_in_the_roster` + `test_the_roster_and_the_shipped_modules_are_the_same_set` in tests/test_gate_roster.py. The module set is asked of the SHIPPED package (`Path(agentic_sdlc.repo.checks.__file__).parent`), not of `src/`, and inverts `_check_module`'s one mapping (`x_y` → `x-y`); `__init__.py` and `_`-prefixed helpers are exempt, the same convention `check hooks` uses for `tools/hooks/_*`. **Proven by construction**, which the original pass did not do: a seventh module planted at `repo/checks/phantom.py` fails both new cases, and both pass again once it is removed |
-| E4 | NIT | landed — `DELIBERATE_PAYLOAD` is keyed on the PATH (`repo/installables`, `repo/pm/templates`, `repo/pm/guidance`) and matched with `rel.is_relative_to`, so a directory NAME can no longer exempt a blob at any depth. **The bypass was executed**: `repo/checks/templates/junk.bin` planted → `test_no_file_ships_without_a_reader_or_a_reason` FAILs naming it; a unit case (`test_the_exemption_does_not_match_a_directory_name_at_any_depth`) plants the same path against the predicate so the guard cannot regress without a build. The "85 entries" claim is deleted rather than re-typed: this file has no build in it, so the number was never re-derivable and could only drift |
+| E1 | MINOR | landed 50cc01d, and a test asserts the README table IS install.PLANS, both directions |
+| E2 | MINOR | landed 50cc01d: documented, and `routed_verbs()` can see it |
+| E3 | MINOR | landed 52a4d8e: proven by planting repo/checks/phantom.py |
+| E4 | NIT | landed 52a4d8e: bypass executed; the 85-entry claim deleted rather than re-typed |
 ```

@@ -152,9 +152,10 @@ running. The rule that catches it: **a category is about whether WORK REMAINS, n
 the outcome is decided.** An accepted feature has had its verdict; it still has work.
 
 Per grain kind, so a bug's vocabulary (`open` / `fixed` / `closed`) is declared the same way
-rather than being the special case it is today. **The shipped default maps exactly today's
-`LIFECYCLE`**, so a consumer that declares nothing sees no change — rule 5, and the only way this
-lands without reddening every tree on the bump.
+rather than being the special case it is today. **The seed reproduces today's `LIFECYCLE`
+exactly**, so a project that accepts what `init` writes gets 0.2.0's behaviour — but it is a SEED
+that gets WRITTEN, not a fallback that gets assumed. See below; this paragraph said the opposite
+until the 0.3.0 plan review caught it contradicting its own §4.
 
 The engine keeps three opinions and no more:
 
@@ -326,15 +327,29 @@ see, cannot change, and did not choose.
 | where | what it infers | becomes |
 |---|---|---|
 | `model.py:80` `STALLED_IF_ALL_STORIES_DONE` | *which states mean a feature has not advanced* — derived by slicing the LIFECYCLE tuple at `reviewing` | `holds(feature, todo)` |
-| `model.py:1066` D2's message | *"all stories done, feature still building — **advance it**"* — the engine saying what should happen next | report the fact; the belt owns what follows |
-| `model.py:~1030` `at_or_past(BUILDING)` | *ordering, by indexing a tuple of words* | category order, the only order there is |
+| ~~D2's "advance it"~~ | **WITHDRAWN.** `ADVANCE_IT` is `checks/pm.py:159` — in the **gate**, not the engine. Rule 9 licenses that exactly: `check` is the thing that fails a contradictory tree and says what would fix it. I attributed a gate's job to the engine. | nothing; never a violation |
+| `pm/cli.py:1524-1557` the ledger dispatch snapshot | *which states count as open work* — keys frozen, matched against the literals `building`/`reviewing`. Its own docstring: *"a project with a genuinely renamed vocabulary records empty lists."* | category buckets — **and this is a DATA MIGRATION**, not a rendering change: those keys are already inside JSONL rows in every consumer tree |
+| `execlist.py:44-50` `_phase_key` | `seam` — a word the engine knows about a project's phase vocabulary | declared, or dropped |
+| `model.py:1071-1084` `at_or_past(BUILDING)` | *ordering, by indexing a tuple of words* | category order, the only order there is |
 | `ledger.py:597` `terminal_state(cfg, kind)` | *which single state ends a grain* — and it special-cases bugs | `holds(grain, done)` |
 | `pm/cli.py` `feature done --cascade` | *which stories to move, and to what* — the engine picking grains to write | the `feature` belt's steps, declared |
 | `model.py:979` `review_slug_fallback` | *a review record, from a filename glob* | a pointer, or a finding |
-| `checks/grain_shape.py` `_kind_of` | *a grain's kind, from path shape* | already half-declared; finish it |
+| `checks/grain_shape.py:167` `_kind_of` | *a grain's kind, from path shape* | already half-declared; finish it |
+| `model.py:1122` `states_without_building` | already NAMES the problem in its own name — "the state sets D5 cannot place BUILDING in" | deleted; a category is always placeable |
 
-Seven. None is a bug today. Every one is a place where a project that wanted to work differently
+Nine, after the plan review withdrew one and found three more. None is a bug today. Every one is a place where a project that wanted to work differently
 would find the engine had already decided.
+
+### The price, which the first draft did not name
+
+**D5 and D2 report strictly LESS.** D5 today has seven positions to compare (the LIFECYCLE
+index); over categories it has three. D2 drops from three to two. The plan review found this, and
+it is right that the design was selling a pure gain.
+
+It is the correct trade — a resolution that exists only while nobody renames a word is a
+resolution about to be wrong — but it IS a trade, and a consumer whose D5 currently distinguishes
+`accepted` from `packaging` will find that it no longer does. **CHANGELOG as a behaviour change,
+not as an improvement.**
 
 ### What this buys, and it is the durability argument
 

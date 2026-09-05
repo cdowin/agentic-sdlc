@@ -13,7 +13,9 @@ closing something if it has a feature with open stories. It shouldn't say, no, y
 It should just say: warning, you're moving to a closed state, and you have open children. That's
 it. The machine running this figures out what to do about all of that."*
 
-Two features, and the second is mostly subtraction:
+**FIVE features**, not the two this milestone opened with. Its own plan review found the scope
+dishonest — the same finding `docs/reviews/2026-09-05-0.2.0-scope-audit.md` made about the last
+milestone, which is why that audit exists:
 
 - **`states-are-categories-not-words`** — three categories, states and transitions declared by
   the project, read every run, never assumed.
@@ -21,6 +23,20 @@ Two features, and the second is mostly subtraction:
   refusal into the conveyor against a rule already in this repo
   (`pm-execution.md`: *"REPORT, never refuse"*), and named the feature after the thing it got
   wrong.
+- **`the-transitions-table-is-published-vocabulary`** — the review called the table *"legitimate
+  but unearned as written"*: a project cannot invent a step, so unless the registry is stated to
+  be published vocabulary, the table is opinion with a config file in front.
+- **`the-ledger-rows-carry-categories`** — the one nobody saw. `pm/cli.py:1524-1557` freezes
+  `building`/`reviewing` as literal keys **inside JSONL rows already written in every consumer
+  tree**. Every other item in the census is rendering; this is a data migration.
+- **`init-can-append-to-a-config-it-did-not-write`** — the blocker. No-fallback plus an `init`
+  that never touches an existing `devkit.toml` refuses every existing consumer with no path
+  between.
+
+**Also unlisted and still owed** (the review's list, not yet features): `check pm` D3/D6/D8/D9/D10,
+`model.py:995` `building_milestones`, `project-devkit.toml`'s all-commented convention, the
+installed agent roster and `pm-execution.md` — both of which spell the seven words in prose that
+SHIPS.
 
 **One line decides anything added here later:** *is the engine reading what the project declared,
 or deciding what the project should do?* The first is its job. The second belongs to the machine

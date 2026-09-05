@@ -27,13 +27,26 @@ carries the claim.
 from __future__ import annotations
 
 import json
+import contextlib
 import os
 import unittest
 from unittest import mock
 
 from support.pm import (LEDGER_REL, bug, commit, dispatch_line, git,
                         porcelain, put_ledger, run_cli, snapshot, status_line,
-                        tree, write)
+                        write, tree as _marked_tree)
+
+# --- this module asks git real questions, so its trees are real repos ---------
+# `support.pm.tree` MARKS a tree with a `.git` directory rather than running
+# `git init`, because `repo_root` walks up for that marker and almost nothing
+# in this suite asks git anything. THIS module does — the whole module is `--from <rev>`, which IS a git range — so it opts in
+# once, here, rather than at 22 call sites. An integration test declaring
+# itself is the point: the default is cheap and the exception is visible.
+@contextlib.contextmanager
+def tree(*args, **kwargs):
+    kwargs.setdefault('git_repo', True)
+    with _marked_tree(*args, **kwargs) as root:
+        yield root
 
 from agentic_sdlc.repo.pm import skills
 

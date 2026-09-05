@@ -160,10 +160,17 @@ class Guidance(unittest.TestCase):
             self.assertEqual(run_cli(root, 'install-skills')[0], 0)
 
     def test_init_stands_up_a_usable_tree_from_nothing(self):
+        # THE ONE FIXTURE HERE THAT STAYS FLOW-LESS ON PURPOSE, and it is the
+        # test that will catch the gap phase 7 has to close. `flow_of`'s
+        # refusal names `agentic-sdlc pm init` as the command that writes
+        # `[pm.states.*]` (model.py:718), and `skills.cmd_init` does not write
+        # it yet. FROM NOTHING is the claim: a bare repo, `init`, then the two
+        # `new` calls init's own next-steps print. Handing this tree a
+        # devkit.toml would make it pass by removing the thing it measures.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             root.mkdir()
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:

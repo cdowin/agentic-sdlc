@@ -48,7 +48,7 @@ def repo(files: dict[str, str] | None = None):
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()

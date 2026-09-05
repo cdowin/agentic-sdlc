@@ -69,14 +69,96 @@ def write(path: Path, front: dict[str, str], body: str = 'x') -> None:
     path.write_text('\n'.join(lines), encoding='utf-8')
 
 
+# --- the flow a fixture tree DECLARES -----------------------------------------
+# `[pm.states.<kind>]` has NO runtime fallback behind it: `model.flow_of`
+# (src/agentic_sdlc/repo/pm/model.py:718) exits 2 BY NAME when a tree declared
+# nothing, and phase 7 routes every engine question through `model.holds`. From
+# that commit on, a fixture that never declared is a tree no `pm` verb and no
+# `check pm` run can read — so every tree builder in this suite declares now,
+# ahead of the routing change, and that change reviews as a behaviour change
+# rather than as four hundred fixture edits.
+#
+# DERIVED FROM `render_seed()` (model.py:218), never hand-copied. A table typed
+# out here would be a second spelling of `DEFAULT_FLOWS` (model.py:209), and the
+# copy nobody runs is the one that goes stale — which is exactly why
+# `installables/project-devkit.toml` is held to `render_seed()` VERBATIM by
+# tests/test_pm_flow.py:559 rather than being allowed its own copy.
+FLOW_TOML = model.render_seed()
+
+
+def with_flow(config: str = '') -> str:
+    """`config` with the flow declaration APPENDED — never replacing it.
+
+    THE APPEND IS THE WHOLE POINT. A fixture that takes a `config=` string and
+    hands it straight to `write_text` lets any test supplying one silently drop
+    `[pm.states.*]`, and the tree it builds is then refused by `flow_of` for a
+    reason having nothing to do with what that test is about. So every config a
+    fixture writes comes through here, and a test override ADDS to the
+    declaration instead of replacing it.
+
+    Idempotent: a config that already declares `[pm.states.…]` comes back
+    untouched, because a second copy of those tables is a TOML duplicate-table
+    error rather than a second declaration.
+    """
+    if '[pm.states.' in config:
+        return config
+    if config and not config.endswith('\n'):
+        config += '\n'
+    return config + FLOW_TOML
+
+
+def write_config(root: Path, config: str = '') -> Path:
+    """Write `root/devkit.toml` as `config` PLUS the flow declaration.
+
+    The one config writer for a fixture tree, so that a test overriding `[pm]`
+    mid-case cannot drop `[pm.states.*]` by writing the file itself — which is
+    what every `(root / 'devkit.toml').write_text(...)` in this suite used to
+    do. See `with_flow` for why the append is not optional.
+    """
+    path = root / 'devkit.toml'
+    path.write_text(with_flow(config), encoding='utf-8')
+    return path
+
+
+def _mark_or_init(root: Path, git_repo: bool) -> None:
+    """Make `root` findable — as a MARKER by default, as a real repo on ask.
+
+    `core.project.repo_root` walks up for `.git` and no longer shells out to
+    `git rev-parse --show-toplevel`, so a tree only has to be MARKED to be
+    found. `mkdir` costs microseconds; `git init` costs a process, and this
+    helper is entered once per TEST across most of the suite.
+
+    `git_repo=True` is for the cases that ask git a real question — what
+    changed, what is staged, what a rev resolves to. Those are integration
+    tests, and they now say so by asking for the thing that makes them one.
+    """
+    if not git_repo:
+        (root / '.git').mkdir(exist_ok=True)
+        return
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+
+
 @contextlib.contextmanager
 def tree(milestone_status='building', feature_status='building',
-         story_statuses=('ready',), with_record=True):
-    """A one-milestone/one-feature/N-story repo, cwd'd into."""
+         story_statuses=('ready',), with_record=True, config='',
+         git_repo=False):
+    """A one-milestone/one-feature/N-story repo, cwd'd into.
+
+    `config` is the tree's `devkit.toml` MINUS the flow declaration, which is
+    appended for you — see `with_flow`. A case that wants to change the config
+    after the tree is standing calls `write_config(root, …)` rather than
+    writing the file, for the same reason.
+
+    `git_repo=False` by default: the tree is MARKED rather than initialised,
+    because `repo_root` walks for `.git` and almost nothing here asks git a
+    question. Pass `git_repo=True` when the test genuinely needs a repository.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         mdir = root / 'pm' / 'roadmap' / '0.1-demo'
         fdir = mdir / 'features' / 'alpha'
+        root.mkdir(parents=True, exist_ok=True)
+        write_config(root, config)
         write(mdir / 'milestone.md', {'id': '"0.1"', 'name': 'Demo',
                                       'status': milestone_status})
         feature = {'id': '0.1/alpha', 'milestone': '"0.1"', 'name': 'Alpha',
@@ -92,7 +174,7 @@ def tree(milestone_status='building', feature_status='building',
             write(fdir / 'stories' / f's{i}.md',
                   {'id': f'0.1/alpha/s{i}', 'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': f'S{i}', 'status': st})
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        _mark_or_init(root, git_repo)
         previous = Path.cwd()
         os.chdir(root)
         try:

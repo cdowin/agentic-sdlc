@@ -29,6 +29,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from support.pm import with_flow
+
 from agentic_sdlc import cli
 from agentic_sdlc.repo.verify import main as verb
 from agentic_sdlc.repo.verify import rules
@@ -82,8 +84,15 @@ class Repo:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
         if verify is not None:
-            (self.root / 'devkit.toml').write_text(f'[verify]\n{verify}',
-                                                   encoding='utf-8')
+            # THROUGH `with_flow`. `verify --plan` reads the building
+            # milestone's ledger for the measured ratio, and that read goes
+            # through `pm.model` — which has no fallback behind `[pm.states.*]`
+            # and swallows every failure as "unknown" (verify/main.py:568). A
+            # tree that declared no flow would therefore print `unknown` for a
+            # config reason and pass the "no rows" case while silently gutting
+            # the measured one. See tests/support/pm.py `with_flow`.
+            (self.root / 'devkit.toml').write_text(
+                with_flow(f'[verify]\n{verify}'), encoding='utf-8')
         self._git('init', '-q')
         self._git('add', '-A')
         self._git('-c', 'user.name=t', '-c', 'user.email=t@t.invalid',

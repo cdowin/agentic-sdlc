@@ -30,6 +30,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import FLOW_TOML  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -577,6 +578,12 @@ def ledger_repo(tmp_path: Path, name: str = 'repo',
     a bash-only spelling. A vehicle that names dash is the honest one.
     """
     root = corpus_repo(tmp_path, name)
+    # The tree DECLARES its flow. Both couriers reach `pm ledger record` through
+    # the Makefile above, and `[pm.states.*]` has no runtime fallback
+    # (model.py:718 `flow_of`) — so a tree without it would fail the hook for a
+    # config reason and read here as a courier that wrote no row, which is the
+    # one failure this module must never mistake for another.
+    (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
     for rel, front in FRONTMATTER.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)

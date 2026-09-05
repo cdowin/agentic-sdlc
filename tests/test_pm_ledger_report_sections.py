@@ -26,7 +26,7 @@ import unittest
 
 from support.pm import (bug, decision_line, dispatch_line, put_ledger, run_cli,
                         section_of, session_line, snapshot, status_line, tree,
-                        write)
+                        write, write_config)
 
 from agentic_sdlc.repo.pm import verdict
 
@@ -532,9 +532,9 @@ class Vocabulary(unittest.TestCase):
         `0` there would say "nothing was reopened" about transitions nobody
         looked for — the read-side sin with a column header on it."""
         with tree(story_statuses=('shipped',)) as root:
-            (root / 'devkit.toml').write_text(
+            write_config(root,
                 '[pm]\nstory_states = ["queued", "doing", "checking", '
-                '"shipped"]\n', encoding='utf-8')
+                '"shipped"]\n')
             put_ledger(root,
                        status_line('2026-09-03T10:00:00Z', A_S0, 'queued',
                                    'doing'),

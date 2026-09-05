@@ -86,6 +86,11 @@ if _TARGET_SRC:
 from agentic_sdlc import cli  # noqa: E402
 from agentic_sdlc.repo.pm.ledger import LEDGER_FILE_NAME  # noqa: E402
 
+# BELOW the overlay purge on purpose: `support.pm` derives `FLOW_TOML` from
+# `model.render_seed()` at import, so importing it above would seed the scratch
+# tree from THIS checkout's seed while the fuzz drove the overlaid one.
+from support.pm import FLOW_TOML  # noqa: E402
+
 pytestmark = pytest.mark.fuzz
 
 # The seed is part of the gate. Changing it changes which hostile inputs are
@@ -290,6 +295,13 @@ def _grain_front(path: Path, front: dict[str, str]) -> None:
 def _build_pm(outer: Path, root: Path) -> None:
     (outer / 'outside.md').write_text('---\nstatus: decoy\n---\n', encoding='utf-8')
     m = root / 'pm' / 'roadmap' / '0.1-demo'
+    # THE FLOW IS PART OF THE TREE, not decoration. `[pm.states.*]` has no
+    # runtime fallback (model.py:718 `flow_of`), so every `pm` verb the fuzz
+    # drives would exit 2 on the DECLARATION rather than on the hostile id it
+    # was handed — and a refusal matrix that refuses for the wrong reason is a
+    # green suite proving nothing (hard rule 4).
+    root.mkdir(parents=True, exist_ok=True)
+    (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
     _grain_front(m / 'milestone.md',
                  {'id': '"0.1"', 'name': 'Demo', 'status': 'building'})
     for slug in ('alpha', 'beta'):

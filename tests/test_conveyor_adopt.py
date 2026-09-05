@@ -26,6 +26,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import FLOW_TOML, with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
@@ -54,14 +55,19 @@ def tree(files: dict[str, str] | None = None, config: str = '',
     `sibling` plants a DECOY repo beside it: rule 8 says `adopt` runs in a
     consumer's own tree and reads no second repo, so the tests assert the decoy
     comes back byte-identical.
+
+    `config` is this tree's devkit.toml MINUS the flow declaration, which is
+    APPENDED for you — `[pm.states.*]` has no runtime fallback, so a case that
+    supplied its own `[release]` block and thereby dropped the flow would build
+    a tree `model.flow_of` refuses for a reason unrelated to what it asserts.
+    See tests/support/pm.py `with_flow`.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         (root / f'pm/roadmap/{VERSION}-scratch').mkdir(parents=True)
         (root / f'pm/roadmap/{VERSION}-scratch/milestone.md').write_text(
             MILESTONE, encoding='utf-8')
-        if config:
-            (root / 'devkit.toml').write_text(config, encoding='utf-8')
+        (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
         for rel, body in (files or {}).items():
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -718,6 +724,11 @@ def test_pm_validates_refuses_a_repo_with_no_pm_tree():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         root.mkdir()
+        # NO PM TREE, but a DECLARED flow: the refusal under test is
+        # about an absent roadmap, and a tree that also declared no
+        # `[pm.states.*]` would refuse one layer earlier for a reason
+        # this case never mentions (model.py:718 `flow_of`).
+        (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
         previous = Path.cwd()
         os.chdir(root)

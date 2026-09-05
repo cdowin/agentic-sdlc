@@ -52,7 +52,7 @@ def tree(config: str = ''):
         root.mkdir()
         if config:
             (root / 'devkit.toml').write_text(config, encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()

@@ -74,7 +74,14 @@ def body(n: int) -> str:
 
 
 def config(root: Path, text: str) -> None:
-    (root / 'devkit.toml').write_text(text, encoding='utf-8')
+    """`text` as the tree's devkit.toml, with the flow declaration APPENDED.
+
+    Through `pmfx.write_config` rather than a bare `write_text`: `check
+    grain-shape` walks the tree through `pm.model`, so a case overriding
+    `[grain_shape]` must not also un-declare `[pm.states.*]` — see
+    tests/support/pm.py `with_flow`.
+    """
+    pmfx.write_config(root, text)
 
 
 # --- the deliberately-broken probe -------------------------------------------

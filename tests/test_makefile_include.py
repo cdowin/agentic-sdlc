@@ -133,7 +133,7 @@ def project(config: str = '', makefile: str = PROJECT_MAKEFILE,
             (root / 'Makefile.tiers').write_text(tiers, encoding='utf-8')
         (root / 'devkit-stub').write_text(
             DEVKIT_STUB.format(src=REPO_ROOT / 'src'), encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         yield root
 
 

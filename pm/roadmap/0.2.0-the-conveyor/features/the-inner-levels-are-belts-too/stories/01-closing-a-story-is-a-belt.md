@@ -15,3 +15,9 @@ depends_on: []
 ## Acceptance criteria
 
 ## Out of scope
+
+## Close
+
+done: cc0569d — five steps, 0.21 s across three runs. The number is the feature: a story
+close slower than closing by hand is a conveyor people skip, and a skipped conveyor is worse
+than none because it looks like control. 55 of 56 tests watched failing at HEAD.

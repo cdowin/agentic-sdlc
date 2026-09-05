@@ -15,3 +15,9 @@ depends_on: []
 ## Acceptance criteria
 
 ## Out of scope
+
+## Close
+
+done: cc0569d — six steps, and no step re-implements a predicate that has a verb:
+stories-done IS `pm ready-for feature`, review-recorded and findings-landed ARE
+`verdict.parse`, inheriting its ruling that an unparseable block is UNVERIFIABLE.

@@ -84,3 +84,4 @@
 {"ts":"2026-09-06T22:19:29Z","kind":"decision","grain":"0.4.0","entry":"D7","title":"The gate and test rows join the grainless family, and release_ledger_dir stops routing writes"}
 {"ts":"2026-09-06T22:20:07Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row","from":"planning","to":"building"}
 {"ts":"2026-09-06T22:20:08Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree","from":"planning","to":"building"}
+{"ts":"2026-09-06T22:25:14Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree","from":"building","to":"done"}

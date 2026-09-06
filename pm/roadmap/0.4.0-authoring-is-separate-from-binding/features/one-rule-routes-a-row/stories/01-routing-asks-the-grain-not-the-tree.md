@@ -3,7 +3,7 @@ id: 0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree
 feature: 0.4.0/one-rule-routes-a-row
 milestone: "0.4.0"
 name: Routing asks the grain, and _building_ledger_dir is deleted
-status: building
+status: done
 owner: claude
 depends_on: []
 ---
@@ -89,4 +89,11 @@ then keep `report` requiring an explicit milestone id rather than guessing.
 
 ## Close
 
-<!-- done: <hash> — what shipped -->
+done: d49cc6c — `_row_ledger_dir` is the one rule; `_building_ledger_dir` is gone from `src/`,
+proven by a name gate in `test_boundaries.py`. A grainless row is PARKED on the gate resolver,
+which story 02 replaces with the root ledger.
+finding: `ledger report`'s default was the lookup's second caller and is now the current
+release's milestone (D7), reconciling 0.3.0's `release_ledger_dir` — it chooses a SUBJECT, never
+a route.
+finding: `tests/conftest.py:278` files slow-test rows through `in_progress_milestones` — a THIRD
+router nobody had listed. It belongs to story 02, with the other grainless rows.

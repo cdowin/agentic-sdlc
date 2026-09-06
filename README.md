@@ -160,7 +160,9 @@ mainline  = "origin/main"
 protected = "^(main|staging)$"
 
 [gates]
-extra = ["my-scan"]                           # your own gate targets, run by `make check`
+extra = ["my-scan"]                           # MAKE TARGETS your own makefile defines, run by
+                                              # `make check` after the devkit gates. A devkit GATE
+                                              # name here is exit 2: gates go in [checks] all
 
 [pm]
 roadmap_dir  = "pm/roadmap"
@@ -218,6 +220,12 @@ test tiers arrive through `Makefile.tiers`, a file you (or a language kit) write
 defines the tier targets and declares which compositions they join with `GDK_PRECOMMIT_TIERS` and
 `GDK_MILESTONE_TIERS`. With no tier file, `precommit` and `milestone` are `check` alone and say so.
 Your own static gates join `check` through `[gates] extra`, never through a fork of the include.
+
+**The two lists next to each other are two namespaces.** `[checks] all` names **gates this package
+ships** (`agentic-sdlc check <name>`); `[gates] extra` names **make targets your own makefile
+defines**. `make check` runs the first list, then the second. A gate name in `[gates] extra` is
+refused at exit 2 and told which key runs it, because make's own answer — `No rule to make target
+'budget'` — arrives three layers below the config that caused it.
 
 Every gate prints ONE verdict line naming its transcript under `.gate-reports/`; `VERBOSE=1`
 streams it. `make precommit` belongs in your per-change loop; `make milestone` is the full gate and

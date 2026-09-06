@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`[gates] extra` refuses a gate name and says which key runs it.** The key takes make targets
+  and the adjacent `[checks] all` takes gate names; neither error said so, so `extra = ["budget"]`
+  reached GNU make as `No rule to make target 'budget'` — three layers below the config that caused
+  it. It is now exit 2 at the config read, naming the entry, the namespace and `make check`. A
+  target that merely CONTAINS a gate name (`budget-check`) is unaffected.
+
 - **A milestone declares `version:`, and D8 became R5.** The id goes back to being a slug: a
   milestone says which version it ships as in one optional frontmatter field, and the engine
   never parses, compares or increments the string — `"1.1.1"` and `"cow"` are equally valid.

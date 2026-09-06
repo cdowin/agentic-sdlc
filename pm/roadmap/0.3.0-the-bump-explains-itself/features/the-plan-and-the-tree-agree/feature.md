@@ -21,8 +21,16 @@ The `R` family asks of the plan what the `V` family asks of the tree:
   milestone with a `version:` that `order` does not carry is UNSCHEDULED. Symmetric, and both name
   the two places that disagree. An entry whose milestone directory was retired is UNVERIFIABLE,
   never a failure — the concept the tree already has for a ref into a retired milestone.
-- **R2** a milestone with no `version:` is backlog: a named, counted line, never a finding. A
-  healthy tree has many, and a gate that reddens on planning is a gate people switch off.
+- **R2 — the unbound census.** A milestone with no `version:` is backlog: a named, counted line,
+  never a finding. A healthy tree has many, and a gate that reddens on planning is a gate people
+  switch off.
+
+**R1 and R2 are written as THE UNBOUND FAMILY, whose first member is the milestone-to-release
+edge** — not as two milestone-specific rules. Every level of the tree has the same pair: a binding
+that names nothing, and a grain that names no binding. 0.4.0 makes authoring separate from binding
+everywhere, at which point a feature with no milestone and a story with no feature join this
+census as further rows rather than as new rules. Naming the family now costs a sentence; naming it
+later costs a rename in every consumer's output that greps these lines.
 - **R3** `version:` values are unique across milestones.
 - **R4 — history is a prefix.** No shipped milestone appears after an unshipped one in `order`.
   This is the invariant that makes "next = the first unshipped entry" *correct* rather than merely

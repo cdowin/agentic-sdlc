@@ -16,11 +16,19 @@ the database, as directories — and the config names them:
 
 ```toml
 [pm]
-milestone_dir = "pm/roadmap/milestones"
+roadmap_dir   = "pm/roadmap"              # the root the rest default under
+milestone_dir = "pm/roadmap/milestones"   # each shown at its DERIVED default
 feature_dir   = "pm/roadmap/features"
 story_dir     = "pm/roadmap/stories"
 bug_dir       = "pm/roadmap/bugs"
+ledger_dir    = "pm/roadmap/ledgers"
 ```
+
+**Granular in the file, derived in the code.** Each key defaults to
+`<roadmap_dir>/<kind>s`, so adopting costs zero edits and moving one table costs one line — but
+the config still SHOWS that there are four kinds and they are peers, which one `roadmap_dir` never
+could. The shape of the config is the shape of the model; that is the point of spelling all six
+out rather than only the root.
 
 **Relative to the repo root, which the tool already discovers** (`core.project.repo_root`). An
 absolute root in a committed config is wrong in every worktree, on every other machine and in CI,

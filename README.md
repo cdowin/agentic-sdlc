@@ -130,9 +130,17 @@ file that could not be DECODED is reported and dropped from the count rather tha
 
 ```
 [check:doc] FAIL — scanned 0 docs; check [doc] scope                        <- config, not drift
-[check:pm]  FAIL — 1 status-drift violation(s) across 18 milestone(s), 12 feature(s), 28 story/ies
+[check:pm]  FAIL — 1 status-drift violation(s) across 18 milestone(s), 12 feature(s), 28 story/ies; 2 warning(s)
   DRIFT  feature 0.28.0/chronicle-bus is done w/o review record  [pm/roadmap/…/feature.md]
+  WARN   story 0.28.0/chronicle-bus/s1 is 'ready' and has an empty `## Acceptance criteria` — …
 ```
+
+A `  WARN  ` line is messaging, not a finding: it is counted separately on the verdict line and
+never moves the exit code. `check pm` warns about a grain that was stamped `ready` (past its
+kind's first `todo` state) and says nothing about what must be true — an empty scaffolded
+`## Acceptance criteria` or `## Ship criterion`, a feature with no stories, a milestone with no
+`branch:` or with a feature carrying no `phase:`. The stamp itself is one command by hand,
+`pm <kind> ready <id>`, and nothing writes it for you.
 
 **Precision over reach.** Nothing is a finding unless the whole picture resolved; anything
 unresolvable is censused `UNVERIFIED`/`UNVERIFIABLE` and never failed. A false PASS is survivable — a

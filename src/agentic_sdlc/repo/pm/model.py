@@ -1619,6 +1619,95 @@ def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:
             f'({" ".join(flow_of(cfg, kind).order)})')
 
 
+# --- ready: a stamp, and what `check pm` says about an empty one -------------
+# `ready` is ONE COMMAND — `pm <kind> ready <id>` — and nothing else writes it
+# (story 02 of the-code-knows-entry-and-exit; Chris: "nothing fancy and
+# automatic"). What `ready` MEANS is a WARNING `check pm` prints, never a gate:
+# a grain that has been readied and says nothing about what must be true is
+# worth a line, not an exit code.
+#
+# "Readied" is asked of the DECLARATION, not of a word: the grain has left its
+# kind's FIRST `todo` state. Under the seed that is `ready` and everything
+# after it; under `todo = ["queued", "shaped"]` it is `shaped`; under a
+# single-word `todo` it is every grain, because that project declared no
+# "still being shaped" state to be in. A word the project never declared is
+# D4's finding and not readied.
+def readied(cfg: PmConfig, kind: str, status: str) -> bool:
+    """True when `status` is declared and is past the kind's first `todo`."""
+    flow = flow_of(cfg, kind)
+    if flow.category(status) is None:
+        return False
+    return status != flow.by_category[TODO][0]
+
+
+# The three sections `pm new` scaffolds and this reads — nothing else is
+# parsed. Spelled here once, beside the templates' headings.
+ACCEPTANCE_HEADING = 'Acceptance criteria'
+SHIP_HEADING = 'Ship criterion'
+
+_HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
+
+
+def section_lines(text: str, heading: str) -> list[str] | None:
+    """The lines under `## <heading>`, up to the next `#`/`##` heading.
+
+    None when the document carries no such heading — a fact the caller says
+    out loud rather than folding into "empty", because "nobody wrote the
+    section" and "nobody filled it" are different sentences to a reader.
+    """
+    lines = _split(text)
+    start = None
+    for i, line in enumerate(lines):
+        m = _HEADING.match(line)
+        if m is None:
+            continue
+        if start is None:
+            if len(m.group(1)) == 2 and m.group(2) == heading:
+                start = i + 1
+        else:
+            return lines[start:i]
+    return None if start is None else lines[start:]
+
+
+def section_is_empty(lines: list[str]) -> bool:
+    """True when nothing but blank lines and HTML comments is under it.
+
+    The template's `<!-- What must be TRUE. … -->` prompt is not content; a
+    section holding only the prompt it was minted with was never written.
+    """
+    in_comment = False
+    for line in lines:
+        rest = line
+        while rest:
+            if in_comment:
+                end = rest.find('-->')
+                if end < 0:
+                    rest = ''
+                    break
+                in_comment = False
+                rest = rest[end + 3:]
+                continue
+            stripped = rest.strip()
+            if not stripped:
+                break
+            if stripped.startswith('<!--'):
+                in_comment = True
+                rest = stripped[4:]
+                continue
+            return False
+    return True
+
+
+def empty_section(path: Path, heading: str) -> str | None:
+    """'' when `## <heading>` is present and written; else why it is not."""
+    lines = section_lines(read_raw(path), heading)
+    if lines is None:
+        return f'has no `## {heading}` section'
+    if section_is_empty(lines):
+        return f'has an empty `## {heading}`'
+    return None
+
+
 # --- appending a decision heading (`pm decide`) -------------------------------
 # The two things authors get wrong writing one of these by hand are the DATE and
 # the ORDINAL, so the verb stamps both and stops there. Everything under the

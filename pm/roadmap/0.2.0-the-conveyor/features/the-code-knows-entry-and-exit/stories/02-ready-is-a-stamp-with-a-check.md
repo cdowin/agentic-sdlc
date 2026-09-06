@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/02-ready-is-a-stamp-with-a-check
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: ready is one command, and an empty ready is a warning
-status: planning
+status: building
 owner:
 depends_on: []
 ---

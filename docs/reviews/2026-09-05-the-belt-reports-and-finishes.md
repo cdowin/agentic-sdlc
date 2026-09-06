@@ -352,7 +352,7 @@ Reviewer's token cost: ~95k.
 verdict: HOLD
 | id | severity | disposition |
 | B1 | BLOCKER | landed 1abba53 |
-| B2 | BLOCKER | open: I2 carried from the-inner-levels-are-belts-too |
+| B2 | BLOCKER | landed bc06971|
 | B3 | BLOCKER | landed 1abba53 |
 | B4 | BLOCKER | landed 6f4e65e |
 | M1 | MAJOR | landed 6f4e65e |

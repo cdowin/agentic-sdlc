@@ -17,11 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'src' / 'agentic_sdlc'
 INSTALLABLES = SRC / 'repo' / 'installables'
-PYTHON = ([SRC / 'cli.py']
-          + sorted((SRC / 'core').glob('*.py'))
-          + sorted((SRC / 'repo' / 'checks').glob('*.py'))
-          + [SRC / 'repo' / 'install.py', SRC / 'repo' / 'init.py',
-             SRC / 'repo' / 'gates_extra.py'])
+PYTHON = sorted(SRC.rglob('*.py'))
 PYTHON_CEILING = 1 / 3
 SHELL_CEILING = 0.20
 

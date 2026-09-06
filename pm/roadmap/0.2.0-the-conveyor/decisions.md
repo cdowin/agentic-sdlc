@@ -376,3 +376,38 @@ rather than taking a measurement, so a tier's number is only as current as the l
 ran that tier. That is why the gate prints the AGE of every row it grades — `7.2s of 20s, measured
 12m ago` — because a ceiling reported against a row from last week is a ceiling reported against
 last week's code, and a number without its age reads as a fact about the tree in front of you.
+
+## D12 — 2026-09-05 — The actions ARE the checks: a belt prints its entry conditions, then writes one status or refuses cleanly
+
+**Chris, 2026-09-05:** *"This tool is essentially a reader/writer. It reads/writes the same
+things, in the same places, over and over again. It just echoes state back — it doesn't DO
+anything."* And on the belts: *"You say `close feature` and it goes `error: story xyz not
+closed`. It doesn't do anything, no feature closed, just a clean error. It wants all stories
+under it to be in any matching done state. Maybe they delete the offending stories, maybe they
+close them all with other CLI commands. That's the conveyor. The actions ARE the checks. And a
+`--force` flag does the action anyway."*
+
+**The ruling.** Every belt — `close story`, `close feature`, `release`, `adopt` — is a printed
+checklist derived from the config, followed by AT MOST ONE write: the status of the grain it was
+asked about, set to the first state in that kind's `done` list. Every check runs and every
+failing one prints, then: all true → the one write; any false → a clean error naming each
+failing check and NO write, exit 1. `--force` performs the write over failing checks and the
+ledger row says which checks were false. Nothing else is written, moved, bumped, retitled,
+pushed or tagged by a belt; what the caller should do next is printed as words.
+
+**What this supersedes.** D8 ("no belt step halts, the walk always finishes") keeps its read
+half — every check still runs and reports — and loses its write half: the automatic steps that
+performed status flips, version bumps, changelog retitles, pushes and tags are gone. A step is
+now a check, or it is not a step.
+
+**Rejected: keep the automatic steps and add `--dry-run`.** A belt that does eleven things
+unless you remembered a flag is the opposite of a reader/writer, and every one of those eleven
+is a place the machine decides what a move MEANS (rule 9).
+
+**Rejected: a check that halts on the first failure.** One error per run is a loop of runs;
+printing every failing condition at once is what makes the caller's next move obvious.
+
+**The cost accepted.** The release is no longer one command from a clean tree to a tag: after
+`release <version>` stamps the milestone done, bumping, retitling, pushing and tagging are the
+caller's, printed as a list. That is the point: the machine reads and writes the PM tree and
+says what it saw, and a human or an agent does the rest on purpose.

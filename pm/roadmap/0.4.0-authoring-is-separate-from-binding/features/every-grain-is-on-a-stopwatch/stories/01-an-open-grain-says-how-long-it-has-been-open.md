@@ -3,8 +3,8 @@ id: 0.4.0/every-grain-is-on-a-stopwatch/01-an-open-grain-says-how-long-it-has-be
 feature: 0.4.0/every-grain-is-on-a-stopwatch
 milestone: "0.4.0"
 name: An open grain says how long it has been open
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 
@@ -41,3 +41,10 @@ returns None while a grain is in flight, which is exactly the case nothing measu
 ## Out of scope
 
 Any gate, ceiling or refusal on the duration. Wall-clock anywhere but a report.
+
+## Close
+
+done: d0db6c4 — `ledger.open_seconds` + `human_duration`; `pm status` prints the age per open
+grain and `ledger report` the count/median/worst per kind.
+finding: the report key is `in_flight`, not `open` — `open` is a declared bug STATE and
+`test_pm_flow`'s no-state-literal gate caught it on the first run. Exactly the gate working.

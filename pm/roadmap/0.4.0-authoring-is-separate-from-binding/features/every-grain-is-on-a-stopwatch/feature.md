@@ -2,7 +2,7 @@
 id: 0.4.0/every-grain-is-on-a-stopwatch
 milestone: "0.4.0"
 name: every grain is on a stopwatch, and the tool says so
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

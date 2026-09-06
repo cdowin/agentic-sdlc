@@ -2,7 +2,7 @@
 id: 0.4.0/every-move-breadcrumbs-the-next-step
 milestone: "0.4.0"
 name: every move breadcrumbs the next step, derived from the declared flow
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

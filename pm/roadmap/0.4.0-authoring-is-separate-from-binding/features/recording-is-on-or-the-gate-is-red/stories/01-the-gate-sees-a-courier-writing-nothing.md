@@ -61,3 +61,9 @@ AC5 landed as a clause on `pm-execution.md` step 1: the flip is bookkeeping and 
 Every hook's behaviour. The routing rule (`0.4.0/one-rule-routes-a-row`, depended on). Attribution
 (`0.4.0/every-row-names-its-grain`). Somebody else's tree —
 `0.4.0/telemetry-arrives-with-the-bump` asks the same question of a consumer.
+merge: the rule is **U2, not D11**. 0.3.0 retired D7 into a new USAGE family and this asks U1's
+question one layer out — not *is this word used* but *is this capability doing anything*. Stock-ON
+for U1's argument: an opt-in warning about silence is itself silence.
+review M1: `_tree_has_a_row` returned True on the FIRST unreadable ledger, silencing the rule for
+the whole tree with no line printed, over exactly the artifact its own docstring names. The rule-4
+citation I wrote for it was backwards. Now `(found, unreadable)` and an UNVERIFIABLE line.

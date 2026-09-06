@@ -3,8 +3,8 @@ id: 0.4.0/every-move-breadcrumbs-the-next-step/01-a-move-prints-what-the-conveyo
 feature: 0.4.0/every-move-breadcrumbs-the-next-step
 milestone: "0.4.0"
 name: A move prints what the conveyor asks next
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 
@@ -49,3 +49,11 @@ reading its own registry back. *"You should run a review now"* is the engine hav
 
 Hooks — the corpus is opt-in and arming-dependent, so CLI output reaches every consumer and a hook
 reaches some. Any gate, refusal or nag.
+
+## Close
+
+done: d0db6c4 — `_breadcrumb` reads `[pm.states.<kind>]` for the category and `registry_for` for
+the checks; four call sites, one function. On STDERR, so the status line stays the one line a
+consumer parses — `run_cli` grew `stdout_only=` rather than loosening the two cases that assert it.
+finding: `[pm] breadcrumbs` is the second config key this milestone added; both are flags with a
+stock value, which is the shape `the-config-is-the-model` says a KNOB has.

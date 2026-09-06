@@ -107,3 +107,7 @@
 {"ts":"2026-09-06T23:35:42Z","kind":"status","grain":"0.4.0/every-row-names-its-grain","from":"building","to":"reviewing"}
 {"ts":"2026-09-06T23:36:55Z","kind":"status","grain":"0.4.0/every-row-names-its-grain","from":"reviewing","to":"done"}
 {"ts":"2026-09-06T23:47:20Z","kind":"status","grain":"0.4.0/the-read-verbs-compose","from":"building","to":"reviewing"}
+{"ts":"2026-09-06T23:56:32Z","kind":"status","grain":"0.4.0/every-move-breadcrumbs-the-next-step","from":"planning","to":"building"}
+{"ts":"2026-09-06T23:56:32Z","kind":"status","grain":"0.4.0/every-move-breadcrumbs-the-next-step/01-a-move-prints-what-the-conveyor-asks-next","from":"planning","to":"building"}
+{"ts":"2026-09-06T23:56:32Z","kind":"status","grain":"0.4.0/every-grain-is-on-a-stopwatch","from":"planning","to":"building"}
+{"ts":"2026-09-06T23:56:32Z","kind":"status","grain":"0.4.0/every-grain-is-on-a-stopwatch/01-an-open-grain-says-how-long-it-has-been-open","from":"planning","to":"building"}

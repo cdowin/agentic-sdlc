@@ -57,3 +57,7 @@ AC5 held: `test_cli_surface.py` asserts the routed verb set is unchanged.
 
 Any new verb or flag. Making recording work — the other three telemetry features. Rewriting
 `pm-operations` beyond what its description needs to say.
+review M2: this story's close claimed the AC5 case "asserts the routed verb set is unchanged".
+It asserted `documented == routed` — the conjunction of two cases already in the file, which would
+pass a verb that was added AND documented. AC5 is true; the claim about the test was not. It
+asserts the routed COUNT now.

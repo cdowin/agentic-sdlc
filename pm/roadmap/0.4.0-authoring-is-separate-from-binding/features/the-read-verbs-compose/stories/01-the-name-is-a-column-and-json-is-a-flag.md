@@ -49,3 +49,10 @@ tab-separated form; `--json` keeps the byte.
 ## Out of scope
 
 Adding filter flags — the behaviour this story exists to make unnecessary.
+review M1: the criterion says EVERY read verb, and `pm next`, `pm roadmap` and bare `pm order`
+did not name their columns. They do; the case that asserted exactly two occurrences reddened on its
+own fix and now counts against the verbs that emit rows.
+review M2: the shipped `pm-operations` roster still listed the four old columns and never mentioned
+`--json`. Fixed. Everything below MAJOR is recorded in the review and CARRIED (0.3.0's severity
+rule) — the three worth picking up are `dict(zip)` wanting `strict=True`, `--json`'s missing
+refusal row, and `\r` / non-ASCII in a `name`.

@@ -1,24 +1,8 @@
-"""sdlc_doc.py — the protocol document, RENDERED from the lists that run.
+"""sdlc_doc.py — `docs/sdlc-protocol.md`, rendered from the lists that run.
 
-`agentic-sdlc install-sdlc` writes `docs/sdlc-protocol.md`. Every check line
-in it comes from `[<operation>] steps` and the registry those names resolve
-against, every "then:" line from `steps.AFTER`, and the write from the
-project's own `[pm.states.<kind>] done` — never from a table of prose kept
-here. Change the config, re-run the verb, and the document changes with it.
-A hand-written document DESCRIBING the checks recreates the drift this
-package measured three times in one milestone.
-
-Two rules this module is written to:
-
-1. **It holds no per-check text.** The sentences live in `steps.STEP_DOC`,
-   beside the `check()` that asks them; the after-lists in `steps.AFTER`; the
-   not-a-check guidance in `steps.GUIDANCE`.
-2. **It writes a WHOLE file it owns.** It never splices into `SDLC.md`
-   (rule 3); `SDLC.md` LINKS here.
-
-The output is a function of CONFIG ALONE: nothing here reads the clock, the
-environment or the working tree, so two repos with the same config render
-byte-identical documents.
+Every check line comes from `[<operation>] steps` and `steps.STEP_DOC`, every
+"then:" line from `steps.AFTER`; nothing here holds per-check text or reads the
+clock or the tree, so two repos with one config render byte-identical files.
 """
 from __future__ import annotations
 
@@ -37,19 +21,14 @@ OPERATIONS = driver.OPERATIONS
 
 
 def _cell(text: str) -> str:
-    """One markdown table cell. A `|` inside would open a column that is not
-    there; a check NAME can never carry one (the grammar is `[a-z][a-z0-9-]*`)
-    so this only guards the prose halves."""
+    """One markdown table cell; a `|` inside would open a column that is not
+    there."""
     return text.replace('|', '\\|').replace('\n', ' ')
 
 
 def _write_line(operation: str) -> str:
-    """What the belt writes when every check is true. The WORD is not
-    rendered — it is `[pm.states.<kind>] done`'s first entry, read by the
-    belt at run time and printed by `pm vocabulary` — so this document stays
-    a function of the check lists alone: `init` renders it before `pm init`
-    has written the flow, and a project that renames a state does not leave
-    a stale document behind."""
+    """What the belt writes when every check is true. The state word is not
+    rendered, so the document stays a function of the check lists alone."""
     kind = driver.WRITES[operation]
     if not kind:
         return ('**Then:** nothing. `adopt` writes nothing; it is checks '
@@ -63,11 +42,10 @@ def _write_line(operation: str) -> str:
 
 
 def _table(operation: str) -> list[str]:
-    """The ordered check list for one operation, as rows, or why there is
-    none — a SENTENCE, never an empty section that reads as complete."""
+    """The ordered check list for one operation as rows, or a sentence saying
+    why there is none."""
     known = driver.registry_for(operation)
-    # A `ConfigError` PROPAGATES: exit 2 from the verb before a byte is
-    # rendered, never a document with a note where a list should be.
+    # A `ConfigError` propagates: exit 2 before a byte is rendered.
     names = steps.steps_for(operation, known)
     if not names:
         return [f'> `[{operation}] steps` is not configured in this repo, and '

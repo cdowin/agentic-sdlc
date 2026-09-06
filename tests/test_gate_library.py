@@ -297,22 +297,19 @@ def test_verbose_streams_the_same_transcript_the_log_holds(tmp_path):
 
 # --- the argument surface: what the script REFUSES ---------------------------
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)
-@pytest.mark.parametrize('argv', [
-    ('--nope',),                 # an unknown verb
-    ('-x',),                     # an unknown short flag
-    ('--self-test', 'extra'),    # a known verb with an argument it does not take
-    ('--help', '--self-test'),   # two verbs
-    ('',),                       # an empty argument is not "no argument"
-], ids=['unknown', 'short', 'verb-plus-extra', 'two-verbs', 'empty'])
-def test_an_argument_the_script_does_not_take_is_refused_as_a_usage_error(script,
-                                                                         argv):
-    done = run(str(script), *argv)
-    assert done.returncode == 2, (
-        f'{script.name} {argv} -> {done.returncode}\n{done.stdout}{done.stderr}')
-    # Exit 2 for the RIGHT reason: a refusal names the remedy. Without this the
-    # empty-argument case passed off a downstream "library not found" as the
-    # argument check working.
-    assert '--help' in done.stdout + done.stderr, done.stdout + done.stderr
+def test_an_argument_the_script_does_not_take_is_refused_as_a_usage_error(script):
+    for argv in (('--nope',),                 # an unknown verb
+                 ('-x',),                     # an unknown short flag
+                 ('--self-test', 'extra'),    # a known verb with an extra argument
+                 ('--help', '--self-test'),   # two verbs
+                 ('',)):                      # an empty argument is not "no argument"
+        done = run(str(script), *argv)
+        assert done.returncode == 2, (
+            f'{script.name} {argv} -> {done.returncode}\n{done.stdout}{done.stderr}')
+        # Exit 2 for the RIGHT reason: a refusal names the remedy. Without this
+        # the empty-argument case passed off a downstream "library not found"
+        # as the argument check working.
+        assert '--help' in done.stdout + done.stderr, (argv, done.stdout + done.stderr)
 
 
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)

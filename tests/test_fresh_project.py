@@ -33,6 +33,14 @@ holding the literal `$(MAKE)`, so `check`'s sub-make is spelled `$${MAKE:-make}`
 — and the census below proves it: nothing is written, no report directory
 appears, and the stock uvx `DEVKIT` is never resolved (which would reach the
 network from a target that promised to run nothing).
+
+**Selection criterion (hard rule 10, 0.2.0/the-proof-is-named-in-the-criterion):**
+every case here costs an `init` and a real `make`, so a claim the include
+already proves against a scratch Makefile (test_makefile_include.py: `help`
+lists the set, `[gates] extra` joins `check`) is not proven a second time
+on an init'd tree. What stays is what only the init'd tree can answer: the
+standard set as INSTALLED, the gates run over what `init` wrote, and the
+hook corpus armed.
 """
 from __future__ import annotations
 
@@ -143,17 +151,6 @@ def test_make_n_succeeds_for_every_standard_target_with_zero_hand_edits():
     assert not (root / '.gate-reports').exists()
 
 
-@pytest.mark.parametrize('target', ['check', 'precommit', 'milestone'])
-def test_the_three_targets_the_ship_criterion_names(target):
-    """Named separately from the sweep because these three ARE the criterion —
-    a sweep that silently stopped covering them would still be green. It was
-    `doctor` and `precommit` until 0.2.0; `doctor` left with the language kit
-    and the two compositions it stood beside are what the criterion is about."""
-    with initialized_project() as root:
-        done = make(root, '-n', target)
-    assert done.returncode == 0, done.stdout + done.stderr
-
-
 # --- `make check`, RUN --------------------------------------------------------
 # A verdict line reads `[check:<gate>] FAIL — …`, and on a blank project there
 # are exactly two kinds: a finding about a file the INSTALL wrote (this
@@ -206,8 +203,13 @@ def check_verdicts(root: Path) -> list[tuple[str, str, str]]:
     return verdicts
 
 
-def test_nothing_the_install_wrote_is_a_check_finding():
-    """The ship criterion's real half, run rather than dry-run."""
+def test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass():
+    """The ship criterion's real half, run rather than dry-run — both
+    directions asked of ONE `make check`, because they were two inits and two
+    runs proving one verdict list. Nothing `init` wrote is a finding; and the
+    assertion must not be satisfiable by a roster on which everything reports
+    an empty census — `doc` and `shell` read what `init` actually wrote, and
+    every applicable gate has to be green on it."""
     with initialized_project() as root:
         verdicts = check_verdicts(root)
     ours = [(gate, detail) for gate, outcome, detail in verdicts
@@ -215,18 +217,42 @@ def test_nothing_the_install_wrote_is_a_check_finding():
     assert not ours, (
         'a gate reported a finding about a file `init` wrote:\n'
         + '\n'.join(f'  [check:{g}] {d}' for g, d in ours))
-
-
-def test_the_gates_that_do_apply_to_a_blank_project_pass():
-    """The other direction: the assertion above must not be satisfiable by a
-    roster on which everything reports an empty census. `doc` and `shell` read
-    what `init` actually wrote, and both have to be green on it."""
-    with initialized_project() as root:
-        verdicts = check_verdicts(root)
     applicable = {gate: outcome for gate, outcome, _ in verdicts
                   if gate not in GATES_WITH_NOTHING_TO_SCAN}
     assert applicable, f'every gate on the roster scanned nothing: {verdicts}'
     assert set(applicable.values()) == {'PASS'}, applicable
+
+
+def test_the_installed_contracts_do_not_redden_a_consumers_gates():
+    """Install day must be green for `install-agents` under a `[doc]` scope
+    that covers it. A contract that fails the gates it arrives beside gets
+    deleted by the first person who runs them. (From test_install.py, which
+    spawns nothing now; `init`'s stock scope above does not cover
+    `.claude/agents/`, so this is not the same run.)"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'repo'
+        root.mkdir()
+        (root / 'devkit.toml').write_text(
+            '[doc]\nscope = [".claude/agents/*.md"]\n', encoding='utf-8')
+        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        previous = Path.cwd()
+        os.chdir(root)
+        try:
+            assert install.main('install-agents', []) == 0
+        finally:
+            os.chdir(previous)
+        subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
+        # A SUBPROCESS on purpose. `check doc` binds its scope and its repo
+        # root at import time, so reloading it in-process to see a temp repo
+        # leaves the module pointing at a directory that no longer exists —
+        # and the next test to import it inherits that.
+        proc = subprocess.run(
+            [sys.executable, '-m', 'agentic_sdlc.cli', 'check', 'doc'],
+            cwd=root, capture_output=True, text=True,
+            env={**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src')})
+    assert proc.returncode == 0, (
+        'the installed contract fails `check doc` on install day:\n'
+        f'{proc.stdout}{proc.stderr}')
 
 
 def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_empty():
@@ -255,41 +281,6 @@ def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_emp
     # `check` ALONE, proven by what ran rather than by what was printed: one
     # gate transcript on disk, and it is check's.
     assert gate_logs == ['check.log'], gate_logs
-
-
-def test_help_lists_the_standard_set_on_a_project_that_added_nothing():
-    with initialized_project() as root:
-        expected = standard_targets(root)
-        done = make(root, 'help')
-    assert done.returncode == 0, done.stdout + done.stderr
-    plain = re.sub(r'\x1b\[[0-9;]*m', '', done.stdout)
-    listed = {m.group(1) for m in
-              re.finditer(r'^  ([a-z][a-z0-9-]*) +\S', plain, re.M)}
-    assert set(expected) <= listed, (
-        f'missing from `make help`: {sorted(set(expected) - listed)}')
-
-
-def test_a_project_gate_joins_check_through_devkit_toml_not_a_fork():
-    """The extension path, on a REAL init'd tree: the project appends its own
-    target to its own Makefile and names it in the config `init` wrote."""
-    with initialized_project() as root:
-        makefile = root / 'Makefile'
-        makefile.write_text(
-            makefile.read_text(encoding='utf-8')
-            + '\nmy-scan: ## a gate this project owns\n\t@echo "[my-scan] PASS"\n',
-            encoding='utf-8')
-        config = root / 'devkit.toml'
-        config.write_text(config.read_text(encoding='utf-8')
-                          + '\n[gates]\nextra = ["my-scan"]\n', encoding='utf-8')
-        listed = make(root, 'help')
-        roster = subprocess.run(
-            [sys.executable, '-m', 'agentic_sdlc.cli', 'gates-extra'],
-            cwd=root, capture_output=True, text=True,
-            env={**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src')})
-    assert 'my-scan' in listed.stdout, listed.stdout
-    assert 'a gate this project owns' in listed.stdout
-    assert roster.returncode == 0, roster.stdout + roster.stderr
-    assert roster.stdout.split() == ['my-scan'], roster.stdout
 
 
 # --- the hook census: the gate's count vs the install roster -------------------

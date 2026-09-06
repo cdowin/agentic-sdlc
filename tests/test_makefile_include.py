@@ -208,14 +208,18 @@ def test_the_framework_names_no_language_kits_target():
         f'GDK_TIERS_MK names, not in the framework')
 
 
-@pytest.mark.parametrize('target', STANDARD)
-def test_make_n_succeeds_for_every_standard_target(target):
+def test_make_n_succeeds_for_every_standard_target():
     """Parse the whole Makefile, resolve the target, expand its recipe — with
     the STOCK `DEVKIT` (uvx), because a dry run that reached the network would
-    be a dry run in name only."""
+    be a dry run in name only. One project, every target: standing one up
+    per target proved the same thing five times."""
     with project() as root:
-        done = make(root, '-n', target)
-    assert done.returncode == 0, done.stdout + done.stderr
+        failed = {}
+        for target in STANDARD:
+            done = make(root, '-n', target)
+            if done.returncode != 0:
+                failed[target] = done.stdout + done.stderr
+    assert not failed, failed
 
 
 def test_a_dry_run_of_check_runs_nothing_at_all():
@@ -386,19 +390,20 @@ def test_tiers_actually_run_in_the_composition():
     assert lines[1:] == ['[KIT-PARSE] PASS', '[KIT-UNIT] PASS'], done.stdout
 
 
-@pytest.mark.parametrize('goal', ['help', 'check', 'precommit', 'milestone'])
-def test_neither_tier_path_warns_about_an_undefined_variable(goal):
+def test_neither_tier_path_warns_about_an_undefined_variable():
     """`--warn-undefined-variables` is on. Both tier variables are defined
     before use in the include-ABSENT path too, which is the path a project
-    with no language kit takes on every single run."""
+    with no language kit takes on every single run. Two projects, four goals
+    each — not eight projects."""
     for tiers in (None, TIERS_MK):
         with project(tiers=tiers) as root:
-            done = make(root, '-n', goal, stubbed(root))
-        assert done.returncode == 0, done.stdout + done.stderr
-        warnings = [ln for ln in done.stderr.splitlines()
-                    if 'undefined variable' in ln]
-        assert not warnings, (f'tiers={"set" if tiers else "absent"}: '
-                              f'{warnings}')
+            for goal in ('help', 'check', 'precommit', 'milestone'):
+                done = make(root, '-n', goal, stubbed(root))
+                assert done.returncode == 0, (goal, done.stdout + done.stderr)
+                warnings = [ln for ln in done.stderr.splitlines()
+                            if 'undefined variable' in ln]
+                assert not warnings, (
+                    f'{goal}, tiers={"set" if tiers else "absent"}: {warnings}')
 
 
 # --- story 02: a named tier that resolves to nothing is loud -------------------
@@ -490,11 +495,13 @@ def test_an_unrelated_goal_is_not_held_hostage_by_a_tier_typo():
 
 
 # --- the shape of the file ----------------------------------------------------
-@pytest.mark.parametrize('target', WRAPPED)
-def test_a_tool_with_no_verdict_of_its_own_gets_one_here(target):
-    body = recipes()[target]
-    assert '$(call gdk_gate,' in body or 'gdk_gate_verdict' in body, (
-        f'{target} prints whatever its tool prints instead of one verdict line')
+def test_a_tool_with_no_verdict_of_its_own_gets_one_here():
+    bodies = recipes()
+    bare = [target for target in WRAPPED
+            if '$(call gdk_gate,' not in bodies[target]
+            and 'gdk_gate_verdict' not in bodies[target]]
+    assert not bare, (
+        f'{bare} print whatever their tool prints instead of one verdict line')
 
 
 def test_the_compositions_add_no_output_of_their_own():
@@ -613,24 +620,25 @@ SHADOWABLE_TIERS = (
 )
 
 
-@pytest.mark.parametrize('shadow', ['dir', 'file'])
-@pytest.mark.parametrize('composition', ['precommit', 'milestone'])
-def test_a_tier_shadowed_by_a_same_named_path_still_runs(shadow, composition):
+def test_a_tier_shadowed_by_a_same_named_path_still_runs():
     """The framework's `.PHONY` covers the tiers the kit declared, so a
-    `test/` directory beside a `test` tier cannot silently shorten the gate."""
-    with project(tiers=SHADOWABLE_TIERS) as root:
-        if shadow == 'dir':
-            (root / 'test').mkdir()
-        else:
-            (root / 'test').write_text('not a target\n', encoding='utf-8')
-        done = make(root, composition, stubbed(root))
-    output = done.stdout + done.stderr
-    assert done.returncode == 0, output
-    assert '[KIT-PARSE] PASS' in output, output
-    assert '[KIT-TEST] PASS' in output, (
-        f'the `test` tier was shadowed by a {shadow} of the same name and did '
-        f'not run — a gate list that quietly gets shorter is the one failure a '
-        f'gate must never have (T1)')
+    `test/` directory beside a `test` tier cannot silently shorten the gate.
+    Both shadow shapes, both compositions, two projects."""
+    for shadow in ('dir', 'file'):
+        with project(tiers=SHADOWABLE_TIERS) as root:
+            if shadow == 'dir':
+                (root / 'test').mkdir()
+            else:
+                (root / 'test').write_text('not a target\n', encoding='utf-8')
+            for composition in ('precommit', 'milestone'):
+                done = make(root, composition, stubbed(root))
+                output = done.stdout + done.stderr
+                assert done.returncode == 0, (shadow, composition, output)
+                assert '[KIT-PARSE] PASS' in output, (shadow, composition, output)
+                assert '[KIT-TEST] PASS' in output, (
+                    f'{composition}: the `test` tier was shadowed by a {shadow} '
+                    f'of the same name and did not run — a gate list that quietly '
+                    f'gets shorter is the one failure a gate must never have (T1)')
 
 
 def test_the_shadow_fixture_would_catch_a_missing_phony():

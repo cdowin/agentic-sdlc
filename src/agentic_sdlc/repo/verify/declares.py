@@ -1,91 +1,11 @@
-"""declares.py — the REVERSE direction: a test declares what it covers.
+"""declares.py — the reverse direction: a test declares what it covers.
 
-Forward rules infer the mapping from structure, which suits unit tests. Reverse
-rules read it out of the test itself, which is the only thing that works for
-integration: only the scenario knows what it exercises, and no path glob could
-infer it. Both ship; neither is chosen over the other.
-
-    [[verify.narrow]]
-    declares = "## covers:"
-    scan     = "tests/integration/**"
-    run      = "make scenario NAME=<stem>"
-
-and in `tests/integration/checkout.md`:
-
-    ## covers: src/agentic_sdlc/repo/pm/ledger.py src/agentic_sdlc/repo/pm
-
-A changed path listed under that header selects that file's `run`, with
-`<stem>` bound to the declaring file's stem (`checkout`) — the only capture
-this direction has, and DERIVED rather than declared.
-
-THE TWO ZERO-CENSUSES, WHICH ARE WHY THIS MODULE EXISTS. Hard rule 4: a gate
-scanning nothing must say so, loudly. A reverse rule has two ways to scan
-nothing and they are not the same fact, so `Scan` carries both numbers and a
-caller cannot read either as "nothing to run":
-
-  * `scanned = 0` — the `scan` glob matched no tracked file at all. The louder
-    case: a rule pointed at a directory that was renamed away rots into a rule
-    that quietly matches nothing, forever. `verify --check` turns this into a
-    finding.
-  * `scanned = N, declaring = 0` — files were found and none of them carries
-    the header. A corpus that has drifted away from the rule that reads it.
-
-THE HEADER GRAMMAR, RULED HERE:
-
-  * `declares` is a LITERAL LINE PREFIX, never a pattern. Nothing here
-    compiles it, escapes it, or matches with it — `declares = "## covers.*:"`
-    looks for those exact characters at the start of a line, so a file
-    containing `## coversXYZ:` does NOT match it. `rules.py` already refuses
-    the metacharacters that would tempt an author; this is the other half.
-  * One line. Paths are whitespace-separated.
-  * A covered path matches a changed path as a PREFIX ON SEGMENT BOUNDARIES,
-    so a declared directory covers the files under it and `src/a` never covers
-    `src/ab`. That off-by-one is the one that silently over-selects.
-  * A header INSIDE A FENCED CODE BLOCK is not a declaration. Documentation
-    showing the syntax is not a claim about coverage — the same near-miss
-    `repo/pm/verdict.py` already solved, and it is solved the same way here:
-    through `core.markdown`, which owns the CommonMark fence rules and reports
-    an unterminated fence rather than letting it mask the rest of the file.
-  * A header listing NOTHING is a FINDING, not an empty coverage set. A test
-    declaring it covers nothing has a header somebody meant to fill.
-  * A header repeated twice in one file is a FINDING naming both line numbers.
-    Which one wins is not a thing this parser may pick.
-
-READING IS BOUNDED AND SPAWNS NOTHING. `stat` first, so a file over MAX_FILE
-is REPORTED by size rather than read whole; each file is read exactly once; the
-header is taken from the one matching line. Stdlib only, no `subprocess` — the
-audit measured `pm-shape-scan` spending 34.8 s on four spawns per file across
-683 markdown files, and that defect is why this feature exists at all.
-
-THE REFUSAL MATRIX — the header is a PAYLOAD PARSER (SDLC.md §5). Its content
-is written by whoever wrote the test, and it is a value that ends up beside a
-command line. Every refusal below is a FINDING naming the declaring file, and
-the whole declaration is dropped rather than half-kept: a file whose header is
-partly unusable covers nothing knowable.
-
-    ../../etc/passwd, /etc/passwd     traversal, absolute — hard rule 8
-    ~/x, file:///x, https://x         home expansion, schemes
-    ., .., a//b, a/./b, a trailing /  empty and dot segments
-    $(id), `id`, a;b, a|b, a&b, a>b   shell fragments. They reach `run`
-                                      through nothing today, and a covered
-                                      path that is a shell fragment is one
-                                      refactor away from being interpolated
-    <name>                            captures are declared in config, never
-                                      found in the tree
-    a backslash                       not a separator here
-    a header line over MAX_HEADER     bounded, refused, never read as a value
-    a file over MAX_FILE              reported by size, not read
-    not UTF-8 decodable               reported by path — never a crash, and
-                                      never a silent skip
-
-A declaring file that is a symlink is not followed: this module resolves
-nothing and opens the path it was handed, which is a path git already told the
-caller is tracked.
-
-THIS MODULE DOES NOT ENUMERATE, CALL GIT, OR READ CONFIG. `tracked` is an
-argument — the verb (story 04) owns git — and the parsed rules arrive from
-`rules.read`. A scanner that walked the tree itself could not be tested against
-a fixed corpus, and the answer would differ per machine (hard rule 8).
+A reverse rule (`declares` / `scan` / `run`) selects a scanned file's `run`,
+with `<stem>` bound, when a changed path is under a path its header line lists
+(segment-bounded prefix; a header inside a code fence does not count). `Scan`
+carries two zero-censuses because they are different facts; reading is bounded
+and spawns nothing; a hostile header is dropped whole (`_why_not_a_path`).
+`tracked` is an argument so a scan is testable against a fixed corpus.
 """
 from __future__ import annotations
 
@@ -97,29 +17,23 @@ from agentic_sdlc.core import markdown
 from agentic_sdlc.repo.verify.rules import REVERSE, Rule
 from agentic_sdlc.repo.verify.select import SelectionError, substitute
 
-# A scanned file past this is REPORTED by size, never read. A declaring header
-# lives in the first screenful of a test; a megabyte is a fixture, a vendored
-# blob, or a generated artefact that wandered into the scan glob.
+# A header lives in the first screenful; a megabyte is a fixture or a blob,
+# reported by size and never read.
 MAX_FILE = 1_000_000
-# One header LINE. A 100 KB line is a payload, and reading it into a value that
-# sits beside a command line is the thing this cap exists to refuse.
+# A 100 KB header line is a payload, not a declaration.
 MAX_HEADER = 4096
-# How many paths one header may declare. A test covering more than this has
-# stopped being a declaration and become a manifest.
+# Past this a declaration has become a manifest.
 MAX_COVERS = 64
 
-# What a covered path may not contain. The union of "this is not a path" and
-# "this would be a shell fragment if anything interpolated it".
+# Not-a-path characters plus shell fragments, since the value sits beside a
+# command line.
 COVER_FORBIDDEN = frozenset(';|&$`()<>#\\~:\'" ')
 
 
 @dataclass(frozen=True)
 class Declaration:
-    """One declaring file: what it covers, and the command that runs it.
-
-    `command` is `rule.run` with `<stem>` already bound, so a caller never
-    re-derives it — one substituter (`select.substitute`) for both directions.
-    """
+    """One declaring file: what it covers, and `rule.run` with `<stem>`
+    bound."""
 
     path: str
     stem: str
@@ -139,11 +53,8 @@ class Declaration:
 class Scan:
     """One reverse rule's read of the tree: both censuses, and every finding.
 
-    `scanned` and `declaring` are separate fields rather than a derived length
-    because they are separate facts, and the caller is required to surface
-    both: `scanned == 0` is a rule pointed at nothing, `declaring == 0` over a
-    non-zero `scanned` is a corpus that drifted from the rule reading it.
-    Neither may read as "nothing to run".
+    `scanned == 0` is a glob matching nothing; `declaring == 0` over a non-zero
+    `scanned` is a corpus that drifted. Neither reads as "nothing to run".
     """
 
     index: int
@@ -165,13 +76,8 @@ class Scan:
 
 
 def scan(rule: Rule, tracked: Iterable[str], root: Path) -> Scan:
-    """Read one REVERSE rule's `scan` glob over `tracked`, in sorted path order.
-
-    Deterministic and idempotent: the same corpus gives the same Scan, in the
-    same order, every time — `tracked` is sorted here rather than trusted to
-    arrive ordered, because `git ls-files`'s order is git's business and a
-    plan that changes between two identical runs cannot be reviewed.
-    """
+    """One reverse rule's `scan` glob over `tracked`, sorted here so the same
+    corpus always gives the same Scan."""
     if rule.kind != REVERSE:  # pragma: no cover - the verb filters by kind
         raise ValueError(f'[verify.narrow] #{rule.index} is not a reverse rule')
     matched = sorted(path for path in tracked
@@ -188,12 +94,8 @@ def scan(rule: Rule, tracked: Iterable[str], root: Path) -> Scan:
 
 
 def resolve(scans: Sequence[Scan], rule: Rule, changed: str) -> str | None:
-    """`select`'s reverse resolver: the command a reverse rule claims for a path.
-
-    First declaring file wins, in the scan's sorted order — the same
-    first-match-wins ruling `select.py` applies to rules, one level down, and
-    for the same reason: two files declaring one path must not run twice.
-    """
+    """The command a reverse rule claims for `changed`, or None; the first
+    declaring file wins, in scan order."""
     for one in scans:
         if one.index != rule.index:
             continue
@@ -205,11 +107,8 @@ def resolve(scans: Sequence[Scan], rule: Rule, changed: str) -> str | None:
 
 def _one_file(rule: Rule, path: str, root: Path,
               findings: list[str]) -> Declaration | None:
-    """One scanned file's declaration, or None — appending anything it found.
-
-    Bounded by `stat` BEFORE the read, so an oversized file costs a stat and
-    a finding rather than a megabyte of memory.
-    """
+    """One scanned file's declaration, or None, appending any finding; `stat`
+    before the read keeps an oversized file to a finding."""
     where = f'[verify.narrow] #{rule.index} {path}'
     target = root / path
     try:

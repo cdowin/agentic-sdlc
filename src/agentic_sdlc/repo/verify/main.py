@@ -1,115 +1,22 @@
 """verify — what proves THIS edit, at the altitude you are working at.
 
-    agentic-sdlc verify --story [--ref <rev>]   # the edit. Alias: --changed
-    agentic-sdlc verify --feature               # the range, one step wider
-    agentic-sdlc verify --milestone             # everything, once
+    agentic-sdlc verify --story [--ref <rev>] [--to <rev>] [--ignore <path>]...
+    agentic-sdlc verify --feature               # the range rung
+    agentic-sdlc verify --milestone             # the close
     agentic-sdlc verify --plan  [--ref <rev>]   # print all three, run NOTHING
     agentic-sdlc verify --check                 # validate [verify] vs the tree
 
-THE LADDER HAS THREE RUNGS (decision D3), and `--plan` is why this is a verb
-and not a make target: an orchestrator writing a dispatch can ASK THE REPO what
-the narrow command is instead of guessing, and the answer stays true as the
-tree grows. The measured case that made this necessary: a full suite is 154 s
-and a single module 0.9 s, and an agent fixing eleven failures ran the full
-suite after each one — 31 minutes — because the dispatch named one command and
-nothing told it there was another.
+`--story` (alias `--changed`) runs the `[[verify.narrow]]` commands the changed
+paths select, deduplicated, in declaration order; a path matching no rule is
+named and the `milestone` rung runs instead. `--feature` and `--milestone` run
+the make target `[verify]` names. `--plan` prints each rung's measured cost
+from the ledger's `gate` rows, or the word `unknown` — never a guess.
+`--ignore` drops a path the caller wrote during this run; `--to` closes the
+range at a commit. A `[verify]` section that is absent is exit 2 for every
+flag.
 
-  * `--story` is a FUNCTION of the changed paths: the diff is read from git,
-    each path is matched against `[[verify.narrow]]`, and the deduplicated
-    commands run in declaration order.
-  * `--feature` and `--milestone` run the make target `[verify]` names. The
-    Makefile stays the authority on what a target RUNS.
-
-`--feature` DOES NOT CLAIM TO BE RANGE-SCOPED. It runs the composition the
-project names for that rung; scoping to a feature's commit range needs that
-feature's first commit, which is derivable from the ledger and is not derived
-in 0.2.0. A rung that claimed a narrowing it does not perform would be a false
-PASS with a scope on it, which is worse than an honest wide one.
-
-A MISS IS LOUD AND FALLS BACK TO THE WIDEST RUNG. A changed path matching no
-rule is printed on its own line, and then `milestone` runs — its exit code is
-the answer. A narrow verifier that matches nothing and exits 0 is worse than no
-verifier: it reports success for work it never checked, which is hard rule 4's
-read-side cardinal sin. That is the single most dangerous failure in this
-design, so the fallback is unconditional and not a heuristic.
-
-THE RATIO IS MEASURED OR IT IS `unknown`. `--plan` reads `gate` rows out of
-`pm/roadmap/<building>/ledger.jsonl` — `duration_ms` (MILLISECONDS), `census`
-and `verdict` — and prints the cost beside each rung. Where no row exists the
-cost is the literal word `unknown`, and so is the ratio. **A fabricated ratio
-is worse than no ratio, because it gets quoted.** Never a guess, never an
-assumed 1.0.
-
-`--plan` RUNS NOTHING. Not the rungs, not the narrow commands, not `make -n`.
-It reads git, config, the tree and the ledger, and it prints.
-
-EXIT CODES ARE CONTRACT (hard rule 6):
-
-    0  the rung passed, the plan printed, or `--check` found nothing
-    1  a verification command failed, or `--check` found something
-    2  usage, a `[verify]` config problem, or git missing/unusable
-
-A command exiting 2 is reported as 1 with its own code printed beside it. Rule
-6 reserves 2 for "you or your config are wrong", and a `make` that happens to
-exit 2 must never reach a caller looking like a devkit config error.
-
-`run` IS PASSED TO A SHELL, deliberately: a project's verification IS a command
-line, and `python3 -m pytest tests/test_pm_*.py` needs the glob expanded. The
-guard is threefold and it is stated here because it is the riskiest thing this
-package does. First, `run` comes from a tracked file the repo owns. Second,
-`rules.py` refuses every spelling that makes one command into two — `;` `|`
-`&` `$` backtick `(` `)` `<` `>` `#` `\\` and any newline — so what reaches the
-shell is one command by construction. Third, `--plan` exists so a caller can
-READ the command before anything runs it.
-
-THE REFUSAL MATRIX — argv is an input surface (SDLC.md §5):
-
-    no flag                     exit 2 with usage. NOT a default to --story,
-                                which would run commands nobody asked for
-    two modes, or three         exit 2 — which one it should have been is not
-                                a thing this verb may pick
-    --ref with no value         exit 2
-    --ref twice                 exit 2 (WHETHER and WHAT are two questions)
-    --ref ''                    exit 2 — an empty rev names the INDEX to git,
-                                a different tree from any commit's
-    --ref '--plan'              exit 2 — the next flag is never adopted as a
-                                rev; position in argv is the only thing
-                                between a value and git running an option
-    --ref with whitespace,      exit 2 — one argument that spells two
-      a newline, or a NUL
-    --ref that does not resolve exit 2, in git's own words
-    --ref beside --feature,     exit 2 — those rungs have no diff, and a
-      --milestone or --check    silently-ignored flag is a lie about scope
-    -x, --nope, --changed=1     exit 2 naming it, never silently ignored
-    a positional argument       exit 2 — this verb takes none
-    --help                      the module docstring, exit 0, runs nothing
-
-The rev reaches git as ONE argv element and never through a shell.
-
-`[verify]` ABSENT IS EXIT 2 FOR ALL FIVE FLAGS, naming the section. A `--plan`
-that prints nothing and exits 0 is the same lie one step earlier than a
-`--story` that runs nothing and exits 0.
-
-WHAT `--check` CAN ANSWER, AND WHAT IT SAYS IT DID NOT (finding S3, ruled here
-because story 05's `## Close` found the same gap by other means):
-
-  * a rung's or a `run`'s `make <target>` is held against the Makefile — TEXT
-    in this checkout, parsed, never `make -n`.
-  * a `run` that is not `make <target>` is NOT validated, and the census says
-    how many of those there were. "Is `uv run … python -m pytest` runnable" is
-    a fact about the MACHINE — PATH, an interpreter's installed packages — and
-    a gate whose verdict moves with the machine answers differently in CI than
-    in a checkout, which is hard rule 8's reason for vendoring fixtures. The
-    cheap version does not even catch the case we have MEASURED: story 05's
-    fifteen rules spelled `python3 -m pytest`, and `python3` is on PATH, so a
-    `shutil.which` on the first word passes all fifteen. What catches it is
-    importing pytest under that interpreter, which boots something (hard rule
-    2). A validation that passes the only case we have observed is worse than
-    none, because it turns an unchecked thing into a checked-LOOKING one.
-  * a rule that can never be FIRST is a finding (S1). The property that matters
-    is a whole-set one — first matching rule wins per path — so it is asked by
-    running the selector over the tracked corpus, not by asking each glob in
-    isolation whether it matches anything.
+Exit: 0 pass | 1 a command failed or `--check` found drift | 2 usage, config,
+or git. A command's own exit 2 is reported as 1, with its code beside it.
 """
 from __future__ import annotations
 
@@ -139,26 +46,19 @@ NOT_A_REPO = ('this is not a git repository, so there is no diff to read — '
               'the story rung is a function of the changed paths and there '
               'are none to compute from')
 
-# The story rung's own name in output and in `--plan`. `--changed` is the
-# alias the feature file introduced it under, kept because a dispatch that
-# already quotes it must not break.
+# `--changed` is the alias a dispatch may already quote.
 STORY = 'story'
 CHANGED = 'changed'
 
-# Ladder order, narrow to wide. Printed in this order and run in this order,
-# so "which is the loop and which is the close" is visible rather than known.
+# Ladder order, narrow to wide — printed and run in this order.
 LADDER = (STORY, FEATURE, MILESTONE)
 RUNG_BLURB = {STORY: 'the edit', FEATURE: 'the range', MILESTONE: 'the close'}
 
-# What `--check` reads to answer "does this target exist". TEXT, parsed — never
-# `make -n`, which would run a build to answer a question about a name (hard
-# rule 2: nothing here boots anything).
+# `--check` reads the Makefile as text, never `make -n` (rule 2).
 MAKEFILE = makefile.MAKEFILE
 MAKE_PROGRAM = 'make'
 
-# A rev arrives from argv and goes to git as one element. These three shapes
-# are refused HERE rather than trusted to stay a value — `report.check_rev`'s
-# reasoning, and the same three refusals.
+# A rev is one argv element to git; the refusals are `report.check_rev`'s.
 REV_MAX = 256
 
 USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
@@ -190,9 +90,8 @@ class Args:
     mode: str
     ref: str | None = None
     ignore: tuple[str, ...] = ()
-    # The far end of the range. HEAD by default; a close that arrives after
-    # other work has landed names the story's own last commit, so the rung
-    # proves the story's edits and not everything that followed them.
+    # The far end of the range, so a late close proves the story's edits and
+    # not what followed them.
     to: str | None = None
 
 
@@ -210,16 +109,14 @@ class Cost:
         return f'{self.duration_ms} ms ({", ".join(extra)})'
 
 
-# `[verify]`, or None when devkit.toml declares no such section. Supplied by
-# `cli.py`, which is the module `tests/test_boundaries.py` allowlists to read
-# raw config — `repo/verify/` is deliberately not on that list, so the section
-# is passed IN and this module stays a pure function of it.
+# `[verify]` or None, passed in by `cli.py` — the one module allowed to read
+# raw config — so this module stays a pure function of it.
 SectionReader = Callable[[], 'dict | None']
 
 
 def main(argv: Sequence[str], section: SectionReader) -> int:
-    """The verb. `section` is called only after argv parses, so `--help` and a
-    usage error never touch devkit.toml."""
+    """The verb; `section` is called only after argv parses, so `--help` and
+    a usage error never touch devkit.toml."""
     if any(flag in ('-h', '--help') for flag in argv):
         print(__doc__.strip())
         return EXIT_OK
@@ -241,8 +138,7 @@ def main(argv: Sequence[str], section: SectionReader) -> int:
         print(f'agentic-sdlc verify: {err}', file=sys.stderr)
         return EXIT_CONFIG
     except SelectionError as err:
-        # Hostile TREE contents: no plan could be produced. That is the same
-        # class of answer as a malformed section, never a finding about code.
+        # Hostile tree contents: no plan, so exit 2 like a malformed section.
         print(f'agentic-sdlc verify: {err}', file=sys.stderr)
         return EXIT_CONFIG
 
@@ -423,13 +319,9 @@ def tracked(root: Path) -> list[str]:
 
 
 def changed(root: Path, ref: str | None, to: str | None = None) -> list[str]:
-    """The diff, plus untracked files: a new file is a changed path.
-
-    Order is git's, deduplicated, because a path can appear in both halves.
-    With no `--ref` the base is HEAD; in a repo with no commits yet there is no
-    HEAD, and every tracked file is new. With `to`, the range is `ref..to` —
-    two commits — and the working tree's untracked files are not in it.
-    """
+    """The diff plus untracked files, git's order, deduplicated. No HEAD
+    means every tracked file is new; with `to` the range is `ref..to` and
+    untracked files are not in it."""
     _require_repo(root)
     if ref is not None:
         _git(root, ['rev-parse', '--verify', ref])
@@ -444,10 +336,8 @@ def changed(root: Path, ref: str | None, to: str | None = None) -> list[str]:
         _git(root, ['rev-parse', '--verify', to])
         ranged = list(dict.fromkeys(
             _nul(_git(root, ['diff', '--name-only', '-z', base or to, to]))))
-        # A closed range is history, and the narrow commands run on the tree
-        # in front of us: a path the range touched that no longer exists here
-        # cannot be verified by running it, so it is named and left out rather
-        # than handed to a rule as a file that is not there.
+        # A path the range touched that no longer exists cannot be run, so it
+        # is named and left out.
         gone = [path for path in ranged if not (root / path).exists()]
         if gone:
             print(f'verify --story: {len(gone)} path(s) in {base or to}..{to} '
@@ -464,24 +354,15 @@ def changed(root: Path, ref: str | None, to: str | None = None) -> list[str]:
 # --- selection ----------------------------------------------------------------
 def _scans(ruleset: RuleSet, root: Path,
            files: Sequence[str]) -> list[declares.Scan]:
-    """Every reverse rule's read of the tree, or [] when there are none.
-
-    Nothing is scanned for a rule set with no reverse rules: reading files to
-    answer a question nobody asked is the spawn-per-file defect this feature
-    exists to end, one layer up.
-    """
+    """Every reverse rule's read of the tree, or [] — nothing is scanned when
+    no rule asks."""
     return [declares.scan(rule, files, root)
             for rule in ruleset.narrow if rule.kind == REVERSE]
 
 
 def _resolver(scans: Sequence[declares.Scan]) -> select.ReverseResolver | None:
-    """`select`'s reverse resolver over these scans, or None when there are none.
-
-    One spelling, used by `plan_for` and by `--check`, because the two ask the
-    selector the SAME question against the same rule set — S1's finding was
-    `--check` answering a per-rule question where the verb answers a whole-set
-    one, and two resolvers would let them drift apart again.
-    """
+    """One reverse resolver for `plan_for` and `--check`, so the two cannot
+    drift apart; None when there are no scans."""
     if not scans:
         return None
     return lambda rule, path: declares.resolve(scans, rule, path)
@@ -490,28 +371,12 @@ def _resolver(scans: Sequence[declares.Scan]) -> select.ReverseResolver | None:
 def plan_for(ruleset: RuleSet, root: Path, ref: str | None,
              ignore: Sequence[str] = (),
              to: str | None = None) -> select.Selection:
-    """The story rung's selection for the current diff.
-
-    `ignore` is the CALLER's own writes — see the comment below.
-    """
+    """The story rung's selection for the current diff; `ignore` is the
+    caller's own writes."""
     paths = changed(root, ref, to)
     if ignore:
-        # THE CALLER'S OWN WRITES, and only a caller can know which those are.
-        #
-        # I3: `close story`'s first step moves a `status:` line inside
-        # `pm/roadmap/` and appends to the tracked `ledger.jsonl`, and its
-        # SECOND step is this rung — so the belt's own writes arrive here as
-        # changed paths, match no `[[verify.narrow]]` rule in a project that
-        # never wrote one for its PM tree, and send the story close to the
-        # MILESTONE rung. Measured on a fresh consumer: a full gate inside the
-        # step advertised as "four of its five steps are already-computed
-        # facts", which is risk 2 of that feature arriving by construction.
-        #
-        # This is NOT the verb deciding that a PM tree needs no verification —
-        # that is the project's call, made by declaring a narrow rule for it
-        # (rule 9). It is the verb letting a caller say which paths IT wrote
-        # during this run, which is exactly the ruling `check_committed`
-        # already makes one step later.
+        # A belt's own writes must not read as the operator's edit and send a
+        # story close to the milestone rung.
         prefixes = tuple(p.rstrip('/') + '/' for p in ignore)
         paths = [p for p in paths
                  if not p.startswith(prefixes) and p not in ignore]
@@ -521,23 +386,15 @@ def plan_for(ruleset: RuleSet, root: Path, ref: str | None,
 
 # --- running ------------------------------------------------------------------
 def _run(command: str, root: Path) -> int:
-    """One verification command, through a shell, in the repo root.
-
-    A shell DELIBERATELY: a project's verification is a command line, and
-    `tests/test_pm_*.py` needs the glob expanded. `rules.py` has already
-    refused every spelling that makes one command into two.
-    """
+    """One verification command through a shell in the repo root — `rules.py`
+    already refused every spelling that makes one command into two."""
     print(f'  $ {command}', flush=True)
     return subprocess.run(command, shell=True, cwd=str(root),
                           check=False).returncode
 
 
 def _run_all(commands: Sequence[str], root: Path) -> int:
-    """In declaration order, stopping at the FIRST failure, naming it.
-
-    Not parallel and not continue-on-error: a runner that hides which command
-    failed is worse than a slow one.
-    """
+    """In declaration order, stopping at the first failure and naming it."""
     for command in commands:
         code = _run(command, root)
         if code != 0:
@@ -555,7 +412,7 @@ def _run_story(ruleset: RuleSet, root: Path, ref: str | None,
               f'{ref or "HEAD"}{f" up to {to}" if to else ""} — nothing to verify')
         return EXIT_OK
     if selection.missed:
-        # THE dangerous case. Named, one path per line, then the widest rung.
+        # The dangerous case: named, then the widest rung.
         print(f'verify --story: {len(selection.missed)} changed path(s) match '
               f'no [[verify.narrow]] rule:')
         for path in selection.missed:
@@ -585,14 +442,8 @@ def _run_rung(ruleset: RuleSet, root: Path, name: str) -> int:
 # --- the ledger, and the ratio ------------------------------------------------
 def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     """(target -> its most recent `gate` row, the ledger path as a string).
-
-    Read from the ONE in-progress milestone's ledger, which is where
-    `every-gate-reports-its-cost` writes. Anything that goes wrong — no PM
-    tree, no milestone in progress (or several: the engine never picks one,
-    decision D5), an unreadable line — yields no costs and the plan says
-    `unknown`. A cost this cannot read is a cost it does not have, and
-    inventing one is the failure this whole feature is against.
-    """
+    Anything unreadable yields no costs and the plan says `unknown`, because
+    an invented cost gets quoted."""
     import json
 
     try:
@@ -669,9 +520,8 @@ def _plan(ruleset: RuleSet, root: Path, ref: str | None) -> int:
 
 def _print_story_rung(selection: select.Selection,
                       costs: dict[str, Cost]) -> int | None:
-    """The story rung's commands. Returns their total ms, or None if any is
-    unknown — a partial total would be a made-up number wearing a real one's
-    clothes."""
+    """The story rung's commands; their total ms, or None when any is
+    unknown."""
     if selection.missed:
         print(f'  {STORY:<10} (falls back: {len(selection.missed)} changed '
               f'path(s) match no rule)   [{RUNG_BLURB[STORY]}]')
@@ -710,37 +560,18 @@ def _ratio(story_ms: int | None, milestone_ms: int | None,
 
 # --- --check ------------------------------------------------------------------
 def make_targets(root: Path) -> tuple[frozenset[str], str]:
-    """(every target the root Makefile and its includes declare, the file read).
-
-    `core.makefile` is the one reader; `check doc` asks it the same question.
-    """
+    """(every target the root Makefile and its includes declare, the file
+    read), through `core.makefile`."""
     path = root / MAKEFILE
     if not path.is_file():
         return frozenset(), ''
     return makefile.targets(root), str(path)
 def _first_claims(ruleset: RuleSet, files: Sequence[str],
                   resolver: select.ReverseResolver | None) -> dict[str, int]:
-    """tracked path -> the index of the rule that is FIRST for it. S1's answer.
+    """tracked path -> the index of the rule that is FIRST for it (S1).
 
-    ONE PATH PER `select` CALL, and that is the trap this function exists to
-    avoid rather than an oversight. A whole-corpus `Selection` CANNOT say which
-    rules fired: `select` deduplicates by COMMAND (select.py:172-190), so two
-    rules whose `run` substitutes to the same string collapse into one `Match`
-    carrying the FIRST one's index. Measured on this repo's own section — #3
-    and #4 both run the whole suite, and #15, #16, #17 and #19 all run
-    `make gates`, so four of its twenty rules are collapsed into an earlier
-    one's Match. Reading `{m.index for m in selection.matched}` as "the rules
-    that fired" therefore files four shadowing findings against a rule set in
-    which every one of the twenty fires for some path, and a gate that invents
-    drift teaches the same lesson as one that misses it: turn it off.
-
-    Asked THROUGH `select` rather than re-derived here, because first-match-wins
-    is the selector's ruling (select.py:35-38) and a second spelling of it in
-    the checker is how the checker comes to validate a selection nobody runs.
-    A tracked path the selector refuses (a control character, a capture binding
-    a value that cannot go on a command line) raises SelectionError and is exit
-    2 at the verb, which is the same answer `--changed` gives for that tree —
-    the two agreeing is the point.
+    One path per `select` call: a whole-corpus Selection dedupes by command
+    and so cannot say which rules fired.
     """
     winner: dict[str, int] = {}
     for path in files:
@@ -752,14 +583,8 @@ def _first_claims(ruleset: RuleSet, files: Sequence[str],
 
 def _shadowed(where: str, rule: Rule, claims: Sequence[str],
               winner: dict[str, int]) -> str:
-    """S1: a rule that claims tracked files and never gets to select any of them.
-
-    `claims` is what this rule would select IN ISOLATION — the paths `paths`
-    matches, or, in the reverse direction, the paths the scanned files DECLARE.
-    The two are named differently on purpose: `scan 'tests/integration/**'`
-    does not MATCH the source path it covers, so rendering the glob as the
-    thing that matched would be a lie about which file is which.
-    """
+    """S1: a rule that claims tracked files and is first for none of them.
+    `claims` is what the rule would select in isolation."""
     example = claims[0]
     what = (f'paths {rule.glob!r} matches' if rule.kind == FORWARD
             else f'the files scan {rule.glob!r} found declare')
@@ -774,24 +599,10 @@ def _shadowed(where: str, rule: Rule, claims: Sequence[str],
 
 
 def _check(ruleset: RuleSet, root: Path) -> int:
-    """Every rule and every rung, held against the tree. Findings are exit 1.
+    """Every rule and rung held against the tree; findings are exit 1.
 
-    A `--check` that reports OK over a rule set it did not actually RESOLVE is
-    this package's cardinal sin, so the census prints on the pass too — and
-    every number in it is in ONE unit, DISTINCT TRACKED FILES, which is finding
-    S2's fix. It used to sum each rule's own match count and render that with a
-    noun meaning distinct files, against a denominator that was distinct files:
-    six rules all naming `src/a.py` in a repo tracking three files printed
-    `6 matched file(s) scanned of 3 tracked`. A census that can EXCEED its own
-    denominator is not counting what it scanned (hard rule 4), and this is the
-    line a consumer reads to decide whether the gate looked at anything.
-
-    The union is counted rather than the column renamed, because the union is
-    the number a reader was already trying to get out of the line — how much of
-    the tree a rule covers — and because `_first_claims` has to compute the
-    same selection anyway for S1. It is exact, not an approximation: a path is
-    claimed by SOME rule exactly when it is claimed by its FIRST one, so
-    `len(winner)` is both, and `len(winner) + len(unclaimed) == len(files)`.
+    The census prints on the pass too, in one unit — distinct tracked files
+    (S2) — so a reader can tell whether the gate looked at anything.
     """
     files = tracked(root)
     targets, makefile = make_targets(root)
@@ -822,10 +633,8 @@ def _check(ruleset: RuleSet, root: Path) -> int:
         where = f'[verify.narrow] #{rule.index}'
         target = _target_of(rule.run)
         if target is None:
-            # S3, ruled in the module docstring: a `run` that is not
-            # `make <target>` is counted and named, never validated. Whether it
-            # is runnable is a fact about the machine, and the cheap spelling
-            # (`which` on the first word) passes the only case we have measured.
+            # S3: a `run` that is not `make <target>` is counted, never
+            # validated — whether it is runnable is a fact about the machine.
             unvalidated += 1
         elif targets and target not in targets:
             findings.append(
@@ -853,11 +662,8 @@ def _check(ruleset: RuleSet, root: Path) -> int:
                 f'and NONE declares {rule.declares!r} — a corpus that has '
                 f'drifted away from the rule reading it')
         elif rule.index not in first_for:
-            # The reverse direction reaches S1's question by two routes: every
-            # path its declarations cover is claimed above it (shadowed), or
-            # they cover nothing that is tracked at all — a scanned corpus that
-            # declares only paths the tree no longer has. Both are "this rule
-            # can never be selected"; only the first has a rule to name.
+            # Shadowed by an earlier rule, or covering nothing the tree still
+            # tracks; only the first has a rule to name.
             claims = [path for path in files
                       if declares.resolve(scans, rule, path) is not None]
             if claims:
@@ -873,10 +679,8 @@ def _check(ruleset: RuleSet, root: Path) -> int:
     for finding in findings:
         print(f'  DRIFT  {finding}')
     if unvalidated:
-        # NOTE, not DRIFT: rule 9 — it reports the fact and the caller decides.
-        # A finding here would redden every repo whose narrow rules are a real
-        # command line (this one's are), and a gate nobody can pass is a gate
-        # that gets turned off.
+        # NOTE, not DRIFT (rule 9): a finding here would redden every repo
+        # whose narrow rules are a real command line.
         print(f'  NOTE   {unvalidated} rule(s) name a `run` that is not '
               f'`{MAKE_PROGRAM} <target>`; this gate holds a make target to '
               f'{makefile or MAKEFILE} and asks nothing else of a command — '

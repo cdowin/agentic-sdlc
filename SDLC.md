@@ -255,8 +255,9 @@ what landed match the story's own table.
 walks them.** It is not hand-maintained and must not be edited: a document
 describing the steps is a second home for the protocol, and this package spent
 three incidents proving that a second home drifts. Run
-`agentic-sdlc release <version>`; it stops at the first step whose postcondition
-is not true and says what would make it true.
+`agentic-sdlc release <version>`; it walks every step to the end, names each
+one whose postcondition is not true and says what would make it true, and the
+last line is a scoreboard (D8 — no step halts the walk).
 
 What stays here is the part that is NOT a step — the judgement the machine
 cannot make and the rule that orders it:
@@ -264,7 +265,8 @@ cannot make and the rule that orders it:
 1. **Cross-cutting review** — a fresh strong reviewer over the milestone's
    whole commit range (adversarial input, RUN — never diff-reading). The
    conveyor's `review-landed` step reads the ARTIFACT of that review; it cannot
-   perform it, and it refuses to advance until the artifact exists.
+   perform it, and until the artifact exists it is reported not true by name
+   while the walk finishes.
 2. **Land every finding** it raised, or defer each one explicitly and in
    writing. `review-landed` passes only when no finding sits at
    `disposition: open`.

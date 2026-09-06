@@ -280,3 +280,16 @@
 {"ts":"2026-09-06T02:11:22Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one","duration_ms":9596,"rank":5}
 {"ts":"2026-09-06T02:11:23Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":96583,"census":1401}
 {"ts":"2026-09-06T02:20:08Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2232}
+{"ts":"2026-09-06T02:21:39Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit/06-the-review-findings-land","from":"planning","to":"building"}
+{"ts":"2026-09-06T02:30:43Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":2248}
+{"ts":"2026-09-06T02:31:20Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit","from":"planning","to":"building"}
+{"ts":"2026-09-06T02:31:23Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3461}
+{"ts":"2026-09-06T02:35:46Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2244}
+{"ts":"2026-09-06T02:36:23Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2135}
+{"ts":"2026-09-06T02:38:44Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2138}
+{"ts":"2026-09-06T02:38:51Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":516,"rank":1}
+{"ts":"2026-09-06T02:38:51Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":403,"rank":2}
+{"ts":"2026-09-06T02:38:51Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":333,"rank":3}
+{"ts":"2026-09-06T02:38:51Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":183,"rank":4}
+{"ts":"2026-09-06T02:38:51Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":179,"rank":5}
+{"ts":"2026-09-06T02:38:51Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6712,"census":736}

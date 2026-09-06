@@ -1,85 +1,20 @@
-# Makefile.devkit — the gate FRAMEWORK, and nothing a language kit owns.
+# Makefile.devkit — the gate framework: `check`, the tier seam, `precommit` and
+# `milestone`. `agentic-sdlc install-gates` writes it; edit the source, not this.
 #
-# DEVKIT-OWNED. `agentic-sdlc install-gates` writes it; `--force` overwrites
-# it. Edit the source under src/agentic_sdlc/repo/installables/ and re-install
-# — a local edit here is a fork by copy, and it is invisible, because the file
-# still looks like the one that was installed.
-#
-# YOUR Makefile is two lines plus whatever is yours:
-#
+# Your Makefile is two lines plus your own targets:
 #     DEVKIT_VERSION := v0.2.0
 #     include Makefile.devkit
-#
-#     my-scan: ## a gate of your own
-#     	@bash tools/dev/checks/my_scan.sh
-#
-# and your own gates join `check` through devkit.toml rather than through a
-# fork of this file:
-#
-#     [gates]
-#     extra = ["my-scan"]
-#
-# THE MIDDLE TIER IS NOT IN HERE. `precommit` and `milestone` are `check` plus
-# whatever tiers a LANGUAGE KIT declared, and this file names none of them. The
-# kit writes one file — GDK_TIERS_MK, default `Makefile.tiers` — which DEFINES
-# its targets and DECLARES which compositions they join:
-#
-#     GDK_PRECOMMIT_TIERS := parse lint unit
-#     GDK_MILESTONE_TIERS := parse lint warnings unit integration-all
-#
-#     .PHONY: parse lint warnings unit integration-all
-#     parse: ## Compile gate — every source file compiles
-#     	@bash tools/dev/runners/parse.sh
-#
-# THE TIER FILE DECLARES ITS OWN `.PHONY`. The `.PHONY` below can only list
-# what THIS file defines — a target it never heard of cannot be on it — and a
-# tier target that is not phony is a gate that a stray file of the same name
-# silently disables. One `.PHONY` line per file, each covering its own.
-#
-# `-include` of a missing tier file is SILENT, which is what makes a project
-# with no tiers at all a supported shape rather than a degraded one. It is also
-# how a typo'd GDK_TIERS_MK would turn a five-gate `precommit` into a one-gate
-# `precommit` that exits 0. So the two cases are held apart on exactly one
-# condition — whether a tier list is empty:
-#
-#   * an EMPTY tier list is fine, and SAYS SO on every run. A short gate that
-#     looks like a long one is the one failure a gate must never have;
-#   * a NAMED tier that resolves to no make target is a PARSE-TIME error that
-#     names the variable that named it — before `check` runs, not after.
-#
-# Tier names are NOT validated as strings the way `[gates] extra` is. That
-# refusal matrix exists because `[gates] extra` comes out of TOML a stranger
-# supplied; these are make goals in a make file the project's own kit wrote,
-# already parsed by make itself. The asymmetry is deliberate.
-#
-# EVERY GATE PRINTS ONE LINE. The default output of a gate target is its
-# verdict, naming the full transcript on disk; `VERBOSE=1` streams the whole
-# thing. That is `gdk_gate_capture` / `gdk_gate_verdict` out of
-# tools/dev/gdk_gate.sh — either called by the recipe here, or already
-# called INSIDE the runner it invokes. A tier target whose runner publishes its
-# own verdict must NOT be wrapped again: the wrapper's summary would replace it
-# and file the real one away in a log nobody opens.
-#
-# GNU make 3.81 (what macOS ships) is the floor. Nothing here needs more.
-#
-# NO `.SHELLFLAGS := -eu -o pipefail -c`. The gate recipes SOURCE the runner
-# library, and the library's capture helper has to suspend and restore errexit
-# to read PIPESTATUS at all; running it under an inherited `-e` is the case its
-# own comments record dying on. Recipes here are written to be robust without
-# it — explicit `|| exit`, and the helper's exit code read from a variable.
+# Your gates join `check` via `[gates] extra` in devkit.toml. A language kit's
+# tier file (GDK_TIERS_MK, default Makefile.tiers) defines its targets and their
+# `.PHONY`, and sets GDK_PRECOMMIT_TIERS / GDK_MILESTONE_TIERS. make 3.81 is the floor.
+# No `.SHELLFLAGS -e`: the capture helper has to read PIPESTATUS itself.
 SHELL := bash
 MAKEFLAGS += --warn-undefined-variables --no-print-directory
 .DELETE_ON_ERROR:
 .DEFAULT_GOAL := help
 
-# The one line that MUST differ per project: the devkit tag every machine and
-# every CI run resolves. It is yours, it lives in YOUR Makefile, and it is set
-# BEFORE this include.
-#
-# OR a project supplies the command itself — `DEVKIT := uv run agentic-sdlc`
-# above the include — and then there is no pin to set, because there is nothing
-# to resolve. That is how the package that SHIPS this file consumes it: its
-# own working tree, installed on itself, is the devkit its gates run.
+# DEVKIT_VERSION is the per-project pin, set above the include; or set DEVKIT
+# to the command itself and there is nothing to resolve.
 ifeq ($(origin DEVKIT),undefined)
 ifndef DEVKIT_VERSION
 $(error DEVKIT_VERSION is not set — put `DEVKIT_VERSION := vX.Y.Z` in your Makefile ABOVE `include Makefile.devkit` (or set DEVKIT to the command that runs the package))
@@ -87,26 +22,16 @@ endif
 DEVKIT := uvx --from "git+https://github.com/cdowin/agentic-sdlc@$(DEVKIT_VERSION)" agentic-sdlc
 endif
 
-# Where `install-gates` put the shell library this file sources. Moving it means
-# setting this; after the write the file is yours. A language kit's own runners
-# live wherever its tier file says — that is not this file's business.
+# Where `install-gates` put the shell library; moving it means setting this.
 GDK_DEV_DIR  ?= tools/dev
-# The shell library every gate recipe sources. `install-gates` writes it
-# beside this file; it is the other half of the same verb and neither is
-# usable alone.
 GDK_GATE_LIB ?= $(GDK_DEV_DIR)/gdk_gate.sh
 
-# Gate output is a SUMMARY by default; the transcript goes to
-# .gate-reports/<gate>.log, which the verdict line names. Exported so
-# `make check VERBOSE=1` works as well as `VERBOSE=1 make check` — a
-# command-line make variable is not in a recipe's environment otherwise.
+# Exported so `make check VERBOSE=1` reaches recipes as well as `VERBOSE=1 make check`.
 VERBOSE ?=
 export VERBOSE
 
-# How the gate library reaches the ledger. `gdk_gate.sh` is SOURCED, so it
-# cannot see a make variable at all — this one line is the whole bridge, and
-# every gate's cost row rides over it. Empty it (`make check GDK_LEDGER_CMD=`)
-# and nothing is recorded and nothing is spawned.
+# The bridge to the ledger: the sourced library cannot see a make variable.
+# Empty it and nothing is recorded or spawned.
 export GDK_LEDGER_CMD ?= $(DEVKIT)
 
 # Arguments, overridden on the command line:
@@ -116,36 +41,20 @@ ARGS ?=
 # Set by `check` when it re-enters itself through a sub-make. See `check`.
 GDK_IN_CHECK ?=
 
-# What a FAILING gate shows on the console before its verdict: the lines that
-# say what broke. Everything else stays in the log.
+# What a FAILING gate shows before its verdict; the rest stays in the log.
 GDK_GATE_FAIL_RE    ?= ^(FAILED|ERROR|SCRIPT ERROR)|  DRIFT |\] FAIL|^  (MISS|FALSE POSITIVE)
 GDK_GATE_FAIL_LINES ?= 20
 
-# Each gate's one-line summary, read back out of its own transcript. The
-# leading `[tag]` a tool prints is stripped: the verdict line supplies the tag.
-# Both are part of the framework's surface — a tier file calls `gdk_gate` with
-# one of these, or with a summary command of its own.
+# Each gate's one-line summary, read out of its transcript with the tool's `[tag]` stripped.
 GDK_SUM_CHECKS := printf '%s check(s) PASS' "$$(grep -acE '^\[check:[a-z-]+\] PASS' "$$log")"
-# The last line the tool TAGGED, not simply the last line: a runner whose
-# closing word is a pointer ("  full report: …") would otherwise summarise
-# itself as a file path. Falls back to the real last line when nothing in the
-# transcript is tagged at all, because a summary that is blank says less than
-# a wrong one.
+# The last TAGGED line, so a closing pointer is never the summary; the real last line when none is tagged.
 GDK_SUM_TAIL   := { grep -aE '^\[[A-Za-z][A-Za-z:_-]*\] ' "$$log" || tail -1 "$$log"; } \
                   | tail -1 | sed -E 's/^\[[a-zA-Z:_-]+\] //'
 
 # $(call gdk_gate,<log slot>,<TAG>,<summary command>,<argv...>[,<census command>])
-# Run a command through the shipped capture helper: quiet by default, the full
-# transcript on disk, one verdict line naming it, and the command's own exit
-# code preserved (the helper reads PIPESTATUS, so `$$?` would be the cap's).
-#
-# The optional FIFTH argument is the CENSUS: a command, run over `$$log` after
-# the gate, that prints how many things this run walked (a test tier prints
-# its case count). `gdk_gate_verdict` files it on the gate's ledger row and
-# `check budget` holds it to `[tests] cases`, because a duration cannot see a
-# tier that doubles in size while a faster machine absorbs the clock. Guarded
-# on `$(origin 5)` rather than `$(5)`: under --warn-undefined-variables an
-# unpassed call argument is a warning on every four-argument gate.
+# Quiet capture, one verdict line, the command's own exit code. The fifth
+# argument prints how many things the run walked, for the ledger row and
+# `check budget`; guarded on `$(origin 5)` because of --warn-undefined-variables.
 define gdk_gate
 @set -o pipefail; . $(GDK_GATE_LIB); \
 log="$$(gdk_gate_log $(1))"; \
@@ -162,7 +71,7 @@ gdk_gate_verdict $(2) "$$summary" "$$log"; \
 exit "$$status"
 endef
 
-# ONLY what this file defines. The tier file declares its own — see the header.
+# Only what this file defines; the tier file declares its own.
 .PHONY: help pm check precommit milestone \
         gdk-tiers-none-precommit gdk-tiers-none-milestone
 
@@ -180,28 +89,10 @@ pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS="story
 	@$(DEVKIT) pm $(if $(ARGS),$(ARGS),--help)
 
 # --- Aggregate gates ----------------------------------------------------------
-# `check` is the devkit gate roster (`check all`, whose members are `[checks]
-# all` in devkit.toml) followed by THIS project's own gate targets (`[gates]
-# extra`). Extension by config; no fork of this file, and no second list of
-# gate names anywhere.
-#
-# The roster is read ONCE per run, by the devkit CLI, because make has no
-# business parsing TOML — a `sed` over section headers is a second reader and
-# a second answer. A bad value exits 2 here rather than silently narrowing the
-# gate, which is the one failure mode a gate must never have.
-#
-# RE-ENTRY IS REFUSED. `extra = ["check"]` — or a project gate that itself runs
-# `make check` — would recurse forever. The sub-make carries a marker, and a
-# second entry stops with a line naming the config key. That holds for
-# `precommit` and `milestone` too, and for a target two levels down, which a
-# list of forbidden names could not.
-#
-# THE SUB-MAKE IS SPELLED `$${MAKE:-make}`, NOT `$(MAKE)`, ON PURPOSE. Make
-# executes any recipe line containing the literal `$(MAKE)` even under `-n` —
-# so `make -n check`, which promises to run NOTHING, would fetch and run the
-# pinned package to read the roster. The cost is that `make -j check` starts
-# the sub-make without the jobserver; gates are sequential anyway, and a
-# dry run that quietly executes is the worse of the two.
+# `check` is the devkit roster then this project's `[gates] extra`, read once
+# by the CLI (a bad value exits 2 rather than narrowing the gate). Re-entry is
+# refused through GDK_IN_CHECK. The sub-make is `$${MAKE:-make}`, not
+# `$(MAKE)`, so `make -n check` runs nothing.
 check: ## Static gate: the devkit checks + this project's own ([gates] extra)
 	@test -z "$(GDK_IN_CHECK)" || { echo "make check: re-entered through [gates] extra in devkit.toml — a gate target that runs \`make check\` recurses forever; drop it from that list" >&2; exit 2; }
 	$(call gdk_gate,check,CHECK,$(GDK_SUM_CHECKS),$(DEVKIT) check all)
@@ -209,29 +100,21 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra)
 	[ -z "$$extra" ] || $${MAKE:-make} GDK_IN_CHECK=1 $$extra
 
 # --- The tier seam ------------------------------------------------------------
-# The language kit's contribution, resolved at PARSE time: the tier LISTS are
-# read and guarded here, before any goal runs, so a bad list is refused before
-# `check` has cost anybody anything. What the lists are made INTO is the
-# compositions below.
+# The kit's tier lists, read and guarded at parse time.
 GDK_TIERS_MK        ?= Makefile.tiers
 GDK_PRECOMMIT_TIERS ?=
 GDK_MILESTONE_TIERS ?=
 -include $(GDK_TIERS_MK)
 
-# The typo guard. `-include` is silent on a missing file and that silence is
-# load-bearing (no tiers is a supported shape), so the guard turns on the
-# moment a tier list is NON-EMPTY and stays off otherwise. Two shapes fail:
-# a tier list with no tier file to have come from, and a tier name no makefile
-# read so far actually defines.
+# The typo guard: `-include` is silent on a missing file, so a non-empty tier
+# list with no file, or a tier no makefile defines, is refused here.
 GDK_TIERS_DECLARED := $(strip $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS))
 ifneq (,$(GDK_TIERS_DECLARED))
 ifeq (,$(wildcard $(GDK_TIERS_MK)))
 $(error GDK_TIERS_MK=$(GDK_TIERS_MK) does not exist yet a tier list names [$(GDK_TIERS_DECLARED)] — `-include` of a missing file is silent by design and this is the typo that silence hides. Point GDK_TIERS_MK at the tier file or clear GDK_PRECOMMIT_TIERS / GDK_MILESTONE_TIERS)
 endif
-# Every explicit target name in the makefiles read so far. Read from the FILES
-# rather than from make's tables because 3.81 exposes no target introspection;
-# a tier defined only by a pattern rule is therefore not visible here and must
-# be given an explicit target in the tier file.
+# Explicit target names from the files, since 3.81 has no target introspection;
+# a tier defined only by a pattern rule is invisible here.
 GDK_TIERS_TARGETS := $(shell awk '/^[A-Za-z0-9][A-Za-z0-9._\/-]*[ \t]*:([^=]|$$)/ { sub(/[ \t]*:.*/, ""); print }' $(MAKEFILE_LIST))
 GDK_TIERS_ORPHAN_PRECOMMIT := $(filter-out $(GDK_TIERS_TARGETS),$(GDK_PRECOMMIT_TIERS))
 GDK_TIERS_ORPHAN_MILESTONE := $(filter-out $(GDK_TIERS_TARGETS),$(GDK_MILESTONE_TIERS))
@@ -243,35 +126,11 @@ $(error GDK_MILESTONE_TIERS names a tier no makefile defines: [$(GDK_TIERS_ORPHA
 endif
 endif
 
-# EVERY DECLARED TIER IS PHONY, and this line is a gate rather than a tidiness.
-# A tier is an ACTION — a gate to run — and make treats a target with no
-# prerequisites as UP TO DATE when a file or directory of that name exists. So
-# `GDK_PRECOMMIT_TIERS := parse test` in a tree that also has a `test/`
-# directory ran `check` and `parse`, SKIPPED `test`, exited 0 and printed
-# nothing about it. The orphan check above cannot see that case: `test` IS a
-# defined target, so it is not an orphan — it is a defined target make decided
-# it did not need to build. The tiers are the GOALS of the composition's
-# sub-make now rather than its prerequisites, and a goal is skipped for a
-# same-named directory exactly the way a prerequisite was; the sub-make reads
-# this file too, so this one line still covers it.
-#
-# Found 2026-09-05 by the feature review, and it inverted this feature's own
-# ship criterion 2 — "a tier that resolves to no target is a LOUD failure, not
-# a silently-shorter gate" — through the one door that criterion did not think
-# to look at. Every tier case in tests/test_makefile_include.py declared
-# `.PHONY` in its own tier file, so no test could reach it.
-#
-# A language kit's tier file should declare its own `.PHONY` too; this is the
-# belt AND the braces, because the cost of the braces is one line and the cost
-# of being wrong is a gate that reports success without running.
+# Every declared tier is phony: a same-named directory would otherwise make
+# the sub-make skip that goal as up to date, silently.
 .PHONY: $(GDK_PRECOMMIT_TIERS) $(GDK_MILESTONE_TIERS)
 
-# The empty case ANNOUNCES ITSELF. It is legitimate — a project with no
-# language kit gates on `check` alone — but it is one gate where a tiered
-# project runs five, and an operator who cannot tell the two runs apart from
-# the output has been handed the cardinal sin in a Makefile. It is a
-# PREREQUISITE, not part of the composition's recipe: it runs FIRST, before
-# the slot below opens, so the announcement is neither timed nor captured.
+# The empty case announces itself, as a prerequisite so it is neither timed nor captured.
 define gdk_tiers_none
 @echo "[TIERS] $(1) is empty — this gate is \`check\` alone; $(GDK_TIERS_MK) $(if $(wildcard $(GDK_TIERS_MK)),declares no tier for it,is not present)"
 endef
@@ -283,45 +142,10 @@ gdk-tiers-none-milestone:
 	$(call gdk_tiers_none,GDK_MILESTONE_TIERS)
 
 # --- The compositions ---------------------------------------------------------
-# `precommit` and `milestone` are `check` plus the tiers the kit declared, run
-# as the goals of ONE sub-make inside a gate slot of the composition's own
-# name — so the ledger gains a `gate` row called `precommit` / `milestone`
-# that times the whole target, beside the rows its members file for
-# themselves, and `verify --plan` can read the wide rungs' cost instead of
-# answering `unknown`.
-#
-# WHY A SUB-MAKE. These were prerequisite-only targets through 0.2.0 —
-# `precommit: check $(GDK_PRECOMMIT_TIERS)` — and make runs prerequisites
-# without ever entering a recipe, so nothing could open a slot; every member
-# filed a cost row and the composition filed none (0.2.0/bugs/
-# a-composition-has-no-slot). A recipe appended to that prerequisite list
-# does not fix it: prerequisites run first and the recipe after, so it
-# cannot time what preceded it. The members therefore run INSIDE the recipe,
-# as the goals of a sub-make, and the slot brackets the sub-make.
-#
-# WHAT REACHES THE CONSOLE: only what the members print. The capture is
-# forced loud for the composition alone (`VERBOSE=1` on the call, in effect
-# for that one function), while the sub-make is handed the VERBOSE the
-# operator set, so each member is as quiet or as loud as it would be typed
-# by hand. The composition's OWN verdict line goes to its transcript, never
-# the console: its outcome is already on the console as its members' lines
-# and in its exit code, and a closing line restating them would be a new
-# line shape for every consumer's grep to learn, carrying no new fact. The
-# row is the point, and the row needs no console line. One consequence: a
-# member's stderr rides the composition's stdout, as every captured gate's
-# does.
-#
-# `make -n precommit` STILL RUNS NOTHING. The sub-make is spelled
-# `$${MAKE:-make}` for the reason `check` gives, so a dry run prints the
-# composition's one recipe — which names every member, in order — and starts
-# nothing. What it no longer does is print each member's own recipe; `make -n
-# check` and `make -n <tier>` do that.
-#
-# THE LEDGER IS WIRED ONCE. GDK_LEDGER_CMD is exported, so the sub-make
-# inherits it and each member files its own row through its own slot; the
-# composition's slot is a different log, so its row is one more, never a
-# duplicate. Empty it and no row is filed by anybody, as before.
-#
+# `precommit` and `milestone` run `check` plus the declared tiers as the goals
+# of one sub-make inside a slot of their own name, so the ledger gets a row
+# for the whole target. Only the members reach the console: the composition's
+# own verdict line goes to its transcript. `make -n` still runs nothing.
 # $(call gdk_composition,<log slot>,<TAG>,<goals...>)
 define gdk_composition
 @set -o pipefail; . $(GDK_GATE_LIB); \

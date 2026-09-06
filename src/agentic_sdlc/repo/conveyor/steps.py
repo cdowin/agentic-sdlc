@@ -120,7 +120,8 @@ consumer's own `DEVKIT_VERSION` line to the version of the package that is
 RUNNING, needing no network and no second checkout.
 
 A step this package cannot perform states precisely what the operator must do
-and refuses to advance until its `check()` is true. `pin-bumped` edits nothing:
+and is reported not true until its `check()` is — the walk finishes either way
+(D8). `pin-bumped` edits nothing:
 the line it names is in a file this package does not own.
 
 ## `story` and `feature` — the belts that run constantly
@@ -547,8 +548,8 @@ def commands_for(operation: str, names: tuple[str, ...] | None = None,
     and a key naming a step whose kind cannot take a command at all.
 
     A JUDGEMENT step with NO entry here is **not** a config error. It is the
-    legal shape: the operator is asked, and the driver refuses to advance. That
-    sentence is in this docstring because "it passed and I do not know why" is
+    legal shape: the operator is asked, and the step is reported UNVERIFIABLE
+    while the walk finishes (D8). That sentence is in this docstring because "it passed and I do not know why" is
     the shape of a false PASS.
     """
     known = registry_for(operation) if registry is None else registry
@@ -783,8 +784,9 @@ def _judged_by_command(ctx: Context, step: str, must: str) -> Answer:
     """The shape of `pr-open` / `ci-green` / `prove-artifact`.
 
     With a command, the command decides. WITHOUT one the answer is
-    UNVERIFIABLE, which is a refusal to advance — never a pass. That is the
-    whole difference between this machine and the prose it replaces.
+    UNVERIFIABLE — reported by name, never a pass, and the walk finishes (D8).
+    That is the whole difference between this machine and the prose it
+    replaces.
     """
     command = _configured(ctx, step)
     if not command:
@@ -2619,10 +2621,10 @@ STEP_DOC: dict[str, str] = {
         'and pushes nothing there.',
     'pr-open':
         'the configured `pr-open` command exits 0. With none, the operator is '
-        'asked and the run refuses to advance.',
+        'asked and the step is reported not true; the walk finishes.',
     'ci-green':
         'the configured `ci-green` command exits 0. With none, the operator '
-        'is asked and the run refuses to advance.',
+        'is asked and the step is reported not true; the walk finishes.',
     'merge': 'the mainline contains this branch\'s tip.',
     'tag': 'the tag exists locally AND on the remote. It is never force-moved.',
     'prove-artifact':

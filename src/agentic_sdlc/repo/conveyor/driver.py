@@ -90,14 +90,15 @@ Line shapes are contract (rule 6):
     [release:tree-clean] GATE ALREADY-TRUE — no modified paths
     [release:version-sync] AUTOMATIC SAID — bumped pyproject.toml
     [release:version-sync] AUTOMATIC DONE — pyproject.toml says 0.2.0
-    [release:gate] GATE STOPPED — 12 failures
+    [release:gate] GATE NOT-TRUE — 12 failures
     [release:ci-green] JUDGEMENT UNVERIFIABLE — no artifact, no command
     [release] CORRECTED — the run state said 'gate' was done; the tree says: …
-    [release] STOPPED — 'gate' (GATE) at step 10/21; what would make it true: …
+    [release] step 10/21 'gate' (GATE) is not true; what would make it true: …
+    [release] 19/21 true · 1 not true: gate · 1 unverifiable: ci-green
     [release] PASS — 21/21 steps
 
-Exit codes are contract (rule 6): 0 the run completed, 1 it stopped on a step
-(a finding), 2 usage or config error.
+Exit codes are contract (rule 6): 0 every postcondition holds, 1 one or more
+do not (a finding — the walk still finished, D8), 2 usage or config error.
 """
 from __future__ import annotations
 

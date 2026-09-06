@@ -105,7 +105,7 @@ every run; a state the project never declared is refused by name.
                                            points at at a disposition other
                                            than `open`. Writes nothing)
   get <grain-id> <key>                    (read one frontmatter field)
-  set <grain-id> <key> <value>            (write one frontmatter field)
+  set <grain-id> <key> <value>            (write one frontmatter field — not status)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
   vocabulary [--json]                     (this version's declared surface:
@@ -391,9 +391,11 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     """Move a bug's `status:` through code — exactly `cmd_story`'s shape.
 
     A bug's status is the one fact that "matters most" (its own docstring in
-    `checks/pm.py`), and today only a hand edit or the untyped `pm set`
-    reaches it — a typo'd status the vocabulary would have refused going
-    straight into the file the vocabulary exists to police. This closes that.
+    `checks/pm.py`), and before this verb only a hand edit or the untyped
+    `pm set` reached it — a typo'd status the vocabulary would have refused
+    going straight into the file the vocabulary exists to police. This verb
+    closes the first route; `cmd_set` refusing the `status` key closes the
+    second, so every status write goes through `_movable`.
 
     `bid` must NAME a bug (contain `/bugs/`) before `_grain_file` ever runs:
     `_grain_file` resolves a milestone/feature/story id too when `/bugs/` is
@@ -1040,12 +1042,26 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
 
     Every hand-rolled `sed` over frontmatter is a chance to rewrite a line
     ending, drop a field, or move a `status:` that had preconditions on it.
+
+    `status` is the one key this verb refuses: a status is a MOVE, and the
+    status verbs are what ask `move_defect` (is this a state the project
+    declared for this kind?) and stamp the ledger row. `set` asks nothing
+    and stamps nothing, so `set … status wombat` wrote any word at exit 0
+    and left no row — a write that looks legitimate and is not (rule 4),
+    caught only by `check pm` D4 on the next run. Refused by name, before
+    the grain is even resolved, the same as `_movable` for the verbs.
     """
     if len(args) != 3:
         raise Usage(USAGE)
     gid, key, value = args
     if not key or not key.replace('_', '').isalnum():
         raise Usage(f'{key!r} is not a frontmatter key')
+    if key == 'status':
+        kind = _grain_kind(gid)
+        raise Usage(f'status is a move, not a field: run `{PROG} {kind} '
+                    f'{value} {gid}` — the {kind} verb checks {value!r} '
+                    f'against [pm.states.{kind}] and stamps the ledger; '
+                    f'`set` would do neither')
     if '\n' in value or '\r' in value:
         raise Refused('a frontmatter scalar is one line')
     path = _grain_file(cfg, gid)

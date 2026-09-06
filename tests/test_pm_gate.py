@@ -59,7 +59,7 @@ def gate_both_streams(root: Path) -> tuple[int, str]:
 
 
 def building_milestone(root: Path, branch: str = '', version: str = '0.1'):
-    """The tree D8/D9/D10 read: a `building` milestone, a `branch:` stamp and
+    """The tree D9/D10/R5 read: a `building` milestone, a `branch:` stamp and
     a `pyproject.toml` version."""
     mfile = root / 'pm/roadmap/0.1-demo/milestone.md'
     model.set_field(mfile, 'status', 'building')
@@ -250,7 +250,12 @@ class DriftGate(unittest.TestCase):
         def warned(out: str) -> int:
             return int(re.search(r'; (\d+) warning\(s\)', out).group(1))
 
-        with tree(feature_status='planning', story_statuses=('done',)) as root:
+        # U1 is stock-ON and warns on any fixture tree holding one state per
+        # kind, so this case pins the roster to the rules it is actually about.
+        # Counting a constant would make the delta this asserts meaningless.
+        with tree(feature_status='planning', story_statuses=('done',),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
@@ -311,7 +316,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                                      ('planning', empty, False)):
             with self.subTest(status=status, filled=body is filled), \
                     tree(feature_status='building',
-                         story_statuses=('ready',)) as root:
+                         story_statuses=('ready',),
+                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
                 self._settle(root)
                 self._story(root, status, body)
                 code, out = run_gate(root)
@@ -324,7 +331,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # phase on each feature. A grain with NO such heading at all says so
         # in different words from an empty one.
         with tree(milestone_status='building', feature_status='building',
-                  story_statuses=()) as root:
+                  story_statuses=(),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             for needle in ("milestone 0.1 is 'building' with no branch:",
@@ -647,16 +656,15 @@ class RetiredConfigIsRefusedByName(unittest.TestCase):
 
 
 class FlowChecks(unittest.TestCase):
-    """D8/D9/D10 — branch-per-milestone, bump-at-start, and the mainline
-    guard. All three are OPT-IN (decision D3): a project bumping at close, or
-    running D9 alone, is running a different valid flow, not drifting.
+    """D9/D10 — branch-per-milestone and the mainline guard. Both are OPT-IN
+    (decision D3): a project running D9 alone is running a different valid
+    flow, not drifting. D8 lived here and became R5, below.
     """
 
     def test_off_unless_named(self):
-        # Every input the three rules exist to catch, on the stock roster.
-        for branch, version in (('staging', '9.9.9'),  # D8: version mismatch
-                                ('', '0.1'),           # D9: no branch stamp
-                                ('main', '0.1')):      # D10: the mainline
+        # Every input the two rules exist to catch, on the stock roster.
+        for branch, version in (('', '0.1'),        # D9: no branch stamp
+                                ('main', '0.1')):   # D10: the mainline
             with self.subTest(branch=branch, version=version), \
                     tree(story_statuses=('ready',)) as root:
                 building_milestone(root, branch=branch, version=version)
@@ -666,9 +674,7 @@ class FlowChecks(unittest.TestCase):
     def test_each_flow_rule_fires_when_it_is_named(self):
         # (checks, branch, version, extra config, the line the finding carries)
         rows = (
-            ('["D8","D9"]', 'staging', '9.9.9', '',
-             'does not match the in-progress milestone'),
-            ('["D8","D9"]', '', '0.1', '', 'declares no branch:'),
+            ('["D9"]', '', '0.1', '', 'declares no branch:'),
             ('["D10"]', 'main', '0.1', '', 'the mainline itself'),
             ('["D10"]', '', '0.1', '', 'needs a branch off the mainline'),
             # `[repo_hygiene] mainline` is a git ref and keeps `origin/`; D10
@@ -691,7 +697,7 @@ class FlowChecks(unittest.TestCase):
     def test_a_correct_tree_passes_each_rule_that_names_it(self):
         # The other side of every row above, including the opt-in split: D9
         # only requires SOME stamp, so it does not refuse the mainline.
-        for checks, branch in (('["D8","D9"]', 'staging'),
+        for checks, branch in (('["D9"]', 'staging'),
                                ('["D10"]', 'milestone/0.1-demo'),
                                ('["D9"]', 'main')):
             with self.subTest(checks=checks, branch=branch), \
@@ -702,61 +708,153 @@ class FlowChecks(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertNotIn('unknown rule', out)
 
-    def test_d8_reports_over_every_in_progress_milestone(self):
-        # A matching sibling used to mask the exact drift D8 exists for.
-        # Decision D5: the rule is asked of EVERY milestone in `in_progress`,
-        # so the one the version names is clean and the other one is the
-        # finding — never "two are building, close one", which was the engine
-        # deciding there can only be one.
-        with tree(milestone_status='building', story_statuses=('ready',)) as root:
-            write(root / 'pm/roadmap/0.2-two/milestone.md',
-                  {'id': '"0.2"', 'name': 'Two', 'status': 'packaging',
-                   'branch': 'staging'})
-            building_milestone(root, branch='staging', version='0.1')
-            write_config(root, '[pm]\nchecks = ["D8"]\n')
-            code, out = run_gate(root)
-            self.assertEqual(code, 1)
-            self.assertIn("does not match the in-progress milestone '0.2'", out)
-            self.assertNotIn("milestone '0.1'", out)
 
-    def _d8_tree_with_version(self, version: str, released: str = '0.0.9'):
-        # 0.1 is building; `released` is the DONE milestone retire's lag-by-one
-        # keeps in the tree — the only id a hotfix may extend.
+class R5GradesTheCurrentRelease(unittest.TestCase):
+    """R5 — the version file equals the CURRENT entry in `order`.
+
+    D8's three cases (match / mismatch / no version in the file) carry over
+    unchanged in what they assert; what moved is where the expected value is
+    read FROM — a position in the plan rather than the id of whichever
+    milestone is in progress. The sin guarded is rule 4's first: a version file
+    that disagrees with the plan while the gate prints PASS.
+    """
+
+    @staticmethod
+    def _planned(root: Path, *versions: str) -> None:
+        body = '\n'.join(f'  - "{v}"' for v in versions)
+        (root / 'pm/roadmap/releases.md').write_text(
+            f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+
+    @staticmethod
+    def _claims(root: Path, mid: str, version: str, status: str) -> None:
+        write(root / f'pm/roadmap/{mid}-m/milestone.md',
+              {'id': f'"{mid}"', 'name': mid, 'status': status,
+               'version': f'"{version}"'})
+
+    def _tree(self, version: str, config: str = '[pm]\nchecks = ["R5"]\n'):
         ctx = tree(milestone_status='building', story_statuses=('ready',))
         root = ctx.__enter__()
-        building_milestone(root, branch='staging', version=version)
-        write(root / f'pm/roadmap/{released}-old/milestone.md',
-              {'id': f'"{released}"', 'name': 'Old', 'status': 'done'})
-        write_config(root, '[pm]\nchecks = ["D8"]\n')
+        (root / 'pyproject.toml').write_text(
+            f'[project]\nversion = "{version}"\n', encoding='utf-8')
+        self._planned(root, '0.0.9', '0.1.0')
+        self._claims(root, 'a', '0.0.9', 'done')
+        self._claims(root, 'b', '0.1.0', 'building')
+        write_config(root, config)
         return ctx, root
 
-    def test_d8_admits_a_hotfix_of_the_released_milestone_and_nothing_else(self):
-        # 0.0.9 shipped; 0.0.9.1 is a hotfix cut from the mainline that carries
-        # no milestone of its own — the release branch must pass. 0.1.1 extends
-        # the BUILDING id, which is not a hotfix of anything shipped, and
-        # `0.0.9.01` is the same version spelled so it no longer resolves. The
-        # rest of the version grammar's refusal matrix belongs to the grammar
-        # (SDLC.md §5), not to this surface.
-        for version, expected in (('0.0.9.1', 0), ('0.1.1', 1), ('0.0.9.01', 1)):
+    def test_off_unless_named(self):
+        ctx, root = self._tree('9.9.9', config='')
+        try:
+            self.assertEqual(run_gate(root)[0], 0)
+        finally:
+            ctx.__exit__(None, None, None)
+
+    def test_the_current_release_is_graded_and_a_mismatch_names_both(self):
+        # `start`: current is 0.1.0, the first entry not yet shipped.
+        for version, expected in (('0.1.0', 0), ('9.9.9', 1)):
             with self.subTest(version=version):
-                ctx, root = self._d8_tree_with_version(version)
+                ctx, root = self._tree(version)
                 try:
                     code, out = run_gate(root)
                     self.assertEqual(code, expected, out)
                     if expected:
-                        self.assertIn('(D8)', out)
+                        self.assertIn('(R5)', out)
+                        self.assertIn("'9.9.9'", out)   # what the file says
+                        self.assertIn("'0.1.0'", out)   # what the plan says
+                        self.assertIn("'b'", out)       # the milestone claiming it
                     else:
-                        self.assertNotIn('(D8)', out)
+                        self.assertNotIn('(R5)', out)
                 finally:
                     ctx.__exit__(None, None, None)
 
+    def test_bump_at_close_permits_the_file_at_either_adjacent_release(self):
+        """Found by RUNNING the release belt: `version-sync` wanted the new
+        version and R5 wanted the old one, at the same instant, on the same
+        tree, and neither was wrong.
+
+        Under `version_at = "ship"` the file carries the last shipped release
+        while the next is built, and the RELEASE COMMIT moves it — so between
+        that commit and the status flip it correctly names a release that has
+        not shipped. Both are valid; a third value is not.
+        """
+        config = '[pm]\nchecks = ["R5"]\nversion_at = "ship"\n'
+        for version, expected in (('0.0.9', 0),   # last shipped, mid-build
+                                  ('0.1.0', 0),   # the release commit landed
+                                  ('9.9.9', 1)):  # neither
+            with self.subTest(version=version):
+                ctx, root = self._tree(version, config=config)
+                try:
+                    code, out = run_gate(root)
+                    self.assertEqual(code, expected, out)
+                    if expected:
+                        self.assertIn("'0.0.9' or '0.1.0'", out)
+                finally:
+                    ctx.__exit__(None, None, None)
+
+    def test_bump_at_start_permits_exactly_one(self):
+        # `start` has no such window: the file carries the release being built
+        # from the moment it opens, so a second accepted value would be slack
+        # the flow does not need.
+        for version, expected in (('0.1.0', 0), ('0.0.9', 1)):
+            with self.subTest(version=version):
+                ctx, root = self._tree(version)
+                try:
+                    self.assertEqual(run_gate(root)[0], expected)
+                finally:
+                    ctx.__exit__(None, None, None)
+
+    def test_no_version_in_the_file_is_a_finding(self):
+        ctx, root = self._tree('0.1.0')
+        try:
+            (root / 'pyproject.toml').write_text('[project]\n', encoding='utf-8')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('no version found', out)
+        finally:
+            ctx.__exit__(None, None, None)
+
+    def test_a_tree_with_no_plan_warns_and_never_reddens(self):
+        # Milestone risk 1: a rule that fails every fresh consumer is a rule
+        # that gets switched off within a version.
+        ctx, root = self._tree('0.1.0')
+        try:
+            (root / 'pm/roadmap/releases.md').unlink()
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('WARN', out)
+            self.assertIn('pm order --append', out)
+        finally:
+            ctx.__exit__(None, None, None)
+
+    def test_d8_in_the_roster_is_named_as_retired_never_as_unknown(self):
+        # A consumer whose config still lists D8 is told where the rule went.
+        # Silently ungating it would be rule 4's first sin wearing a typo.
+        with tree() as root:
+            write_config(root, '[pm]\nchecks = ["D8"]\n')
+            code, out = gate_both_streams(root)
+            self.assertEqual(code, 2, out)
+            self.assertIn('D8', out)
+            self.assertIn('retired', out)
+            self.assertIn('R5', out)
+            self.assertNotIn('unknown rule', out)
+
 
 class ConfigValueErrors(unittest.TestCase):
+    def test_a_bad_version_at_is_exit_2_not_a_finding(self):
+        # Review F8: the criterion says "at exit 2" and its first proof only
+        # asserted that `load()` raises. This is the exit-code half, in the
+        # exit-2 family where §6's amend-first ordering puts it.
+        for bad in ('version_at = "whenever"', 'version_at = "START"',
+                    'version_at = ""', 'version_at = 7'):
+            with self.subTest(bad=bad), tree() as root:
+                write_config(root, f'[pm]\nchecks = ["R5"]\n{bad}\n')
+                self.assertEqual(gate_both_streams(root)[0], 2)
+
     def test_a_bad_version_pattern_is_exit_2_not_a_finding(self):
         for bad in ('version_pattern = "version = \\"(.*\\""',
                     'version_pattern = "^version = .*$"'):
             with self.subTest(bad=bad), tree() as root:
-                write_config(root, f'[pm]\nchecks = ["D8"]\n{bad}\n')
+                write_config(root, f'[pm]\nchecks = ["R5"]\n{bad}\n')
                 self.assertEqual(run_gate(root)[0], 2)
 
     def test_a_path_key_outside_the_checkout_is_refused_not_followed(self):
@@ -1645,3 +1743,320 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         # dangling record stays a DRIFT marker (D1 is a finding).
         self.assertIn('<WARN: all stories done, feature still shaped>', out_r)
         self.assertIn('<DRIFT: reviewed:', out_r)
+
+
+class TheUnboundFamily(unittest.TestCase):
+    """R1-R4 and R6 — the plan and the tree held to each other.
+
+    R1 and R6 get two cases each because both are symmetric and only ONE
+    direction of each is the bug that motivated it: an entry nothing claims is
+    the cheap half, and a milestone that finished under someone else's version
+    is the half no rule in the package could previously see.
+    """
+
+    ALL = '[pm]\nchecks = ["R1","R2","R3","R4","R6"]\n'
+
+    @staticmethod
+    def _planned(root: Path, *versions: str) -> None:
+        body = '\n'.join(f'  - "{v}"' for v in versions)
+        (root / 'pm/roadmap/releases.md').write_text(
+            f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+
+    @staticmethod
+    def _claims(root: Path, mid: str, version: str, status: str) -> None:
+        front = {'id': f'"{mid}"', 'name': mid, 'status': status}
+        if version:
+            front['version'] = f'"{version}"'
+        write(root / f'pm/roadmap/{mid}-m/milestone.md', front)
+
+    def test_off_unless_named(self):
+        # Every input the family exists to catch, on the stock roster.
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.0.9', '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'done')   # R4 + R6 + R1 dangling
+            self._claims(root, 'b', '9.9.9', 'done')   # R1 unscheduled + R6
+            self.assertEqual(run_gate(root)[0], 0)
+
+    def test_r1_names_both_directions_and_only_one_of_them_reddens(self):
+        """An entry nothing claims is a WARN — the row survives its milestone on
+        purpose, and a retired milestone is indistinguishable from an unwritten
+        one. A `version:` on no plan is a FAIL: somebody wrote it down."""
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'b', '9.9.9', 'planning')
+            write_config(root, '[pm]\nchecks = ["R1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('UNBOUND', out)
+            self.assertIn('0.2.0', out)      # dangling, warned
+            self.assertIn('9.9.9', out)      # unscheduled, failed
+            self.assertIn('UNSCHEDULED', out)
+            self.assertIn('pm order --append 9.9.9', out)
+
+    def test_r2_counts_the_backlog_and_never_reddens_on_it(self):
+        # A healthy tree has many, and a gate that reddens on planning is a
+        # gate people switch off (milestone risk 1).
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'someday', '', 'planning')
+            self._claims(root, 'later', '', 'planning')
+            write_config(root, '[pm]\nchecks = ["R2"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('BACKLOG', out)
+            # The fixture's own `0.1` milestone declares no version either, and
+            # counting it is right: backlog is every milestone not proposed as
+            # a release, not just the ones this case wrote.
+            self.assertIn('3 milestone(s)', out)
+            self.assertIn('someday', out)
+            self.assertIn('later', out)
+
+    def test_r3_refuses_to_let_a_directory_name_decide_which_release_ships(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'done')
+            self._claims(root, 'b', '0.1.0', 'building')
+            write_config(root, '[pm]\nchecks = ["R3"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('claimed by 2 milestones', out)
+            self.assertIn('directory NAME', out)
+
+    def test_r4_history_is_a_prefix(self):
+        """The invariant that makes "next = the first unshipped entry" correct
+        rather than merely usual, and what lets version_at="start" mean
+        anything."""
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'b', '0.2.0', 'done')
+            write_config(root, '[pm]\nchecks = ["R4"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('history is not a prefix', out)
+            self.assertIn('0.2.0 has shipped and sits AFTER 0.1.0', out)
+
+    def test_r6_catches_the_first_milestone_never_closed_in_both_directions(self):
+        """0.3.0/bugs/the-first-milestone-never-closed, as a rule.
+
+        Direction one is the bug: work that went out under someone else's
+        version, whose record never moved. Direction two is its mirror: a
+        milestone that finished having never been scheduled at all.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'planning')   # behind a shipped one
+            self._claims(root, 'b', '0.2.0', 'done')
+            self._claims(root, 'c', '7.7.7', 'done')       # done, on no plan
+            write_config(root, '[pm]\nchecks = ["R6"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn("its work went out under someone else's version", out)
+            self.assertIn('0.1.0 sits at position 1', out)
+            self.assertIn('finished without ever being scheduled', out)
+            self.assertIn('7.7.7', out)
+
+    def test_a_healthy_plan_passes_every_rule_in_the_family(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'done')
+            self._claims(root, 'b', '0.2.0', 'building')
+            self._claims(root, 'someday', '', 'planning')
+            write_config(root, self.ALL)
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('DRIFT', out)
+            self.assertNotIn('unknown rule', out)
+
+
+class D7ADeclaredStateNobodyUses(unittest.TestCase):
+    """D4 asks "is this word declared", never "is this word used".
+
+    The finding: a tree adopted the flow as a CONFIG FIX, watched `check pm` go
+    green, and used three of its eight declared milestone states — for its whole
+    life, invisibly, because nothing anywhere related the declared set to the
+    set in use. A WARN, never a finding: a tree mid-adoption legitimately has
+    unused states, and 0.2.0 moved four rules to warnings for the same reason.
+    """
+
+    def test_it_names_the_unused_states_with_the_count_in_use(self):
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('done',)) as root:
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)          # a WARN never decides the code
+            self.assertIn('(U1)', out)
+            self.assertIn('WARN', out)
+            self.assertIn('declared state(s) are in use', out)
+            # The milestone kind declares 8 and this tree holds one word.
+            self.assertIn('1 of 8 declared state(s) are in use', out)
+            self.assertIn('packaging', out)
+
+    def test_a_kind_with_no_grains_at_all_is_silent_rather_than_all_unused(self):
+        # "Every declared state unused" means the tree holds no grain of that
+        # kind — a different fact, and reporting it as flow drift would redden
+        # (well, warn at) every tree that has not filed a bug yet.
+        with tree() as root:
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('bug:', out)
+
+    def test_off_unless_named(self):
+        with tree(milestone_status='building') as root:
+            write_config(root, '[pm]\nchecks = ["D1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U1)', out)
+
+    def test_an_undeclared_word_in_the_tree_is_D4s_and_not_counted_here(self):
+        # The census counts DECLARED states only; a `wombat` in a file is D4's
+        # finding, and letting it into this census would make the two rules
+        # argue about the same byte.
+        with tree(milestone_status='building') as root:
+            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+                            'status', 'wombat')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('wombat', out)
+
+
+class AConfigErrorIsComplete(unittest.TestCase):
+    """A `devkit.toml` read reports EVERY defect, and the flow first.
+
+    Measured on a real adoption: that tree had a retired `[pm] review_slug_fallback`
+    AND no `[pm.states.*]` at all. It was told about the retired key — the
+    cosmetic one — and had to fix it and re-run to learn that the flow was
+    missing, which is what stops every work-moving verb in the package. Every
+    config refusal in this suite was covered SINGLY; nothing asserted what a
+    consumer is told when the tree is wrong in more than one way, which is the
+    normal state of a real adoption.
+    """
+
+    @staticmethod
+    def _bare_tree(config: str):
+        import tempfile as _tf
+        ctx = _tf.TemporaryDirectory()
+        root = Path(ctx.name) / 'repo'
+        (root / 'pm' / 'roadmap').mkdir(parents=True)
+        (root / '.git').mkdir()
+        (root / 'devkit.toml').write_text(config, encoding='utf-8')
+        return ctx, root
+
+    def test_two_defects_are_both_reported_and_the_flow_comes_first(self):
+        ctx, root = self._bare_tree('[pm]\nreview_slug_fallback = true\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+            self.assertIn('declares no flow', out)
+            self.assertIn('review_slug_fallback', out)
+            # The ORDER is the feature: the flow stops every verb, the retired
+            # key is cosmetic, and the tree that motivated this was told the
+            # cosmetic one.
+            self.assertLess(out.index('declares no flow'),
+                            out.index('review_slug_fallback'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_it_is_exit_2_once_not_once_per_defect(self):
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nalso_done = ["x"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+        finally:
+            ctx.cleanup()
+
+    def test_five_defects_at_once_are_all_reported_flow_first(self):
+        """Review D2/D3: two defects INSIDE `load()` reported as one, and any
+        `load()` defect hid the whole retired-key sweep behind it. Each reader
+        is now asked separately."""
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n'
+            'checks = ["D8", "D99"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+            for needle in ('declares no flow', 'version_at', 'D8',
+                           'D99', 'review_slug_fallback'):
+                self.assertIn(needle, out)
+            self.assertEqual(out.count('[check:pm] ERROR'), 5, out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('version_at'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_every_pm_verb_reports_the_whole_set_not_just_check_pm(self):
+        """Review D1: `pm validate` on the motivating tree printed ONE line,
+        the cosmetic one, and never named the flow."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        from agentic_sdlc.core.project import load_config, repo_root
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(buf):
+                    code = pm_cli.main(['validate'])
+            finally:
+                os.chdir(previous)
+                repo_root.cache_clear()
+                load_config.cache_clear()
+            out = buf.getvalue()
+            self.assertEqual(code, 2, out)
+            self.assertIn('declares no flow', out)
+            self.assertIn('review_slug_fallback', out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('review_slug_fallback'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_a_roster_error_carries_what_the_named_gates_would_have_said(self):
+        """The adoption split its roster, watched `make check` go green, and
+        reported the bump complete over a PM CLI refusing every verb. The one
+        message it saw was about GATE NAMES."""
+        from agentic_sdlc import cli as top
+        from agentic_sdlc.core.config import ConfigError
+        from agentic_sdlc.core.project import load_config, repo_root
+        ctx, root = self._bare_tree(
+            '[checks]\nall = ["doc", "pm", "uid", "tres"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            try:
+                with self.assertRaises(ConfigError) as caught:
+                    top.all_roster()
+            finally:
+                os.chdir(previous)
+                repo_root.cache_clear()
+                load_config.cache_clear()
+            said = str(caught.exception)
+            self.assertIn('unknown gate(s) uid, tres', said)
+            self.assertIn('ALSO', said)
+            self.assertIn('declares no flow', said)
+        finally:
+            ctx.cleanup()

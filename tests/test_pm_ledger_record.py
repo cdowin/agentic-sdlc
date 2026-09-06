@@ -442,10 +442,19 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 # exactly why this verb must not lie about having recorded: a silent success
 # would make the discarded failure unauditable.
 
+# 0.3.0: the ledger binds to the CURRENT RELEASE, not to a status flag. "No
+# milestone is in progress" stopped being a reason to refuse a cost row — gate
+# cost is a fact about a RUN, and the run happened whether or not anybody had
+# flipped a status. The one honest reason left is that the tree has no plan.
+# 0.3.0, review X1: having nowhere to file a gate row is a TRUE and
+# unremarkable fact — a fresh adoption has no plan and no milestone in progress
+# — and reporting it as a REFUSAL made every gate of every run print `the
+# recorder exited 1`, which reads as a broken install. It is INFORMATION now:
+# one line, exit 0, and still no row, which is the half that must not change.
 @pytest.mark.parametrize('kwargs,remove_pm,second_milestone,code,needle', [
-    (dict(), True, False, 1, 'no PM tree'),
-    (dict(milestone_status='planning'), False, False, 1, 'is in progress'),
-    (dict(), False, True, 2, '2 milestones are in progress'),
+    (dict(), True, False, 0, 'no PM tree'),
+    (dict(milestone_status='planning'), False, False, 0, 'declares no `order`'),
+    (dict(), False, True, 0, 'declares no `order`'),
 ])
 def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
         kwargs, remove_pm, second_milestone, code, needle):
@@ -785,3 +794,43 @@ def test_such_a_row_does_not_become_this_grains_row():
         {'grain': {'id': STORY}, 'tree': {'stories_wip': [{'id': STORY}]}},
         {STORY})
     assert ledger.row_names({'tree': {'stories_wip': [STORY]}}, {STORY})
+
+
+# --- 0.3.0: the release is what the ledger binds to ---------------------------
+def test_a_tree_at_rest_with_a_plan_files_the_row(tmp_path):
+    """THE BUG. Every gate run during this milestone's design printed
+
+        [pm] REFUSED — no milestone in pm/roadmap is in progress, so there is
+        no ledger this gate row belongs to; no row was written
+
+    over a tree that was planning two milestones with none flipped to
+    `in_progress`. The refusal was on the wrong axis: gate cost is a fact about
+    a RUN. `order` plus `version_at` answer with exactly one by construction,
+    and read no status field to do it.
+    """
+    with tree(milestone_status='planning') as root:
+        _model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+                        'version', '"0.1.0"')
+        (root / 'pm/roadmap/releases.md').write_text(
+            '---\norder:\n  - "0.1.0"\n---\n\nThe plan.\n', encoding='utf-8')
+        code, out = record(root, *GATE)
+        assert code == 0, out
+        assert only_row(root)['kind'] == 'gate'
+
+
+def test_several_milestones_in_progress_is_no_longer_a_question(tmp_path):
+    """"Which one owns this row" was the one thing the verb could not know. A
+    position in `order` is one place, so it is not asked."""
+    with tree(milestone_status='building') as root:
+        write(root / 'pm/roadmap/0.2-next/milestone.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building',
+               'version': '"0.2.0"'})
+        _model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+                        'version', '"0.1.0"')
+        (root / 'pm/roadmap/releases.md').write_text(
+            '---\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n', encoding='utf-8')
+        code, out = record(root, *GATE)
+        assert code == 0, out
+        # `start`: the first unshipped entry is 0.1.0, so its milestone holds it.
+        assert (root / 'pm/roadmap/0.1-demo/ledger.jsonl').is_file(), out
+        assert not (root / 'pm/roadmap/0.2-next/ledger.jsonl').exists()

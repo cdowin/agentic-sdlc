@@ -70,7 +70,6 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 # what stops the number moving again without a line moving here.
 WRITES = (
     'devkit.toml',
-    'pm/roadmap/ROADMAP.md',
     '.claude/rules/pm-execution.md',
     '.claude/skills/pm-operations/SKILL.md',
     'Makefile',
@@ -174,7 +173,9 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
     from_tables |= {rel for _, rel in init.SEEDS}
     # The PM tree and .gitignore have no plan table — they are the two writes
     # init owns outright, and they are named here for exactly that reason.
-    owned = {'pm/roadmap/ROADMAP.md', '.claude/rules/pm-execution.md',
+    # 0.3.0: ROADMAP.md left this list with the file. `init` still stands up
+    # `pm/roadmap/` itself, which is a DIRECTORY and so writes no file here.
+    owned = {'.claude/rules/pm-execution.md',
              '.claude/skills/pm-operations/SKILL.md', '.gitignore'}
     assert set(WRITES) == from_tables | owned, (
         f'roster drift: {sorted(set(WRITES) ^ (from_tables | owned))}')

@@ -33,6 +33,17 @@ VERDICTS = (
 
 # The union of what the installed reviewer definitions grade with; the
 # simplifier's DELETE/REPLACE/KEEP are kinds, not severities.
+# The severities that HOLD a close. Everything below `MAJOR` is recorded and
+# reported and does not block: a NIT about a regex held a feature exactly as
+# hard as a shipping bug, which is how "perfect" becomes the enemy of "good" —
+# and a reviewer who knows a NIT blocks stops writing NITs, which is worse,
+# because the cheap observation is the one you want written down.
+#
+# A MINOR you actually want to stop the line is raised as MAJOR. That is a
+# judgement the reviewer makes on purpose, once, instead of the belt making it
+# for them on every finding.
+BLOCKING_SEVERITIES = ('BLOCKER', 'CRITICAL', 'MAJOR')
+
 SEVERITIES = (
     'BLOCKER',
     'CRITICAL',

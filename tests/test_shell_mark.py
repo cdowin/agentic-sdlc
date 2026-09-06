@@ -84,6 +84,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_record.py',
     'test_pm_ledger_report.py',
     'test_pm_ledger_report_sections.py',
+    'test_pm_order.py',
     'test_pm_ready_for.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
@@ -321,3 +322,55 @@ class HandApplicationIsRefused(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TheGuardBehindTheDerivation(unittest.TestCase):
+    """The RUNTIME half of the mark (0.3.0/bugs/a-unit-test-can-spawn-the-full-gate).
+
+    `module_spawns` reads a module's SOURCE, so it cannot see a spawn reached
+    INDIRECTLY — a unit test calling a library function that, frames down, runs
+    a belt whose `gate` check is `make milestone`. That happened, and `make
+    unit` went from 7 s to 153 s with nothing saying why.
+
+    So the tier is ENFORCED as well as derived: outside `shell`, a spawn fails
+    the test that made it. Proving that is an INTEGRATION concern by
+    construction — the thing under test is what a real pytest process does with
+    the real conftest — and doing it in-process would mean writing a spawn
+    spelling into an unmarked module, which is the hole `NoUnreadSpawnSpelling`
+    exists to close. So it runs out here, through `ScratchSuite`, like every
+    other end-to-end claim about the derivation.
+    """
+
+    SPAWNER = (
+        'def test_reaches_a_spawn_indirectly():\n'
+        '    import importlib\n'
+        '    helper = importlib.import_module("sub" + "process")\n'
+        '    helper.Popen(["true"])\n'
+    )
+
+    def test_a_spawn_outside_the_shell_tier_fails_by_nodeid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            # The module names no spawn spelling its source can be read for —
+            # which is exactly the case the static mark misses.
+            (root / 'test_indirect.py').write_text(self.SPAWNER, encoding='utf-8')
+            code, out = ScratchSuite.run(root, '-m', 'not shell', 'test_indirect.py')
+            self.assertEqual(code, 1, out)
+            self.assertIn('tried to spawn a process', out)
+            self.assertIn('test_reaches_a_spawn_indirectly', out)
+            self.assertIn('module_spawns', out)
+
+    def test_the_same_spawn_is_allowed_once_the_module_is_marked(self):
+        # The guard enforces the TIER, not a ban: a module the derivation marks
+        # spawns freely, which is what `make test` and the floor interpreter run.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            (root / 'test_marked.py').write_text(
+                'import subprocess\n\n'
+                'def test_spawns_openly():\n'
+                '    subprocess.run(["true"], check=True)\n',
+                encoding='utf-8')
+            code, out = ScratchSuite.run(root, '-m', 'shell', 'test_marked.py')
+            self.assertEqual(code, 0, out)

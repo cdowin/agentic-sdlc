@@ -2,12 +2,17 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6 and D8-D10 are opt-in).
+(default: D1-D6 + V1-V5; V6, U1, D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
   D4  a status the project never declared, for any grain kind
-  D8  the shipped version equals an `in_progress` milestone's id (or is a hotfix `<done id>.N`)
+  R1  an `order` entry no milestone claims (WARN), or a `version:` on no plan (FAIL)
+  R3  two milestones claiming one `version:`
+  R4  history is a prefix — a shipped release sitting after an unshipped one
+  R5  the version file equals the CURRENT release in `order` ([pm] version_at)
+  R6  a release behind the last shipped one whose milestone never closed, and a
+      `done` milestone whose version is on no plan
   D9  an `in_progress` milestone declares a `branch:`
   D10 that branch is not the mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
 WARN (a line, never the exit code; both grains and both categories named):
@@ -15,13 +20,13 @@ WARN (a line, never the exit code; both grains and both categories named):
   D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
+  U1  a DECLARED state no grain of that kind has ever held, with the count in use
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:` or no `branch:`
+  R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
 
 Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
-
-import re
 
 import sys
 
@@ -34,7 +39,22 @@ def run() -> int:
     except model.ConfigError as err:
         # Exit 2 for the whole walk: the flow is read lazily, so a tree that
         # declared none is refused at the first category question.
-        print(f'[check:pm] ERROR — {err}', file=sys.stderr)
+        #
+        # EVERY defect, not the first, and the FLOW first among them. A real
+        # adoption is wrong in more than one way at once, and reporting them
+        # one per run makes the consumer pay a round trip to learn the next —
+        # the tree that motivated this had a retired key and no flow, and was
+        # told about the retired key, which is the cosmetic one.
+        try:
+            defects = model.all_config_defects()
+        except Exception:  # noqa: BLE001 - the collector must never mask the error
+            defects = []
+        for msg in defects or [str(err)]:
+            print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
+        if len(defects) > 1:
+            print(f'[check:pm] {len(defects)} config defect(s) — all of them '
+                  f'are above, and the first one listed is the one that stops '
+                  f'the most', file=sys.stderr)
         return 2
 
 
@@ -43,7 +63,10 @@ def _run() -> int:
     # Validated here, not in `model.load()`, so a stale rule id cannot take `pm status` down.
     stale = model.config_complaints(cfg)
     if stale:
-        for msg in stale:
+        # The flow can be declared and the roster still stale; report the whole
+        # set either way, in the same order.
+        flow = model.missing_flow_defect()
+        for msg in ([flow] if flow else []) + stale:
             print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
         return 2
     findings: list[str] = []
@@ -82,6 +105,8 @@ def _run() -> int:
     n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
 
     _flow_findings(cfg, enabled, report)
+    _unused_states(cfg, enabled, warn)
+    _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V6: structural + referential integrity ------------------------
     v_on = enabled & set(model.VALIDATE_CHECKS)
@@ -219,41 +244,38 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
     return n_features, n_stories
 
 
-_HOTFIX_N = re.compile(r'[1-9][0-9]*')
+def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """U1 — a state the project DECLARED and no grain has ever held.
 
-
-def _is_hotfix_of_released(cfg: model.PmConfig, version: str) -> bool:
-    """`<id>.N` for a `done` milestone still in the tree: a hotfix cut from the mainline."""
-    for mdir, mid in model.known_milestones(cfg):
-        if not mid or not version.startswith(mid + '.'):
+    A WARN with the count, never a finding: a tree mid-adoption legitimately has
+    unused states, and a rule that reddens every fresh consumer is undone within
+    a version. What it buys is that the fact stays VISIBLE after the install
+    scrolls away — the tool's most valuable idea, the conveyor, was invisible to
+    the tool.
+    """
+    if 'U1' not in enabled:
+        return
+    for kind in model.FLOW_KINDS:
+        counts = model.state_usage(cfg).get(kind)
+        if not counts:
             continue
-        status = model.field_of(mdir / model.MILESTONE_DOC, 'status')
-        if model.category_of(cfg, 'milestone', status) != model.DONE_CATEGORY:
+        unused = [state for state, n in counts.items() if n == 0]
+        if not unused or len(unused) == len(counts):
+            # All of them unused means the tree holds no grain of this kind at
+            # all, which is a different fact and not this rule's to report.
             continue
-        if _HOTFIX_N.fullmatch(version[len(mid) + 1:]):
-            return True
-    return False
+        warn(f'{kind}: {len(counts) - len(unused)} of {len(counts)} declared '
+             f'state(s) are in use; {", ".join(unused)} '
+             f'{"has" if len(unused) == 1 else "have"} never been held by any '
+             f'{kind} in this tree — declared and unused is a flow the project '
+             f'is not running (U1)')
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
-    """D8/D9/D10 over every `in_progress` milestone; two in progress is two answers."""
+    """D9/D10 over every `in_progress` milestone; two in progress is two answers."""
     live = (model.in_progress_milestones(cfg)
             if enabled & set(model.FLOW_CHECKS) else [])
 
-    if 'D8' in enabled and live:
-        version = model.shipped_version(cfg)
-        ids = [mid for mid, _, _ in live]
-        if version is None:
-            report(f'no version found in {cfg.version_file} — D8 cannot verify '
-                   f'the in-progress milestone(s) {", ".join(ids)}')
-        else:
-            for mid in ids:
-                if version != mid and not _is_hotfix_of_released(cfg, version):
-                    report(f'{cfg.version_file} version {version!r} does not '
-                           f'match the in-progress milestone {mid!r} — bump at '
-                           f'milestone START, and the id IS the version; a '
-                           f'hotfix is a done milestone id in this tree plus '
-                           f'one positive integer (D8)')
 
     mainline = model.mainline_branch() if 'D10' in enabled and live else ''
 
@@ -270,6 +292,158 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                 report(f'in-progress milestone {mid} declares branch: {branch!r}, '
                        f'the mainline itself — work must live off '
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
+
+
+def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
+                    report, warn) -> None:
+    """R1-R4 and R6 — the plan and the tree held to each other.
+
+    **This is THE UNBOUND FAMILY, whose first member is the milestone-to-release
+    edge**, not a set of milestone-specific rules. Every level of the tree has
+    the same pair: a binding that names nothing, and a grain that names no
+    binding. When 0.4.0 makes authoring separate from binding everywhere, a
+    feature with no milestone and a story with no feature join this census as
+    further ROWS rather than as new rules — naming the family now costs a
+    sentence, and naming it later costs a rename in every consumer's output
+    that greps these lines.
+    """
+    claims = model.version_claims(cfg)
+    scheduled = set(order)
+
+    if 'R1' in enabled:
+        for version in order:
+            claimants = model.milestones_of_version(cfg, version)
+            if claimants:
+                continue
+            # The concept the tree already has for a ref into a milestone that
+            # is gone: never a failure, because the row survives its milestone
+            # on purpose (ROADMAP.md's only real job, now retired).
+            warn(f'UNBOUND: {version} is in '
+                 f'{cfg.rel(model.releases_file(cfg))} `order` and no milestone '
+                 f'declares version: {version} — DANGLING if it was never '
+                 f'written, UNVERIFIABLE if its milestone was retired (R1)')
+        for version, mid in claims:
+            if version not in scheduled:
+                report(f'UNBOUND: milestone {mid} declares version: {version} '
+                       f'and {cfg.rel(model.releases_file(cfg))} `order` does '
+                       f'not carry it — UNSCHEDULED; `agentic-sdlc pm order '
+                       f'--append {version}` puts it on the plan (R1)')
+
+    if 'R2' in enabled:
+        # Backlog: a named, counted line, never a finding. A healthy tree has
+        # many, and a gate that reddens on planning is a gate people switch off.
+        bound = {mid for _, mid in claims}
+        backlog = [mid for _, mid in model.known_milestones(cfg)
+                   if mid and mid not in bound]
+        if backlog:
+            print(f'  BACKLOG  {len(backlog)} milestone(s) declare no '
+                  f'version: and are not proposed as releases — '
+                  f'{", ".join(sorted(backlog))} (R2)')
+
+    if 'R3' in enabled:
+        seen: dict[str, list[str]] = {}
+        for version, mid in claims:
+            seen.setdefault(version, []).append(mid)
+        for version, mids in seen.items():
+            if len(mids) > 1:
+                report(f'version: {version} is claimed by {len(mids)} '
+                       f'milestones — {", ".join(sorted(mids))}; a version '
+                       f'names one release, and which one ships is otherwise '
+                       f'decided by a directory NAME (R3)')
+
+    if 'R4' in enabled and order:
+        # History is a prefix. This is the invariant that makes "next = the
+        # first unshipped entry" CORRECT rather than merely usual, and it is
+        # what lets version_at = "start" mean anything.
+        first_open = None
+        for version in order:
+            if model.release_is_shipped(cfg, version):
+                if first_open is not None:
+                    report(f'history is not a prefix: {version} has shipped and '
+                           f'sits AFTER {first_open}, which has not — '
+                           f'`agentic-sdlc pm order` re-sequences the plan (R4)')
+            elif first_open is None and not model.release_is_unverifiable(cfg, version):
+                first_open = version
+
+    if 'R6' in enabled:
+        last = model.last_shipped_index(cfg)
+        for i, version in enumerate(order):
+            if i > last or model.release_is_shipped(cfg, version):
+                continue
+            mid = model.milestone_of_version(cfg, version)
+            if mid is None:
+                continue
+            mfile = model.milestone_file(cfg, mid)
+            status = model.field_of(mfile, 'status') if mfile else ''
+            report(f'{version} sits at position {i + 1}, behind the last '
+                   f'shipped release, and its milestone {mid} is {status!r} — '
+                   f'its work went out under someone else\'s version and the '
+                   f'record never moved (R6)')
+        for version, mid in claims:
+            mfile = model.milestone_file(cfg, mid)
+            status = model.field_of(mfile, 'status') if mfile else ''
+            done = model.category_of(cfg, 'milestone', status) == model.DONE_CATEGORY
+            if done and version not in scheduled:
+                report(f'milestone {mid} is {status!r} and its version '
+                       f'{version} is on no plan — a milestone that finished '
+                       f'without ever being scheduled as a release (R6)')
+
+
+def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+    """The release family: the plan (`order`) and the tree held to each other.
+
+    R1-R4 and R6 are the unbound family, in `_unbound_family`. R5, below, is the
+    version file against the CURRENT release — a POSITION in `order`, never a
+    parse, so it fits bump-at-start and bump-at-close both ([pm] version_at) and
+    has no opinion about what a version string looks like.
+    """
+    if not enabled & set(model.RELEASE_CHECKS):
+        return
+    # A plan that is THERE and unreadable is a finding, not the absence of a
+    # plan: saying "declares no `order`" over a BOM-damaged or fence-eaten file
+    # is rule 4's first sin — passing over what was never measured.
+    defect = model.plan_defect(cfg)
+    if defect is not None:
+        report(f'{cfg.rel(model.releases_file(cfg))} {defect} — R5 cannot read '
+               f'the plan, so {cfg.version_file} was NOT graded (R5)')
+        return
+    order = model.declared_order(cfg)
+    _unbound_family(cfg, enabled, order, report, warn)
+    if 'R5' not in enabled:
+        return
+    if not order:
+        # A tree mid-adoption has no plan yet. Reddening it would be milestone
+        # risk 1: a rule that fails every fresh consumer gets switched off.
+        warn(f'R5 is enabled and {cfg.rel(model.releases_file(cfg))} declares '
+             f'no `order` — nothing to grade {cfg.version_file} against; '
+             f'`agentic-sdlc pm order --append <version>` writes the plan')
+        return
+    accepted, why = model.graded_release_accepts(cfg)
+    current = accepted[0] if accepted else None
+    if current is None:
+        # The reason is READ, never invented: saying "every entry has shipped"
+        # over a tree where none had was a confident wrong answer at exit 0
+        # (review B3).
+        warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
+             f'(under [pm] version_at = {cfg.version_at!r})')
+        return
+    version = model.shipped_version(cfg)
+    if version is None:
+        report(f'no version found in {cfg.version_file} — R5 cannot verify it '
+               f'against the current release {current!r} (R5)')
+        return
+    if version in accepted:
+        return
+    mid = model.milestone_of_version(cfg, current)
+    claims = (f'the milestone {mid!r} claims it'
+              if mid is not None
+              else 'no milestone claims it — an `order` entry nothing carries')
+    named = ' or '.join(repr(v) for v in accepted)
+    report(f'{cfg.version_file} version {version!r} does not match '
+           f'{named} ({claims}), which is the '
+           f'{"first unshipped" if cfg.version_at == model.VERSION_AT_START else "last shipped"} '
+           f'entry in {cfg.rel(model.releases_file(cfg))} under [pm] '
+           f'version_at = {cfg.version_at!r} (R5)')
 
 
 def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],

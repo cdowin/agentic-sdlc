@@ -4,8 +4,9 @@ A check is a question about the tree with a one-line answer; nothing here
 performs anything (D12), and no check re-implements a predicate that has a
 verb — `pm ready-for` and `verify` are called, never copied. Config lives in
 `[<op>] steps`, `[<op>.commands]`, `[<op>] command_timeout`, `[release]
-changelog` / `version_files`, `[adopt] pin_file` / `runner_targets` (README);
-a repo with no `devkit.toml` runs the shipped defaults byte-identically.
+changelog` / `version_files`, `[adopt] pin_file` / `runner_targets` / `ours`
+(README); a repo with no `devkit.toml` runs the shipped defaults
+byte-identically.
 """
 from __future__ import annotations
 
@@ -18,7 +19,8 @@ from pathlib import Path
 
 from agentic_sdlc import __version__
 from agentic_sdlc.core import walk
-from agentic_sdlc.core.config import ConfigError, config_section
+from agentic_sdlc.core.config import (ConfigError, config_section,
+                                      relpath_tuple)
 from agentic_sdlc.repo.conveyor.driver import Answer, Check, Context, grain_path
 from agentic_sdlc.repo.pm import model, verdict
 
@@ -112,6 +114,22 @@ DEFAULT_COMMAND_TIMEOUT = 1800
 # --- what the adopt checks look at, all of it inside the checkout --------------
 DEFAULT_PIN_FILE = 'Makefile'
 DEFAULT_RUNNER_TARGETS = ('check', 'precommit', 'milestone')
+# `[<op>] ours`: the installed files the project has taken over. Empty by
+# default, because a file is claimed only by being named — the installables
+# INVITE local edits (each ships a `Project config` section), so the belt
+# grades what the project did not claim and NAMES what it did.
+DEFAULT_OURS: tuple[str, ...] = ()
+# The verdicts `_installable_drift` files each planned destination under.
+CURRENT = 'current'
+HEADER_ONLY = 'header-only'
+NOT_INSTALLED = 'not-installed'
+CLAIMED = 'claimed'
+# What is not drift: byte-current, the operator's own project-config header,
+# never installed, or claimed by the project under `[<op>] ours`.
+NOT_DRIFT = (CURRENT, HEADER_ONLY, NOT_INSTALLED, CLAIMED)
+# What the "N installed file(s)" count leaves out: a file that is not there,
+# and a file this belt does not grade.
+UNCOUNTED = (NOT_INSTALLED, CLAIMED)
 # Written by `install-gates`; `adopt` only reads it.
 FRAMEWORK_MAKEFILE = 'Makefile.devkit'
 # Where `install-hooks` puts the corpus in every consumer.
@@ -377,6 +395,8 @@ def validate_config(operation: str, names: tuple[str, ...],
         _pin_file_of(operation)
     if 'runner-targets-resolve' in names:
         _runner_targets_of(operation)
+    if 'installables-current' in names:
+        _ours_of(operation)
 
 
 def _timeout(operation: str) -> int:
@@ -407,6 +427,31 @@ def _pin_file_of(operation: str) -> str:
         raise ConfigError(
             f'[{operation}] pin_file must be one path, got {raw!r}')
     return raw
+
+
+def _ours_of(operation: str) -> tuple[str, ...]:
+    """The installed files this project has taken over — `[<op>] ours`.
+
+    Read through `relpath_tuple`, the SAME path grammar every other path key
+    in this package uses (`core/config.py`), so a bare string, an empty list,
+    a traversal, a URL or an absolute path is exit 2 — a claim this machine
+    cannot read is a reading failure (rule 9), never a silent claim. What a
+    claimed file MEANS is one thing only: `installables-current` does not
+    grade it, and names it on every run.
+    """
+    claims = relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
+    # `relpath_tuple` guards what LEAVES the checkout; these two stay inside it
+    # and still name no file (review O3). An empty string claims nothing and a
+    # `.` claims the repo root, and both would sit in the config reading like a
+    # claim while matching no installed path — a claim nobody can act on.
+    for claim in claims:
+        if not claim.strip() or claim.strip() in ('.', './'):
+            raise ConfigError(
+                f'[{operation}] ours contains {claim!r}, which names no file — '
+                f'a claim is one installed path this project has taken over, '
+                f'e.g. ".github/workflows/verify.yml". Remove the entry, or '
+                f'remove the key to claim nothing')
+    return claims
 
 
 def _runner_targets_of(operation: str) -> tuple[str, ...]:
@@ -680,49 +725,111 @@ def check_pin_bumped(ctx: Context) -> Answer:
 
 def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
     """(verb, path, verdict) for every file the `install-*` verbs write, from
-    `install.PLANS`; `not-installed` is not drift."""
+    `install.PLANS`; `not-installed` is not drift, and a path the project
+    claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
     from agentic_sdlc.repo import install
 
+    from agentic_sdlc.repo.pm import skills
+
+    claimed = frozenset(_ours_of(ctx.operation))
     out: list[tuple[str, str, str]] = []
-    for verb, plan in install.PLANS.items():
+    # All SIX installers (CLAUDE.md's self-hosting list), not the five that
+    # happen to share a module: the two guidance files drifted invisibly here,
+    # with no `ours` key in play at all (review O2).
+    everything = list(install.PLANS.items()) + [
+        (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
+    for verb, plan in everything:
         for name, rel in plan:
+            if rel in claimed:
+                # The project declared this file its own. Grading it would be
+                # this package holding an opinion about somebody else's file
+                # — and the claim is printed, so it hides nothing.
+                out.append((verb, rel, CLAIMED))
+                continue
             target = ctx.root / rel
             if not target.is_file():
-                out.append((verb, rel, 'not-installed'))
+                out.append((verb, rel, NOT_INSTALLED))
                 continue
             text, _defect = install.read_destination(target)
             try:
-                body = install.resolve_body(name, rel)
+                body = (skills.guidance_body(name)
+                        if verb == skills.GUIDANCE_VERB
+                        else install.resolve_body(name, rel))
             except (OSError, UnicodeDecodeError, ConfigError) as err:
                 out.append((verb, rel, f'unrenderable({_clip(str(err), 60)})'))
                 continue
             if text is None:
                 out.append((verb, rel, 'unreadable'))
             elif text == body:
-                out.append((verb, rel, 'current'))
+                out.append((verb, rel, CURRENT))
             elif install.header_only_difference(text, body):
                 # The operator's own project-config header; not drift.
-                out.append((verb, rel, 'header-only'))
+                out.append((verb, rel, HEADER_ONLY))
             else:
                 out.append((verb, rel, 'differs'))
     return out
 
 
+def _claim_clause(operation: str,
+                  drift: list[tuple[str, str, str]]) -> str:
+    """What `[<op>] ours` claimed, counted and named, for the end of the
+    `installables-current` line — on EVERY run, pass or fail.
+
+    A claim that is never printed is a hiding place: eleven files could leave
+    the belt's attention and the line would still read like a clean pass
+    (rule 4). A claim naming a path this version does not install is reported
+    rather than refused, because the install plans change between versions and
+    a consumer's belt must not become exit 2 for a file that simply retired.
+    Empty when nothing is claimed, so a repo declaring no `ours` prints
+    byte-identically to one with no devkit.toml at all (rule 5).
+    """
+    claimed = [rel for _, rel, verdict in drift if verdict == CLAIMED]
+    planned = {rel for _, rel, _ in drift}
+    unplanned = [rel for rel in _ours_of(operation) if rel not in planned]
+    clause = ''
+    if claimed:
+        clause += (f'; {len(claimed)} claimed by [{operation}] ours and not '
+                   f'graded: ' + _clip(', '.join(claimed)))
+    if unplanned:
+        clause += (f'; {len(unplanned)} claim(s) in [{operation}] ours name '
+                   f'no file {__version__} installs: '
+                   + _clip(', '.join(unplanned)))
+    return clause
+
+
 def check_installables_current(ctx: Context) -> Answer:
-    """Every installed file is byte-current or header-only different; each
-    that is not is named with the verb that shows the diff."""
+    """Every installed file the project did not claim is byte-current or
+    header-only different; each that is not is named with the verb that shows
+    the diff, and what `[<op>] ours` claimed is counted and named beside it.
+    """
     drift = _installable_drift(ctx)
     stale = [(verb, rel, verdict) for verb, rel, verdict in drift
-             if verdict not in ('current', 'header-only', 'not-installed')]
-    counted = sum(1 for _, _, v in drift if v != 'not-installed')
+             if verdict not in NOT_DRIFT]
+    counted = sum(1 for _, _, v in drift if v not in UNCOUNTED)
+    # After the clip, never inside it: the claim is the one part of this line
+    # that must survive a hundred drifted files.
+    claims = _claim_clause(ctx.operation, drift)
     if stale:
         return Answer.no(
             f'{len(stale)} of {counted} installed file(s) differ from what '
             f'{__version__} ships: '
             + _clip(', '.join(f'{rel} ({verdict}; `agentic-sdlc {verb} '
-                              f'--diff`)' for verb, rel, verdict in stale)))
+                              f'--diff`)' for verb, rel, verdict in stale))
+            + claims)
+    if not counted:
+        # Review O1, and milestone risk 2 arriving exactly as written: "a
+        # project can silence the check by claiming every file." Claiming all of
+        # them leaves NOTHING graded, and answering `ok — 0 installed file(s)
+        # are current` is rule 4's zero census wearing a pass. Naming the
+        # claims is what makes the list a statement; refusing to grade nothing
+        # is what stops it being a hiding place.
+        return Answer.no(
+            f'every installed file this belt would grade is claimed in '
+            f'[{ctx.operation}] ours, so NOTHING was graded — a verdict over an '
+            f'empty census is not a pass (CLAUDE.md rule 4). Un-claim the files '
+            f'this project has not actually taken over' + claims)
     return Answer.yes(f'{counted} installed file(s) are current with '
-                      f'{__version__}')
+                      f'{__version__}' + claims)
 
 
 def _config_readers() -> tuple[tuple[str, str, object], ...]:
@@ -1069,14 +1176,29 @@ def check_findings_landed(ctx: Context) -> Answer:
     passes, why = _passes(ctx, path)
     if why:
         return Answer.unverifiable(why)
-    opened = [f.id for p in passes for f in p.findings
-              if f.disposition_kind == verdict.OPEN]
+    opened = [f for p in passes for f in p.findings
+               if f.disposition_kind == verdict.OPEN]
+    blocking = [f.id for f in opened
+                if f.severity in verdict.BLOCKING_SEVERITIES]
+    minor = [f.id for f in opened
+             if f.severity not in verdict.BLOCKING_SEVERITIES]
     total = sum(len(p.findings) for p in passes)
-    if opened:
-        return Answer.no(f'{len(opened)} finding(s) open in {cfg.rel(path)}: '
-                         f'{_clip(", ".join(opened))} — land each, or defer '
-                         f'it in writing')
-    return Answer.yes(f'{cfg.rel(path)}: {total} finding(s), none open')
+    # SEVERITY gates the hold. An open NIT used to block a close exactly as
+    # hard as a shipping bug, so a review that did its job — writing down the
+    # cheap observations too — cost more to clear than it was worth, and the
+    # next reviewer learns to stop writing them.
+    if blocking:
+        return Answer.no(
+            f'{len(blocking)} blocking finding(s) open in {cfg.rel(path)}: '
+            f'{_clip(", ".join(blocking))} — land each, or defer it in writing'
+            + (f' ({len(minor)} non-blocking also open, which do not hold this '
+               f'close)' if minor else ''))
+    said = f'{cfg.rel(path)}: {total} finding(s), none blocking'
+    if minor:
+        # Reported on every run: not blocking is not the same as not there.
+        said += (f'; {len(minor)} open below MAJOR carried forward: '
+                 + _clip(', '.join(minor)))
+    return Answer.yes(said)
 
 
 # --- the registries -----------------------------------------------------------
@@ -1153,9 +1275,11 @@ STEP_DOC: dict[str, str] = {
         'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
         'version of the package that is running.',
     'installables-current':
-        'every installed file is byte-current with what this version ships, '
-        'or differs only in its project-config header; each that differs is '
-        'named with the `install-* --diff` that shows it.',
+        'every installed file the project has not claimed in `[<op>] ours` is '
+        'byte-current with what this version ships, or differs only in its '
+        'project-config header; each that differs is named with the '
+        '`install-* --diff` that shows it, and what was claimed is counted and '
+        'named beside it, on every run.',
     'config-updated':
         'every devkit.toml section this version reads accepts what this repo '
         'declares.',

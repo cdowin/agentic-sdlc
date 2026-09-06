@@ -55,10 +55,20 @@ verdict: SHIP-WITH-FIXES
 | M1 | CRITICAL | open |
 | M2 | MAJOR | landed in-place |
 """
+# MAJOR, because what this fixture is FOR is proving the second block is read
+# at all — and since 0.3.0 severity gates the hold, a below-MAJOR finding would
+# make the case pass for the wrong reason.
 SECOND_OPEN_BLOCK = """
 verdict: HOLD
 | id | severity | disposition |
-| Q5 | QUESTION | open |
+| Q5 | MAJOR | open |
+"""
+
+# The other side of that rule: read, reported, and NOT a blocker.
+SECOND_NIT_BLOCK = """
+verdict: SHIP-WITH-FIXES
+| id | severity | disposition |
+| Q6 | NIT | open |
 """
 EMPTY_BLOCK = """
 verdict: SHIP
@@ -402,7 +412,7 @@ class TagBelt(unittest.TestCase):
                     put_record(root, 'y.md', record(EMPTY_BLOCK)))
             code, out = run_cli(root, 'ready-for', 'tag', '0.1')
             self.assertEqual(code, 0, out)
-            self.assertIn('2 record(s), 3 finding(s), none open', out)
+            self.assertIn('2 record(s), 3 finding(s), none blocking', out)
 
     def test_a_record_with_zero_findings_is_counted_out_loud_on_a_passing_run(self):
         with tree(feature_status='done') as root:
@@ -448,6 +458,22 @@ class TagBelt(unittest.TestCase):
             code, out = run_cli(root, 'ready-for', 'tag', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn(f'Q5 open in {pointer}', out)
+
+    def test_an_open_finding_below_major_is_named_and_does_not_hold_the_tag(self):
+        """0.3.0: severity gates the hold. An open NIT used to block a tag
+        exactly as hard as a shipping bug, so a reviewer who did the job —
+        writing the cheap observations down too — cost more to clear than it
+        was worth, and the next one learns to stop writing them. Named on the
+        passing path, because not blocking is not the same as not there.
+        """
+        with tree(feature_status='done') as root:
+            pointer = put_record(root, 'x.md',
+                                 record(CLEAN_BLOCK, SECOND_NIT_BLOCK))
+            feature(root, 'alpha', 'done', pointer)
+            code, out = run_cli(root, 'ready-for', 'tag', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('Q6', out)
+            self.assertIn('carried forward', out)
 
     def test_a_clean_first_block_does_not_excuse_a_malformed_second(self):
         with tree(feature_status='done') as root:

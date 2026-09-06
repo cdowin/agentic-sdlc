@@ -76,15 +76,35 @@
 # checks = ["D1", "D2", "D3", "D4", "D5", "D6",   # drift rules — the default
 #           "V1", "V2", "V3", "V4", "V5"]         # integrity rules
 #                                   # V6 (execution lists match the tree) and
-#                                   # the FLOW rules are opt-in: D8 (the project
-#                                   # version equals an in-progress milestone's
-#                                   # id — bump-at-START), D9 (an in-progress
-#                                   # milestone declares `branch:`), D10 (that
-#                                   # branch is neither empty nor the mainline).
-#                                   # Each reports over EVERY milestone whose
-#                                   # state is in `in_progress` below.
-# version_file    = "pyproject.toml"              # D8: where the version lives
-# version_pattern = '^version = "(.*)"$'          # D8: the line carrying it
+#                                   # the FLOW rules are opt-in: D9 (an
+#                                   # in-progress milestone declares `branch:`)
+#                                   # and D10 (that branch is neither empty nor
+#                                   # the mainline). Both report over EVERY
+#                                   # milestone whose state is in `in_progress`
+#                                   # below.
+#                                   # The RELEASE family holds the plan
+#                                   # (pm/roadmap/releases.md `order`) and the
+#                                   # tree to each other: R1 an entry no
+#                                   # milestone claims, or a `version:` on no
+#                                   # plan; R2 the backlog census; R3 two
+#                                   # milestones claiming one version; R4
+#                                   # history is a prefix; R5 the version file
+#                                   # equals the CURRENT entry (`version_at`
+#                                   # below picks which); R6 a release behind
+#                                   # the last shipped one whose milestone
+#                                   # never closed.
+#                                   # U1 is stock-ON: a state this project
+#                                   # DECLARED and no grain has ever held. A
+#                                   # WARN with the count, never a finding — a
+#                                   # tree mid-adoption legitimately has
+#                                   # unused states.
+# version_file    = "pyproject.toml"              # R5: where the version lives
+# version_pattern = '^version = "(.*)"$'          # R5: the line carrying it
+# version_at      = "start"                       # R5: which entry in `order`
+#                                   # the version file must match — "start",
+#                                   # the first not yet shipped (bump at
+#                                   # START), or "ship", the last that has
+#                                   # (bump at CLOSE, in the release commit).
 #                                   # A project that keeps its version in an
 #                                   # framework's own file names that file
 #                                   # and the line that carries it, e.g.

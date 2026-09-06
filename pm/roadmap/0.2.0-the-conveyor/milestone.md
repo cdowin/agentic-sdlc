@@ -5,6 +5,7 @@ status: done
 depends_on: []
 branch: milestone/0.2.0-the-conveyor
 reviewed: docs/reviews/2026-09-05-0.2.0-release-review.md
+version: 0.2.0
 ---
 
 # 0.2.0 — the conveyor

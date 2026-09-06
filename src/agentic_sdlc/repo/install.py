@@ -8,6 +8,13 @@ name, with `--force` and moving it aside as the remedies; an entry with nothing 
 way is still written, and the run exits 1 because a replacement was withheld. A
 difference confined to the `project config` header is reported as one. No manifest,
 no merge, no sync: after the write the file is the repo's.
+
+Two things the report owes a consumer, and both are about SILENCE: every destination
+gets ONE `[install]` line whatever its disposition, because `grep '^\\[install\\]'` is
+how a run is summarised; and a run names what this verb has STOPPED shipping over the
+span between the version this repo pins and this one, because a make target that left
+in a bump is otherwise learnt from a broken build and a retired flag from nothing at
+all.
 """
 from __future__ import annotations
 
@@ -16,7 +23,9 @@ import re
 import sys
 from importlib import resources
 from pathlib import Path
+from typing import NamedTuple
 
+from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
@@ -130,7 +139,13 @@ roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
 confined to the `project config` header is reported as one, and the rest of
 that file is byte-current, so it needs no --force. --force overwrites the whole
-file, header included. --diff prints what would change and writes nothing."""
+file, header included. --diff prints what would change and writes nothing.
+EVERY destination gets one `[install]` line whatever its disposition — added,
+modified, header-only, already current, withheld — so a run summarised with
+`grep '^[install]'` cannot omit a file. Each run also names what this verb has
+STOPPED shipping (make targets, retired verb flags) between the DEVKIT_VERSION
+your Makefile pins and the version running; no readable pin reports the whole
+record rather than none of it."""
 
 # A `.sh` installable is written executable, as part of the write in `core.apply`.
 EXECUTABLE_SUFFIX = '.sh'
@@ -189,7 +204,10 @@ _NEXT_STEP = {
                      'that applies, so a target may call the library either '
                      'way — the stock recipes source it. Then edit the '
                      '`project config` header: the files are yours now.',
-    'install-sdlc': 'docs/sdlc-protocol.md is GENERATED — it is the one '
+    # No paragraph here may OPEN with a destination path: `[install] <path> …`
+    # is a destination's own header line, and prose wearing that shape is prose
+    # a summary counts as a file. `test_install.py` holds this.
+    'install-sdlc': 'this one is GENERATED — docs/sdlc-protocol.md is the one '
                     'installed file you do not edit. Its check lists come '
                     'from `[<operation>] steps` in devkit.toml and from the '
                     'registry that runs them, so the way to change the '
@@ -250,6 +268,7 @@ HEADER_ONLY_NOTE = '   (project-config header only)'
 def collision_refusal(collisions: list[str],
                       wrote: list[str] | None = None,
                       header_only: tuple[str, ...] | list[str] = (),
+                      undecodable: tuple[str, ...] | list[str] = (),
                       ) -> tuple[str, str]:
     """(what collided, what that means), plural-correct; shared with `pm install-skills`.
 
@@ -257,8 +276,18 @@ def collision_refusal(collisions: list[str],
     confined to the editable block, whose repair is to do nothing.
     """
     flagged = set(header_only)
+    # Review I5: a file that cannot be decoded did not "differ" — it could not
+    # be compared. `--force` still replaces it, which is why it is a collision
+    # and not a defect, but the reader is told which of the two this is.
+    note = ('' if not undecodable else
+            '\n    ' + ', '.join(sorted(undecodable))
+            + f' {UNDECODABLE_NOTE}')
     if len(collisions) == 1:
         rel = collisions[0]
+        if rel in set(undecodable):
+            return (f'{rel} {UNDECODABLE_NOTE}',
+                    'Nothing was written. `--force` replaces it whole; there '
+                    'is no diff to read first.')
         if rel in flagged:
             head = (f'{rel} exists and differs ONLY inside its project-config '
                     f'header — the rest of the file is byte-current, so there '
@@ -316,8 +345,17 @@ def destination_defect(target: Path) -> str:
     return f'cannot be created: {first.path} {_PARENT_TEXT[first.reason]}'
 
 
+UNDECODABLE_NOTE = 'is not UTF-8 text, so it cannot be compared'
+
+
 def read_destination(target: Path) -> tuple[str | None, str]:
-    """(the file's text, or None when it cannot be decoded and so is a collision; a read defect)."""
+    """(the file's text, or None when it cannot be decoded; a read DEFECT, or '').
+
+    An undecodable file comes back as `(None, '')` on purpose: it is a
+    COLLISION, not a defect — `--force` can replace it and that is useful — and
+    the caller tells the two apart by `text is None` with no defect. What it is
+    NOT is a file that "differs", and the refusal now says which (review I5).
+    """
     try:
         return target.read_text(encoding='utf-8'), ''
     except UnicodeDecodeError:
@@ -381,27 +419,192 @@ def resolve_body(name: str, rel: str) -> str:
     return getattr(import_module(module_name), function)()
 
 
+# --- one line per destination, whatever its disposition -----------------------
+# A consumer summarises a run with `grep '^\[install\]'`. Through 0.2.0 a MODIFIED
+# file printed a bare unified diff and no header at all, so that summary named the
+# additions and silently omitted the file that actually changed — over a 1,211-line
+# diff, the most consequential one. The dispositions below are a CLOSED set, and
+# every entry of a plan gets exactly one of them, in `--diff` and in a real run.
+REPORT_PREFIX = '[install]'
+WOULD_ADD = '{rel} does not exist — the whole file is an addition'
+IS_CURRENT = '{rel} already current'
+HEADER_ONLY_DIFFERS = ('{rel} differs ONLY inside its project-config header — '
+                       'the rest of the file is byte-current')
+BODY_DIFFERS = '{rel} exists and differs from what this would write'
+UNDECODABLE = '{rel} {defect} — --force would replace it whole'
+WROTE = 'wrote {rel}'
+WITHHELD = ('{rel} withheld — it exists and differs from what this would '
+            'write, and no --force was given')
+WRITE_FAILED = '{rel} could not be written — the refusal names why'
+NOT_REACHED = '{rel} not reached — an earlier write failed'
+
+
+def _say(line: str) -> None:
+    """One report line, under the prefix consumers grep for."""
+    print(f'{REPORT_PREFIX} {line}')
+
+
 def print_diff(rel: str, target: Path, body: str) -> None:
-    """What an install would change, as a unified diff. Writes nothing."""
+    """What an install would change, as a unified diff under ONE header line.
+
+    Every disposition gets a header, the modified file included; writes nothing.
+    """
     if not target.is_file():
-        print(f'[install] {rel} does not exist — the whole file is an addition')
+        # `is_file()` is false for a DIRECTORY and for an unwritable parent
+        # too, and calling either "an addition" at exit 0 disagrees with the
+        # real run, which refuses at exit 1 (review I4). `--diff` is what a
+        # consumer reads BEFORE the run, so it is the surface where the
+        # disagreement costs the most.
+        defect = destination_defect(target)
+        if defect:
+            _say(f'{rel} {defect} — a real run REFUSES this; no diff')
+            return
+        _say(WOULD_ADD.format(rel=rel))
         existing = ''
     else:
         text, defect = read_destination(target)
         if text is None:
-            print(f'[install] {rel} {defect or "is not text this can diff"} '
-                  f'— --force would replace it whole')
+            _say(UNDECODABLE.format(
+                rel=rel, defect=defect or 'is not text this can diff'))
             return
         if text == body:
-            print(f'[install] {rel} already current')
+            _say(IS_CURRENT.format(rel=rel))
             return
-        if header_only_difference(text, body):
-            print(f'[install] {rel} differs ONLY inside its project-config '
-                  f'header — the rest of the file is byte-current')
+        _say((HEADER_ONLY_DIFFERS if header_only_difference(text, body)
+              else BODY_DIFFERS).format(rel=rel))
         existing = text
     sys.stdout.writelines(difflib.unified_diff(
         existing.splitlines(keepends=True), body.splitlines(keepends=True),
         fromfile=f'a/{rel}', tofile=f'b/{rel}'))
+
+
+# --- what a verb STOPPED shipping ---------------------------------------------
+# Neither half of this is derivable. A make target dropped by a SPLIT is in no
+# installable this package still ships, and a retired FLAG lived in the consumer's
+# prose — a sentence naming it survives a bump intact and green, because no gate
+# reads a sentence. So it is DECLARED: one row per (version, verb), and a release
+# that withdraws something appends one row. The shape, for the release that needs
+# it:
+#
+#     Retirement('0.4.0', 'install-gates', targets=('some-target',),
+#                flags=('pm feature done --cascade',))
+#
+# The table is EMPTY because nothing this package ships was withdrawn between
+# 0.2.0 and 0.3.0 — install-gates' targets (`check`, `precommit`, `milestone`) and
+# every verb flag are all still here. Inventing a row to exercise the mechanism
+# would put a false sentence in a consumer's terminal; the mechanism is proven in
+# `tests/test_install.py` against a fixture table instead.
+
+
+class Retirement(NamedTuple):
+    """What one version stopped shipping, for one install verb."""
+
+    version: str
+    command: str
+    targets: tuple[str, ...] = ()
+    flags: tuple[str, ...] = ()
+
+
+RETIREMENTS: tuple[Retirement, ...] = ()
+
+# Where a consumer's `DEVKIT_VERSION` pin lives — READ, never written, and never
+# created. `[adopt] pin_file` can move it, but an install verb runs in trees with
+# no devkit.toml at all, so this reads the stock path and treats every other
+# answer as unknown, which WIDENS the span rather than narrowing it.
+PIN_FILE = 'Makefile'
+_VERSION = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)')
+
+NO_LONGER_SHIPPED = (
+    'no longer shipped: {what} — withdrawn {span}. A make target your Makefile '
+    'or `[gates] extra` still names fails with `No rule to make target`, so '
+    'drop or replace each one')
+RETIRED_FLAGS = (
+    'retired verb flags: {what} — withdrawn {span}. A flag lives in your prose, '
+    'and no gate can read a sentence about one: grep your rules and agent '
+    'briefs for each')
+NOTHING_WITHDRAWN = (
+    '{command} has withdrawn no make target and no verb flag {span}')
+
+
+def _version_key(version: str) -> tuple[int, int, int] | None:
+    """(major, minor, patch), or None when the string is not one — and an
+    unreadable version widens the span rather than narrowing it."""
+    found = _VERSION.match(version.strip().strip('"\''))
+    return (int(found[1]), int(found[2]), int(found[3])) if found else None
+
+
+def installed_stamp(root: Path) -> str | None:
+    """The version `root` pins, or None when there is no readable pin.
+
+    The pin is the only version marker a consumer repo carries: the installables
+    are written verbatim and carry no stamp of their own. Read through the one
+    pin grammar (`conveyor.steps.PIN_LINE`), never a second copy of it.
+    """
+    from agentic_sdlc.repo.conveyor.steps import PIN_LINE
+
+    try:
+        text = (root / PIN_FILE).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in text.split('\n'):
+        found = PIN_LINE.match(line)
+        if found:
+            return found.group(1).strip('"\'')
+    return None
+
+
+def retired_since(command: str, stamp: str | None,
+                  rows: tuple[Retirement, ...] | None = None,
+                  current: str | None = None) -> tuple[Retirement, ...]:
+    """`command`'s rows over the span between `stamp` and `current`.
+
+    This version's OWN row is always in the span — a run of this installer says
+    what this installer stopped shipping, whatever the pin says — and an older
+    stamp, or one that cannot be read at all, only widens it. Narrowing is the
+    direction that costs a consumer a broken build.
+    """
+    rows = RETIREMENTS if rows is None else rows
+    ceiling = _version_key(current or __version__)
+    floor = _version_key(stamp) if stamp else None
+    kept = []
+    for row in rows:
+        if row.command != command:
+            continue
+        key = _version_key(row.version)
+        if key is None or ceiling is None or key == ceiling:
+            kept.append(row)
+        elif key < ceiling and (floor is None or key > floor):
+            kept.append(row)
+    return tuple(kept)
+
+
+def _span_phrase(stamp: str | None) -> str:
+    at = f'v{__version__}'
+    if stamp is None:
+        return (f'at or before {at} — this repo pins no readable '
+                f'DEVKIT_VERSION, so the whole record is reported')
+    return f'between {stamp if stamp.startswith("v") else "v" + stamp} and {at}'
+
+
+def retirement_report(command: str, stamp: str | None,
+                      rows: tuple[Retirement, ...] | None = None,
+                      current: str | None = None) -> list[str]:
+    """The lines a run prints about what `command` stopped shipping.
+
+    Never empty: a span that withdrew nothing SAYS so, because a report that
+    found nothing and a report that never ran read identically in a transcript.
+    """
+    found = retired_since(command, stamp, rows, current)
+    span = _span_phrase(stamp)
+    targets = [t for row in found for t in row.targets]
+    flags = [f for row in found for f in row.flags]
+    lines = []
+    if targets:
+        lines.append(NO_LONGER_SHIPPED.format(what=', '.join(targets),
+                                              span=span))
+    if flags:
+        lines.append(RETIRED_FLAGS.format(what=', '.join(flags), span=span))
+    return lines or [NOTHING_WITHDRAWN.format(command=command, span=span)]
 
 
 def _defect_refusal(command: str, defects: list[str], wrote: list[str]) -> str:
@@ -412,6 +615,16 @@ def _defect_refusal(command: str, defects: list[str], wrote: list[str]) -> str:
             f'written:\n{listed}\n'
             f'agentic-sdlc {command}: {what}. Fix the path(s) and re-run — the '
             f'command is idempotent.')
+
+
+def _report_retirements(command: str, root: Path) -> None:
+    """What `command` stopped shipping over the span this repo is crossing.
+
+    Skipped under `next_step=False`, which is `init`: a tree being wired for the
+    first time has no span, and there is nothing it could have lost.
+    """
+    for line in retirement_report(command, installed_stamp(root)):
+        _say(line)
 
 
 def main(command: str, argv: list[str], next_step: bool = True) -> int:
@@ -444,12 +657,18 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     if diff:
         for target, rel, body in entries:
             print_diff(rel, target, body)
+        if next_step:
+            _report_retirements(command, root)
         return 0
 
-    # Decide the whole plan first; touch nothing until it holds.
+    # Decide the whole plan first; touch nothing until it holds. A WITHHELD entry
+    # keeps its row and its place, so the report below names every entry the run
+    # reached, in plan order, rather than dropping the ones it did not write. (A
+    # defect refuses the whole command below, before any of that is printed.)
     plan: list[tuple[str, Path, str, str]] = []   # (kind, target, rel, body)
     collisions: list[str] = []
     header_only: list[str] = []
+    undecodable: list[str] = []
     defects: list[str] = []
     for target, rel, body in entries:
         kind = 'write'
@@ -470,17 +689,37 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                 pass
             elif not force:
                 collisions.append(rel)
-                if existing is not None and header_only_difference(existing,
-                                                                   body):
+                if existing is None:
+                    # Review I5: not a file that "differs" — one that cannot be
+                    # compared at all, which is a different thing to be told.
+                    undecodable.append(rel)
+                elif header_only_difference(existing, body):
                     header_only.append(rel)
+                plan.append(('withheld', target, rel, body))
                 continue
         plan.append((kind, target, rel, body))
 
     # A defect refuses the whole command: it is not a decision the operator made.
     if defects:
+        # ...but it still HEADS every file this verb owns, because the report's
+        # completeness is the criterion (review I1). Refusing with zero
+        # `[install]` lines makes `grep -c '^\[install\]'` answer 0 for a verb
+        # that owns six files, which is the exact silence this feature exists to
+        # end — and it is worst on the path where a human most needs the list.
+        blocked = {d.split(' ', 1)[0] for d in defects}
+        for target, rel, body in entries:
+            if rel in blocked:
+                _say(f'{rel} CANNOT be written — the refusal on stderr says why')
+            elif rel in collisions:
+                _say(f'{rel} exists and differs; nothing was written because '
+                     f'another destination is unusable')
+            else:
+                _say(f'{rel} was reachable; nothing was written because '
+                     f'another destination is unusable')
         if collisions:
             head, tail = collision_refusal(collisions,
-                                           header_only=header_only)
+                                           header_only=header_only,
+                                           undecodable=undecodable)
             print(f'agentic-sdlc {command}: {head}\n'
                   f'agentic-sdlc {command}: {tail}', file=sys.stderr)
         print(_defect_refusal(command, defects, []), file=sys.stderr)
@@ -488,20 +727,27 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
 
     writes = apply.Plan()
     for kind, target, rel, body in plan:
-        if kind != 'current':
+        if kind == 'write':
             writes.overwrite(target, body, newline=None, label=rel,
                              executable=rel.endswith(EXECUTABLE_SUFFIX))
     # A failure here means the filesystem changed under the plan; `landed` says how far it got.
     result = writes.apply(decide=False)
     written = [step.label for step in result.landed]
     landed = set(written)
+    failed = None if result.failed is None else result.failed.label
     for kind, target, rel, body in plan:
         if kind == 'current':
-            print(f'[install] {rel} already current')
+            _say(IS_CURRENT.format(rel=rel))
+        elif kind == 'withheld':
+            _say(WITHHELD.format(rel=rel))
         elif rel in landed:
-            print(f'[install] wrote {rel}')
+            _say(WROTE.format(rel=rel))
+        elif rel == failed:
+            _say(WRITE_FAILED.format(rel=rel))
         else:
-            break
+            # Named, not dropped: the entries a mid-plan failure never reached
+            # are the ones an operator has to re-run for.
+            _say(NOT_REACHED.format(rel=rel))
     if result.failed is not None:
         print(_defect_refusal(command,
                               [f'{result.failed.label} could not be written '
@@ -511,9 +757,12 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # Before the next-step paragraph, so the pasteable settings block stays last on stdout.
     if collisions:
         head, tail = collision_refusal(collisions, wrote=written,
-                                       header_only=header_only)
+                                       header_only=header_only,
+                                       undecodable=undecodable)
         print(f'agentic-sdlc {command}: {head}\n'
               f'agentic-sdlc {command}: {tail}', file=sys.stderr)
+    if next_step:
+        _report_retirements(command, root)
     if written and next_step:
         print(f'[install] {_NEXT_STEP[command]}')
         settings = _SETTINGS_BLOCK.get(command)

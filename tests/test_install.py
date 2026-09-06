@@ -87,6 +87,36 @@ def refuse(command: str, *argv: str) -> tuple[int, str]:
     return code, buffer.getvalue()
 
 
+def streams(command: str, *argv: str) -> tuple[int, str, str]:
+    """Exit code, stdout and stderr APART — for the claims about which stream a
+    fact reached. A refusal on stderr is not a report on stdout, and the summary
+    an operator builds reads one of them."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = install.main(command, list(argv))
+    return code, out.getvalue(), err.getvalue()
+
+
+def headers(out: str) -> list[str]:
+    """The summary a consumer actually builds: `grep '^\\[install\\]'`."""
+    return [line for line in out.splitlines()
+            if line.startswith(install.REPORT_PREFIX)]
+
+
+def dispositions(out: str, command: str) -> dict[str, list[str]]:
+    """That summary, keyed by destination — the run's PROSE (the next-step
+    paragraph, the retirement report) dropped, because it is not a file's line.
+
+    A header line is `[install] <rel> …` or `[install] wrote <rel>`, anchored:
+    two shapes, so a destination can be counted rather than searched for.
+    """
+    lines = headers(out)
+    return {rel: [line for line in lines
+                  if line.startswith(f'{install.REPORT_PREFIX} {rel} ')
+                  or line == f'{install.REPORT_PREFIX} wrote {rel}']
+            for rel in DESTINATIONS[command]}
+
+
 WORKFLOW = '.github/workflows/verify.yml'
 # The set a project runs on a push. verify.yml is the one this repo itself
 # carries; the other two mint and gate a TAG, and this repo's release protocol
@@ -181,15 +211,40 @@ def test_the_verb_writes_its_files_and_a_second_run_is_a_no_op(command):
             f'gate summary matches')
         assert not runnable, (
             f'{command} made {runnable} executable; only `.sh` is a script here')
+        # One header line per destination, on the run that WROTE them: the
+        # next-step paragraph names paths too, and a summary that counts those
+        # is a summary that can also miss one (0.3.0).
+        one_each(out, command)
         code, out = run(command)
         assert code == 0, out
         assert out.count('already current') == len(DESTINATIONS[command]), out
+        one_each(out, command)
         assert {rel: (root / rel).read_text(encoding='utf-8')
                 for rel in DESTINATIONS[command]} == bodies
         code, out = run(command, '--diff')
         assert code == 0
         assert out.count('already current') == len(DESTINATIONS[command]), out
+        one_each(out, command)
         assert '@@' not in out, out
+
+
+def one_each(out: str, command: str) -> None:
+    """Every destination of `command` named by exactly one header line."""
+    for rel, lines in dispositions(out, command).items():
+        assert len(lines) == 1, (
+            f'{command}: {rel} has {len(lines)} header line(s), not one — a '
+            f'summary built from these omits it or double-counts it\n{out}')
+
+
+@pytest.mark.parametrize('command', VERBS)
+def test_no_run_prose_opens_with_a_destination_path(command):
+    """`[install] <path> …` is a destination's own line, and the shape is what
+    makes the summary countable. A next-step paragraph that OPENS with a path
+    wears that shape, and `install-sdlc`'s did — one file, two header lines."""
+    for rel in DESTINATIONS[command]:
+        assert not install._NEXT_STEP[command].startswith(rel), (
+            f'{command}: the next-step paragraph opens with {rel}, so it reads '
+            f'as that file\'s header line')
 
 
 @pytest.mark.parametrize('command', VERBS)
@@ -291,6 +346,14 @@ def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
 
 @pytest.mark.parametrize('command', VERBS)
 def test_diff_prints_a_unified_diff_and_writes_nothing(command):
+    """…and a MODIFIED file gets a header line of its own.
+
+    The 0.2.0 defect, from an adoption: `--diff` headed an ADDITION and printed
+    a bare hunk for a change, so `grep '^[install]'` over a 1,211-line diff
+    reported one file and silently omitted the most consequential one. It was
+    found by counting lines and hunting `+++` markers. Every disposition gets a
+    header now, so the summary is complete by construction.
+    """
     first = DESTINATIONS[command][0]
     mine = 'my own version, deliberately\n'
     with repo({first: mine}) as root:
@@ -299,6 +362,12 @@ def test_diff_prints_a_unified_diff_and_writes_nothing(command):
         # A real unified diff of the DIFFERING file …
         assert f'--- a/{first}' in out and f'+++ b/{first}' in out, out
         assert '-my own version, deliberately' in out, out
+        # … under a header line, so the grep-summary names it …
+        assert dispositions(out, command)[first] == [
+            f'{install.REPORT_PREFIX} {install.BODY_DIFFERS.format(rel=first)}'
+        ], out
+        # … and every other destination is named exactly once too.
+        one_each(out, command)
         # … and the ABSENT ones named as additions rather than shown as noise.
         for rel in DESTINATIONS[command][1:]:
             assert f'{rel} does not exist' in out, out
@@ -315,6 +384,141 @@ def test_an_unknown_flag_is_a_usage_error():
         assert code == 2
 
 
+# --- what a verb STOPPED shipping ---------------------------------------------
+# The other half of the same silence. A split dropped seven make targets between
+# two pins; one was named in that consumer's `[gates] extra`, so `make check`
+# broke with `No rule to make target`, and the other six surfaced only because
+# that repo ran a doc check that validates make targets — a gate in the CONSUMER
+# doing the installer's job. A retired FLAG has not even that: it lives in prose
+# ("the way stories close"), and the sentence survives the bump green.
+#
+# Nothing this package ships was withdrawn between 0.2.0 and 0.3.0, so
+# `install.RETIREMENTS` is empty and a row invented to exercise it would print a
+# false sentence in a consumer's terminal. The table below is the FIXTURE the
+# mechanism is proven against; it is not this package's history.
+THIS = install.__version__
+OLD_TARGET = 'a-target-withdrawn-long-ago'
+GONE_TARGET = 'a-target-a-split-dropped'
+GONE_FLAG = 'some-verb --a-flag-that-left'
+FIXTURE = (
+    install.Retirement('0.0.2', 'install-gates', targets=(OLD_TARGET,)),
+    install.Retirement(THIS, 'install-gates',
+                       targets=(GONE_TARGET,), flags=(GONE_FLAG,)),
+    install.Retirement(THIS, 'install-hooks', targets=('another-verbs-loss',)),
+)
+
+
+def reported(command: str, stamp: str | None) -> set[str]:
+    """Every target and flag the report would name, as one set."""
+    found = install.retired_since(command, stamp, rows=FIXTURE)
+    return {name for row in found for name in row.targets + row.flags}
+
+
+@pytest.mark.parametrize('stamp,expected', [
+    # An unbumped pin: the whole span between where they are and where this is.
+    ('v0.0.1', {OLD_TARGET, GONE_TARGET, GONE_FLAG}),
+    # Already bumped — the ONE case the defect was reported from. The pin said
+    # the new version and the run said nothing, so `(stamp, current]` read empty
+    # and the consumer learnt the removals from a broken build. This version's
+    # own row is in the span whatever the pin says.
+    (f'v{THIS}', {GONE_TARGET, GONE_FLAG}),
+    # No pin this can read: report the whole record rather than none of it.
+    (None, {OLD_TARGET, GONE_TARGET, GONE_FLAG}),
+    # A pin AHEAD of the package running: still never narrower than this version.
+    ('v9.9.9', {GONE_TARGET, GONE_FLAG}),
+])
+def test_the_span_between_the_pin_and_this_version_is_what_is_reported(
+        stamp, expected):
+    assert reported('install-gates', stamp) == expected
+
+
+def test_the_report_is_per_verb_and_says_so_when_nothing_was_withdrawn():
+    """A verb reports its OWN losses — another verb's row in the same table is
+    not its news — and a span that withdrew nothing prints a line saying so,
+    because a report that found nothing and a report that never ran read
+    identically in a transcript (hard rule 4)."""
+    assert reported('install-hooks', None) == {'another-verbs-loss'}
+    lines = install.retirement_report('install-ci', None, rows=FIXTURE)
+    assert len(lines) == 1, lines
+    assert 'install-ci' in lines[0] and 'no longer shipped' not in lines[0]
+    assert 'withdrawn no make target and no verb flag' in lines[0]
+    # And the shipped table, empty, is honest the same way rather than silent.
+    assert install.retirement_report('install-gates', None) == [
+        install.NOTHING_WITHDRAWN.format(
+            command='install-gates',
+            span=install._span_phrase(None))]
+
+
+# A version this cannot read is not a version this may narrow on: every one of
+# these has to widen the span to the whole record. Traversal, empty, whitespace,
+# an over-long string and a bare word are the shapes the matrix asks of any
+# grammar here; the pin is a file's contents, so all of them are reachable.
+MALFORMED = ('', '   ', 'v', '0.2', 'latest', 'not-a-version', '../0.1.0',
+             'v' + '9' * 400, '0.2.0.0.0.0'[::-1], '\n')
+
+
+@pytest.mark.parametrize('stamp', MALFORMED)
+def test_a_version_this_cannot_read_widens_the_span_never_narrows_it(stamp):
+    """Both ends of the comparison. A stamp that will not parse reports the
+    whole record, and a ROW whose version will not parse is reported whatever
+    the stamp says — the cardinal sin here is the quiet omission, not the
+    extra line."""
+    assert reported('install-gates', stamp) == {OLD_TARGET, GONE_TARGET,
+                                                GONE_FLAG}
+    unreadable = (install.Retirement('who-knows', 'install-gates',
+                                     targets=('cannot-be-placed',)),)
+    assert install.retired_since('install-gates', 'v9.9.9',
+                                 rows=unreadable) == unreadable
+
+
+def test_every_declared_retirement_names_a_routed_verb_and_a_readable_version():
+    """The gate on the table itself, so the row a future release appends is
+    checked the day it lands. The shipped table is empty today, so the fixture
+    rides with it: a check that scanned zero rows would prove nothing."""
+    checked = 0
+    for row in install.RETIREMENTS + FIXTURE:
+        assert row.command in install.PLANS, (
+            f'{row.version} names {row.command}, which no verb routes')
+        assert install._version_key(row.version) is not None, (
+            f'{row.command} row {row.version!r} is not a version')
+        assert row.targets or row.flags, (
+            f'{row.command} {row.version} withdrew nothing — a row with '
+            f'nothing to say is a row that should not exist')
+        checked += 1
+    assert checked >= len(FIXTURE)
+
+
+def test_a_run_and_a_diff_both_carry_the_report_and_init_does_not(monkeypatch):
+    """The verb's altitude: the report reaches the terminal on a real run and
+    on `--diff`, the pin is READ and never written, and the tree `init` is
+    wiring for the first time is spared a span it cannot have.
+
+    The pin is read through `conveyor.steps.PIN_LINE`, the one grammar for that
+    line (SDLC §5): the `?=` spelling below is one a hand-rolled `:=` regex
+    would miss, and missing it would report OLD_TARGET here rather than the
+    narrowed span the pin asks for.
+    """
+    monkeypatch.setattr(install, 'RETIREMENTS', FIXTURE)
+    pin = f'DEVKIT_VERSION ?= v{THIS}\ninclude Makefile.devkit\n'
+    with repo({'Makefile': pin}) as root:
+        for argv in ((), ('--diff',)):
+            code, out, err = streams('install-gates', *argv)
+            assert code == 0, out + err
+            said = [line for line in headers(out)
+                    if 'no longer shipped' in line or 'retired verb' in line]
+            assert len(said) == 2, out
+            assert GONE_TARGET in said[0] and GONE_FLAG in said[1], out
+            assert 'No rule to make target' in said[0], out
+            assert OLD_TARGET not in out, (
+                'the pin was not read: the span widened past what it names')
+        assert (root / 'Makefile').read_text(encoding='utf-8') == pin
+        # `init`'s call — a fresh tree has no span, and nothing it could lose.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            install.main('install-gates', ['--force'], next_step=False)
+        assert 'no longer shipped' not in buffer.getvalue(), buffer.getvalue()
+
+
 # --- the report and the disk are one thing ------------------------------------
 def test_a_collision_on_a_LATER_entry_withholds_that_file_and_nothing_else():
     """The defect this replaced: `install-agents` wrote the reviewer, THEN
@@ -326,21 +530,28 @@ def test_a_collision_on_a_LATER_entry_withholds_that_file_and_nothing_else():
     the run reports exactly what it did. The whole-plan decision is proven
     where it belongs, on a DEFECT (below): that one still writes nothing.
     `install-hooks` is proven in the same shape by
-    `test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited`."""
+    `test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited`.
+
+    The withheld file gets its header line on STDOUT with the rest (0.3.0): the
+    refusal on stderr is a second stream, and a summary of the report proper
+    had one file missing from it — the one the operator has to decide about."""
     command = 'install-agents'
     rels = DESTINATIONS[command]
     mine = 'my own version, deliberately\n'
     with repo({rels[-1]: mine}) as root:
-        code, out = refuse(command)
-        assert code == 1, out
+        code, out, err = streams(command)
+        assert code == 1, out + err
         for earlier in rels[:-1]:
             assert (root / earlier).is_file(), (
                 f'{earlier} was withheld by a collision on {rels[-1]}')
             assert f'wrote {earlier}' in out, out
         assert (root / rels[-1]).read_text(encoding='utf-8') == mine
-        assert rels[-1] in out, out
+        assert dispositions(out, command)[rels[-1]] == [
+            f'{install.REPORT_PREFIX} '
+            f'{install.WITHHELD.format(rel=rels[-1])}'], out
+        one_each(out, command)
         assert f'wrote {rels[-1]}' not in out, out
-        assert 'nothing was written' not in out, out
+        assert 'nothing was written' not in out + err, out + err
 
 
 def test_every_collision_is_named_in_one_refusal():
@@ -1105,3 +1316,75 @@ class TestTheNameBothCommandsBlockIsOneWording:
         for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
                      'pm-operator.md'):
             assert self.OPEN not in install.body_of(name), name
+
+
+# --- the report is complete on the FAILING run too (review I1/I4/I5) ----------
+def _heads(out: str) -> list[str]:
+    return [ln for ln in out.split('\n') if ln.startswith('[install]')]
+
+
+def test_a_defect_still_heads_every_file_the_verb_owns():
+    """Review I1. `grep -c '^[install]'` answered 0 for a verb that owns two
+    files, on the path where a human most needs the list. The criterion is
+    "whatever its disposition", and a refusal is a disposition."""
+    with repo() as root:
+        (root / 'Makefile.devkit').mkdir()          # a DIRECTORY where a file goes
+        code, out = run('install-gates')
+        assert code == 1, out
+        heads = _heads(out)
+        assert len(heads) == 2, out
+        assert any('Makefile.devkit CANNOT be written' in h for h in heads), out
+        assert any('gdk_gate.sh was reachable' in h for h in heads), out
+
+
+def test_diff_refuses_a_directory_rather_than_calling_it_an_addition():
+    """Review I4: `--diff` said "does not exist — the whole file is an addition"
+    at exit 0 while a real run refused at exit 1. `--diff` is what a consumer
+    reads BEFORE the run, so the disagreement costs the most there."""
+    with repo() as root:
+        (root / 'Makefile.devkit').mkdir()
+        code, out = run('install-gates', '--diff')
+        assert code == 0, out
+        assert 'is a directory' in out, out
+        assert 'a real run REFUSES this' in out, out
+        assert 'the whole file is an addition' not in out.split('gdk_gate')[0], out
+
+
+def test_an_undecodable_destination_says_so_rather_than_differs():
+    # Review I5: the decode branch handed back an EMPTY defect string, so
+    # `if unreadable:` was dead for it and the file was reported as one that
+    # "differs" — which it does not, because it cannot be compared at all.
+    with repo() as root:
+        (root / 'Makefile.devkit').write_bytes(b'\x00\xff\xfe')
+        # A COLLISION, not a defect: `--force` can still replace it, which is
+        # useful. What changed is that the refusal says which of the two it is.
+        text, defect = install.read_destination(root / 'Makefile.devkit')
+        assert text is None and defect == ''
+        code, out = refuse('install-gates')
+        assert code == 1, out
+        assert install.UNDECODABLE_NOTE in out, out
+        # ...and specifically NOT the word the old path used for it.
+        assert 'Makefile.devkit exists and differs' not in out, out
+
+
+def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
+    """Review I2: `pm install-skills` is the sixth installer in CLAUDE.md's
+    self-hosting list, and it prefixed `[pm]`, so the documented
+    `grep '^[install]'` summary returned 0 for both of its files."""
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    with repo() as root:
+        (root / 'devkit.toml').write_text(_flow(), encoding='utf-8')
+        load_config.cache_clear()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            pm_cli.main(['install-skills'])
+        heads = _heads(buf.getvalue())
+        assert len(heads) == 2, buf.getvalue()
+        for rel in ('.claude/rules/pm-execution.md',
+                    '.claude/skills/pm-operations/SKILL.md'):
+            assert any(rel in h for h in heads), buf.getvalue()
+
+
+def _flow() -> str:
+    from support.pm import with_flow
+    return with_flow('')

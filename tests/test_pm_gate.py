@@ -233,6 +233,130 @@ class DriftGate(unittest.TestCase):
             self.assertIn('two places in this tree disagree', out)
 
 
+class ReadyIsAStampWithACheck(unittest.TestCase):
+    """Story 02 of the-code-knows-entry-and-exit: `pm <kind> ready <id>` is
+    the only stamp, and what `ready` MEANS is a `  WARN  ` line from
+    `check pm`, never a finding and never an exit code.
+
+    NO EXISTING CASE COULD FAIL FOR THIS. Every case in this module reads a
+    grain's frontmatter; none reads a section body, and `support.pm.write`
+    gives every grain the body `x` — so a gate that never opened
+    `## Acceptance criteria` passed all of them. These cases write the three
+    sections `pm new` scaffolds, empty (the template's HTML prompt only) and
+    filled, and hold the exit code at 0 on both sides.
+    """
+
+    PROMPT = '<!-- What must be TRUE. One line each, and each one able to fail. -->'
+
+    def _story(self, root, status, body):
+        write(root / STORY_REL,
+              {'id': '0.1/alpha/s0', 'feature': '0.1/alpha',
+               'milestone': '"0.1"', 'name': 'S0', 'status': status}, body)
+
+    SHIP = '# Alpha\n\n## Ship criterion\n\nIt ships.\n'
+
+    def _settle(self, root):
+        """The milestone and the feature with nothing left to warn about, so
+        a case about the STORY sees only the story's line."""
+        write(root / FFILE_REL, {'id': '0.1/alpha', 'milestone': '"0.1"',
+                                 'name': 'Alpha', 'status': 'building',
+                                 'reviewed': '', 'phase': '1'}, self.SHIP)
+        write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
+                                 'status': 'building',
+                                 'branch': 'milestone/0.1'}, self.SHIP)
+
+    def test_each_warning_fires_on_the_scaffold_and_is_silent_on_a_filled_grain(self):
+        empty = f'# S0\n\n## Acceptance criteria\n\n{self.PROMPT}\n\n## Out of scope\n'
+        filled = empty.replace(self.PROMPT, '- the gate says so\n')
+        # A story at `ready` whose section holds only the template's prompt
+        # warns; the same story with one line under the heading does not; a
+        # story that never left `planning` is not asked. Exit 0 throughout.
+        for status, body, expect in (('ready', empty, True),
+                                     ('building', empty, True),
+                                     ('ready', filled, False),
+                                     ('planning', empty, False)):
+            with self.subTest(status=status, filled=body is filled), \
+                    tree(feature_status='building',
+                         story_statuses=('ready',)) as root:
+                self._settle(root)
+                self._story(root, status, body)
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                line = "story 0.1/alpha/s0 is %r and has an empty `## Acceptance criteria`" % status
+                self.assertEqual(line in out, expect, out)
+                self.assertEqual('warning(s)' in out, expect, out)
+        # The feature's and the milestone's own sections, plus the two
+        # frontmatter facts a readied milestone needs: a branch, and a phase
+        # on each feature. A grain with NO such heading at all says so in
+        # different words from an empty one.
+        with tree(milestone_status='ready', feature_status='ready',
+                  story_statuses=()) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            for needle in ("milestone 0.1 is 'ready' with no branch:",
+                           "milestone 0.1 is 'ready' and has no `## Ship criterion` section",
+                           "milestone 0.1 is 'ready' and feature 0.1/alpha carries no phase:",
+                           "feature 0.1/alpha is 'ready' with no stories",
+                           "feature 0.1/alpha is 'ready' and has no `## Ship criterion` section"):
+                self.assertIn(f'  WARN  {needle}', out, out)
+            self.assertIn('; 5 warning(s)', out)
+            self.assertNotIn('DRIFT', out)
+            # Filled: the sections written, the branch and the phase stamped,
+            # one story under the feature — silent, and the verdict line is
+            # the plain one.
+            write(root / FFILE_REL, {'id': '0.1/alpha', 'milestone': '"0.1"',
+                                     'name': 'Alpha', 'status': 'ready',
+                                     'reviewed': '', 'phase': '1'}, self.SHIP)
+            write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
+                                     'status': 'ready',
+                                     'branch': 'milestone/0.1'}, self.SHIP)
+            self._story(root, 'planning', 'x')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('WARN', out)
+            self.assertNotIn('warning(s)', out)
+
+    def test_readied_is_the_declaration_not_the_word(self):
+        # "At or past `ready`" is "past the kind's FIRST `todo` state": under
+        # `todo = ["queued", "shaped"]` a `shaped` story is asked and a
+        # `queued` one is not, and the seed's word appears nowhere.
+        renamed = {'todo': ('queued', 'shaped'), 'in_progress': ('doing',),
+                   'done': ('shipped',)}
+        for status, expect in (('shaped', True), ('queued', False)):
+            with self.subTest(status=status), \
+                    tree(feature_status='building',
+                         story_statuses=('ready',)) as root:
+                write_config(root, declaring(story=renamed))
+                self._settle(root)
+                self._story(root, status, 'x')
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(
+                    f"story 0.1/alpha/s0 is {status!r} and has no "
+                    f"`## Acceptance criteria` section" in out, expect, out)
+                cfg = cfg_for(root)
+                self.assertTrue(model.readied(cfg, 'story', 'shaped'))
+                self.assertFalse(model.readied(cfg, 'story', 'queued'))
+                self.assertFalse(model.readied(cfg, 'story', 'wombat'))
+
+    def test_the_section_reader_stops_at_the_next_heading_and_sees_through_comments(self):
+        text = ('---\nstatus: ready\n---\n# T\n\n## Acceptance criteria\n'
+                '<!-- a\nmulti-line\nprompt -->\n\n## Out of scope\n- real\n')
+        lines = model.section_lines(text, model.ACCEPTANCE_HEADING)
+        self.assertEqual(lines, ['<!-- a', 'multi-line', 'prompt -->', ''])
+        self.assertTrue(model.section_is_empty(lines))
+        self.assertFalse(model.section_is_empty(['<!-- x --> said', '']))
+        self.assertIsNone(model.section_lines(text, model.SHIP_HEADING))
+        # `### Acceptance criteria` is not the scaffolded heading.
+        self.assertIsNone(model.section_lines(
+            text.replace('## Acceptance', '### Acceptance'),
+            model.ACCEPTANCE_HEADING))
+
+
+FFILE_REL = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+MFILE_REL = 'pm/roadmap/0.1-demo/milestone.md'
+
+
 # The one ordered vocabulary the SEED writes — and that it is the seed, not a
 # default the reader falls back to — is pinned once, in tests/test_pm_flow.py
 # (`test_the_seed_is_the_installables_LIVE_section_and_a_tree_seeded_with_it_LOADS`).
@@ -1420,9 +1544,12 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         # D5 fires per story that has started under a `todo` feature: both
         # finished stories of `stalled`, the one `doing` story of `ahead`.
         self.assertEqual(out_r.count('two places in this tree disagree'), 3)
-        # ...and the normal path is silent: a `dropped` story is finished.
-        self.assertNotIn('normal', out_r.split('\n[check:pm]')[-1])
-        self.assertNotIn('1.0/normal', out_r)
+        # ...and the normal path is silent: a `dropped` story is finished. No
+        # DRIFT names it — a WARN may (its scaffold sections are empty, and
+        # the READY warnings are symmetric across the two trees, which the
+        # equality above already holds).
+        drift = [ln for ln in out_r.splitlines() if ln.startswith('  DRIFT  ')]
+        self.assertFalse([ln for ln in drift if '1.0/normal' in ln], drift)
 
     def test_pm_status_says_the_same_thing_about_both_trees(self):
         def status(root):

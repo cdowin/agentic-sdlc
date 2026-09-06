@@ -62,6 +62,15 @@ DRIFT RULES (each FAILs, naming the offending path):
 Which rules run is `[pm] checks` in devkit.toml (default: D1-D6 + V1-V5).
 V6 is known but OPT-IN, as are the three flow rules named just above.
 
+WARNINGS (each prints `  WARN  …`, is counted separately in the verdict line,
+and never moves the exit code — messaging, not a finding, hard rule 9):
+  READY  `pm <kind> ready <id>` is the only stamp, and what it MEANS is asked
+      here: a grain past its kind's first `todo` state whose scaffolded
+      section is empty — a story's `## Acceptance criteria`, a feature's or a
+      milestone's `## Ship criterion` — a feature with no stories, a milestone
+      with a feature carrying no `phase:` or with no `branch:`. Nothing new is
+      parsed: the three headings are the ones `pm new` writes.
+
 Scope: the ACTIVE tree only — archived milestones predate the convention. This
 MUST pass on the legitimate mid-build state: an in-progress milestone with
 mixed children, a feature under review with its stories still in progress
@@ -103,10 +112,17 @@ def _run() -> int:
             print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
         return 2
     findings: list[str] = []
+    warnings: list[str] = []
 
     def report(msg: str) -> None:
         findings.append(msg)
         print(f'  DRIFT  {msg}')
+
+    # A WARN is a fact worth a line and not an exit code (rule 9): it names
+    # what it saw and what the reader might do, and the caller decides.
+    def warn(msg: str) -> None:
+        warnings.append(msg)
+        print(f'  WARN  {msg}')
 
     enabled = set(cfg.checks)
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
@@ -135,7 +151,7 @@ def _run() -> int:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
-    n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report)
+    n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
 
     _flow_findings(cfg, enabled, report)
 
@@ -148,8 +164,8 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    return _verdict(cfg, findings, len(mdirs), n_features, n_stories, n_bugs,
-                    v_on, v_census)
+    return _verdict(cfg, findings, warnings, len(mdirs), n_features,
+                    n_stories, n_bugs, v_on, v_census)
 
 
 # D2's and D6's shared tail. Both used to name `done` as the state to move to —
@@ -161,8 +177,11 @@ ADVANCE_IT = 'advance it (`done` is the LAST state, not the next one)'
 
 
 def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
-                report) -> tuple[int, int]:
-    """D1-D6 over every grain. Returns the (feature, story) census."""
+                report, warn) -> tuple[int, int]:
+    """D1-D6 over every grain, and the READY warnings beside them.
+
+    Returns the (feature, story) census.
+    """
     n_features = 0
     n_stories = 0
 
@@ -171,11 +190,22 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
         m_cat = model.category_of(cfg, 'milestone', mstat)
+        m_ready = model.readied(cfg, 'milestone', mstat)
 
         if 'D4' in enabled:
             reason = model.undeclared_status(cfg, 'milestone', mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
+
+        if m_ready:
+            if not model.unquote(model.field_of(mfile, 'branch')):
+                warn(f'milestone {mid} is {mstat!r} with no branch: — readied, '
+                     f'and a fresh checkout cannot find where its work lives'
+                     f'  [{cfg.rel(mfile)}]')
+            why = model.empty_section(mfile, model.SHIP_HEADING)
+            if why:
+                warn(f'milestone {mid} is {mstat!r} and {why} — readied, and '
+                     f'nothing says what done means  [{cfg.rel(mfile)}]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(mdir)]
@@ -208,6 +238,20 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
 
+            if m_ready and not view.phase:
+                warn(f'milestone {mid} is {mstat!r} and feature {view.fid} '
+                     f'carries no phase: — readied, and the board cannot '
+                     f'order it  [{frel}]')
+            if model.readied(cfg, 'feature', view.status):
+                if view.total == 0:
+                    warn(f'feature {view.fid} is {view.status!r} with no '
+                         f'stories — readied, and nothing to build  [{frel}]')
+                why = model.empty_section(view.path, model.SHIP_HEADING)
+                if why:
+                    warn(f'feature {view.fid} is {view.status!r} and {why} — '
+                         f'readied, and nothing says what done means'
+                         f'  [{frel}]')
+
             for sfile in view.stories:
                 sid = model.field_of(sfile, 'id')
                 sstat = model.field_of(sfile, 'status')
@@ -216,6 +260,11 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     reason = model.undeclared_status(cfg, 'story', sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
+                if model.readied(cfg, 'story', sstat):
+                    why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
+                    if why:
+                        warn(f'story {sid} is {sstat!r} and {why} — readied, '
+                             f'and nothing says what must be true  [{srel}]')
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     report(f'story {sid} is {sstat!r} but its feature '
@@ -310,10 +359,15 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
 
 
-def _verdict(cfg: model.PmConfig, findings: list[str], n_milestones: int,
-             n_features: int, n_stories: int, n_bugs: int,
+def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],
+             n_milestones: int, n_features: int, n_stories: int, n_bugs: int,
              v_on: set[str], v_census: dict) -> int:
-    """Render the census + verdict from what the phases reported."""
+    """Render the census + verdict from what the phases reported.
+
+    Warnings are COUNTED SEPARATELY and never decide the code: the line reads
+    `… N warning(s)` only when there are any, so a clean tree's verdict line
+    is byte-identical to what it was (rule 6).
+    """
     print()
     census = (f'{n_milestones} milestone(s), {n_features} feature(s), '
               f'{n_stories} story/ies')
@@ -338,9 +392,11 @@ def _verdict(cfg: model.PmConfig, findings: list[str], n_milestones: int,
             census += (f' ({v_census["unverifiable"]} UNVERIFIABLE — the ref '
                        f'names a milestone no longer in the tree)')
     what = 'status-drift / integrity violation(s)' if v_on else 'status-drift violation(s)'
+    warned = f'; {len(warnings)} warning(s)' if warnings else ''
     if findings:
-        print(f'[check:pm] FAIL — {len(findings)} {what} across {census}')
+        print(f'[check:pm] FAIL — {len(findings)} {what} across {census}'
+              f'{warned}')
         return 1
     clean = 'no PM-tree drift or integrity problems' if v_on else 'no PM-tree status drift'
-    print(f'[check:pm] PASS — {clean}; scanned {census}')
+    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}')
     return 0

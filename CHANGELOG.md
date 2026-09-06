@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### ready is one command, and an empty ready is a warning
+
+- **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has been
+  readied — past its kind's FIRST `todo` state, under whatever words the project declared — and
+  says nothing about what must be true: a story with an empty or absent `## Acceptance criteria`,
+  a feature or a milestone with an empty or absent `## Ship criterion`, a feature with no stories,
+  a milestone with no `branch:` or with a feature carrying no `phase:`. The three headings are the
+  ones `pm new` scaffolds; a section holding only the template's `<!-- … -->` prompt is empty.
+  **Warnings are counted separately and never move the exit code**: the verdict line gains
+  `; N warning(s)` only when there are any, so a tree with none prints exactly what it did.
+- **`pm <kind> ready <id>` is the only stamp.** Nothing readies a grain for you — Chris,
+  2026-09-05: *"nothing fancy and automatic. If I want a feature to go in progress, I move it."*
+
 ### Each kind declares its own states, and there is no transitions table
 
 - **The seed is per kind, and it is what the belts write.** `pm init` now writes a story

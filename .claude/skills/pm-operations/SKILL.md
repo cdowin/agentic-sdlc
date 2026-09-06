@@ -121,7 +121,12 @@ requires the two readings to agree.
   is acyclic. **UNVERIFIABLE** in its summary is not a failure: it
   counts refs into milestones no longer in the working tree, which is expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
-  names the file; fix it with the CLI, never with a `status:` edit.
+  names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
+  is not a failure: it names a grain stamped `ready` whose scaffolded section is still
+  empty (`## Acceptance criteria`, `## Ship criterion`), a readied feature with no
+  stories, or a readied milestone with no `branch:` or an unphased feature — counted
+  on the verdict line, never in the exit code. `pm <kind> ready <id>` is the only
+  stamp; write the section, then stamp.
 
 ## Retiring a closed milestone — git history is the archive
 

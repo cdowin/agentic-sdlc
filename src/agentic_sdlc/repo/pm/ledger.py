@@ -619,8 +619,20 @@ def usage_row(kind: str, **fields: object) -> dict:
     "the source did not say", and a key that is not on the row is the only
     honest way to write that. A ZERO, an empty dict and an empty list all mean
     "the source said none", so all three are KEPT — `tools: {}` is a dispatch
-    that called no tool, and `tree.stories_wip: []` is D3's true statement that
-    nothing was `wip` when the hook fired.
+    that called no tool, and `tree.stories_in_progress: []` is D3's true
+    statement that nothing was in progress when the hook fired.
+
+    THE `tree` SNAPSHOT CARRIES TWO KEY FAMILIES (decision D7, 2026-09-05).
+    The category keys — `milestones_in_progress`, `features_in_progress`,
+    `stories_in_progress` — are what the row means, and `report.py` attributes
+    a dispatch by them. The frozen keys — `milestones_building`,
+    `features_building`, `features_review`, `stories_wip`, `stories_review`
+    — are **DEPRECATED**: matched by the seed's words, kept because they are
+    inside rows already written in every consumer tree, and removed at the
+    next major. A reader meets three shapes: both families (this version),
+    the frozen five alone (before 0.2.0 — read as written, and disclosed by
+    `pm ledger report` where it names nothing), and no `tree` at all (a hand
+    entry that never snapshotted).
     """
     fields['kind'] = kind
     fields.setdefault('ts', utc_now())

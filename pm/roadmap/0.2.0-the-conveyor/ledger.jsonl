@@ -243,3 +243,11 @@
 {"ts":"2026-09-06T02:35:54Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":187,"rank":4}
 {"ts":"2026-09-06T02:35:54Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":184,"rank":5}
 {"ts":"2026-09-06T02:35:55Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7456,"census":738}
+{"ts":"2026-09-06T02:37:19Z","kind":"status","grain":"0.2.0/the-ledger-rows-carry-categories","from":"planning","to":"building"}
+{"ts":"2026-09-06T02:43:08Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":546,"rank":1}
+{"ts":"2026-09-06T02:43:08Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":455,"rank":2}
+{"ts":"2026-09-06T02:43:08Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":356,"rank":3}
+{"ts":"2026-09-06T02:43:08Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":207,"rank":4}
+{"ts":"2026-09-06T02:43:08Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":188,"rank":5}
+{"ts":"2026-09-06T02:43:08Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8245,"census":742}
+{"ts":"2026-09-06T02:43:11Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":2475}

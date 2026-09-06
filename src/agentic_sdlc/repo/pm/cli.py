@@ -156,7 +156,8 @@ every run; a state the project never declared is refused by name.
   ledger report [<milestone-id>] [--json] [--from <rev>]
                                           (spend per grain from that milestone's
                                            rows: dispatches, tokens, tool calls,
-                                           wall-clock and seconds in each state,
+                                           wall-clock and seconds in each
+                                           CATEGORY (todo / in_progress / done),
                                            per story/feature/bug. Defaults to the
                                            one in_progress milestone. Never
                                            exits non-zero on a number.
@@ -1674,41 +1675,67 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
     something a dispatch can have been working on. A grain whose frontmatter
     carries no `id:` is left out — an unnamed grain cannot be named.
 
-    The bucket KEYS are frozen and the states they match follow the vocabulary.
-    `stories_wip` collects stories at `building` and `features_review` features
-    at `reviewing` because a key is part of a ROW's shape: renaming them to
-    match the lifecycle would leave every row already written, in every tree,
-    unattributable by `pm ledger report` — a report that silently counts less.
-    A project with a genuinely renamed vocabulary records empty lists, which is
-    a true statement about a tree whose states this row shape cannot name.
+    TWO KEY FAMILIES, one row (decision D7 — "keep and extend").
+
+    The CATEGORY keys — `milestones_in_progress`, `features_in_progress`,
+    `stories_in_progress` — are what the row MEANS: every grain of that kind
+    whose status is in this project's `in_progress` category, whatever the
+    words. `pm ledger report` attributes a dispatch by them.
+
+    The FROZEN keys — `milestones_building`, `features_building`,
+    `features_review`, `stories_wip`, `stories_review` — are **DEPRECATED,
+    kept for one reason and removed at the next major**: they are inside JSONL
+    rows already written in every consumer tree, and rows are never rewritten.
+    They match the SEED's words by name (`building`, `reviewing` — the one
+    place outside the seed this package still compares against a word, dated
+    2026-09-05 and named in `tests/test_pm_flow.py`'s census as D7's
+    exception). A reader of an old row — this package's own `report` included
+    — still finds them; a project with a renamed vocabulary records empty
+    frozen lists beside full category lists, which is a true statement about
+    what each key can spell.
     """
-    snap: dict[str, list[str]] = {
+    frozen: dict[str, list[str]] = {
         'milestones_building': [], 'features_building': [], 'features_review': [],
         'stories_wip': [], 'stories_review': [],
     }
+    live: dict[str, list[str]] = {
+        'milestones_in_progress': [], 'features_in_progress': [],
+        'stories_in_progress': [],
+    }
 
-    def add(bucket: str, path: Path) -> None:
+    def add(snap: dict, bucket: str, path: Path) -> None:
         gid = model.unquote(model.field_of(path, 'id'))
         if gid:
             snap[bucket].append(gid)
 
+    def in_progress(kind: str, status: str) -> bool:
+        return model.category_of(cfg, kind, status) == model.IN_PROGRESS
+
     for mdir in model.milestone_dirs(cfg):
         mfile = mdir / model.MILESTONE_DOC
-        if model.field_of(mfile, 'status') == model.BUILDING:
-            add('milestones_building', mfile)
+        mstat = model.field_of(mfile, 'status')
+        if in_progress('milestone', mstat):
+            add(live, 'milestones_in_progress', mfile)
+        if mstat == model.BUILDING:
+            add(frozen, 'milestones_building', mfile)
         for ffile in model.feature_files(mdir):
             fstat = model.field_of(ffile, 'status')
+            if in_progress('feature', fstat):
+                add(live, 'features_in_progress', ffile)
             if fstat == model.BUILDING:
-                add('features_building', ffile)
+                add(frozen, 'features_building', ffile)
             elif fstat == model.REVIEWING:
-                add('features_review', ffile)
+                add(frozen, 'features_review', ffile)
             for sfile in model.story_files(ffile):
                 sstat = model.field_of(sfile, 'status')
+                if in_progress('story', sstat):
+                    add(live, 'stories_in_progress', sfile)
                 if sstat == model.BUILDING:
-                    add('stories_wip', sfile)
+                    add(frozen, 'stories_wip', sfile)
                 elif sstat == model.REVIEWING:
-                    add('stories_review', sfile)
-    return {bucket: sorted(ids) for bucket, ids in snap.items()}
+                    add(frozen, 'stories_review', sfile)
+    return {bucket: sorted(ids)
+            for bucket, ids in (*frozen.items(), *live.items())}
 
 
 def cmd_ledger(cfg: model.PmConfig, args: list[str]) -> int:

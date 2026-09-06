@@ -108,6 +108,34 @@ defect one layer down.
    96 s ->  62 s   two corpus constants in `gdk_gate.sh --self-test`
    62 s ->  39 s   `--dist loadgroup`, and the tests that share this repo saying so
 
+### The ledger rows carry categories
+
+**Data-format change, additive** (decision D7 — "keep and extend"). The dispatch snapshot a
+`ledger record` writes — the `tree` on every dispatch and session row — now carries three
+category keys beside the five it always had:
+
+- **New keys: `milestones_in_progress`, `features_in_progress`, `stories_in_progress`** — every
+  grain of that kind whose status is in your `in_progress` category, whatever the words.
+  `pm ledger report` attributes a dispatch by these.
+- **`milestones_building`, `features_building`, `features_review`, `stories_wip` and
+  `stories_review` are DEPRECATED and removed at the next major.** They still match the seed's
+  words by name and are still written, because they are inside rows already on disk in every
+  consumer tree and rows are never rewritten. A renamed vocabulary records them empty beside full
+  category keys, which is a true statement about what each key can spell.
+- **An old-shape row is read as it was written, never through your current declaration** — that
+  would be inventing history. A row that names a grain through the frozen keys is attributed as
+  it always was. A row that names nothing is EITHER a dispatch over an idle tree OR one over a
+  tree whose words the old shape could not spell, and the report says so rather than counting it
+  as empty: a line under `rows naming no grain` — `N of these predate category keys and name no
+  grain — unreadable under a renamed vocabulary, and not counted as empty` — and a `legacy`
+  key in `--json` (`{"rows": N, "unattributed": M}`, zeros when there is no boundary).
+- **The dwell columns of `pm ledger report` are per CATEGORY — `todo`, `in_progress`, `done` —
+  for every grain kind**, so a twelve-state project gets three columns and not twelve. A stint
+  in `building` and a stint in `reviewing` are one `in_progress` number; `done` has a column
+  because a reopened grain spent a measurable stint finished. A stint in a word your declaration
+  no longer names lands in no column and is disclosed by grain under the table (`unplaced_s` in
+  `--json`). The old per-word columns are gone.
+
 ### Every question is asked of a category
 
 **Behaviour change.** No question the engine asks about a status is asked of the word any more —

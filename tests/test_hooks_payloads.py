@@ -520,6 +520,45 @@ def test_a_hook_fed_garbage_or_another_tool_fails_open(hooks_repo, hook):
     assert other.returncode == 0
 
 
+# --- setup-hooks.sh: arms by glob, and the whole corpus ------------------------
+def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
+    """The forks this replaced did it two ways — a `cc-*.sh` glob, and two
+    named files. The glob is strictly better: it is tolerant of absence AND does
+    not have to be edited when a hook is added. core.hooksPath skips a
+    non-executable hook in silence, so a hook this misses is a guard nobody
+    knows is off. (From test_install.py, which spawns nothing now.)"""
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    previous = Path.cwd()
+    os.chdir(root)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        assert install.main('install-hooks', []) == 0
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+    disarmed = (PATHSPEC, STOP_GATE)
+    for rel in disarmed:
+        (root / rel).chmod(0o644)
+    (root / 'tools' / 'hooks' / 'cc-invented-later.sh').write_text(
+        '#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+    done = subprocess.run(['bash', 'tools/setup-hooks.sh'], cwd=root,
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    for rel in (*disarmed, 'tools/hooks/cc-invented-later.sh'):
+        assert os.access(root / rel, os.X_OK), rel
+    # The whole corpus is armed, not just the cc-* glob: the classic git
+    # hooks (skipped by core.hooksPath in silence when unexecutable) and
+    # the by-path tools.
+    for rel in ('tools/hooks/pre-push', 'tools/hooks/prepare-commit-msg',
+                WORKTREE):
+        assert os.access(root / rel, os.X_OK), rel
+    assert git(root, 'config', 'core.hooksPath').stdout.strip() == 'tools/hooks'
+
+
 # =============================================================================
 # The 0.22.0 corpus: cc-ledger-subagent (SubagentStop) and cc-ledger-session
 # (Stop) — the two couriers, installed into a temp repo that has a REAL PM

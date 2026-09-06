@@ -3,7 +3,7 @@ id: 0.2.0/the-belt-reports-and-finishes
 milestone: "0.2.0"
 name: Every step is a check, every check reports, and the walk always finishes
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-05-the-belt-reports-and-finishes.md
 phase: 5
 depends_on: []
 consumed_by: ["0.2.0/the-inner-levels-are-belts-too"]

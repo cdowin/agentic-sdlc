@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: A changed path resolves to the command that proves it
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-05-the-story-belt-knows-what-verifies-this-edit.md
 risk: high
 size: m
 phase: 3

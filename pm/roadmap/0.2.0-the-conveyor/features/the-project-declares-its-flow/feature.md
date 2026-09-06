@@ -3,7 +3,7 @@ id: 0.2.0/the-project-declares-its-flow
 milestone: "0.2.0"
 name: The states, the transitions and the flow are in the project's config, written by init and read every run
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-05-the-project-declares-its-flow.md
 phase: 6
 depends_on: ["0.2.0/adopt-is-a-conveyor"]
 consumed_by: ["0.2.0/every-question-is-asked-of-a-category"]

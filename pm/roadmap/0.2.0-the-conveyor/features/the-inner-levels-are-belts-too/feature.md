@@ -14,13 +14,13 @@ labels: ["belts", "conveyor", "sdlc"]
 
 # Closing a story and closing a feature are step lists, not prose
 
-> **RE-SCOPED 2026-09-05 by the plan audit (Q3). This feature is unbuilt, and it must not be built
-> until `0.2.0/the-belt-reports-and-finishes` has landed.** The record below — and its story 01 —
-> specify belts that REFUSE, because both were written before the report-never-refuse ruling. It
-> is the only unbuilt feature in the tree that would have to write the halt and then delete it,
-> and that is a feature's worth of code and tests rather than a finding. **The ORDER is still the
-> whole deliverable**; nothing else about this feature changes. Read every "refuses" below as
-> "warns, names what is open, and finishes."
+> **Built 2026-09-05, under D8.** This record was written before the report-never-refuse ruling
+> (`decisions.md` D8; `0.2.0/the-belt-reports-and-finishes`), and the plan audit (Q3) held it
+> unbuilt until that feature landed. It has: `close story` and `close feature` are two more rows
+> in `driver.OPERATIONS`, and like every belt they REPORT — each step is a check, a check that is
+> not true is named with what would make it true, and the walk finishes with a scoreboard and
+> exit 1. Nothing halts. **The ORDER is still the whole deliverable**; what changed is who acts on
+> a step that is not true: the caller, never the engine (hard rule 9).
 
 **Chris, 2026-09-05, on being shown the three levels written up as doctrine:**
 
@@ -39,8 +39,9 @@ reviewed the whole milestone in one pass, skipping the feature level entirely �
 that builds the levels. `pm ready-for milestone` had been answering NOT READY with all eight
 features named for hours, and prose is what it takes to notice a verb telling you that.
 
-That is not a mistake a step machine permits. `close story` cannot advance past
-`narrow-verified`; `close feature` cannot advance past `stories-done`.
+That is not a mistake a step machine lets pass unnamed. `close story` reports a red or
+unverifiable `narrow-verified` in its scoreboard; `close feature` names every story that
+`stories-done` finds open.
 
 ## Two more operations on the driver that already exists
 
@@ -66,22 +67,23 @@ three step kinds, the same `do()`-never-decides rule, the same run-state cache u
 > *"We can't really enforce all of this perfectly through code, nor really should we, but we
 > should express it when the code pops back."*
 
-So: **the entry conditions are enforced, the judgement is expressed.** `stories-done` is a fact
-about the tree and it blocks. `review-recorded` can only check that a record EXISTS and parses —
+So: **the entry conditions are checked and reported, the judgement is expressed.** `stories-done`
+is a fact about the tree and it is named, story by story. `review-recorded` can only check that a record EXISTS and parses —
 whether the review was any good is not a thing to encode, and a step that pretended to check it
 would be this package's cardinal sin wearing a protocol. Each JUDGEMENT step says, in its
 `do()`, what a human must do and why the machine is not doing it.
 
 ## Ship criterion
 
-1. `agentic-sdlc close story <id>` and `close feature <id>` walk their lists, refuse to advance,
-   and are resumable — the same driver, proven by the same tests.
-2. **`close story` refuses while the story's own narrow check is red**, and the narrow command
-   comes from `[verify]` rather than being named in the step.
-3. **`close feature` refuses while any story is not `done`**, naming each — by calling
+1. `agentic-sdlc close story <id>` and `close feature <id>` walk their lists, report every step
+   that is not true, finish, and are resumable — the same driver, proven by the same tests.
+2. **`close story` reports a red narrow check by name and exits 1**, scanning the story's own
+   commit range rather than the moment's diff; the narrow command comes from `[verify]` rather
+   than being named in the step.
+3. **`close feature` names every story that is not `done` and exits 1** — by calling
    `pm ready-for feature`, never by re-implementing it.
-4. `close feature` refuses while its review record is absent, unparseable, or holds a finding at
-   `disposition: open`.
+4. `close feature` reports an absent or unparseable review record, or a finding at
+   `disposition: open`, as UNVERIFIABLE — never as a pass.
 5. `install-sdlc` renders all FOUR lists, so the generated protocol is the whole SDLC and not
    just its outer half.
 6. **0.2.0's own 28 stories and 9 features close through these verbs.** Same bar as ship

@@ -21,7 +21,7 @@ set -eu
 # Branch names (exact, space-separated) that must never be pushed directly.
 PROTECTED_BRANCHES="main"
 # The gate a trunk push pays. Must exist as a target in your Makefile.
-PUSH_GATE=(make gates)
+PUSH_GATE=(make check)
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------

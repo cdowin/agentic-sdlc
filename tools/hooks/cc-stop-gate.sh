@@ -22,13 +22,12 @@ set -eu
 # --- project config (yours to edit after install — the file is your repo's) --
 # The static slice of the gate, run first. Must be cheap enough to pay on
 # every agent stop.
-# agentic-sdlc itself: `gates` is its static gate (check all, under a second) and
-# the hook self-tests stand in for a unit slice — the suite is one tier
-# (`make test`, minutes) and is the per-change gate run by hand, not a Stop-time one.
-GATE_STATIC=(make gates)
+# agentic-sdlc itself: `make check` is the static gate (~2 s) and `make unit`
+# the inner-loop tier (~7 s, no subprocess) — together they are `make precommit`.
+GATE_STATIC=(make check)
 # The unit tier, invoked as: "${GATE_UNIT[@]}" SYS="<derived slices>". An empty
 # SYS means the whole tier — never silently narrower than "all".
-GATE_UNIT=(make hooks-self-test)
+GATE_UNIT=(make unit)
 # Where per-system unit slices live: a changed top-level dir <d> with a
 # matching <UNIT_SLICE_ROOT>/<d>/ becomes a slice.
 UNIT_SLICE_ROOT="tests/unit"
@@ -52,6 +51,14 @@ is_agent_context() {
 }
 
 INPUT="$(cat)"
+# A payload this hook cannot read is a payload it cannot act on: exit 0 with
+# the reason, BEFORE the agent-context test — a stop gate that ran the whole
+# gate over garbage would wedge every agent stop, and `check hooks` replays
+# exactly this case against every installed hook and expects it to fail OPEN.
+case "${INPUT#"${INPUT%%[![:space:]]*}"}" in
+	'{'*) ;;
+	*) echo "cc-stop-gate: payload is not JSON; allowing the stop" >&2; exit 0 ;;
+esac
 
 # grep extractors are adequate here: the fields this hook reads are a path and
 # a boolean, which never carry an escaped quote. A hook reading a COMMAND must

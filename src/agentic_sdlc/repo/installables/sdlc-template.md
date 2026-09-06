@@ -18,11 +18,13 @@ agentic-sdlc release       <version>       once its features are done
 agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
 ```
 
-It walks the list below in order and **stops at the first step whose
-postcondition is not true**, saying what would make it true. It is resumable:
-the position is a cache under `.agentic-sdlc/run/`, every step is re-checked
-against the tree on every run, and deleting that file costs nothing. Exit `0`
-the run completed, `1` it stopped on a step, `2` a usage or config error.
+It walks the list below in order **to the end**, and for every step whose
+postcondition is not true it says so by name and says what would make it
+true. It is resumable: the position is a cache under `.agentic-sdlc/run/`,
+every step is re-checked against the tree on every run, and deleting that
+file costs nothing. Exit `0` every postcondition holds, `1` one or more do not
+(the walk still finished), `2` a usage or config error — the declaration
+could not be read, before the walk or at the step whose reader met it.
 
 Three kinds of step, and the third one is the honest limit:
 

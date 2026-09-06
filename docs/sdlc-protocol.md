@@ -18,11 +18,13 @@ agentic-sdlc release       <version>       once its features are done
 agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
 ```
 
-It walks the list below in order and **stops at the first step whose
-postcondition is not true**, saying what would make it true. It is resumable:
-the position is a cache under `.agentic-sdlc/run/`, every step is re-checked
-against the tree on every run, and deleting that file costs nothing. Exit `0`
-the run completed, `1` it stopped on a step, `2` a usage or config error.
+It walks the list below in order **to the end**, and for every step whose
+postcondition is not true it says so by name and says what would make it
+true. It is resumable: the position is a cache under `.agentic-sdlc/run/`,
+every step is re-checked against the tree on every run, and deleting that
+file costs nothing. Exit `0` every postcondition holds, `1` one or more do not
+(the walk still finished), `2` a usage or config error — the declaration
+could not be read, before the walk or at the step whose reader met it.
 
 Three kinds of step, and the third one is the honest limit:
 
@@ -65,11 +67,11 @@ recorded.
 | 11 | `milestone-accepted` | AUTOMATIC | — | the milestone status is `accepted` or later. |
 | 12 | `changelog-retitle` | AUTOMATIC | — | a `## v<version> — <ISO date>` heading exists with a fresh empty `## Unreleased` above it. |
 | 13 | `milestone-packaging` | AUTOMATIC | — | the milestone status is `packaging` or later. |
-| 14 | `findings-resolved` | JUDGEMENT | — *(operator)* | no document under the review directory names this milestone — every record resolved and deleted. |
+| 14 | `findings-resolved` | JUDGEMENT | — *(operator)* | `pm ready-for tag <milestone>` exits 0 — every finding in every record the milestone's grains point at has a disposition other than `open`. The same question `review-landed` asked, re-asked after the gate and the changelog moved. The records STAY: they are what `reviewed:` points at, and deleting one leaves `check pm` D1 red. |
 | 15 | `milestone-done` | AUTOMATIC | — | the milestone status is `done`. |
 | 16 | `push-branch` | AUTOMATIC | — | the branch tip equals its upstream tip. It refuses on the mainline and pushes nothing there. |
-| 17 | `pr-open` | JUDGEMENT | — *(operator)* | the configured `pr-open` command exits 0. With none, the operator is asked and the step is reported not true; the walk finishes. |
-| 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the step is reported not true; the walk finishes. |
+| 17 | `pr-open` | JUDGEMENT | — *(operator)* | the configured `pr-open` command exits 0. With none, the operator is asked and the step is reported UNVERIFIABLE — never a pass, counted apart from a plain no; the walk finishes. |
+| 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the step is reported UNVERIFIABLE — never a pass, counted apart from a plain no; the walk finishes. |
 | 19 | `merge` | JUDGEMENT | — *(operator)* | the mainline contains this branch's tip. |
 | 20 | `tag` | AUTOMATIC | — | the tag exists locally AND on the remote. It is never force-moved. |
 | 21 | `prove-artifact` | JUDGEMENT | `uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version` | the configured `prove-artifact` command exits 0. This package ships no default: the proof names a git URL, and a URL is the project's own fact (hard rule 8). |

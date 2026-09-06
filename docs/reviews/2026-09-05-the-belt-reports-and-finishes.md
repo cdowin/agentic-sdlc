@@ -351,17 +351,17 @@ Reviewer's token cost: ~95k.
 ```
 verdict: HOLD
 | id | severity | disposition |
-| B1 | BLOCKER | open |
+| B1 | BLOCKER | landed 1abba53 |
 | B2 | BLOCKER | open: I2 carried from the-inner-levels-are-belts-too |
-| B3 | BLOCKER | open |
-| B4 | BLOCKER | open |
-| M1 | MAJOR | open |
-| M2 | MAJOR | open |
-| M3 | MAJOR | open |
-| M4 | MAJOR | open: belongs to 0.2.0/the-release-is-a-conveyor |
-| N1 | MINOR | open |
-| N2 | MINOR | open |
-| N3 | MINOR | open |
-| N4 | NIT | open |
-| Q1 | QUESTION | open |
+| B3 | BLOCKER | landed 1abba53 |
+| B4 | BLOCKER | landed 6f4e65e |
+| M1 | MAJOR | landed 6f4e65e |
+| M2 | MAJOR | landed 1abba53 |
+| M3 | MAJOR | landed 1abba53 |
+| M4 | MAJOR | landed 1abba53 |
+| N1 | MINOR | landed d6dc307 |
+| N2 | MINOR | landed 1abba53 |
+| N3 | MINOR | landed 1abba53 |
+| N4 | NIT | landed 1abba53 |
+| Q1 | QUESTION | landed 1abba53 |
 ```

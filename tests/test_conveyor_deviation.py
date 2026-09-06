@@ -218,17 +218,24 @@ def test_u2028_in_a_step_detail_reads_back_as_one_row():
         assert rows(root)[0]['reason'] == 'a\u2028b'
 
 
-def test_a_step_that_answers_not_true_with_no_detail_writes_no_row():
+def test_a_step_that_answers_not_true_with_no_detail_writes_a_row_naming_the_silence():
     """`Answer`'s own docstring: a step that answers no with an empty detail
     has told the operator that something is wrong and nothing about what. The
-    row minter has always refused that, and the new caller hits the same wall
-    — so the run still walks and the silence is not laundered into a row."""
+    row minter refuses an empty reason, and this case USED to assert the
+    consequence — no row at all — as if silence in the durable half were the
+    honest outcome. N2 (`docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`):
+    the scoreboard counted the step and the ledger held nothing, and nothing
+    said so. Now the DEFECT is the reason, on the line and in the row: it is
+    true, it is not empty, and it is not a reason the step never gave."""
     mute = driver.Step('mute', driver.StepKind.GATE,
                        lambda c: driver.Answer.no(''))
     with tree() as root:
         code, out = run(registry={'mute': mute}, steps=('mute',))
         assert code == 1, out
-        assert not (root / LEDGER).exists()
+        recorded = rows(root)
+        assert [r['step'] for r in recorded] == ['mute'], recorded
+        assert 'gave no reason' in recorded[0]['reason'], recorded
+        assert 'defect in the step' in out, out
 
 
 # --- the row minter -----------------------------------------------------------
@@ -269,6 +276,22 @@ def test_status_prints_the_recorded_run_and_walks_nothing():
         assert code == 0, out
         assert FALSE.name in out and 'NOT-TRUE' in out, out
         assert (root / LEDGER).read_bytes() == before
+        assert 'disagree' not in out, out
+        # N3. The tree moves, the step is TRUE on the next walk, and the row
+        # — written once, the machine's FIRST account — still says NOT-TRUE.
+        # `--status` prints both halves and SAYS they disagree, and which is
+        # which; it decides nothing, because the next walk asks the tree.
+        now_true = driver.Step(FALSE.name, driver.StepKind.JUDGEMENT,
+                               lambda c: driver.Answer.yes('fixed'),
+                               lambda c: 'say')
+        code, out = run(registry={TRUE.name: TRUE, FALSE.name: now_true})
+        assert code == 0, out
+        assert (root / LEDGER).read_bytes() == before
+        code, out = run('--status')
+        assert code == 0, out
+        assert f'[release:{FALSE.name}] cached TRUE' in out, out
+        assert (f'[release:{FALSE.name}] the ledger row' in out
+                and 'disagree — the tree moved' in out), out
 
 
 def test_status_on_a_milestone_with_no_deviation_says_so():

@@ -412,10 +412,6 @@ class TheRunStateIsPreflighted(unittest.TestCase):
         self.assertIn('.agentic-sdlc', out.getvalue() + err.getvalue())
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class TheWalkAlwaysFinishes(unittest.TestCase):
     """D8. Every step is a check, every check reports, nothing halts.
 
@@ -538,16 +534,55 @@ class ACrashIsAnAnswerNotATraceback(unittest.TestCase):
         self.assertEqual(('push-branch',), result.not_true)
         self.assertEqual(2, step.check.calls)
 
-    def test_a_ConfigError_is_re_raised_because_it_is_the_reader_failing(self):
-        """D8's line. A malformed declaration is not a check reporting — it is
-        this module failing to read, and it belongs to exit 2 before the walk
-        rather than to a row on the scoreboard."""
+    def test_a_ConfigError_met_at_a_step_is_one_line_at_exit_2_from_the_CLI(self):
+        """D8's line, asked at the altitude that bites — D11.
+
+        This case used to assert `assertRaises(ConfigError)` around `_walk`
+        and stop, one altitude below its own docstring's claim: nothing asked
+        `main` whether "exit 2" was what happened, and it was not. Measured
+        (B3, `docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`): a
+        consumer typo in `[release.version_files]`, read by step 6 DURING the
+        walk, was a traceback at exit 1 — hard rule 6's code for FINDINGS —
+        with the five steps already walked printing nothing, while the ledger
+        row an earlier not-true step wrote had already landed. So this asks
+        the CLI: the transcript so far, one REFUSED line naming the step, one
+        line on stderr, exit 2, no traceback, and nothing after it walked.
+        """
         from agentic_sdlc.core.config import ConfigError
 
         def bad(ctx):
-            raise ConfigError('[release] steps: not a list')
+            raise ConfigError('[release.version_files] pyproject.toml must be '
+                              'a regex string, got 42')
 
-        steps = [dr.Step('reader', dr.StepKind.GATE, check=bad)]
+        before = Scripted(YES('no modified paths'))
+        after = Scripted(YES())
+        registry = {
+            'tree-clean': dr.Step('tree-clean', dr.StepKind.GATE, check=before),
+            'version-sync': dr.Step('version-sync', dr.StepKind.GATE, check=bad),
+            'gate': dr.Step('gate', dr.StepKind.GATE, check=after),
+        }
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ConfigError):
-                _walk(Path(tmp), steps)
+            root = Path(tmp)
+            (root / 'pm' / 'roadmap' / '0.2.0-the-conveyor').mkdir(parents=True)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = dr.main(['release', '0.2.0'], root=root,
+                               registry=registry,
+                               steps=('tree-clean', 'version-sync', 'gate'))
+        self.assertEqual(2, code)
+        self.assertNotIn('Traceback', out.getvalue() + err.getvalue())
+        # The transcript SO FAR is kept — the step before the reader failed
+        # is on stdout, by name — and the refusal names the step it met.
+        self.assertIn('[release:tree-clean] GATE ALREADY-TRUE — no modified '
+                      'paths', out.getvalue())
+        self.assertIn("[release] REFUSED — step 2/3 'version-sync' (GATE): "
+                      '[release.version_files]', out.getvalue())
+        self.assertEqual(1, len(err.getvalue().strip().split('\n')))
+        self.assertIn('got 42', err.getvalue())
+        # Nothing after the reader failed walked: a walk over a declaration
+        # it cannot read is D8's "before the walk" moment arriving late.
+        self.assertEqual(0, after.calls)
+
+
+if __name__ == '__main__':
+    unittest.main()

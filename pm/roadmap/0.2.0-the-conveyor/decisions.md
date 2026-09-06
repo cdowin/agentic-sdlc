@@ -377,6 +377,71 @@ ran that tier. That is why the gate prints the AGE of every row it grades — `7
 12m ago` — because a ceiling reported against a row from last week is a ceiling reported against
 last week's code, and a number without its age reads as a fact about the tree in front of you.
 
+## D11 — 2026-09-05 — A callee's exit 2 is UNVERIFIABLE, and a reader that fails mid-walk is one line at exit 2
+
+Q1 and B3 from `docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`, and they are the one
+seam where D8's two moments touch. Measured, both:
+
+```
+[story:narrow-verified] GATE NOT-TRUE — `agentic-sdlc verify --story …` exited 2 — a CONFIG or
+usage error, not a finding, so nothing was decided: [verify] feature must be a string, got 42
+[story:story-done] AUTOMATIC DONE — …01-the-ledger-holds-what-a-gate-cost.md is 'done'
+
+$ uv run -q agentic-sdlc release 0.2.0        # devkit.toml: "pyproject.toml" = 42
+Traceback (most recent call last):
+  …
+agentic_sdlc.core.config.ConfigError: [release.version_files] pyproject.toml must be a regex string
+EXIT=1
+```
+
+The first: a GATE that subprocesses this same CLI folded the callee's exit 2 into NOT-TRUE, the
+step's own detail said *nothing was decided*, and the belt then decided — the story flipped `done`
+with its narrow check never run. The second: a `ConfigError` raised by a step's `check()` escaped
+`main` as a traceback at exit 1, hard rule 6's code for FINDINGS, with the five steps already
+walked printing nothing while the ledger row an earlier step wrote had already landed.
+
+**The ruling, Chris's northstar applied twice — everything is a check, the walk always finishes,
+and exit 2 belongs to the READER:**
+
+1. **A callee's exit 2 — a config or usage error — is UNVERIFIABLE, never NOT-TRUE.** The
+   callee's reader failed, so the question was never asked; that is the third value of `Truth`,
+   kept apart from a plain no for exactly this. The walk still finishes (D8): THIS process read its
+   own declaration fine, and a fact a subprocess reports is a fact about the tree. Only the callee
+   that speaks hard rule 6 — `agentic-sdlc` itself, through `_own_verdict` — gets the ruling. A
+   configured `[<operation>.commands]` string is any shell at all, and `make` exits 2 for a failed
+   recipe: reading that as "unverifiable" would launder a red gate into the column that says
+   nobody looked. `run_command` stays 0-is-true and nothing else.
+2. **A `ConfigError` raised inside `main` is reported as one line and the CLI exits 2** — never a
+   traceback, never exit 1. `validate_config` reads every key it knows before step 1; a key only one
+   step reads is met AT that step, and `walk` catches it there: every line already on the
+   transcript is printed, one `[release] REFUSED — step 6/21 'version-sync' (AUTOMATIC): …` names
+   the step and the key, the run state is saved, one line goes to stderr, and nothing after it
+   walks. A walk over a declaration it cannot read is D8's "before the walk" moment arriving late,
+   and it gets the same answer.
+
+**Rejected: fold the mid-walk `ConfigError` into UNVERIFIABLE and keep walking, for symmetry with
+rule 1.** Tempting — it makes the two halves one rule — and wrong on hard rule 6: a consumer typo
+would then land at exit 1 in a column beside genuine findings, and a consumer's CI would read a
+config mistake as drift. Rule 1 is about a SUBPROCESS's reader; rule 2 is about this one, and the
+exit code says whose.
+
+**Rejected: read every configured command's exit 2 as UNVERIFIABLE too.** `make` — the one
+shipped default, `gate = "make milestone"` — says 2 for a failed recipe. Rule 4's read-side sin,
+delivered by a convention this package does not own.
+
+**Rejected: pre-read every config key any step might touch, so nothing can raise mid-walk.**
+`validate_config` already reads what it knows; a step's own reader is the authority on the shape
+it needs (`_version_files`, `_pin_files`), and a second reader of each key up front is the
+second answer this module's docstring refuses. Catching it at the step costs one `try` and keeps
+one reader.
+
+**The cost accepted:** a `ConfigError` at step 6 leaves the rows earlier not-true steps wrote in
+the ledger. They stay, deliberately — each was a fact about the tree, the tree did not change, and
+a machine that un-wrote its own account because a later key was malformed would be rewriting
+history (D7's reasoning). And a callee's exit 2 now exits the belt at 1 rather than 2, which reads
+as "one or more postconditions do not hold" — true, and the scoreboard's `unverifiable:` column
+names which and the row says why.
+
 ## D12 — 2026-09-05 — The actions ARE the checks: a belt prints its entry conditions, then writes one status or refuses cleanly
 
 **Chris, 2026-09-05:** *"This tool is essentially a reader/writer. It reads/writes the same

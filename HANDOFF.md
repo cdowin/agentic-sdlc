@@ -118,18 +118,28 @@ count going UP. Hard rule 10 is the counterweight rule 4 never had.
 
 ## NEXT, in order
 
-1. **Finish phase A/B of `the-proof-is-named-in-the-criterion`** — cut the suite
-   to what BITES. Phase C (the prevention) is already landed: templates, rule
-   10, the roster, `check budget`'s time AND case ceilings. The feature record
-   carries the "does it bite" table; use it as the criterion, not "which are
-   duplicates".
-2. **Phase 5's inner belts** (`the-inner-levels-are-belts-too`). It is unbuilt
+1. **Close the probe gap in `the-proof-is-named-in-the-criterion`.** Phases A,
+   B and C all landed — 1,478 test functions → 1,016, 32 probes, all red. What
+   is NOT done is ship criterion 4, which wants a broken-probe against **all
+   eight `check` gates and every `pm` write verb**. Unprobed today: **D3, D8,
+   D9, D10, `pm retire`, `pm move`, `pm decide`.** Their tests are intact; they
+   are simply unproven by that exercise, and the criterion is what makes an
+   aggressive cut safe. Closing this is what triggers `verify --feature` and
+   the wide rung — once, as part of the close.
+
+2. **`0.2.0/bugs/the-repo-forks-the-framework-it-ships`** — this repo does not
+   `include Makefile.devkit`. It hand-writes a parallel framework, so
+   `make precommit` here and in a consumer are two different programs sharing a
+   name. D1's `-include` + `GDK_*_TIERS` mechanism is the one thing its own
+   author does not use. The bug says what has to be decided before it can be
+   fixed: which half of this Makefile is framework and which is this project's.
+3. **Phase 5's inner belts** (`the-inner-levels-are-belts-too`). It is unbuilt
    and its record specifies belts that REFUSE — read its banner first; D8 means
    they report. Closing it closes I2.
-3. **Phase 7** (`every-question-is-asked-of-a-category`) — the behaviour change.
+4. **Phase 7** (`every-question-is-asked-of-a-category`) — the behaviour change.
    Route the census through `holds`. **Every fixture tree already declares a
    flow**, so this lands as a behaviour change rather than 400 fixture edits.
-4. **Phase 8**, then close the tree through the belts, review, and release
+5. **Phase 8**, then close the tree through the belts, review, and release
    0.2.0 through `agentic-sdlc release 0.2.0` (criterion 10 — a conveyor whose
    first release is done by hand has not been tested).
 
@@ -153,3 +163,34 @@ count going UP. Hard rule 10 is the counterweight rule 4 never had.
   `deferred: <grain-id>`, `open`, `open: <note>`. Prose after the hash makes
   `pm ready-for tag` refuse the record.
 - **The scene half is gone.** Anything naming Godot in `src/` is drift (rule 8).
+- **`make check` here is an ALIAS for `gates`**, and it is a stopgap over
+  `0.2.0/bugs/the-repo-forks-the-framework-it-ships`. Do not read this repo's
+  `precommit`/`milestone` as evidence of what a consumer gets — they are a
+  parallel implementation.
+- **The suite tiers on the `shell` mark, DERIVED** from what a module's source
+  reaches. `support.pm.tree` marks a tree with `.git`; `support.pm.git_tree`
+  runs `git init`. Reaching for the second is what puts a module in the slow
+  tier, so reach for it only when the test asks git a real question.
+- **A new test must say why the old ones were not enough** (rule 10, and the
+  story template's `## How this is proven`). Name the test that already covers
+  it, or the one that can be amended. The default is that a new test is not
+  warranted.
+
+## The numbers, so drift is visible
+
+Measured 2026-09-05, end of session. `check budget` gates the first two and
+`[tests]` in `devkit.toml` holds the ceilings.
+
+| | |
+|---|---|
+| `make check` / `gates` | ~2 s |
+| `make precommit` | **~10 s** (gates + hooks + unit) |
+| unit tier | **736 cases, 7 s** — ceiling 1250 / 20 s |
+| integration tier | **~40 s** — ceiling 800 / 130 s |
+| whole suite | **~40 s**, 1,415 collected |
+| test functions | **1,016** (was 1,478) |
+| tests:src statements | **1.49** (was 1.80) |
+
+Ship criterion 2 of `the-proof-is-named-in-the-criterion` wants under 700
+collected and a ratio under 1.2. Neither is met; both moved a long way. The
+integration tier is ~40 s against a 30 s target.

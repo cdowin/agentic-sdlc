@@ -34,7 +34,7 @@ that does not parse — prints `unverifiable:` and counts as false: a write over
 a question nobody answered is the one thing this machine will not do.
 
 This tool reads and writes the PM tree and says what it saw. Whether a false
-check should stop you is YOUR question: the engine cannot know whether it is
+check should stop you is YOUR question: the tool cannot know whether it is
 wrong (descoped? a hotfix? deliberate?), which is what `--force` is for, on
 the record. `agentic-sdlc check <gate>` is the thing that FAILS a tree, in CI
 and pre-push, with an exit-code contract for exactly that.

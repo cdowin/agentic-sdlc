@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/08-every-surface-describes-the-tool-that
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: README, CLAUDE.md, the agents, the seeds and the hooks describe the reader/writer that ships, and nothing else
-status: planning
+status: building
 owner:
 depends_on: []
 ---

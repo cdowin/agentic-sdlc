@@ -500,8 +500,8 @@ def test_this_repo_carries_what_install_ci_produces():
 
     PARTIAL, and decided the same way `install-agents` is: verify.yml runs
     `make milestone`, which this repo has, so it MUST be present and current.
-    The other three read `config/version` out of a project.godot — this package
-    has neither, versions in pyproject.toml, and bumps at CLOSE rather than at
+    The other three read the version out of a project file at merge — this
+    package versions in pyproject.toml, and bumps at CLOSE rather than at
     merge. Installing them here would be three workflows guarding a flow this
     repo does not run — the reasoning that kept `install-hooks` un-self-hosted
     until 0.23.0 gave its corpus a job here (the ledger couriers; the hook
@@ -532,10 +532,9 @@ def test_this_repo_carries_what_install_ci_produces():
 def test_this_repo_carries_the_roles_it_runs_byte_current():
     """PARTIAL-roster self-hosting, decided with the roster.
 
-    This package runs its own SDLC with the verification pair; the
-    game-shaped roles (developer with an engine-expertise brief, po writing
-    against scene tooling, test-writer's two-tier boot split) have nothing to
-    act on in a stdlib Python repo — the same reasoning that keeps
+    This package runs its own SDLC with the verification pair; the base
+    roster (architect, po, developer, reviewer, …) is dispatched by a
+    consumer's orchestrator and has nothing to act on in this repo — the same reasoning that keeps
     `install-hooks` un-self-hosted. So the contract is conditional, not
     total: the verification pair MUST be present, and any plan destination
     this repo carries MUST be byte-current with its installable. A local

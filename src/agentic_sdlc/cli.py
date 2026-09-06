@@ -2,8 +2,8 @@
 
 Every verb this docstring names is routed by `main()` below, and a test proves
 that both ways round. A `--help` advertising a verb the tool does not have is
-worse than a bare error, because it reads as documentation: this file printed a
-menu of fourteen absent scene verbs for the whole of 0.1.0.
+worse than a bare error, because it reads as documentation: this file once
+printed a menu of fourteen verbs that had left.
 
 Project management (the PM tree is markdown + frontmatter):
     agentic-sdlc pm story <status> <story-id>
@@ -74,9 +74,9 @@ asks for:
     agentic-sdlc version            # also -V / --version
 
 Static gates (exit 1 on findings; run from anywhere inside the repo):
-    agentic-sdlc check doc | shell | repo-hygiene | pm | hooks
+    agentic-sdlc check doc | shell | grain-shape | pm | hooks | repo-hygiene | budget
     agentic-sdlc check <gate> --help  # that gate's contract, config and scope
-    agentic-sdlc check all          # the default roster (doc + shell); every
+    agentic-sdlc check all          # the stock roster (doc + shell + grain-shape); every
                                     # other gate stays explicit — see
                                     # KNOWN_GATES for the reason each is out.
                                     # `[checks] all` in devkit.toml names the
@@ -188,7 +188,7 @@ KNOWN_GATES = {
 }
 
 # The gates that accept `--fix`. Empty since 0.2.0 — `uid` was the only one and
-# it left with the Godot half. Kept rather than inlined, because the PLUMBING is
+# it left at 0.2.0. Kept rather than inlined, because the PLUMBING is
 # a shipped contract with its own tests: `_run_check` refuses an unknown flag at
 # exit 2 instead of silently ignoring it, and a consumer that thinks it asked
 # for a repair and got a read-only run has been lied to. A second fixable gate

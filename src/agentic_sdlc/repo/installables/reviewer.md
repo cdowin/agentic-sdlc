@@ -75,8 +75,8 @@ the combined effect wandered; cross-story duplication. You see all of that.
 7. **Spec/doc deltas** — flag docs now behind the code for the tech-writer;
    don't block on them.
 
-A list of one language's or one engine's anti-patterns used to sit here. It
-belongs in the `anti-patterns` line of the Project config at the top of this
+One language's anti-patterns are not listed here. They belong in the
+`anti-patterns` line of the Project config at the top of this
 file, which is this project's copy to fill in — a roster shipped to every
 consumer cannot know which mistakes yours actually makes.
 

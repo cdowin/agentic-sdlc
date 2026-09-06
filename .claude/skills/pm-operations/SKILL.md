@@ -76,7 +76,9 @@ The seed `pm init` writes:
 Each kind holds the states its belt WRITES and no others: a story is claimed
 (`building`) and closed (`done`), a feature is additionally `reviewing` while its
 record is written, and acceptance and packaging are milestone acts. There is no
-step-to-state table — a belt writes the first state of its kind's `done` list, and
+step-to-state table — a belt (`close story`, `close feature`, `release`) runs its
+checks and then writes the first state of its kind's `done` list, or writes nothing
+and names each false check; `--force` writes anyway, on the record (D12) — and
 `pm <kind> <state>` reaches any declared state by hand. `done` does not mean SHIPPED — the flip is itself a commit that has not
 shipped when it is written. It means everything inside the tree's authority is
 finished: changelog written, reviews closed, findings landed, gates green. `obe` sits

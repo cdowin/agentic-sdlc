@@ -13,7 +13,7 @@ Review priorities, in order:
 1. **False-PASS hazards (rule 4).** For every gate: could its file census silently miss files? Interrogate every glob, pathspec, prefix-exclude, and `git ls-files` pattern — git pathspec wildmatch is NOT fnmatch and NOT shell glob; verify each pattern against `git ls-files` reality in a scratch repo you build to hold the drift class, or in one of the committed `tests/fixtures/` repos. A gate that scans fewer files than the drift class inhabits is a CONFIRMED critical, not a nit.
 2. **Contract stability (rules 5–6).** Exit codes, output line shapes, subcommand/flag names, config keys. Flag any change that a consumer Makefile/hook/CI grep would feel.
 3. **Config surfaces (rule 3).** Defaults-vs-devkit.toml equivalence; missing-section, missing-file, and malformed-file behavior; type coercion (TOML tables/arrays into the sets/tuples the code expects).
-4. **Robustness.** Malformed/truncated .tscn input, non-UTF-8 bytes, paths with spaces, empty repos, detached HEAD, repos with no origin. Windows: path separators, no reliance on bash.
+4. **Robustness.** Malformed or truncated markdown and frontmatter, non-UTF-8 bytes, paths with spaces, empty repos, detached HEAD, repos with no origin. Windows: path separators, no reliance on bash.
 5. **Stdlib-only + 3.11 floor** (imports, syntax).
 6. **Truth of docs.** README/CLAUDE.md claims vs actual behavior.
 7. **Consumer coupling (rule 8).** Any file naming a consuming project, reading a path outside this checkout, or gating on another repo's content or working state is a finding on its own — a verdict that changes with whose machine ran it is not a verdict.

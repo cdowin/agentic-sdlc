@@ -53,6 +53,25 @@
 - **`docs/sdlc-protocol.md` renders from the four check lists, the state each belt writes
   and each belt's after-list**; a tree that has declared no flow renders the absence rather
   than exiting 2. Re-render with `install-sdlc --force`.
+### Every surface describes the tool that ships
+
+- **`README.md` is a consumer's ten-minute read**: what the tool is (a reader/writer over the
+  PM tree — `pm` writes one status, `check` echoes findings, a belt is its checks then one write
+  or a clean error), the ladder, the verb table (exactly what `--help` routes), the
+  `devkit.toml` keys the tool actually reads, and the two-line Makefile. Every retired target,
+  key and history paragraph is gone.
+- **The `CLAUDE.md` seed (`init`) carries the same ladder** — `make check` → `verify --story`
+  → `make precommit` → `close story` → `close feature` → `release` → `adopt` — and describes
+  the belts as D12 does. The installed `pm-execution` rule and `pm-operations` skill say the
+  same thing, so `pm install-skills --diff` will show it on a pin bump.
+- **`tools/dev/agent-worktree.sh` ships `WARM_DIRS=()`** — the pre-warm list carried one
+  language's cache directories as its stock value; it is now empty, and the header is where a
+  project names its own. An empty list is handled under `set -u`.
+- Installable comments and agent briefs name only this kit's own targets and verbs; the
+  `review-recorded` check's description no longer cites a source path that does not exist in a
+  consumer's tree. The stock `check all` roster is spelled out in `--help` as `doc` + `shell` +
+  `grain-shape`, which is what `KNOWN_GATES` has run since `grain-shape` landed.
+
 ### The review findings land: `pm init` writes the flow it is named for
 
 - **`pm init` appends `[pm.states.<kind>]` to a `devkit.toml` it did not write** — after the

@@ -1,0 +1,90 @@
+# Makefile.tiers — agentic-sdlc's own test tiers, on Makefile.devkit's seam.
+#
+# This file is what a language kit writes for a consumer; here the "kit" is
+# pytest and the consumer is the package itself. It DEFINES the tier targets,
+# DECLARES which compositions they join, and carries its own .PHONY.
+#
+# THE LADDER (decision D10). `unit` is the inner loop: no subprocess, one
+# process, seconds. `integration` is everything that spawns — a real repo, a
+# real make, an installed hook corpus. `test` is both and is what a feature
+# close runs. `matrix` is every claimed interpreter, once, at the milestone.
+# The tier is the `shell` mark, DERIVED by tests/conftest.py from what a
+# module's source reaches — never a list here.
+GDK_PRECOMMIT_TIERS := unit
+GDK_MILESTONE_TIERS := matrix budget
+
+# The package is stdlib-only at RUNTIME (hard rule 1). pytest and xdist are the
+# `dev` dependency group in pyproject.toml, and `uv run` syncs them into the
+# same environment the package is installed into. 3.11 is the declared floor
+# and where the fast loop runs; the matrix is every interpreter it claims.
+PY_FLOOR  ?= 3.11
+PY_MATRIX ?= 3.11 3.12 3.13 3.14
+# `auto` is the machine's core count; `loadgroup` keeps the tests that spawn
+# `make` against THIS repo on one worker so they serialise against each other
+# and nothing else.
+PYTEST_N  ?= -n auto --dist loadgroup
+PYTEST    ?= $(UV) run -q python -m pytest -q
+
+# The one-line summary and the census, read off the same pytest summary line
+# so the number in the ledger row and the number a human sees cannot disagree.
+SUM_PYTEST    := grep -aoE '[0-9]+ (passed|failed)[^|]*' "$$log" | tail -1
+CENSUS_PYTEST := grep -aoE '[0-9]+ passed' "$$log" | tail -1 | grep -oE '[0-9]+'
+
+.PHONY: unit integration test fuzz matrix budget
+
+unit: export GDK_TEST_TIER = unit
+unit: ## the inner loop: no subprocess, one process, seconds
+	$(call gdk_gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) -m "not shell",$(CENSUS_PYTEST))
+
+integration: export GDK_TEST_TIER = integration
+integration: ## everything that spawns — a real repo, make, a hook corpus
+	$(call gdk_gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_N) -m shell,$(CENSUS_PYTEST))
+
+test: export GDK_TEST_TIER = test
+test: ## both tiers on the $(PY_FLOOR) floor — what a feature close runs
+	$(call gdk_gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_N),$(CENSUS_PYTEST))
+
+fuzz: ## the seeded differential + replay harnesses alone (`test` runs them too)
+	$(call gdk_gate,fuzz,FUZZ,$(SUM_PYTEST),$(PYTEST) -m fuzz)
+
+# Every claimed interpreter in one target, reporting WHICH one failed. The
+# FLOOR runs the whole suite; every other interpreter runs `-m "not shell"`,
+# because a spawn is not something a Python version changes. Each interpreter
+# gets its own environment (`.venv-<version>`, kept between runs) so the
+# project's own .venv is never rebuilt under the matrix. A PY_FLOOR that is not
+# in PY_MATRIX is refused BEFORE the first interpreter — otherwise nobody runs
+# the shell slice and the verdict says PASS over a suite that never ran.
+matrix: ## every interpreter in PY_MATRIX; the floor runs everything, the rest `-m "not shell"`
+	@set -o pipefail; . $(GDK_GATE_LIB); \
+	log="$$(gdk_gate_log matrix)"; fail=''; floor=''; full=''; \
+	for v in $(PY_MATRIX); do [ "$$v" = "$(PY_FLOOR)" ] && floor="$$v"; done; \
+	if [ -z "$$floor" ]; then \
+		echo 'PY_FLOOR "$(PY_FLOOR)" is not in PY_MATRIX "$(PY_MATRIX)"' >> "$$log"; \
+		gdk_gate_verdict MATRIX 'REFUSED: PY_FLOOR "$(PY_FLOOR)" is not in PY_MATRIX "$(PY_MATRIX)", so no interpreter would run the whole suite' "$$log"; \
+		exit 2; \
+	fi; \
+	for v in $(PY_MATRIX); do \
+		if [ -z "$$full" ] && [ "$$v" = "$(PY_FLOOR)" ]; then \
+			full="$$v"; slice=(); ran='the whole suite'; \
+		else \
+			slice=(-m 'not shell'); ran='-m "not shell"'; \
+		fi; \
+		echo "=== python $$v ($$ran) ===" >> "$$log"; \
+		[ "$$VERBOSE" = "" ] || echo "=== python $$v ($$ran) ==="; \
+		gdk_gate_capture "$$log" -- env UV_PROJECT_ENVIRONMENT=".venv-$$v" \
+			$(UV) run -q --python $$v python -m pytest -q $(PYTEST_N) "$${slice[@]}" || true; \
+		[ "$$GDK_GATE_EXIT" -eq 0 ] || fail="$$fail $$v"; \
+	done; \
+	if [ -n "$$fail" ]; then \
+		grep -aE '$(GDK_GATE_FAIL_RE)' "$$log" | head -$(GDK_GATE_FAIL_LINES) || true; \
+		gdk_gate_verdict MATRIX "FAIL on$$fail" "$$log"; \
+		exit 1; \
+	fi; \
+	gdk_gate_verdict MATRIX "PASS on $(PY_MATRIX)" "$$log"
+
+# Asked ONCE, at the milestone, never per change: it grades the LAST recorded
+# run of each tier against `[tests] budget` / `[tests] cases`, so in `check
+# all` a slow afternoon would redden the next person's edit over a number they
+# cannot act on.
+budget: ## the last recorded tier costs against the [tests] ceilings
+	$(call gdk_gate,budget,BUDGET,$(GDK_SUM_CHECKS),$(DEVKIT) check budget)

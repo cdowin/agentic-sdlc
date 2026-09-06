@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentic-sdlc"
-version = "0.1.0"
-description = "Headless dev tooling for Godot 4.x - pure-parse scene introspection (summary/diff/refs/orphans/autoloads/tiles) + surgical scene and TileMapLayer edits + static repo gates (uid, tres-format, props, defaults, doc, shell, repo-hygiene) + a PM-tree tracker with its own drift gate."
+version = "0.2.0"
+description = "A deterministic SDLC as a pinned-tag CLI: a markdown-and-frontmatter PM tracker with its own drift gate, static repo gates (doc, shell, repo-hygiene, hooks), the agent-workflow guard corpus, and installers for the CI, agent and hook files a project runs the loop with. Stdlib only."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Chris Dowin" }]
-keywords = ["godot", "gamedev", "tooling", "tscn", "lint"]
+keywords = ["sdlc", "project-management", "gates", "agents", "tooling", "lint"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -25,6 +25,12 @@ Repository = "https://github.com/cdowin/agentic-sdlc"
 
 [project.scripts]
 agentic-sdlc = "agentic_sdlc.cli:main"
+
+# TEST-time only. Hard rule 1 governs the RUNTIME — the package ships no
+# dependency — and `uv run` installs this tree on itself with these beside it,
+# which is what the Makefile's gates run.
+[dependency-groups]
+dev = ["pytest", "pytest-xdist"]
 
 # A repo with no pytest config is a repo where every agent invents its own
 # incantation. `pytest` from the root now means exactly one thing.

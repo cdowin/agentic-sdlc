@@ -24,7 +24,6 @@ import contextlib
 import hashlib
 import io
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +32,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli  # noqa: E402
@@ -40,10 +40,16 @@ from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 
 pytestmark = pytest.mark.fuzz
 
-DEVKIT_TOML = """\
+# The flow is APPENDED rather than typed out: `[pm.states.*]` has no runtime
+# fallback (model.py:718 `flow_of`), so the eleven-step sequence below —
+# `pm new milestone`, `pm new feature`, `pm sync` — reads it on every call, and
+# a tree that declared nothing would fail the FIRST step at exit 2 with nothing
+# said about idempotence. Derived from `render_seed()` through
+# tests/support/pm.py, never hand-copied.
+DEVKIT_TOML = with_flow("""\
 [pm]
 template_dir = "pm/templates"
-"""
+""")
 
 # The scaffolding sequence, in the order a repo actually adopts the toolkit,
 # each step paired with the exit code its REPLAY must produce.
@@ -116,7 +122,7 @@ def _tree():
         (root / 'Makefile').write_text(
             '.PHONY: precommit milestone\nprecommit:\n\t@true\n'
             'milestone:\n\t@true\n', encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir(exist_ok=True)  # a MARKER, not a repo: `repo_root` walks for it
         yield root
 
 

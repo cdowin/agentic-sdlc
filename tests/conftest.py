@@ -1,33 +1,15 @@
-"""`shell` is derived here — from the source, at collection, never by hand.
+"""`shell` is derived here, from the source at collection, never by hand.
 
-`make matrix` replays this suite on four interpreters, and ~85% of that wall
-clock is `subprocess`: bash, make, git and the installed hook corpora, none of
-which an interpreter changes. The matrix runs everything on the floor and
-`-m "not shell"` on the other three, so the mark has to be true of every
-spawning module on every run, with nobody maintaining a list. Hence derivation.
-
-A module carries `shell` when its own source imports `subprocess`, or when it
-binds a `tests/support` name that reaches `subprocess`. The helper set is
-derived too — support's call graph walked to a fixpoint — so `commit()` counts
-because it calls `git()`, and a new helper that shells out drags its callers
-across on the next collection rather than on the next audit.
-
-Deliberately AST, not grep. `grep -l subprocess tests/test_*.py` gets both ends
-of the census wrong: it counts `test_boundaries.py`, which spells
-`subprocess.run` in a docstring and spawns nothing, and it misses every module
-that shells out only through `temp_repo()` or `tree()` — which is most of the
-pm suite, and the bulk of the seconds this mark exists to move.
-
-The mark is a fact, so no module gets to assert it: an item that reaches this
-hook already carrying `shell` is refused by name. That holds even when the
-claim is TRUE, because one mechanism is the whole point — `pytest -m shell`
-should be a statement about what the source does, and a reader should never
-have to work out whether a given mark was derived or opined.
+A module carries the mark when its source imports `subprocess` or binds a
+`tests/support` name that reaches it (the helper set is a call-graph fixpoint).
+Decided by AST, not grep, so a docstring naming `subprocess` is not a spawn. A
+hand-written `shell` mark is refused by name: one mechanism is the point.
 """
 from __future__ import annotations
 
 import ast
 import functools
+import os
 from pathlib import Path
 
 import pytest
@@ -196,3 +178,56 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if module_spawns(item.path):
             item.add_marker(MARK)
+
+
+# --- the suite records what its own tail cost ---------------------------------
+# `make unit` / `make integration` / `make test` already file a `gate` row
+# carrying the TIER's duration. That answers "did it get slower" and not "where"
+# — and where is the half you can act on. Two cases in this suite were once 47
+# of 96 seconds, and no artifact anywhere recorded that fact; it took a
+# `--durations` run somebody thought to do.
+#
+# So the slowest few of every gated run land in the ledger as `test` rows.
+#
+# ONLY THE SLOWEST FEW. A row per test is ~1850 rows per run into a file that is
+# COMMITTED, and a ledger that doubles every afternoon is one somebody deletes.
+# The tail is where a suite's wall clock lives, so the tail is what earns
+# durable space.
+#
+# GUARDED ON AN ENV VAR the make targets set, and never on by default. An
+# ad-hoc `pytest -k something` would otherwise file a "slowest test" list from a
+# run of four tests, which is a measurement of nothing recorded as though it
+# were one — rule 4's zero census, wearing a stopwatch.
+#
+# `pytest_terminal_summary` rather than `pytest_sessionfinish`: under xdist the
+# latter fires on every worker AND the controller, so each worker would file its
+# own partial tail. The terminal summary runs once, on the controller, over the
+# reports every worker sent back.
+TIER_ENV = 'GDK_TEST_TIER'
+SLOWEST = 5
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
+    tier = os.environ.get(TIER_ENV, '')
+    if not tier or hasattr(config, 'workerinput'):
+        return
+    calls = [r for r in terminalreporter.stats.get('passed', [])
+             if getattr(r, 'when', '') == 'call']
+    if not calls:
+        return
+    slowest = sorted(calls, key=lambda r: r.duration, reverse=True)[:SLOWEST]
+    try:
+        from agentic_sdlc.repo.pm import ledger, model
+        cfg = model.load()
+        for mid, _branch, mfile in model.in_progress_milestones(cfg):
+            for rank, report in enumerate(slowest, start=1):
+                ledger.append_row(mfile.parent, ledger.test_row(
+                    tier, report.nodeid, int(report.duration * 1000), rank))
+            break
+    except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
+        # FAILING OPEN, deliberately. A suite that went red because it could
+        # not write its own cost row would be telemetry outranking the thing it
+        # measures, which is the ruling `check budget` is built on one layer up.
+        terminalreporter.write_line(
+            f'[tier:{tier}] could not record slow-test rows: '
+            f'{type(err).__name__}: {err}')

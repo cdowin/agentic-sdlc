@@ -218,10 +218,13 @@ def _mutation_sites(rel: str, tree: ast.Module) -> list[str]:
 
 
 class TheCensusIsTheRealTree(unittest.TestCase):
-    """Before either allowlist means anything, it has to have scanned the tree."""
+    """Before either allowlist means anything, it has to have scanned the tree.
 
-    def test_the_source_census_clears_the_floor(self):
-        self.assertGreater(len(_sources()), MIN_SOURCES)
+    The floor itself is asserted inside `_sources()`, which every case below
+    goes through — so the case that restated it here was the same assertion
+    twice. What is NOT derivable from that is whether the floor ever fires, and
+    that is what stayed.
+    """
 
     def test_a_moved_SRC_breaks_the_build_instead_of_passing(self):
         import tempfile
@@ -488,9 +491,25 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     'cli.py',
     'repo/pm/model.py',
     'repo/checks/doc.py',
+    'repo/checks/grain_shape.py',
     'repo/checks/repo_hygiene.py',
     'repo/checks/shell.py',
+    # `[tests] budget` — a table of tier ceilings, read through `number_table`,
+    # which is the guard for exactly this shape. A bare `cfg.get('budget')`
+    # would hand back whatever TOML held, and a ceiling that is a STRING
+    # compares against a float in a way this gate would report as "under
+    # budget" forever: the read-side cardinal sin, in the gate whose whole job
+    # is to notice a number getting worse.
+    'repo/checks/budget.py',
     'repo/gates_extra.py',
+    # The conveyor reads `[release] steps`, `[release.commands]` and
+    # `[<op>.version_files]`, and every one of those values goes through a
+    # refusal before it is used: a step name through `name_defect`, a command
+    # through the table check, a version file through the non-empty-table
+    # check. A step list silently narrowed by a bad value would be a release
+    # protocol that walked past what it was asked to prove — the same shape as
+    # a gate roster narrowed by a typo, one altitude up.
+    'repo/conveyor/steps.py',
 ))
 # Calls that build a collection straight from an unguarded value.
 COLLECTORS = ('tuple', 'set', 'list', 'frozenset')
@@ -695,3 +714,62 @@ class LayersPointDownward(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# --- primitive 6: config is read PER RUN, never at import ---------------------
+# Found 2026-09-05: `repo/checks/doc.py` bound `[doc] scope` and `[doc]
+# ephemeral` into module-level constants at import. Once the module was in
+# `sys.modules` — which `check all` does, and which any test touching the gate
+# roster does — a later run in a repo whose `[doc]` section was MALFORMED used
+# the first repo's values and never raised. The gate reported findings, or
+# none, where the contract says exit 2.
+#
+# It passed alone and failed after a peer imported first, which is the worst
+# shape a defect can have: the suite's answer depended on its own order.
+CONFIG_CALLS = ('config_section', 'load_config')
+
+
+def module_level_config_reads(path: Path) -> list[str]:
+    """`config_section(...)` / `load_config(...)` called at module scope."""
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        # A module this walk cannot READ is a module it cannot clear, so it is
+        # reported rather than skipped. (`UNREADABLE` was a name that did not
+        # exist: the one branch here that could not itself be exercised raised
+        # NameError instead of naming the file.)
+        return [f'{path.name}: unreadable — not parsed, so not cleared']
+    hits = []
+    # TOP LEVEL ONLY. A `def`/`class` body is where these calls BELONG, so a
+    # walk that descends into one reports the fix as the defect.
+    executable = [n for n in tree.body
+                  if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                        ast.ClassDef))]
+    for node in executable:
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Call):
+                continue
+            name = getattr(inner.func, 'id', None) or getattr(
+                inner.func, 'attr', None)
+            if name in CONFIG_CALLS:
+                hits.append(f'{path.name}:{inner.lineno}: {name}() at import')
+    return hits
+
+
+def test_no_module_reads_its_config_at_import_time():
+    """A config value bound at import is a refusal that fires once per process.
+
+    The cwd does not move mid-run in production, and `config_section` is
+    `lru_cache`d — so reading inside the function that needs it costs one
+    cached lookup and buys the exit-2 contract being true every time rather
+    than the first time.
+    """
+    offenders: list[str] = []
+    for path in sorted((REPO_ROOT / 'src').rglob('*.py')):
+        if '__pycache__' in path.parts:
+            continue
+        offenders.extend(module_level_config_reads(path))
+    assert offenders == [], (
+        'config read at import — the value is bound to whichever repo imported '
+        'the module FIRST, and a malformed section in any later one stops '
+        'raising:\n  ' + '\n  '.join(offenders))

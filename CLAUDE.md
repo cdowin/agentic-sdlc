@@ -1,146 +1,134 @@
 # CLAUDE.md — agentic-sdlc
 
-Two families, consumed as a **pinned-tag Python package** by shipping game repos: **scene tooling**
-for Godot 4.x (introspection, surgery, the `.tscn`/`.tres` gates) and **repo discipline** that has
-nothing to do with Godot (`check doc`, `check shell`, `check repo-hygiene`, and `pm` — a
-markdown-and-frontmatter project tracker).
+**A reader/writer over a PM tree, shipped as a pinned-tag Python package.** `pm` writes one
+status; `check` reads the same files and echoes findings and warnings; a belt (`close story`,
+`close feature`, `release`, `adopt`) is its checks, then one write or a clean error, and `--force`
+writes anyway on the record (D12). Consumers pin `DEVKIT_VERSION` in a Makefile and run it through
+`uvx`; every change here lands in their commit gates — **treat the CLI as a published API.**
+Public repo, MIT.
 
-Consumed by game repos that pin `DEVKIT_VERSION` in their Makefile and route gates through `uvx`.
-Which repos those are is none of this package's business (hard rule 8). Public repo, MIT. **Every
-change here lands in other projects' commit gates — treat the CLI as a published API.**
-
-**The goal, the northstar, and the reasoning behind the rules below live in [`README.md`](README.md).** Read it once before your first change here; this file is the enforceable form, not a second copy of it. One line worth carrying in your head: *any change you can make to a scene by hand should be makeable through one deterministic command that touches nothing else — and provable without reading the file.* Two audiences, humans and LLMs; for the latter the deliverables are a stable verb vocabulary, determinism, and token reduction.
+**The README carries the why; this file is the enforceable form.** Read [`README.md`](README.md)
+once. The northstar, in Chris's words: *a simple local Jira — it creates the work, moves it,
+expresses what the states and the flow are, and infers nothing. It just echoes state back.*
 
 ## Hard rules
 
-1. **Stdlib only, forever.** No runtime dependencies. Python 3.11+ (`tomllib`). A consumer's pre-push hook must never break because of a transitive dep.
-2. **Pure parse — never boots Godot.** No tool starts the engine, runs an import, or depends on `.godot/` cache state. Safe anywhere, anytime, in parallel. A `.tscn` is text: the write verbs edit it without ever starting the engine. The `repo/` family does not touch a scene at all: it is here because this is the pinned-tag channel its consumers already share, not because PM tracking is Godot tooling. **If that stops being true, it leaves** — and the layout is what keeps that a real option rather than a sentiment.
-3. **A write verb touches only what it was asked to touch.** Parse → serialise with no mutation is **byte-identical**, proven against a corpus of real consumer scenes. A verb that cannot guarantee a correct result **refuses and says why** — it never edits partially and never reformats adjacent lines. Writes are idempotent: the same command twice is a no-op the second time.
-4. **Two cardinal sins, one shape.** Read side: a gate that misses real drift and prints PASS. Write side: a diff that looks legitimate and is not. Both are worse than a crash because both destroy the signal a consumer relies on. When scoping/globbing/excluding, prove the file census matches intent (count what you scanned; a gate scanning 0 files must say so, loudly). Loud failure is a feature — an LLM can recover from an error and cannot recover from a lie.
-5. **Config over forks.** Per-project variation goes in the consumer's `devkit.toml` section with a stock default — never "edit the tool". A repo with NO `devkit.toml` must behave byte-identically to one declaring the defaults.
-6. **Exit codes are contract:** 0 pass, 1 findings, 2 usage error. Output line shapes (`  DRIFT  …`, `[check:x] PASS — …`) are grepped by consumers — changing them is a **minor** bump at least.
-7. **Semver, enforced by habit:** patch = fix with identical interface; minor = new subcommand/flag/config key or output-format change; major = anything a consumer Makefile/hook must edit to survive. `__version__` in `src/agentic_sdlc/__init__.py` and `version` in `pyproject.toml` move together, always.
-8. **This package knows nothing about its consumers.** No file here names a consuming project, reads a path outside this checkout, or gates on another repo's content or working state. Fixtures live in `tests/fixtures/`, committed and versioned — a check that needs realistic data VENDORS that data here. A consumer proves its own integration when it bumps its pin; that is the consumer's gate and it runs in the consumer's repo. A release gate that can be reddened by somebody else's uncommitted work is not a gate. Worked examples in prose name a SHAPE ("a project whose `check` carries extra gates"), never a repo.
+1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). A consumer's
+   hook must never break on a transitive dependency.
+2. **Pure text — boots nothing.** Every verb reads git, markdown and shell as text; nothing starts
+   a build, an import or a cache. Safe anywhere, any time, in parallel.
+3. **A write touches only what it was asked to touch.** `pm` rewrites ONE frontmatter line and
+   preserves every other byte, line endings included; an installer writes a whole file or refuses
+   by path. A verb that cannot guarantee a correct result refuses and says why. Writes are
+   idempotent: the same command twice is a no-op the second time.
+4. **Two cardinal sins, one shape.** A gate that misses drift and prints PASS; a write that looks
+   legitimate and is not. Both are worse than a crash. Prove the census matches intent — a gate
+   scanning 0 files FAILS and says so. An LLM recovers from an error and cannot recover from a lie.
+5. **Config over forks.** Per-project variation is the consumer's `devkit.toml`, never an edit to
+   the tool. A GATE ships stock defaults: a repo with no `devkit.toml` runs byte-identically to one
+   declaring them. A WORKFLOW does not: states and flow are the project's declaration — `init`
+   writes them, every run reads them, and a tree without them is refused by name.
+6. **Exit codes are contract:** 0 pass, 1 findings, 2 usage or config error. Output line shapes
+   are grepped by consumers; changing one is a **minor** bump at least.
+7. **Semver, enforced by habit:** patch = same interface; minor = a new verb, flag, config key or
+   output shape; major = a consumer Makefile or hook must change to survive. `__version__` in
+   `src/agentic_sdlc/__init__.py` and `version` in `pyproject.toml` move together, always.
+8. **This package knows nothing about its consumers.** No file names a consuming project, reads a
+   path outside this checkout, or gates on another repo's state. Realistic data is VENDORED under
+   `tests/fixtures/`. A worked example names a shape, never a repo.
+9. **Express, never infer.** The tool lets a project declare its grains, states and flow; create
+   work, move it, and ask where it is. It never decides what a move MEANS or what should happen
+   next. The edge is one question: *is this reading what the project declared, or deciding what
+   the project should do?* A malformed declaration — a state in no category, a value of the wrong
+   shape — is refused at exit 2: reading. A fact about the tree — *"3 stories not in `done`"* —
+   is reported and the caller decides. **`pm` moves and reports; `check` gates; a belt checks,
+   then writes one status or refuses; `--force` is the deviation, recorded in the ledger.**
+10. **Test what BITES, the cheapest way that can fail.** A test earns its place by gating
+    something that would cost real time if it broke: a load-bearing module, a path consumers run
+    daily, or one of rule 4's sins. A function call before a temp tree, a temp tree before a
+    process. **Prove it once**: before a new case, name the one that already covers this or can
+    be amended to; a new case is warranted only when neither exists. A tier that got slower is a
+    finding.
 
 ## Where things live
 
-Two families and a shared floor. The rule, not the inventory — `ls src/agentic_sdlc`
-is the inventory, and it cannot go stale:
+`ls src/agentic_sdlc` is the inventory; this is the rule:
 
-- **`core/`** — infrastructure that knows about neither family. `project.py` finds the
-  repo and loads config; `config.py` decides what a config VALUE may be. Nothing here
-  may import from `godot/` or `repo/`.
-- **`godot/`** — everything that knows what a `.tscn` is, layered `format/` → `index/`
-  → `read/`+`write/` → `checks/`. A layer may import downward, never up.
-- **`repo/`** — repo discipline with no Godot in it: the `pm` tracker and the gates
-  that read markdown, shell and git. **Nothing in `repo/` may import `godot/`.** That
-  is what keeps rule 2's exit clause real rather than sentimental — check it before
-  you add an import, because nothing else will.
+- **`src/agentic_sdlc/core/`** knows no family: `project.py` finds the repo and loads config,
+  `config.py` decides what a config VALUE may be. It imports nothing from `repo/`.
+- **`src/agentic_sdlc/repo/`** is the tool — the `pm` tracker, the checks, the belts, `verify`,
+  and `install.py` with the files it writes under `installables/`. It imports `core/`, never the
+  reverse. `cli.py` only routes; each verb module owns its behaviour and its `--help` docstring.
+- **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in `cli.py` + a
+  README row + a CHANGELOG line. **New verb** = module + route + README row + CHANGELOG line; a
+  verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
+  first the search (rule 10), then the cheapest tier, then a row in the story's
+  `## How this is proven` table.
+- **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never
+  `tuple(cfg.get(...))` — a bare string is iterable.
+- **The committed fixtures ARE the fixtures.** `tests/fixtures/` holds purpose-built repos, hook
+  payloads and transcripts, versioned with the code that reads them. `unit` / `integration` /
+  `test` select on the `shell` mark, DERIVED in `tests/conftest.py` from whether a module's
+  source spawns; a hand-written mark is a collection refusal.
+- **`CHANGELOG.md` is hand-maintained.** A consumer-visible change goes into `## Unreleased` as
+  it lands. Rationale with a rejected alternative is `pm decide`, not a release note.
 
-A module that fits neither family is a signal worth raising, not a placement problem
-to solve quietly. Tool modules own their behavior and expose `main(argv)` or `run()`;
-`cli.py` only routes.
+## The ladder
 
-- **New check** = module in the right family's `checks/` + branch in `_dispatch_check` +
-  README table row + CHANGELOG line.
-- **New read verb** = module + `cli.py` route + README table row + CHANGELOG line.
-- **New WRITE verb**: the dominant case is a new **scene subverb** — a row in
-  `scene_edit.py`'s `VERBS` + `HANDLERS` tables plus `_build_parser`/`_check_usage`,
-  no new module and no `cli.py` edit. A new TOP-LEVEL verb is module + `cli.py`
-  route + README table row + CHANGELOG line. Either way, **plus** a round-trip fidelity case in the
-  corpus, an explicit refusal path with a test proving it declines rather than
-  mangles, and an idempotence test. Address nodes by PATH (`parent` + `name`) —
-  Godot addresses them that way; format-4 `unique_id` is not the addressing key.
-  Read output must be valid write input.
-- **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never `tuple(cfg.get(...))` —
-  a bare string is iterable, and that is how seven gates shipped a silent PASS over an
-  empty census in v0.9.0.
+Never hand-roll an incantation, and never run a rung wider than the thing you changed.
+`make help` is the target list; if the check you need is not a target, add one to `Makefile.tiers`.
 
-## How we work
+| you changed | run |
+|---|---|
+| the PM tree, or a doc | `make check` |
+| code, inner loop | `agentic-sdlc verify --story` — `make unit`, the `[verify] story` target |
+| code, before a commit | `make precommit` — `check` + `unit` |
+| closing a story | `agentic-sdlc close story <id>` |
+| closing a feature | `agentic-sdlc close feature <id>` — `make test`, both tiers, is `[verify] feature` |
+| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone`: `check` + `matrix` + `budget` |
 
-- **The agent SDLC** — milestone branching, the dispatch loop, the model mix, and the roster `install-agents` ships — is [`SDLC.md`](SDLC.md), at the root because it is the operating contract, not auxiliary documentation.
-- **The README carries the why; this file carries the enforceable form.** If a change
-  makes you want to edit this file, ask first whether it changed *doctrine* or merely
-  *contents*. Contents belong in the tree, in `--help`, or in the README. A CLAUDE.md
-  that has to be edited whenever code moves is a manifest, and it will lie.
-- **The committed fixtures ARE the fixtures.** `tests/fixtures/` holds purpose-built
-  repos and a scrubbed real-world scene corpus, versioned with the code that reads
-  them; every read verb and every gate is proven against those. A check that wants
-  more realistic data vendors more data here (rule 8) — it never reaches for a tree
-  outside this checkout, which would answer differently on every machine.
-- **Verify against source, never a cached wheel.** `uvx --from <path>` caches by
-  version, so an unchanged version number serves stale code and a fixed bug still
-  reproduces. Use `PYTHONPATH=src python3 -m agentic_sdlc.cli …`.
-- **A review is part of a release, not a courtesy.** Every minor bump in this package
-  so far has had a pre-release review return NOT RELEASE-SAFE, and each time the
-  blocker was a false PASS that would have shipped a permanently-green gate.
+`agentic-sdlc verify --plan` prints each rung with the cost it last took, from the ledger — ask it
+rather than guessing. Every gate prints ONE verdict line naming its log under `.gate-reports/`;
+`VERBOSE=1` streams it. A gate-semantics change needs a deliberately-broken probe: plant the drift
+class in a scratch copy of a fixture and confirm the gate FAILS; a bad config value exits 2; a
+zero-file census FAILS. A write verb under test writes to scratch, never to a fixture in place.
 
-### Reporting to Chris
-
-**Every decision he needs to make goes in a numbered `NEEDS YOU` list at the TOP**, so
-he can answer "1 yes, 2 delete" without scrolling. Each item is a decision, not an
-observation, and it carries the thing being decided **in the message** — a path, a
-commit hash, or the content itself. Never "there are three open questions" — name them
-A, B, C. When nothing needs him, say "nothing needs you" explicitly.
-
-- **Gate output only when it FAILED, or when you ran it yourself** — one line
-  ("157/157, my run"), never a pasted PASS block. A wall of green tells him nothing.
-- **Numbers, not adjectives.** "228 files, census unchanged", not "verified thoroughly".
-- **Say what you did NOT verify.** A claim with an unstated gap is worse than a gap.
-
-## Verification loop
-
-**Run `make precommit` after a change and `make milestone` before a release. Never
-hand-roll an incantation.** `make help` lists every target. If the check you need is not
-a target, **add the target**, then run it — apparatus that lives in one agent's context
-is apparatus that gets rebuilt.
-
-**`make milestone` runs the matrix, and the matrix proves PYTHON on every interpreter —
-bash once.** `PY_FLOOR` runs the whole suite; the other interpreters in `PY_MATRIX` run
-`-m "not shell"`. ~85% of this suite's wall clock is `subprocess` — bash, make, git, the
-installed hook corpora — and a spawn is not something a Python version changes, so
-replaying it four times bought minutes and no information. The `shell` mark is DERIVED
-per module in `tests/conftest.py` from what the source does, never hand-applied (a
-hand-written one is a collection refusal). A `PY_FLOOR` outside `PY_MATRIX` is refused
-by name before the first interpreter starts: a matrix with no full pass would print PASS
-over a suite nothing ran. `make test` is unaffected — it runs everything.
-
-**Every gate prints ONE verdict line naming its full transcript under .gate-reports/;
-`VERBOSE=1` streams the whole thing.** A new target routes through the shipped
-`gdk_gate_capture` / `gdk_gate_verdict` (installables/gdk_runners.sh, sourced from
-source — this package is its own first consumer) like the rest; never ask an agent to
-grep a gate's output for its result. Enforced by `tests/test_makefile_gates.py`.
-
-- Behavior gate: `make gates` — `agentic-sdlc check all` over this repo's own tree,
-  which is a real Godot-less project with a real PM tree. Self-hosting is the behavior
-  proof: every check runs against something committed here.
-- Differential + replay harnesses: `make fuzz`. Seeded, so a divergence reproduces
-  exactly rather than being re-derived; `make test` runs them too.
-- **A write verb under test writes to scratch, never to a fixture in place.** Copy the
-  file (or the tree) to a `tempfile` first; a fixture that a test run mutates is a
-  fixture that grades the next run against the last one's output.
-- Round-trip fidelity is proven on a committed corpus of scrubbed real-world scenes (`tests/fixtures/corpus/` — census-floored and construct-guarded, so it runs everywhere including CI). Parse → serialise with no mutation, byte-compared; `load()`/`save()` proven on the same corpus. This is the test that makes every write verb safe, and it is not optional. If the corpus lacks a construct, VENDOR a scrubbed scene carrying it — the corpus is how coverage grows.
-- A gate-semantics change additionally needs a deliberately-broken probe: introduce the drift class in a scratch copy of a fixture repo and confirm the gate FAILS (rule 4). Prove the **config** path too: a bad value for that gate's section must exit 2, and a zero-file census must FAIL rather than pass.
-- **Never verify through `uvx --from <path>`.** uv caches the built wheel by version, so an unchanged
-  version number serves stale code and a fixed bug still reproduces. Run `PYTHONPATH=src python3 -m
-  agentic_sdlc.cli …`, or `uv cache clean agentic-sdlc` first.
+**The CLI from this tree is `uv run -q agentic-sdlc …`** (`make pm ARGS="…"` is the same thing):
+the working tree installed on itself, re-synced every call. Never `uvx --from <path>` — uv caches
+a built wheel by version, so an unchanged version number serves stale code.
 
 ## Self-hosting
 
 This package runs its own tooling on its own tree, and that is a gate, not a demo.
 
-- `pm/roadmap/` is a real PM tree scaffolded by `pm new`, and `devkit.toml` turns on **every** rule this package ships except D8 (which encodes bump-at-START; we bump at close). Both `agentic-sdlc check all` and `agentic-sdlc check pm` must exit 0 here.
-- Work follows the milestone-branch flow — [`SDLC.md`](SDLC.md) §1 — the same as its consumers: `main` is merge-commit-only, at close. D9 + D10 in `[pm] checks` are what hold this tree to it.
-- CI is `.github/workflows/verify.yml`, whose one job runs `make milestone` — the same target the local full gate is. The same target is not the same ANSWER: a gate that reads repo-LOCAL state answers differently in a checkout, and `core.hooksPath` is the measured case (nothing tracked carries it, so `check hooks` was UNARMED on every CI run while every developer's tree was armed). Whatever the gate needs and the checkout lacks is a step ahead of it — the engine and the linters behind `hashFiles('project.godot')`, the arming script behind `hashFiles('tools/setup-hooks.sh')`. It is INSTALLED by `install-ci`, not hand-written: edit `src/agentic_sdlc/repo/installables/ci-verify.yml` and re-install.
-- The review + build contract under `.claude/agents/verification-*.md` is INSTALLED by `install-agents`, not hand-written — edit the source under `src/agentic_sdlc/repo/installables/` and re-install. A test asserts this repo's copies stay byte-current, and another asserts they pass `check doc` in a fresh consumer, because a contract that reddens the gates it arrives beside gets deleted by the first person who runs them.
-- `install-hooks` IS self-hosted since 0.23.0: `tools/hooks/`, `tools/setup-hooks.sh`, `tools/dev/agent-worktree.sh` and `tools/dev/checks/doctor.sh` are the installer's output, and `.claude/settings.json` carries the entries it prints — the two ledger couriers `"async": true`, feeding `pm/roadmap/<building>/ledger.jsonl` through this Makefile's `pm` target. The `project config` headers are this repo's (static gate `make gates`, the hook self-tests standing in for a unit slice, base `main`); `make hooks-self-test` replays the three corpora and is in `precommit`. `bash tools/setup-hooks.sh` arms the git hooks — it writes `core.hooksPath`, which a worktree shares with the main checkout. The installables are still proven by installing them into a temp repo and RUNNING them against real hook payloads.
-- **`CHANGELOG.md` is hand-maintained**, like every other project's. A consumer-visible change goes into its `## Unreleased` section as a bullet as the work lands, and the release skill retitles that section to the tag. Rationale with a rejected alternative is a decision — `pm decide` opens the heading — not a release note.
-- If a rule fails when pointed at this repo, the finding gets fixed. Turning the rule off is only right when the rule encodes a flow this package does not run, and that goes in `decisions.md` with what was rejected.
+- `pm/roadmap/` is a real PM tree, and `devkit.toml` turns on every rule this package ships
+  except D8 (it encodes bump-at-start; we bump at close). `make check` must exit 0 here. Work
+  follows [`SDLC.md`](SDLC.md): a milestone branch, `main` merge-commit-only at close.
+- **Every installer's output is installed here, byte-current with its source, or legitimately
+  absent.** `Makefile.devkit` + `tools/dev/gdk_gate.sh` (`install-gates`);
+  `.github/workflows/verify.yml` (`install-ci`); `tools/hooks/`, `tools/dev/agent-worktree.sh`
+  and `tools/setup-hooks.sh` (`install-hooks`, with `.claude/settings.json` carrying the entries
+  it prints); the verification pair under `.claude/agents/` (`install-agents`);
+  `.claude/rules/pm-execution.md` + `.claude/skills/pm-operations/SKILL.md`
+  (`pm install-skills`); `docs/sdlc-protocol.md` (`install-sdlc`). Edit the source under
+  `src/agentic_sdlc/repo/installables/` or `src/agentic_sdlc/repo/pm/guidance/` and re-install
+  with `--force`; a copy edited in place is the invisible fork these verbs exist to prevent, and
+  `tests/test_install.py` fails it. The hooks' `project config` headers are this repo's, and a
+  header-only difference is allowed. `bash tools/setup-hooks.sh` arms them.
+- CI runs `make milestone` — the same target as the local full gate — after an arming step
+  guarded on `tools/setup-hooks.sh`, because a fresh checkout is not armed.
+- If a rule fails when pointed at this repo, the finding gets fixed. Turning a rule off is only
+  right when it encodes a flow this package does not run, recorded with `pm decide`.
+- **Releases** go through the `/release` skill: `agentic-sdlc release <version>` on this tree,
+  then its `next:` lines by hand. Never tag by hand; never let the two version sites diverge.
 
-## Releases
+## Reporting to Chris
 
-Use the `/release` skill — it owns the bump/tag/push sequence and the consumer-pin reminder. Never tag by hand; never let `__init__.py` and `pyproject.toml` versions diverge.
+**Every decision he needs to make goes in a numbered `NEEDS YOU` list at the TOP**, each item a
+decision — not an observation — carrying the thing being decided in the message: a path, a hash,
+the content itself. When nothing needs him, say "nothing needs you".
 
-## Known gaps
-
-The `refs` tool has a known blind spot: autoload NAMES (declared in `project.godot`, not via `class_name`) aren't indexed — fix upstream here, not in consumers.
+- **Gate output only when it FAILED, or when you ran it yourself** — one line, never a pasted
+  PASS block.
+- **Numbers, not adjectives.** "228 files, census unchanged", not "verified thoroughly".
+- **Say what you did NOT verify.** A claim with an unstated gap is worse than a gap.

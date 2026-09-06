@@ -1,43 +1,10 @@
 """report.py — `pm ledger report`: the milestone's raw rows, added up.
 
-The ledger writes and never judges (Chris, 2026-09-03: *"It just timestamps
-transitions and stamps whatever hook data. Judgement/inference is left to the
-caller."*). **This module is that caller**, and it lives outside `ledger.py`
-for exactly that reason: one module appends rows and reads them back, another
-one decides what a pile of rows MEANS. A report that grew inside the writer
-would make the writer's contract negotiable.
-
-WHAT IT MAY DO, AND WHAT IT MAY NOT (D5):
-
-  * it may SUM (four token counts, tool calls, wall-clock), COUNT (dispatches,
-    rows, grains), SUBTRACT (seconds between two status rows) and GROUP (by
-    grain, by kind, by agent type);
-  * it may not WEIGHT, ESTIMATE, PRICE or LABEL. `size:` is printed as a
-    COLUMN and is never a divisor; there is no dollar figure, no efficiency
-    score, no "expensive" and no leaderboard. A number here can always be
-    re-derived from the rows, which is the whole reason the rows are raw.
-
-THREE RULES THE TABLE KEEPS:
-
-  * **Absent is not zero.** A row that carried no `cache_creation` contributes
-    NOTHING to that column, and a column no row carried prints `-`. A `0` is a
-    measurement — "the API returned none" — and printing one where nobody
-    counted is hard rule 4's read-side sin with a column header on it.
-  * **The tree is walked, not the ledger.** Every story, feature and bug under
-    the milestone gets a row, whether or not any ledger row names it. A grain
-    absent from the table because nothing measured it would read as a grain
-    that does not exist.
-  * **Nothing is dropped.** A dispatch row whose `tree` names no grain under
-    this milestone is counted in its own trailing block — not hidden, and not
-    labelled beyond the heading that says what is true of it: it names no
-    grain.
-
-Exit codes are the CLI's, and this module can fail in exactly two ways, both
-of them about a document that will not PARSE and neither of them about a
-number: a `ledger.LedgerError` from a ledger line, and a `RecordError` from a
-review record whose verdict block exists and cannot be read correctly. A
-record with no block at all is neither — it is listed, by name, as a pass
-nobody wrote a block for.
+The ledger never judges; this is the caller judgement is left to. It may
+sum, count, subtract and group, never weight, price or label (D5). Absent
+is `-`, not zero; the tree is walked, so every grain gets a row; nothing is
+dropped. It fails only on a document that will not parse, never on a
+number.
 """
 from __future__ import annotations
 
@@ -50,13 +17,11 @@ from typing import NamedTuple
 
 from agentic_sdlc.repo.pm import ledger, model, verdict
 
-# The two line shapes a consumer greps (hard rule 6): the heading and the
-# summary. Both carry the milestone id, so a report of two milestones
-# concatenated is still attributable line by line.
+# The two line shapes a consumer greps (rule 6); both carry the milestone id.
 HEADING_PREFIX = '[ledger:report]'
 
-# What a section calls itself in `--json` and in its own heading. The five
-# questions of `pm/roadmap/<ms>/milestone.md`, in the order it asks them.
+# What a section calls itself in `--json` and in its heading, in the order the
+# milestone asks.
 SECTION_SPEND = 'spend'
 SPEND_TITLE = 'spend per grain'
 SECTION_YIELD = 'yield'
@@ -67,23 +32,21 @@ SECTION_ESCAPES = 'escapes'
 ESCAPES_TITLE = 'escapes'
 SECTION_OVERHEAD = 'overhead'
 OVERHEAD_TITLE = 'overhead shape'
+SECTION_GATES = 'gates'
+GATES_TITLE = 'gate cost'
 
-# Printed for a NUMBER nobody recorded. A blank cell would read as zero at a
-# glance and a `0` would BE a lie; `-` is the third thing, and it is the same
-# character `pm list` already prints for an unowned story.
+# Printed for a number nobody recorded: a blank reads as zero and a `0` would
+# be a lie.
 DASH = '-'
 
-# The milestone has no `ledger.jsonl` at all — no rows have ever been written
-# for it. A fact, not a failure: exit 0, one line, no table of dashes.
+# No `ledger.jsonl` at all: a fact, exit 0, one line.
 NO_LEDGER = 'no ledger'
 
-# A section that found nothing to count. One line, never a table of zeros: a
-# `0` in a column is a measurement, and a grid of them under a heading reads
-# as one — which is the same lie an empty census printing PASS tells.
+# A section that found nothing to count prints one line, never a table of
+# zeros.
 NO_DATA = 'no data'
 
-# Two spaces between columns, `--` before a block heading — the shape
-# `pm status` already uses for its phase buckets.
+# The shape `pm status` already uses for its phase buckets.
 COLUMN_GAP = '  '
 BLOCK_PREFIX = '--'
 SUB_ROW_INDENT = '  '
@@ -91,27 +54,43 @@ SUB_ROW_INDENT = '  '
 # Frontmatter key printed as a column and used for nothing else (D5).
 SIZE_FIELD = 'size'
 
-# Grain kinds, in the order their tables print. `bug` is spelled by `ledger`
-# because `terminal_state` reads the same word — a bug's last state is the one
-# thing about a vocabulary this package lets a project rename.
+# Grain kinds, in the order their tables print.
 KIND_STORY = 'story'
 KIND_FEATURE = 'feature'
 KIND_BUG = ledger.GRAIN_BUG
 KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
 
-# D3's snapshot buckets, by the kind of grain whose ids they hold. A dispatch
-# row names a story by having it `wip` or at `review` when the hook fired, and
-# a feature by being `building`/`review` — or, below, by owning one of the
-# named stories. Nothing else on the row is attribution: `milestones_building`
-# is on every row and would attribute every dispatch to every grain.
-DISPATCH_BUCKETS = (
+# D3's snapshot buckets, by the kind of grain whose ids they hold;
+# `milestones_in_progress` is on every row and would attribute every dispatch
+# to every grain.
+CATEGORY_BUCKETS = (
+    (KIND_STORY, ('stories_in_progress',)),
+    (KIND_FEATURE, ('features_in_progress',)),
+)
+# The old shape, read as-is (D7): rows written before the category keys carry
+# only these, matched by the seed's words when written, and never re-read
+# through a later declaration.
+LEGACY_BUCKETS = (
     (KIND_STORY, ('stories_wip', 'stories_review')),
     (KIND_FEATURE, ('features_building', 'features_review')),
 )
+CATEGORY_KEYS = frozenset(key for _, keys in CATEGORY_BUCKETS for key in keys)
+# What a spend table says about old-shape rows that named nothing here: one of
+# three things, and only that it is not the fourth.
+LEGACY_NOTE = ('predate category keys and name no grain of this milestone — '
+               'an idle tree, another milestone\'s work, or words that shape '
+               'could not spell; not counted as empty')
+UNPLACED_NOTE = ('spent time in a state this declaration does not name — '
+                 'seconds in no category column, not zero')
+# The dispatch-side twin of UNPLACED_NOTE: a new-shape row whose frozen key
+# names a grain the category key does not is read through the category keys,
+# and the drop is said out loud.
+FROZEN_ONLY_NOTE = ('named only through a deprecated key — at a word this '
+                    'declaration does not place in in_progress, so counted '
+                    'in no column above')
 
-# Our column label ← the row's `usage` key. The ORDER is `ledger.USAGE_FIELDS`,
-# so a field added there appears here rather than being silently dropped; only
-# the display name lives in this file.
+# Column label <- `usage` key, in `ledger.USAGE_FIELDS` order so a new field
+# appears rather than being dropped.
 USAGE_KEYS = tuple(name for name, _ in ledger.USAGE_FIELDS)
 USAGE_LABELS = {'input': 'in', 'output': 'out',
                 'cache_creation': 'cache_create', 'cache_read': 'cache_read'}
@@ -127,15 +106,12 @@ SIZE_COLUMN = 'size'
 TOTAL_COLUMN = 'total_s'
 NO_GRAIN_TITLE = 'rows naming no grain'
 
-# Section 2's columns and block titles. `verdict.DISPOSITION_KINDS` supplies
-# the three disposition columns, so a fourth kind added there appears here
-# rather than being counted into nothing.
+# Section 2's columns; `verdict.DISPOSITION_KINDS` supplies the disposition
+# columns, so a new kind appears rather than counting into nothing.
 FEATURE_COLUMN = 'feature'
 RECORD_COLUMN = 'record'
-# One record, N passes. The ordinal is a COLUMN rather than a suffix on the
-# record path, because the rows of two passes over one record are otherwise
-# indistinguishable — and a table whose rows cannot be told apart is where a
-# reader starts assuming one of them is a duplicate.
+# One record, N passes; the ordinal is a column so two passes' rows can be told
+# apart.
 PASS_COLUMN = 'pass'
 VERDICT_COLUMN = 'verdict'
 FINDINGS_COLUMN = 'findings'
@@ -145,19 +121,13 @@ VERDICT_TITLE = 'verdict'
 SEVERITY_TITLE = 'findings by severity'
 DEFERRED_TITLE = 'deferred to'
 
-# Section 3's. The two story states a reopen is made of come from the ONE
-# vocabulary in `model`, and are checked against the configured set before the
-# column is filled: a project that renamed either gets `-`, because a `0` would
-# say "nothing was reopened" about a transition this rule cannot see.
+# Section 3's; this module reads no seed word (tests/test_pm_flow.py asserts
+# it).
 STORY_COLUMN = 'story'
-REOPENS_COLUMN = 'reopens'
-AFTER_REVIEW_COLUMN = 'after_review'
 PASSES_COLUMN = 'passes'
-REOPEN_TITLE = 'story'
 DISTRIBUTION_TITLE = 'verdict distribution'
 
-# Section 4's. `caused_by:` is the bug frontmatter field the review-record
-# feature added; `caught_in:` is a different fact and is not read here.
+# Section 4's. `caught_in:` is a different fact and is not read here.
 CAUSED_BY_FIELD = 'caused_by'
 CAUSE_COLUMN = 'caused_by'
 BUG_COLUMN = 'bug'
@@ -165,8 +135,8 @@ STATUS_COLUMN = 'status'
 FEATURE_STATUS_COLUMN = 'feature_status'
 ESCAPE_TITLE = 'bugs naming a cause'
 
-# Section 5's. The three row keys it reads by name, and the separator that
-# turns the per-dispatch list into one cell.
+# Section 5's row keys, and the separator that makes the per-dispatch list one
+# cell.
 BEFORE_WRITE_KEY = 'tool_calls_before_first_write'
 TOOL_CALLS_KEY = 'tool_calls'
 OUTPUT_KEY = 'output'
@@ -179,9 +149,7 @@ ENTRY_COLUMN = 'entry'
 TS_COLUMN = 'ts'
 NEXT_STATUS_COLUMN = 'next_status_s'
 SESSION_COLUMN = 'session_id'
-# The delta columns are HEADED by the keys they diff — `out` is section 1's
-# spelling of `usage.output`, taken from its table rather than respelled, so a
-# reader comparing the two sections is reading one word.
+# The delta columns are headed by the keys they diff, in section 1's spelling.
 OUT_DELTA_COLUMN = USAGE_LABELS[OUTPUT_KEY]
 TOOL_CALLS_COLUMN = TOOL_CALLS_KEY
 BEFORE_WRITE_TITLE = 'story'
@@ -189,38 +157,44 @@ DECISION_COUNT_TITLE = 'decisions per grain'
 DECISION_GAP_TITLE = 'decision to next status row'
 SESSION_TITLE = 'session deltas'
 
+# Section 6's, in milliseconds, the unit the row carries; rounding to seconds
+# would print `0` for most gates.
+GATE_KEY = 'gate'
+GATE_DURATION_KEY = 'duration_ms'
+GATE_CENSUS_KEY = 'census'
+GATE_COLUMN = 'gate'
+RUNS_COLUMN = 'runs'
+FIRST_MS_COLUMN = 'first_ms'
+LAST_MS_COLUMN = 'last_ms'
+DELTA_MS_COLUMN = 'delta_ms'
+CENSUS_COLUMN = 'census'
+WHY_COLUMN = 'why'
+GATE_COST_TITLE = 'gate'
+GATE_UNUSABLE_TITLE = 'rows this section could not use'
+# Marks a delta whose corpus moved: still printed, but a bigger tree is not a
+# regression.
+INCOMPARABLE_MARK = '*'
+CENSUS_ARROW = ' → '
+
 LEFT, RIGHT = 'left', 'right'
 
 
 # --- WHERE the report reads from ----------------------------------------------
-# Every file this module opens goes through one of these objects, and the two
-# implementations are the whole difference between `pm ledger report <ms>` and
-# `pm ledger report <ms> --from <rev>`. Nothing below this section knows which
-# one it is holding: `build` is ONE function over one tree, so a report read out
-# of history is the same report by construction rather than by a second
-# renderer somebody keeps in step by hand.
-#
-# `DiskSource` is delegation and nothing else — every method hands straight to
-# the `model` walker the GATE uses. That is what keeps `walk_grains`'s promise
-# ("the walkers are `check pm`'s and `pm status`'s") true after this seam
-# exists: the live path did not get a second census, it got a name.
-#
-# `GitSource` runs four git verbs and no others — `rev-parse`, `ls-tree`,
-# `cat-file` and `show`. None of them writes, none touches the index, and none
-# checks anything out. It reads a milestone that is no longer in the tree,
-# which is D6's answer to where a retired milestone's rows live: history is
-# git's job.
-FEATURES_DIR = 'features'
-STORIES_DIR = 'stories'
-BUGS_DIR = 'bugs'
+# Every file this module opens goes through a `Source`; `build` is one function
+# over one tree, so a report read from history is the same report by
+# construction. `DiskSource` delegates to the walkers the gate uses;
+# `GitSource` runs `rev-parse`, `ls-tree`, `cat-file` and `show`, none of which
+# writes or touches the index (D6). The slot names are `model`'s.
+FEATURES_DIR = model.FEATURES_DIR
+STORIES_DIR = model.STORIES_DIR
+BUGS_DIR = model.BUGS_DIR
 MD_SUFFIX = '.md'
 
 GIT = 'git'
 GIT_MISSING = (f'{GIT} is not on PATH, so a report `--from` a rev cannot be '
                f'read — a retired milestone is only in history')
-# `<rev>:<path>`, git's own spelling, used verbatim in every message this
-# module raises: a reader who wants to see the file for themselves can paste
-# the string after `git show`.
+# `<rev>:<path>`, git's own spelling, so a reader can paste it after `git
+# show`.
 REV_SEPARATOR = ':'
 
 # The two object types `git ls-tree` names for the things a PM tree is made of.
@@ -229,30 +203,16 @@ BLOB = 'blob'
 
 
 class GitError(OSError):
-    """A git invocation that failed, carrying git's OWN message, verbatim.
-
-    An `OSError` deliberately. `parsed_records` already turns "this document
-    could not be read" into a `RecordError` that names the record, and a blob
-    absent at the rev is that same fact about that same file — so it lands in
-    the handler that already exists, with the message shape that already ships,
-    and no reader of this module has to learn a second exception to stay
-    correct.
-
-    The text is git's stderr unedited. A rev that does not resolve is a thing
-    git already explains better than a paraphrase would, and a paraphrase is
-    one more place for the two to drift.
+    """A git invocation that failed, carrying git's own stderr verbatim. An
+    `OSError`, so a blob absent at the rev lands in the `RecordError`
+    handler that already exists.
     """
 
 
 def check_rev(rev: str) -> None:
-    """The `--from` grammar. Three refusals, each a shape that is not a rev.
-
-    Position in `argv` is the only thing between `--from --upload-pack=…` and
-    git running it, so a leading `-` is refused HERE rather than trusted to
-    stay a value; whitespace and NUL are one argument that spells two (and a
-    NUL truncates at the exec boundary, past anything this code could see); and
-    an empty rev makes `<rev>:<path>` name the INDEX, a different file from any
-    commit's. Whether the rev EXISTS is git's answer, not this function's.
+    """The `--from` grammar: a leading `-`, whitespace/NUL, and an empty rev
+    (which names the index) are refused here; whether the rev exists is
+    git's answer.
     """
     if not rev:
         raise GitError('--from needs a rev — a tag, a hash or a ref '
@@ -268,35 +228,18 @@ def check_rev(rev: str) -> None:
 
 
 def _universal(text: str) -> str:
-    """`Path.read_text`'s universal-newline translation, applied by hand.
-
-    `git show` hands over the bytes as they are and `Path.read_text` does not,
-    so a CRLF ledger would read back as one row shape from disk and another
-    from history. The translation belongs to the LEDGER read alone —
-    `Source.read_raw` mirrors `model.read_raw`'s `newline=''` and preserves the
-    terminators, because a grain document's are the file's own convention.
+    """`Path.read_text`'s universal-newline translation, applied by hand to
+    the ledger read alone, so a CRLF ledger reads the same from disk and
+    from history.
     """
     return text.replace('\r\n', '\n').replace('\r', '\n')
 
 
 class _Blob:
-    """One file AT A REV, shaped as the two things this package's file readers
-    ask of a path: `open(mode, encoding=…, newline=…)` and `read_text(…)`.
-
-    A shim, so that there is still exactly ONE reader of each format.
-    `model.read_raw` owns what a grain document is (`newline=''`, terminators
-    intact); `model.field_of` owns where a frontmatter field lives;
-    `model._is_grain_doc` owns whether a `.md` is a grain at all; and
-    `ledger.read_rows` owns what a ledger line is — one JSON object per line,
-    refused by LINE NUMBER when it is not. A `--from` read that re-implemented
-    any of them would be two readers of one format, free to disagree, and the
-    disagreement would surface as a report that is quietly not the report the
-    live path prints.
-
-    `str()` is git's own `<rev>:<path>`, so a line number arrives attached to
-    something a reader can paste after `git show`. The text is produced LAZILY,
-    so a blob that is absent or will not decode raises inside the reader that
-    already handles it, under the message that reader already writes.
+    """One file at a rev, shaped as `open(...)` and `read_text(...)` so
+    `model` and `ledger` stay the only readers of their formats. `str()` is
+    git's `<rev>:<path>`; the text is produced lazily, so an absent blob
+    raises inside the reader that already handles it.
     """
 
     def __init__(self, display: str, read: Callable[[], str]) -> None:
@@ -305,8 +248,7 @@ class _Blob:
     def open(self, mode: str = 'r', encoding: str | None = None,
              newline: str | None = None) -> io.StringIO:
         # `newline=''` on a StringIO is the same disabled translation
-        # `model.read_raw` asks of `open()`: the terminators come back as the
-        # blob spells them.
+        # `model.read_raw` asks of `open()`.
         return io.StringIO(self._read(), newline='')
 
     def read_text(self, encoding: str = 'utf-8') -> str:
@@ -317,16 +259,12 @@ class _Blob:
 
 
 class Source:
-    """The tree the report reads, as the ten reads it actually makes.
-
-    Ten and no more, and none of them writes. Adding an eleventh means both
-    implementations answer it or one of them lies about the tree, which is hard
-    rule 4 with a column header on it — so the list is stated here and the
-    subclasses below are checked against it rather than against each other.
+    """The tree the report reads, as the ten reads it makes — no more, none
+    writing; both subclasses are checked against this list.
     """
 
-    #: The rev this source reads, or `''` for the working tree. `build` puts it
-    #: on the object and `render` puts it in the heading; nothing else reads it.
+    #: The rev this source reads, or `''` for the working tree; `render` puts
+    #: it in the heading.
     rev = ''
 
     def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
@@ -361,12 +299,8 @@ class Source:
 
 
 class DiskSource(Source):
-    """The working tree — today's behaviour, delegated and not re-derived.
-
-    Every method is one call into `model` (or into `ledger`, for the rows), so
-    the live report's census is still the GATE's census: `check pm` and this
-    table cannot come to different answers about what the tree holds, because
-    they are running the same walk.
+    """The working tree, delegated to `model` and `ledger` so the live census
+    is the gate's census.
     """
 
     def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
@@ -401,28 +335,11 @@ class DiskSource(Source):
 
 
 class GitSource(Source):
-    """The same tree AT A REV, through `git show` — read-only, by construction.
-
-    A milestone is retired at the close AFTER its own, so `vX.Y.Z` is the
-    natural anchor: the directory is still in the tree at its own release. The
-    rev is the CALLER's, always — this class never searches history for one
-    (D6: the anchor is recorded, nothing is inferred).
-
-    The directory name is resolved by the version PREFIX exactly as
-    `model.milestone_dir` globs it on disk, because the human suffix
-    (`0.23.0-telemetry`) is not part of the id and a milestone may have been
-    renamed since.
-
-    Paths are the currency here as they are everywhere else in this module —
-    the same `<root>/<relative>` shapes `model` produces, so `cfg.rel`,
-    `Path.parent`, `Path.stem` and `_bug_slug`'s `relative_to` all keep
-    working. They simply never reach the filesystem: every one is turned back
-    into a repo-relative posix path and handed to git.
-
-    Blobs and object types are MEMOISED. A rev is immutable, so a second read
-    of one path cannot produce a second answer, and without the cache one
-    report of a real milestone re-runs `git show` over the same few dozen
-    documents once per section.
+    """The same tree at a rev, through `git show`, read-only by construction.
+    The rev is the caller's; the directory is resolved by version prefix as
+    `model.milestone_dir` globs on disk; paths keep `model`'s shapes but
+    never reach the filesystem. Blobs and object types are memoised, since
+    a rev is immutable.
     """
 
     def __init__(self, root: Path, rev: str) -> None:
@@ -432,17 +349,14 @@ class GitSource(Source):
         self._blobs: dict[str, bytes] = {}
         self._types: dict[str, str] = {}
         self._trees: dict[tuple[str, bool], list[tuple[str, str]]] = {}
-        # `rev-parse --verify` first, so "there is no such rev" is answered
-        # once, by git, in git's words — rather than N times as N absent files.
+        # `rev-parse --verify` first, so "no such rev" is answered once, in
+        # git's words.
         self._git(['rev-parse', '--verify', rev])
 
     # --- the four verbs -------------------------------------------------------
     def _git(self, args: list[str]) -> bytes:
-        """One git run in the repo root, stdout as BYTES.
-
-        Bytes, not `text=True`: `subprocess` would apply universal-newline
-        translation and the locale's encoding to a file whose terminators and
-        UTF-8-ness are exactly what this module is trying to reproduce.
+        """One git run in the repo root, stdout as bytes — `text=True` would
+        apply newline translation and the locale's encoding.
         """
         try:
             done = subprocess.run([GIT, '-C', str(self.root), *args],
@@ -460,22 +374,17 @@ class GitSource(Source):
         return f'{self.rev}{REV_SEPARATOR}{self._rel(path) or path}'
 
     def _rel(self, path: Path) -> str | None:
-        """The repo-relative posix path git addresses, or None when there is
-        none: a path outside the repo root is in no rev at all, and answering
-        it from the filesystem instead would be the live tree leaking into a
-        historical read."""
+        """The repo-relative posix path git addresses, or None for a path
+        outside the root, which is in no rev.
+        """
         try:
             return path.relative_to(self.root).as_posix()
         except ValueError:
             return None
 
     def _ls(self, path: Path, recursive: bool) -> list[tuple[str, str]]:
-        """`(object type, name)` for one directory at the rev, git's order.
-
-        A tree that is not there comes back EMPTY rather than raising, which is
-        `walk.children`'s own answer ("a missing directory is an empty walk"):
-        the callers here all read "no such tree" as "no such entries", and the
-        paths a report genuinely requires are refused by name in `cli.py`.
+        """`(object type, name)` for one directory at the rev, git's order; a
+        missing tree is empty, `walk.children`'s own answer.
         """
         rel = self._rel(path)
         if rel is None:
@@ -493,9 +402,8 @@ class GitSource(Source):
             self._trees[key] = []
             return []
         out: list[tuple[str, str]] = []
-        # `-z` turns off path quoting, so a name arrives as its own bytes;
-        # `surrogateescape` carries one that is not UTF-8 through `Path`
-        # losslessly rather than replacing it with a name that matches nothing.
+        # `-z` turns off path quoting; `surrogateescape` carries a non-UTF-8
+        # name through `Path` losslessly.
         for record in raw.decode('utf-8', 'surrogateescape').split('\0'):
             if not record:
                 continue
@@ -507,24 +415,18 @@ class GitSource(Source):
         return out
 
     def _dirs(self, path: Path, pattern: str = '') -> list[Path]:
-        """This directory's immediate subdirectories at the rev, sorted.
-
-        `walk.children(..., Kind.DIR)` / `walk.matching(..., Kind.DIR)` over a
-        tree object. `fnmatchcase` is `Path.glob`'s own matcher on this
-        platform — case-SENSITIVE, which is what pathlib does even where the
-        filesystem does not, and what git's tree always is.
+        """This directory's immediate subdirectories at the rev, sorted;
+        `fnmatchcase` because `Path.glob` is case-sensitive and so is git's
+        tree.
         """
         return sorted(path / name for kind, name in self._ls(path, False)
                       if kind == TREE
                       and (not pattern or fnmatch.fnmatchcase(name, pattern)))
 
     def _grain_docs(self, gdir: Path) -> list[Path]:
-        """`model.grain_docs` at the rev: the same walk, the same narrowings.
-
-        Recursive, `.md` compared case-INSENSITIVELY, dot-prefixed components
-        dropped, and a `.md` that opens no frontmatter block dropped as a note
-        — the four decisions `model.slot_walk` documents, in the same order, so
-        a milestone read out of history has the same census it had on disk.
+        """`model.grain_docs` at the rev: the same walk and the same four
+        narrowings, in the same order, so a milestone read from history has
+        the census it had on disk.
         """
         out: list[Path] = []
         for kind, name in self._ls(gdir, True):
@@ -541,18 +443,9 @@ class GitSource(Source):
         return sorted(out)
 
     def _is_grain_doc(self, path: Path) -> bool:
-        """`model._is_grain_doc` at the rev — the predicate, not a copy of it.
-
-        "Is this a grain" is ONE definition (model.py's, the one every rule in
-        `check pm` asks through the same walk), and a second spelling of it
-        here would be a census that disagrees with the gate about what the tree
-        holds — the defect `core/walk.py` exists to make impossible. The
-        leading underscore says "not part of model's public surface"; it does
-        not say "write it twice".
-
-        A blob that cannot be READ stays in scope, exactly as on disk: "this is
-        not a grain" and "this cannot be opened" are different facts, and the
-        second is a finding for the rules rather than a silent absence.
+        """`model._is_grain_doc` at the rev — the predicate itself, not a
+        copy, so this census cannot disagree with the gate's. An unreadable
+        blob stays in scope, as on disk.
         """
         return model._is_grain_doc(self._doc(path))
 
@@ -561,12 +454,9 @@ class GitSource(Source):
         return _Blob(self.spec(path), lambda: self._text(path))
 
     def _text(self, path: Path) -> str:
-        """One blob, decoded, terminators intact. The one read under them all.
-
-        `UnicodeDecodeError` propagates rather than being wrapped: every reader
-        that opens a grain document already catches it beside `OSError`, and
-        renaming it here would need each of them taught a new name to stay as
-        correct as it is.
+        """One blob, decoded, terminators intact — the one read under them
+        all. `UnicodeDecodeError` propagates, since every reader already
+        catches it beside `OSError`.
         """
         rel = self._rel(path)
         if rel is None:
@@ -607,15 +497,9 @@ class GitSource(Source):
         return self._grain_docs(mdir / BUGS_DIR)
 
     def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
-        """`model.review_record_for` at the rev: the pointer, then the fallback.
-
-        A pointer spelled ABSOLUTE resolves to nothing here and its record is
-        listed as absent rather than read off today's disk — an absolute path
-        is in no rev, and answering it from the working tree would put a file
-        the milestone never shipped with into a report about history. That
-        holds when the path happens to fall INSIDE the root too: relativising
-        it would read whatever sits at that path in the rev, and the pointer
-        never named that — it named a place on one machine's disk.
+        """`model.review_record_for` at the rev. An absolute pointer resolves
+        to nothing here, even one that falls inside the root: it named a
+        place on one machine's disk, not a path in the rev.
         """
         ffile = self.feature_file(cfg, fid)
         if ffile is None:
@@ -624,14 +508,6 @@ class GitSource(Source):
         if pointer and pointer != 'null' and not pointer.startswith('/'):
             if self.is_file(cfg.root / pointer):
                 return pointer
-        if cfg.review_slug_fallback:
-            slug = fid.partition('/')[2]
-            rdir = cfg.root / cfg.review_dir
-            pattern = f'{slug}*{MD_SUFFIX}'
-            for name in sorted(n for kind, n in self._ls(rdir, False)
-                               if kind == BLOB and slug
-                               and fnmatch.fnmatchcase(n, pattern)):
-                return cfg.rel(rdir / name)
         return None
 
     def field_of(self, path: Path, key: str) -> str:
@@ -641,12 +517,8 @@ class GitSource(Source):
         return model.read_raw(self._doc(path))
 
     def is_file(self, path: Path) -> bool:
-        """Is there a BLOB at this path at the rev? A tree is not a file.
-
-        `Path.is_file()`'s question, asked of history — and the distinction
-        matters here for the same reason it does on disk: `git show
-        <rev>:<a-directory>` succeeds and hands back a LISTING, which a reader
-        expecting a document would happily parse as one.
+        """Is there a blob at this path at the rev? A tree is not a file —
+        `git show <rev>:<dir>` succeeds with a listing.
         """
         rel = self._rel(path)
         if rel is None:
@@ -661,12 +533,9 @@ class GitSource(Source):
         return self._types[rel] == BLOB
 
     def ledger_rows(self, path: Path) -> list:
-        """The milestone's rows at the rev. An absent ledger is no rows.
-
-        The same fact it is on disk: a milestone nothing was recorded for has
-        no file, and the report prints its `no ledger` line rather than
-        refusing. A ledger that IS there and will not parse is still
-        `ledger.LedgerError`, by line number, naming `<rev>:<path>`.
+        """The milestone's rows at the rev; an absent ledger is no rows, and
+        one that will not parse is `ledger.LedgerError` naming
+        `<rev>:<path>`.
         """
         if not self.is_file(path):
             return []
@@ -681,15 +550,10 @@ class Grain(NamedTuple):
 
 
 class Section(NamedTuple):
-    """One of the milestone's five questions: its data, and its lines.
-
-    The registry at the foot of this file holds one entry per section and
-    `build`/`render` walk it, so section 1 (spend), 2 (yield), 3 (rework), 4
-    (escapes) and 5 (overhead shape) are each ONE pair of functions and one row
-    there — never another branch inside one of them. `data` returns the
-    section's own keys and `lines` reads the WHOLE object back, so a section
-    may print a number another section computed and none of them may recompute
-    one.
+    """One of the milestone's questions: `data` returns its own keys and
+    `lines` reads the whole object back, so a section may print another's
+    number and none recomputes one. Sections are added to the registry,
+    never as a branch inside one.
     """
     name: str
     data: Callable[[Source, model.PmConfig, str, Path, list], dict]
@@ -704,14 +568,9 @@ def _blank() -> dict:
 
 
 def _plus(running: int | None, value: object) -> int | None:
-    """`running` plus `value`, where an absent or unreadable value adds nothing.
-
-    The asymmetry is the point: `None + absent` stays None (nobody counted),
-    `None + 5` is 5, and `0 + absent` stays 0 (somebody counted none). A value
-    that is not an integer — a hand-edited row, a shape a later version
-    writes — is treated as absent rather than crashing the report or being
-    coerced: exit 2 is reserved for a line that will not PARSE, and no number
-    in a ledger is ever this module's reason to fail.
+    """`running` plus `value`, where an absent or non-integer value adds
+    nothing: `None + absent` stays None, `0 + absent` stays 0. No number is
+    ever this module's reason to fail.
     """
     if isinstance(value, bool) or not isinstance(value, int):
         return running
@@ -731,12 +590,9 @@ def _add(acc: dict, row: dict) -> None:
 
 # --- the tree -----------------------------------------------------------------
 def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
-    """One grain document as a row: its own id, its kind, its `size:`.
-
-    The id is the file's OWN claim, the same one `_ledger_id` writes into every
-    row — that is what a report joins on. A grain whose frontmatter carries no
-    `id:` (the drift V2 reports) still gets a row, under the id its PATH spells,
-    because a grain missing from the table reads as a grain that never existed.
+    """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
+    which the report joins on), its kind, its `size:`; a missing id falls
+    back to the path's.
     """
     gid = model.unquote(src.field_of(path, 'id')) or fallback
     return Grain(gid, kind, src.field_of(path, SIZE_FIELD))
@@ -749,10 +605,8 @@ def _bug_slug(mdir: Path, path: Path) -> str:
 
 def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
                 mdir: Path) -> tuple[list[Grain], dict[str, set[str]]]:
-    """Every grain under the milestone, and which stories each feature owns.
-
-    The walkers are `check pm`'s and `pm status`'s, so the report's census and
-    the gate's cannot disagree about what is in the tree.
+    """Every grain under the milestone, and which stories each feature owns —
+    the walkers `check pm` uses.
     """
     grains: list[Grain] = []
     owned: dict[str, set[str]] = {}
@@ -774,25 +628,36 @@ def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
 
 def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
-    """The grains under THIS milestone that one dispatch row's `tree` names.
-
-    D3 put every live candidate on the row and left the rule here, so the rule
-    is spelled once and re-derivable: a story is named by being `wip` or at
-    `review`, a feature by being `building`/at `review` OR by owning a named
-    story. An id in the snapshot that is not a grain of this milestone (a
-    parallel milestone's story) names nothing here, and a row that names
-    nothing is not dropped — it is counted in the trailing block.
-
-    A row naming SEVERAL grains is added to each of them whole. Splitting one
-    dispatch's tokens across two stories would be a weight, and D5 says the
-    report does not weight; the per-grain columns therefore sum to MORE than
-    the totals line, which counts every row exactly once.
+    """The grains under this milestone that one dispatch row's `tree` names: a
+    story by being in progress, a feature by being in progress or owning a
+    named story. A row naming several grains is added to each whole (no
+    weighting, D5). Category keys when present; frozen keys only for an
+    old-shape row.
     """
+    buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
+    return _named_through(row, buckets_by_kind, kinds, owned)
+
+
+def frozen_only_grains(row: dict, kinds: dict[str, str],
+                       owned: dict[str, set[str]]) -> set[str]:
+    """The grains a new-shape row names through the frozen keys and not the
+    category keys — what `named_grains` reads past, disclosed rather than
+    silent (rule 4). Empty for an old-shape row.
+    """
+    if is_legacy(row):
+        return set()
+    return (_named_through(row, LEGACY_BUCKETS, kinds, owned)
+            - _named_through(row, CATEGORY_BUCKETS, kinds, owned))
+
+
+def _named_through(row: dict, buckets_by_kind: tuple, kinds: dict[str, str],
+                   owned: dict[str, set[str]]) -> set[str]:
+    """`named_grains`' rule over one key family."""
     tree = row.get('tree')
     if not isinstance(tree, dict):
         return set()
     named: set[str] = set()
-    for kind, buckets in DISPATCH_BUCKETS:
+    for kind, buckets in buckets_by_kind:
         for bucket in buckets:
             ids = tree.get(bucket)
             for gid in ids if isinstance(ids, list) else ():
@@ -804,71 +669,56 @@ def named_grains(row: dict, kinds: dict[str, str],
     return named
 
 
-# --- the clock ----------------------------------------------------------------
-def state_columns(cfg: model.PmConfig, kind: str) -> tuple[str, ...]:
-    """Every state of the kind's vocabulary except the terminal one, in order.
-
-    EVERY one, not the ones before it in the tuple: a vocabulary is a closed
-    SET with no transition graph, so its ORDER is a reading order and never a
-    claim about which states a grain passes through. Stock: `todo wip review
-    blocked` for a story, `planning ready building review` for a feature, `open
-    fixed` for a bug. Time stuck in `blocked` is the question this section
-    exists to answer (Chris, 2026-09-03: *"figure out which ones are taking the
-    most time"*), and it sits PAST `done` in the tuple — a column set cut at
-    the terminal state would have dropped exactly the number worth looking at.
-
-    The terminal state alone has no column: it is where the grain ENDED, so
-    the seconds after it are a running clock rather than a duration, and
-    `total_s` beside these columns is the span that ends there.
-    `ledger.terminal_state` is the one home for which state that is, so the
-    columns and the total cannot come to different answers. A vocabulary that
-    does not contain its terminal state at all (a consumer without `done`)
-    gets a column for every state rather than none.
-
-    A grain that RE-ENTERED a state — reopened, unblocked and blocked again —
-    sums both stints into the one column. That is addition over the rows the
-    ledger already holds, and the stints themselves are `pm ledger show`.
+def is_legacy(row: dict) -> bool:
+    """Was this dispatch row written before the snapshot carried categories? A
+    row with no `tree` at all is not legacy; it never snapshotted.
     """
-    states = {KIND_STORY: cfg.story_states, KIND_FEATURE: cfg.feature_states,
-              KIND_BUG: cfg.bug_states}[kind]
-    terminal = ledger.terminal_state(cfg, kind)
-    return tuple(state for state in states if state != terminal)
+    tree = row.get('tree')
+    return isinstance(tree, dict) and not (CATEGORY_KEYS & set(tree))
+
+
+# --- the clock ----------------------------------------------------------------
+def state_columns() -> tuple[str, ...]:
+    """The dwell columns: one per category, whatever the vocabulary; which
+    word within `in_progress` is `pm ledger show`. `done` has a column
+    because a reopened grain leaves it; the seconds after the last row are
+    never counted; re-entered categories sum; a stint in an undeclared word
+    is disclosed as `unplaced_s`.
+    """
+    return model.CATEGORIES
+
+
+def category_seconds(cfg: model.PmConfig, kind: str,
+                     seconds: dict[str, int]) -> tuple[dict[str, int], int]:
+    """(seconds per category, seconds in words the declaration does not name),
+    read through the current declaration.
+    """
+    placed: dict[str, int] = {}
+    unplaced = 0
+    for word, spent in seconds.items():
+        category = model.category_of(cfg, kind, word)
+        if category is None:
+            unplaced += spent
+            continue
+        placed[category] = placed.get(category, 0) + spent
+    return placed, unplaced
 
 
 def in_time_order(rows: list) -> list:
-    """The rows sorted by their own `ts`, stably, unstamped ones last.
-
-    Every subtraction below reads "the interval between two CONSECUTIVE rows",
-    and that sentence is only a measurement when consecutive means consecutive
-    IN TIME. The file's order is not that: `pm/roadmap/*/ledger.jsonl` is
-    `merge=union` (D6), so a merge interleaves two branches' appends by branch
-    rather than by clock, and `ledger.read_rows` reads the file as it finds it.
-    Read in file order a merged ledger bills a NEGATIVE stint to one state and
-    the leftover to another — two numbers that look like measurements and are
-    not, which is hard rule 4's read side with a column header on it.
-
-    Sorting is not inference: `ts` is on every row, recorded by the verb that
-    wrote it, and ordering by it adds no fact the rows do not already carry.
-    The sort is STABLE, so two rows stamped the same second stay in the order
-    the file spells them — a no-op flip and the flip it repeats are one
-    instant, and which came first is the file's answer to give. A row whose
-    `ts` will not parse sorts LAST and contributes no arithmetic anywhere;
-    leaving it mid-file would silently destroy the two intervals it sits
-    between.
+    """The rows sorted stably by their own `ts`, unstamped ones last. The
+    file's order is not time order under `merge=union`, and a subtraction
+    over merged file order bills a negative stint. Sorting adds no fact the
+    rows do not carry.
     """
     return sorted(rows, key=lambda row: (
         (stamp := ledger.parse_ts(row.data.get('ts'))) is None, stamp))
 
 
 def state_seconds(rows: list) -> dict[str, int]:
-    """Seconds in each state, by subtraction over consecutive status rows.
-
-    The interval between two rows belongs to the state the EARLIER one moved
-    to. The time before the first row is not measured (nobody recorded when the
-    grain came into being) and the time after the last one is not a duration —
-    a running clock has no end — which is the rule `pm ledger show` prints its
-    per-row gaps by. A row whose `ts` will not parse contributes no arithmetic;
-    a fabricated interval is worse than a missing one.
+    """Seconds in each state by subtraction over consecutive status rows; the
+    interval belongs to the state the earlier row moved to. Nothing before
+    the first row or after the last is measured; an unparseable `ts`
+    contributes nothing.
     """
     seconds: dict[str, int] = {}
     for earlier, later in zip(rows, rows[1:]):
@@ -893,13 +743,25 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     per_grain = {g.gid: _blank() for g in grains}
     per_type: dict[str, dict[str | None, dict]] = {g.gid: {} for g in grains}
     unattributed, totals = _blank(), _blank()
+    # The boundary, counted (D7): old-shape rows, and how many named nothing
+    # here.
+    legacy_rows = 0
+    legacy_unattributed = 0
+    # The drop, counted per grain: rows that named it only through a frozen
+    # key.
+    frozen_only = {g.gid: 0 for g in grains}
     for row in dispatch:
-        # Every row lands in the totals exactly once, whether or not it names
-        # a grain — so the summary line is a statement about the FILE.
+        # Every row lands in the totals exactly once, so the summary line is a
+        # statement about the file.
         _add(totals, row.data)
+        legacy = is_legacy(row.data)
+        legacy_rows += legacy
+        for gid in frozen_only_grains(row.data, kinds, owned):
+            frozen_only[gid] += 1
         named = named_grains(row.data, kinds, owned)
         if not named:
             _add(unattributed, row.data)
+            legacy_unattributed += legacy
             continue
         agent = row.data.get('agent_type')
         agent = agent if isinstance(agent, str) and agent else None
@@ -911,7 +773,8 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                                                g.gid)):
         names = {grain.gid}
         my_status = [r for r in status if r.data.get('grain') in names]
-        seconds = state_seconds(my_status)
+        placed, unplaced = category_seconds(
+            cfg, grain.kind, state_seconds(my_status))
         out.append({
             'grain': grain.gid, 'kind': grain.kind,
             'size': grain.size or None,
@@ -920,12 +783,16 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                             for agent, spend in sorted(
                                 per_type[grain.gid].items(),
                                 key=lambda kv: (kv[0] is None, kv[0] or ''))],
-            'states': {state: seconds.get(state)
-                       for state in state_columns(cfg, grain.kind)},
+            'states': {category: placed.get(category)
+                       for category in state_columns()},
+            'unplaced_s': unplaced or None,
+            'frozen_only': frozen_only[grain.gid] or None,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
     return {'section': SECTION_SPEND, 'grains': out,
             'unattributed': unattributed,
+            'legacy': {'rows': legacy_rows,
+                       'unattributed': legacy_unattributed},
             'totals': {'dispatch_rows': len(dispatch),
                        'status_rows': len(status), 'grains': len(grains),
                        **{k: v for k, v in totals.items()
@@ -936,13 +803,8 @@ AT_REV = ' — at {rev}'
 
 
 def heading_id(data: dict) -> str:
-    """The milestone id as a HEADING names it — plus ` — at <rev>` from git.
-
-    Every `[ledger:report] <id> — …` heading carries it, so a section lifted
-    out of the report on its own still says which tree it is a report OF. The
-    summary line does not: it is a statement of totals rather than a heading,
-    and `pm ledger report`'s section-heading shape (three ` — ` parts) is what
-    a reader — and `tests/support/pm.py`'s `section_of` — slices the report by.
+    """The milestone id as a heading names it, plus ` — at <rev>` from git;
+    every section heading carries it, the summary line does not.
     """
     rev = data.get('rev')
     return f'{data["milestone"]}{AT_REV.format(rev=rev)}' if rev else str(
@@ -956,11 +818,8 @@ def _cell(value: object) -> str:
 
 def _table(title: str, headers: tuple[str, ...], aligns: tuple[str, ...],
            rows: list[tuple[str, ...]]) -> list[str]:
-    """One `-- <title> (n)` block, columns padded to their widest cell.
-
-    The heading prints even when there are no rows: a census that says `(0)`
-    is a fact, and silence there is the one thing that reads the same as a
-    scan that never happened (hard rule 4).
+    """One `-- <title> (n)` block, columns padded; the heading prints even at
+    `(0)`, because silence reads like a scan that never happened.
     """
     lines = [f'{BLOCK_PREFIX} {title}']
     if not rows:
@@ -990,7 +849,7 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
            f'{totals["grains"]} grain(s)']
     for kind in KIND_ORDER:
         entries = [e for e in data['grains'] if e['kind'] == kind]
-        states = state_columns(cfg, kind)
+        states = state_columns()
         headers = (GRAIN_COLUMN, SIZE_COLUMN, *SPEND_COLUMNS, *states,
                    TOTAL_COLUMN)
         aligns = (LEFT, LEFT) + (RIGHT,) * (len(headers) - 2)
@@ -1000,8 +859,8 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
                          *_spend_cells(entry),
                          *(_cell(entry['states'][state]) for state in states),
                          _cell(entry['total_s'])))
-            # One agent type is the grain's own row said twice; the split is
-            # printed only where there is something to split.
+            # One agent type is the grain's row said twice; the split prints
+            # only where there is something to split.
             if len(entry['agent_types']) > 1:
                 for split in entry['agent_types']:
                     rows.append((
@@ -1009,11 +868,26 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
                         *_spend_cells(split), *('',) * (len(states) + 1)))
         out.append('')
         out.extend(_table(f'{kind} ({len(entries)})', headers, aligns, rows))
+        # Disclosed under the table it is missing from: a stint in an
+        # undeclared word must not read as "no stint measured".
+        unplaced = [(e['grain'], e['unplaced_s']) for e in entries
+                    if e.get('unplaced_s')]
+        for gid, spent in unplaced:
+            out.append(f'   {gid} {UNPLACED_NOTE}: {spent} s')
+        # Its dispatch-side twin: a frozen-key-only attribution must not read
+        # as "no row".
+        for entry in entries:
+            if entry.get('frozen_only'):
+                out.append(f'   {entry["grain"]} {FROZEN_ONLY_NOTE}: '
+                           f'{entry["frozen_only"]} dispatch row(s)')
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',
                       SPEND_COLUMNS, (RIGHT,) * len(SPEND_COLUMNS),
                       [_spend_cells(stray)] if stray['dispatches'] else []))
+    legacy = data.get('legacy') or {}
+    if legacy.get('unattributed'):
+        out.append(f'   {legacy["unattributed"]} of these {LEGACY_NOTE}')
     out.append('')
     out.append(f'{HEADING_PREFIX} {data["milestone"]} — '
                f'{_cell(totals["usage"]["output"])} out / '
@@ -1024,25 +898,15 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- the review records (sections 2 and 3) ------------------------------------
-# Where one feature's record is, in the order this looks: the `reviewed:`
-# pointer `model.review_record_for` resolves — the mechanism `check pm` and
-# `pm validate` already own, including the slug fallback a project may turn on
-# — and then `features/<slug>/review.md` beside the feature document, the slot
-# `pm new` scaffolds and `model.FEATURE_OPTIONAL_SLOTS` names. Not a guess and
-# not a search: two named slots, tried in one order, and the table PRINTS the
-# path it read, so a reader never has to ask which of the two answered.
+# Where one feature's record is: the `reviewed:` pointer, then
+# `features/<slug>/review.md`; the table prints the path it read.
 NO_VERDICT = 'no verdict block'
 
 
 class RecordError(Exception):
-    """A review record whose verdict block will not parse. Names record + line.
-
-    The one refusal sections 2-5 make on content, and it is not a number. A
-    block that EXISTS and cannot be read correctly (`verdict.MalformedVerdict`)
-    reported as a yield of nothing would be hard rule 4's read-side sin with a
-    column header on it — a pass that raised five findings printed as a pass
-    that raised none. A record with NO block is the other thing entirely: that
-    is `verdict.NoVerdict`, it is a fact about the pass, and it is listed.
+    """A review record whose verdict block exists and will not parse, naming
+    record and line — the one content refusal sections 2-5 make. No block
+    at all is `NoVerdict`, listed as a fact.
     """
 
 
@@ -1061,25 +925,17 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
                 path, rel = beside, cfg.rel(beside)
         if path is not None and rel is not None:
             out.append((fid, rel, path))
-    # By feature id, not by the order the walker returned: the table's order
-    # is a contract of this file, and a walker's is a fact about a filesystem.
+    # By feature id: the table's order is a contract, a walker's is a
+    # filesystem fact.
     out.sort(key=lambda found: found[0])
     return out
 
 
 def parsed_records(src: Source, cfg: model.PmConfig, mid: str,
                    mdir: Path) -> list[tuple[str, str, object]]:
-    """Every record, parsed: its PASSES, or `None` when it carries no block.
-
-    The third slot is the list `verdict.parse` returns — one entry per verdict
-    block, in the order the record carries them — and `None` only for a record
-    with none at all, which stays a fact the table lists rather than a zero.
-
-    Sections 2 and 3 both call this and both parse the same handful of files.
-    That is the registry's shape holding — one section is one pair of functions
-    over the tree and the rows, never a pipeline stage that has to run first —
-    and re-reading a record cannot produce two answers, because `verdict.parse`
-    is the only reader either of them has.
+    """Every record, parsed: its passes (one per verdict block, in order), or
+    `None` when it carries no block. Sections 2 and 3 both call this;
+    `verdict.parse` is the only reader either has.
     """
     out: list[tuple[str, str, object]] = []
     for fid, rel, path in review_records(src, cfg, mid, mdir):
@@ -1107,14 +963,9 @@ def _tally(values: Iterable) -> dict:
 
 def _section(mid: str, title: str, census: str,
              blocks: list[tuple[str, tuple, tuple, list]]) -> list[str]:
-    """One section: its heading, then its blocks — or ONE line when it has none.
-
-    `no data` rather than a table of zeros is the story's gotcha, and it is the
-    same distinction the columns keep: a section with nothing in it has not
-    measured zero of anything, and a grid of `0`s would read as if it had.
-    Inside a section that DID find rows, an empty block still prints its
-    `-- <title> (0)` heading, exactly as section 1's do — there the census is
-    beside the blocks that have content, so it says "and none of these".
+    """One section: its heading, then its blocks — or one `no data` line when
+    it has none. Inside a section with rows, an empty block still prints
+    its `(0)` heading.
     """
     out = ['', f'{HEADING_PREFIX} {mid} — {title} — {census}']
     if not any(rows for _, _, _, rows in blocks):
@@ -1129,22 +980,10 @@ def _section(mid: str, title: str, census: str,
 # --- section 2: yield per review pass -----------------------------------------
 def yield_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                rows: list) -> dict:
-    """Section 2 as data: one entry per review record under the milestone.
-
-    Counting only, over the block's own closed sets: findings per severity,
-    dispositions per kind, deferrals per target grain. The disposition is read
-    as `disposition_kind` and NEVER as the shape of its value — `landed <hash>`
-    and `landed in-place` are one column, because a reviewer in this SDLC fixes
-    in place and never commits (SDLC § 2), so counting only the hash form would
-    under-count exactly the findings that were acted on.
-    `open` — raised, not yet acted on — is its own column beside the three,
-    never folded into `rejected` and never a reweighting of the others.
-
-    Spend is NOT joined in here. Section 1 already splits every grain's tokens
-    by `agent_type`, and picking the types that are "reviewer-shaped" out of
-    that split would be a LABEL over an open set of agent names (D5) — the one
-    thing this module may not do. The reviewer's spend is in section 1, under
-    the feature, beside its own agent type.
+    """Section 2 as data: counting over the block's closed sets per record.
+    The disposition is read as its kind, never as the shape of its value;
+    `open` is its own column. Spend is not joined in — picking
+    "reviewer-shaped" agent types would be a label (D5).
     """
     records = []
     for fid, rel, parsed in parsed_records(src, cfg, mid, mdir):
@@ -1180,9 +1019,8 @@ def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     """Section 2 as lines: the pass, its severities, and where it deferred."""
     section = data[SECTION_YIELD]
     records = section['records']
-    # A record with no block keeps its one row — a pass nobody measured is
-    # still a record this milestone carries, and dropping it would make the
-    # table read as if every record had been reviewed.
+    # A record with no block keeps its one row; dropping it would read as every
+    # record reviewed.
     passes = [(r['feature'], r['record'], str(one['pass']), one['verdict'],
                _cell(one['findings']),
                *(_cell(one['dispositions'][kind])
@@ -1218,119 +1056,39 @@ def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 3: rework --------------------------------------------------------
-def _after(row, moment) -> bool:
-    """True when this row's stamp is later than `moment`, and it parses."""
-    ts = ledger.parse_ts(row.data.get('ts'))
-    return ts is not None and ts > moment
-
-
 def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                 rows: list) -> dict:
-    """Section 3 as data: reopens, dispatches after review, verdict spread.
-
-    A reopen is one status row: `from` the review state, `to` the working one.
-    Both names are read out of the story vocabulary rather than assumed — a
-    project that renamed either gets `-` in that column and never a `0`, since
-    a zero there would say "nothing was reopened" about a machine this rule
-    cannot see (hard rule 4).
-
-    That guard is against a renamed CONFIG, and the same miss arrives through
-    HISTORY: every row a consumer wrote before its pin bump spells the pair the
-    way its old vocabulary did, so a story reviewed and sent back twice holds
-    no row this rule can read while the config it is read under is perfectly
-    stock. So the column is armed PER STORY, by whether that story's own rows
-    NAME the review state at all — in either direction, since a reopen row is
-    itself proof the vocabulary is readable here, and a ledger opened mid-flight
-    can hold the departure without the arrival. Never by the ledger as a whole:
-    one migrated story is enough to re-arm the column for every legacy one
-    beside it, which is the exact ledger a consumer has the day after the bump.
-    `-` covers two worlds the rows cannot tell apart — "never reached review"
-    and "reached it under a spelling this rule cannot read" — and a `0` would
-    be picking one of them by guess. What stays invisible is one story that
-    straddles the bump AND was reopened on both sides of it: the older reopen
-    is not counted and the column is armed by the newer one. Reading that out
-    would mean testing each row's words against `story_states`, which answers
-    wrong under exactly the union set a migration lands there.
-
-    "After review" counts DISPATCH rows, by D3's snapshot and the same
-    `named_grains` rule section 1 attributes by — so the two sections cannot
-    disagree about which dispatches were a story's. The moment compared against
-    is the story's FIRST row into the review state; a story that never reached
-    it has no such moment, and `-` is the honest column.
+    """Section 3 as data: the verdict spread, per pass rather than per
+    record.
     """
-    grains, owned = walk_grains(src, cfg, mid, mdir)
-    kinds = {g.gid: g.kind for g in grains}
-    status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
-    dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
-    reopenable = (model.REVIEWING in cfg.story_states
-                  and model.BUILDING in cfg.story_states)
-    feature_of = {sid: fid for fid, sids in owned.items() for sid in sids}
-    out = []
-    for grain in sorted((g for g in grains if g.kind == KIND_STORY),
-                        key=lambda g: g.gid):
-        mine = [r for r in status if r.data.get('grain') == grain.gid]
-        entered = [r for r in mine if r.data.get('to') == model.REVIEWING]
-        named = entered or [r for r in mine
-                            if r.data.get('from') == model.REVIEWING]
-        reopens = None
-        if named and reopenable:
-            reopens = sum(1 for r in mine
-                          if r.data.get('from') == model.REVIEWING
-                          and r.data.get('to') == model.BUILDING)
-        moment = next((ts for ts in
-                       (ledger.parse_ts(r.data.get('ts')) for r in entered)
-                       if ts is not None), None)
-        after = None if moment is None else sum(
-            1 for r in dispatch
-            if grain.gid in named_grains(r.data, kinds, owned)
-            and _after(r, moment))
-        out.append({'grain': grain.gid, 'feature': feature_of.get(grain.gid),
-                    'reopens': reopens, 'after_review': after})
-    # Every PASS's verdict, not every record's: a record reviewed twice gave
-    # two verdicts, and counting it once would have to pick one of them.
     spread = _tally(one.verdict
                     for _, _, parsed in parsed_records(src, cfg, mid, mdir)
                     if parsed is not None for one in parsed)
-    reopened = [e['reopens'] for e in out if e['reopens'] is not None]
     return {SECTION_REWORK: {
-        'stories': out,
         'verdicts': [{'verdict': name, 'passes': spread[name]}
                      for name in verdict.VERDICTS if name in spread],
-        'totals': {'stories': len(out),
-                   'reopens': sum(reopened) if reopened else None,
-                   'passes': sum(spread.values())}}}
+        'totals': {'passes': sum(spread.values())}}}
 
 
 def rework_lines(cfg: model.PmConfig, data: dict) -> list[str]:
-    """Section 3 as lines: one row per story, one per verdict that was given."""
+    """Section 3 as lines: one row per verdict that was given."""
     section = data[SECTION_REWORK]
-    stories = [(e['feature'] or DASH, e['grain'], _cell(e['reopens']),
-                _cell(e['after_review'])) for e in section['stories']]
     spread = [(v['verdict'], str(v['passes'])) for v in section['verdicts']]
     totals = section['totals']
     return _section(
         heading_id(data), REWORK_TITLE,
-        f'{totals["stories"]} story(s), {_cell(totals["reopens"])} reopen(s), '
         f'{totals["passes"]} pass(es) with a verdict',
-        [(f'{REOPEN_TITLE} ({len(stories)})',
-          (FEATURE_COLUMN, STORY_COLUMN, REOPENS_COLUMN, AFTER_REVIEW_COLUMN),
-          (LEFT, LEFT, RIGHT, RIGHT), stories),
-         (f'{DISTRIBUTION_TITLE} ({len(spread)})',
+        [(f'{DISTRIBUTION_TITLE} ({len(spread)})',
           (VERDICT_COLUMN, PASSES_COLUMN), (LEFT, RIGHT), spread)])
 
 
 # --- section 4: escapes -------------------------------------------------------
 def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                  rows: list) -> dict:
-    """Section 4 as data: every bug here whose `caused_by:` names a feature.
-
-    Grouped by the id the bug NAMES, resolved wherever it lives — an escape's
-    cause is usually a feature of an earlier milestone, and a cause that
-    resolves to nothing (retired, or a typo `pm validate` reports) still gets
-    its row with `-` in the feature's column. The feature's own `status:` is
-    copied verbatim from the tree at report time; whether that word is the
-    terminal one is the reader's question, and `feature_done` answers it in
-    `--json` as the equality it is. Neither is a judgement about the bug.
+    """Section 4 as data: every bug whose `caused_by:` names a feature,
+    grouped by the id named, resolved wherever it lives; an unresolved
+    cause keeps its row with `-`. The feature's `status:` is copied
+    verbatim; `feature_done` is the equality, never a judgement.
     """
     out = []
     for bfile in src.bug_files(mdir):
@@ -1346,7 +1104,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             'status': src.field_of(bfile, 'status') or None,
             'feature_status': fstatus or None,
             'feature_done': (None if not fstatus
-                             else fstatus == ledger.TERMINAL_STATE)})
+                             else ledger.ends_grain(cfg, KIND_FEATURE, fstatus))})
     out.sort(key=lambda e: (e['caused_by'], e['bug']))
     return {SECTION_ESCAPES: {
         'bugs': out,
@@ -1378,10 +1136,8 @@ def _int(value: object) -> int | None:
 
 
 def _delta(earlier: object, later: object) -> int | None:
-    """`later - earlier`, or None unless BOTH ends are integers.
-
-    A delta over one measured end and one absent one would be the absent end
-    read as zero — the whole reading of a cumulative session row inverted.
+    """`later - earlier`, or None unless both ends are integers — an absent
+    end read as zero would invert a cumulative row.
     """
     a, b = _int(earlier), _int(later)
     return None if a is None or b is None else b - a
@@ -1394,28 +1150,11 @@ def _usage_of(row: dict, key: str) -> object:
 
 def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                   rows: list) -> dict:
-    """Section 5 as data: looking before writing, deciding, and stopping.
-
-    Three counts and one subtraction, and the attribution of each is named:
-
-      * a story's dispatches are D3's snapshot, `named_grains`, section 1's
-        rule — and `tool_calls_before_first_write` is SUMMED and also LISTED,
-        because one dispatch that looked at 90 files and nine that looked at
-        ten are the same sum and not the same shape;
-      * a decision row counts against the grain its own `grain` field names.
-        `pm decide` writes a FEATURE id for a feature's `decisions.md` and the
-        MILESTONE id for the milestone's, so those are the two rows the block
-        holds — a milestone-grained decision is never divided among features
-        (that would be a weight) and never attributed to one (that would be a
-        guess);
-      * the seconds after a decision are the gap to the next status row of any
-        grain in that decision's scope — the feature and its stories for a
-        feature-grained row, every grain under the milestone for a
-        milestone-grained one. `-` when no status row follows it.
-
-    Session rows are diffed per `session_id` and nothing else: consecutive
-    stops carry cumulative totals (D4), so the delta is what the turn cost, and
-    which grain it was about is a question this row cannot answer.
+    """Section 5 as data: a story's `tool_calls_before_first_write` summed and
+    listed; a decision row against the grain its own `grain` names, never
+    divided or attributed; the seconds after a decision to the next status
+    row in its scope; session rows diffed per `session_id` (cumulative
+    totals, D4).
     """
     grains, owned = walk_grains(src, cfg, mid, mdir)
     kinds = {g.gid: g.kind for g in grains}
@@ -1439,10 +1178,9 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     scopes = {mid: {g.gid for g in grains} | {mid}}
     for fid, sids in owned.items():
         scopes[fid] = {fid} | sids
-    # Every feature under the milestone, and the milestone itself — but only
-    # once SOMETHING has been decided. A column of zeros under a ledger with no
-    # decision row in it says nothing the census (`0 decision row(s)`) does not
-    # already say, and it says it in the shape of a measurement.
+    # Every feature and the milestone itself, but only once something has been
+    # decided; zeros under a ledger with no decision row would wear a
+    # measurement's shape.
     per_grain = ([{'grain': gid,
                    'decisions': sum(1 for r in decisions
                                     if r.data.get('grain') == gid)}
@@ -1526,32 +1264,122 @@ def overhead_lines(cfg: model.PmConfig, data: dict) -> list[str]:
           (LEFT, LEFT, RIGHT, RIGHT), deltas)])
 
 
-# The registry: one row per question, one pair of functions each. A section is
-# added HERE and nowhere else — never as another branch inside one of them.
+# --- section 6: gate cost -----------------------------------------------------
+def _gate_unusable(row: dict) -> str | None:
+    """Why this `kind: gate` row cannot be counted, or None — named beside the
+    row rather than dropped, so the table cannot look clean over discarded
+    input.
+    """
+    name = row.get(GATE_KEY)
+    if not isinstance(name, str) or not name:
+        return 'no gate name'
+    duration = row.get(GATE_DURATION_KEY)
+    if duration is None:
+        return f'no {GATE_DURATION_KEY}'
+    if _int(duration) is None:
+        return f'{GATE_DURATION_KEY} is not an integer'
+    if duration < 0:
+        return f'{GATE_DURATION_KEY} is negative'
+    return None
+
+
+def gates_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+               rows: list) -> dict:
+    """Section 6 as data: one entry per `gate`, slowest-latest first;
+    `delta_ms` is `last - first`. A gate with one run still appears, with
+    `-`; a delta whose census moved is printed and marked (`comparable`).
+    Nothing is a ceiling or a budget.
+    """
+    gate_rows = [r.data for r in rows
+                 if r.data.get('kind') == ledger.KIND_GATE]
+    unusable, runs_of = [], {}
+    for row in gate_rows:
+        why = _gate_unusable(row)
+        if why is not None:
+            name = row.get(GATE_KEY)
+            unusable.append({'gate': name if isinstance(name, str) and name
+                             else None, 'why': why,
+                             'ts': row.get('ts') if isinstance(row.get('ts'),
+                                                               str) else None})
+            continue
+        runs_of.setdefault(row[GATE_KEY], []).append(row)
+
+    entries = []
+    for name, runs in runs_of.items():
+        first, last = runs[0][GATE_DURATION_KEY], runs[-1][GATE_DURATION_KEY]
+        delta = last - first if len(runs) > 1 else None
+        censuses = (_int(runs[0].get(GATE_CENSUS_KEY)),
+                    _int(runs[-1].get(GATE_CENSUS_KEY)))
+        entries.append({
+            'gate': name, 'runs': len(runs),
+            'first_ms': first, 'last_ms': last, 'delta_ms': delta,
+            'first_census': censuses[0], 'last_census': censuses[1],
+            'comparable': None if delta is None else (
+                None not in censuses and censuses[0] == censuses[1])})
+    entries.sort(key=lambda e: (-e['last_ms'], e['gate']))
+    return {SECTION_GATES: {
+        'gates': entries, 'unusable': unusable,
+        'totals': {'rows': len(gate_rows), 'gates': len(entries),
+                   'incomparable': sum(1 for e in entries
+                                       if e['comparable'] is False),
+                   'unusable': len(unusable)}}}
+
+
+def _gate_census_cell(entry: dict) -> str:
+    """`first → last`, or `-` when either end was never recorded — half a pair
+    is no answer.
+    """
+    first, last = entry['first_census'], entry['last_census']
+    return (DASH if first is None or last is None
+            else f'{first}{CENSUS_ARROW}{last}')
+
+
+def gates_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+    """Section 6 as lines: the cost table, then whatever it could not read."""
+    section = data[SECTION_GATES]
+    cost = []
+    for entry in section['gates']:
+        delta = (DASH if entry['delta_ms'] is None
+                 else f'{entry["delta_ms"]:+d}')
+        if entry['comparable'] is False:
+            delta += INCOMPARABLE_MARK
+        cost.append((entry['gate'], str(entry['runs']),
+                     _cell(entry['first_ms']), _cell(entry['last_ms']),
+                     delta, _gate_census_cell(entry)))
+    unusable = [(_cell(e['gate']), e['why'], _cell(e['ts']))
+                for e in section['unusable']]
+    totals = section['totals']
+    return _section(
+        heading_id(data), GATES_TITLE,
+        f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
+        f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for a '
+        f'census that moved or is absent, '
+        f'{totals["unusable"]} row(s) this section could not use',
+        [(f'{GATE_COST_TITLE} ({len(cost)})',
+          (GATE_COLUMN, RUNS_COLUMN, FIRST_MS_COLUMN, LAST_MS_COLUMN,
+           DELTA_MS_COLUMN, CENSUS_COLUMN),
+          (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost),
+         (f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
+          (GATE_COLUMN, WHY_COLUMN, TS_COLUMN),
+          (LEFT, LEFT, LEFT), unusable)])
+
+
+# The registry: one row per question, one pair of functions each; a section is
+# added here and nowhere else.
 SECTIONS = (Section(SECTION_SPEND, spend_data, spend_lines),
             Section(SECTION_YIELD, yield_data, yield_lines),
             Section(SECTION_REWORK, rework_data, rework_lines),
             Section(SECTION_ESCAPES, escapes_data, escapes_lines),
-            Section(SECTION_OVERHEAD, overhead_data, overhead_lines))
+            Section(SECTION_OVERHEAD, overhead_data, overhead_lines),
+            Section(SECTION_GATES, gates_data, gates_lines))
 
 
 def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
           src: Source | None = None) -> dict:
-    """The whole report as ONE object — what `--json` prints, verbatim.
-
-    Every section contributes its own keys: section 1's sit at the top level
-    (`section`, `grains`, `unattributed`, `totals` — the shape it shipped, kept
-    byte-for-byte because a consumer already reads it), and sections 2-5 each
-    add ONE key named for the question (`yield`, `rework`, `escapes`,
-    `overhead`). Adding a key is an output-format change and so a minor bump
-    (hard rule 6); removing or renaming one is not a thing this file does.
-
-    ONE `build`, both paths. `src` is where the files come from — the working
-    tree by default, `GitSource(root, rev)` for `--from <rev>` — and the only
-    trace of the difference in the object is a `rev` key, present ONLY when
-    there was a rev. A live report gains no key, because a `"rev": null` in
-    every payload would be this file answering a question nobody asked and a
-    consumer would have to learn it to keep reading.
+    """The whole report as one object — what `--json` prints. Section 1's keys
+    sit at the top level as shipped; sections 2-5 each add one key. `rev`
+    is present only when there was a rev (a `"rev": null` would be a
+    question nobody asked).
     """
     src = DiskSource() if src is None else src
     rows = in_time_order(rows)
@@ -1564,18 +1392,10 @@ def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
 
 
 def beyond_ledger(data: dict) -> bool:
-    """Did anything OUTSIDE `ledger.jsonl` get measured for this milestone?
-
-    Sections 2 and 4 read the review records and the bug frontmatter, and
-    neither document has anything to do with the ledger. So "there is no
-    ledger" is a true statement about section 1 and not about the report, and
-    a caller that stops at the one-line form when this returns True tells a
-    reader there is nothing where there is a verdict block and an escape —
-    the read-side sin, phrased as a line about a different file.
-
-    Narrow on purpose: a review record with NO verdict block is a row saying so
-    and not a measurement, and a milestone nobody has recorded anything for
-    keeps its one quiet line.
+    """Did anything outside `ledger.jsonl` get measured — a verdict block or
+    an escape — so the caller does not stop at the one-line form over a
+    tree that holds one? Narrow: a record with no block is not a
+    measurement.
     """
     return (any(record['passes'] for record in data[SECTION_YIELD]['records'])
             or bool(data[SECTION_ESCAPES]['totals']['bugs']))

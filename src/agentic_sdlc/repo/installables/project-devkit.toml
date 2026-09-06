@@ -4,32 +4,32 @@
 # with --force: the tool is pinned by DEVKIT_VERSION in the Makefile, and what
 # that tool should do HERE is the project's own statement.
 #
-# Every section below is COMMENTED OUT and carries the stock default. A repo
-# with no devkit.toml behaves byte-identically to one declaring every default,
-# so deleting a section is always safe — uncomment only where your layout
-# genuinely differs. `agentic-sdlc check <gate> --help` prints that gate's
-# contract, its section and its honest scope.
+# Every section below is COMMENTED OUT and carries the stock default, with ONE
+# exception — `[pm.states.*]`, which is LIVE and argued where it sits. A repo
+# with no devkit.toml behaves byte-identically to one declaring every commented
+# default, so deleting any of those is always safe — uncomment only where your
+# layout genuinely differs. `agentic-sdlc check <gate> --help` prints that
+# gate's contract, its section and its honest scope.
 #
 # A key this package no longer honours is NAMED at exit 2, never ignored; a
 # wrong-typed value (a bare string where a list belongs) is exit 2 as well,
 # because a gate quietly scanning nothing is worse than a gate that stops.
 
 # --- which gates run ----------------------------------------------------------
-# The roster `agentic-sdlc check all` runs HERE. The default suits a Godot
-# project that has scenes and scripts in it. A repo holding NONE of a gate's
-# file kind gets a 0-file census, and that gate correctly reddens — a gate that
-# scanned nothing must say so. That is the roster being wrong for the repo, not
-# a reason to soften a gate: narrow it here instead. An unknown name is exit 2.
+# The roster `agentic-sdlc check all` runs HERE. Five gates exist — `doc`,
+# `shell`, `repo-hygiene`, `pm`, `hooks` — and two are in the stock aggregate.
+# A repo holding NONE of a gate's file kind gets a 0-file census, and that gate
+# correctly reddens — a gate that scanned nothing must say so. That is the
+# roster being wrong for the repo, not a reason to soften a gate: narrow it
+# here instead. An unknown name is exit 2.
 #
-# The four project scans below (rng, tres-comment, unit-disk, test-shape) are
-# OPT-IN for the mirror-image reason — none can state a stock scope true of
-# every repo — so each joins by being named here once you have declared its
-# scope further down. `defaults`, `repo-hygiene` and `pm` are out of the stock
-# roster too: `defaults` reports thousands of findings until you canonicalize
-# once, `repo-hygiene` is close-time and hits the network, and `pm` would fail
-# a repo that has no PM tree. Name any of them here to fold it in.
+# The other three are OPT-IN, each for its own reason: `repo-hygiene` is
+# close-time and hits the network, `pm` would fail a repo that has no PM tree,
+# and `hooks` would fail one that has not run `install-hooks` — arming is a
+# decision a consumer makes once, and the gate is for a repo that has made it.
+# Name any of them here to fold it in.
 # [checks]
-# all = ["uid", "tres", "props", "doc", "shell"]
+# all = ["doc", "shell"]
 
 # `make check` runs the devkit gates and then YOUR gate targets, named here as
 # make goals — extension by config, never a fork of Makefile.devkit. A name
@@ -37,23 +37,6 @@
 # metacharacter) is exit 2, and `check` refuses to re-enter itself.
 # [gates]
 # extra = []
-
-# --- the Godot-file gates -----------------------------------------------------
-# Each is a prefix roster that REPLACES its default wholesale (not a merge).
-# [uid]
-# exclude_prefixes = ["addons/"]   # scopes BOTH uid checks, not just the ref one
-# [tres]
-# exclude_prefixes = ["addons/"]
-# [defaults]
-# exclude_prefixes = ["addons/"]
-
-# `extra_properties` is the carve-out for a `_get_property_list` shape the
-# scanner cannot see. The key names the script's `class_name` (or an
-# ancestor's) or the node's engine type — the carve-out applies ONLY to
-# sections of that class, never tree-wide.
-# [props]
-# exclude_prefixes = ["addons/"]
-# extra_properties = { MyWidget = ["virtual_prop"] }
 
 # --- the repo gates -----------------------------------------------------------
 # `check doc` reads your ALWAYS-LOADED agent docs and verifies their claims
@@ -67,6 +50,13 @@
 # extension-less hook entry points included. It soft-skips without shellcheck.
 # [shell]
 # roots = ["tools"]
+
+# `check grain-shape` holds every grain body and every review record to a cap, in
+# lines. Stock: story 60, feature 80, bug 50, milestone 120, decisions 300,
+# review 120. A kind not named keeps its stock cap; raise one here, visibly, or
+# split the record. `review` reads `[pm] review_dir`.
+# [grain_shape]
+# caps = { story = 60 }
 
 # `check repo-hygiene` is CLOSE-TIME and fetches from the network.
 # [repo_hygiene]
@@ -82,101 +72,135 @@
 # roadmap_dir  = "pm/roadmap"     # the tree, relative to the repo root
 # template_dir = "pm/templates"   # REQUIRED to override a grain template
 # review_dir   = "docs/reviews"   # where review records live
-# review_slug_fallback = false    # also accept <review_dir>/<feature-slug>*.md
 # story_ordinal_prefix = false    # also resolve stories/NN-<slug>.md
 # checks = ["D1", "D2", "D3", "D4", "D5", "D6",   # drift rules — the default
 #           "V1", "V2", "V3", "V4", "V5"]         # integrity rules
 #                                   # V6 (execution lists match the tree) and
 #                                   # the FLOW rules are opt-in: D8 (the project
-#                                   # version equals the building milestone's
-#                                   # id — bump-at-START), D9 (a building
+#                                   # version equals an in-progress milestone's
+#                                   # id — bump-at-START), D9 (an in-progress
 #                                   # milestone declares `branch:`), D10 (that
 #                                   # branch is neither empty nor the mainline).
-# bug_states      = ["open", "fixed", "closed"]   # D4: the bug vocabulary
-# version_file    = "project.godot"               # D8: where the version lives
-# version_pattern = '^config/version="(.*)"$'     # D8: the line carrying it
-# milestone_states / feature_states / story_states are overridable the same way.
-# All three default to ONE ordered vocabulary — planning, ready, building,
-# reviewing, accepted, packaging, done — and a grain skips the states it does
-# not need. A custom set's ORDER is its lifecycle order: D5 places "at work" by
-# index within each grain's own set, at `building`, where the shaping half
-# ends. So list the states in the order the work moves through them — an
-# alphabetical list is a different lifecycle, not the same one tidied — and a
-# set that drops `building` leaves D5 with nothing to compare, which
-# `check pm` says out loud rather than passing in silence.
+#                                   # Each reports over EVERY milestone whose
+#                                   # state is in `in_progress` below.
+# version_file    = "pyproject.toml"              # D8: where the version lives
+# version_pattern = '^version = "(.*)"$'          # D8: the line carrying it
+#                                   # A project that keeps its version in an
+#                                   # framework's own file names that file
+#                                   # and the line that carries it, e.g.
+#                                   #   version_file    = "<its project file>"
+#                                   #   version_pattern = '^<key>="(.*)"$'
+#                                   # The CI workflows `install-ci` writes read
+#                                   # the same fact from their own VERSION_FILE
+#                                   # / VERSION_PATTERN env, at the head of
+#                                   # each file — bash has no TOML reader, so
+#                                   # it is written twice on purpose. Change
+#                                   # one, change the other.
+# The states themselves are [pm.states.<kind>] below — the one LIVE section in
+# this file — and every question `pm` and `check pm` ask is asked of a state's
+# CATEGORY (todo / in_progress / done), never of the word. The flat
+# `<kind>_states` lists, `also_done` and `review_slug_fallback` are retired
+# and refused by name: a second declaration of the same words was a second
+# scoreboard, and a review record found by filename was a guess.
 #
-# 0.24.0 ONLY: the stock sets also READ the four words they replaced — todo
-# (-> ready), wip (-> building), blocked (-> building), review (-> reviewing) —
-# so a tree holding one is not a D4 finding on the day you bump the pin. The
-# verbs refuse to WRITE them, `check pm` prints a census of how many grains
-# still hold one, and 0.25.0 removes them. Rewrite yours before that bump.
-# Declaring your own set that happens to use one of those words opts out: it is
-# your vocabulary, not the window, and nothing here refuses it.
+# The deprecation window that carried todo / wip / blocked / review through
+# 0.24.0 is CLOSED: the stock sets are the seven words above and nothing else,
+# so a grain still holding one of the four is a D4 finding. Rewrite them
+# (todo -> ready, wip -> building, review -> reviewing, blocked -> building,
+# recording what is blocking the work in the grain itself). Declaring your own
+# set that happens to use one of those words is your vocabulary, not the
+# window, and nothing here refuses it.
+
+# --- THE FLOW — the ONE LIVE SECTION in this file -----------------------------
+# Everything else here is commented at its stock default, because a GATE ships
+# stock defaults and a commented default IS the default: a repo with no
+# devkit.toml runs every gate byte-identically to one declaring them. **A
+# WORKFLOW does not** (CLAUDE.md hard rule 5). There is NO runtime fallback
+# behind the table below — the reader takes what is here and refuses BY NAME
+# when it is absent — so a commented copy of this section would leave this
+# freshly-initialised tree refused on its first `pm` call. That is the whole
+# reason it is live, and it is the only section that has one.
 #
-# Run `agentic-sdlc check pm` BY HAND once while you are on 0.24.0 and read its
-# NOTE: `make check` summarises this gate as a PASS count, so the census line
-# lands in the transcript under .gate-reports/ and never on your console
-# (VERBOSE=1 streams it), and a project that stays green through 0.24.0 without
-# ever reading it meets the 0.25.0 red with no warning shot.
-
-# --- the read verbs -----------------------------------------------------------
-# `autoloads` cross-checks each autoload's NAME SUFFIX against what its source
-# actually does: "emits" (declares signals), "relays" (connects to others),
-# "inert". The table replaces the default vocabulary wholesale.
-# [autoloads]
-# suffixes = { Manager = "emits", Tracker = "relays", Registry = "inert", Store = "inert", Service = "inert" }
-# expected_prefixes = ["autoloads/core/", "autoloads/presentation/"]
-
-# [refs]
-# exclude_prefixes = [".git/", ".godot/", ".claude/worktrees/", "pm/roadmap/zz_archive/", "addons/"]
-
-# [orphans]
-# vendored_prefixes        = ["addons/"]          # out of the scan entirely
-# entry_point_prefixes     = ["tools/"]           # reference corpus, never candidates
-# auto_discovered_prefixes = ["tests/", "data/"]  # not candidates unless --tests
-# convention_files         = ["default_bus_layout.tres"]   # engine implicit loads
-
-# --- the opt-in project scans -------------------------------------------------
-# None of these four runs until you name it in `[checks] all` above.
+# YOURS, and changing a word here changes no code anywhere. The tool keeps
+# three opinions and no more: the category set is `todo` / `in_progress` /
+# `done`, they are ordered that way, and every declared state maps to exactly
+# one. How many states, what they are called, which category each sits in and
+# what order they appear in within it are all this project's. A state in no
+# category, or in two, is exit 2 — a fact about this file, not drift in a tree.
 #
-# `check rng` — randomness a seeded run cannot reproduce: an UNQUALIFIED
-# randi()/randf()/randi_range()/randf_range(), and randomize() in any spelling.
-# Keep `roots` narrow. The allowlist key is "<path>:<enclosing func>" and its
-# VALUE is the reason (data, not a comment); an entry matching no call is
-# itself a finding, so the list cannot rot.
-# [rng]
-# roots = ["."]
-# allowlist = { "scenes/ui/title.gd:_ready" = "cosmetic title jitter, never replayed" }
+# The milestone's values reproduce the shipped lifecycle exactly; a feature
+# and a story hold the subset a belt writes for them. `accepted` and
+# `packaging` are `in_progress`: a category is about whether WORK REMAINS, not
+# about whether the outcome is decided. A word that means FINISHED-BUT-NOT-DELIVERED
+# — `obe`, `wontfix`, `duplicate` — belongs in `done`, because finished and
+# delivered are different axes (`docs/design/state-categories.md` §4).
+#
+# THESE BYTES ARE `model.render_seed()` VERBATIM and a test holds them there.
+# Hand-copying the table would leave two spellings of it in this package, and
+# the copy nobody runs is the one that goes stale.
 
-# `check tres-comment` — an authored `;` comment in a .tres/.tscn. Godot's
-# parser accepts one and its writer DROPS it, silently and permanently.
-# [tres_comment]
-# exclude_prefixes = ["addons/"]
+[pm.states.milestone]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
 
-# `check unit-disk` — a no-boot test that reaches real persistent state.
-# `forbidden_calls` names your own live owners; `min_args` names a call whose
-# root/scope parameter DEFAULTS to the real one.
-# [unit_disk]
-# roots = ["tests/unit"]
-# forbidden_literals = { "a real user:// path" = ["user://"] }
-# forbidden_calls    = { "the live settings autoload" = ["Settings.save"] }
-# min_args           = { "SaveService.save" = 2 }
+[pm.states.feature]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing"]
+done        = ["done", "obe"]
 
-# `check test-shape` — a RATCHET on the expensive test tier: `cap` bounds a new
-# scenario, `ledger` records every file already over it at its current size,
-# and the gate fails when one GROWS past its ceiling. `infra` names the tier's
-# shared harness, which is where duplication is supposed to move TO.
-# [test_shape]
-# scenario_root = "tests/integration"
-# unit_root     = "tests/unit"
-# cap           = 300
-# infra         = []
-# ledger        = { "tests/integration/boot/test_boot.gd" = 412 }
-# Opt-in: every scenario says why it boots and what it covers. The rule is
-# asked of the roster `make integration-list` prints — the integration runner
-# owns discovery, and your Makefile's exports reach it through that target —
-# so header = true needs the runner where install-runners put it and
-# Makefile.devkit included.
-# header        = false
-# header_ledger = []
-# runner        = "tools/dev/runners/integration.sh"
+[pm.states.story]
+todo        = ["planning", "ready"]
+in_progress = ["building"]
+done        = ["done", "obe"]
+
+[pm.states.bug]
+todo        = ["open"]
+in_progress = ["fixed"]
+done        = ["closed"]
+
+# EACH KIND DECLARES ITS OWN STATES, and the lists above are what the belts
+# WRITE. `close story` claims a story (`building`) and closes it (`done`); a
+# feature is additionally `reviewing` while its review record is written; a
+# milestone walks all seven because acceptance and packaging are milestone
+# acts. A word a kind never holds is not seeded for it. There is NO
+# step-to-state table: a belt writes the FIRST state of its kind's `done`
+# list, and `pm <kind> <state>` reaches any declared state by hand. A
+# `[pm.transitions.<kind>]` table left over from an earlier 0.2.0 build is
+# refused by name.
+
+# --- your own gates -----------------------------------------------------------
+# Everything heavier than the five gates above is this project's to supply, and
+# it arrives through two seams rather than through a section here:
+#
+#   [gates] extra      — your own make goals, run by `make check` after the
+#                        devkit roster. Static, same as the rest of `check`.
+#   Makefile.tiers     — GDK_PRECOMMIT_TIERS / GDK_MILESTONE_TIERS, the target
+#                        lists `precommit` and `milestone` compose from. This
+#                        is where a build, a linter or a test tier
+#                        belongs: it can boot, because it is not a devkit gate.
+#
+# A gate that reads one language's file format is a gate that
+# kit owns, and it configures itself in its own section of this file.
+
+# --- the ladder ---------------------------------------------------------------
+# `agentic-sdlc verify --story | --feature | --milestone` runs the make target
+# named here — three rungs, one shape, and the Makefile stays the authority on
+# what a target RUNS. `close story` runs the story rung; `release`'s `gate`
+# check runs `make milestone`. `verify --check` holds each target to existing
+# in the Makefile; `verify --plan` prints each rung's cost from the ledger.
+# `unit` and `test` are the tier targets your Makefile.tiers defines. An
+# absent `[verify]` is exit 2 on every flag, and the retired `[[verify.narrow]]`
+# table — the story rung when it selected commands by changed path — is
+# refused by name.
+# [verify]
+# story     = "make unit"
+# feature   = "make test"
+# milestone = "make milestone"
+
+# --- more words that mean FINISHED --------------------------------------------
+# `ready-for feature` asks "is every story in the `done` CATEGORY", not "is
+# every story at the word `done`" — so a story you stop working on needs a word
+# in `[pm.states.story] done` or it holds its feature open forever. The seed
+# lists `obe` there; add `wontfix`, `duplicate` or whatever you say. Finished
+# and delivered-or-not are different axes, and only the first is a category.

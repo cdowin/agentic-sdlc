@@ -1,20 +1,24 @@
 """test_pm_ledger.py — every status flip and every decision leaves a row.
 
-The contract under test (D6 + D8):
+The contract under test (D6 + D8), and what each case here is FOR. The file is
+APPEND-ONLY, COMMITTED and read back by `pm ledger report`, `check budget` and
+`verify --plan`, so the cases that earn their place are the ones guarding a
+permanent defect:
 
   * a status verb appends `{ts, kind, grain, from, to}` to
-    `pm/roadmap/<ms>/ledger.jsonl` — the grain's OWN milestone directory,
-    beside `decisions.md` — AFTER its frontmatter write landed;
+    `pm/roadmap/<ms>/ledger.jsonl` — the grain's OWN milestone directory —
+    AFTER its frontmatter write landed;
   * a REFUSED or failed flip appends nothing: a row is a record of a write
     that happened, and a ledger that claims a flip nobody made is rule 4's
     cardinal sin with a timestamp on it;
-  * a NO-OP flip still appends. Somebody ran the verb; that is a fact;
-  * `feature done --cascade` appends its own row, then one per closed story;
-  * `pm decide` appends `{ts, kind, grain, entry, title}`;
-  * the file is APPEND-ONLY — bytes already on disk are never rewritten;
+  * one row is one LINE and round-trips: U+2028 and friends must not split one
+    row into two, because the second half is invalid JSON forever after;
+  * an ABSENT measurement is an absent KEY, never a `0` — a `0` census reads as
+    "this gate walked nothing";
+  * `append_row` never joins a line it did not write, and never rewrites a byte
+    another branch or a later version of this package put there;
   * `ledger.jsonl` is not a grain doc: `pm validate`, `check pm` and
-    `pm status` are byte-identical with and without it, and `retire` removes
-    it with the directory;
+    `pm status` are byte-identical with and without it;
   * `pm init` ships the `merge=union` attribute that makes two branches' rows
     one file rather than one conflict.
 
@@ -25,9 +29,10 @@ as the parse, because compactness and key order are half the shape.
 from __future__ import annotations
 
 import json
-import unittest
+import os
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from support.pm import (
     damage,
     ledger_lines,
@@ -36,11 +41,38 @@ from support.pm import (
     run_gate,
     tree,
     write,
+    write_config,
 )
 
-from agentic_sdlc.repo.pm import ledger, model
+from agentic_sdlc.repo.pm import ledger
+
+# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
+# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
+# gives each kind the states its belt writes (a story: `building`, `done`), and
+# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
+# `in_progress` number whatever the word — so the tree keeps the declaration
+# the rows were written under rather than rewriting every row to a word that
+# proves nothing different. `support.pm.tree` is the builder; this only fixes
+# its `config`.
+from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
+from agentic_sdlc.repo.pm import model as _model  # noqa: E402
+
+LEGACY_FLOW = _declaring(feature=_model.DEFAULT_FLOWS['milestone'],
+                         story=_model.DEFAULT_FLOWS['milestone'])
+
+
+def tree(**kwargs):
+    """`support.pm.tree` under the all-seven flow these ledgers assume."""
+    kwargs.setdefault('config', LEGACY_FLOW)
+    return _seed_tree(**kwargs)
 
 BUG_ID = '0.1/bugs/b0'
+STORY = '0.1/alpha/s0'
+
+# A fixed stamp for the row-shape cases: `gate_row`'s own `ts` is asserted by
+# the CLI cases, and pinning it here keeps a key-set assertion from depending
+# on the clock.
+GATE_TS = '2026-09-05T14:02:11Z'
 
 
 def only_row(root) -> dict:
@@ -55,450 +87,382 @@ def bug(root, status: str = 'open') -> None:
            'status': status})
 
 
-class RowShape(unittest.TestCase):
-    """One row, exactly the five keys, in order, compact, UTC to the second."""
-
-    def test_a_story_flip_writes_one_compact_line_with_the_five_keys(self):
-        with tree(story_statuses=('ready',)) as root:
-            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            lines = ledger_lines(root)
-            self.assertEqual(len(lines), 1, lines)
-            row = json.loads(lines[0])
-            self.assertEqual(list(row), ['ts', 'kind', 'grain', 'from', 'to'])
-            self.assertEqual(row['kind'], 'status')
-            self.assertEqual(row['grain'], '0.1/alpha/s0')
-            self.assertEqual(row['from'], 'ready')
-            self.assertEqual(row['to'], 'building')
-            # Compact and key-ordered, byte for byte — a report reads these
-            # with `wc -l` and `readline`, so one row is one line and there
-            # are no spaces after the separators.
-            self.assertEqual(lines[0], json.dumps(row, separators=(',', ':')))
-
-    def test_the_timestamp_is_full_utc_to_the_second_and_ends_in_Z(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/s0')[0], 0)
-            ts = only_row(root)['ts']
-        self.assertTrue(ts.endswith('Z'), ts)
-        self.assertEqual(len(ts), len('2026-09-03T21:40:12Z'), ts)
-        stamped = datetime.strptime(ts, ledger.TS_FORMAT).replace(
-            tzinfo=timezone.utc)
-        # A local-time stamp in a durable log is undetectable later; against
-        # `now` in UTC it is detectable NOW, anywhere but UTC itself.
-        self.assertLess(abs(stamped - datetime.now(timezone.utc)),
-                        timedelta(minutes=5), ts)
-
-    def test_rows_land_in_order_and_earlier_bytes_are_never_rewritten(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/s0')[0], 0)
-            first = ledger_lines(root)[0]
-            self.assertEqual(run_cli(root, 'story', 'reviewing', '0.1/alpha/s0')[0], 0)
-            self.assertEqual(run_cli(root, 'story', 'done', '0.1/alpha/s0')[0], 0)
-            lines = ledger_lines(root)
-        self.assertEqual(len(lines), 3, lines)
-        self.assertEqual(lines[0], first, 'an earlier row was rewritten')
-        self.assertEqual([json.loads(ln)['to'] for ln in lines],
-                         ['building', 'reviewing', 'done'])
-        self.assertEqual([json.loads(ln)['from'] for ln in lines],
-                         ['ready', 'building', 'reviewing'])
-
-    def test_a_foreign_row_already_on_disk_survives_byte_identical(self):
-        """Append-only means append-only: a row this version cannot parse —
-        another branch's, a later kind — is not read, not rewritten, not
-        reordered. It is the property `merge=union` is worth having."""
-        with tree() as root:
-            path = root / 'pm/roadmap/0.1-demo' / ledger.LEDGER_FILE_NAME
-            foreign = '{"ts":"2020-01-01T00:00:00Z","kind":"dispatch","x":[1,2]}'
-            path.write_text(foreign + '\n', encoding='utf-8')
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/s0')[0], 0)
-            lines = ledger_lines(root)
-        self.assertEqual(lines[0], foreign)
-        self.assertEqual(len(lines), 2, lines)
-
-
-class EveryStatusVerb(unittest.TestCase):
-    """One test per verb. Each writes to the grain's OWN milestone directory."""
-
-    def test_story(self):
-        with tree(story_statuses=('ready',)) as root:
-            self.assertEqual(run_cli(root, 'story', 'reviewing', '0.1/alpha/s0')[0], 0)
-            self.assertEqual(
-                only_row(root),
-                {'ts': only_row(root)['ts'], 'kind': 'status',
-                 'grain': '0.1/alpha/s0', 'from': 'ready', 'to': 'reviewing'})
-
-    def test_bug(self):
-        with tree() as root:
-            bug(root, 'open')
-            code, out = run_cli(root, 'bug', 'fixed', BUG_ID)
-            self.assertEqual(code, 0, out)
-            row = only_row(root)
-        self.assertEqual((row['kind'], row['grain'], row['from'], row['to']),
-                         ('status', BUG_ID, 'open', 'fixed'))
-
-    def test_feature_simple_status(self):
-        with tree(feature_status='ready') as root:
-            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            row = only_row(root)
-        self.assertEqual((row['grain'], row['from'], row['to']),
-                         ('0.1/alpha', 'ready', 'building'))
-
-    def test_feature_review(self):
-        with tree(feature_status='building') as root:
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            row = only_row(root)
-        self.assertEqual((row['grain'], row['from'], row['to']),
-                         ('0.1/alpha', 'building', 'reviewing'))
-
-    def test_feature_done(self):
-        with tree(feature_status='reviewing') as root:
-            code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            row = only_row(root)
-        self.assertEqual((row['grain'], row['from'], row['to']),
-                         ('0.1/alpha', 'reviewing', 'done'))
-
-    def test_milestone(self):
-        with tree(milestone_status='ready') as root:
-            code, out = run_cli(root, 'milestone', 'building', '0.1')
-            self.assertEqual(code, 0, out)
-            row = only_row(root)
-        self.assertEqual((row['grain'], row['from'], row['to']),
-                         ('0.1', 'ready', 'building'))
-
-    def test_the_row_lands_in_the_grains_OWN_milestone_directory(self):
-        """A story two milestones deep in the tree stamps ITS milestone, not
-        the first one the walker finds."""
-        with tree() as root:
-            other = root / 'pm/roadmap/0.2-next'
-            write(other / 'milestone.md',
-                  {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/s0')[0], 0)
-            self.assertEqual(len(ledger_rows(root)), 1)
-            self.assertFalse((other / ledger.LEDGER_FILE_NAME).exists())
-
-    def test_the_verbs_output_and_exit_code_are_unchanged(self):
-        """Hard rule 6: the shipped line shapes are a contract. The ledger is
-        a side effect on disk and never a line on stdout."""
-        with tree(story_statuses=('ready',)) as root:
-            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-        self.assertEqual(code, 0)
-        self.assertEqual(out, '[pm] story 0.1/alpha/s0: ready -> building\n')
-
-
-class ANoOpIsAFact(unittest.TestCase):
-    """Same-status flips append too (D2's cost note, carried by D8)."""
-
-    def test_a_story_no_op_appends_a_from_equals_to_row(self):
-        with tree(story_statuses=('building',)) as root:
-            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            self.assertIn('already building (no-op)', out)
-            row = only_row(root)
-        self.assertEqual((row['from'], row['to']), ('building', 'building'))
-
-    def test_a_feature_no_op_appends(self):
-        with tree(feature_status='building') as root:
-            self.assertEqual(run_cli(root, 'feature', 'building', '0.1/alpha')[0], 0)
-            self.assertEqual(only_row(root)['from'], 'building')
-
-    def test_a_feature_review_no_op_appends(self):
-        with tree(feature_status='reviewing') as root:
-            self.assertEqual(run_cli(root, 'feature', 'reviewing', '0.1/alpha')[0], 0)
-            row = only_row(root)
-        self.assertEqual((row['from'], row['to']), ('reviewing', 'reviewing'))
-
-    def test_a_feature_done_no_op_appends(self):
-        with tree(feature_status='done') as root:
-            code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertIn('already done (no-op)', out)
-            row = only_row(root)
-        self.assertEqual((row['from'], row['to']), ('done', 'done'))
-
-    def test_a_milestone_no_op_appends(self):
-        with tree(milestone_status='building') as root:
-            self.assertEqual(run_cli(root, 'milestone', 'building', '0.1')[0], 0)
-            self.assertEqual(only_row(root)['to'], 'building')
-
-    def test_a_bug_no_op_appends(self):
-        with tree() as root:
-            bug(root, 'open')
-            self.assertEqual(run_cli(root, 'bug', 'open', BUG_ID)[0], 0)
-            self.assertEqual(only_row(root)['from'], 'open')
-
-
-class Cascade(unittest.TestCase):
-    """`feature done --cascade`: the feature's row, then one per closed story."""
-
-    def test_the_feature_row_comes_first_then_one_row_per_closed_story(self):
-        with tree(feature_status='reviewing',
-                  story_statuses=('reviewing', 'reviewing', 'ready')) as root:
-            code, out = run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')
-            self.assertEqual(code, 0, out)
-            rows = ledger_rows(root)
-        self.assertEqual(len(rows), 3, rows)
-        self.assertEqual((rows[0]['grain'], rows[0]['from'], rows[0]['to']),
-                         ('0.1/alpha', 'reviewing', 'done'))
-        self.assertEqual([(r['grain'], r['from'], r['to']) for r in rows[1:]],
-                         [('0.1/alpha/s0', 'reviewing', 'done'),
-                          ('0.1/alpha/s1', 'reviewing', 'done')])
-
-    def test_a_story_the_cascade_did_not_touch_gets_no_row(self):
-        with tree(feature_status='reviewing',
-                  story_statuses=('reviewing', 'ready')) as root:
-            self.assertEqual(
-                run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')[0], 0)
-            grains = [r['grain'] for r in ledger_rows(root)]
-        self.assertNotIn('0.1/alpha/s1', grains)
-        self.assertEqual(grains, ['0.1/alpha', '0.1/alpha/s0'])
-
-    def test_without_the_flag_only_the_feature_gets_a_row(self):
-        with tree(feature_status='reviewing', story_statuses=('reviewing',)) as root:
-            self.assertEqual(run_cli(root, 'feature', 'done', '0.1/alpha')[0], 0)
-            self.assertEqual([r['grain'] for r in ledger_rows(root)],
-                             ['0.1/alpha'])
-
-    def test_the_second_cascade_run_adds_only_its_own_no_op_row(self):
-        with tree(feature_status='reviewing', story_statuses=('reviewing',)) as root:
-            self.assertEqual(
-                run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')[0], 0)
-            self.assertEqual(
-                run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')[0], 0)
-            rows = ledger_rows(root)
-        self.assertEqual([(r['grain'], r['from'], r['to']) for r in rows],
-                         [('0.1/alpha', 'reviewing', 'done'),
-                          ('0.1/alpha/s0', 'reviewing', 'done'),
-                          ('0.1/alpha', 'done', 'done')])
-
-
-class ARefusedFlipAppendsNothing(unittest.TestCase):
-    """The row records a write that LANDED. No write, no row — ever."""
-
-    def test_a_review_record_naming_no_file_refuses_and_writes_no_row(self):
-        with tree(feature_status='reviewing', with_record=False) as root:
-            code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
-                                '--review-record', 'docs/reviews/nope.md')
-            self.assertEqual(code, 1, out)
-            self.assertEqual(ledger_lines(root), [])
-
-    def test_a_status_outside_the_vocabulary_writes_no_row(self):
-        with tree() as root:
-            code, out = run_cli(root, 'story', 'wombat', '0.1/alpha/s0')
-            self.assertEqual(code, 2, out)
-            self.assertEqual(ledger_lines(root), [])
-
-    def test_an_id_that_resolves_to_nothing_writes_no_row(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/ghost')[0], 2)
-            self.assertEqual(run_cli(root, 'feature', 'done', '0.1/ghost')[0], 2)
-            self.assertEqual(run_cli(root, 'milestone', 'done', '9.9')[0], 2)
-            self.assertEqual(run_cli(root, 'bug', 'fixed', '0.1/bugs/ghost')[0], 2)
-            self.assertEqual(ledger_lines(root), [])
-
-    def test_a_frontmatter_write_that_FAILS_writes_no_row(self):
-        """The one ordering that matters: the row is written after the write
-        succeeded. Damaged frontmatter is where `set_field` returns False —
-        the file is untouched, so the ledger must be too."""
-        with tree() as root:
-            damage(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
-                   'no-closing-fence')
-            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-            self.assertEqual(code, 2, out)
-            self.assertEqual(ledger_lines(root), [])
-
-    def test_a_cascade_that_cannot_close_a_story_still_records_what_landed(self):
-        """The half that DID land is a fact. The cascade aborts on the
-        unwritable story, and the story it already closed keeps its row — with
-        no row for the feature, whose own flip never happened."""
-        with tree(feature_status='reviewing',
-                  story_statuses=('reviewing', 'reviewing')) as root:
-            blocked = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s1.md'
-            blocked.chmod(0o444)
-            try:
-                code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
-                                    '--cascade')
-            finally:
-                blocked.chmod(0o644)
-            self.assertEqual(code, 2, out)
-            rows = ledger_rows(root)
-        self.assertEqual([(r['grain'], r['from'], r['to']) for r in rows],
-                         [('0.1/alpha/s0', 'reviewing', 'done')])
-
-
-class Decide(unittest.TestCase):
-    """`pm decide` appends `{ts, kind, grain, entry, title}` after the heading."""
-
-    def test_a_milestone_decision_row(self):
-        with tree() as root:
-            code, out = run_cli(root, 'decide', '0.1', 'The ledger is one file')
-            self.assertEqual(code, 0, out)
-            lines = ledger_lines(root)
-            self.assertEqual(len(lines), 1, lines)
-            row = json.loads(lines[0])
-        self.assertEqual(list(row), ['ts', 'kind', 'grain', 'entry', 'title'])
-        self.assertEqual((row['kind'], row['grain'], row['entry'], row['title']),
-                         ('decision', '0.1', 'D1', 'The ledger is one file'))
-
-    def test_a_feature_decision_lands_in_the_MILESTONE_ledger(self):
-        """`decisions.md` is per-grain; the ledger is per-milestone (D6)."""
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'decide', '0.1/alpha', 'Ship it')[0], 0)
-            fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
-            self.assertTrue((fdir / 'decisions.md').is_file())
-            self.assertFalse((fdir / ledger.LEDGER_FILE_NAME).exists())
-            row = only_row(root)
-        self.assertEqual((row['grain'], row['entry']), ('0.1/alpha', 'D1'))
-
-    def test_the_ordinal_on_the_row_is_the_one_written_into_the_log(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'decide', '0.1', 'First')[0], 0)
-            self.assertEqual(run_cli(root, 'decide', '0.1', 'Second')[0], 0)
-            rows = ledger_rows(root)
-            log = (root / 'pm/roadmap/0.1-demo/decisions.md').read_text()
-        self.assertEqual([(r['entry'], r['title']) for r in rows],
-                         [('D1', 'First'), ('D2', 'Second')])
-        self.assertIn('## D2 — ', log)
-
-    def test_a_refused_decide_appends_nothing(self):
-        with tree() as root:
-            # A story has no decision log; a heading a shell cut in half is
-            # refused whole. Neither is a row.
-            self.assertEqual(run_cli(root, 'decide', '0.1/alpha/s0', 'x')[0], 1)
-            self.assertEqual(run_cli(root, 'decide', '0.1', 'first half;')[0], 1)
-            self.assertEqual(run_cli(root, 'decide', '0.1')[0], 2)
-            self.assertEqual(ledger_lines(root), [])
-
-    def test_a_title_with_quotes_unicode_and_backslashes_stays_ONE_line(self):
-        title = 'the "ledger" — a\\b, not c'
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'decide', '0.1', title)[0], 0)
-            lines = ledger_lines(root)
-        self.assertEqual(len(lines), 1, lines)
-        self.assertEqual(json.loads(lines[0])['title'], title)
-        # ensure_ascii=False: the em dash is written as itself.
-        self.assertIn('—', lines[0])
-
-    def test_a_unicode_line_separator_in_a_title_stays_ONE_row(self):
-        """U+2028 is a line terminator to `str.splitlines()` and `ensure_ascii
-        =False` writes it raw — a row carrying one would read back as two, the
-        second of them invalid JSON. `decide` refuses \\n and \\r; nothing
-        refuses this, so the serialiser escapes it."""
-        title = 'a\u2028b\u2029c'
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'decide', '0.1', title)[0], 0)
-            raw = (root / 'pm/roadmap/0.1-demo'
-                   / ledger.LEDGER_FILE_NAME).read_text(encoding='utf-8')
-        self.assertEqual(len(raw.splitlines()), 1, raw)
-        self.assertEqual(json.loads(raw)['title'], title)
-
-
-class NotAGrainDoc(unittest.TestCase):
-    """`ledger.jsonl` is not `.md` and carries no frontmatter. Every reader
-    that walks the tree must be byte-identical with it and without it."""
-
-    def test_validate_and_the_gate_and_status_are_unchanged_by_the_ledger(self):
-        with tree(story_statuses=('building',), feature_status='building',
-                  milestone_status='building') as root:
-            before = (run_cli(root, 'validate'), run_gate(root),
-                      run_cli(root, 'status'))
-            self.assertEqual(run_cli(root, 'story', 'building', '0.1/alpha/s0')[0], 0)
-            self.assertTrue(
-                (root / 'pm/roadmap/0.1-demo' / ledger.LEDGER_FILE_NAME).is_file())
-            after = (run_cli(root, 'validate'), run_gate(root),
-                     run_cli(root, 'status'))
-        self.assertEqual(before[0], after[0], 'pm validate saw the ledger')
-        self.assertEqual(before[1], after[1], 'check pm saw the ledger')
-        self.assertEqual(before[2], after[2], 'pm status saw the ledger')
-        self.assertEqual(after[0][0], 0)
-        self.assertEqual(after[1][0], 0)
-        self.assertNotIn(ledger.LEDGER_FILE_NAME, after[2][1])
-
-    def test_the_slot_walk_never_yields_it(self):
-        """Even parked inside a slot directory, where a `.md` note would at
-        least be COUNTED as skipped, it is not a document the walk knows."""
-        with tree() as root:
-            sdir = root / 'pm/roadmap/0.1-demo/features/alpha/stories'
-            (sdir / ledger.LEDGER_FILE_NAME).write_text(
-                '{"ts":"2026-01-01T00:00:00Z"}\n', encoding='utf-8')
-            walk = model.slot_walk(sdir)
-            self.assertEqual([p.name for p in walk.kept], ['s0.md'])
-            self.assertNotIn(ledger.LEDGER_FILE_NAME, walk.census('doc(s)'))
-
-    def test_retire_removes_the_ledger_with_the_directory(self):
-        with tree(milestone_status='done', feature_status='done',
-                  story_statuses=('done',)) as root:
-            (root / 'pm/roadmap/ROADMAP.md').write_text(
-                '# Roadmap\n\n| Version | Name | Delivered | What shipped |\n'
-                '|---|---|---|---|\n', encoding='utf-8')
-            self.assertEqual(run_cli(root, 'story', 'done', '0.1/alpha/s0')[0], 0)
-            path = root / 'pm/roadmap/0.1-demo' / ledger.LEDGER_FILE_NAME
-            self.assertTrue(path.is_file())
-            code, out = run_cli(root, 'retire', '0.1', 'shipped')
-            self.assertEqual(code, 0, out)
-            self.assertFalse(path.exists())
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
-
-
-class MergeAttribute(unittest.TestCase):
-    """`pm/roadmap/*/ledger.jsonl merge=union` — the one file two milestone
-    branches can both append to, and the only way that is a merge rather than
-    a conflict."""
-
-    def test_pm_init_writes_the_file_when_there_is_none(self):
-        with tree() as root:
-            (root / '.gitattributes').unlink(missing_ok=True)
-            code, out = run_cli(root, 'init')
-            self.assertEqual(code, 0, out)
-            body = (root / '.gitattributes').read_text(encoding='utf-8')
-        self.assertIn(skills_attribute_line(), body)
-        self.assertIn('.gitattributes', out)
-
-    def test_it_is_APPENDED_to_a_gitattributes_that_already_exists(self):
-        with tree() as root:
-            (root / '.gitattributes').write_text('*.png binary\n',
-                                                 encoding='utf-8')
-            self.assertEqual(run_cli(root, 'init')[0], 0)
-            body = (root / '.gitattributes').read_text(encoding='utf-8')
-        self.assertTrue(body.startswith('*.png binary\n'),
-                        'the project\'s own attributes were lost')
-        self.assertIn(skills_attribute_line(), body)
-
-    def test_a_file_already_carrying_the_line_is_left_alone_and_says_so(self):
-        with tree() as root:
-            target = root / '.gitattributes'
-            target.write_text(f'{skills_attribute_line()}\n', encoding='utf-8')
-            before = target.read_bytes()
-            code, out = run_cli(root, 'init')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(target.read_bytes(), before)
-        self.assertIn('already carries', out)
-
-    def test_a_second_run_does_not_duplicate_the_line(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'init')[0], 0)
-            self.assertEqual(run_cli(root, 'init')[0], 0)
-            body = (root / '.gitattributes').read_text(encoding='utf-8')
-        self.assertEqual(body.count(skills_attribute_line()), 1, body)
-
-    def test_the_pattern_names_the_configured_roadmap_dir(self):
-        """`[pm] roadmap_dir` is config, so the attribute cannot be a literal
-        that is right only for the stock path."""
-        with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nroadmap_dir = "planning/ms"\n', encoding='utf-8')
-            self.assertEqual(run_cli(root, 'init')[0], 0)
-            body = (root / '.gitattributes').read_text(encoding='utf-8')
-        self.assertIn(f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union',
-                      body)
-
-
 def skills_attribute_line() -> str:
     from agentic_sdlc.repo.pm import skills
     return skills.attribute_line('pm/roadmap')
 
 
-if __name__ == '__main__':  # pragma: no cover
-    unittest.main()
+# --- the row, and the line it is written as -----------------------------------
+
+def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
+    """Keys, order, values, compactness and a fresh UTC stamp, in one pass.
+
+    A local-time stamp in a durable log is undetectable later; against `now` in
+    UTC it is detectable NOW, anywhere but UTC itself. The stdout assertion is
+    here too (hard rule 6): the ledger is a side effect on disk and never a
+    line a consumer's hook has to learn to skip.
+    """
+    with tree(story_statuses=('ready',)) as root:
+        code, out = run_cli(root, 'story', 'building', STORY)
+        assert code == 0, out
+        assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
+        lines = ledger_lines(root)
+    assert len(lines) == 1, lines
+    row = json.loads(lines[0])
+    assert list(row) == ['ts', 'kind', 'grain', 'from', 'to']
+    assert (row['kind'], row['grain'], row['from'], row['to']) == (
+        'status', STORY, 'ready', 'building')
+    # A report reads these with `wc -l` and `readline`, so one row is one line
+    # and there are no spaces after the separators.
+    assert lines[0] == json.dumps(row, separators=(',', ':'))
+    stamped = datetime.strptime(row['ts'], ledger.TS_FORMAT).replace(
+        tzinfo=timezone.utc)
+    assert len(row['ts']) == len('2026-09-03T21:40:12Z')
+    assert abs(stamped - datetime.now(timezone.utc)) < timedelta(minutes=5)
+
+
+def test_rows_land_in_order_and_earlier_bytes_are_never_rewritten():
+    with tree() as root:
+        assert run_cli(root, 'story', 'building', STORY)[0] == 0
+        first = ledger_lines(root)[0]
+        assert run_cli(root, 'story', 'reviewing', STORY)[0] == 0
+        assert run_cli(root, 'story', 'done', STORY)[0] == 0
+        lines = ledger_lines(root)
+    assert len(lines) == 3, lines
+    assert lines[0] == first, 'an earlier row was rewritten'
+    assert [json.loads(ln)['to'] for ln in lines] == [
+        'building', 'reviewing', 'done']
+    assert [json.loads(ln)['from'] for ln in lines] == [
+        'ready', 'building', 'reviewing']
+
+
+# One case per VERB rather than per verb-and-state: each of these is a distinct
+# route in cli.py, and a route that stopped appending loses rows silently.
+STATUS_VERBS = [
+    (dict(story_statuses=('ready',)), False,
+     ('story', 'reviewing', STORY), (STORY, 'ready', 'reviewing')),
+    (dict(), True, ('bug', 'fixed', BUG_ID), (BUG_ID, 'open', 'fixed')),
+    (dict(feature_status='ready'), False,
+     ('feature', 'building', '0.1/alpha'), ('0.1/alpha', 'ready', 'building')),
+    (dict(feature_status='reviewing'), False,
+     ('feature', 'done', '0.1/alpha'), ('0.1/alpha', 'reviewing', 'done')),
+    (dict(milestone_status='ready'), False,
+     ('milestone', 'building', '0.1'), ('0.1', 'ready', 'building')),
+]
+
+
+@pytest.mark.parametrize('kwargs,needs_bug,argv,expected', STATUS_VERBS)
+def test_every_status_verb_writes_the_grains_row(kwargs, needs_bug, argv,
+                                                 expected):
+    with tree(**kwargs) as root:
+        if needs_bug:
+            bug(root, 'open')
+        code, out = run_cli(root, *argv)
+        assert code == 0, out
+        row = only_row(root)
+    assert (row['kind'], row['grain'], row['from'], row['to']) == (
+        'status',) + expected
+
+
+def test_the_row_lands_in_the_grains_OWN_milestone_directory():
+    """A story two milestones deep in the tree stamps ITS milestone, not the
+    first one the walker finds."""
+    with tree() as root:
+        other = root / 'pm/roadmap/0.2-next'
+        write(other / 'milestone.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
+        assert run_cli(root, 'story', 'building', STORY)[0] == 0
+        assert len(ledger_rows(root)) == 1
+        assert not (other / ledger.LEDGER_FILE_NAME).exists()
+
+
+# `feature done` is its own route with its own early exits, so the no-op rule
+# (D2's cost note, carried by D8) is proven on it as well as on the generic one.
+@pytest.mark.parametrize('kwargs,argv,expected', [
+    (dict(story_statuses=('building',)), ('story', 'building', STORY),
+     ('building', 'building')),
+    (dict(feature_status='done'), ('feature', 'done', '0.1/alpha'),
+     ('done', 'done')),
+])
+def test_a_no_op_flip_still_appends_a_from_equals_to_row(kwargs, argv,
+                                                         expected):
+    with tree(**kwargs) as root:
+        code, out = run_cli(root, *argv)
+        assert code == 0, out
+        assert '(no-op)' in out
+        row = only_row(root)
+    assert (row['from'], row['to']) == expected
+
+
+# --- a feature close touches one grain, so it writes one row ------------------
+
+def test_a_feature_close_writes_the_feature_row_and_no_story_row():
+    """Three grains in the tree, one closed, exactly one row. The `--cascade`
+    that used to add a story row per `reviewing` story is gone — the story
+    belt closes stories by name — so a story row here would be a write the
+    caller never asked for."""
+    with tree(feature_status='reviewing',
+              story_statuses=('reviewing', 'reviewing', 'ready')) as root:
+        code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
+        assert code == 0, out
+        rows = ledger_rows(root)
+    assert [(r['grain'], r['from'], r['to']) for r in rows] == [
+        ('0.1/alpha', 'reviewing', 'done')]
+
+
+# --- a refused flip appends nothing -------------------------------------------
+# The row records a write that LANDED. No write, no row — ever.
+
+def test_a_refused_flip_appends_nothing():
+    """Every refusal shape this verb has, against ONE tree: a review record
+    naming no file, a status outside the vocabulary, and an id that resolves to
+    nothing on each of the four grain kinds."""
+    with tree(feature_status='reviewing', with_record=False) as root:
+        refusals = (
+            (1, ('feature', 'done', '0.1/alpha',
+                 '--review-record', 'docs/reviews/nope.md')),
+            (2, ('story', 'wombat', STORY)),
+            (2, ('story', 'building', '0.1/alpha/ghost')),
+            (2, ('feature', 'done', '0.1/ghost')),
+            (2, ('milestone', 'done', '9.9')),
+            (2, ('bug', 'fixed', '0.1/bugs/ghost')),
+        )
+        for expected, argv in refusals:
+            code, out = run_cli(root, *argv)
+            assert code == expected, (argv, out)
+            assert ledger_lines(root) == [], f'a refusal wrote a row: {argv}'
+
+
+def test_a_frontmatter_write_that_FAILS_writes_no_row():
+    """The one ordering that matters: the row is written after the write
+    succeeded. Damaged frontmatter is where `set_field` returns False — the
+    file is untouched, so the ledger must be too."""
+    with tree() as root:
+        damage(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
+               'no-closing-fence')
+        code, out = run_cli(root, 'story', 'building', STORY)
+        assert code == 2, out
+        assert ledger_lines(root) == []
+
+
+def test_a_ledger_that_cannot_be_written_never_fails_the_verb_that_wrote():
+    """FAIL OPEN, and it is the whole reason the row is a side effect.
+
+    These verbs run under the installed hooks, inside a commit — and a hook
+    that blocks a commit because telemetry could not be written is the
+    expensive defect, far more expensive than a missing row. The flip LANDED,
+    so the verb reports it and exits 0. Loudly, though: the warning names the
+    file on stderr, because a ledger that quietly stopped being written is the
+    one failure nothing downstream would ever notice.
+
+    Nothing covered this before the cut — the loud half (`pm ledger record`
+    exiting 2) was proven and this half was not.
+    """
+    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits
+        pytest.skip('running as root: a read-only file is still writable')
+    story = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
+    with tree(story_statuses=('ready',)) as root:
+        path = root / 'pm/roadmap/0.1-demo' / ledger.LEDGER_FILE_NAME
+        path.write_text('', encoding='utf-8')
+        path.chmod(0o444)
+        try:
+            code, out = run_cli(root, 'story', 'building', STORY)
+        finally:
+            path.chmod(0o644)
+        assert code == 0, out
+        assert '[pm] story 0.1/alpha/s0: ready -> building' in out
+        assert 'could not be appended to' in out
+        assert 'status: building' in (root / story).read_text(encoding='utf-8')
+
+
+# --- `pm decide` --------------------------------------------------------------
+
+def test_a_milestone_decision_row():
+    with tree() as root:
+        code, out = run_cli(root, 'decide', '0.1', 'The ledger is one file')
+        assert code == 0, out
+        lines = ledger_lines(root)
+        assert len(lines) == 1, lines
+        row = json.loads(lines[0])
+    assert list(row) == ['ts', 'kind', 'grain', 'entry', 'title']
+    assert (row['kind'], row['grain'], row['entry'], row['title']) == (
+        'decision', '0.1', 'D1', 'The ledger is one file')
+
+
+def test_a_feature_decision_lands_in_the_MILESTONE_ledger():
+    """`decisions.md` is per-grain; the ledger is per-milestone (D6). A second
+    ledger beside the feature would split one milestone's rows across files no
+    report ever joins."""
+    with tree() as root:
+        assert run_cli(root, 'decide', '0.1/alpha', 'Ship it')[0] == 0
+        fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
+        assert (fdir / 'decisions.md').is_file()
+        assert not (fdir / ledger.LEDGER_FILE_NAME).exists()
+        row = only_row(root)
+    assert (row['grain'], row['entry']) == ('0.1/alpha', 'D1')
+
+
+def test_the_ordinal_on_the_row_is_the_one_written_into_the_log():
+    """The row and `decisions.md` must name the same entry, permanently: a
+    mismatch makes the machine file and the prose file disagree about which
+    decision is which, and neither can be repaired from the other."""
+    with tree() as root:
+        assert run_cli(root, 'decide', '0.1', 'First')[0] == 0
+        assert run_cli(root, 'decide', '0.1', 'Second')[0] == 0
+        rows = ledger_rows(root)
+        log = (root / 'pm/roadmap/0.1-demo/decisions.md').read_text()
+    assert [(r['entry'], r['title']) for r in rows] == [
+        ('D1', 'First'), ('D2', 'Second')]
+    assert '## D2 — ' in log
+
+
+def test_a_refused_decide_appends_nothing():
+    with tree() as root:
+        # A story has no decision log; a heading a shell cut in half is
+        # refused whole; a decide with no title is a usage error. None is a row.
+        assert run_cli(root, 'decide', '0.1/alpha/s0', 'x')[0] == 1
+        assert run_cli(root, 'decide', '0.1', 'first half;')[0] == 1
+        assert run_cli(root, 'decide', '0.1')[0] == 2
+        assert ledger_lines(root) == []
+
+
+@pytest.mark.parametrize('title', [
+    'the "ledger" — a\\b, not c',
+    # U+2028/U+2029 are line terminators to `str.splitlines()` and to a
+    # browser's JSON reader, and `ensure_ascii=False` writes them raw — a row
+    # carrying one would read back as TWO rows, the second invalid JSON, in a
+    # file that is committed and never rewritten. `decide` refuses \n and \r;
+    # nothing refuses these, so the serialiser escapes them.
+    'a\u2028b\u2029c',
+])
+def test_a_hostile_decision_title_stays_ONE_row_and_round_trips(title):
+    with tree() as root:
+        assert run_cli(root, 'decide', '0.1', title)[0] == 0
+        raw = (root / 'pm/roadmap/0.1-demo'
+               / ledger.LEDGER_FILE_NAME).read_text(encoding='utf-8')
+    assert len(raw.splitlines()) == 1, raw
+    assert json.loads(raw)['title'] == title
+    # ensure_ascii=False: prose in the durable log is written as itself.
+    assert '\\u2014' not in raw
+
+
+# --- not a grain document -----------------------------------------------------
+
+def test_validate_and_the_gate_and_status_are_unchanged_by_the_ledger():
+    """`ledger.jsonl` is not `.md` and carries no frontmatter. Every reader
+    that walks the tree must be byte-identical with it and without it — a
+    consumer whose `check pm` reddens the day a row is first written would
+    have no way to tell that from real drift."""
+    with tree(story_statuses=('building',), feature_status='building',
+              milestone_status='building') as root:
+        before = (run_cli(root, 'validate'), run_gate(root),
+                  run_cli(root, 'status'))
+        assert run_cli(root, 'story', 'building', STORY)[0] == 0
+        assert (root / 'pm/roadmap/0.1-demo'
+                / ledger.LEDGER_FILE_NAME).is_file()
+        after = (run_cli(root, 'validate'), run_gate(root),
+                 run_cli(root, 'status'))
+    assert before[0] == after[0], 'pm validate saw the ledger'
+    assert before[1] == after[1], 'check pm saw the ledger'
+    assert before[2] == after[2], 'pm status saw the ledger'
+    assert after[0][0] == 0
+    assert after[1][0] == 0
+    assert ledger.LEDGER_FILE_NAME not in after[2][1]
+
+
+# --- the merge=union attribute ------------------------------------------------
+
+def test_pm_init_writes_the_merge_union_line_for_the_configured_roadmap_dir():
+    """The one file two milestone branches can both append to, and the only
+    way that is a merge rather than a conflict. `[pm] roadmap_dir` is config,
+    so the attribute cannot be a literal that is right only for the stock path
+    — and the project's own attributes are preserved beside it."""
+    with tree() as root:
+        write_config(root, '[pm]\nroadmap_dir = "planning/ms"\n')
+        (root / '.gitattributes').write_text('*.png binary\n', encoding='utf-8')
+        code, out = run_cli(root, 'init')
+        assert code == 0, out
+        body = (root / '.gitattributes').read_text(encoding='utf-8')
+    assert body.startswith('*.png binary\n'), "the project's own attributes were lost"
+    assert f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union' in body
+
+
+def test_a_second_init_does_not_duplicate_the_line():
+    with tree() as root:
+        assert run_cli(root, 'init')[0] == 0
+        before = (root / '.gitattributes').read_bytes()
+        code, out = run_cli(root, 'init')
+        assert code == 0, out
+        assert (root / '.gitattributes').read_bytes() == before
+        assert 'already carries' in out
+        body = (root / '.gitattributes').read_text(encoding='utf-8')
+    assert body.count(skills_attribute_line()) == 1, body
+
+
+# --- the gate row -------------------------------------------------------------
+# Story 02 (the shell that calls the verb) and story 03 (the report that prints
+# it) both build against this exact key set, so the cases assert `sorted(row)`
+# rather than membership: a membership check passes on a row carrying a sixth
+# key nobody agreed to.
+
+@pytest.mark.parametrize('duration_ms,census,expected', [
+    # Everything measured.
+    (12, 228, {'ts': GATE_TS, 'kind': 'gate', 'gate': 'check',
+               'verdict': 'PASS', 'duration_ms': 12, 'census': 228}),
+    # A census nobody reported is an absent KEY. A `0` there is this package's
+    # cardinal sin with a number on it — indistinguishable afterwards from a
+    # gate that really walked nothing.
+    (12, None, {'ts': GATE_TS, 'kind': 'gate', 'gate': 'check',
+                'verdict': 'PASS', 'duration_ms': 12}),
+    # And the other half of the same rule: a measured zero is KEPT.
+    (0, 0, {'ts': GATE_TS, 'kind': 'gate', 'gate': 'check',
+            'verdict': 'PASS', 'duration_ms': 0, 'census': 0}),
+])
+def test_the_gate_row_keeps_a_measured_zero_and_omits_what_nobody_measured(
+        duration_ms, census, expected):
+    assert ledger.gate_row('check', 'PASS', duration_ms,
+                           census, ts=GATE_TS) == expected
+
+
+# --- append_row never joins a line it did not write ---------------------------
+# A ledger whose last line lost its newline — a killed writer, a hand edit, a
+# `merge=union` that landed a fragment — is the one shape where "open('a') and
+# write one line" produces `{…}{…}` on ONE line: two rows nobody can read, one
+# of them invalid, and `read_rows` reports a parse defect on a line nobody
+# wrote. The well-formed and empty cases are the negative control: a repair
+# that always fired would put a blank line in front of every row.
+
+TORN = ledger.dumps(ledger.status_row('0.1/a/s0', 'ready', 'building',
+                                      ts=GATE_TS))
+
+
+@pytest.mark.parametrize('existing,expected_kinds', [
+    (TORN, ['status', 'gate']),
+    (TORN + '\n', ['status', 'gate']),
+    ('', ['gate']),
+])
+def test_append_row_closes_a_torn_line_and_adds_exactly_one_of_its_own(
+        tmp_path, existing, expected_kinds):
+    path = ledger.ledger_path(tmp_path)
+    if existing:
+        path.write_text(existing, encoding='utf-8')
+    ledger.append_row(tmp_path, ledger.gate_row('check', 'PASS', 12, 228,
+                                                ts=GATE_TS))
+    raw = path.read_text(encoding='utf-8')
+    assert len(raw.splitlines()) == len(expected_kinds), raw
+    assert raw.startswith(existing.rstrip('\n')), raw
+    assert [r.data['kind'] for r in ledger.read_rows(path)] == expected_kinds
+
+
+def test_a_row_of_an_unknown_future_kind_survives_byte_identical(tmp_path):
+    """Forward compatibility, which is the property `merge=union` is worth
+    having: old consumers read new files. A row this version cannot parse —
+    another branch's, a later kind — is not read, not rewritten, not reordered,
+    and does not stop the reader."""
+    foreign = '{"ts":"2030-01-01T00:00:00Z","kind":"wombat","x":[1,2]}\n'
+    path = ledger.ledger_path(tmp_path)
+    path.write_text(foreign, encoding='utf-8')
+    ledger.append_row(tmp_path, ledger.gate_row('check', 'PASS', 12, None,
+                                                ts=GATE_TS))
+    assert path.read_bytes()[:len(foreign)] == foreign.encode('utf-8')
+    assert [r.data['kind'] for r in ledger.read_rows(path)] == ['wombat', 'gate']

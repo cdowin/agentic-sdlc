@@ -1,54 +1,10 @@
-"""init.py — `agentic-sdlc init`: a blank Godot 4 project, wired in one command.
+"""`agentic-sdlc init`: a repo wired for this toolkit, in one command.
 
-Every piece this writes already existed as a verb. What did not exist was the
-ORDER, and the two files nobody wrote: `devkit.toml` and the project's own
-`Makefile`. Both consumers hand-rolled those two and then re-derived the order
-by trial — the same fork this package already stopped them making, one layer up
-from the files it stopped them forking.
-
-So this composes, and re-implements nothing:
-
-    devkit.toml       a template carrying every [section] the gates read,
-                      every one commented out at its stock default
-    pm init           the PM tree + the execution rule + the operations skill
-    Makefile          two lines: the pin, and the include
-    install-runners   Makefile.devkit + the shell library + the runners
-    install-hooks     the guard corpus, then `bash tools/setup-hooks.sh` —
-                      installing a hook is not ARMING it, and an unarmed hook
-                      is a guard that is not there
-    install-agents    the review/build contract + the base roster
-    install-ci        the four workflows
-    .gitignore        the four directories the runners write into
-    CLAUDE.md         a skeleton naming the standard targets and the installed
-                      rules, for the first agent to open the repo
-
-TWO OWNERSHIPS, AND `--force` RESPECTS THE SPLIT. The installed files are
-DEVKIT-owned: they are overwritten on `--force`, and the way to change one is
-to change it here and re-install. `devkit.toml`, `Makefile`, `CLAUDE.md` and
-the PM tree are PROJECT-owned from the first write: `--force` does not touch
-them, ever. A template that overwrote a project's own config on a pin bump
-would be this package reaching past the line it draws everywhere else.
-
-That is also why a differing project-owned file is REPORTED rather than
-refused: divergence is what those files are FOR. A differing devkit-owned file
-is the install verb's own refusal, unchanged — named, with `--force` as the
-remedy.
-
-INIT IS A COMPOSITION, SO ITS ATOMICITY IS PER-VERB. Each verb it calls decides
-its whole plan before writing a byte and either lands or refuses whole; init
-runs them in order and reports each. It does NOT stop at the first refusal,
-because a collision under `install-runners` says nothing about whether the
-agents are installed — one run naming every refusal beats four re-runs that
-each find the next one. The summary says which verbs refused and that `--force`
-is the answer, and the exit code is 1 if any did.
-
-TWO REFUSALS, BOTH DECIDED BEFORE THE FIRST BYTE. No `project.godot` at the
-repo root: this writes a Godot project's scaffolding, and a directory that is
-not one would get a Makefile whose every runner target has nothing to run. Not
-a git repo: five of the gates resolve their scope through `git ls-files` (a
-0-file census reddens each), and `setup-hooks.sh` has no git to point at the
-hooks — so an init there would report success over a tree where nothing it
-installed works.
+Composes the install verbs in order plus the seeds nobody else writes (devkit.toml,
+Makefile, CLAUDE.md, .gitignore). Installed files are devkit-owned and `--force`
+overwrites them; the seeds and the PM tree are project-owned from the first write and
+`--force` never touches them. Each verb lands or refuses whole; init runs every one
+and reports each refusal rather than stopping at the first.
 """
 from __future__ import annotations
 
@@ -61,57 +17,49 @@ from agentic_sdlc.core import apply
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import install
 
-# The one substitution any seed carries: the tag the project pins. Spelled the
-# same way `pm install-skills` spells its own, because it is the same fact.
 VERSION_PLACEHOLDER = '{version}'
 
-# (installable, destination) — the PROJECT-owned seeds, written once and never
-# forced. Named individually because the ORDER they land in is interleaved with
-# the install verbs, and collected in SEEDS so the file set stays ASKABLE.
+# (installable, destination): the project-owned seeds, written once and never forced.
 SEED_CONFIG = ('project-devkit.toml', 'devkit.toml')
 SEED_MAKEFILE = ('project-Makefile', 'Makefile')
 SEED_CLAUDE = ('project-CLAUDE.md', 'CLAUDE.md')
 SEEDS = (SEED_CONFIG, SEED_MAKEFILE, SEED_CLAUDE)
 
-# What a Godot project is, and what a repo is. Both are refusals, not warnings.
-PROJECT_FILE = 'project.godot'
 GIT_DIR = '.git'
 
 GITIGNORE = '.gitignore'
 GITIGNORE_HEADER = '# agentic-sdlc run artifacts (agentic-sdlc init)'
-# The four directories the installed runners write into, each named here as the
-# runner's own default. A test pins every one of these against the `GDK_*`
-# default in the runner that owns it, so the two cannot drift in silence — a
-# shell default is not readable from Python, but it is greppable from a test.
+# Every run artifact this package writes; a test pins each to the constant that owns it,
+# because an unignored artifact falsifies `tree-clean`.
 IGNORED = (
-    '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_runners.sh)
-    '.headless-userdata/',  # GDK_SANDBOX_DIRNAME      (gdk_runners.sh)
-    '.scenario-reports/',   # GDK_SCENARIO_REPORT_DIR  (scenario.sh)
-    '.capture-reports/',    # GDK_CAPTURE_REPORT_DIR   (capture.sh)
+    '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_gate.sh)
+    '.agent-scope',         # SCOPE_MARKER             (agent-worktree.sh)
+    '.claude/worktrees/',   # WORKTREE_PARENT          (agent-worktree.sh)
 )
 
 SETUP_HOOKS = 'tools/setup-hooks.sh'
 
-# The delegated install verbs, in the order a fresh project needs them. Named
-# rather than derived from `install.PLANS`: the ORDER is init's contribution,
-# and a dict's insertion order is not a contract.
-VERBS = ('install-runners', 'install-hooks', 'install-agents', 'install-ci')
+# The order is init's contribution; a dict's insertion order is not a contract.
+VERBS = ('install-gates', 'install-hooks', 'install-agents', 'install-sdlc',
+         'install-ci')
 
 USAGE = """usage: agentic-sdlc init [--force] [--diff]
 
-Stand a blank Godot 4 project up on this toolkit. Writes, in order:
+Stand a repo up on this toolkit. Writes, in order:
 
   devkit.toml        every [section] the gates read, commented at its default
   pm/roadmap/        the PM tree, plus the execution rule and the operations
                      skill (`pm init`)
   Makefile           two lines — the DEVKIT_VERSION pin, and the include
-  Makefile.devkit    the standard target set, plus tools/dev/gdk_runners.sh
-  + tools/dev/       and the runners that source it   (`install-runners`)
+  Makefile.devkit    the standard target set, plus the gate library it
+  + tools/dev/       sources                          (`install-gates`)
   tools/hooks/       the guard corpus, then `bash tools/setup-hooks.sh` to arm
                      it                               (`install-hooks`)
   .claude/agents/    the review/build contract + the base roster
                                                       (`install-agents`)
-  .github/workflows/ verify, uid-guard, semver-gate, auto-tag  (`install-ci`)
+  docs/              the SDLC protocol, rendered from your step lists
+                                                      (`install-sdlc`)
+  .github/workflows/ verify, semver-gate, auto-tag      (`install-ci`)
   .gitignore         the run-artifact directories, appended if absent
   CLAUDE.md          a skeleton naming the standard targets + installed rules
 
@@ -121,12 +69,11 @@ Run it again any time: it fills what is missing and reports the rest.
         Makefile, CLAUDE.md and the PM tree are the project's from the first
         write, and --force does not touch them.
 
-Refuses, before writing anything: a root with no project.godot (not a Godot
-project), and a root that is not a git repository."""
+Refuses, before writing anything: a root that is not a git repository."""
 
 
 def seed_body(name: str) -> str:
-    """One seed's text, with the pin substituted. The only template in here."""
+    """One seed's text, with the pin substituted."""
     return install.body_of(name).replace(VERSION_PLACEHOLDER, f'v{__version__}')
 
 
@@ -136,12 +83,6 @@ def _say(message: str) -> None:
 
 def _preflight(root: Path) -> str:
     """'' when this root can be initialized, else why it cannot."""
-    if not (root / PROJECT_FILE).is_file():
-        return (f'{root}/{PROJECT_FILE} does not exist — this writes a Godot '
-                f'project\'s scaffolding (runners that boot the engine, gates '
-                f'that read .tscn/.tres), and a directory that is not one gets '
-                f'a Makefile with nothing behind it. Create the project in '
-                f'Godot first, then re-run here.')
     if not (root / GIT_DIR).exists():
         return (f'{root} is not a git repository — every gate resolves its '
                 f'scope through `git ls-files` (a 0-file census reddens each '
@@ -151,13 +92,7 @@ def _preflight(root: Path) -> str:
 
 
 def _write_seed(root: Path, name: str, rel: str) -> int:
-    """Write one project-owned seed, or say why it was left alone.
-
-    A seed that exists and DIFFERS is not a collision: the project owns it and
-    divergence is the point. It is reported, and `--diff` is what shows the
-    drift. The only failure here is a destination that cannot be written at
-    all, which is a defect naming the path.
-    """
+    """Write one project-owned seed; a differing seed is reported, not a collision."""
     target = root / rel
     body = seed_body(name)
     defect = install.destination_defect(target)
@@ -200,14 +135,7 @@ def _gitignore_missing(root: Path) -> list[str]:
 
 
 def _write_gitignore(root: Path) -> int:
-    """APPEND the missing run-artifact entries. Never rewrites, never removes.
-
-    The one merge in this package, and it is a merge because both alternatives
-    are worse: a `.gitignore` is a file every project already has opinions in,
-    so refusing on a collision would refuse on every repo that has one, and
-    overwriting would delete those opinions. Appending what is missing is the
-    only act that is both idempotent and non-destructive.
-    """
+    """Append the missing entries: the one merge here, because every project has opinions in this file."""
     missing = _gitignore_missing(root)
     if not missing:
         _say(f'{GITIGNORE} already ignores the run artifacts')
@@ -241,14 +169,7 @@ def _write_gitignore(root: Path) -> int:
 
 
 def _arm_hooks(root: Path) -> int:
-    """Run the installed `setup-hooks.sh`. Installing a hook is not arming it.
-
-    `core.hooksPath` silently skips a non-executable hook, and this package
-    makes no mode changes — the script that does both is the one the install
-    just wrote, so init RUNS it rather than printing a paragraph asking the
-    operator to. A failure is reported and does not stop the rest: the files
-    are on disk either way, and the remedy is one named command.
-    """
+    """Run the installed `setup-hooks.sh`; installing a hook is not arming it."""
     script = root / SETUP_HOOKS
     if not script.is_file():
         _say(f'{SETUP_HOOKS} is not present — the hooks were NOT armed')
@@ -268,14 +189,9 @@ def _arm_hooks(root: Path) -> int:
 
 
 def _stand_up_pm_tree(cfg) -> int:
-    """`pm init`, minus the four next-steps it prints for a bare repo.
-
-    Two of those four are already done here — the `pm-scan` target ships in
-    Makefile.devkit, and devkit.toml is written above with its `[pm]` block —
-    so printing them would send an operator to wire what init just wired. The
-    tree and the guidance install are the same two functions `pm init` calls.
-    """
+    """`pm init` minus its next-steps; a pre-existing devkit.toml gets the flow appended."""
     from agentic_sdlc.repo.pm import skills
+    _say(skills.install_flow(cfg))
     for made in skills.stand_up_tree(cfg):
         _say(f'created {made}')
     return skills.cmd_install_skills(cfg, [])
@@ -287,12 +203,7 @@ def _pm_config():
 
 
 def _diff(root: Path) -> int:
-    """What a run WOULD change, per file, writing nothing.
-
-    Same order as a real run, so the two reports read as one thing. The seeds
-    go through the SAME diff printer the install verbs use — a second unified
-    diff would be a second answer to one question.
-    """
+    """What a run would change, per file, in run order, writing nothing."""
     from agentic_sdlc.repo.pm import skills
     install.print_diff(SEED_CONFIG[1], root / SEED_CONFIG[1],
                        seed_body(SEED_CONFIG[0]))
@@ -333,8 +244,6 @@ def main(argv: list[str]) -> int:
         print('agentic-sdlc init: nothing was written.', file=sys.stderr)
         return 2
 
-    # --diff reads and prints. Never combined with a write, so it is answered
-    # before the first plan is decided — the same shape the install verbs use.
     if diff:
         return _diff(root)
 
@@ -368,8 +277,11 @@ def main(argv: list[str]) -> int:
         return worst
     _say(f'agentic-sdlc v{__version__} — this project is wired. Next:')
     print()
-    print('  1. `make doctor` — the toolchain census; it names a fix for '
-          'anything missing.')
+    print('  1. `git add -A` — FIRST. Every gate here reads `git ls-files`, '
+          'so until')
+    print('     these files are tracked they are invisible to the tools that '
+          'just wrote')
+    print('     them, and `check shell` correctly reports it scanned nothing.')
     print('  2. `make help` — the standard target set, plus any of your own.')
     print('  3. Edit CLAUDE.md and devkit.toml. They are yours now: the '
           'skeleton says where')
@@ -378,12 +290,20 @@ def main(argv: list[str]) -> int:
     print('  4. Every file under .claude/agents/ and tools/ opens with a '
           'project-config')
     print('     section carrying stock values — edit them to your spellings.')
-    print('  5. .github/workflows/: uid-guard.yml names its branches '
-          'literally (an `on:`')
-    print('     filter takes no variable), and auto-tag.yml dispatches '
-          'RELEASE_WORKFLOW —')
-    print('     leave that alone if you have no release pipeline; the step is '
-          'a no-op then.')
-    print('  6. `agentic-sdlc pm new milestone 0.1 "First Milestone"`, then '
-          '`make pm-scan`.')
+    print('  5. .github/workflows/: semver-gate.yml and auto-tag.yml name '
+          'their branches')
+    print('     literally (an `on:` filter takes no variable) and read your '
+          'version through')
+    print('     VERSION_FILE/VERSION_PATTERN at the head of each file. '
+          'auto-tag.yml dispatches')
+    print('     RELEASE_WORKFLOW — leave that alone if you have no release '
+          'pipeline; the')
+    print('     step is a no-op then.')
+    print('  6. Your language kit installs Makefile.tiers, which is where '
+          '`make precommit`')
+    print('     and `make milestone` get their tiers. Without one they are '
+          '`check` alone,')
+    print('     and they say so.')
+    print('  7. `agentic-sdlc pm new milestone 0.1 "First Milestone"`, then '
+          '`agentic-sdlc check pm`.')
     return 0

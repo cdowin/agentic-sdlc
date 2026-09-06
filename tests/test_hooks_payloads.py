@@ -16,25 +16,12 @@ paths, but the space spelling was consumed as an argument-taking flag without
 setting the pathspec verdict, and the `=` spelling fell into the generic
 `--*=*` skip: both false-BLOCKED, the one false-positive class the hook's own
 header promises must not exist.
-
-cc-godot-sandbox.sh — the flag roster missed `-e` (short `--editor`), every
-positional project boot (`godot main.tscn`, `godot .`, bare `godot` — all real
-boots against the real user://), and a ` --help` substring anywhere in the
-segment waved a genuine boot through. `${CMD%%<<*}` also truncated at `<<<`,
-so a herestring hid any boot typed after it.
-
-cc-godot-sandbox.sh, second round (v0.18.1, found by a consumer): the segment
-split ran `tr` over the whole line, INSIDE quotes as well, so a quoted `godot`
-that happened to follow `;`, `(` or `)` became the next segment's command word
-— `echo "foo; godot --headless"` and a commit message naming the guard were
-both false-BLOCKED.
 """
 from __future__ import annotations
 
 import json
 import os
 import shutil
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +30,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import FLOW_TOML  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -51,7 +39,6 @@ from agentic_sdlc.repo import install  # noqa: E402
 pytestmark = pytest.mark.skipif(shutil.which('bash') is None,
                                 reason='needs bash')
 
-SANDBOX = 'tools/hooks/cc-godot-sandbox.sh'
 PATHSPEC = 'tools/hooks/cc-commit-pathspec.sh'
 
 
@@ -75,14 +62,6 @@ def hooks_repo(tmp_path_factory) -> Path:
     return root
 
 
-def fire_file(hook: Path, command: str) -> int:
-    event = json.dumps({'tool_name': 'Bash',
-                        'tool_input': {'command': command},
-                        'cwd': str(hook.parent)})
-    return subprocess.run(['bash', str(hook)], input=event,
-                          text=True, capture_output=True).returncode
-
-
 def fire(root: Path, hook: str, command: str) -> int:
     event = json.dumps({'tool_name': 'Bash',
                         'tool_input': {'command': command},
@@ -92,252 +71,49 @@ def fire(root: Path, hook: str, command: str) -> int:
 
 
 # --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
-@pytest.mark.parametrize('command', [
+ALLOWED = (
     # pre-fix: all four false-BLOCKED (exit 2)
     'git commit --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=list.txt -m "msg"',
     'git commit -m "fix: x" --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=- -m "msg"',
-])
-def test_pathspec_from_file_names_paths_and_is_allowed(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+    # the exemptions that predate the fix
     'git commit -m "fix: x" -- a.py',      # explicit `--` pathspec
     'git commit -m "fix: x" a.py',         # bare path argument
     'git commit --amend',                  # exempt: another rule's territory
     'git commit --dry-run',                # exempt: writes nothing
     'git status',                          # not a commit at all
-])
-def test_pathspec_existing_exemptions_survive_the_fix(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+)
+BLOCKED = (
     'git commit -m "fix: x"',
     'git commit -am "sweep"',
     'git commit --all -m "sweep"',
-])
-def test_pathspec_a_pathless_commit_still_blocks(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 2
+)
 
 
-# --- cc-godot-sandbox: allowed matrix -----------------------------------------
-@pytest.mark.parametrize('command', [
-    'godot --version',                     # boots nothing, prints, exits
-    'godot --help',
-    'godot -h',
-    'command -v godot',                    # resolves the binary, runs nothing
-    'make unit SYS=combat',                # the wrapper path — never godot
-    'make smoke',                          # in command position for the hook
-    'echo godot is not booting here',      # godot as data, not command word
-    # heredoc body is data: writing a doc that QUOTES a boot is not a boot
-    "cat > notes.md <<'EOF'\ngodot --headless --path .\nEOF",
-    'grep -c godot <<<"$notes"',           # herestring alone: no boot follows
-    'agentic-sdlc check all',              # this toolkit's own CLI — never a boot
-    '$GODOT --version',                    # variable resolved, still query-only
-    # A word inside QUOTES is data, never a command word. The naive `tr` split
-    # cut inside quoted text, so a quoted `godot` that happened to follow an
-    # operator character became the next segment's command word.
-    # pre-fix: BLOCKED — the `;` inside the quoted string split the line
-    'echo "foo; godot --headless"',
-    # pre-fix: BLOCKED — `(` and `)` inside the commit message split the line
-    'git commit -m "hooks: block (godot --headless) in command position"',
-    # allowed pre-fix only by luck (the `:` after `)` became the command word);
-    # pinned because it is the spelling the consumer reported
-    'git commit -m "tools(dev): godot --headless is wrapper-only"',
-])
-def test_sandbox_allows_queries_wrappers_and_data(hooks_repo, command):
-    assert fire(hooks_repo, SANDBOX, command) == 0
-
-
-# --- cc-godot-sandbox: blocked matrix -----------------------------------------
-@pytest.mark.parametrize('command', [
-    'godot --headless --path .',           # the original roster, kept
-    'godot --editor',
-    '/Applications/Godot.app/Contents/MacOS/Godot --editor',
-    'godot -e',                            # pre-fix: allowed (short --editor)
-    'godot main.tscn',                     # pre-fix: allowed (bare scene boot)
-    'godot scenes/world/hub.tscn',         # pre-fix: allowed
-    'godot .',                             # pre-fix: allowed (bare path boot)
-    'godot /path/to/project',              # pre-fix: allowed
-    'godot',                               # pre-fix: allowed (project manager)
-    'timeout 60 godot -e',                 # pre-fix: allowed (via wrapper)
-    'cd proj && godot',                    # pre-fix: allowed
-    # pre-fix: ${CMD%%<<*} truncated at the herestring and hid the boot
-    'grep godot <<<"$x"; godot --headless --path .',
-    # pre-fix: a " --help" substring anywhere waved a real boot through
-    'godot --headless --script tool.gd -- --help',
-    # pre-fix: a godot-NAMED variable in command position was allowed — the
-    # `$` failed the command-word match (the arbitrary-name case stays the
-    # hook's declared accepted gap)
-    'GODOT=/Apps/Godot; $GODOT --headless',
-    '"$GODOT" --headless --path .',
-    '"${GODOT}" -e',
-    '$GODOT --headless --path .',          # pre-fix: fast path missed ALL-CAPS
-    # An unbalanced quote is unparseable, and unparseable input stays STRICT:
-    # the quote-aware split refuses, the naive fallback still sees the boot.
-    'echo "foo; godot --headless',
-])
-def test_sandbox_blocks_every_raw_boot_shape(hooks_repo, command):
-    assert fire(hooks_repo, SANDBOX, command) == 2
-
-
-def test_a_line_past_the_split_bound_still_blocks_a_boot(hooks_repo):
-    """The quote-aware walk is bounded (SPLIT_MAX_CHARS) because a 36KB line
-    carrying 4,000 operators took 12s in it — a hook that stalls the session is
-    its own kind of broken. The bound's escape hatch must be the STRICT split,
-    never 'allow': over the bound the guard is exactly what it was before the
-    quoting fix."""
-    over = 'echo "pad ' + 'x' * 9000 + '" ; godot --headless'
-    assert len(over) > 8192
-    assert fire(hooks_repo, SANDBOX, over) == 2
-
-
-def test_sandbox_self_test_replays_its_own_corpus(hooks_repo):
-    """The corpus shipped IN the hook is the one consumers wire into their
-    gate. If it can go stale silently, it is decoration — so the devkit's own
-    suite runs it, and a wrong verdict is proven to FAIL loudly rather than
-    being swallowed by the hook's fail-open ERR trap."""
-    hook = hooks_repo / SANDBOX
-    ok = subprocess.run(['bash', str(hook), '--self-test'],
-                        text=True, capture_output=True)
-    assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert 'SELF-TEST OK' in ok.stdout
-
-    broken = hooks_repo.parent / 'broken-sandbox.sh'
-    broken.write_text(hook.read_text().replace(
-        "\t'make parse'\n", "\t'make parse ; godot --headless'\n"))
-    bad = subprocess.run(['bash', str(broken), '--self-test'],
-                         text=True, capture_output=True)
-    assert bad.returncode != 0
-    assert 'FALSE POSITIVE' in bad.stderr
-
-
-# --- cc-godot-sandbox: the OPTIONAL sourced-boot-function guard ---------------
-# SANDBOX_FUNCTION ships EMPTY (the installable is consumer-agnostic); a
-# consumer whose sandbox library boots the engine from a shell function names it
-# in the project-config header. Empty must be inert, and armed must guard by
-# COMMAND POSITION — the same rule the engine guard follows.
-FUNCTION_NAME = 'proj_rebuild_import_cache'
-
-
-@pytest.fixture(scope='module')
-def armed_sandbox(hooks_repo) -> Path:
-    armed = hooks_repo.parent / 'armed-sandbox.sh'
-    armed.write_text((hooks_repo / SANDBOX).read_text()
-                     .replace("SANDBOX_FUNCTION=''",
-                              f"SANDBOX_FUNCTION='{FUNCTION_NAME}'", 1)
-                     .replace("SANDBOX_FUNCTION_TARGET=''",
-                              "SANDBOX_FUNCTION_TARGET='make import-cache'", 1))
-    return armed
-
-
-@pytest.mark.parametrize('command', [
-    FUNCTION_NAME,                                  # typed after sourcing
-    f'source ./sandbox-lib.sh && {FUNCTION_NAME}',  # sourced, then typed
-    f'timeout 60 {FUNCTION_NAME}',                  # behind a wrapper word
-])
-def test_sandbox_blocks_the_named_boot_function(armed_sandbox, command):
-    assert fire_file(armed_sandbox, command) == 2
-
-
-@pytest.mark.parametrize('command', [
-    f'grep -rn {FUNCTION_NAME} docs/',              # an argument, not a command
-    f'echo "run it: ({FUNCTION_NAME}) by hand"',    # quoted: data
-])
-def test_the_named_boot_function_is_data_unless_it_is_the_command_word(
-        armed_sandbox, command):
-    assert fire_file(armed_sandbox, command) == 0
-
-
-@pytest.mark.parametrize('command', [
-    FUNCTION_NAME,
-    f'source ./sandbox-lib.sh && {FUNCTION_NAME}',
-])
-def test_an_unset_sandbox_function_guards_nothing_and_still_fast_paths(
-        hooks_repo, command):
-    """Stock value = no such guard. The failure this pins is the OTHER
-    direction: `*"$SANDBOX_FUNCTION"*` with an empty value matches every
-    command on earth, which would retire the fast path for every consumer that
-    left the stock value alone."""
-    assert fire(hooks_repo, SANDBOX, command) == 0
-
-
-def test_the_armed_corpus_grows_by_exactly_the_function_cases(armed_sandbox,
-                                                              hooks_repo):
-    def counts(hook: Path) -> str:
-        run = subprocess.run(['bash', str(hook), '--self-test'],
-                             text=True, capture_output=True)
-        assert run.returncode == 0, run.stdout + run.stderr
-        return run.stdout.split('—')[1].strip()
-
-    assert counts(hooks_repo / SANDBOX) == '13 block / 16 allow case(s)'
-    assert counts(armed_sandbox) == '15 block / 18 allow case(s)'
-
-
-# --- cc-godot-sandbox: the STOCK gdk_ roster, guarded with no config ----------
-# `install-runners` puts gdk_runners.sh in every consumer, so its
-# boot-in-a-function is guarded out of the box — SANDBOX_FUNCTION above stays
-# for a repo that ALSO carries a project-prefixed spelling. The pair below is
-# the whole point: the function that BOOTS is blocked, the function that makes
-# a run safe is not.
-@pytest.mark.parametrize('command', [
-    'gdk_rebuild_import_cache',                                  # typed
-    'source tools/dev/gdk_runners.sh && gdk_rebuild_import_cache',
-    'timeout 60 gdk_rebuild_import_cache',                       # behind a wrapper
-])
-def test_the_stock_roster_blocks_the_library_boot_function_unconfigured(
-        hooks_repo, command):
-    assert fire(hooks_repo, SANDBOX, command) == 2
-
-
-@pytest.mark.parametrize('command', [
-    # gdk_sandbox_home is the DOOR: it exports a sandboxed HOME and boots
-    # nothing. A guard that blocked it would be teaching people to switch the
-    # guard off, which is the one outcome this file exists to prevent.
-    'source tools/dev/gdk_runners.sh && gdk_sandbox_home',
-    'gdk_sandbox_home',
-    'make import-cache',                                # the sanctioned target
-    'grep -rn gdk_rebuild_import_cache docs/',          # an argument, not a command
-    'echo "run it: (gdk_rebuild_import_cache) by hand"',
-])
-def test_the_stock_roster_never_blocks_the_sandbox_door_or_a_mention(
-        hooks_repo, command):
-    assert fire(hooks_repo, SANDBOX, command) == 0
-
-
-def test_the_block_message_names_the_function_that_matched(hooks_repo):
-    """Two rosters feed one guard, so the message has to name the entry that
-    actually matched — a block that names the OTHER roster's function sends
-    the agent to a door that does not exist."""
-    event = json.dumps({'tool_name': 'Bash',
-                        'tool_input': {'command': 'gdk_rebuild_import_cache'},
-                        'cwd': str(hooks_repo)})
-    done = subprocess.run(['bash', str(hooks_repo / SANDBOX)], input=event,
-                          text=True, capture_output=True)
-    assert done.returncode == 2
-    assert '`gdk_rebuild_import_cache`' in done.stderr, done.stderr
-    assert 'make import-cache' in done.stderr, done.stderr
-    assert 'gdk_runners.sh' in done.stderr, done.stderr
+def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
+        hooks_repo):
+    """Twelve rows, one case, both directions: a hook that blocks everything
+    and a hook that is disarmed are equally broken, and only the pair tells
+    them apart. A row that answers wrongly names itself."""
+    wrong = ([f'BLOCKED: {c}' for c in ALLOWED
+              if fire(hooks_repo, PATHSPEC, c) != 0]
+             + [f'allowed: {c}' for c in BLOCKED
+                if fire(hooks_repo, PATHSPEC, c) != 2])
+    assert not wrong, wrong
 
 
 # =============================================================================
 # The 0.16.0 corpus: cc-stop-gate, cc-write-confine, pre-push,
-# prepare-commit-msg, agent-worktree, doctor — installed into temp repos and
-# RUN, the same way the two hooks above are proven. The git hooks and tools are
-# exercised through REAL git operations (push, commit, worktree), not by
-# feeding them synthetic argv.
+# prepare-commit-msg, agent-worktree — installed into temp repos and RUN, the
+# same way the hook above is proven. The git hooks and tools are exercised
+# through REAL git operations (push, commit, worktree), not by feeding them
+# synthetic argv.
 # =============================================================================
 
 STOP_GATE = 'tools/hooks/cc-stop-gate.sh'
 CONFINE = 'tools/hooks/cc-write-confine.sh'
 WORKTREE = 'tools/dev/agent-worktree.sh'
-DOCTOR = 'tools/dev/checks/doctor.sh'
-# One shipped git hook, by name: the doctor cases below replace it with
-# something git cannot exec.
-A_GIT_HOOK = 'pre-push'
 MARKER = '.agent-scope'
 
 # The corpus reads DEVKIT_AGENT_SCOPE; a test machine that happens to export
@@ -709,145 +485,124 @@ def test_worktree_done_keeps_an_unmerged_branch_and_deletes_a_merged_one(
     assert git(root, 'branch', '-d', 'feat/keeper').returncode == 0
 
 
-def test_worktree_new_bases_off_the_building_milestones_branch(tmp_path):
+def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML) -> None:
+    """A PM tree the worktree script can ASK about: one milestone at `status`
+    declaring `branch: feat/integration`, the flow, and the `make pm` target
+    the script's `PM_CMD` runs — routed to the CLI from source, the same
+    Makefile `ledger_repo` below plants."""
+    (root / 'devkit.toml').write_text(flow, encoding='utf-8')
+    (root / 'Makefile').write_text(
+        PM_MAKEFILE.format(src=REPO_ROOT / 'src', python=sys.executable),
+        encoding='utf-8')
+    milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
+    milestone.parent.mkdir(parents=True)
+    milestone.write_text(f'---\nid: "0.1.0"\nstatus: {status}\n'
+                         f'branch: feat/integration\n---\n', encoding='utf-8')
+
+
+def test_worktree_new_bases_off_the_in_progress_milestones_branch(tmp_path):
     """The devkit PM tree is the source for the integration branch: a
-    milestone declaring `branch:` while `building` is where agents branch
+    milestone declaring `branch:` while in progress is where agents branch
     from, not the trunk — basing off the trunk strands the agent behind every
-    commit the milestone already landed."""
+    commit the milestone already landed.
+
+    ASKED OF THE CLI BY CATEGORY, never grepped. The script used to grep
+    `status: building` out of milestone.md, so the second tree here — the
+    same milestone under a vocabulary that calls the state `doing` — is the
+    case the old script could not pass: it found no `building`, based the
+    agent off the trunk, and said nothing. `pm list --kind milestone
+    --category in_progress` answers both trees the same way.
+    """
+    for status, flow in (('building', FLOW_TOML),
+                         ('doing', FLOW_TOML.replace('"building"',
+                                                     '"doing"'))):
+        root = corpus_repo(tmp_path, name=f'repo-{status}')
+        assert git(root, 'branch', 'staging').returncode == 0
+        assert git(root, 'branch', 'feat/integration').returncode == 0
+        _pm_tree(root, status, flow)
+        done = worktree(root, 'new', 'based')
+        assert done.returncode == 0, done.stderr
+        marker = (Path(done.stdout.strip()) / MARKER).read_text(
+            encoding='utf-8')
+        assert 'base=feat/integration' in marker, (status, done.stderr)
+        assert 'could not answer' not in done.stderr, done.stderr
+
+
+def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
+    """No PM tree, no flow, no `make pm` — the three trees above start this
+    way — is not an error the worktree tool should die on: it says so on
+    stderr and bases off FALLBACK_BASE, which is what a tree with no PM
+    records means. A milestone the CLI cannot read (no flow declared) is the
+    same answer, said the same way, never a silent trunk base."""
     root = corpus_repo(tmp_path)
     assert git(root, 'branch', 'staging').returncode == 0
-    assert git(root, 'branch', 'feat/integration').returncode == 0
     milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text('---\nid: "0.1.0"\nstatus: building\n'
                          'branch: feat/integration\n---\n', encoding='utf-8')
-    done = worktree(root, 'new', 'based')
+    done = worktree(root, 'new', 'unasked')
     assert done.returncode == 0, done.stderr
+    assert 'could not answer' in done.stderr, done.stderr
+    assert 'basing off staging' in done.stderr, done.stderr
     marker = (Path(done.stdout.strip()) / MARKER).read_text(encoding='utf-8')
-    assert 'base=feat/integration' in marker
+    assert 'base=staging' in marker
 
 
-# --- doctor: self-heals the hook wiring, reds on a missing critical dep -------
-def doctor_env(stub_bin: Path) -> dict:
-    """A deterministic PATH: the stubs + the system dirs (git, make, awk) —
-    whatever godot/gdlint/uv the HOST has must not decide a test."""
-    return dict(CLEAN_ENV, PATH=f'{stub_bin}:/usr/bin:/bin')
-
-
-def stub_tools(parent: Path, *names: str) -> Path:
-    stub_bin = parent / 'stub-bin'
-    stub_bin.mkdir(parents=True, exist_ok=True)
-    versions = {'godot': '4.6.stable.official',
-                'gdlint': 'gdlint 4.3.1',
-                'uv': 'uv 0.5.0',
-                'shellcheck': 'version: 0.11.0'}
-    for name in names:
-        tool = stub_bin / name
-        tool.write_text(f'#!/bin/sh\necho "{versions[name]}"\n',
-                        encoding='utf-8')
-        tool.chmod(0o755)
-    return stub_bin
-
-
-def run_doctor(root: Path, stub_bin: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(['bash', str(root / DOCTOR)], cwd=root,
-                          capture_output=True, text=True,
-                          env=doctor_env(stub_bin))
-
-
-def ready_repo(tmp_path: Path) -> tuple[Path, Path]:
-    """Corpus repo + every critical dep satisfied: stubs on PATH, GUT entry
-    present, hooks armed (setup-hooks), hooksPath deliberately UNSET so the
-    self-heal has something to do."""
-    root = corpus_repo(tmp_path)
-    gut = root / 'addons/gut/gut_cmdln.gd'
-    gut.parent.mkdir(parents=True)
-    gut.write_text('# GUT\n', encoding='utf-8')
-    subprocess.run(['git', 'config', '--unset', 'core.hooksPath'], cwd=root,
-                   check=True)
-    return root, stub_tools(tmp_path, 'godot', 'gdlint', 'uv', 'shellcheck')
-
-
-def test_doctor_passes_a_ready_toolchain_and_heals_the_hook_wiring(tmp_path):
-    root, stub_bin = ready_repo(tmp_path)
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert '[DOCTOR] PASS' in done.stdout
-    healed = git(root, 'config', 'core.hooksPath').stdout.strip()
-    assert healed == 'tools/hooks', 'doctor did not self-heal core.hooksPath'
-
-
-def test_doctor_reds_when_a_critical_dep_is_missing(tmp_path):
-    root, _ = ready_repo(tmp_path)
-    without_godot = stub_tools(tmp_path / 'partial', 'gdlint', 'uv')
-    done = run_doctor(root, without_godot)
-    assert done.returncode == 1
-    assert 'godot not on PATH' in done.stdout
-    assert '[DOCTOR] FAIL' in done.stdout
-
-
-def test_doctor_reds_on_a_disarmed_hook_whatever_its_name(tmp_path):
-    """core.hooksPath skips a non-executable hook in silence, and the census
-    is asked of the DIRECTORY — a hook invented after the doctor shipped is
-    still covered, which is what a hardcoded roster can never promise."""
-    root, stub_bin = ready_repo(tmp_path)
-    invented = root / 'tools/hooks/cc-invented-later.sh'
-    invented.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
-    invented.chmod(0o644)
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 1
-    assert 'cc-invented-later.sh not executable' in done.stdout
-
-
-@pytest.mark.parametrize('shape', ['directory', 'broken symlink'])
-def test_doctor_reds_on_an_entry_git_cannot_exec_at_all(tmp_path, shape):
-    """The other way a guard dies: not a lost exec bit but a name git tries
-    and cannot start. doctor skipped these on `[ -f ]`, so its census read
-    SMALLER than the directory with no line saying so — the same defect
-    `check hooks` carried, and two shipped surfaces agreeing on the wrong
-    answer is worse than one."""
-    root, stub_bin = ready_repo(tmp_path)
-    dead = root / 'tools/hooks' / A_GIT_HOOK
-    dead.unlink()
-    if shape == 'directory':
-        dead.mkdir()
-    else:
-        dead.symlink_to('../../gone/somewhere.sh')
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 1, done.stdout
-    assert f'tracked hook {A_GIT_HOOK} is not a regular file' in done.stdout, done.stdout
-    assert '[DOCTOR] FAIL' in done.stdout
-
-
-def test_doctor_still_warns_rather_than_reds_on_an_EMPTY_corpus(tmp_path):
-    """The one thing the `-f` skip was load-bearing for: an unmatched glob is
-    the literal pattern, and a census that turned THAT into a finding would be
-    a gate reddening on nothing. `no tracked hooks` is still the answer."""
-    root, stub_bin = ready_repo(tmp_path)
-    for entry in (root / 'tools/hooks').iterdir():
-        entry.unlink()
-    done = run_doctor(root, stub_bin)
-    assert 'no tracked hooks under tools/hooks/' in done.stdout, done.stdout
-    assert 'is not a regular file' not in done.stdout, done.stdout
-
-
-# --- fail-open posture, both PreToolUse hooks ---------------------------------
-@pytest.mark.parametrize('hook', [SANDBOX, PATHSPEC])
+# --- fail-open posture, the PreToolUse hook -----------------------------------
+@pytest.mark.parametrize('hook', [PATHSPEC])
 def test_a_hook_fed_garbage_or_another_tool_fails_open(hooks_repo, hook):
     """A broken hook must never wedge the session: unparseable stdin and a
     non-Bash tool event both allow, even when the payload mentions the very
     thing the hook exists to block."""
     garbage = subprocess.run(['bash', str(hooks_repo / hook)],
-                             input='not json {{{ godot commit',
+                             input='not json {{{ git commit',
                              text=True, capture_output=True)
     assert garbage.returncode == 0
     event = json.dumps({'tool_name': 'Write',
-                        'tool_input': {'command':
-                                       'godot -e; git commit -m x'},
+                        'tool_input': {'command': 'git commit -m x'},
                         'cwd': str(hooks_repo)})
     other = subprocess.run(['bash', str(hooks_repo / hook)], input=event,
                            text=True, capture_output=True)
     assert other.returncode == 0
+
+
+# --- setup-hooks.sh: arms by glob, and the whole corpus ------------------------
+def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
+    """The forks this replaced did it two ways — a `cc-*.sh` glob, and two
+    named files. The glob is strictly better: it is tolerant of absence AND does
+    not have to be edited when a hook is added. core.hooksPath skips a
+    non-executable hook in silence, so a hook this misses is a guard nobody
+    knows is off. (From test_install.py, which spawns nothing now.)"""
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    previous = Path.cwd()
+    os.chdir(root)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        assert install.main('install-hooks', []) == 0
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+    disarmed = (PATHSPEC, STOP_GATE)
+    for rel in disarmed:
+        (root / rel).chmod(0o644)
+    (root / 'tools' / 'hooks' / 'cc-invented-later.sh').write_text(
+        '#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+    done = subprocess.run(['bash', 'tools/setup-hooks.sh'], cwd=root,
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    for rel in (*disarmed, 'tools/hooks/cc-invented-later.sh'):
+        assert os.access(root / rel, os.X_OK), rel
+    # The whole corpus is armed, not just the cc-* glob: the classic git
+    # hooks (skipped by core.hooksPath in silence when unexecutable) and
+    # the by-path tools.
+    for rel in ('tools/hooks/pre-push', 'tools/hooks/prepare-commit-msg',
+                WORKTREE):
+        assert os.access(root / rel, os.X_OK), rel
+    assert git(root, 'config', 'core.hooksPath').stdout.strip() == 'tools/hooks'
 
 
 # =============================================================================
@@ -908,6 +663,12 @@ def ledger_repo(tmp_path: Path, name: str = 'repo',
     a bash-only spelling. A vehicle that names dash is the honest one.
     """
     root = corpus_repo(tmp_path, name)
+    # The tree DECLARES its flow. Both couriers reach `pm ledger record` through
+    # the Makefile above, and `[pm.states.*]` has no runtime fallback
+    # (model.py:718 `flow_of`) — so a tree without it would fail the hook for a
+    # config reason and read here as a courier that wrote no row, which is the
+    # one failure this module must never mistake for another.
+    (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
     for rel, front in FRONTMATTER.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1209,151 +970,3 @@ def test_the_ledger_hooks_replay_their_own_corpus(tmp_path, hook):
     assert 'SELF-TEST OK' in done.stdout, done.stdout
 
 
-# --- doctor: the uid index against the sidecars the repo tracks ---------------
-# 0.24.0/bugs/import-cache-rebuild-does-not-repair-a-stale-uid-index. A
-# consumer ran 147 scenarios against a `.godot` whose uid index had lost 56
-# tracked sidecars: every scenario printed its own PASS and every one of them
-# was FAILED by the runner's engine-noise sweep, and the runner's remedy — an
-# import pass against the EXISTING directory — cannot put those entries back.
-# The runner now escalates (test_runners_installable.py); this is the cheaper
-# half, which says so in one line BEFORE a 147-scenario sweep instead of after.
-#
-# The fixture writes a REAL uid_cache.bin layout — u32 count, then per entry a
-# u64 id, a u32 length and the raw path — because what the check does is search
-# that binary, and a text stand-in would prove the search against a file the
-# engine never writes.
-def fake_uid_cache(paths: tuple[str, ...], *, uid: int | None = None) -> bytes:
-    body = struct.pack('<I', len(paths))
-    for index, path in enumerate(paths):
-        raw = path.encode('utf-8')
-        ident = uid if uid is not None else 0x7F00000000000000 + index
-        body += struct.pack('<QI', ident, len(raw)) + raw
-    return body
-
-
-def godot_repo(tmp_path: Path, sidecars: tuple[str, ...],
-               indexed: tuple[str, ...], *, gdignore: tuple[str, ...] = (),
-               cache: bool = True,
-               uid: int | None = None) -> tuple[Path, Path]:
-    """A ready corpus repo that is ALSO a Godot project: `sidecars` are tracked
-    `.uid` files, `indexed` are the res:// paths the binary index names."""
-    root, stub_bin = ready_repo(tmp_path)
-    (root / 'project.godot').write_text('config_version=5\n', encoding='utf-8')
-    for index, rel in enumerate(sidecars):
-        sidecar = root / f'{rel}.uid'
-        sidecar.parent.mkdir(parents=True, exist_ok=True)
-        sidecar.write_text(f'uid://c{index}\n', encoding='utf-8')
-        source = root / rel
-        source.write_text('extends Node\n', encoding='utf-8')
-    for directory in gdignore:
-        (root / directory).mkdir(parents=True, exist_ok=True)
-        (root / directory / '.gdignore').write_text('', encoding='utf-8')
-    subprocess.run(['git', 'add', '-A'], cwd=root, check=True,
-                   capture_output=True)
-    if cache:
-        (root / '.godot').mkdir(exist_ok=True)
-        (root / '.godot' / 'uid_cache.bin').write_bytes(
-            fake_uid_cache(indexed, uid=uid))
-    return root, stub_bin
-
-
-def test_doctor_reds_on_a_uid_index_missing_a_tracked_sidecar(tmp_path):
-    """The 56-missing tree, in miniature. The line has to name the shortfall
-    AND the only repair that works — a plain rebuild is what did not."""
-    root, stub_bin = godot_repo(
-        tmp_path, ('systems/alpha.gd', 'systems/beta.gd', 'shaders/glow.gdshader'),
-        ('res://systems/alpha.gd', 'res://scenes/hub.tscn'))
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 1, done.stdout
-    assert '2 of 3' in done.stdout, done.stdout
-    assert 'rm -rf .godot' in done.stdout, done.stdout
-    # It names what is missing: a count alone cannot be acted on.
-    assert 'res://systems/beta.gd' in done.stdout, done.stdout
-    assert '[DOCTOR] FAIL' in done.stdout, done.stdout
-
-
-def test_doctor_passes_a_uid_index_that_covers_every_tracked_sidecar(tmp_path):
-    """The control. Without it the case above is satisfied by a check that
-    fails on every tree, which is the same as no check."""
-    root, stub_bin = godot_repo(
-        tmp_path, ('systems/alpha.gd', 'shaders/glow.gdshader'),
-        ('res://systems/alpha.gd', 'res://shaders/glow.gdshader',
-         'res://scenes/hub.tscn'))
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert '2 tracked .uid sidecar' in done.stdout, done.stdout
-
-
-def test_doctor_does_not_count_a_sidecar_the_editor_never_scans(tmp_path):
-    """A directory carrying `.gdignore` is invisible to the editor filesystem,
-    so nothing under it is ever indexed. Counting those would red a healthy
-    tree — a real one tracked two such directories."""
-    root, stub_bin = godot_repo(
-        tmp_path, ('systems/alpha.gd', 'worktrees/scratch/copy.gd'),
-        ('res://systems/alpha.gd',), gdignore=('worktrees',))
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert '1 tracked .uid sidecar' in done.stdout, done.stdout
-
-
-def test_doctor_never_claims_a_sidecar_a_longer_path_could_be_hiding(tmp_path):
-    """The index is binary, so membership is a substring search — and
-    `res://a/x.gd` is a substring of `res://a/x.gdshader`. A path that is a
-    proper prefix of another expected path is therefore UNVERIFIABLE by that
-    search, and is reported as unverifiable rather than counted as present.
-    Both live consumers have zero such pairs; a check that is only usually
-    exact is not a check."""
-    root, stub_bin = godot_repo(
-        tmp_path, ('a/x.gd', 'a/x.gdshader'), ('res://a/x.gdshader',))
-    done = run_doctor(root, stub_bin)
-    assert 'res://a/x.gd' in done.stdout, done.stdout
-    assert 'unverifiable' in done.stdout, done.stdout
-    # The census names what it actually checked, and x.gd is not in it.
-    assert '1 tracked .uid sidecar' in done.stdout, done.stdout
-
-
-def test_doctor_warns_rather_than_passing_when_there_is_no_import_cache(tmp_path):
-    """A cold checkout has no `.godot/` at all. That is a fresh tree, not a
-    broken one — but it must not read as 'the index is fine'."""
-    root, stub_bin = godot_repo(tmp_path, ('systems/alpha.gd',), (),
-                                cache=False)
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert 'no .godot/uid_cache.bin' in done.stdout, done.stdout
-    assert 'make import-cache' in done.stdout, done.stdout
-
-
-def test_doctor_says_so_when_it_has_nothing_to_check_the_index_against(tmp_path):
-    """Rule 4: a zero-file census that prints a pass is the read-side cardinal
-    sin. Zero tracked sidecars is a real state of a fresh project, and the line
-    says the number rather than implying coverage."""
-    root, stub_bin = godot_repo(tmp_path, (), ('res://scenes/hub.tscn',))
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert '0 tracked .uid sidecar' in done.stdout, done.stdout
-
-
-def test_doctor_says_nothing_about_uids_in_a_repo_that_is_not_a_godot_project(tmp_path):
-    """doctor ships to every repo that installs the hook corpus, and this
-    package's own tree is not a Godot project. A check with no subject must be
-    silent, not a warning nobody can act on."""
-    root, stub_bin = ready_repo(tmp_path)
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert 'uid' not in done.stdout.lower(), done.stdout
-
-
-def test_doctor_finds_a_path_the_next_entrys_id_glued_printable_bytes_onto(tmp_path):
-    """The extraction turns non-printable bytes into separators, so a path
-    lands at the start of a token — but the bytes AFTER it are the next
-    entry's 64-bit id, and roughly a third of those are printable ASCII. On a
-    1800-entry cache that is hundreds of tokens carrying trailing junk, so
-    membership is decided by PREFIX and never by equality. Here every id is
-    0x4141… — eight `A`s glued to every path."""
-    root, stub_bin = godot_repo(
-        tmp_path, ('systems/alpha.gd',),
-        ('res://systems/alpha.gd', 'res://scenes/hub.tscn'),
-        uid=0x4141414141414141)
-    done = run_doctor(root, stub_bin)
-    assert done.returncode == 0, done.stdout
-    assert 'uid index covers 1 tracked .uid sidecar' in done.stdout, done.stdout

@@ -12,8 +12,17 @@ a half-installed repo behind and still claimed nothing was written.
 The hook installables carry one more: they are STANDALONE. The forked copies in
 both consumers `source tools/hooks/_scope.sh` for a project-name-prefixed JSON
 reader; a `source` of a file a fresh project does not have fails OPEN, and a
-guard that fails open is a guard that is not there. So the tests below install
-into an empty repo with no library of any kind and RUN the hooks.
+guard that fails open is a guard that is not there. So the corpus is pinned to
+carry its parser INLINE here, and tests/test_hooks_payloads.py installs it
+into an empty repo with no library of any kind and RUNS it.
+
+**Selection criterion (hard rule 10, 0.2.0/the-proof-is-named-in-the-criterion):**
+this module spawns NOTHING and sits in the unit tier. `install.main` reads and
+writes files, so every case here is a temp tree; the four cases that ran bash
+or git moved to the module whose subject that is (the installed corpus, run:
+test_hooks_payloads.py; install day's gates: test_fresh_project.py) or were
+already proven there. A claim about the installables' PROSE is not asserted;
+a claim about what a write did to the disk is.
 """
 from __future__ import annotations
 
@@ -21,8 +30,6 @@ import contextlib
 import io
 import json
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -39,6 +46,9 @@ from agentic_sdlc.repo import install  # noqa: E402
 
 @contextlib.contextmanager
 def repo(files: dict[str, str] | None = None):
+    """An empty repo, cwd'd into. `.git` is a MARKER directory: `repo_root`
+    walks up for it and never asks git, so `git init` here was a process
+    per case that bought nothing (tests/support/pm.py `_mark`)."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         root.mkdir()
@@ -46,7 +56,7 @@ def repo(files: dict[str, str] | None = None):
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        (root / '.git').mkdir()
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()
@@ -76,11 +86,12 @@ def refuse(command: str, *argv: str) -> tuple[int, str]:
 
 
 WORKFLOW = '.github/workflows/verify.yml'
-# The set both consumers run on a push. verify.yml is the one this repo itself
-# carries; the other three read `config/version` out of a project.godot, which
-# a stdlib Python package does not have — see the self-hosting test below.
+# The set a project runs on a push. verify.yml is the one this repo itself
+# carries; the other two mint and gate a TAG, and this repo's release protocol
+# tags by hand — a second tagger on the same mainline is the reason those two
+# are installed everywhere and self-hosted nowhere. uid-guard.yml left in 0.2.0
+# with the gate it ran (decision D2).
 WORKFLOWS = (WORKFLOW,
-             '.github/workflows/uid-guard.yml',
              '.github/workflows/semver-gate.yml',
              '.github/workflows/auto-tag.yml')
 AGENTS = ('.claude/agents/verification-reviewer.md',
@@ -103,7 +114,6 @@ AGENTS = ('.claude/agents/verification-reviewer.md',
 # sentences, the roster tests pin the parameterization story.
 ROSTER = AGENTS[2:]
 HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
-         'tools/hooks/cc-godot-sandbox.sh',
          'tools/hooks/cc-stop-gate.sh',
          'tools/hooks/cc-write-confine.sh',
          # The two ledger couriers (0.22.0). They guard nothing; they carry a
@@ -113,25 +123,24 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          'tools/hooks/pre-push',
          'tools/hooks/prepare-commit-msg',
          'tools/dev/agent-worktree.sh',
-         'tools/dev/checks/doctor.sh',
          'tools/setup-hooks.sh')
-RUNNERS = ('tools/dev/gdk_runners.sh',
-           'tools/dev/runners/import_cache.sh',
-           'tools/dev/runners/parse.sh',
-           'tools/dev/runners/compile_sweep.gd',
-           'tools/dev/runners/compile_sweep.gd.uid',
-           'tools/dev/runners/lint.sh',
-           'tools/dev/runners/warnings.sh',
-           'tools/dev/runners/unit.sh',
-           'tools/dev/runners/scenario.sh',
-           'tools/dev/runners/integration.sh',
-           'tools/dev/runners/capture.sh',
-           'tools/dev/runners/hermetic_run_scan.sh',
-           'Makefile.devkit')
+# The gate FRAMEWORK, and the whole of it: the library that gives every gate one
+# verdict line, and the include that calls it. It was `install-runners` through
+# 0.1.0 and carried twelve engine runners besides — the gate framework and one
+# language's roster under one verb, which is what blocked splitting this package
+# in two (decision D2). A language kit installs its own runners and a
+# `Makefile.tiers` that hangs them off this include's `-include` seam.
+GATES = ('tools/dev/gdk_gate.sh',
+         'Makefile.devkit')
+# The fifth verb, and the only one whose body is GENERATED: the release
+# protocol rendered from `[release] steps` and the registry that walks them.
+# One destination, so it is never a whole-set `--force` story.
+SDLC = ('docs/sdlc-protocol.md',)
 DESTINATIONS = {'install-ci': WORKFLOWS,
                 'install-agents': AGENTS,
                 'install-hooks': HOOKS,
-                'install-runners': RUNNERS}
+                'install-gates': GATES,
+                'install-sdlc': SDLC}
 VERBS = tuple(DESTINATIONS)
 # The table above is spelled out so a test READS as the contract, but it is
 # not allowed to become a second roster: a verb added to PLANS and not here
@@ -143,17 +152,42 @@ assert {verb: tuple(rel for _, rel in entries)
 # --- the four sentences, once per verb ---------------------------------------
 @pytest.mark.parametrize('command', VERBS)
 def test_the_verb_writes_its_files_and_a_second_run_is_a_no_op(command):
+    """One install, asked three things of: the files landed with the mode
+    each deserves, a second run is byte-identical and says `already current`
+    for every entry, and `--diff` over that tree shows no hunk.
+
+    The exec bit: 0.20.0 MAJOR-1, and the 0.19.0 NIT it subsumes. Scripts
+    were written -rw-r--r-- and the next step told the operator to `chmod +x`
+    them; a fan-out that exec'd one directly got 126 with nothing under it.
+    The mode is part of the write now, in `core.apply`, and it is asked of
+    the DESTINATION suffix per verb so a `.sh` added to any plan tomorrow is
+    covered the day it lands — and nothing that is not a script gets the bit.
+    """
     with repo() as root:
         code, out = run(command)
         assert code == 0, out
         bodies = {rel: (root / rel).read_text(encoding='utf-8')
                   for rel in DESTINATIONS[command]}
         assert all(bodies.values()), 'a destination was written empty'
+        not_runnable = [rel for rel in DESTINATIONS[command]
+                        if rel.endswith('.sh') and not os.access(root / rel, os.X_OK)]
+        runnable = [rel for rel in DESTINATIONS[command]
+                    if not rel.endswith('.sh') and os.access(root / rel, os.X_OK)]
+        assert not not_runnable, (
+            f'{command} wrote {not_runnable} without an execute bit — a caller '
+            f'exec\'ing one gets 126, and `Permission denied` is a diagnosis no '
+            f'gate summary matches')
+        assert not runnable, (
+            f'{command} made {runnable} executable; only `.sh` is a script here')
         code, out = run(command)
         assert code == 0, out
         assert out.count('already current') == len(DESTINATIONS[command]), out
         assert {rel: (root / rel).read_text(encoding='utf-8')
                 for rel in DESTINATIONS[command]} == bodies
+        code, out = run(command, '--diff')
+        assert code == 0
+        assert out.count('already current') == len(DESTINATIONS[command]), out
+        assert '@@' not in out, out
 
 
 @pytest.mark.parametrize('command', VERBS)
@@ -179,8 +213,11 @@ def test_force_overwrites_every_entry(command):
         code, out = run(command, '--force')
         assert code == 0, out
         for name, rel in install.PLANS[command]:
+            # `resolve_body`, not `body_of`: one entry's body is RENDERED, and
+            # asking the wrong one would compare the destination against a
+            # template nobody installs.
             assert ((root / rel).read_text(encoding='utf-8')
-                    == install.body_of(name)), rel
+                    == install.resolve_body(name, rel)), rel
 
 
 # --- what a release is allowed to TELL a consumer to do -----------------------
@@ -270,17 +307,6 @@ def test_diff_prints_a_unified_diff_and_writes_nothing(command):
             assert not (root / rel).exists(), rel
 
 
-@pytest.mark.parametrize('command', VERBS)
-def test_diff_of_an_installed_tree_reports_current_and_shows_no_hunks(command):
-    with repo() as root:
-        assert run(command)[0] == 0
-        code, out = run(command, '--diff')
-        assert code == 0
-        assert out.count('already current') == len(DESTINATIONS[command]), out
-        assert '@@' not in out, out
-        assert root.is_dir()
-
-
 def test_an_unknown_flag_is_a_usage_error():
     with repo():
         code, _ = refuse('install-ci', '--yolo')
@@ -288,9 +314,7 @@ def test_an_unknown_flag_is_a_usage_error():
 
 
 # --- the report and the disk are one thing ------------------------------------
-@pytest.mark.parametrize('command', ('install-agents', 'install-hooks'))
-def test_a_collision_on_a_LATER_entry_withholds_that_file_and_nothing_else(
-        command):
+def test_a_collision_on_a_LATER_entry_withholds_that_file_and_nothing_else():
     """The defect this replaced: `install-agents` wrote the reviewer, THEN
     refused on the builder, and reported `nothing was written` about a repo
     that now held one of the two files. The claim was the bug — not the write.
@@ -298,7 +322,10 @@ def test_a_collision_on_a_LATER_entry_withholds_that_file_and_nothing_else(
     A collision is the operator's own file, deliberately theirs, and it
     withholds ITS destination; the entries with nothing in their way land, and
     the run reports exactly what it did. The whole-plan decision is proven
-    where it belongs, on a DEFECT (below): that one still writes nothing."""
+    where it belongs, on a DEFECT (below): that one still writes nothing.
+    `install-hooks` is proven in the same shape by
+    `test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited`."""
+    command = 'install-agents'
     rels = DESTINATIONS[command]
     mine = 'my own version, deliberately\n'
     with repo({rels[-1]: mine}) as root:
@@ -328,17 +355,6 @@ def test_every_collision_is_named_in_one_refusal():
     assert code == 1
     assert 'nothing was written' not in message, message
     assert f'{len(AGENTS) - 2} file(s) with nothing in the way' in message
-
-
-def test_a_destination_that_is_a_directory_is_a_refusal_not_a_traceback():
-    with repo() as root:
-        (root / AGENTS[1]).mkdir(parents=True)
-        code, out = refuse('install-agents')
-    assert code == 1, out
-    assert 'is a directory' in out and AGENTS[1] in out, out
-    assert 'nothing was written' in out, out
-    assert not (root / AGENTS[0]).exists(), (
-        'the FIRST entry was written before the SECOND was found unwritable')
 
 
 @pytest.mark.skipif(hasattr(os, 'geteuid') and os.geteuid() == 0,
@@ -387,41 +403,7 @@ def test_a_non_utf8_destination_is_a_collision_and_force_overwrites_it():
                 == install.body_of('verification-builder.md'))
 
 
-# --- install-agents: what the contract is, and where it lands -----------------
-def test_the_contract_ships_as_an_agent_definition_not_a_rule():
-    """Measured, not assumed: a rules file never reaches a subagent's spawn
-    context while its definition does. A contract written as a rule arrives
-    nowhere, so the destination is part of the contract."""
-    with repo() as root:
-        run('install-agents')
-        for rel in AGENTS:
-            assert (root / rel).is_file()
-            head = (root / rel).read_text(encoding='utf-8').splitlines()[:4]
-            assert head[0] == '---'
-            assert any(line.startswith('name: ') for line in head)
-        assert not (root / '.claude' / 'rules').exists()
-
-
-def test_the_load_bearing_sentences_survive_an_edit():
-    """The lines the whole contract exists to deliver, pinned.
-
-    If nothing else in the contract lands, these must — so a future trim that
-    drops them fails here rather than being noticed a release later by their
-    absence from a review that went badly.
-    """
-    with repo() as root:
-        run('install-agents')
-        reviewer = (root / AGENTS[0]).read_text(encoding='utf-8')
-        builder = (root / AGENTS[1]).read_text(encoding='utf-8')
-    assert 'Construct adversarial input and RUN it' in reviewer
-    assert 'Never read a diff and reason about it' in reviewer
-    assert 'FAILS against HEAD' in builder
-    assert 'BEFORE and AFTER' in builder
-    for body in (reviewer, builder):
-        assert 'arrowing instead of reporting' in body
-        assert 'token cost' in body
-
-
+# --- install-agents: the roster's two deliveries --------------------------------
 def test_every_roster_agent_carries_model_and_an_editable_config_section():
     """The roster's two load-bearing deliveries, pinned per file.
 
@@ -438,59 +420,19 @@ def test_every_roster_agent_carries_model_and_an_editable_config_section():
     predates the roster and deliberately carries neither.
     """
     by_rel = {rel: name for name, rel in install.PLANS['install-agents']}
-    with repo() as root:
-        assert run('install-agents')[0] == 0
-        for rel in ROSTER:
-            body = (root / rel).read_text(encoding='utf-8')
-            head = body.split('---', 2)[1]
-            assert '\nmodel: ' in head, f'{rel} declares no model:'
-            assert '\neffort: ' in head, f'{rel} declares no effort:'
-            assert 'UNVERIFIED' in head, (
-                f'{rel} dropped the effort-is-unverified caveat')
-            assert 'GENERATED by agentic-sdlc' in body, rel
-            assert '## Project config (yours to edit after install)' in body, (
-                f'{rel} carries no editable project-config section')
-        for rel in AGENTS[:2]:
-            head = (root / rel).read_text(encoding='utf-8').split('---', 2)[1]
-            assert 'model:' not in head, f'{rel} grew a model: it never had'
-
-
-def test_the_installed_contracts_do_not_redden_a_consumers_gates():
-    """Install day must be green. A contract that fails the gates it arrives
-    beside gets deleted by the first person who runs them."""
-    with repo({'devkit.toml': '[doc]\nscope = [".claude/agents/*.md"]\n'}) as root:
-        run('install-agents')
-        subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
-        # A SUBPROCESS on purpose. `check doc` binds its scope and its repo root
-        # at import time, so reloading it in-process to see a temp repo leaves
-        # the module pointing at a directory that no longer exists — and the
-        # next test to import it inherits that. A gate run out-of-process cannot
-        # contaminate the suite that runs it.
-        proc = subprocess.run(
-            [sys.executable, '-m', 'agentic_sdlc.cli', 'check', 'doc'],
-            cwd=root, capture_output=True, text=True,
-            env={**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src')})
-        assert proc.returncode == 0, (
-            'the installed contract fails `check doc` on install day:\n'
-            f'{proc.stdout}{proc.stderr}')
-
-
-# --- install-ci: one opinion, and the assumption said out loud ----------------
-def test_the_workflow_runs_the_projects_full_gate_and_says_so():
-    """No `[ci]` block, no emitter, no allowlist: the workflow the verb writes
-    is the same one in every repo, and what it runs is a make target. The
-    assumption is a COMMENT because a fresh project may not have the target,
-    and a generator that went looking for one would be the ~180 lines of
-    config DSL this verb exists without."""
-    with repo() as root:
-        assert run('install-ci')[0] == 0
-        body = (root / WORKFLOW).read_text(encoding='utf-8')
-    assert 'run: make milestone' in body
-    assert 'ASSUMES `make milestone` is your full gate' in body
-    assert 'actions/checkout@v4' in body and 'astral-sh/setup-uv@v5' in body
-    # The cut config DSL, by the names it would reappear under.
-    for gone in ('{ci_on}', '{ci_setup}', '{devkit_source}', '{version}'):
-        assert gone not in body, gone
+    for rel in ROSTER:
+        body = install.body_of(by_rel[rel])
+        head = body.split('---', 2)[1]
+        assert '\nmodel: ' in head, f'{rel} declares no model:'
+        assert '\neffort: ' in head, f'{rel} declares no effort:'
+        assert 'UNVERIFIED' in head, (
+            f'{rel} dropped the effort-is-unverified caveat')
+        assert 'GENERATED by agentic-sdlc' in body, rel
+        assert '## Project config (yours to edit after install)' in body, (
+            f'{rel} carries no editable project-config section')
+    for rel in AGENTS[:2]:
+        head = install.body_of(by_rel[rel]).split('---', 2)[1]
+        assert 'model:' not in head, f'{rel} grew a model: it never had'
 
 
 # --- install-hooks: canonical, and STANDALONE ---------------------------------
@@ -500,16 +442,22 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
     defined where it is used: a hook that `source`s a library a fresh repo
     does not have fails OPEN, so the corpus ships every helper INLINE and the
     shared scope library ships as no file at all."""
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        for rel in HOOKS:
-            body = (root / rel).read_text(encoding='utf-8')
-            for banned in ('consumer_b_', 'CONSUMER_B_', 'consumer_a', 'CONSUMER_A',
-                           '_scope.sh', 'source "'):
-                assert banned not in body, f'{rel} carries {banned!r}'
-        for rel in HOOKS[:2]:
-            assert 'hook_json_field() {' in (
-                root / rel).read_text(encoding='utf-8'), rel
+    for rel in HOOKS:
+        body = install.body_of(Path(rel).name)
+        for banned in ('consumer_b_', 'CONSUMER_B_', 'consumer_a', 'CONSUMER_A',
+                       '_scope.sh', 'source "'):
+            assert banned not in body, f'{rel} carries {banned!r}'
+    # A hook that parses the stdin event carries its parser INLINE — a
+    # hook that `source`s a library a fresh repo may not have fails OPEN.
+    # DERIVED, not listed: it was `HOOKS[:2]`, which meant "the two that
+    # parse a payload" until 0.2.0 moved one of them to the kit that owned
+    # the artifact it guarded. A slice cannot say which property it selects
+    # for, and a hand-written list here goes stale the same way.
+    parsers = [rel for rel in HOOKS
+               if 'hook_json_field' in install.body_of(Path(rel).name)]
+    assert parsers, 'no installed hook parses its payload — census of zero'
+    for rel in parsers:
+        assert 'hook_json_field() {' in install.body_of(Path(rel).name), rel
 
 
 CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
@@ -517,8 +465,7 @@ CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
                  'tools/hooks/cc-ledger-session.sh',
                  'tools/hooks/pre-push',
                  'tools/hooks/prepare-commit-msg',
-                 'tools/dev/agent-worktree.sh',
-                 'tools/dev/checks/doctor.sh')
+                 'tools/dev/agent-worktree.sh')
 
 
 def test_the_corpus_files_carry_an_editable_config_header():
@@ -526,84 +473,21 @@ def test_the_corpus_files_carry_an_editable_config_header():
     when the file is its own — never a fork of the source. The header marker
     is the contract; a rewrite that drops it drops the whole parameterization
     story."""
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        for rel in CONFIG_HEADED:
-            body = (root / rel).read_text(encoding='utf-8')
-            assert 'project config (yours to edit after install' in body, rel
-        # The agent-context contract is one marker + one env var, spelled the
-        # same in every file that reads it — a hook and the worktree tool
-        # disagreeing on the marker name silently de-scopes the hook.
-        for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                    'tools/hooks/prepare-commit-msg',
-                    'tools/dev/agent-worktree.sh'):
-            assert 'SCOPE_MARKER=".agent-scope"' in (
-                root / rel).read_text(encoding='utf-8'), rel
-        for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
-                    'tools/hooks/prepare-commit-msg',
-                    'tools/hooks/cc-write-confine.sh'):
-            assert 'DEVKIT_AGENT_SCOPE' in (
-                root / rel).read_text(encoding='utf-8'), rel
-
-
-@pytest.mark.skipif(shutil.which('bash') is None, reason='needs bash')
-def test_the_installed_hooks_run_and_block_what_they_exist_to_block():
-    """Installed into an empty repo with no library of any kind, fed the real
-    Claude Code PreToolUse payload shape. Exit 2 is a BLOCK; exit 0 is allow.
-
-    Each guard is exercised in both directions, because a hook that blocks
-    everything and a hook that is disarmed are equally broken and only the
-    pair of assertions tells them apart.
-    """
-    payload = ('{{"tool_name": "Bash", "tool_input": {{"command": {cmd}}}, '
-               '"cwd": "{cwd}"}}')
-
-    def fire(hook: str, command: str, root: Path) -> int:
-        import json
-        event = payload.format(cmd=json.dumps(command), cwd=root)
-        return subprocess.run(['bash', str(root / hook)], input=event,
-                              text=True, capture_output=True).returncode
-
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        sandbox = 'tools/hooks/cc-godot-sandbox.sh'
-        assert fire(sandbox, 'godot --headless --path .', root) == 2
-        assert fire(sandbox, 'make unit SYS=combat', root) == 0
-        pathspec = 'tools/hooks/cc-commit-pathspec.sh'
-        assert fire(pathspec, 'git commit -m "fix: a thing"', root) == 2
-        assert fire(pathspec, 'git commit -m "fix: a thing" -- one.py',
-                    root) == 0
-
-
-@pytest.mark.skipif(shutil.which('bash') is None, reason='needs bash')
-def test_setup_hooks_arms_every_cc_hook_by_glob():
-    """The forks this replaced did it two ways — a `cc-*.sh` glob, and two
-    named files. The glob is strictly better: it is tolerant of absence AND does
-    not have to be edited when a hook is added. core.hooksPath skips a
-    non-executable hook in silence, so a hook this misses is a guard nobody
-    knows is off."""
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        for rel in HOOKS[:2]:
-            (root / rel).chmod(0o644)
-        (root / 'tools' / 'hooks' / 'cc-invented-later.sh').write_text(
-            '#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
-        done = subprocess.run(['bash', 'tools/setup-hooks.sh'], cwd=root,
-                              capture_output=True, text=True)
-        assert done.returncode == 0, done.stderr
-        for rel in (*HOOKS[:2], 'tools/hooks/cc-invented-later.sh'):
-            assert os.access(root / rel, os.X_OK), rel
-        # The whole corpus is armed, not just the cc-* glob: the classic git
-        # hooks (skipped by core.hooksPath in silence when unexecutable) and
-        # the by-path tools.
-        for rel in ('tools/hooks/pre-push', 'tools/hooks/prepare-commit-msg',
-                    'tools/dev/agent-worktree.sh',
-                    'tools/dev/checks/doctor.sh'):
-            assert os.access(root / rel, os.X_OK), rel
-        hooks_path = subprocess.run(
-            ['git', 'config', 'core.hooksPath'], cwd=root,
-            capture_output=True, text=True).stdout.strip()
-        assert hooks_path == 'tools/hooks'
+    for rel in CONFIG_HEADED:
+        body = install.body_of(Path(rel).name)
+        assert 'project config (yours to edit after install' in body, rel
+    # The agent-context contract is one marker + one env var, spelled the
+    # same in every file that reads it — a hook and the worktree tool
+    # disagreeing on the marker name silently de-scopes the hook.
+    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
+                'tools/hooks/prepare-commit-msg',
+                'tools/dev/agent-worktree.sh'):
+        assert 'SCOPE_MARKER=".agent-scope"' in install.body_of(
+            Path(rel).name), rel
+    for rel in ('tools/hooks/cc-stop-gate.sh', 'tools/hooks/pre-push',
+                'tools/hooks/prepare-commit-msg',
+                'tools/hooks/cc-write-confine.sh'):
+        assert 'DEVKIT_AGENT_SCOPE' in install.body_of(Path(rel).name), rel
 
 
 # --- self-hosting -------------------------------------------------------------
@@ -616,8 +500,8 @@ def test_this_repo_carries_what_install_ci_produces():
 
     PARTIAL, and decided the same way `install-agents` is: verify.yml runs
     `make milestone`, which this repo has, so it MUST be present and current.
-    The other three read `config/version` out of a project.godot — this package
-    has neither, versions in pyproject.toml, and bumps at CLOSE rather than at
+    The other three read the version out of a project file at merge — this
+    package versions in pyproject.toml, and bumps at CLOSE rather than at
     merge. Installing them here would be three workflows guarding a flow this
     repo does not run — the reasoning that kept `install-hooks` un-self-hosted
     until 0.23.0 gave its corpus a job here (the ledger couriers; the hook
@@ -648,10 +532,9 @@ def test_this_repo_carries_what_install_ci_produces():
 def test_this_repo_carries_the_roles_it_runs_byte_current():
     """PARTIAL-roster self-hosting, decided with the roster.
 
-    This package runs its own SDLC with the verification pair; the
-    game-shaped roles (developer with an engine-expertise brief, po writing
-    against scene tooling, test-writer's two-tier boot split) have nothing to
-    act on in a stdlib Python repo — the same reasoning that keeps
+    This package runs its own SDLC with the verification pair; the base
+    roster (architect, po, developer, reviewer, …) is dispatched by a
+    consumer's orchestrator and has nothing to act on in this repo — the same reasoning that keeps
     `install-hooks` un-self-hosted. So the contract is conditional, not
     total: the verification pair MUST be present, and any plan destination
     this repo carries MUST be byte-current with its installable. A local
@@ -694,39 +577,12 @@ def test_every_installable_on_disk_is_reachable_through_a_verb():
         f'missing: {sorted(named - on_disk)}')
 
 
-# --- the exec bit: a script is written RUNNABLE -------------------------------
-# 0.20.0 MAJOR-1, and the 0.19.0 NIT it subsumes. The runners used to be
-# written -rw-r--r-- and the next step told the operator to `chmod +x` them.
-# `integration.sh`'s fan-out did not read that paragraph: it exec'd
-# `scenario.sh` directly, so every scenario on every `init`'d project exited
-# 126 and the FAILURES block printed the scenario name with nothing under it.
-# The mode is now part of the write, in `core.apply`, which owns every
-# mutation this package makes.
+# --- the exec bit: the mode is part of the write ------------------------------
+# The census (every `.sh` runnable, nothing else) rides on
+# `test_the_verb_writes_its_files_and_a_second_run_is_a_no_op`; these two are
+# the mode's two edges.
 def _mode(target: Path) -> int:
     return target.stat().st_mode & 0o777
-
-
-@pytest.mark.parametrize('command', VERBS)
-def test_every_shell_installable_is_written_executable(command):
-    """Every `.sh` this verb writes is runnable, and nothing else's mode moved.
-
-    Asked of the DESTINATION suffix, per verb, so a `.sh` added to any plan
-    tomorrow is covered the day it lands.
-    """
-    with repo() as root:
-        code, out = run(command)
-        assert code == 0, out
-        scripts = [rel for rel in DESTINATIONS[command] if rel.endswith('.sh')]
-        others = [rel for rel in DESTINATIONS[command] if not rel.endswith('.sh')]
-        not_runnable = [rel for rel in scripts
-                        if not os.access(root / rel, os.X_OK)]
-        runnable = [rel for rel in others if os.access(root / rel, os.X_OK)]
-    assert not not_runnable, (
-        f'{command} wrote {not_runnable} without an execute bit — a caller '
-        f'exec\'ing one gets 126, and `Permission denied` is a diagnosis no '
-        f'gate summary matches')
-    assert not runnable, (
-        f'{command} made {runnable} executable; only `.sh` is a script here')
 
 
 def test_the_exec_bit_does_not_widen_who_may_read_the_file():
@@ -734,11 +590,11 @@ def test_the_exec_bit_does_not_widen_who_may_read_the_file():
     already read the file — widening a 0600 destination to world-readable is a
     permission decision no install verb was asked to make."""
     with repo() as root:
-        target = root / 'tools/dev/runners/parse.sh'
+        target = root / 'tools/dev/gdk_gate.sh'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('stale\n', encoding='utf-8')
         target.chmod(0o600)
-        code, out = run('install-runners', '--force')
+        code, out = run('install-gates', '--force')
         assert code == 0, out
         assert _mode(target) == 0o700, oct(_mode(target))
 
@@ -748,31 +604,20 @@ def test_a_byte_current_script_missing_the_bit_is_repaired_not_reported_current(
     are byte-identical and 0644. A re-run that reported them `already current`
     would leave every one of them broken forever."""
     with repo() as root:
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
-        target = root / 'tools/dev/runners/scenario.sh'
+        target = root / 'tools/dev/gdk_gate.sh'
         target.chmod(0o644)
 
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
         assert os.access(target, os.X_OK), 'the re-run left it unrunnable'
-        assert 'wrote tools/dev/runners/scenario.sh' in out, out
+        assert 'wrote tools/dev/gdk_gate.sh' in out, out
 
         # …and it converges: the run after that has nothing left to do.
-        code, out = run('install-runners')
+        code, out = run('install-gates')
         assert code == 0, out
         assert 'already current' in out and 'wrote ' not in out, out
-
-
-def test_install_runners_next_step_no_longer_asks_for_a_chmod():
-    """The 0.19.0 NIT was closed by DOCUMENTING the missing bit. It is closed
-    now by writing it, and a paragraph still asking for the chmod would send an
-    operator to repair something the verb just did."""
-    with repo():
-        code, out = run('install-runners')
-    assert code == 0, out
-    assert 'chmod +x' not in out, out
-    assert 'EXECUTABLE' in out, out
 
 
 # --- install-hooks prints the settings.json entries that FIRE the hooks -------
@@ -832,22 +677,6 @@ def test_the_two_ledger_couriers_are_registered_async_and_unmatched():
         assert subagent['async'] is True and session['async'] is True, wired
 
 
-@pytest.mark.skipif(shutil.which('bash') is None, reason='needs bash')
-@pytest.mark.parametrize('rel', ASYNC_HOOKS)
-def test_the_installed_ledger_couriers_are_executable_and_replay_their_corpus(
-        rel):
-    """Installed, armed by the write itself, and PROVEN by their own
-    `--self-test` — the same contract cc-godot-sandbox.sh carries."""
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        target = root / rel
-        assert target.stat().st_mode & 0o111, f'{rel} is not executable'
-        done = subprocess.run(['bash', str(target), '--self-test'],
-                              capture_output=True, text=True, cwd=root)
-        assert done.returncode == 0, done.stdout + done.stderr
-        assert 'SELF-TEST OK' in done.stdout, done.stdout
-
-
 # --- a collision withholds ITS file, and a header-only one is named as one ----
 # The v0.23.0 adoption defect, from both consumers: four hooks differed ONLY
 # inside the `project config` header the file invites them to edit, so the two
@@ -880,8 +709,7 @@ def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
     raise AssertionError('no project-config block to edit')
 
 
-HEADER_EDITED_HOOKS = ('tools/hooks/cc-godot-sandbox.sh',
-                       'tools/hooks/cc-stop-gate.sh',
+HEADER_EDITED_HOOKS = ('tools/hooks/cc-stop-gate.sh',
                        'tools/hooks/pre-push',
                        'tools/hooks/prepare-commit-msg')
 
@@ -902,78 +730,60 @@ def a_consumer_mid_adoption(root: Path) -> dict[str, str]:
 
 
 def test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited():
-    """The bug, whole: the couriers land, the four headers survive byte for
-    byte, and the run exits 1 naming the files it withheld."""
+    """The bug, whole, asked of ONE run: the couriers land byte-current with
+    their installables, the edited headers survive byte for byte, the run
+    exits 1 naming what it withheld, and the report says what the disk says.
+
+    The exit code carries the withholding, and only the exit code can: a
+    caller that reads it alone must never be told the roster is on disk when
+    one of it is the operator's own file. `code == 1` alone is what the
+    defect already did, by writing nothing at all — what has to be true
+    TOGETHER is that the additions landed AND the run still exits 1.
+
+    The report is the one an operator can act on: `nothing was written` over
+    a repo that gained two files is the defect `core.apply` exists to end,
+    and a header-only collision is named as one, because the rest of the
+    file is byte-current and the repair is to do nothing — not --force and
+    four re-edits. Once the collisions are gone the same command is a clean
+    0: the non-zero is about the withholding, not about having spoken."""
     with repo() as root:
         mine = a_consumer_mid_adoption(root)
-        code, out = refuse('install-hooks')
-        assert code == 1, out
-        for rel in ASYNC_HOOKS:
-            assert (root / rel).is_file(), f'{rel} did not land\n{out}'
-            assert (root / rel).read_text(encoding='utf-8') == install.body_of(
-                Path(rel).name), rel
-            assert f'wrote {rel}' in out, out
-        for rel, text in mine.items():
-            assert (root / rel).read_text(encoding='utf-8') == text, (
-                f'{rel} was overwritten by a run that did not say so')
-            assert rel in out, f'{rel} was withheld and not named\n{out}'
-
-
-def test_an_addition_beside_a_withheld_replacement_still_exits_1():
-    """The exit code carries the withholding, and only the exit code can: a
-    caller that reads it alone must never be told the roster is on disk when
-    one of it is the operator's own file.
-
-    Both halves in one assertion path on purpose — `code == 1` alone is what
-    the defect already did, by writing nothing at all. What has to be true
-    TOGETHER is that the additions landed AND the run still exits 1. Exit 0
-    here is this bug in a new shape."""
-    with repo() as root:
-        a_consumer_mid_adoption(root)
         code, out = refuse('install-hooks')
         assert [rel for rel in ASYNC_HOOKS if (root / rel).is_file()] == list(
             ASYNC_HOOKS), out
         assert code == 1, f'additions landed and the run exited {code}\n{out}'
-        # And once the collision is gone, the same command is a clean 0 — the
-        # non-zero is about the withholding, not about the run having spoken.
+        for rel in ASYNC_HOOKS:
+            assert (root / rel).read_text(encoding='utf-8') == install.body_of(
+                Path(rel).name), rel
+        for rel, text in mine.items():
+            assert (root / rel).read_text(encoding='utf-8') == text, (
+                f'{rel} was overwritten by a run that did not say so')
+            assert rel in out, f'{rel} was withheld and not named\n{out}'
+        for rel in HOOKS:
+            assert (root / rel).is_file(), rel
+        assert 'nothing was written' not in out, out
+        wrote = {line.split('wrote ', 1)[1].strip()
+                 for line in out.splitlines() if '] wrote ' in line}
+        assert wrote == set(ASYNC_HOOKS), out
+        assert out.count(install.HEADER_ONLY_NOTE) == len(
+            HEADER_EDITED_HOOKS), out
+        assert 'byte-current' in out, out
+        assert '--force would replace the header too' in out, out
         for rel in HEADER_EDITED_HOOKS:
             (root / rel).write_text(
                 install.body_of(Path(rel).name), encoding='utf-8')
         assert refuse('install-hooks')[0] == 0
 
 
-def test_a_partial_run_never_claims_nothing_was_written():
-    """The claim and the disk are one thing. `nothing was written` over a repo
-    that gained two files is the defect `core.apply` exists to end."""
-    with repo() as root:
-        a_consumer_mid_adoption(root)
-        code, out = refuse('install-hooks')
-        assert code == 1, out
-        assert 'nothing was written' not in out, out
-        wrote = {line.split('wrote ', 1)[1].strip()
-                 for line in out.splitlines() if '] wrote ' in line}
-        assert wrote == set(ASYNC_HOOKS), out
-        for rel in HOOKS:
-            assert (root / rel).is_file(), rel
-
-
-def test_a_header_only_collision_is_reported_as_one():
-    """The report an operator can act on: the rest of the file is byte-current,
-    so the repair is to do nothing — not --force and four re-edits."""
-    with repo() as root:
-        a_consumer_mid_adoption(root)
-        code, out = refuse('install-hooks')
-        assert code == 1, out
-        assert out.count(install.HEADER_ONLY_NOTE) == len(
-            HEADER_EDITED_HOOKS), out
-        assert 'byte-current' in out, out
-        assert '--force would replace the header too' in out, out
-
-
 def test_a_body_difference_is_not_reported_as_a_header_only_one():
     """The predicate is only allowed to be wrong in one direction. An edit
     OUTSIDE the block is a plain collision, and saying `byte-current` about it
-    would send an operator past a real change."""
+    would send an operator past a real change.
+
+    The one CLI-altitude case for the predicate's False side: the other
+    shapes (header AND body edited, the marker itself rewritten, …) are
+    `HOSTILE` rows below, at the function altitude, and this case is what
+    proves the verb wires the predicate's answer into its report."""
     rel = 'tools/hooks/pre-push'
     with repo() as root:
         assert run('install-hooks')[0] == 0
@@ -986,35 +796,6 @@ def test_a_body_difference_is_not_reported_as_a_header_only_one():
         assert rel in out, out
         assert install.HEADER_ONLY_NOTE not in out, out
         assert 'byte-current' not in out, out
-
-
-def test_an_edit_in_the_header_AND_the_body_is_a_plain_collision():
-    rel = 'tools/hooks/cc-stop-gate.sh'
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        target = root / rel
-        target.write_text(
-            header_edited(target.read_text(encoding='utf-8')) + '# also this\n',
-            encoding='utf-8')
-        code, out = refuse('install-hooks')
-        assert code == 1, out
-        assert rel in out and install.HEADER_ONLY_NOTE not in out, out
-
-
-def test_a_consumer_who_edited_the_marker_itself_gets_a_plain_collision():
-    """The markers are the installable's, not the block's contents. A file
-    whose shape this can no longer read is reported as what it is."""
-    rel = 'tools/hooks/pre-push'
-    with repo() as root:
-        assert run('install-hooks')[0] == 0
-        target = root / rel
-        target.write_text(
-            target.read_text(encoding='utf-8').replace(
-                'project config (yours to edit after install', 'MY CONFIG ('),
-            encoding='utf-8')
-        code, out = refuse('install-hooks')
-        assert code == 1, out
-        assert rel in out and install.HEADER_ONLY_NOTE not in out, out
 
 
 def test_diff_names_a_header_only_difference_before_the_hunks():
@@ -1104,7 +885,7 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
     """The grammar covers every block this package actually ships — shell and
     markdown — rather than the two files a test happened to pick."""
     checked = 0
-    for command in ('install-hooks', 'install-agents', 'install-runners'):
+    for command in ('install-hooks', 'install-agents', 'install-gates'):
         for name, rel in install.PLANS[command]:
             body = install.body_of(name)
             if install.config_block_span(body) is None:
@@ -1114,7 +895,12 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
                 f'{rel} carries a block this cannot locate')
             assert not install.header_only_difference(body + 'trailing\n',
                                                       body), rel
-    assert checked >= 25, f'only {checked} config-headed installables scanned'
+    # A floor, not a count: it catches a census that COLLAPSES (a moved
+    # PLANS key, a broken `body_of`) without going stale every time the roster
+    # changes size. It was 25 when install-gates carried thirteen engine
+    # runners; the roster is 18 now and the floor moved with it, deliberately
+    # and in the open.
+    assert checked >= 15, f'only {checked} config-headed installables scanned'
 
 
 # --- the predicate, against hostile pairs ------------------------------------
@@ -1189,11 +975,15 @@ HOSTILE = {
 }
 
 
-@pytest.mark.parametrize('label', sorted(HOSTILE))
-def test_header_only_difference_answers_the_hostile_pair(label):
-    mine, expected = HOSTILE[label]
-    stock = MD_STOCK if 'markdown' in label else STOCK
-    assert install.header_only_difference(mine, stock) is expected, label
+def test_header_only_difference_answers_every_hostile_pair():
+    """One case, every row: the pure predicate costs nothing per row, so a
+    parametrize here only multiplied the collected count."""
+    wrong = []
+    for label, (mine, expected) in HOSTILE.items():
+        stock = MD_STOCK if 'markdown' in label else STOCK
+        if install.header_only_difference(mine, stock) is not expected:
+            wrong.append(f'{label}: expected {expected}')
+    assert not wrong, wrong
 
 
 def test_the_predicate_needs_a_block_on_BOTH_sides():
@@ -1221,3 +1011,86 @@ def test_the_span_excludes_its_own_markers_and_stops_at_the_first_close():
         5, len(open_ended.splitlines()))
     assert install.config_block_span('') is None
     assert install.config_block_span('nothing in here\n') is None
+
+
+# --- the docs are a second list, so they are asserted rather than trusted ------
+class TestTheReadmeInstallerTableIsTheRoutedSet:
+    """E1 + T3, and the same shape as `test_gate_roster`: a table a human
+    maintains beside a dict a machine dispatches from is two lists, and the
+    second one lies. It already did — `install-runners` shipped the Godot
+    runners, left with them at 0.2.0, and stayed documented here for a release
+    afterwards, while `install-gates` (which replaced it) and `install-sdlc`
+    had no row at all.
+    """
+
+    README = REPO / 'README.md' if 'REPO' in dir() else None
+
+    def _rows(self) -> set[str]:
+        import re
+        from pathlib import Path
+        readme = Path(__file__).resolve().parents[1] / 'README.md'
+        text = readme.read_text(encoding='utf-8')
+        return {m.group(1) for m in
+                re.finditer(r'^\| `(install-[a-z-]+)` \|', text, re.M)}
+
+    def test_every_routed_installer_has_a_row(self):
+        missing = sorted(set(install.PLANS) - self._rows())
+        assert missing == [], (
+            f'{missing} are routed by `install.PLANS` and documented in no '
+            f"README row — a consumer cannot discover a verb that isn't there")
+
+    def test_every_row_names_a_routed_installer(self):
+        stray = sorted(self._rows() - set(install.PLANS))
+        assert stray == [], (
+            f'README documents {stray}, which this version does not route. '
+            f'A verb that left is worse than one never documented: a reader '
+            f'runs it and gets exit 2.')
+
+
+# --- one wording, five files (0.2.0/every-gate-reports-its-cost story 04) ------
+class TestTheNameBothCommandsBlockIsOneWording:
+    """Five hand-maintained near-copies drift. This is what keeps them one.
+
+    The rule they carry cost 31 minutes to learn: a dispatch names BOTH the
+    narrow command and the wide one, with their measured costs, because an
+    agent given one command uses it as its inner loop — nothing told it there
+    was another. 154 s against 0.9 s is 170x, and it is the economics this
+    whole milestone exists to end.
+
+    **G4 is why this test exists rather than the block alone.** Story 04 filed
+    close evidence naming a commit that touched none of its five files, its
+    acceptance criterion 1 asked for exactly this assertion, and there was
+    none — so a reader of that `## Close` would have taken the criterion as
+    delivered. A test comparing the copies is the difference between a rule
+    that ships and a rule that was described.
+    """
+
+    CARRIERS = ('architect.md', 'po.md', 'developer.md',
+                'verification-builder.md', 'test-writer.md')
+    OPEN = '<!-- BEGIN name-both-commands -->'
+    CLOSE = '<!-- END name-both-commands -->'
+
+    def _block(self, name: str) -> str:
+        body = install.body_of(name)
+        assert self.OPEN in body and self.CLOSE in body, (
+            f'{name} carries no name-both-commands block')
+        start = body.index(self.OPEN) + len(self.OPEN)
+        return body[start:body.index(self.CLOSE)]
+
+    def test_the_five_carriers_are_byte_identical(self):
+        blocks = {name: self._block(name) for name in self.CARRIERS}
+        first = blocks[self.CARRIERS[0]]
+        drifted = [n for n, b in blocks.items() if b != first]
+        assert drifted == [], (
+            f'{drifted} carry a different wording from '
+            f'{self.CARRIERS[0]} — five near-copies is five chances to say '
+            f'something slightly different, and the differences are what get '
+            f'the whole block deleted')
+
+    def test_the_agents_whose_work_has_no_inner_loop_do_not_carry_it(self):
+        """A rule pasted where it does not apply is the noise that gets the
+        whole block deleted. `changelog-writer` and friends sync prose against
+        a known diff; there is no narrow command to name."""
+        for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
+                     'pm-operator.md'):
+            assert self.OPEN not in install.body_of(name), name

@@ -69,14 +69,131 @@ def write(path: Path, front: dict[str, str], body: str = 'x') -> None:
     path.write_text('\n'.join(lines), encoding='utf-8')
 
 
+# --- the flow a fixture tree DECLARES -----------------------------------------
+# `[pm.states.<kind>]` has NO runtime fallback behind it: `model.flow_of`
+# (src/agentic_sdlc/repo/pm/model.py:718) exits 2 BY NAME when a tree declared
+# nothing, and phase 7 routes every engine question through `model.holds`. From
+# that commit on, a fixture that never declared is a tree no `pm` verb and no
+# `check pm` run can read — so every tree builder in this suite declares now,
+# ahead of the routing change, and that change reviews as a behaviour change
+# rather than as four hundred fixture edits.
+#
+# DERIVED FROM `render_seed()` (model.py:218), never hand-copied. A table typed
+# out here would be a second spelling of `DEFAULT_FLOWS` (model.py:209), and the
+# copy nobody runs is the one that goes stale — which is exactly why
+# `installables/project-devkit.toml` is held to `render_seed()` VERBATIM by
+# tests/test_pm_flow.py:559 rather than being allowed its own copy.
+FLOW_TOML = model.render_seed()
+
+
+def with_flow(config: str = '') -> str:
+    """`config` with the flow declaration APPENDED — never replacing it.
+
+    THE APPEND IS THE WHOLE POINT. A fixture that takes a `config=` string and
+    hands it straight to `write_text` lets any test supplying one silently drop
+    `[pm.states.*]`, and the tree it builds is then refused by `flow_of` for a
+    reason having nothing to do with what that test is about. So every config a
+    fixture writes comes through here, and a test override ADDS to the
+    declaration instead of replacing it.
+
+    Idempotent: a config that already declares `[pm.states.…]` comes back
+    untouched, because a second copy of those tables is a TOML duplicate-table
+    error rather than a second declaration.
+    """
+    if '[pm.states.' in config:
+        return config
+    if config and not config.endswith('\n'):
+        config += '\n'
+    return config + FLOW_TOML
+
+
+def declaring(config: str = '', **kinds: dict) -> str:
+    """`config` plus a flow whose table for each kind NAMED here is `kinds[kind]`.
+
+    The seed for every kind not named, so a case about the story vocabulary
+    declares the story flow and inherits the rest. `kinds` values are
+    `{category: (state, ...)}` — the same shape `model.DEFAULT_FLOWS` holds —
+    and `model.render_seed` is the one renderer, so a case cannot hand-type a
+    table the reader would not read.
+    """
+    flows = {**model.DEFAULT_FLOWS, **{k: dict(v) for k, v in kinds.items()}}
+    if config and not config.endswith('\n'):
+        config += '\n'
+    return config + model.render_seed(flows)
+
+
+def loaded(root: Path) -> model.PmConfig:
+    """`model.load()` for a tree, caches cleared — the config the verbs read.
+
+    `cfg_for` builds a BARE `PmConfig(root=…)` with no flow, which is right
+    for `validate` (it asks no category) and wrong for anything that does.
+    """
+    from agentic_sdlc.core.project import load_config, repo_root
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    previous = Path.cwd()
+    os.chdir(root)
+    try:
+        return model.load()
+    finally:
+        os.chdir(previous)
+
+
+def write_config(root: Path, config: str = '') -> Path:
+    """Write `root/devkit.toml` as `config` PLUS the flow declaration.
+
+    The one config writer for a fixture tree, so that a test overriding `[pm]`
+    mid-case cannot drop `[pm.states.*]` by writing the file itself — which is
+    what every `(root / 'devkit.toml').write_text(...)` in this suite used to
+    do. See `with_flow` for why the append is not optional.
+    """
+    path = root / 'devkit.toml'
+    path.write_text(with_flow(config), encoding='utf-8')
+    return path
+
+
+def _mark(root: Path) -> None:
+    """Make `root` findable without spawning anything.
+
+    `core.project.repo_root` walks up for `.git` and no longer shells out to
+    `git rev-parse --show-toplevel`, so a tree only has to be MARKED to be
+    found. `mkdir` costs microseconds; `git init` costs a process, and a tree
+    builder is entered once per TEST across most of this suite.
+
+    **This function must never spawn, and that is load-bearing rather than
+    tidy.** `conftest.py` derives the `shell` mark by walking `tests/support`'s
+    call graph, so anything `tree` reaches decides the TIER of every module
+    that uses it. While the init lived here behind a flag, 1430 tests were
+    marked integration for a branch they never took — source cannot see which
+    side of an `if` runs, and one helper dragged three hundred cheap cases
+    across with it. The two builders are separate functions for that reason.
+    """
+    (root / '.git').mkdir(exist_ok=True)
+
+
 @contextlib.contextmanager
 def tree(milestone_status='building', feature_status='building',
-         story_statuses=('ready',), with_record=True):
-    """A one-milestone/one-feature/N-story repo, cwd'd into."""
+         story_statuses=('ready',), with_record=True, config=''):
+    """A one-milestone/one-feature/N-story repo, cwd'd into.
+
+    `config` is the tree's `devkit.toml` MINUS the flow declaration, which is
+    appended for you — see `with_flow`. A case that wants to change the config
+    after the tree is standing calls `write_config(root, …)` rather than
+    writing the file, for the same reason.
+
+    **This builder never spawns**, and `git_tree` below is the one that does.
+    They are two functions rather than one with a flag because `conftest.py`
+    derives the `shell` mark from `tests/support`'s CALL GRAPH — source cannot
+    see which side of an `if` runs, so a single builder with a `git_repo=`
+    branch marked every module that used it as integration, including three
+    hundred cases that never took the branch.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         mdir = root / 'pm' / 'roadmap' / '0.1-demo'
         fdir = mdir / 'features' / 'alpha'
+        root.mkdir(parents=True, exist_ok=True)
+        write_config(root, config)
         write(mdir / 'milestone.md', {'id': '"0.1"', 'name': 'Demo',
                                       'status': milestone_status})
         feature = {'id': '0.1/alpha', 'milestone': '"0.1"', 'name': 'Alpha',
@@ -92,13 +209,31 @@ def tree(milestone_status='building', feature_status='building',
             write(fdir / 'stories' / f's{i}.md',
                   {'id': f'0.1/alpha/s{i}', 'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': f'S{i}', 'status': st})
-        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        _mark(root)
         previous = Path.cwd()
         os.chdir(root)
         try:
             yield root
         finally:
             os.chdir(previous)
+
+
+@contextlib.contextmanager
+def git_tree(**kwargs):
+    """`tree`, in a REAL repository — for cases that ask git a question.
+
+    What changed, what is staged, what a rev resolves to: those are questions
+    only git can answer, and a test asking one is an integration test. It says
+    so by reaching for this builder, and `conftest.py`'s derivation reads that
+    reach and marks the module.
+
+    **The declaration is the point.** The default is cheap and the exception is
+    visible, so a module that quietly grows a git dependency changes tier in
+    the census rather than in somebody's wall clock.
+    """
+    with tree(**kwargs) as root:
+        subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+        yield root
 
 
 def bug(root: Path, slug: str = 'crash', status: str = 'open',
@@ -150,7 +285,8 @@ def ledger_rows(root: Path, rel: str = LEDGER_REL) -> list[dict]:
 
 
 def cfg_for(root: Path) -> model.PmConfig:
-    return model.PmConfig(root=root)
+    """The config a `tree()` READS — flow included — for a direct model call."""
+    return loaded(root)
 
 
 def run_cli(root: Path, *argv: str) -> tuple[int, str]:
@@ -187,13 +323,39 @@ def run_gate(root: Path) -> tuple[int, str]:
 MILESTONE_ID = '0.1'
 
 # D3's snapshot as the hook writes it: every bucket present, empty lists when
-# empty. A row naming no grain has all five empty.
+# empty. Two key families (decision D7): the frozen five — deprecated, matched
+# by the seed's words — and the three category keys the report attributes by.
+# A row naming no grain has every list but the milestone's empty.
 EMPTY_TREE = {'milestones_building': [MILESTONE_ID], 'features_building': [],
-              'features_review': [], 'stories_wip': [], 'stories_review': []}
+              'features_review': [], 'stories_wip': [], 'stories_review': [],
+              'milestones_in_progress': [MILESTONE_ID],
+              'features_in_progress': [], 'stories_in_progress': []}
+
+# The OLD shape — what every row written before 0.2.0's category keys holds.
+# `snapshot_legacy(...)` builds one for a case about the reader's boundary.
+LEGACY_TREE = {'milestones_building': [MILESTONE_ID], 'features_building': [],
+               'features_review': [], 'stories_wip': [], 'stories_review': []}
+
+
+def snapshot_legacy(**over: list) -> dict:
+    snap = dict(LEGACY_TREE)
+    snap.update(over)
+    return snap
 
 
 def snapshot(**over: list) -> dict:
+    """A CURRENT-shape snapshot. A frozen key given alone is mirrored into its
+    category key, so a case that says `stories_wip=[s]` builds the row the
+    writer would build for a `building` story — both families agreeing."""
     snap = dict(EMPTY_TREE)
+    mirror = {'stories_wip': 'stories_in_progress',
+              'stories_review': 'stories_in_progress',
+              'features_building': 'features_in_progress',
+              'features_review': 'features_in_progress',
+              'milestones_building': 'milestones_in_progress'}
+    for key, ids in over.items():
+        if key in mirror and mirror[key] not in over:
+            snap[mirror[key]] = sorted(set(snap[mirror[key]]) | set(ids))
     snap.update(over)
     return snap
 

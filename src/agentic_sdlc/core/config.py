@@ -1,14 +1,7 @@
-"""config.py — typed `devkit.toml` reading.
+"""Typed `devkit.toml` reading: every coercion refuses rather than converts.
 
-Separate from `project.py` because they answer different questions: project.py
-finds the repo and loads the file, this decides what a value is allowed to be.
-
-Every coercion here refuses rather than converts. That is the whole point: a
-BARE STRING is iterable, so `exclude_prefixes = "addons/"` under a plain
-`tuple(...)` becomes ('a','d','d','o','n','s','/') and excludes almost the
-entire tree — after which the gate scans nothing and prints PASS. That defect
-shipped in v0.9.0 in seven of eight config sections, because the guard was
-written once for `[pm]` and never carried across. One reader is the fix.
+A bare string is iterable, so a `tuple(...)` over `exclude_prefixes = "addons/"` would
+exclude the whole tree and let a gate print PASS over nothing.
 """
 from __future__ import annotations
 
@@ -16,14 +9,7 @@ from agentic_sdlc.core.project import load_config
 
 
 class ConfigError(Exception):
-    """A malformed `devkit.toml` value. Exit 2 — a typo is NOT a finding.
-
-    Exit 1 is reserved for findings, so CI must never read a config mistake as
-    "drift found". Worse is the silent case this class exists to prevent: a
-    BARE STRING is iterable, so `exclude_prefixes = "addons/"` coerced with
-    `tuple(...)` becomes ('a','d','d','o','n','s','/') and excludes almost the
-    whole tree — the gate then scans nothing and prints PASS.
-    """
+    """A malformed `devkit.toml` value; exit 2, because a typo is not a finding."""
 
 
 def config_section(name: str) -> dict:
@@ -35,18 +21,13 @@ def config_section(name: str) -> dict:
 
 
 def section_declared(name: str) -> bool:
-    """Is `[name]` PRESENT in devkit.toml at all — even declared empty?
-
-    `config_section` cannot answer this: an absent table and an empty one both
-    read as {}. A section a release RETIRED has to be named on either spelling,
-    because the author of the empty one believes it took effect just as much.
-    """
+    """Is `[name]` present at all; `config_section` reads absent and empty both as {}."""
     return name in load_config()
 
 
 def str_tuple(sect: dict, name: str, key: str,
               fallback: tuple[str, ...]) -> tuple[str, ...]:
-    """A list-of-strings setting. A bare string is REFUSED, never iterated."""
+    """A list-of-strings setting. A bare string is refused, never iterated."""
     value = sect.get(key)
     if value is None:
         return fallback
@@ -55,9 +36,7 @@ def str_tuple(sect: dict, name: str, key: str,
             f'[{name}] {key} must be a list of strings, got {value!r}'
             + (f' — write {key} = [{value!r}]' if isinstance(value, str) else ''))
     if not value:
-        # An empty list reads as "nothing", but downstream it usually means the
-        # opposite: `git ls-files` with no pathspec is the ENTIRE repo. Refuse
-        # rather than let a value mean the reverse of what it looks like.
+        # An empty pathspec downstream usually means the ENTIRE repo, not nothing.
         raise ConfigError(
             f'[{name}] {key} is empty — remove the key to take the default '
             f'({" ".join(fallback) or "none"}) rather than declaring nothing')
@@ -71,6 +50,50 @@ def text(sect: dict, name: str, key: str, fallback: str) -> str:
     return value
 
 
+def _escapes_checkout(value: str) -> str | None:
+    """Why this value names a path outside the checkout, by shape alone, or None.
+
+    Only what actually leaves is refused; `.`, a trailing slash and `*` stay inside.
+    """
+    if '://' in value or value.lower().startswith('file:'):
+        return 'is a URL, and nothing here is fetched'
+    if value.startswith('/'):
+        return 'is absolute; every path key is relative to the repo root'
+    if value.startswith('~'):
+        return 'is home-relative, and nothing here is expanded'
+    if '\\' in value:
+        return 'carries a backslash, which is not a path separator here'
+    if len(value) > 1 and value[1] == ':' and value[0].isalpha():
+        return 'names a drive; every path key is relative to the repo root'
+    if '..' in value.split('/'):
+        return 'climbs out with a `..` segment'
+    return None
+
+
+def relpath(sect: dict, name: str, key: str, fallback: str) -> str:
+    """A path setting: `text`, plus "inside this checkout" (hard rule 8)."""
+    value = text(sect, name, key, fallback)
+    defect = _escapes_checkout(value)
+    if defect is not None:
+        raise ConfigError(
+            f'[{name}] {key} must name a path inside this checkout, got '
+            f'{value!r} — it {defect}')
+    return value
+
+
+def relpath_tuple(sect: dict, name: str, key: str,
+                  fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """`str_tuple`, plus "every entry is inside this checkout"; the message names which."""
+    values = str_tuple(sect, name, key, fallback)
+    for index, value in enumerate(values, start=1):
+        defect = _escapes_checkout(value)
+        if defect is not None:
+            raise ConfigError(
+                f'[{name}] {key} entry {index} of {len(values)} must name a '
+                f'path inside this checkout, got {value!r} — it {defect}')
+    return values
+
+
 def flag(sect: dict, name: str, key: str, fallback: bool) -> bool:
     value = sect.get(key, fallback)
     if not isinstance(value, bool):
@@ -79,23 +102,37 @@ def flag(sect: dict, name: str, key: str, fallback: bool) -> bool:
 
 
 def table(sect: dict, name: str, key: str, fallback: dict) -> dict:
-    """A table-of-tables setting. A string or list is REFUSED, never walked."""
+    """A table-of-tables setting. A string or list is refused, never walked."""
     value = sect.get(key, fallback)
     if not isinstance(value, dict):
         raise ConfigError(f'[{name}] {key} must be a table, got {value!r}')
     return value
 
 
+def table_array(sect: dict, name: str, key: str,
+                fallback: tuple[dict, ...] = ()) -> tuple[dict, ...]:
+    """An array of tables (`[[section.key]]`), in declaration order; an empty list is refused."""
+    value = sect.get(key)
+    if value is None:
+        return tuple(fallback)
+    if not isinstance(value, list):
+        raise ConfigError(
+            f'[{name}] {key} must be an array of tables — write '
+            f'[[{name}.{key}]] blocks, got {value!r}')
+    if not value:
+        raise ConfigError(
+            f'[{name}] {key} is empty — remove the key (or the whole [{name}] '
+            f'section) rather than declaring nothing')
+    for index, entry in enumerate(value, start=1):
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f'[{name}.{key}] #{index} must be a table, got {entry!r}')
+    return tuple(value)
+
+
 def str_tuple_table(sect: dict, name: str, key: str,
                     fallback: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
-    """A table mapping names to lists of strings — `str_tuple`, one level down.
-
-    A bare-string VALUE is accepted as a ONE-ELEMENT list: it is the documented
-    shorthand (`suffixes = { Manager = "emits" }`) and, taken whole, it cannot
-    fall into the character-iteration trap this module exists to prevent —
-    nothing here ever iterates it. Anything else non-list is REFUSED, and so is
-    an empty list (remove the entry rather than declaring nothing).
-    """
+    """A table of name -> list of strings; a bare-string value is the one-element shorthand."""
     raw = sect.get(key)
     if raw is None:
         return dict(fallback)
@@ -117,13 +154,7 @@ def str_tuple_table(sect: dict, name: str, key: str,
 
 def number_table(sect: dict, name: str, key: str,
                  fallback: dict[str, int]) -> dict[str, int]:
-    """A table mapping names to INTEGERS — `number`, one level down.
-
-    A ledger (`{path = 956}`) and an arity floor (`{"Save.write" = 2}`) are the
-    same shape, and both are read as "how many" by code that would otherwise
-    silently compare an int against a string. A bool is refused with everything
-    else: `true` is an `int` in Python and would arrive as 1.
-    """
+    """A table of name -> integer; a bool is refused because `True` would arrive as 1."""
     raw = sect.get(key)
     if raw is None:
         return dict(fallback)
@@ -139,7 +170,7 @@ def number_table(sect: dict, name: str, key: str,
 
 
 def pattern(sect: dict, name: str, key: str, fallback: str) -> str:
-    """A regex setting, COMPILED at load so a bad one is exit 2, not a finding."""
+    """A regex setting, compiled at load so a bad one is exit 2, not a finding."""
     import re as _re
     value = text(sect, name, key, fallback)
     try:

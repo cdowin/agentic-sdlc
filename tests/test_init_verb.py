@@ -1,4 +1,4 @@
-"""test_init_verb.py — `agentic-sdlc init` on a blank Godot 4 project.
+"""test_init_verb.py — `agentic-sdlc init` on a fresh repo.
 
 The verb is a COMPOSITION, so the contract under test is what a composition
 can get wrong:
@@ -12,24 +12,32 @@ can get wrong:
     project-owned seed) and writes nothing;
   * `--force` respects the ownership split: it overwrites the installed files
     and does not touch devkit.toml / Makefile / CLAUDE.md / the PM tree;
-  * the refusals are decided BEFORE the first byte — a directory that is not a
-    Godot project, and one that is not a git repo, leave it empty.
+  * THERE IS ONE REFUSAL, and it is decided BEFORE the first byte: a directory
+    that is not a git repo is left as it was found. There were two through
+    0.1.0 — the second declined a root holding no engine project file, and it
+    left with the engine half in 0.2.0. A removal that is merely absent from a
+    suite is a removal nothing holds, so the case that used to prove that
+    refusal now proves it is GONE: an engine-less repo is INITIALIZED, whole.
 
-Nothing here boots Godot. `init` runs OUT OF PROCESS, because it resolves the
-repo root and the config through module-level caches that a same-process run
-would leave pointing at a deleted temp directory.
+The fixture keeps a `project.godot` and an icon because a fresh repo with two
+files of its own is the realistic shape, not because `init` reads either one —
+`test_a_git_repo_with_no_engine_project_file_is_initialized_whole` is the case
+that says so. Nothing here boots anything. `init` runs OUT OF PROCESS, because
+it resolves the repo root and the config through module-level caches that a
+same-process run would leave pointing at a deleted temp directory.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import hashlib
+import inspect
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
@@ -37,6 +45,7 @@ from support import REPO_ROOT  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.repo import init, install  # noqa: E402
+from agentic_sdlc.repo.pm import model  # noqa: E402
 
 PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/name="Fresh"\nconfig/version="0.1.0"\n')
@@ -45,6 +54,20 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 # THE ROSTER. Spelled out so this file states the contract; cross-checked
 # against the verbs' own tables below so it cannot become a second list that
 # quietly disagrees with what ships.
+#
+# IT SHRANK FROM 49 TO 34 IN 0.2.0, and the fifteen that left are named here
+# rather than simply deleted, because a roster that only ever gets shorter is
+# how a census stops being one. Decision D2 — an installable belongs to the kit
+# whose ARTIFACT it acts on: the twelve engine runners under
+# `tools/dev/runners/` (`parse.sh`, `lint.sh`, `unit.sh`, `integration.sh`,
+# `scenario.sh`, `warnings.sh`, `capture.sh`, `import_cache.sh`,
+# `hermetic_run_scan.sh`, `compile_sweep.gd` + its `.uid`), the engine-boot
+# guard hook `cc-godot-sandbox.sh`, and `tools/dev/checks/doctor.sh` all went
+# to the language kit; `.github/workflows/uid-guard.yml` guarded an engine
+# artifact and went with them; and `gdk_runners.sh` became `gdk_gate.sh` when
+# the verb that writes it became `install-gates`. Nothing on this list is
+# optional, and `test_the_roster_above_is_what_the_verbs_actually_carry` is
+# what stops the number moving again without a line moving here.
 WRITES = (
     'devkit.toml',
     'pm/roadmap/ROADMAP.md',
@@ -52,20 +75,8 @@ WRITES = (
     '.claude/skills/pm-operations/SKILL.md',
     'Makefile',
     'Makefile.devkit',
-    'tools/dev/gdk_runners.sh',
-    'tools/dev/runners/import_cache.sh',
-    'tools/dev/runners/parse.sh',
-    'tools/dev/runners/compile_sweep.gd',
-    'tools/dev/runners/compile_sweep.gd.uid',
-    'tools/dev/runners/lint.sh',
-    'tools/dev/runners/warnings.sh',
-    'tools/dev/runners/unit.sh',
-    'tools/dev/runners/scenario.sh',
-    'tools/dev/runners/integration.sh',
-    'tools/dev/runners/capture.sh',
-    'tools/dev/runners/hermetic_run_scan.sh',
+    'tools/dev/gdk_gate.sh',
     'tools/hooks/cc-commit-pathspec.sh',
-    'tools/hooks/cc-godot-sandbox.sh',
     'tools/hooks/cc-stop-gate.sh',
     'tools/hooks/cc-write-confine.sh',
     'tools/hooks/cc-ledger-subagent.sh',
@@ -73,7 +84,6 @@ WRITES = (
     'tools/hooks/pre-push',
     'tools/hooks/prepare-commit-msg',
     'tools/dev/agent-worktree.sh',
-    'tools/dev/checks/doctor.sh',
     'tools/setup-hooks.sh',
     '.claude/agents/verification-reviewer.md',
     '.claude/agents/verification-builder.md',
@@ -89,12 +99,19 @@ WRITES = (
     '.claude/agents/doc-hygiene.md',
     '.claude/agents/pm-operator.md',
     '.github/workflows/verify.yml',
-    '.github/workflows/uid-guard.yml',
     '.github/workflows/semver-gate.yml',
     '.github/workflows/auto-tag.yml',
     '.gitignore',
     'CLAUDE.md',
+    'docs/sdlc-protocol.md',
 )
+# Rule 4: the roster above must not be able to collapse and still pass. 34 is
+# what ships today; the floor is what a composition of four install verbs plus
+# four owned writes cannot go under without a verb having silently stopped
+# firing, and it is asserted rather than trusted.
+ROSTER_FLOOR = 20
+assert len(WRITES) == len(set(WRITES)) >= ROSTER_FLOOR, WRITES
+
 # What the fixture starts with — everything else present afterwards is init's.
 PRE_EXISTING = ('project.godot', 'icon.svg')
 
@@ -172,37 +189,114 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
     assert init.VERSION_PLACEHOLDER not in body, 'the pin was never substituted'
 
 
+# Every [section] the seed devkit.toml offers. It was SEVENTEEN through 0.1.0;
+# the eleven engine-gate sections (`uid`, `tres`, `props`, `defaults`,
+# `autoloads`, `refs`, `orphans`, `rng`, `tres_comment`, `unit_disk`,
+# `test_shape`) left with the gates that read them in 0.2.0. Asserted as an
+# EQUALITY rather than as a floor, which is the direction that got stronger: a
+# section ADDED to the template without a line here now fails too, where the
+# old `in` loop would have let one arrive unmentioned.
+CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
+                   'pm', 'verify')
+
+
 def test_the_config_template_carries_every_section_the_gates_read():
     """Commented out, at the stock default — a repo with no devkit.toml must
-    behave byte-identically to one declaring the defaults, so the template
-    starts inert and is a menu rather than an opinion."""
+    behave byte-identically to one declaring the defaults, so the GATE half of
+    the template is a menu rather than an opinion.
+
+    THE FLOW IS THE EXCEPTION AND IT IS THE ONE LINE-ITEM HERE. Hard rule 5 as
+    it now reads: a GATE ships stock defaults, a WORKFLOW does not. There is no
+    runtime fallback behind `[pm.states.*]`, so a commented copy would leave a
+    freshly-initialised tree refused on its first `pm` call (plan review
+    finding P1). Every live line therefore has to belong to that one section —
+    asserted as an equality against `render_seed()`, which is also what
+    `test_pm_flow.py` pins the template's bytes to.
+    """
     body = init.seed_body(init.SEED_CONFIG[0])
-    for section in ('checks', 'gates', 'uid', 'tres', 'props', 'defaults',
-                    'doc', 'shell', 'repo_hygiene', 'pm', 'autoloads', 'refs',
-                    'orphans', 'rng', 'tres_comment', 'unit_disk',
-                    'test_shape'):
-        assert f'# [{section}]' in body, f'[{section}] is not in the template'
+    offered = re.findall(r'^# \[([a-z_]+)\]$', body, re.MULTILINE)
+    assert offered, 'the template offers no section at all'
+    assert sorted(offered) == sorted(CONFIG_SECTIONS), (
+        f'template drift: {sorted(set(offered) ^ set(CONFIG_SECTIONS))}')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
-    assert live == [], f'the template declares something: {live}'
+    seeded = [ln for ln in model.render_seed().splitlines() if ln.strip()]
+    assert live == seeded, (
+        f'the template declares something outside the flow: '
+        f'{[ln for ln in live if ln not in seeded]}')
 
 
-def test_the_gitignore_entries_are_the_runners_own_defaults():
+# Each `IGNORED` entry, pinned to the constant in the file that WRITES it.
+# `(shipped shell file, variable)` for a shell default — not readable from
+# Python, but greppable — and `None` for the one whose writer is Python and can
+# simply be imported.
+IGNORE_OWNERS = {
+    '.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR'),
+    '.agent-scope': ('agent-worktree.sh', 'SCOPE_MARKER'),
+    '.claude/worktrees/': ('agent-worktree.sh', 'WORKTREE_PARENT'),
+}
+
+
+def test_the_gitignore_entries_are_their_writers_own_defaults():
     """A shell default is not readable from Python, so it is PINNED here: each
-    ignored directory must be the `GDK_*` default of the runner that writes
-    it. A rename on either side fails this rather than silently committing a
-    consumer's gate transcripts."""
-    owners = {'.gate-reports/': ('gdk_runners.sh', 'GDK_GATE_REPORT_DIR'),
-              '.headless-userdata/': ('gdk_runners.sh', 'GDK_SANDBOX_DIRNAME'),
-              '.scenario-reports/': ('scenario.sh', 'GDK_SCENARIO_REPORT_DIR'),
-              '.capture-reports/': ('capture.sh', 'GDK_CAPTURE_REPORT_DIR')}
-    assert set(init.IGNORED) == set(owners)
-    for entry, (runner, variable) in owners.items():
-        body = install.body_of(runner)
-        expected = f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"'
-        assert expected in body, (
-            f'{runner} no longer defaults {variable} to {entry} '
-            f'(looked for {expected})')
+    ignored path must be the default of the shipped file that writes it. A
+    rename on either side fails this rather than silently committing a
+    consumer's run artifacts.
+
+    THREE ENTRIES (R3,
+    `docs/reviews/2026-09-05-the-release-is-a-conveyor.md`). It was
+    `.gate-reports/` alone while three other paths this package's own files
+    write were left tracked, and `.agentic-sdlc/` is the one that bit: the
+    conveyor's run state dirtied the tree the conveyor's own `tree-clean` step
+    measures. Measured on a stock `init` tree, run 2 of `release`:
+
+        [release] CORRECTED — the run state said 'tree-clean' was done; the
+        tree says: 1 modified path(s): .agentic-sdlc/
+
+    It went the other way in 0.2.0 too: `.headless-userdata/`,
+    `.scenario-reports/` and `.capture-reports/` were written only by the
+    engine runners and left with them (decision D2). The floor this census
+    stands on is that it is not EMPTY — an `IGNORED` that emptied out would
+    have every consumer committing its run artifacts while this test passed
+    over nothing, so emptiness is a failure here before the equality below is
+    even asked.
+    """
+    assert init.IGNORED, 'init.IGNORED is empty — this test would prove nothing'
+    assert set(init.IGNORED) == set(IGNORE_OWNERS)
+    for entry, owner in IGNORE_OWNERS.items():
+        if owner is None:
+            continue
+        shipped, variable = owner
+        body = install.body_of(shipped)
+        # Both spellings the shipped scripts use: a `${VAR:-default}` fallback
+        # and a plain assignment. Either one is the file DECLARING that path.
+        assert (f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"' in body
+                or f'{variable}="{entry.rstrip("/")}"' in body), (
+            f'{shipped} no longer defaults {variable} to {entry}')
+
+
+def test_every_run_artifact_this_package_writes_is_ignored():
+    """R3's second half: the SWEEP, not just the one entry that was found.
+
+    Gitignoring is what keeps `tree-clean` answerable (under D12 a belt keeps
+    no run state, so the directory it once wrote is gone from this sweep), so
+    a path this package's own files write and `init` does not ignore is a
+    `tree-clean` this package falsifies in every consumer. Asked of the
+    installables' own constants rather than restated, so a renamed marker fails
+    here instead of quietly re-opening the hole.
+    """
+    writes: set[str] = set()
+    body = install.body_of('agent-worktree.sh')
+    for variable in ('SCOPE_MARKER', 'WORKTREE_PARENT'):
+        found = re.search(rf'^{variable}="([^"]+)"', body, re.MULTILINE)
+        assert found, f'agent-worktree.sh declares no {variable}'
+        writes.add(found.group(1))
+    ignored = {entry.rstrip('/') for entry in init.IGNORED}
+    missing = sorted(path for path in writes if path.rstrip('/') not in ignored)
+    assert missing == [], (
+        f'{missing} are written by files this package installs and are in no '
+        f'init.IGNORED entry — every one of them dirties the tree that '
+        f'`tree-clean` measures')
 
 
 # --- idempotence --------------------------------------------------------------
@@ -217,7 +311,16 @@ def test_a_second_run_writes_nothing():
     assert not changed, f'a second run rewrote: {changed}'
     assert set(after) == set(before), (
         f'a second run added: {sorted(set(after) - set(before))}')
-    assert 'wrote' not in done.stdout, done.stdout
+    # The LINE SHAPE, not the word. `'wrote' not in stdout` was a false
+    # positive the moment init's own next-steps prose used the word — the third
+    # substring assertion in this milestone to catch prose instead of the thing
+    # it was aimed at ('DLC.md' is in 'SDLC.md' too). The two assertions above
+    # already prove no byte moved; this one exists to catch a verb that WRITES
+    # and reports itself as current, so it must match what the writer prints.
+    wrote = [line for line in done.stdout.splitlines()
+             if line.startswith(('[install] wrote ', '[init] wrote ',
+                                 '[pm] wrote '))]
+    assert wrote == [], done.stdout
 
 
 def test_a_second_run_does_not_duplicate_the_gitignore_entries():
@@ -231,10 +334,16 @@ def test_a_second_run_does_not_duplicate_the_gitignore_entries():
 
 
 # --- --diff -------------------------------------------------------------------
+# The devkit-owned file the ownership cases below drift, in place of
+# `tools/dev/checks/doctor.sh`, which left with the engine half in 0.2.0. A
+# hook, so the refusal case can still name the verb that owns it.
+DEVKIT_OWNED = 'tools/hooks/cc-stop-gate.sh'
+
+
 def test_diff_names_drift_on_both_ownerships_and_writes_nothing():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        (root / 'tools/dev/checks/doctor.sh').write_text(
+        (root / DEVKIT_OWNED).write_text(
             '#!/usr/bin/env bash\necho mine\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text('# mine\n', encoding='utf-8')
         before = census(root)
@@ -242,7 +351,7 @@ def test_diff_names_drift_on_both_ownerships_and_writes_nothing():
         after = census(root)
     assert done.returncode == 0, done.stdout + done.stderr
     assert before == after, '--diff wrote something'
-    assert 'a/tools/dev/checks/doctor.sh' in done.stdout, done.stdout
+    assert f'a/{DEVKIT_OWNED}' in done.stdout, done.stdout
     assert 'a/CLAUDE.md' in done.stdout, done.stdout
     # Everything else is reported current, so the drift is what stands out.
     assert done.stdout.count('already current') >= len(WRITES) - 4, done.stdout
@@ -260,7 +369,10 @@ def test_diff_names_a_missing_gitignore_entry():
 # --- ownership ----------------------------------------------------------------
 def test_a_differing_project_owned_file_is_reported_not_refused():
     """devkit.toml, Makefile and CLAUDE.md are the project's from the first
-    write. Divergence is what they are FOR, so it is not a collision."""
+    write. Divergence is what they are FOR, so it is not a collision. The one
+    thing init still does to a devkit.toml it did not write is APPEND the
+    flow, because that is the section nothing falls back on — every byte the
+    project wrote stays, in front of it."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
         mine = '# mine\n'
@@ -270,19 +382,57 @@ def test_a_differing_project_owned_file_is_reported_not_refused():
         kept = [(root / rel).read_text(encoding='utf-8')
                 for rel in ('devkit.toml', 'Makefile', 'CLAUDE.md')]
     assert done.returncode == 0, done.stdout + done.stderr
-    assert kept == [mine] * 3, 'a project-owned file was overwritten'
+    assert kept[1:] == [mine] * 2, 'a project-owned file was overwritten'
+    assert kept[0].startswith(mine), 'devkit.toml lost the project\'s bytes'
+    assert model.render_seed() in kept[0], kept[0]
     assert done.stdout.count('is yours — left alone') == 3, done.stdout
+    assert 'appended the flow to devkit.toml' in done.stdout, done.stdout
+
+
+def test_init_appends_the_flow_to_a_config_it_did_not_write_byte_preserving():
+    """F2/F3 of docs/reviews/2026-09-05-the-project-declares-its-flow.md,
+    measured the way the review measured them: a hand-written CRLF
+    devkit.toml with `[checks]` and `[pm]` and NO `[pm.states.*]`.
+
+    No existing case could fail for this. Every other case here initialises
+    a tree that has no devkit.toml, so the template is written whole and the
+    append path never runs; the one case that pre-writes the file (above)
+    read it back as text, which is where a CRLF-to-LF rewrite hides. This one
+    holds the BYTES: the original is a prefix of the result, the appended
+    block uses the file's own CRLF, the second run changes nothing, and a
+    verb that asks `flow_of` — the refusal that names `pm init` — now works.
+    """
+    theirs = ('[checks]\r\nall = ["doc"]\r\n\r\n[pm]\r\n'
+              'review_dir = "docs/reviews"\r\n')
+    with fresh_project(files={'devkit.toml': theirs}) as root:
+        path = root / 'devkit.toml'
+        path.write_bytes(theirs.encode())          # write_text would translate
+        done = devkit(root, 'init')
+        assert done.returncode == 0, done.stdout + done.stderr
+        first = path.read_bytes()
+        assert first.startswith(theirs.encode()), first
+        appended = first[len(theirs):].decode()
+        assert '\n' not in appended.replace('\r\n', ''), (
+            'the appended block does not use the file\'s CRLF')
+        assert appended.replace('\r\n', '\n').endswith(model.render_seed())
+        again = devkit(root, 'init')
+        assert again.returncode == 0, again.stdout + again.stderr
+        assert path.read_bytes() == first, 'a second run rewrote devkit.toml'
+        assert 'already declares [pm.states.*]' in again.stdout, again.stdout
+        # ...and the tree the refusal was about now answers.
+        vocab = devkit(root, 'pm', 'vocabulary', '--json')
+        assert vocab.returncode == 0, vocab.stderr
+        assert '"flow_declared": true' in vocab.stdout
 
 
 def test_force_overwrites_the_installed_files_and_not_the_projects_own():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        stock = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
-        (root / 'tools/dev/checks/doctor.sh').write_text('# mine\n',
-                                                         encoding='utf-8')
+        stock = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
+        (root / DEVKIT_OWNED).write_text('# mine\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text('# mine\n', encoding='utf-8')
         done = devkit(root, 'init', '--force')
-        restored = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
+        restored = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
         claude = (root / 'CLAUDE.md').read_text(encoding='utf-8')
     assert done.returncode == 0, done.stdout + done.stderr
     assert restored == stock, '--force did not restore the devkit-owned file'
@@ -292,30 +442,47 @@ def test_force_overwrites_the_installed_files_and_not_the_projects_own():
 def test_a_differing_installed_file_refuses_and_names_force():
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
-        (root / 'tools/dev/checks/doctor.sh').write_text('# mine\n',
-                                                         encoding='utf-8')
+        (root / DEVKIT_OWNED).write_text('# mine\n', encoding='utf-8')
         done = devkit(root, 'init')
-        kept = (root / 'tools/dev/checks/doctor.sh').read_text(encoding='utf-8')
+        kept = (root / DEVKIT_OWNED).read_text(encoding='utf-8')
     assert done.returncode == 1, done.stdout + done.stderr
     assert kept == '# mine\n', 'the refusal wrote anyway'
     assert '--force' in done.stderr + done.stdout
     assert 'REFUSED by install-hooks' in done.stdout, done.stdout
 
 
-# --- the refusal matrix -------------------------------------------------------
-def test_a_directory_that_is_not_a_godot_project_is_refused_whole():
+# --- the refusal matrix, and the refusal that was REMOVED ---------------------
+def test_a_git_repo_with_no_engine_project_file_is_initialized_whole():
+    """THE REMOVAL, HELD. This exact tree — `git init` and nothing else — was
+    refused at exit 2 through 0.1.0 for holding no `project.godot`, and this
+    case asserted the refusal. 0.2.0 took the engine half out and the refusal
+    went with it: an engine-less kit whose `init` declined every engine-less
+    repo was the sharpest thing left in the package.
+
+    So the case is INVERTED rather than deleted. A removal that is merely
+    absent from a suite is a removal nothing holds, and the way this one comes
+    back is a preflight quietly regaining an opinion — which would read as an
+    exit code nobody asserted. What is asked is the whole result, not the exit
+    code: the roster lands entire in a repo with no engine file anywhere in
+    it, and no output mentions one.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
         done = devkit(root, 'init')
-        left = set(census(root))
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert 'project.godot' in done.stderr
-    assert 'nothing was written' in done.stderr
-    assert left == set(), f'a refused init wrote: {sorted(left)}'
+        present = set(census(root))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'project.godot' not in done.stdout + done.stderr, (
+        f'init has an opinion about an engine project file again:\n'
+        f'{done.stdout}{done.stderr}')
+    assert present == set(WRITES), (
+        f'missing: {sorted(set(WRITES) - present)}; '
+        f'unexpected: {sorted(present - set(WRITES))}')
 
 
 def test_a_directory_that_is_not_a_git_repo_is_refused_whole():
+    """The ONE refusal left, and it still fires before the first byte: the
+    tree comes back holding exactly what it held going in."""
     with fresh_project(git=False) as root:
         done = devkit(root, 'init')
         left = set(census(root))
@@ -324,14 +491,31 @@ def test_a_directory_that_is_not_a_git_repo_is_refused_whole():
     assert left == set(PRE_EXISTING), f'a refused init wrote: {sorted(left)}'
 
 
-@pytest.mark.parametrize('flag', ['--forse', '-f', 'install', '--diff=1', ''])
-def test_an_unknown_flag_is_a_usage_error_that_writes_nothing(flag):
+def test_the_preflight_carries_exactly_one_refusal():
+    """The other half of the inversion, asked of the code rather than of a run.
+    `_preflight` is the whole before-the-first-byte gate, and the case above
+    proves the engine one is gone by OBSERVING one tree; this proves there is
+    no third refusal waiting for a tree neither case builds."""
+    reasons = [node for node in ast.walk(ast.parse(
+        inspect.getsource(init._preflight)))
+        if isinstance(node, ast.Return) and not (
+            isinstance(node.value, ast.Constant) and node.value.value == '')]
+    assert len(reasons) == 1, (
+        f'`init` grew a refusal: _preflight has {len(reasons)} of them, and '
+        f'the suite asserts one — the git-repo check')
+
+
+def test_an_unknown_flag_is_a_usage_error_that_writes_nothing():
+    """Five spellings, one project: a usage error writes nothing, so the
+    tree is as fresh for the second flag as for the first."""
     with fresh_project() as root:
-        done = devkit(root, 'init', flag)
-        left = set(census(root))
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert 'unknown flag' in done.stderr
-    assert left == set(PRE_EXISTING), f'a usage error wrote: {sorted(left)}'
+        for flag in ('--forse', '-f', 'install', '--diff=1', ''):
+            done = devkit(root, 'init', flag)
+            left = set(census(root))
+            assert done.returncode == 2, (flag, done.stdout + done.stderr)
+            assert 'unknown flag' in done.stderr, flag
+            assert left == set(PRE_EXISTING), (
+                f'{flag!r}: a usage error wrote: {sorted(left)}')
 
 
 def test_help_prints_the_written_set_and_writes_nothing():
@@ -388,9 +572,16 @@ def test_the_doc_gate_widened_to_the_include_chain_and_no_further():
     sin, so both directions are asserted in one tree."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
+        # A tier the project's kit hangs off the include's `-include
+        # $(GDK_TIERS_MK)` seam — a variable path, resolved from the
+        # include's own `?=` default rather than skipped. Every `make unit`
+        # in every consumer's CLAUDE.md read as dead until it was.
+        (root / 'Makefile.tiers').write_text(
+            'GDK_PRECOMMIT_TIERS := kit-unit\n.PHONY: kit-unit\n'
+            'kit-unit:\n\t@echo unit\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text(
-            '# Doc\n\nThe gate is `make check` and `make precommit`.\n',
-            encoding='utf-8')
+            '# Doc\n\nThe gate is `make check`, `make precommit` and '
+            '`make kit-unit`.\n', encoding='utf-8')
         subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
         green = devkit(root, 'check', 'doc')
         (root / 'CLAUDE.md').write_text(

@@ -56,27 +56,38 @@ make this project responsible for the rest.
 
 ## Status vocabularies
 
-CLOSED sets, listed in reading order. Any state in a grain's own set is reachable
-directly — nothing constrains which may follow which, and `pm vocabulary --json` prints
-these plus the rule ids `[pm] checks` may name, which is what to read after a pin bump.
+This project's, declared in `devkit.toml` under `[pm.states.<kind>]` and written by
+`pm init`. Every state sits in exactly one of three CATEGORIES — `todo`, `in_progress`,
+`done` — and every question the tool asks (is this feature's work finished? has this
+story started under a feature that has not? which milestone's ledger?) is asked of the
+category, never of the word. Any declared state is reachable directly — nothing
+constrains which may follow which — and `pm vocabulary --json` prints the declaration
+plus the rule ids `[pm] checks` may name, which is what to read after a pin bump.
 
-| Grain | States |
-|---|---|
-| Milestone | `planning` `ready` `building` `reviewing` `accepted` `packaging` `done` |
-| Feature | the same seven |
-| Story | the same seven |
-| Bug | `open` `fixed` `closed` (override with `[pm] bug_states`) — a different machine |
+The seed `pm init` writes:
 
-One vocabulary, three grains, and a grain uses the states it needs and SKIPS the
-rest: packaging a feature is a different act from packaging a milestone, and a story
-routinely skips packaging altogether. `done` does not mean SHIPPED — the flip is
-itself a commit that has not shipped when it is written. It means everything inside
-the tree's authority is finished: changelog written, reviews closed, findings landed,
-gates green. Branch, PR, merge and tag are git events, outside the tree, after `done`.
+| Grain | `todo` | `in_progress` | `done` |
+|---|---|---|---|
+| Milestone | `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` |
+| Feature | `planning` `ready` | `building` `reviewing` | `done` `obe` |
+| Story | `planning` `ready` | `building` | `done` `obe` |
+| Bug | `open` | `fixed` | `closed` |
 
-A status outside its set is a `check pm` D4 finding, on every grain kind including
-bugs. Move a status with the `pm` CLI rather than an editor — see the auto-loaded
-`pm-execution` rule for why, and for what the verbs refuse.
+Each kind holds the states its belt WRITES and no others: a story is claimed
+(`building`) and closed (`done`), a feature is additionally `reviewing` while its
+record is written, and acceptance and packaging are milestone acts. There is no
+step-to-state table — a belt (`close story`, `close feature`, `release`) runs its
+checks and then writes the first state of its kind's `done` list, or writes nothing
+and names each false check; `--force` writes anyway, on the record (D12) — and
+`pm <kind> <state>` reaches any declared state by hand. `done` does not mean SHIPPED — the flip is itself a commit that has not
+shipped when it is written. It means everything inside the tree's authority is
+finished: changelog written, reviews closed, findings landed, gates green. `obe` sits
+beside it because abandoned work is finished too. Branch, PR, merge and tag are git
+events, outside the tree, after `done`.
+
+A status the project never declared is a `check pm` D4 finding, on every grain kind
+including bugs. Move a status with the `pm` CLI rather than an editor — see the
+auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
 
 ## Decomposing work
 
@@ -93,17 +104,19 @@ bugs. Move a status with the `pm` CLI rather than an editor — see the auto-loa
 ## Phases — optional execution buckets
 
 A milestone big enough to need ordering stamps `phase:` on each feature (`0`, `1`, …,
-or `seam` for work that neither blocks nor is blocked). `pm status` then groups by
-bucket with a per-phase tally.
+or any name you choose — `seam`, say, for work that neither blocks nor is blocked).
+`pm status` then groups by bucket with a per-phase tally: numbered phases first, then
+named ones, then the unphased. The tool knows no phase word.
 Small milestones omit the field and report as before. The phase is the bucket, never
 the status — it groups the board, and the dependency graph orders the work; nothing
 requires the two readings to agree.
 
 ## Reading the tools
 
-- **`pm status [<milestone>]`** — the whole tree. It marks `<DRIFT>` using the same
-  predicates the gate reports on. Never hand-copy a tally out of it into a doc; that
-  is a second scoreboard and it will lie.
+- **`pm status [<milestone>]`** — the whole tree. It marks `<DRIFT: …>` (a dangling
+  review record) and `<WARN: …>` (a feature behind its own finished stories) off the
+  same predicates the gate reports on. Never hand-copy a tally out of it into a doc;
+  that is a second scoreboard and it will lie.
 - **`pm list [--status …] [--owner …] [--milestone …]`** — one tab-separated
   `<story-id>  <status>  <owner>  <feature-id>` per story. It is the "what is open"
   read; `pm status` is the "what is everything doing" read.
@@ -111,7 +124,15 @@ requires the two readings to agree.
   is acyclic. **UNVERIFIABLE** in its summary is not a failure: it
   counts refs into milestones no longer in the working tree, which is expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
-  names the file; fix it with the CLI, never with a `status:` edit.
+  names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
+  is not a failure and moves nothing: it names a grain that has left `todo` (its status
+  is in `in_progress` or `done`) whose scaffolded section is still empty
+  (`## Acceptance criteria`, `## Ship criterion`), such a feature with no stories, such a
+  milestone with no `branch:` or an unphased feature — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
+  a `todo` feature, a `todo` feature over finished stories, a `done` milestone over an
+  unfinished feature), both grains and both categories named. Counted on the verdict
+  line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the
+  only stamp; write the section, then stamp.
 
 ## Retiring a closed milestone — git history is the archive
 

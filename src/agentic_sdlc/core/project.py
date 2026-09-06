@@ -1,10 +1,8 @@
-"""project.py — consuming-repo resolution + devkit.toml config.
+"""Consuming-repo resolution and the `devkit.toml` load.
 
-Every tool operates on the Godot repo the user invokes it FROM: the repo
-root is the git toplevel of the current working directory (falling back to
-the cwd itself outside a repo). Per-project variation lives in an optional
-`devkit.toml` at that root — tools read their section with sensible
-defaults, so a config-less repo gets the stock behavior.
+The repo root is the nearest ancestor carrying `.git`, else the cwd. Nothing here
+spawns except `git_lines`, because what changed is git's question and where the
+checkout starts is not.
 """
 from __future__ import annotations
 
@@ -17,15 +15,21 @@ from pathlib import Path
 CONFIG_NAME = 'devkit.toml'
 
 
+# A directory in a clone and a file in a worktree or submodule; both count.
+GIT_MARKER = '.git'
+
+
 @lru_cache(maxsize=1)
 def repo_root() -> Path:
-    try:
-        out = subprocess.run(
-            ['git', 'rev-parse', '--show-toplevel'],
-            capture_output=True, text=True, check=True)
-        return Path(out.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path.cwd()
+    """The top of the checkout: walk up for `.git`, or the cwd outside one.
+
+    Cached; tests that chdir clear it.
+    """
+    here = Path.cwd().resolve()
+    for candidate in (here, *here.parents):
+        if (candidate / GIT_MARKER).exists():
+            return candidate
+    return Path.cwd()
 
 
 @lru_cache(maxsize=1)
@@ -37,8 +41,7 @@ def load_config() -> dict:
         with path.open('rb') as fh:
             return tomllib.load(fh)
     except tomllib.TOMLDecodeError as err:
-        # Config error, not drift: exit 2 per the contract (1 is reserved for
-        # findings — CI must not read a toml typo as "drift found").
+        # A toml typo is exit 2, never 1: CI must not read it as drift found.
         print(f'agentic-sdlc: invalid {CONFIG_NAME}: {err}', file=sys.stderr)
         raise SystemExit(2) from err
 

@@ -7,34 +7,50 @@
 # this file, and this file is the proof it can.
 
 [checks]
-# The roster `check all` runs HERE. Four of the eight gates read .tscn/.tres,
-# and this package holds none outside its FIXTURES — so on the default roster
-# those four report a 0-file census and rule 4 correctly reddens every one.
-# That is the roster being wrong for the repo, not a reason to soften a gate:
-# `check uid|tres|props` still run here on demand and still say exactly what
-# they scanned. The repo-family two apply, and `shell` joined them when the
-# repo started self-hosting its own hook corpus under tools/ (0.23.0).
+# The roster `check all` runs HERE. The stock default is `doc` + `shell` — the
+# two that apply to any repo — and this file adds the ones the stock roster
+# leaves off for reasons that do not hold here.
+#
+# `pm` is stock-OFF because it would fail a consumer for having no PM tree at
+# all. This tree IS one, self-hosted, so the gate is pointed at its author.
+#
+# `repo-hygiene` is the one known gate this file still leaves out: it hits the
+# network and belongs at milestone close, not inside every `make check`.
 #
 # `hooks` is the other half of that self-hosting, and it is here because the
 # sentence was not enough: `core.hooksPath` was unset in every checkout of this
 # repo for two releases while CLAUDE.md said the corpus was armed, and no target
 # looked. It is stock-OFF for consumers — arming is a decision each makes once —
 # and on for the repo that told them to.
-all = ["doc", "pm", "shell", "hooks"]
+#
+# `grain-shape` is stock-ON (0.2.0) and is named here for the same reason
+# `shell` is: an explicit roster does not inherit the stock default, so a gate
+# this file forgets is a gate this repo — the one that ships it — never runs on
+# itself. Self-hosting is the proof that the caps it ships are caps real grains
+# written by several hands can meet.
+all = ["doc", "grain-shape", "pm", "shell", "hooks"]
 
-# The deliberately-drifted Godot corpus under tests/fixtures/ is the INPUT to
-# this package's tests, not content this repo maintains: a stale uid and a
-# path-only ext_resource are there on purpose, and the tests point each gate at
-# a temp copy of them to prove it fires. Excluded here so a gate run at the repo
-# root reports this repo, while the tests keep proving the gate works.
-[uid]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
+[grain_shape]
+# Story 09 of 0.2.0/the-code-knows-entry-and-exit removes this once this tree's records are trimmed to the stock caps.
+caps = { story = 200, feature = 210, bug = 150, milestone = 210, decisions = 500, review = 450 }
 
-[tres]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
+# No scope section is set for the gates above. The deliberately-drifted trees
+# under tests/fixtures/ are the INPUT to this package's tests, not content this
+# repo maintains — but every gate still on the roster is pointed at markdown,
+# shell, git or the PM tree, and none of them walks that directory, so there is
+# nothing left here to carve out. The three `exclude_prefixes` sections that did
+# the carving left with the gates that read them (0.2.0).
 
-[props]
-exclude_prefixes = ["addons/", "tests/fixtures/"]
+[doc]
+# Every human- and agent-facing surface, not only the always-loaded ones: the
+# README, the SDLC, the design docs, the rules, the roster and the skills all
+# make `make <target>` and file-path claims against this tree, and a claim
+# nobody checks is a claim that goes dead. Stock scope is the three always-
+# loaded globs; this repo holds all of its prose to the same gate.
+scope = [
+    "CLAUDE.md", "README.md", "SDLC.md", "docs/*.md",
+    ".claude/rules/*.md", ".claude/agents/*.md", ".claude/skills/*/SKILL.md",
+]
 
 [pm]
 # Everything opt-in except D8. The rules this package ships OFF by default are
@@ -56,6 +72,45 @@ checks = [
     "D9", "D10",
     "V1", "V2", "V3", "V4", "V5", "V6",
 ]
+
+[tests]
+# THE CEILINGS, and they are ours rather than the package's. `check budget`
+# ships with none — "twenty seconds" is a claim about a machine, and rule 8
+# says this package knows nothing about the machines its consumers run on — so
+# a tree that declares nothing gets its costs reported and exit 0.
+#
+# Measured 2026-09-06 on the floor interpreter, off the verdict lines in
+# .gate-reports/unit.log and test.log: unit 8.2 s in one process, both tiers
+# 100.6 s on eight workers.
+# The ceilings are roughly 2x each, because a shared CI runner is not a laptop
+# and a gate that goes red on a busy afternoon is a gate somebody deletes.
+#
+# NOT IN `[checks] all`, and that is a ruling rather than an oversight.
+# `check all` is the PER-CHANGE gate: it runs in `precommit`, in a pre-push
+# hook, and inside `test_makefile_gates`, which spawns `make check` against
+# this very tree. A budget gate there grades the LAST suite run, so one slow
+# afternoon reddens the next person's edit for a reason they cannot act on —
+# and it made nine tests fail for a timing number that had nothing to do with
+# what they assert. A gate that reddens on somebody else's clock is milestone
+# risk 2 with a stopwatch, and it is the kind that gets deleted.
+#
+# It runs in `make milestone`, once, where a regression is a thing to act on.
+#
+# They exist to catch a DOUBLING, not a wobble. The drift this is aimed at is
+# the one that already happened here: 240 s of suite, arrived at one honest
+# fixture at a time, with every gate green the whole way down.
+budget = { unit = 20, integration = 130, test = 150 }
+
+# AND A CEILING ON SIZE, which the duration cannot see. A tier holds its wall
+# clock while doubling in case count — parallelism and a faster machine both
+# absorb it — and the number that then goes wrong is the reader's, not the
+# gate's. Measured 2026-09-06: 706 unit and 389 integration (1,095 in `test`).
+#
+# Set ~10% above the counts they were written against (1,123 / 730), because
+# the point is to make GROWTH a decision somebody argues rather than one that
+# happens. Today's counts sit well under them; lowering the ceilings toward
+# today's is a decision to take on purpose, not a drift to correct in passing.
+cases = { unit = 780, integration = 430 }
 # V6 is named on purpose, and it is the one rule here that is NOT stock. This
 # tree keeps generated execution lists and is small enough for `pm sync` to be
 # cheap, so the gate holds the view to the tree. A project whose lists go stale
@@ -64,3 +119,100 @@ checks = [
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
 # says nothing about the length of anybody's markdown.
+
+# --- THE FLOW, and it is this project's rather than the tool's ----------------
+# Written by `agentic-sdlc pm init`, read every run, never assumed. This is the
+# section hard rule 5 splits on: a GATE ships stock defaults and a repo with no
+# devkit.toml runs every gate byte-identically to one declaring them; a
+# WORKFLOW does not, because the states are the project's and that is the
+# entire point. A default nobody can see is the tool's opinion wearing the
+# project's clothes.
+#
+# The tool keeps three opinions and no more: the category set is
+# `todo`/`in_progress`/`done`, they are ordered that way, and every declared
+# state maps to exactly one. Everything below — how many states, what they are
+# called, which category each sits in, what order they appear in within it — is
+# ours, and changing a word here changes no code anywhere.
+#
+# Each kind holds what the belts WRITE for it: a story is claimed (`building`)
+# and closed (`done`), a feature is additionally `reviewing` while its record
+# is written, and the milestone walks all seven — `accepted` and `packaging`
+# are milestone acts and `in_progress`: a category is about whether WORK
+# REMAINS, not about whether the outcome is decided. Thirty stories sat at
+# `reviewing` here under the all-seven seed, a state no belt writes.
+#
+# `obe` is in `done` for every kind that can hold it. It is FINISHED and not
+# DELIVERED, and those are different axes — Jira keeps `Won't Do` in the Done
+# category and puts delivered-vs-not in a separate `resolution` field, which is
+# the side `docs/design/state-categories.md` §4 takes and why there is no
+# fourth category here.
+
+[pm.states.milestone]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+
+[pm.states.feature]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing"]
+done        = ["done", "obe"]
+
+[pm.states.story]
+todo        = ["planning", "ready"]
+in_progress = ["building"]
+done        = ["done", "obe"]
+
+[pm.states.bug]
+todo        = ["open"]
+in_progress = ["fixed"]
+done        = ["closed"]
+
+[verify]
+# The verification LADDER, self-hosted. Decision D3 (0.2.0): `[verify]` says
+# which RUNG a composition is; the Makefile stays the authority on what the
+# target RUNS. So these are make target NAMES, never a second command string —
+# a project that renames a target changes one line here, and there is never a
+# second answer to "did the full gate pass". `agentic-sdlc verify --check`
+# holds each target to existing in this Makefile.
+#
+# Three rungs, one shape. The story rung was `[[verify.narrow]]` tables that
+# diffed a commit range and matched paths against globs; that engine is gone
+# (2026-09-06, Chris: "stories should just run simple fast unit tests"), and
+# the key is refused by name.
+#
+# THE FEATURE RUNG IS LOCAL INTEGRATION, and it stopped being that for about an
+# hour on 2026-09-05, which is worth recording rather than quietly fixing. It
+# read `make precommit`, and `precommit` was the whole suite — so the rung was
+# honest. Then `precommit` became gates + hooks + unit and this line did not
+# move, so a feature closed having run no integration test at all. A ladder is
+# only true while every rung names what it still runs.
+#
+# Chris's model, and the rungs match it: "Build, unit, done. Build, unit,
+# done. Stack up to features. Feature review, local integration, done."
+#
+#   an edit, inner loop     verify --story      seconds  `unit`: no subprocess
+#   closing a story         close story         seconds  (runs the story rung)
+#   closing a feature       verify --feature    ~40 s    BOTH tiers, locally
+#   closing a milestone     verify --milestone           the matrix, once
+story     = "make unit"
+feature   = "make test"
+milestone = "make milestone"
+
+# --- the release conveyor -----------------------------------------------------
+# The step list is the SHIPPED default, so it is not restated here — a list
+# copied into config is a list that stops tracking the registry. What IS here is
+# the two facts that are this repo's and nobody else's.
+
+[release.version_files]
+# Hard rule 7: `__version__` and `version` move together, ALWAYS. This package
+# carries the number in two files, so `version-sync` is asked about both — the
+# default is `[pm] version_file` alone, which would have checked one of them and
+# reported the pair in sync while they were not. That is the rule this repo
+# wrote for itself being enforced on itself for the first time.
+"pyproject.toml" = '^version = "(.*)"$'
+"src/agentic_sdlc/__init__.py" = "^__version__ = '(.*)'$"
+
+[release.commands]
+# `prove-artifact` ships with NO default, because the proof names a git URL and
+# a URL is a project's fact, not this package's (rule 8). Ours:
+prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"

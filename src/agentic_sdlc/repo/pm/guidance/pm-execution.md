@@ -46,10 +46,12 @@ whose statuses contradict each other. Neither has an opinion about which state m
 follow which — the ORDER below is a shape that works, not something the tool enforces.
 
 The states are this project's — `[pm.states.<kind>]` in `devkit.toml`, written by
-`pm init` (the seed: `planning` `ready` | `building` `reviewing` `accepted` `packaging` |
-`done` `obe`) — and every question the tool asks is asked of a state's CATEGORY,
-`todo` / `in_progress` / `done`, never of the word. Each grain skips the states it does
-not need. A `done`-category state is not the state that follows the work: it means
+`pm init` (the seed, per kind: a story `planning` `ready` | `building` | `done` `obe`; a
+feature adds `reviewing`; a milestone `planning` `ready` | `building` `reviewing`
+`accepted` `packaging` | `done` `obe`; a bug `open` | `fixed` | `closed`) — and every
+question the tool asks is asked of a state's CATEGORY, `todo` / `in_progress` / `done`,
+never of the word. Each kind holds the states its belt writes and no others; there is
+no step-to-state table. A `done`-category state is not the state that follows the work: it means
 everything inside this tree's authority is finished (changelog written, reviews
 closed, findings landed, gates green) — or, for `obe`, abandoned, which is finished
 too. Shipping is a git event, after `done`.
@@ -64,7 +66,7 @@ it becomes true, rather than batching flips at the end.
 3. **Ready for review.** `pm story reviewing <id>`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
    the `done` category is the close — sets the feature's status and **touches nothing
-   else**. It prints the stories not in `done`; each is closed by name through the
+   else**, and prints only what it wrote; a story left behind is `check pm`'s WARN, and each is closed by name through the
    story belt (`agentic-sdlc close story <id>`), never by a command aimed at the
    feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves
@@ -128,10 +130,9 @@ and it will lie.
   resolve, the feature graph is acyclic. A ref into a milestone no longer in the tree
   is UNVERIFIABLE, not a failure.
 - `check pm` — status drift and those same integrity rules, as a gate.
-- `pm vocabulary [--json]` — the closed CATEGORY set, the states and transitions
-  THIS project declared, the conveyor step names a `[pm.transitions.<kind>]`
-  table may key on, the state set per grain kind, and the rule ids
-  `[pm] checks` may name. Read it after a devkit pin bump.
+- `pm vocabulary [--json]` — the closed CATEGORY set, each kind's states with
+  the category each sits in, and the rule ids `[pm] checks` may name — nothing
+  else about flow. Read it after a devkit pin bump.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

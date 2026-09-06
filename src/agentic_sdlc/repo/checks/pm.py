@@ -15,20 +15,28 @@ vendored tree). `model.holds` is the one predicate; `model.category_of` the
 one lookup. The words below are the SEED's, for reading, and the gate never
 compares against them.
 
-DRIFT RULES (each FAILs, naming the offending path):
+DRIFT RULES (each FAILs, naming the offending path) are facts about the INPUT
+— a dangling record, a word outside the declaration, the branch flow:
   D1  a `reviewed:` pointer naming a file that is not there. The
       dangling-POINTER half only — the same shape V4 checks for `depends_on`.
       "This feature carries no `reviewed:` at all" is not drift; it is the
       absence of a document, which is a fact about a team rather than a tree.
+  D4  a status the project never declared — in no category — for milestone,
+      feature, story AND bug. It matters most for a bug: every reader that
+      asks "is this one still open" tests for a NAME, so a typo reads as
+      closed and passes in silence.
+
+CROSS-LEVEL DISAGREEMENTS are `  WARN  ` lines — story 03 of
+the-code-knows-entry-and-exit; Chris, 2026-09-05: *"If I do a check on a
+feature and it shows to-do and a story in progress, that's a warn. Not a fail,
+no action, just messaging."* Each names BOTH grains and BOTH categories, is
+counted separately on the verdict line, and never moves the exit code. Nothing
+moves a parent on a child's account: the caller reads the line and decides.
   D2  a feature still in `todo` while ALL its stories are in `done` (a
       forgotten advance). In `in_progress` it has advanced, whatever the word.
   D3  a milestone in `done` with a feature child that is not. `done` means
       every thing inside this tree's authority is finished, so it cannot be
       true of a milestone while one of its features says otherwise.
-  D4  a status the project never declared — in no category — for milestone,
-      feature, story AND bug. It matters most for a bug: every reader that
-      asks "is this one still open" tests for a NAME, so a typo reads as
-      closed and passes in silence.
   D5  a story that has LEFT `todo` under a feature still IN it. Not "a done
       story under a non-done feature": a story reaches `done` while its
       feature is still in `in_progress`, and that is the normal path — the
@@ -39,6 +47,9 @@ DRIFT RULES (each FAILs, naming the offending path):
       the shape of a milestone being reviewed, accepted and packaged, and the
       release gate RUNS over it — which is the whole point: the gate that
       informs the ship decision has to run while that decision is still open.
+  The four still answer to `[pm] checks` — a project that does not want the
+  line names the id off — but an id that is on prints a warning, not a
+  finding.
   D8  the shipped version equals an `in_progress` milestone's id
       (bump-at-START: the version names what is being built, so every crash
       report, save file and dev build carries that fact for free). EXACT
@@ -61,6 +72,14 @@ DRIFT RULES (each FAILs, naming the offending path):
 
 Which rules run is `[pm] checks` in devkit.toml (default: D1-D6 + V1-V5).
 V6 is known but OPT-IN, as are the three flow rules named just above.
+
+OTHER WARNINGS (same line shape, same counting, same exit code):
+  READY  `pm <kind> ready <id>` is the only stamp, and what it MEANS is asked
+      here: a grain past its kind's first `todo` state whose scaffolded
+      section is empty — a story's `## Acceptance criteria`, a feature's or a
+      milestone's `## Ship criterion` — a feature with no stories, a milestone
+      with a feature carrying no `phase:` or with no `branch:`. Nothing new is
+      parsed: the three headings are the ones `pm new` writes.
 
 Scope: the ACTIVE tree only — archived milestones predate the convention. This
 MUST pass on the legitimate mid-build state: an in-progress milestone with
@@ -103,10 +122,17 @@ def _run() -> int:
             print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
         return 2
     findings: list[str] = []
+    warnings: list[str] = []
 
     def report(msg: str) -> None:
         findings.append(msg)
         print(f'  DRIFT  {msg}')
+
+    # A WARN is a fact worth a line and not an exit code (rule 9): it names
+    # what it saw and what the reader might do, and the caller decides.
+    def warn(msg: str) -> None:
+        warnings.append(msg)
+        print(f'  WARN  {msg}')
 
     enabled = set(cfg.checks)
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
@@ -135,7 +161,7 @@ def _run() -> int:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
-    n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report)
+    n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
 
     _flow_findings(cfg, enabled, report)
 
@@ -148,21 +174,30 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    return _verdict(cfg, findings, len(mdirs), n_features, n_stories, n_bugs,
-                    v_on, v_census)
+    return _verdict(cfg, findings, warnings, len(mdirs), n_features,
+                    n_stories, n_bugs, v_on, v_census)
 
 
 # D2's and D6's shared tail. Both used to name `done` as the state to move to —
 # D2 said "should be review/done", D6 "should be done" — and D6's version was
 # the deadlock this vocabulary exists to break: it demanded the close BEFORE
 # the gate that informs the close could run. `done` is the LAST state now, not
-# the next one, and neither rule has an opinion about which state is.
+# the next one, and neither rule has an opinion about which state is. It is a
+# suggestion on a WARN line, and the caller may have a reason not to take it.
 ADVANCE_IT = 'advance it (`done` is the LAST state, not the next one)'
 
 
+def _cat(cfg: model.PmConfig, kind: str, status: str) -> str:
+    """The category a WARN line prints beside a word — or that it has none."""
+    return model.category_of(cfg, kind, status) or 'undeclared'
+
+
 def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
-                report) -> tuple[int, int]:
-    """D1-D6 over every grain. Returns the (feature, story) census."""
+                report, warn) -> tuple[int, int]:
+    """D1-D6 over every grain, and the READY warnings beside them.
+
+    Returns the (feature, story) census.
+    """
     n_features = 0
     n_stories = 0
 
@@ -171,11 +206,22 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
         m_cat = model.category_of(cfg, 'milestone', mstat)
+        m_ready = model.readied(cfg, 'milestone', mstat)
 
         if 'D4' in enabled:
             reason = model.undeclared_status(cfg, 'milestone', mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
+
+        if m_ready:
+            if not model.unquote(model.field_of(mfile, 'branch')):
+                warn(f'milestone {mid} is {mstat!r} with no branch: — readied, '
+                     f'and a fresh checkout cannot find where its work lives'
+                     f'  [{cfg.rel(mfile)}]')
+            why = model.empty_section(mfile, model.SHIP_HEADING)
+            if why:
+                warn(f'milestone {mid} is {mstat!r} and {why} — readied, and '
+                     f'nothing says what done means  [{cfg.rel(mfile)}]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(mdir)]
@@ -199,14 +245,31 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
 
             if ('D3' in enabled and m_cat == model.DONE_CATEGORY
                     and view.fid in unfinished):
-                report(f'milestone {mid} is done but feature {view.fid} '
-                       f'is {view.status!r}  [{frel}]')
+                warn(f'milestone {mid} is {mstat!r} ({m_cat}) but feature '
+                     f'{view.fid} is {view.status!r} '
+                     f'({_cat(cfg, "feature", view.status)}) — the milestone '
+                     f'says everything inside it is finished and this '
+                     f'feature says otherwise (D3)  [{frel}]')
 
             if 'D1' in enabled:
                 reason = model.drift_dangling_record(cfg, view.fid)
                 if reason:
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
+
+            if m_ready and not view.phase:
+                warn(f'milestone {mid} is {mstat!r} and feature {view.fid} '
+                     f'carries no phase: — readied, and the board cannot '
+                     f'order it  [{frel}]')
+            if model.readied(cfg, 'feature', view.status):
+                if view.total == 0:
+                    warn(f'feature {view.fid} is {view.status!r} with no '
+                         f'stories — readied, and nothing to build  [{frel}]')
+                why = model.empty_section(view.path, model.SHIP_HEADING)
+                if why:
+                    warn(f'feature {view.fid} is {view.status!r} and {why} — '
+                         f'readied, and nothing says what done means'
+                         f'  [{frel}]')
 
             for sfile in view.stories:
                 sid = model.field_of(sfile, 'id')
@@ -216,26 +279,35 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     reason = model.undeclared_status(cfg, 'story', sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
+                if model.readied(cfg, 'story', sstat):
+                    why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
+                    if why:
+                        warn(f'story {sid} is {sstat!r} and {why} — readied, '
+                             f'and nothing says what must be true  [{srel}]')
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
-                    report(f'story {sid} is {sstat!r} but its feature '
-                           f'{view.fid} is still {view.status!r} — the story '
-                           f'is at work and the feature says it has not '
-                           f'started (two places in this tree disagree)'
-                           f'  [{srel}]')
+                    warn(f'story {sid} is {sstat!r} '
+                         f'({_cat(cfg, "story", sstat)}) but its feature '
+                         f'{view.fid} is still {view.status!r} '
+                         f'({_cat(cfg, "feature", view.status)}) — the story '
+                         f'is at work and the feature says it has not '
+                         f'started (two places in this tree disagree, D5)'
+                         f'  [{srel}]')
 
             if 'D2' in enabled:
                 reason = model.drift_stalled(cfg, view)
                 if reason:
-                    report(f'feature {view.fid}: {reason} — {ADVANCE_IT}'
-                           f'  [{frel}]')
+                    warn(f'feature {view.fid}: {reason} '
+                         f'({_cat(cfg, "feature", view.status)}) — all '
+                         f'{view.total} stories are {model.DONE_CATEGORY}; '
+                         f'{ADVANCE_IT} (D2)  [{frel}]')
 
         if ('D6' in enabled and m_cat == model.TODO
                 and finished.counted > 0 and finished):
-            report(f'milestone {mid} is {mstat!r} but all {finished.counted} '
-                   f'features are done — you finished the features and the '
-                   f'milestone still calls itself {mstat!r}; {ADVANCE_IT}'
-                   f'  [{cfg.rel(mfile)}]')
+            warn(f'milestone {mid} is {mstat!r} ({m_cat}) but all '
+                 f'{finished.counted} features are {model.DONE_CATEGORY} — '
+                 f'you finished the features and the milestone still calls '
+                 f'itself {mstat!r}; {ADVANCE_IT} (D6)  [{cfg.rel(mfile)}]')
 
     return n_features, n_stories
 
@@ -310,10 +382,15 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
 
 
-def _verdict(cfg: model.PmConfig, findings: list[str], n_milestones: int,
-             n_features: int, n_stories: int, n_bugs: int,
+def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],
+             n_milestones: int, n_features: int, n_stories: int, n_bugs: int,
              v_on: set[str], v_census: dict) -> int:
-    """Render the census + verdict from what the phases reported."""
+    """Render the census + verdict from what the phases reported.
+
+    Warnings are COUNTED SEPARATELY and never decide the code: the line reads
+    `… N warning(s)` only when there are any, so a clean tree's verdict line
+    is byte-identical to what it was (rule 6).
+    """
     print()
     census = (f'{n_milestones} milestone(s), {n_features} feature(s), '
               f'{n_stories} story/ies')
@@ -338,9 +415,11 @@ def _verdict(cfg: model.PmConfig, findings: list[str], n_milestones: int,
             census += (f' ({v_census["unverifiable"]} UNVERIFIABLE — the ref '
                        f'names a milestone no longer in the tree)')
     what = 'status-drift / integrity violation(s)' if v_on else 'status-drift violation(s)'
+    warned = f'; {len(warnings)} warning(s)' if warnings else ''
     if findings:
-        print(f'[check:pm] FAIL — {len(findings)} {what} across {census}')
+        print(f'[check:pm] FAIL — {len(findings)} {what} across {census}'
+              f'{warned}')
         return 1
     clean = 'no PM-tree drift or integrity problems' if v_on else 'no PM-tree status drift'
-    print(f'[check:pm] PASS — {clean}; scanned {census}')
+    print(f'[check:pm] PASS — {clean}; scanned {census}{warned}')
     return 0

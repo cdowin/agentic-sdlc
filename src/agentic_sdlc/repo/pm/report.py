@@ -165,12 +165,13 @@ VERDICT_TITLE = 'verdict'
 SEVERITY_TITLE = 'findings by severity'
 DEFERRED_TITLE = 'deferred to'
 
-# Section 3's. The two story states a reopen is made of come from the ONE
-# vocabulary in `model`, and are checked against the configured set before the
-# column is filled: a project that renamed either gets `-`, because a `0` would
-# say "nothing was reopened" about a transition this rule cannot see.
+# Section 3's. `after_review` counts dispatches after a story's first move into
+# the review state, which is read by NAME from the seed (`model.REVIEWING`) —
+# the one seed-word reader left in this module, declared as such in
+# tests/test_pm_flow.py. The `reopens` column that sat beside it counted
+# `reviewing -> building` the same way and left in 0.2.0: the story seed no
+# longer holds `reviewing`, so the column could only ever print `-`.
 STORY_COLUMN = 'story'
-REOPENS_COLUMN = 'reopens'
 AFTER_REVIEW_COLUMN = 'after_review'
 PASSES_COLUMN = 'passes'
 REOPEN_TITLE = 'story'
@@ -253,9 +254,13 @@ LEFT, RIGHT = 'left', 'right'
 # checks anything out. It reads a milestone that is no longer in the tree,
 # which is D6's answer to where a retired milestone's rows live: history is
 # git's job.
-FEATURES_DIR = 'features'
-STORIES_DIR = 'stories'
-BUGS_DIR = 'bugs'
+# The slot names are `model`'s — one spelling
+# (0.2.0/bugs/the-slot-names-are-spelled-in-six-places): this module used to
+# carry its own three literals for the git-source walk, which was the second
+# spelling the bug counted.
+FEATURES_DIR = model.FEATURES_DIR
+STORIES_DIR = model.STORIES_DIR
+BUGS_DIR = model.BUGS_DIR
 MD_SUFFIX = '.md'
 
 GIT = 'git'
@@ -1316,57 +1321,33 @@ def _after(row, moment) -> bool:
 
 def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                 rows: list) -> dict:
-    """Section 3 as data: reopens, dispatches after review, verdict spread.
-
-    A reopen is one status row: `from` the review state, `to` the working one.
-    Both names are read out of the story vocabulary rather than assumed — a
-    project that renamed either gets `-` in that column and never a `0`, since
-    a zero there would say "nothing was reopened" about a machine this rule
-    cannot see (hard rule 4).
-
-    That guard is against a renamed CONFIG, and the same miss arrives through
-    HISTORY: every row a consumer wrote before its pin bump spells the pair the
-    way its old vocabulary did, so a story reviewed and sent back twice holds
-    no row this rule can read while the config it is read under is perfectly
-    stock. So the column is armed PER STORY, by whether that story's own rows
-    NAME the review state at all — in either direction, since a reopen row is
-    itself proof the vocabulary is readable here, and a ledger opened mid-flight
-    can hold the departure without the arrival. Never by the ledger as a whole:
-    one migrated story is enough to re-arm the column for every legacy one
-    beside it, which is the exact ledger a consumer has the day after the bump.
-    `-` covers two worlds the rows cannot tell apart — "never reached review"
-    and "reached it under a spelling this rule cannot read" — and a `0` would
-    be picking one of them by guess. What stays invisible is one story that
-    straddles the bump AND was reopened on both sides of it: the older reopen
-    is not counted and the column is armed by the newer one. Reading that out
-    would mean testing each row's words against `story_states`, which answers
-    wrong under exactly the union set a migration lands there.
+    """Section 3 as data: dispatches after review, verdict spread.
 
     "After review" counts DISPATCH rows, by D3's snapshot and the same
     `named_grains` rule section 1 attributes by — so the two sections cannot
     disagree about which dispatches were a story's. The moment compared against
     is the story's FIRST row into the review state; a story that never reached
-    it has no such moment, and `-` is the honest column.
+    it has no such moment, and `-` is the honest column. The review state is
+    the SEED's word, read by name: a project whose story flow holds no
+    `reviewing` — the shipped seed included, since 0.2.0 — gets `-` in every
+    row, never a `0`, because a zero would say "no dispatch after review"
+    about a review this rule cannot see (hard rule 4).
+
+    THE `reopens` COLUMN LEFT (0.2.0). It counted `reviewing -> building` rows
+    by name, with a per-story guard that printed `-` under a renamed or legacy
+    vocabulary; once the story seed stopped holding `reviewing` the column had
+    no tree left to be a number on.
     """
     grains, owned = walk_grains(src, cfg, mid, mdir)
     kinds = {g.gid: g.kind for g in grains}
     status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
     dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
-    reopenable = (model.REVIEWING in cfg.story_states
-                  and model.BUILDING in cfg.story_states)
     feature_of = {sid: fid for fid, sids in owned.items() for sid in sids}
     out = []
     for grain in sorted((g for g in grains if g.kind == KIND_STORY),
                         key=lambda g: g.gid):
         mine = [r for r in status if r.data.get('grain') == grain.gid]
         entered = [r for r in mine if r.data.get('to') == model.REVIEWING]
-        named = entered or [r for r in mine
-                            if r.data.get('from') == model.REVIEWING]
-        reopens = None
-        if named and reopenable:
-            reopens = sum(1 for r in mine
-                          if r.data.get('from') == model.REVIEWING
-                          and r.data.get('to') == model.BUILDING)
         moment = next((ts for ts in
                        (ledger.parse_ts(r.data.get('ts')) for r in entered)
                        if ts is not None), None)
@@ -1375,36 +1356,34 @@ def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             if grain.gid in named_grains(r.data, kinds, owned)
             and _after(r, moment))
         out.append({'grain': grain.gid, 'feature': feature_of.get(grain.gid),
-                    'reopens': reopens, 'after_review': after})
+                    'after_review': after})
     # Every PASS's verdict, not every record's: a record reviewed twice gave
     # two verdicts, and counting it once would have to pick one of them.
     spread = _tally(one.verdict
                     for _, _, parsed in parsed_records(src, cfg, mid, mdir)
                     if parsed is not None for one in parsed)
-    reopened = [e['reopens'] for e in out if e['reopens'] is not None]
     return {SECTION_REWORK: {
         'stories': out,
         'verdicts': [{'verdict': name, 'passes': spread[name]}
                      for name in verdict.VERDICTS if name in spread],
         'totals': {'stories': len(out),
-                   'reopens': sum(reopened) if reopened else None,
                    'passes': sum(spread.values())}}}
 
 
 def rework_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     """Section 3 as lines: one row per story, one per verdict that was given."""
     section = data[SECTION_REWORK]
-    stories = [(e['feature'] or DASH, e['grain'], _cell(e['reopens']),
+    stories = [(e['feature'] or DASH, e['grain'],
                 _cell(e['after_review'])) for e in section['stories']]
     spread = [(v['verdict'], str(v['passes'])) for v in section['verdicts']]
     totals = section['totals']
     return _section(
         heading_id(data), REWORK_TITLE,
-        f'{totals["stories"]} story(s), {_cell(totals["reopens"])} reopen(s), '
+        f'{totals["stories"]} story(s), '
         f'{totals["passes"]} pass(es) with a verdict',
         [(f'{REOPEN_TITLE} ({len(stories)})',
-          (FEATURE_COLUMN, STORY_COLUMN, REOPENS_COLUMN, AFTER_REVIEW_COLUMN),
-          (LEFT, LEFT, RIGHT, RIGHT), stories),
+          (FEATURE_COLUMN, STORY_COLUMN, AFTER_REVIEW_COLUMN),
+          (LEFT, LEFT, RIGHT), stories),
          (f'{DISTRIBUTION_TITLE} ({len(spread)})',
           (VERDICT_COLUMN, PASSES_COLUMN), (LEFT, RIGHT), spread)])
 

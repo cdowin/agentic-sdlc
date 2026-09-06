@@ -330,13 +330,13 @@ Reviewer's token cost: ~165k.
 ```
 verdict: HOLD
 | id | severity | disposition |
-| F1 | BLOCKER | open |
-| F2 | BLOCKER | open |
-| F3 | BLOCKER | open |
-| F4 | BLOCKER | open |
+| F1 | BLOCKER | landed 32b20b1 |
+| F2 | BLOCKER | landed ada37ae |
+| F3 | BLOCKER | landed ada37ae |
+| F4 | BLOCKER | landed ada37ae |
 | F5 | MAJOR | open: dissolves when phase 7 deletes [pm] <kind>_states |
-| F6 | MAJOR | open |
-| F7 | MAJOR | open |
+| F6 | MAJOR | rejected: superseded — [pm.transitions.<kind>] is deleted and a leftover table is refused by name (story 01, 1e01518) |
+| F7 | MAJOR | rejected: superseded — nothing writes a transitions table any more; criterion 1's transitions half was retired with the key (story 01, 1e01518) |
 | F8 | MINOR | open |
 | F9 | MINOR | open: owned by phase 7 |
 | F10 | MINOR | open |

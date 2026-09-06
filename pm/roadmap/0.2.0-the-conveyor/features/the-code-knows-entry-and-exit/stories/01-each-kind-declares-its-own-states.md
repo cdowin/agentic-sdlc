@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/01-each-kind-declares-its-own-states
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Each kind declares its own states, and there is no transitions table
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -22,6 +22,9 @@ depends_on: []
 |---|---|---|---|
 | 1 | unit | the seed parses per kind; a leftover transitions key is refused by name | amend tests/test_pm_flow.py |
 | 2 | unit | `pm vocabulary` output | amend tests/test_pm_verbs.py |
+| — | unit | the `reopens` column is gone: golden table + JSON | amend tests/test_pm_ledger_report_sections.py |
+| — | unit | `pm list --kind milestone` prints id/status/category/branch, `--category` filters | amend tests/test_pm_verbs.py (ListFindsTheNail) |
+| — | integration | the worktree script bases off the in-progress milestone under a RENAMED status word, and falls back loudly when the CLI cannot answer | amend tests/test_hooks_payloads.py |
 
 ## Out of scope
 

@@ -34,6 +34,26 @@ from support.pm import (bug, decision_line, dispatch_line, put_ledger, run_cli,
 
 from agentic_sdlc.repo.pm import ledger
 
+# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
+# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
+# gives each kind the states its belt writes (a story: `building`, `done`), and
+# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
+# `in_progress` number whatever the word — so the tree keeps the declaration
+# the rows were written under rather than rewriting every row to a word that
+# proves nothing different. `support.pm.tree` is the builder; this only fixes
+# its `config`.
+from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
+from agentic_sdlc.repo.pm import model as _model  # noqa: E402
+
+LEGACY_FLOW = _declaring(feature=_model.DEFAULT_FLOWS['milestone'],
+                         story=_model.DEFAULT_FLOWS['milestone'])
+
+
+def tree(**kwargs):
+    """`support.pm.tree` under the all-seven flow these ledgers assume."""
+    kwargs.setdefault('config', LEGACY_FLOW)
+    return _seed_tree(**kwargs)
+
 STORY = '0.1/alpha/s0'
 QUIET = '0.1/alpha/s1'
 FEATURE = '0.1/alpha'

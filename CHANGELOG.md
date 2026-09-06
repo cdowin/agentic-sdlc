@@ -53,6 +53,98 @@
 - **`docs/sdlc-protocol.md` renders from the four check lists, the state each belt writes
   and each belt's after-list**; a tree that has declared no flow renders the absence rather
   than exiting 2. Re-render with `install-sdlc --force`.
+### The review findings land: `pm init` writes the flow it is named for
+
+- **`pm init` appends `[pm.states.<kind>]` to a `devkit.toml` it did not write** — after the
+  project's own bytes, in the file's own line endings (a CRLF config gets a CRLF block), idempotent
+  (a tree that already declares its flow is not touched), and creating the file holding the flow
+  alone when there is none. `agentic-sdlc init` takes the same path for a pre-existing config it
+  leaves alone otherwise. F2/F3 of `docs/reviews/2026-09-05-the-project-declares-its-flow.md`:
+  the refusal for a flowless tree named this command, and the command left the file untouched.
+
+### An open bug against the milestone is named, and two of the three open bugs are fixed
+
+- **`pm ready-for milestone <id>` names every bug whose `fix_milestone:` is `<id>` and whose
+  status is not in the `done` category** — one `  BLOCKED  <bug-id> is <status> — a bug whose
+  fix_milestone is <id>` line each, exit 1 (behaviour change: bugs used to be ignored). The whole
+  active tree is read, because a bug is filed where it was caught and promised to the milestone
+  that fixes it; a bug promised to another milestone is counted, not asked, and the census line
+  says both numbers: `N feature(s), M bug(s) naming fix_milestone <id> of K read`.
+- **`pm retire` retires a milestone in any `done`-category state — `obe` included — and the
+  ROADMAP.md row says which**: the last cell opens with the state the file held (`done — shipped
+  X`, `obe — collapsed into 0.3`, and `building — pulled` for a milestone retired unfinished),
+  so the "What shipped" column never calls abandoned work delivered. Closes
+  `0.2.0/bugs/a-collapsed-milestone-has-no-verb`. (Row-shape change, rule 6.)
+- **The grain-slot names `stories` and `bugs` have one spelling**, `model.STORIES_DIR` /
+  `model.BUGS_DIR`; `report.py`'s own three literals and `cli.py`'s six are gone, and a census
+  test walks the pm tracker and the gates for a survivor. Closes
+  `0.2.0/bugs/the-slot-names-are-spelled-in-six-places`.
+
+### A parent behind its child is a warning, not a finding, and nothing moves it
+
+- **D2, D3, D5 and D6 are `  WARN  ` lines now, never `  DRIFT  `, and never an exit code**
+  (behaviour change, rule 6). A story at work under a feature still in `todo` (D5), a `todo`
+  feature over finished stories (D2), a `todo` milestone over finished features (D6), a `done`
+  milestone over an unfinished feature (D3): each line names both grains and both categories,
+  the verdict line counts them apart (`[check:pm] PASS — …; 3 warning(s)`), and `check pm` exits
+  0 on a tree whose only complaint is one of the four. Chris, 2026-09-05: *"If I do a check on a
+  feature and it shows to-do and a story in progress, that's a warn. Not a fail, no action, just
+  messaging."* D1, D4, D8/D9/D10 and V1–V6 are facts about the input and stay findings. The four
+  still answer to `[pm] checks`. A CI that relied on D2/D3/D5/D6 to redden a tree reads the
+  `warning(s)` count instead.
+- **A status write prints what it wrote and nothing else.** `pm feature <state>` no longer names
+  the stories not in `done` on a move into `in_progress`; `pm feature <done-state>` no longer
+  prints `N story/ies not done and NOT touched`; `pm milestone <done-state>` no longer prints
+  `N feature(s) not done`. Those facts are `check pm`'s WARN lines, asked of the tree.
+- **`pm status` marks `<WARN: …>` for D2** (a feature behind its own finished stories) and keeps
+  `<DRIFT: …>` for D1 (a dangling record) — the board says what the gate says.
+
+### ready is one command, and an empty ready is a warning
+
+- **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has been
+  readied — past its kind's FIRST `todo` state, under whatever words the project declared — and
+  says nothing about what must be true: a story with an empty or absent `## Acceptance criteria`,
+  a feature or a milestone with an empty or absent `## Ship criterion`, a feature with no stories,
+  a milestone with no `branch:` or with a feature carrying no `phase:`. The three headings are the
+  ones `pm new` scaffolds; a section holding only the template's `<!-- … -->` prompt is empty.
+  **Warnings are counted separately and never move the exit code**: the verdict line gains
+  `; N warning(s)` only when there are any, so a tree with none prints exactly what it did.
+- **`pm <kind> ready <id>` is the only stamp.** Nothing readies a grain for you — Chris,
+  2026-09-05: *"nothing fancy and automatic. If I want a feature to go in progress, I move it."*
+
+### Each kind declares its own states, and there is no transitions table
+
+- **The seed is per kind, and it is what the belts write.** `pm init` now writes a story
+  `planning ready | building | done obe`, a feature that adds `reviewing`, a milestone with all
+  seven, a bug `open | fixed | closed`. Under the all-seven seed this repo's own tree held
+  thirty stories at `reviewing`, a state no belt writes and no gate reads. A tree that adopted
+  the earlier seed keeps its declaration — `[pm.states.<kind>]` is the project's — and a grain
+  holding a word its kind no longer declares is D4's finding, repaired by `pm <kind> <state>`.
+- **`[pm.transitions.<kind>]` is gone and a leftover table is refused by name** (exit 2, naming
+  each `[pm.transitions.<kind>]` present and saying to remove it). It was read by nothing: a
+  belt writes the FIRST state of its kind's `done` list, and a hand move reaches any declared
+  state. `model.transition_target` and the `[pm] <kind>_transitions` wording went with it.
+- **`pm vocabulary` echoes each kind's states with their category and nothing else about flow**
+  (output-format change, rule 6): the `[pm.transitions.<kind>]` block, the `published steps`
+  list and the two flow notes are gone from the plain output; `--json` drops `published_steps`,
+  `grains.<kind>.flow.transitions` and `notes.transitions`/`notes.feature_done`. Every other
+  key keeps its meaning.
+- **`pm ledger report`'s `reopens` column is deleted** (output-format change): it counted
+  `reviewing -> building` by name, and with `reviewing` out of the story seed it could only
+  ever print `-`. Section 3's per-story table is `feature story after_review`; the summary line
+  reads `N story(s), M pass(es) with a verdict`; `--json` drops `rework.stories[].reopens` and
+  `rework.totals.reopens`.
+- **`pm list --kind milestone [--status …] [--category <c>]`** prints one tab-separated
+  `<id> <status> <category> <branch>` per milestone (`-` for no branch), census to stderr; and
+  `pm list` takes `--category todo|in_progress|done` for stories. New flags; the story listing is
+  unchanged.
+- **`tools/dev/agent-worktree.sh` asks the CLI for the integration branch** —
+  `make pm ARGS="list --kind milestone --category in_progress"`, through a new `PM_CMD` line in
+  its project-config header — instead of grepping `status: building` out of `milestone.md`, a
+  literal that stopped matching the day a project renamed the word. A CLI that cannot answer (no
+  PM tree, no flow, no `make pm`) is said on stderr and the base falls back to `FALLBACK_BASE`;
+  "answered" is the CLI's own census line, not the exit code, because `make pm` in a tree with no
+  Makefile exits 0 saying nothing. Re-install with `install-hooks --force`.
 
 ### The belt's findings land (D11)
 
@@ -304,33 +396,36 @@ and no state literal survives outside the seed `pm init` writes.
 ### The project declares its flow
 
 **New config, and it is the one section that ships LIVE rather than commented.** `[pm.states.<kind>]`
-maps every state this project uses into one of three categories — `todo`, `in_progress`, `done` —
-and `[pm.transitions.<kind>]` maps a conveyor step to the exact state it writes. `init` writes both;
-the runtime reads them every run and **does not fall back**. Hard rule 5 now says why: a GATE ships
+maps every state this project uses into one of three categories — `todo`, `in_progress`, `done`.
+`init` writes it, and `pm init` APPENDS it to a devkit.toml it did not write — every other byte
+preserved, the file's own line endings kept, idempotent; the runtime reads it every run and **does
+not fall back**. (An earlier draft of this note said `init` wrote a `[pm.transitions.<kind>]` table
+too; nothing ever wrote one, and the key is refused by name now — see *Each kind declares its own
+states*.) Hard rule 5 now says why: a GATE ships
 stock defaults and a repo with no `devkit.toml` runs every gate byte-identically to one declaring
 them; a WORKFLOW does not, because a default nobody can see is the engine's opinion wearing the
 project's clothes.
 
-- **This release adds the section and changes no question the engine asks.** Every predicate still
-  asks by name. Only the workflow verbs refuse a tree that has not declared a flow — `check doc`,
-  `check shell` and `check repo-hygiene` are untouched — and the refusal names
-  `agentic-sdlc pm init` rather than pasting the table for you to copy wrong.
+- **Every question the engine asks is asked of the declaration** (`model.holds`, `model.category_of`,
+  `model.move_defect` — the routing landed in `32b20b1`), and the workflow verbs and `check pm`
+  refuse a tree that has not declared a flow — `check doc`, `check shell` and `check repo-hygiene`
+  are untouched — with a refusal that names `agentic-sdlc pm init` rather than pasting the table for
+  you to copy wrong. (The earlier draft said "changes no question" and "only the workflow verbs
+  refuse" of a build in which nothing yet asked; F1/F4 of the flow's review.)
 - **The engine gets two verbs**, which the design has specified since it was written and nothing had
   built: `move(grain, to_state)` asks whether the target is a state this project declared, and
   `holds(grains, category)` answers whether they are all there **and names who is not**. A status the
   project never declared blocks rather than passes.
-- **A state mapped to no category or to two, a transition to a state nobody declared, a category
-  outside the closed set, or a partial declaration is exit 2** naming the key. Refusing a malformed
-  declaration is the engine READING, which is the one thing it is always allowed to do.
+- **A state mapped to no category or to two, a category outside the closed set, or a partial
+  declaration is exit 2** naming the key. Refusing a malformed declaration is the engine READING,
+  which is the one thing it is always allowed to do.
 - **The seed carries `obe` in `done`.** It is the one place the seed is not literally the old
   `LIFECYCLE`, and it is deliberate: without it a freshly-initialised tree has no word for abandoned
   work, and `[pm] also_done`'s live defect — a story at `obe` holding its feature open forever —
   comes straight back for every new consumer. A tree that never types `obe` is unaffected.
-- **`pm vocabulary` is the pin-bump verb and it stopped saying there are no transitions to print.**
-  It now prints the categories, your declared flow, and the conveyor step names a transitions table
-  may key on — read from the registry, because that key set is the ENGINE's: a project selects from
-  a published vocabulary and cannot invent a step, which is the same shape `[<operation>] steps`
-  already works in. `--json` is additive; every existing key keeps its meaning.
+- **`pm vocabulary` is the pin-bump verb.** It prints the categories and your declared flow — each
+  kind's states with the category each sits in — beside the rule ids. `--json` is additive over the
+  0.1.x payload; every existing key keeps its meaning.
 
 ### The story belt verifies the story rather than the moment
 

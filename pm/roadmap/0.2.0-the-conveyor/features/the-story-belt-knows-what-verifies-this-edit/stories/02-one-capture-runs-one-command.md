@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit/02-one-capture-runs-one-c
 feature: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: Five files under one capture select one command, and a miss is named
-status: reviewing
+status: building
 owner:
 depends_on: ["0.2.0/the-story-belt-knows-what-verifies-this-edit/01-the-verify-declaration-is-read-or-refused"]
 ---

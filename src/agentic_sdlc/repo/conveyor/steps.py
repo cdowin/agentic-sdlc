@@ -39,7 +39,7 @@ Hard rule 1 is stdlib-only, forever: no `gh`, no HTTP client, no transitive
 dependency in a consumer's pre-push hook. So `pr-open`, `ci-green` and
 `prove-artifact` ship with **no default command**. Each is a JUDGEMENT whose
 `check()` runs `[release.commands] <step>` if the project supplies one and
-answers UNVERIFIABLE if it does not — a refusal to advance, never a pass.
+answers UNVERIFIABLE if it does not — never a pass, and the walk finishes (D8).
 `prove-artifact` additionally cannot have a default because the proof names a
 git URL, and a URL is a project's own fact (rule 8): a default naming a
 repository would put a consumer's provenance in this package's source, which is
@@ -63,9 +63,10 @@ never a second one. There is no `pm ready-for` at feature grain that answers
 "does this record parse and is every finding dispositioned" (`ready-for tag`
 asks it of a whole milestone), so `review-recorded` and `findings-landed` ask
 `verdict.parse` directly and INHERIT its rulings whole: a record whose block
-does not parse is UNVERIFIABLE — a refusal to advance — and never a pass, and a
-finding at `disposition: open` blocks. Softening either one here would be the
-second, permissive answer this section exists to refuse.
+does not parse is UNVERIFIABLE — reported by name while the walk finishes, and
+never a pass — and a finding at `disposition: open` is NOT-TRUE. Softening
+either one here would be the second, permissive answer this section exists to
+refuse.
 
 ## Config (rule 5 — a repo with no `devkit.toml` behaves identically)
 
@@ -78,6 +79,10 @@ second, permissive answer this section exists to refuse.
     [release.commands]
     gate      = "make milestone"           # the ONE shipped default command
     ci-green  = "gh pr checks --required"  # the PROJECT supplies gh
+    prove-artifact = "uvx --from …@v{version} pkg --version"
+                                           # {version} is the walk's subject;
+                                           # a placeholder this table does not
+                                           # know is refused at exit 2
 
     [release.version_files]
     "pyproject.toml"           = '^version = "(.*)"$'
@@ -260,6 +265,33 @@ DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
 # consumer's provenance in this package's source (rule 8).
 DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 
+# What a configured command may ask this machine to fill in. `{version}` is
+# the walk's SUBJECT — the release or pin version on `release`/`adopt`, the
+# grain id on a close belt. A brace pair is a placeholder only when it is
+# exactly `{identifier}` and not preceded by `$`: `${HOME}` is the shell's,
+# `{}` is xargs's, `awk '{print $1}'` and `{a,b}` are theirs, and all of those
+# pass through byte for byte. An identifier this table does not know is
+# refused at exit 2 (`commands_for`) rather than handed to the shell as a
+# literal it will never expand — M4: this repo's own `prove-artifact` carried
+# `@v{version}` for a whole milestone and the walk substituted nothing, so the
+# step was not true forever and said so only once D8 let it be reached.
+PLACEHOLDERS: tuple[str, ...] = ('version',)
+_PLACEHOLDER = re.compile(r'(?<!\$)\{([A-Za-z_][A-Za-z0-9_]*)\}')
+
+
+def unknown_placeholders(command: str) -> tuple[str, ...]:
+    """Every `{identifier}` in `command` this machine cannot fill, in order."""
+    return tuple(dict.fromkeys(
+        name for name in _PLACEHOLDER.findall(command)
+        if name not in PLACEHOLDERS))
+
+
+def substitute(command: str, ctx: Context) -> str:
+    """`command` with every known placeholder filled from the walk's subject."""
+    values = {'version': ctx.version}
+    return _PLACEHOLDER.sub(
+        lambda m: values.get(m.group(1), m.group(0)), command)
+
 # The judgements that CANNOT ship a default command, named so the census test
 # can assert the shipped table holds none of them.
 NO_DEFAULT_COMMAND = ('pr-open', 'ci-green', 'prove-artifact')
@@ -434,9 +466,20 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
 def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
     """One of this package's own gates, answered as a step.
 
-    Exit 2 is NOT exit 1: a config or usage error decided nothing, and saying
-    so with the same sentence as a finding is how an operator comes to fix the
-    wrong thing.
+    Exit 2 is NOT exit 1, and D11 says which column it lands in: the callee's
+    reader failed, so the question was never asked — that is UNVERIFIABLE,
+    never NOT-TRUE. A step that folded it into "no" would be reporting a
+    finding about a tree nobody measured, and the belt would then perform its
+    next step over a verdict that does not exist (Q1 in
+    `docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`). The walk
+    still finishes (D8): this process read ITS declaration fine; it is the
+    subprocess that could not read its own, and a fact reported by a callee is
+    a fact about the tree, not this reader failing.
+
+    Only THIS callee gets the ruling. It is the one that speaks hard rule 6;
+    a configured `[<operation>.commands]` string is any shell at all, and
+    `make` exits 2 for a failed recipe — so `run_command` reads exit codes as
+    0-is-true and nothing else.
     """
     code, said, _ = _own_cli(ctx, *argv)
     spoken = f'`agentic-sdlc {" ".join(argv)}`'
@@ -444,9 +487,9 @@ def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
         return Answer.yes(f'{spoken} exited 0{f" — {found}" if found else ""}'
                           + (f': {said}' if said else ''))
     if code == 2:
-        return Answer.no(
+        return Answer.unverifiable(
             f'{spoken} exited 2 — a CONFIG or usage error, not a finding, so '
-            f'nothing was decided: {said}')
+            f'nothing was decided (D11): {said}')
     return Answer.no(f'{spoken} exited {code}: {said}')
 
 
@@ -575,6 +618,14 @@ def commands_for(operation: str, names: tuple[str, ...] | None = None,
             raise ConfigError(
                 f'[{operation}.commands] {key} is empty — an empty command is '
                 f'not "no command", it is a mistake; remove the key')
+        unknown = unknown_placeholders(value)
+        if unknown:
+            raise ConfigError(
+                f'[{operation}.commands] {key} names a placeholder this '
+                f'package cannot fill: '
+                f'{", ".join("{" + name + "}" for name in unknown)} — the '
+                f'known placeholders are '
+                f'{", ".join("{" + name + "}" for name in PLACEHOLDERS)}')
         step = known.get(key)
         if step is None:
             raise ConfigError(
@@ -726,8 +777,8 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
     except subprocess.TimeoutExpired:
         return Answer.no(
             f'`{_clip(command, 120)}` did not finish inside '
-            f'{_timeout(ctx.operation)}s — the step is not done and the run '
-            f'stops')
+            f'{_timeout(ctx.operation)}s — the step is not true; the walk '
+            f'finishes')
     except OSError as err:
         return Answer.unverifiable(
             f'`{_clip(command, 120)}` could not be run ({err})')
@@ -777,7 +828,11 @@ def _configured(ctx: Context, step: str) -> str:
     key = (str(ctx.root), ctx.operation, raw)
     if key not in _COMMANDS_MEMO:
         _COMMANDS_MEMO[key] = commands_for(ctx.operation)
-    return _COMMANDS_MEMO[key].get(step, '')
+    command = _COMMANDS_MEMO[key].get(step, '')
+    # Substituted HERE and not in the memo: the memo is keyed by the config's
+    # bytes, and the subject is the walk's, so one checkout walking two
+    # versions must not hand the second the first one's command.
+    return substitute(command, ctx) if command else ''
 
 
 def _judged_by_command(ctx: Context, step: str, must: str) -> Answer:
@@ -2264,7 +2319,9 @@ def do_committed(ctx: Context) -> str:
     return ('commit your own paths, by explicit pathspec — this machine never '
             'commits for you, and it cannot know which of the paths above '
             'belong to this story; if some of them are another agent\'s work '
-            'in the same worktree, that is what --skip --reason records')
+            'in the same worktree, this step stays not true and the ledger '
+            'row it writes carries the paths it saw — the walk finishes '
+            'either way')
 
 
 def check_evidence_written(ctx: Context) -> Answer:
@@ -2613,18 +2670,23 @@ STEP_DOC: dict[str, str] = {
         '`## Unreleased` above it.',
     'milestone-packaging': 'the milestone status is `packaging` or later.',
     'findings-resolved':
-        'no document under the review directory names this milestone — every '
-        'record resolved and deleted.',
+        '`pm ready-for tag <milestone>` exits 0 — every finding in every '
+        'record the milestone\'s grains point at has a disposition other than '
+        '`open`. The same question `review-landed` asked, re-asked after the '
+        'gate and the changelog moved. The records STAY: they are what '
+        '`reviewed:` points at, and deleting one leaves `check pm` D1 red.',
     'milestone-done': 'the milestone status is `done`.',
     'push-branch':
         'the branch tip equals its upstream tip. It refuses on the mainline '
         'and pushes nothing there.',
     'pr-open':
         'the configured `pr-open` command exits 0. With none, the operator is '
-        'asked and the step is reported not true; the walk finishes.',
+        'asked and the step is reported UNVERIFIABLE — never a pass, counted '
+        'apart from a plain no; the walk finishes.',
     'ci-green':
         'the configured `ci-green` command exits 0. With none, the operator '
-        'is asked and the step is reported not true; the walk finishes.',
+        'is asked and the step is reported UNVERIFIABLE — never a pass, '
+        'counted apart from a plain no; the walk finishes.',
     'merge': 'the mainline contains this branch\'s tip.',
     'tag': 'the tag exists locally AND on the remote. It is never force-moved.',
     'prove-artifact':

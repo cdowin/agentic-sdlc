@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import bug, run_cli, tree, write, write_config
+from support.pm import bug, declaring, run_cli, tree, write, write_config
 
 from agentic_sdlc.repo.pm import model, ready_for
 
@@ -626,29 +626,27 @@ class NothingIsWritten(unittest.TestCase):
             self.assertEqual(bytes_of(root), before)
 
 
-class ConfigRefusals(unittest.TestCase):
-    """A vocabulary that cannot express the question is exit 2, not a PASS."""
+class TheQuestionIsACategory(unittest.TestCase):
+    """A vocabulary without the word `done` can still answer — the question
+    is the `done` CATEGORY, which every declaration has. The `ConfigRefusals`
+    this replaces exited 2 when `story_states` lacked `done`; that refusal
+    was the verb unable to ask about a word, and there is no word to ask
+    about now. `obe` is finished by declaration, and a word the project never
+    declared is a BLOCKER carrying the file's own spelling."""
 
-    def _with_states(self, key: str, states: str) -> str:
-        return f'[pm]\n{key} = {states}\n'
-
-    def test_a_story_vocabulary_without_done_refuses(self):
-        with tree() as root:
-            write_config(root,
-                self._with_states('story_states', '["todo", "shipped"]'))
+    def test_a_renamed_vocabulary_answers_and_obe_is_finished(self):
+        renamed = {'todo': ('queued',), 'in_progress': ('doing',),
+                   'done': ('shipped', 'dropped')}
+        with tree(story_statuses=('shipped', 'dropped')) as root:
+            write_config(root, declaring(story=renamed))
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
-            self.assertEqual(code, 2, out)
-            self.assertNotIn(UNROUTED, out)
-            self.assertIn('story_states', out)
-
-    def test_a_feature_vocabulary_without_done_refuses(self):
-        with tree() as root:
-            write_config(root,
-                self._with_states('feature_states', '["todo", "shipped"]'))
-            code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
-            self.assertEqual(code, 2, out)
-            self.assertNotIn(UNROUTED, out)
-            self.assertIn('feature_states', out)
+            self.assertEqual(code, 0, out)
+            self.assertIn('all done', out)
+        with tree(story_statuses=('done', 'obe', 'wombat')) as root:
+            code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
+            self.assertEqual(code, 1, out)
+            self.assertIn('s2 is wombat', out)
+            self.assertNotIn('s1 is obe', out)
 
 
 if __name__ == '__main__':

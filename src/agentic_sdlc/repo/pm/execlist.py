@@ -41,14 +41,6 @@ class Refusal(Exception):
     """
 
 
-def _phase_key(phase: str) -> tuple:
-    if phase.isdigit():
-        return (0, int(phase), '')
-    if phase == 'seam':
-        return (1, 0, '')
-    return (2, 0, '')
-
-
 def _toposort(names: list[str], deps: dict[str, list[str]]) -> list[str]:
     """Kahn, name-tiebroken. A cycle degrades to name order (V5 reports it)."""
     remaining = set(names)
@@ -69,7 +61,7 @@ def _short(gid: str) -> str:
 
 
 def milestone_rows(cfg: model.PmConfig, mdir: Path) -> list[str]:
-    views = [model.read_feature(f) for f in model.feature_files(mdir)]
+    views = [model.read_feature(cfg, f) for f in model.feature_files(mdir)]
     by_id = {v.fid: v for v in views}
     deps: dict[str, list[str]] = {}
     for v in views:
@@ -78,16 +70,20 @@ def milestone_rows(cfg: model.PmConfig, mdir: Path) -> list[str]:
         except validate.Unparseable:
             refs = []
         deps[v.fid] = [r for r in refs if r in by_id]
+    # `model.phase_key` is the ONE reading order of a board — `pm status`
+    # sorts by it too — and it knows no phase word: numbered, then named in
+    # the project's own spelling, then unphased.
     buckets: dict[tuple, list[str]] = {}
+    phases: dict[tuple, str] = {}
     for v in views:
-        buckets.setdefault(_phase_key(v.phase), []).append(v.fid)
+        key = model.phase_key(v.phase)
+        buckets.setdefault(key, []).append(v.fid)
+        phases[key] = v.phase
     rows, n = [], 0
     for key in sorted(buckets):
         ordered = _toposort(sorted(buckets[key]), deps)
-        label = ('phase ' + str(key[1]) if key[0] == 0
-                 else 'seam' if key[0] == 1 else 'unphased')
-        if len(buckets) > 1 or key[0] != 2:
-            rows.append(f'\n**{label}**\n')
+        if len(buckets) > 1 or phases[key]:
+            rows.append(f'\n**{model.phase_label(phases[key])}**\n')
         for fid in ordered:
             v = by_id[fid]
             n += 1

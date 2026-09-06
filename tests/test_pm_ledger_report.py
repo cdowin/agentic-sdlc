@@ -389,8 +389,8 @@ def test_the_refusal_matrix():
 
 
 @pytest.mark.parametrize('kwargs,second,needle', [
-    (dict(milestone_status='planning'), False, 'is `building`'),
-    (dict(), True, '2 milestones are building'),
+    (dict(milestone_status='planning'), False, 'is in progress'),
+    (dict(), True, '2 milestones are in progress'),
 ])
 def test_a_milestone_this_verb_cannot_choose_is_named(kwargs, second, needle):
     """The one question the verb cannot answer, and it says so rather than

@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from support.pm import ledger_lines, ledger_rows, run_cli, tree, write
+from support.pm import ledger_lines, ledger_rows, loaded, run_cli, tree, write
 
 from agentic_sdlc.repo.pm import ledger
 
@@ -387,8 +387,8 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 
 @pytest.mark.parametrize('kwargs,remove_pm,second_milestone,code,needle', [
     (dict(), True, False, 1, 'no PM tree'),
-    (dict(milestone_status='planning'), False, False, 1, 'is `building`'),
-    (dict(), False, True, 2, '2 milestones are building'),
+    (dict(milestone_status='planning'), False, False, 1, 'is in progress'),
+    (dict(), False, True, 2, '2 milestones are in progress'),
 ])
 def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
         kwargs, remove_pm, second_milestone, code, needle):
@@ -604,12 +604,12 @@ def test_no_total_line_while_the_grain_is_still_in_flight():
 
 
 def test_done_ends_a_story_and_blocked_does_not():
-    """`done` is NAMED, never `story_states[-1]` — which is `blocked`.
+    """Finished is the `done` CATEGORY, never the last word in a list.
 
-    Reading the tuple's last entry would have printed a total for a story that
-    STALLED and none for a story that finished. The order is `pm vocabulary`'s
-    output and a consumer contract, so the state is named instead — and `done`
-    is the one every drift rule in model.py already treats as terminal.
+    `blocked` is a word this project never declared, so it is in no category
+    and ends nothing; reading a list's last entry would have printed a total
+    for a story that STALLED and none for one that finished. The category is
+    the one every drift rule in model.py asks, so `show` agrees with the gate.
     """
     with tree() as root:
         timeline(root, last_to='done')
@@ -644,14 +644,22 @@ def test_only_status_rows_bound_the_total():
     assert '4500s' not in before
 
 
-def test_the_terminal_state_rule_lives_in_ledger_py_and_nowhere_else():
+def test_the_finished_rule_lives_in_ledger_py_and_is_the_done_category():
     """One home, because a report that disagreed with `show` about where a
-    grain finished would produce two durations for one grain."""
-    cfg = type('C', (), {'bug_states': ('open', 'fixed', 'shut')})()
-    assert ledger.terminal_state(cfg, 'story') == 'done'
-    assert ledger.terminal_state(cfg, 'feature') == 'done'
-    assert ledger.terminal_state(cfg, 'milestone') == 'done'
-    assert ledger.terminal_state(cfg, ledger.GRAIN_BUG) == 'shut'
+    grain finished would produce two durations for one grain — and it is the
+    kind's `done` CATEGORY: `obe` ends a story, a bug's own `closed` ends a
+    bug, and a word the project never declared ends nothing."""
+    with tree() as root:
+        cfg = loaded(root)
+    assert ledger.ends_grain(cfg, 'story', 'done')
+    assert ledger.ends_grain(cfg, 'story', 'obe')
+    assert ledger.ends_grain(cfg, 'feature', 'done')
+    assert ledger.ends_grain(cfg, 'milestone', 'done')
+    assert ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'closed')
+    assert not ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'fixed')
+    assert not ledger.ends_grain(cfg, 'story', 'reviewing')
+    assert not ledger.ends_grain(cfg, 'story', 'shut')
+    assert not ledger.ends_grain(cfg, 'story', {'to': 'done'})
 
 
 def test_json_prints_the_raw_lines_and_nothing_else():

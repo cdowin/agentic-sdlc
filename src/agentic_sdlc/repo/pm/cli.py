@@ -1,18 +1,29 @@
 """cli.py — the PM-tree status CLI.
 
 Moves a story/feature/milestone `status:` through code rather than a regex: the
-verb validates the value against that grain's vocabulary, writes ONLY the
-`status:` line (plus `reviewed:` on the feature-done step), preserves every
-other byte and line ending, and is idempotent.
+verb validates the value against that grain's DECLARED flow (`model.move_defect`
+— is this a state the project named in `[pm.states.<kind>]`?), writes ONLY the
+`status:` line (plus `reviewed:` on a feature close), preserves every other
+byte and line ending, and is idempotent.
+
+EVERY QUESTION THIS CLI ASKS OF A STATUS IS ASKED OF ITS CATEGORY — `todo`,
+`in_progress` or `done` — through `model.holds`, never of the word. "Is this
+feature's work finished" is `holds(stories, done)`; "which state is the close"
+is `category_of(to) == done`; which WORDS sit in those categories is the
+project's declaration, and a project that renames every one of them gets this
+CLI's behaviour unchanged. The seed's words appear in this file's prose for
+reading only.
 
 It does NOT own a transition graph. Nothing checks an EDGE — D3/D4/D5 check the
 tree's END STATE — so a graph here would only tax whoever used the sanctioned
-tool while a `sed` of the same line reached the state it refused. The one
-convenience that remains is the `feature done` cascade, and it is OPT-IN: a run
-without `--cascade` touches the feature and no story file, so a closed feature
-over unclosed stories is the DEFAULT outcome and an intended one. A verb writes
-what it was named; what the tree is then left holding is D5's question, asked of
-the tree. Every run reports the stories it did not touch, closed feature or not.
+tool while a `sed` of the same line reached the state it refused. A verb writes
+the ONE grain it was named; a feature close touches no story file, so a closed
+feature over unclosed stories is the DEFAULT outcome and an intended one — what
+the tree is then left holding is D5's question, asked of the tree. Every close
+reports the stories it did not touch. (The `--cascade` that used to close a
+feature's `reviewing` stories is gone: which stories to move and to what was the
+engine's opinion about two words, and the feature belt closes stories through
+the story belt, one at a time, by name.)
 
 Its companion is `agentic-sdlc check pm`, which imports the same predicates
 from model.py and makes an inconsistent END STATE loud.
@@ -40,15 +51,26 @@ from agentic_sdlc.repo.pm import ledger, model, report, templates
 PROG = 'agentic-sdlc pm'
 
 USAGE = """usage: agentic-sdlc pm <command>
-  story <status> <story-id>               (any status in [pm] story_states)
-  bug <status> <bug-id>                   (any status in [pm] bug_states;
+
+Every question asked of a status is asked of its CATEGORY — todo, in_progress
+or done — never of the word. Which words sit in which category is this
+project's [pm.states.<kind>] in devkit.toml, written by `pm init` and read
+every run; a state the project never declared is refused by name.
+
+  story <status> <story-id>               (any state in [pm.states.story])
+  bug <status> <bug-id>                   (any state in [pm.states.bug];
                                            bug-id is <milestone>/bugs/<slug>)
-  feature <status> <feature-id>           (any status in [pm] feature_states)
-  feature done <feature-id> [--cascade] [--review-record <path>]
-                                          (--cascade also closes that feature's
-                                           stories at `reviewing`; without it,
-                                           no story file is touched)
-  milestone <status> <milestone-id>       (any state; reports features not done)
+  feature <status> <feature-id>           (any state in [pm.states.feature];
+                                           a move into in_progress reports the
+                                           stories not in `done`)
+  feature <done-state> <feature-id> [--review-record <path>]
+                                          (a state in the `done` category
+                                           closes: stamps `reviewed:` from the
+                                           flag and reports the stories not in
+                                           `done`. No story file is touched —
+                                           the story belt closes each by name)
+  milestone <status> <milestone-id>       (any state; a move into `done`
+                                           reports the features not there)
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes the milestone directory and
                                            appends its row to ROADMAP.md;
@@ -69,9 +91,10 @@ USAGE = """usage: agentic-sdlc pm <command>
                                            rung, as an EXIT CODE: 0 ready,
                                            1 not ready — naming every blocker,
                                            never a tally — 2 usage. feature:
-                                           every story finished — `done`, or
-                                           anything in `[pm] also_done`.
-                                           milestone: every feature done with a
+                                           every story in the `done` CATEGORY
+                                           ([pm.states.story] done — `obe` too,
+                                           never the bare word). milestone:
+                                           every feature in `done` with a
                                            non-empty review record. tag: every
                                            finding in the records the milestone
                                            points at at a disposition other
@@ -107,8 +130,10 @@ USAGE = """usage: agentic-sdlc pm <command>
                 [--agent-id X] [--agent-type Y] [--session-id Z]
                                           (sum one Claude Code transcript and
                                            append a dispatch (SubagentStop) or
-                                           session (Stop) row to the BUILDING
-                                           milestone's ledger.jsonl)
+                                           session (Stop) row to the ONE
+                                           in_progress milestone's ledger.jsonl
+                                           — none or several is a refusal that
+                                           names them)
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N]
                 [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
@@ -133,8 +158,8 @@ USAGE = """usage: agentic-sdlc pm <command>
                                            rows: dispatches, tokens, tool calls,
                                            wall-clock and seconds in each state,
                                            per story/feature/bug. Defaults to the
-                                           building milestone. Never exits
-                                           non-zero on a number.
+                                           one in_progress milestone. Never
+                                           exits non-zero on a number.
                                            --from <rev> reads the ledger and the
                                            grain docs out of git at that rev
                                            instead of the tree, for a milestone
@@ -323,13 +348,36 @@ def _stamp_status(cfg: model.PmConfig, path: Path, frm: str, to: str,
     _stamp(cfg, path, ledger.status_row(_ledger_id(path, gid), frm, to))
 
 
+def _movable(cfg: model.PmConfig, kind: str, to: str) -> None:
+    """Exit 2 unless `to` is a state this project declared for `kind`.
+
+    `model.move_defect` is the engine's whole opinion about a move, and every
+    status verb asks it BEFORE resolving the grain — a target outside the
+    declaration used to dispatch first, so a custom vocabulary had the
+    sanctioned tool writing the exact word D4 then reported.
+    """
+    defect = model.move_defect(cfg, kind, to)
+    if defect:
+        raise Usage(defect)
+
+
+def _unfinished(cfg: model.PmConfig, kind: str,
+                grains) -> list[str]:
+    """`<name>(<status>)` for every grain NOT in `done` — `holds`' blockers.
+
+    The one shape every advisory in this file prints, so `feature`,
+    `milestone` and `retire` cannot describe "not finished" three ways.
+    """
+    held = model.holds(cfg, kind, grains, model.DONE_CATEGORY)
+    return [f'{name}({status})' for name, status in held.blockers]
+
+
 # --- story --------------------------------------------------------------------
 def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
     if len(args) != 2:
         raise Usage(USAGE)
     to, sid = args
-    if to not in cfg.story_states:
-        raise Usage(f'{to!r} is not a story status ({" ".join(cfg.story_states)})')
+    _movable(cfg, 'story', to)
     sf = model.story_file(cfg, sid)
     if sf is None:
         raise Usage(f'no story resolves from id {sid!r} '
@@ -357,15 +405,14 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     `bid` must NAME a bug (contain `/bugs/`) before `_grain_file` ever runs:
     `_grain_file` resolves a milestone/feature/story id too when `/bugs/` is
     absent, and a bug verb resolving to a FEATURE file would flip that
-    file's `status:` to a word validated against `bug_states` instead of its
-    own vocabulary — a cross-grain write no caller asked for.
+    file's `status:` to a word validated against the bug flow instead of its
+    own — a cross-grain write no caller asked for.
     """
     if len(args) != 2:
         raise Usage(USAGE)
     to, bid = args
-    if to not in cfg.bug_states:
-        raise Usage(f'{to!r} is not a bug status ({" ".join(cfg.bug_states)})')
-    if '/bugs/' not in bid:
+    _movable(cfg, 'bug', to)
+    if f'/{model.BUGS_DIR}/' not in bid:
         raise Usage(f'no bug resolves from id {bid!r} '
                     f'(expected <milestone>/bugs/<slug>)')
     bf = _grain_file(cfg, bid)
@@ -388,13 +435,25 @@ def _feature_or_usage(cfg: model.PmConfig, fid: str) -> tuple[Path, str]:
     return ff, _was(ff)
 
 
-def _story_states(cfg: model.PmConfig, fid: str) -> list[tuple[Path, str]]:
+def _story_states(cfg: model.PmConfig, fid: str) -> list[tuple[str, str]]:
     ff = model.feature_file(cfg, fid)
     assert ff is not None
-    return [(s, model.field_of(s, 'status')) for s in model.story_files(ff)]
+    return [(s.name, model.field_of(s, 'status')) for s in model.story_files(ff)]
 
 
 def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
+    """Any feature move that is not a close. One write, one advisory.
+
+    The advisory — the stories not in `done`, named with the word each file
+    holds — prints on every move INTO `in_progress`. It used to print on
+    `reviewing` alone (B3), which was the engine knowing that one word is the
+    hand-off; under categories "work has started on this feature" is the
+    honest trigger, and `holds(stories, done)` is the one question
+    `pm ready-for feature` asks too, so the two cannot name different sets.
+    Reported, never refused: "a feature cannot be under review while its own
+    work is unfinished" is a claim about how a team works, and which stories
+    are where is a fact for the caller to act on.
+    """
     if len(args) != 1:
         raise Usage(USAGE)
     fid = args[0]
@@ -403,36 +462,12 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
         _ok(f'feature {fid} already {to} (no-op)')
         _stamp_status(cfg, ff, cur, to, fid)
         return 0
+    pending = (_unfinished(cfg, 'story', _story_states(cfg, fid))
+               if model.category_of(cfg, 'feature', to) == model.IN_PROGRESS
+               else [])
     _set_status(cfg, ff, to)
     _ok(f'feature {fid}: {cur} -> {to}')
     _stamp_status(cfg, ff, cur, to, fid)
-    return 0
-
-
-def cmd_feature_reviewing(cfg: model.PmConfig, args: list[str]) -> int:
-    if len(args) != 1:
-        raise Usage(USAGE)
-    fid = args[0]
-    ff, cur = _feature_or_usage(cfg, fid)
-    if cur == model.REVIEWING:
-        _ok(f'feature {fid} already {model.REVIEWING} (no-op)')
-        _stamp_status(cfg, ff, cur, model.REVIEWING, fid)
-        return 0
-    # B3: ONE question, asked once. `model.is_terminal` is what
-    # `pm ready-for feature` asks — `done`, or anything in `[pm] also_done` —
-    # and this advisory used to ask `not in (reviewing, 'done')` instead. Two
-    # surfaces answering "is this feature's work finished" with two different
-    # sets is a second scoreboard, and it showed: a feature whose stories were
-    # all at `reviewing` flipped with no advisory, and then `ready-for feature`
-    # named every one of them.
-    pending = [f'{p.name}({st})' for p, st in _story_states(cfg, fid)
-               if not model.is_terminal(cfg, st, cfg.story_states)]
-    _set_status(cfg, ff, model.REVIEWING)
-    _ok(f'feature {fid}: {cur} -> {model.REVIEWING}')
-    _stamp_status(cfg, ff, cur, model.REVIEWING, fid)
-    # Reported, never refused. "A feature cannot be under review while its own
-    # work is unfinished" is a claim about how a team works; which stories are
-    # where is a fact, and it is the caller's to act on.
     if pending:
         _ok(f'  {len(pending)} story/ies not finished: {" ".join(pending)}')
     return 0
@@ -476,23 +511,25 @@ def _take_flags(args: list[str], flags: tuple[str, ...],
     return pairs, rest
 
 
-def cmd_feature_done(cfg: model.PmConfig, args: list[str]) -> int:
-    """Close a feature. Touches the feature's own `status:` and nothing else.
+def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
+    """Close a feature — a move into the `done` CATEGORY, by whichever word.
 
-    `--cascade` additionally moves that feature's stories at `reviewing`
-    to `done`, in the same run. It is OPT-IN: writing to files the caller did
-    not name is the tool acting on its own initiative, and a story flipped by a
-    command aimed at a feature is exactly that. With the flag, it was asked for.
+    `done`, `obe`, or anything the project lists there: the close is the
+    category, and what makes it a close rather than a plain move is the record
+    stamp and the report. Touches the feature's own `status:` (plus `reviewed:`
+    from `--review-record`) and nothing else. A story is closed by the story
+    belt, by name — `agentic-sdlc close story <id>` — never by a command aimed
+    at its feature: writing to files the caller did not name is the tool
+    acting on its own initiative.
 
-    Either way the verb REPORTS what it saw — the stories it did not touch, and
-    why — and refuses nothing on their account. What the tree is left holding is
-    D5's question, and D5 asks it of the tree rather than of the caller.
+    The verb REPORTS what it saw — the stories not finished, with the word
+    each holds — and refuses nothing on their account. What the tree is left
+    holding is D5's question, and D5 asks it of the tree rather than of the
+    caller.
 
-    A feature that is ALREADY `done` is not a short circuit. The flip is the
-    idempotent part; the cascade, the record stamp and the report each run on
-    their own terms, so the two-step (close, then re-run with `--cascade`) does
-    what the first run said it would. Run twice with the same flags and the
-    second is a no-op, because there is nothing left at `reviewing` to move.
+    A feature that is ALREADY closed is not a short circuit. The flip is the
+    idempotent part; the record stamp and the report each run on their own
+    terms, so every run answers for the whole tree it was pointed at.
     """
     pairs, rest = _take_flags(args, ('--review-record',), noun='a path')
     rec = ''
@@ -502,11 +539,8 @@ def cmd_feature_done(cfg: model.PmConfig, args: list[str]) -> int:
             raise Usage('--review-record needs a path')
         rec = value
     fid = ''
-    cascade = False
     for a in rest:
-        if a == '--cascade':
-            cascade = True
-        elif a.startswith('-'):
+        if a.startswith('-'):
             raise Usage(f'unknown flag {a!r}')
         elif fid:
             raise Usage(f'unexpected arg {a!r}')
@@ -514,27 +548,10 @@ def cmd_feature_done(cfg: model.PmConfig, args: list[str]) -> int:
             fid = a
     if not fid:
         raise Usage(USAGE)
-    # `--cascade` writes `done` into STORY files, so that target state is
-    # validated against the story vocabulary before anything is touched — a
-    # custom `story_states` without `done` used to get it written anyway.
-    if cascade and 'done' not in cfg.story_states:
-        raise Usage(f"--cascade writes story status 'done', which is not a "
-                    f'story status ({" ".join(cfg.story_states)})')
     ff, cur = _feature_or_usage(cfg, fid)
-    # NOT short-circuited on `cur == 'done'`. An early return there made the
-    # two-step this verb's own output recommends — close, read "--cascade
-    # closes the ones at `reviewing`", re-run with the flag — print
-    # "already done (no-op)" at exit 0 and touch nothing, with the untouched
-    # stories no longer even reported. The feature flip is what is idempotent;
-    # the cascade and the report are computed either way, so every run answers
-    # for the whole tree it was pointed at.
-    states = _story_states(cfg, fid)
-    to_close = ([p for p, st in states if st == model.REVIEWING]
-                if cascade else [])
     # What it noticed, said out loud. Never a refusal: the caller asked for a
     # feature to be closed, and this is a fact about its stories.
-    untouched = [f'{p.name}({st})' for p, st in states
-                 if st != 'done' and p not in to_close]
+    untouched = _unfinished(cfg, 'story', _story_states(cfg, fid))
 
     if rec:
         # The one thing checked about a record: the path RESOLVES. Whether the
@@ -543,7 +560,7 @@ def cmd_feature_done(cfg: model.PmConfig, args: list[str]) -> int:
         target = _resolve_record(cfg, rec)
         if not model.record_resolves(target):
             raise Refused(
-                f'feature {fid} -> done: review record {rec!r} names no file '
+                f'feature {fid} -> {to}: review record {rec!r} names no file '
                 f'({cfg.rel(target)}). Nothing was written — stamping a pointer '
                 f'to nothing is the drift D1 reports.')
         if not model.set_field(ff, 'reviewed', rec):
@@ -551,42 +568,18 @@ def cmd_feature_done(cfg: model.PmConfig, args: list[str]) -> int:
         _ok(f'feature {fid}: reviewed -> {rec}')
     record = model.review_record_for(cfg, fid)
 
-    # Stories first: if the FEATURE flip is the one that fails, the gate still
-    # sees a non-done feature and a re-run completes the close cleanly.
-    #
-    # THE LEDGER READS THE OTHER WAY ROUND — the feature's row first, then one
-    # per story it closed — so a report reads the close as the one act it was.
-    # Each story's row is still BUILT the moment its own write lands (that is
-    # its timestamp), held until the feature's row is on disk, and flushed even
-    # when the feature flip fails: a write that landed always has its row.
-    story_rows = []
-    try:
-        for p in to_close:
-            _set_status(cfg, p, 'done',
-                        'CASCADE ABORTED — some stories may already be done; '
-                        're-run the same command to finish (it is idempotent).')
-            story_rows.append(ledger.status_row(
-                _ledger_id(p, f'{fid}/{model.story_slug_of(cfg, p.stem)}'),
-                model.REVIEWING, 'done'))
-            _ok(f'  story {p.name}: {model.REVIEWING} -> done')
-        if cur == 'done':
-            _ok(f'feature {fid} already done (no-op)')
-        else:
-            _set_status(cfg, ff, 'done',
-                        'Stories were flipped; re-run to finish closing the '
-                        'feature.')
-            _ok(f'feature {fid}: {cur} -> done'
-                + (f' (review record: {record})' if record
-                   else ' (no review record)'))
-        _stamp_status(cfg, ff, cur, 'done', fid)
-    finally:
-        for row in story_rows:
-            _stamp(cfg, ff, row)
+    if cur == to:
+        _ok(f'feature {fid} already {to} (no-op)')
+    else:
+        _set_status(cfg, ff, to)
+        _ok(f'feature {fid}: {cur} -> {to}'
+            + (f' (review record: {record})' if record
+               else ' (no review record)'))
+    _stamp_status(cfg, ff, cur, to, fid)
     if untouched:
         _ok(f'  {len(untouched)} story/ies not done and NOT touched: '
-            f'{" ".join(untouched)}'
-            + ('' if cascade
-               else ' (--cascade closes the ones at `reviewing`)'))
+            f'{" ".join(untouched)} (close each through '
+            f'`agentic-sdlc close story <id>`)')
     return 0
 
 
@@ -594,19 +587,16 @@ def cmd_feature(cfg: model.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
     sub, rest = args[0], args[1:]
-    # The TARGET state is validated against the closed vocabulary before ANY
+    # The TARGET state is validated against the declaration before ANY
     # dispatch — `done` and `reviewing` used to dispatch first, so a project
-    # custom `feature_states` excluded them had the sanctioned tool writing the
-    # exact out-of-vocabulary status D4 reports. (The CURRENT state is still
-    # never gated on — repair from any state stays.)
-    if sub not in cfg.feature_states:
-        raise Usage(f'{sub!r} is not a feature status '
-                    f'({" ".join(cfg.feature_states)})')
-    # `done` is the only verb with behaviour of its own — the cascade.
-    if sub == 'done':
-        return cmd_feature_done(cfg, rest)
-    if sub == model.REVIEWING:
-        return cmd_feature_reviewing(cfg, rest)
+    # whose flow excluded them had the sanctioned tool writing the exact
+    # undeclared status D4 reports. (The CURRENT state is still never gated
+    # on — repair from any state stays.)
+    _movable(cfg, 'feature', sub)
+    # A move into the `done` CATEGORY is the close — the record stamp and the
+    # report — by whichever word the project put there.
+    if model.category_of(cfg, 'feature', sub) == model.DONE_CATEGORY:
+        return cmd_feature_done(cfg, sub, rest)
     return cmd_feature_simple(cfg, sub, rest)
 
 
@@ -615,9 +605,7 @@ def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
     if len(args) != 2:
         raise Usage(USAGE)
     to, mid = args
-    if to not in cfg.milestone_states:
-        raise Usage(f'{to!r} is not a milestone status '
-                    f'({" ".join(cfg.milestone_states)})')
+    _movable(cfg, 'milestone', to)
     mf = model.milestone_file(cfg, mid)
     if mf is None:
         raise Usage(f'no milestone resolves from id {mid!r}')
@@ -627,12 +615,13 @@ def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
         _stamp_status(cfg, mf, cur, to, mid)
         return 0
     pending: list[str] = []
-    if to == 'done':
+    if model.category_of(cfg, 'milestone', to) == model.DONE_CATEGORY:
         mdir = model.milestone_dir(cfg, mid)
         assert mdir is not None
-        pending = [f'{ff.parent.name}({model.field_of(ff, "status")})'
-                   for ff in model.feature_files(mdir)
-                   if model.field_of(ff, 'status') != 'done']
+        pending = _unfinished(
+            cfg, 'feature',
+            ((ff.parent.name, model.field_of(ff, 'status'))
+             for ff in model.feature_files(mdir)))
     _set_status(cfg, mf, to)
     _ok(f'milestone {mid}: {cur} -> {to}')
     _stamp_status(cfg, mf, cur, to, mid)
@@ -703,16 +692,29 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         status = model.field_of(mfile, 'status')
         canonical_id = model.unquote(model.field_of(mfile, 'id')) or mid
         name = model.field_of(mfile, 'name')
-        if status != 'done':
+        if not model.holds(cfg, 'milestone', [(mid, status)],
+                           model.DONE_CATEGORY):
             notices.append(f'milestone {mid} is {status or "(no status)"}, '
                            f'not done')
-    open_features = sorted(ff.parent.name for ff in model.feature_files(mdir)
-                           if model.field_of(ff, 'status') != 'done')
+    open_features = sorted(
+        name for name, _ in model.holds(
+            cfg, 'feature',
+            ((ff.parent.name, model.field_of(ff, 'status'))
+             for ff in model.feature_files(mdir)),
+            model.DONE_CATEGORY).blockers)
     if open_features:
         notices.append(f'{len(open_features)} feature(s) not done: '
                        f'{" ".join(open_features)}')
-    open_bugs = sorted(bf.stem for bf in model.bug_files(mdir)
-                       if model.field_of(bf, 'status') == 'open')
+    # "Still open" is "not in `done`": a bug at `fixed` is work that remains
+    # (the fix is not yet closed out), and a project's word for that is its
+    # own. The 0.2.0 verb asked for the literal `open`, so a `fixed` bug was
+    # silently not reported.
+    open_bugs = sorted(
+        name for name, _ in model.holds(
+            cfg, 'bug',
+            ((bf.stem, model.field_of(bf, 'status'))
+             for bf in model.bug_files(mdir)),
+            model.DONE_CATEGORY).blockers)
     if open_bugs:
         notices.append(f'{len(open_bugs)} bug(s) still open: '
                        f'{" ".join(open_bugs)}')
@@ -863,18 +865,16 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]')
         rows = []
         for ffile in model.feature_files(mdir):
-            view = model.read_feature(ffile)
+            view = model.read_feature(cfg, ffile)
             # Drift markers reuse the SAME predicates the gate runs on, so the
             # report and the gate can never describe drift differently.
             reason = (model.drift_dangling_record(cfg, view.fid)
-                      or model.drift_stalled(view.status, view.done_n, view.total))
+                      or model.drift_stalled(cfg, view))
             drift = f'  <DRIFT: {reason}>' if reason else ''
-            phase = view.phase or 'unphased'
-            # Numeric phases first, then the seam bucket, then unphased — the
-            # reading order of the milestone's own board.
-            sort = (0, int(phase)) if phase.isdigit() else (
-                (1, 0) if phase == 'seam' else (2, 0))
-            rows.append((sort, phase, view.status,
+            # Numbered phases first, then the named ones, then unphased — the
+            # reading order of the milestone's own board, and `model.phase_key`
+            # is the one spelling of it (the execution list sorts by it too).
+            rows.append((model.phase_key(view.phase), view.phase, view,
                          f'  feature {view.fid.partition("/")[2]:<40} '
                          f'[{view.status:<8}] stories {view.done_n}/{view.total} done{drift}'))
         if not rows:
@@ -887,14 +887,13 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # the lone `unphased` bucket suppresses its own header.
         for phase in buckets:
             members = [r for r in rows if r[1] == phase]
-            n_done = sum(1 for r in members if r[2] == 'done')
-            if phase == 'unphased':
-                if buckets != ['unphased']:
-                    print(f'  -- unphased ({n_done}/{len(members)} done)')
-            elif phase == 'seam':
-                print(f'  -- seam ({n_done}/{len(members)} done)')
-            else:
-                print(f'  -- phase {phase} ({n_done}/{len(members)} done)')
+            finished = model.holds(cfg, 'feature',
+                                   ((r[2].fid, r[2].status) for r in members),
+                                   model.DONE_CATEGORY)
+            n_done = finished.counted - len(finished.blockers)
+            if phase or buckets != ['']:
+                print(f'  -- {model.phase_label(phase)} '
+                      f'({n_done}/{len(members)} done)')
             for r in members:
                 print(r[3])
     return 0
@@ -928,10 +927,8 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
             owner = value
         else:
             milestone = value
-    unknown = sorted(statuses - set(cfg.story_states))
-    if unknown:
-        raise Usage(f'--status names {", ".join(unknown)}, which is not a story '
-                    f'status ({" ".join(cfg.story_states)})')
+    for status in sorted(statuses):
+        _movable(cfg, 'story', status)
 
     # Enumerated ONCE, and used both to refuse a typo and to filter. A
     # `--milestone` naming nothing used to print `0 of 0` at exit 0, which is
@@ -952,7 +949,7 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
         if milestone and milestone != mid:
             continue
         for ffile in model.feature_files(mdir):
-            view = model.read_feature(ffile)
+            view = model.read_feature(cfg, ffile)
             for sfile in view.stories:
                 scanned += 1
                 status = model.field_of(sfile, 'status')
@@ -1128,11 +1125,11 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
         if a != '--json':
             raise Usage(f'unknown flag {a!r}')
     # THE FLAT SETS STAY, and the lines they print are unchanged (hard rule 6).
-    # They are not a duplicate of the flow below: `[pm] <kind>_states` is what
-    # `check pm` D4 measures a grain's status against TODAY, and phase 6
-    # changed no question the engine asks. Dropping them here would hide the
-    # set the gate actually runs on, which is the same class of lie the
-    # docstring above just stopped telling.
+    # They are the flow's ORDER — category-major, then the project's own list
+    # order — which is what `check pm` D4 names when it reports an undeclared
+    # word and what a conveyor status step compares in. Empty for a tree that
+    # declared nothing: printing the seed there would be the runtime fallback
+    # this reader does not have.
     grains = {
         'milestone': cfg.milestone_states,
         'feature': cfg.feature_states,
@@ -1140,11 +1137,11 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
         'bug': cfg.bug_states,
     }
     published = _published_steps()
-    cascade_note = ('the story cascade is OPT-IN: `pm feature done <id>` '
-                    'touches the feature only, and `--cascade` additionally '
-                    'moves that feature\'s stories at `reviewing` to `done`. '
-                    'Either way the stories it did not touch are reported, '
-                    'never refused')
+    close_note = ('a feature close is a move into the `done` CATEGORY, by '
+                  'whichever word this project lists there: `pm feature '
+                  '<done-state> <id>` stamps `reviewed:` and reports the '
+                  'stories not in `done`, never refuses on them, and touches '
+                  'no story file — the story belt closes each by name')
     transitions_note = ('there is no EDGE graph — any state in a grain\'s own '
                         'set is reachable directly, and `check pm` reports an '
                         'inconsistent END STATE. [pm.transitions.<kind>] maps '
@@ -1179,23 +1176,26 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
             'notes': {
                 'transitions': transitions_note,
                 'published_steps': PUBLISHED_STEPS_NOTE,
-                'states': 'the flat per-kind `states` list is [pm] '
-                          '<kind>_states, which is what `check pm` D4 measures '
-                          'a grain\'s status against; `flow` is what the '
-                          'project declared in [pm.states.<kind>]',
-                'feature_done': cascade_note,
+                'states': 'the flat per-kind `states` list is the declared '
+                          'flow\'s order — category-major, then the project\'s '
+                          'own list order — and is empty for a tree that '
+                          'declared nothing; `flow` is what the project '
+                          'declared in [pm.states.<kind>], and every question '
+                          'the engine asks is asked of a category',
+                'feature_done': close_note,
             },
             'checks': list(model.KNOWN_CHECKS),
         }, indent=2))
         return 0
     width = max(len(g) for g in grains)
     for g, states in grains.items():
-        print(f'{g:<{width}}  {" ".join(states)}')
+        print(f'{g:<{width}}  {" ".join(states) if states else "(undeclared)"}')
     print()
-    print('Those are the sets `check pm` D4 measures a grain\'s status against')
-    print('([pm] <kind>_states). Below is the FLOW this project declared — the')
-    print('categories every state maps into, and the transitions a conveyor')
-    print('step reads. The category set is closed and is exactly')
+    print('Those are the declared states in their reading order — the words')
+    print('`check pm` D4 holds a grain to. Every question the engine asks is')
+    print('asked of a CATEGORY, never of a word. Below is the FLOW this project')
+    print('declared — the categories every state maps into, and the transitions')
+    print('a conveyor step reads. The category set is closed and is exactly')
     print(f'{" ".join(model.CATEGORIES)}.')
     print()
     if not cfg.flows:
@@ -1247,7 +1247,7 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
                             initial_indent=f'  {operation:<{step_width}}  ',
                             subsequent_indent=' ' * (step_width + 4)))
     print()
-    for note in (transitions_note, cascade_note):
+    for note in (transitions_note, close_note):
         print(textwrap.fill(f'{note[0].upper()}{note[1:]}.', width=76))
     print()
     print(f'rules  {" ".join(model.KNOWN_CHECKS)}')
@@ -1637,23 +1637,28 @@ def _building_ledger_dir(cfg: model.PmConfig, subject: str = 'this row',
     """The milestone directory whose ledger `subject` belongs to (D6).
 
     The one thing `record` cannot work out for itself, and the default for
-    `report`. Exactly one milestone `building` is the answer; none and several
-    are both refusals that NAME the situation, because a verb that picked would
-    attribute a real dispatch's cost to whichever milestone sorted first and
-    nothing downstream could detect it.
+    `report`. Exactly one milestone in `in_progress` is the answer; none and
+    several are both refusals that NAME the situation, because a verb that
+    picked would attribute a real dispatch's cost to whichever milestone
+    sorted first and nothing downstream could detect it. Decision D5: the
+    engine never chooses among several; a project that wants one narrows its
+    own declaration.
     """
-    building = model.building_milestones(cfg)
-    if not building:
-        raise Usage(f'no milestone in {cfg.roadmap_dir} is `building`, so there '
-                    f'is no ledger {subject} belongs to — flip one with '
-                    f'`pm milestone building <id>`{hint} and re-run')
-    if len(building) > 1:
-        ids = ' '.join(sorted(model.unquote(mid) for mid, _, _ in building))
-        raise Usage(f'{len(building)} milestones are building ({ids}) — which '
+    live = model.in_progress_milestones(cfg)
+    if not live:
+        words = ', '.join(model.flow_of(cfg, 'milestone')
+                          .by_category.get(model.IN_PROGRESS, ()))
+        raise Usage(f'no milestone in {cfg.roadmap_dir} is in progress '
+                    f'({words}), so there is no ledger {subject} belongs to — '
+                    f'move one there with `pm milestone <state> <id>`{hint} '
+                    f'and re-run')
+    if len(live) > 1:
+        ids = ' '.join(sorted(model.unquote(mid) for mid, _, _ in live))
+        raise Usage(f'{len(live)} milestones are in progress ({ids}) — which '
                     f'one owns {subject} is the one thing this verb cannot '
                     f'know, so it is not guessing; run it where exactly one '
-                    f'milestone is building{hint}')
-    return building[0][2].parent
+                    f'milestone is in progress{hint}')
+    return live[0][2].parent
 
 
 def _tree_snapshot(cfg: model.PmConfig) -> dict:
@@ -1875,14 +1880,14 @@ def _gate_ledger_dir(cfg: model.PmConfig) -> Path:
         raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                       f'there is no ledger this gate row belongs to; no row '
                       f'was written')
-    building = model.building_milestones(cfg)
-    if not building:
-        raise Refused(f'no milestone in {cfg.rel(cfg.roadmap)} is '
-                      f'`building`, so there is no ledger this gate row '
+    live = model.in_progress_milestones(cfg)
+    if not live:
+        raise Refused(f'no milestone in {cfg.rel(cfg.roadmap)} is in '
+                      f'progress, so there is no ledger this gate row '
                       f'belongs to; no row was written')
-    if len(building) > 1:
+    if len(live) > 1:
         _building_ledger_dir(cfg, 'this gate row')
-    return building[0][2].parent
+    return live[0][2].parent
 
 
 def _required(flags: dict[str, str], name: str) -> str:
@@ -1947,11 +1952,11 @@ def _by_hand(cfg: model.PmConfig, grain: str, flags: dict[str, str]) -> dict:
 def _grain_kind(gid: str) -> str:
     """Which vocabulary an id answers to, by the shape `_grain_file` resolves by.
 
-    The kind, not the state: `ledger.terminal_state` owns WHICH state ends a
-    grain, so a report and this verb cannot come to different answers about
-    where one finished.
+    The kind, not the state: `ledger.ends_grain` owns WHICH states end a
+    grain (its kind's `done` category), so a report and this verb cannot come
+    to different answers about where one finished.
     """
-    if '/bugs/' in gid:
+    if f'/{model.BUGS_DIR}/' in gid:
         return ledger.GRAIN_BUG
     depth = gid.count('/')
     return 'milestone' if depth == 0 else 'feature' if depth == 1 else 'story'

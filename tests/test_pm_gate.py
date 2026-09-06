@@ -19,6 +19,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,10 +103,19 @@ class Frontmatter(unittest.TestCase):
 class DriftGate(unittest.TestCase):
     """The drift roster, one row per rule.
 
-    Each row is a tree that trips exactly the rule it names and the line the
-    finding must carry. A rule that stopped firing, or started firing under a
-    different name, fails here — which is the whole read-side contract.
+    Each row is a tree that trips exactly the rule it names, the line it must
+    carry, and WHICH LINE SHAPE — `  DRIFT  ` (a finding, exit 1) or
+    `  WARN  ` (a cross-level disagreement, exit 0, counted separately). A
+    rule that stopped firing, started firing under a different name, or
+    changed sides fails here — which is the whole read-side contract.
+
+    Story 03 of the-code-knows-entry-and-exit moved D2, D3, D5 and D6 to
+    WARN. Chris: *"a feature to-do and a story in progress, that's a warn.
+    Not a fail, no action, just messaging."* D1 and D4 are facts about the
+    input and stay findings.
     """
+
+    WARNED = ('D2', 'D3', 'D5', 'D6')
 
     # (rule, tree kwargs, the line the finding must carry)
     #
@@ -113,20 +123,24 @@ class DriftGate(unittest.TestCase):
     # `building` over finished children is NOT drift any more: `building` is
     # `in_progress`, and which in-progress word a parent holds is the
     # project's business (the D2/D5 resolution loss the CHANGELOG names).
+    # Each WARN names both grains and both categories.
     RULES = (
         ('D2', dict(feature_status='ready', story_statuses=('done',)),
-         'all stories done, feature still ready'),
+         "feature 0.1/alpha: all stories done, feature still ready (todo) — "
+         "all 1 stories are done"),
         ('D3', dict(milestone_status='done', feature_status='building'),
-         'is done but feature'),
+         "milestone 0.1 is 'done' (done) but feature 0.1/alpha is "
+         "'building' (in_progress)"),
         # The set the tree is judged against: the FEATURE's declared order,
         # and nothing else now that the deprecation window has closed.
         ('D4', dict(feature_status='bogus'),
          'not in (planning ready building reviewing done obe)'),
         ('D5', dict(feature_status='planning', story_statuses=('done',)),
-         'two places in this tree disagree'),
+         "story 0.1/alpha/s0 is 'done' (done) but its feature 0.1/alpha is "
+         "still 'planning' (todo)"),
         ('D6', dict(milestone_status='ready', feature_status='done',
                     story_statuses=('done',)),
-         'all 1 features are done'),
+         "milestone 0.1 is 'ready' (todo) but all 1 features are done"),
     )
 
     def test_a_parent_in_progress_over_finished_children_is_not_drift(self):
@@ -170,8 +184,18 @@ class DriftGate(unittest.TestCase):
         for rule, kwargs, message in self.RULES:
             with self.subTest(rule=rule), tree(**kwargs) as root:
                 code, out = run_gate(root)
-                self.assertEqual(code, 1, out)
-                self.assertIn(message, out)
+                warned = rule in self.WARNED
+                self.assertEqual(code, 0 if warned else 1, out)
+                shape = '  WARN  ' if warned else '  DRIFT  '
+                self.assertTrue(
+                    any(message in ln and ln.startswith(shape)
+                        for ln in out.splitlines()), (rule, out))
+                if warned:
+                    self.assertIn('[check:pm] PASS', out)
+                    self.assertIn('warning(s)', out)
+                    self.assertNotIn('DRIFT', out)
+                else:
+                    self.assertIn('[check:pm] FAIL', out)
 
     def test_d1_a_reviewed_pointer_that_resolves_to_nothing(self):
         with tree(feature_status='done', story_statuses=('done',),
@@ -221,16 +245,24 @@ class DriftGate(unittest.TestCase):
         # `[pm] checks` is the knob. This fixture trips D2 AND D5, so turning
         # D2 off must silence D2's message specifically while D5 still fires —
         # a blanket "exit 0" would also pass if the config had disabled
-        # everything, which is exactly the false green worth avoiding.
+        # everything, which is exactly the false green worth avoiding. Both
+        # are WARN lines now, so the count on the verdict line is what moves.
+        def warned(out: str) -> int:
+            return int(re.search(r'; (\d+) warning\(s\)', out).group(1))
+
         with tree(feature_status='planning', story_statuses=('done',)) as root:
             code, out = run_gate(root)
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
+            before = warned(out)
             write_config(root, '[pm]\nchecks = ["D1","D3","D4","D5","D6"]\n')
             code, out = run_gate(root)
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             self.assertNotIn('all stories done', out)
             self.assertIn('two places in this tree disagree', out)
+            # Exactly D2's line left the count (the READY warnings the default
+            # tree carries are not `[pm] checks`' and stay).
+            self.assertEqual(warned(out), before - 1)
 
 
 class ReadyIsAStampWithACheck(unittest.TestCase):
@@ -412,10 +444,13 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
             for sstat in started:
                 with self.subTest(feature=fstat, story=sstat):
                     code, out = self._gate(fstat, (sstat, 'ready'))
-                    self.assertEqual(code, 1, out)
+                    # A WARN, never a finding: exit 0, counted.
+                    self.assertEqual(code, 0, out)
+                    self.assertIn(f'  WARN  story 0.1/alpha/s0 is {sstat!r}', out)
                     self.assertIn(self.MSG, out)
-                    self.assertIn(f"is still {fstat!r}", out)
+                    self.assertIn(f"is still {fstat!r} (todo)", out)
                     self.assertIn('the story is at work', out)
+                    self.assertIn('warning(s)', out)
 
     def test_a_vocabulary_without_the_word_building_still_answers(self):
         # A project may rename the vocabulary. The 0.2.0 rule indexed each
@@ -430,7 +465,7 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
             write_config(root, declaring('[pm]\nchecks = ["D4","D5"]\n',
                                          story=renamed, feature=renamed))
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
+            self.assertEqual(code, 0, out)
             self.assertIn(self.MSG, out)
             self.assertNotIn('cannot place', out)
 
@@ -488,8 +523,9 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
         # finding — otherwise the case above would pass over a dead rule.
         code, out = self._gate_with(self.SORTED_STORY_SET, 'planning',
                                     ('building', 'ready'))
-        self.assertEqual(code, 1, out)
+        self.assertEqual(code, 0, out)
         self.assertIn(self.MSG, out)
+        self.assertIn('  WARN  ', out)
 
 
 class ConfigValidation(unittest.TestCase):
@@ -1530,17 +1566,24 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         self.assertEqual(self._unrename(out_r), out_s)
         # Every rule the fixture is built to trip, tripped — on the RENAMED
         # tree, whose output is the one that could have gone quiet.
-        for needle in ('resolves to nothing',                         # D1
-                       'all stories done, feature still shaped',      # D2
-                       'milestone 0.9 is done but feature',           # D3
+        for needle in ('  DRIFT  feature 1.0/dangling: reviewed:',       # D1
+                       '  WARN  feature 1.0/stalled: all stories done, '
+                       'feature still shaped (todo)',                   # D2
+                       "  WARN  milestone 0.9 is 'shipped' (done) but feature",  # D3
                        "status 'wombat' not in",                      # D4 feature
                        "status 'wobmat' not in",                      # D4 story
                        "bug status 'fidel' is not in",                # D4 bug
                        'two places in this tree disagree',            # D5
-                       "milestone 2.0 is 'queued' but all 1 features are done",  # D6
+                       "  WARN  milestone 2.0 is 'queued' (todo) but all 1 "
+                       "features are done",                           # D6
                        'in-progress milestone 1.1 declares no branch',  # D9/D10
                        'D10'):
             self.assertIn(needle, out_r, needle)
+        # The four cross-level rules are WARN lines, the rest DRIFT — and the
+        # verdict counts them apart. The renamed tree and the stock twin agree
+        # on both counts (the equality above), so one is enough to state.
+        self.assertRegex(out_r, r'\[check:pm\] FAIL — \d+ status-drift.*; '
+                                r'\d+ warning\(s\)')
         # D5 fires per story that has started under a `todo` feature: both
         # finished stories of `stalled`, the one `doing` story of `ahead`.
         self.assertEqual(out_r.count('two places in this tree disagree'), 3)
@@ -1568,4 +1611,7 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
                     for ln in text.splitlines()]
         self.assertEqual(squeeze(self._unrename(out_r)), squeeze(out_s))
         self.assertIn('stories 2/2 done', out_r)          # shipped + dropped
-        self.assertIn('<DRIFT: all stories done, feature still shaped>', out_r)
+        # D2 is the gate's WARN, so the board's marker says WARN too; a
+        # dangling record stays a DRIFT marker (D1 is a finding).
+        self.assertIn('<WARN: all stories done, feature still shaped>', out_r)
+        self.assertIn('<DRIFT: reviewed:', out_r)

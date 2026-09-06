@@ -430,3 +430,12 @@
 {"ts":"2026-09-06T03:23:36Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":188,"rank":4}
 {"ts":"2026-09-06T03:23:36Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":185,"rank":5}
 {"ts":"2026-09-06T03:23:36Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8085,"census":731}
+{"ts":"2026-09-06T03:24:19Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit/03-a-parent-behind-its-child-is-a-warning","from":"planning","to":"building"}
+{"ts":"2026-09-06T03:29:08Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2097}
+{"ts":"2026-09-06T03:29:10Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2016}
+{"ts":"2026-09-06T03:29:17Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":495,"rank":1}
+{"ts":"2026-09-06T03:29:17Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":407,"rank":2}
+{"ts":"2026-09-06T03:29:17Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":344,"rank":3}
+{"ts":"2026-09-06T03:29:17Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":190,"rank":4}
+{"ts":"2026-09-06T03:29:17Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":187,"rank":5}
+{"ts":"2026-09-06T03:29:17Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6993,"census":730}

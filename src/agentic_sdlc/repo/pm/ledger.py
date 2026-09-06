@@ -171,6 +171,19 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 # same durability argument, minus the requirement that somebody remember to
 # type it. `outcome` is what widened: it was the constant `'skipped'` and it is
 # now the step's own verdict.
+# ONE SLOW TEST, named. The `gate` row above says what a TIER cost; this says
+# which case inside it did. The two answer different questions and the second
+# is the one you can act on: a tier that went from 30 s to 45 s tells you to go
+# looking, and this tells you where.
+#
+# ONLY THE SLOWEST FEW ARE FILED, and the cap is the whole design. A row per
+# test would be ~1850 rows per run in a file that is COMMITTED — telemetry
+# nobody can read is telemetry nobody keeps, and a ledger that doubles every
+# afternoon gets deleted. What is worth durable space is the tail, because the
+# tail is where a suite's wall clock lives: two cases were once 47 of 96
+# seconds here, and nothing recorded that fact.
+KIND_TEST = 'test'
+
 KIND_DEVIATION = 'deviation'
 
 # What a `deviation` row may say happened. CLOSED, and `'skipped'` stays in it
@@ -209,6 +222,32 @@ def reason_defect(reason: object) -> str:
         if char in reason:
             return f'a reason carrying {spelling} would not be one row'
     return ''
+
+
+def test_row(tier: str, nodeid: str, duration_ms: int, rank: int,
+             ts: str = '') -> dict:
+    """One slow test: which tier it ran in, what it is called, what it cost.
+
+    `rank` is its position in that run's slowest list — 1 is the slowest — so a
+    reader can tell "this was the worst case in the suite" from "this was the
+    tenth worst" without holding the other nine.
+
+    MILLISECONDS, for the reason `gate_row` gives: the interesting comparison
+    spans three orders of magnitude, and a whole-second column cannot resolve
+    the cheap half of it.
+    """
+    if not isinstance(nodeid, str) or not nodeid.strip():
+        raise ValueError('refusing to mint a test row with no node id')
+    if not isinstance(duration_ms, int) or duration_ms < 0:
+        raise ValueError(
+            f'refusing to mint a test row for {nodeid!r}: duration_ms is '
+            f'{duration_ms!r}, and a cost that is not a whole number of '
+            f'milliseconds is not a measurement')
+    if not isinstance(rank, int) or rank < 1:
+        raise ValueError(f'refusing to mint a test row for {nodeid!r}: rank '
+                         f'{rank!r} is not a position in a list')
+    return {'ts': ts or utc_now(), 'kind': KIND_TEST, 'tier': tier,
+            'nodeid': nodeid, 'duration_ms': duration_ms, 'rank': rank}
 
 
 def deviation_row(grain_id: str, operation: str, step: str, reason: str,

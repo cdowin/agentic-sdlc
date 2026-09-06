@@ -992,10 +992,27 @@ exit=7" "$body"
 exit=0" "$body"
 	done
 
-	# A RECORDER THAT HANGS IS BOUNDED. Without this, a wedged recorder wedges
-	# every gate in a consumer's pre-push hook — the one failure worse than a
-	# missing row.
-	if [ -n "$GDK_TIMEOUT" ]; then
+	# --- THE WALL-CLOCK CASES, and they are the only slow ones in here -------
+	#
+	# Three cases below prove a bound by WAITING for it: a recorder that hangs,
+	# one that forks, and one whose value is parsed in front of the bound. Only
+	# the clock can tell a fixed library from a broken one on those, so they
+	# cost real seconds — about 3 of this corpus's 4.
+	#
+	# `GDK_ST_SKIP_TIMING=1` runs everything else. That exists because the
+	# corpus is driven by NINE mutation tests, each of which reverts one line of
+	# this library and asserts one specific case reddens — and seven of those
+	# nine have nothing to do with timing. Paying 3 s of sleep to prove a
+	# verdict-shape mutant reddens is 21 s of a suite spent proving nothing, on
+	# every run, forever (hard rule 10).
+	#
+	# The two mutation tests that ARE about the bound run the whole corpus, and
+	# so does `--self-test` with nothing set — which is what a consumer runs and
+	# what `make hooks-self-test` replays. The skip is a caller's optimisation,
+	# never the default: a corpus that quietly stopped covering its slowest
+	# cases would be exactly the narrowing this library's own census exists to
+	# refuse.
+	if [ -n "$GDK_TIMEOUT" ] && [ "${GDK_ST_SKIP_TIMING:-0}" != "1" ]; then
 		# EXPORTED: the bound is read by the library in the CHILD shell, and an
 		# assignment this shell merely holds would never reach it — the case
 		# would then take 30 s and pass for the wrong reason.

@@ -66,18 +66,16 @@ def test_the_targets_are_printed_one_per_line_in_declaration_order():
     assert out.splitlines() == ['codex-check', 'behaviors-check']
 
 
-@pytest.mark.parametrize('config', [
-    None,                       # no devkit.toml at all
-    '',                         # a devkit.toml with nothing in it
-    '[checks]\nall = ["doc"]\n',  # a devkit.toml with no [gates] section
-    '[gates]\n',                # a [gates] section with no key
-])
-def test_a_repo_that_declares_nothing_prints_nothing_and_passes(config):
+def test_a_repo_that_declares_nothing_prints_nothing_and_passes():
     """The default is the stock one: the devkit gates and no more. A project
     with no gates of its own must not be told it has a config error."""
-    with repo_with(config):
-        code, out, err = run()
-    assert (code, out, err) == (0, '', '')
+    for config in (None,                         # no devkit.toml at all
+                   '',                           # a devkit.toml with nothing in it
+                   '[checks]\nall = ["doc"]\n',  # no [gates] section
+                   '[gates]\n'):                 # a [gates] section with no key
+        with repo_with(config):
+            code, out, err = run()
+        assert (code, out, err) == (0, '', ''), config
 
 
 def test_a_name_repeated_is_run_once():
@@ -122,18 +120,22 @@ REFUSED = {
 }
 
 
-@pytest.mark.parametrize('value', REFUSED.values(), ids=list(REFUSED))
-def test_a_value_that_is_not_a_make_goal_is_refused_and_named(value):
-    # json.dumps is exactly TOML's basic-string escaping for these values, so
-    # the hostile bytes survive the round trip into the parser under test.
-    with repo_with(f'[gates]\nextra = [{json.dumps(value)}]\n'):
-        code, out, err = run()
-    assert code == 2, f'{value!r} was accepted: {out!r}'
-    assert out == '', 'a refused roster still printed something to run'
-    assert 'not make targets' in err, err
-    # The offending value is IN the message: a refusal that names no repair is
-    # a refusal a reader has to go and derive.
-    assert repr(value) in err, err
+def test_every_value_that_is_not_a_make_goal_is_refused_and_named():
+    """Every REFUSED row, one case: the parametrize multiplied the collected
+    count by 29 for a pure config read that costs nothing per row. A row that
+    fails names itself."""
+    accepted = []
+    for label, value in REFUSED.items():
+        # json.dumps is exactly TOML's basic-string escaping for these values,
+        # so the hostile bytes survive the round trip into the parser under test.
+        with repo_with(f'[gates]\nextra = [{json.dumps(value)}]\n'):
+            code, out, err = run()
+        # The offending value is IN the message: a refusal that names no
+        # repair is a refusal a reader has to go and derive.
+        if not (code == 2 and out == '' and 'not make targets' in err
+                and repr(value) in err):
+            accepted.append(f'{label} ({value!r}): exit {code}, {out!r}, {err!r}')
+    assert not accepted, accepted
 
 
 def test_every_bad_value_is_named_in_one_refusal_not_the_first_one():
@@ -144,19 +146,17 @@ def test_every_bad_value_is_named_in_one_refusal_not_the_first_one():
     assert 'bad one' in err and 'also;bad' in err, err
 
 
-@pytest.mark.parametrize('config', [
-    '[gates]\nextra = "codex-check"\n',      # a bare string is iterable
-    '[gates]\nextra = []\n',                 # declaring nothing
-    '[gates]\nextra = ["ok", 3]\n',          # a non-string member
-    '[gates]\nextra = { a = "b" }\n',        # a table
-])
-def test_a_malformed_value_is_a_config_error_not_a_narrowed_roster(config):
-    """`core.config` owns these three refusals; this asserts they are not
-    caught and swallowed on the way to a make command line."""
-    with repo_with(config):
-        code, out, err = run()
-    assert (code, out) == (2, '')
-    assert 'agentic-sdlc:' in err, err
+def test_a_malformed_value_is_a_config_error_not_a_narrowed_roster():
+    """`core.config` owns these refusals; this asserts they are not caught
+    and swallowed on the way to a make command line."""
+    for config in ('[gates]\nextra = "codex-check"\n',   # a bare string is iterable
+                   '[gates]\nextra = []\n',              # declaring nothing
+                   '[gates]\nextra = ["ok", 3]\n',       # a non-string member
+                   '[gates]\nextra = { a = "b" }\n'):    # a table
+        with repo_with(config):
+            code, out, err = run()
+        assert (code, out) == (2, ''), config
+        assert 'agentic-sdlc:' in err, (config, err)
 
 
 def test_a_non_table_gates_section_is_a_config_error():

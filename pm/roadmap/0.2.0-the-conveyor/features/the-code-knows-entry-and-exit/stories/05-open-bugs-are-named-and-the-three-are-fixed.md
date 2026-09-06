@@ -30,3 +30,7 @@ depends_on: []
 ## Out of scope
 
 New bugs. If fixing one finds another, it is filed against 0.2.0 and fixed here too.
+
+## Close
+
+done: 844268e 0a63a80 ef174b9 — ready-for milestone names open bugs; the composition slot, the collapsed-milestone retire and the one slot spelling landed; all three bugs closed

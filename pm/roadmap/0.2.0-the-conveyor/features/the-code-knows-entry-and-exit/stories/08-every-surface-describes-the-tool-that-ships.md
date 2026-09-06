@@ -35,3 +35,7 @@ the agents and claude and hooks are all clean too."*
 ## Out of scope
 
 New doctrine. This story deletes and corrects; it adds no rule.
+
+## Close
+
+done: 95a4258 b81169a dbd9a49 e0538c6 3b347e4 fea01e8 — README 266 lines, CLAUDE.md 134, the seed and every agent, hook, rule and skill byte-current and free of retired words; check doc over ten docs

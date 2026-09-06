@@ -29,3 +29,7 @@ depends_on: []
 ## Out of scope
 
 Hand moves (`pm <kind> <state>`) stay free — `pm` moves and reports (rule 9).
+
+## Close
+
+done: 1e01518 c1bffb5 — per-kind states in the seed and here, the transitions table deleted, 26 stories migrated to building, the reopens and after_review columns gone, the worktree script asks the CLI

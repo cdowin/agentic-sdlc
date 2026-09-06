@@ -29,3 +29,7 @@ depends_on: []
 ## Out of scope
 
 Any automatic move. Any rule that decides what a disagreement means.
+
+## Close
+
+done: 2cb2be9 — D2/D3/D5/D6 are WARN lines naming both grains, counted apart, exit unchanged; the move advisories are gone

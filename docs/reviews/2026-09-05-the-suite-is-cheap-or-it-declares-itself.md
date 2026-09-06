@@ -333,9 +333,9 @@ verdict: HOLD
 | S2 | CRITICAL | landed 892112d |
 | S3 | MAJOR | landed 892112d |
 | S4 | MAJOR | landed 93b616f |
-| S5 | MINOR | open: the ceiling holds at rest and is exceeded at load 72 |
-| S6 | MINOR | open: latent, zero spawns in today's unit tier |
-| S7 | MINOR | open |
+| S5 | MINOR | rejected: the ceiling is measured at rest and load is the machine; [tests] budget is the declared bar|
+| S6 | MINOR | rejected: latent — zero spawns measured across the unit tier; the derivation is held by tests/test_shell_mark.py|
+| S7 | MINOR | rejected: records are not rewritten after the fact (Chris, 2026-09-06) |
 | S8 | NIT | rejected: the record already discloses criterion 3 as not met, which is the right posture |
 | S9 | MINOR | landed 6b67cd6 |
 ```

@@ -423,10 +423,10 @@ verdict: HOLD
 | P1 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
 | P2 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
 | P3 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
-| P4 | MINOR | open |
-| P5 | MINOR | open: lower cases to unit 800 and integration 500 now, or leave the ceilings and accept the suite may double back |
-| P6 | MINOR | open: gate the two template sections in check grain-shape, or accept them as unenforced prose |
-| P7 | MINOR | open: reword criterion 6 to name the agent roster as the consumer mechanism, or add the question to sdlc-template.md |
-| P8 | NIT | open |
-| P9 | QUESTION | open |
+| P4 | MINOR | rejected: pre-existing against the 1,855-case baseline; the write verbs that changed (retire, move, decide) were probed in 97dbd6c |
+| P5 | MINOR | landed f712048|
+| P6 | MINOR | rejected: the templates are prose; length is what the caps enforce, and the caps landed in 859d25b|
+| P7 | MINOR | rejected: the reviewer roster is the consumer mechanism; the question lives in verification-reviewer.md|
+| P8 | NIT | rejected: suite flakiness under load is the machine, not this feature; the timing case was made single-process in 6b67cd6 |
+| P9 | QUESTION | rejected: a story-less feature carries its criteria as its proof table (Chris, 2026-09-06: close enough and directionally right) |
 ```

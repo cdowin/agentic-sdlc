@@ -262,7 +262,7 @@ verdict: HOLD
 | R1 | BLOCKER | landed 08f15d2 |
 | R2 | BLOCKER | landed 4a351a4 |
 | R3 | BLOCKER | landed 274e18c |
-| R4 | MAJOR | open: `_status_at_or_past` IS `at_or_past`; phase 7 deletes the line |
+| R4 | MAJOR | landed 32b20b1|
 | R5 | MINOR | rejected: superseded by D8 — the guard lived inside `if skips:` and went with `--skip` in 50cc01d |
 | R6 | MINOR | landed 274e18c |
 | R7 | NIT | landed 274e18c |

@@ -36,7 +36,7 @@ def _write_line(operation: str) -> str:
     return (f'**Then, all true:** the {kind}\'s status → the first state of '
             f'`[pm.states.{kind}] done` (`pm vocabulary` prints it), through '
             f'`pm {kind} <state> <id>`, which mints the ledger\'s `status` '
-            f'row. Any check false → `error:` lines, exit 1, nothing written. '
+            f'row. Any check false → `error:` lines, exit 1, no status written. '
             f'`--force` writes anyway and the ledger\'s `deviation` row '
             f'names the false checks.')
 

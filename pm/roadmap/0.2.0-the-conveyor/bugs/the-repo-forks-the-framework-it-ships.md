@@ -2,9 +2,9 @@
 id: 0.2.0/bugs/the-repo-forks-the-framework-it-ships
 milestone: "0.2.0"
 name: This repo hand-writes the gate framework it installs, instead of including it
-status: fixed
+status: closed
 caught_in: "0.2.0"
-fix_milestone:
+fix_milestone: 0.2.0
 caused_by: 0.2.0/the-middle-tier-splits
 ---
 

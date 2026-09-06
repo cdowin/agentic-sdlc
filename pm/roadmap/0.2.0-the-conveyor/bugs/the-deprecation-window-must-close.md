@@ -2,9 +2,9 @@
 id: 0.2.0/bugs/the-deprecation-window-must-close
 milestone: "0.2.0"
 name: "`todo`/`wip`/`blocked`/`review` ride in the stock vocabulary for 0.24.0 only — 0.25.0 trims them, and each consumer must rewrite its tree before that bump"
-status: fixed
+status: closed
 caught_in: "0.24.0"
-fix_milestone: "0.2.0"
+fix_milestone: 0.2.0
 caused_by: 0.24.0/the-lifecycle-says-what-it-means
 ---
 

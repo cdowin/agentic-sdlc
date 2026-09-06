@@ -55,6 +55,7 @@ DEFAULT_STORY_STEPS = (
 
 DEFAULT_FEATURE_STEPS = (
     'stories-done',
+    'feature-verified',
     'review-recorded',
     'findings-landed',
 )

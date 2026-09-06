@@ -1354,6 +1354,12 @@ def plan_defect(cfg: PmConfig) -> str | None:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
     lines = _split(text)
     if _fence_bounds(lines) is None:
+        if lines and lines[0].startswith(BOM):
+            # Naming it "no frontmatter" sent the reader looking for a missing
+            # block when the block is there and three invisible bytes precede
+            # it (review B5).
+            return ('opens with a UTF-8 BOM before its `---`, so the '
+                    'frontmatter block is not the first line — strip the BOM')
         opens = bool(lines) and _FENCE.match(lines[0]) is not None
         return ('has an opening `---` with no closing one'
                 if opens else
@@ -1382,7 +1388,7 @@ def milestone_version(cfg: PmConfig, mid: str) -> str:
     and a milestone without one is BACKLOG, never a finding (R2).
     """
     mfile = milestone_file(cfg, mid)
-    return field_of(mfile, 'version') if mfile is not None else ''
+    return field_of(mfile, 'version').strip() if mfile is not None else ''
 
 
 def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
@@ -1392,7 +1398,11 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     """
     out = []
     for mdir, mid in known_milestones(cfg):
-        version = field_of(mdir / MILESTONE_DOC, 'version')
+        # `.strip()`: a whitespace-only `version:` is not a claim. Reading it as
+        # one put the milestone outside R2's backlog census while claiming a
+        # version nothing could match, and the R1 failure it produced then
+        # prescribed a `pm order --append` the verb refuses at exit 2 (B4).
+        version = field_of(mdir / MILESTONE_DOC, 'version').strip()
         if version:
             out.append((version, mid))
     return out

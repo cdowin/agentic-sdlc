@@ -773,3 +773,89 @@ def test_no_module_reads_its_config_at_import_time():
         'config read at import — the value is bound to whichever repo imported '
         'the module FIRST, and a malformed section in any later one stops '
         'raising:\n  ' + '\n  '.join(offenders))
+
+
+class NoCodePathParsesAVersion(unittest.TestCase):
+    """0.3.0: order is a DECLARED list, so the engine never reads a version
+    string as a structure.
+
+    The claim `a-milestone-declares-its-version` makes to consumers is that
+    `"1.1.1"` and `"cow"` are equally valid — scheme-agnosticism as a
+    consequence of ordering by position rather than as a promise. A comparator
+    creeping back in would break every tree whose versions are not semver
+    (`0.90.3.2` is the real one that motivated this), and it would do it
+    silently, by sorting wrong rather than by raising.
+
+    This is a source-shaped gate because the behaviour it protects is an
+    ABSENCE, and an absence has no call site to assert against.
+    """
+
+    # Everything that turns a version string into something ordered or numeric.
+    _PARSERS = (
+        'packaging', 'pkg_resources', 'distutils', 'LooseVersion',
+        'StrictVersion', 'parse_version', 'version_tuple', 'VERSION_RE',
+    )
+
+    def test_no_module_imports_a_version_comparator(self):
+        offenders = []
+        for rel, path in _sources():
+            tree = _tree(path)
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or '']
+                for name in names:
+                    root = name.split('.')[0]
+                    if root in self._PARSERS:
+                        offenders.append(f'{rel}: imports {name}')
+        self.assertEqual(
+            [], offenders,
+            'a version comparator was imported — order is a POSITION in '
+            '`order`, and a comparator cannot sort `0.90.3.2` anyway')
+
+    def test_the_release_helpers_never_split_a_version_into_components(self):
+        """The modules that HANDLE versions do not take one apart.
+
+        Scoped to the release surface rather than to all of `src`: `.split('.')`
+        is how every module reads a dotted grain id, and a repo-wide ban would
+        be a gate nobody could keep green. The census floor below is what keeps
+        the narrowing honest.
+        """
+        surface = {
+            'repo/pm/model.py': ('releases_file', 'declared_order',
+                                 'milestone_version', 'version_claims',
+                                 'milestone_of_version', 'release_is_shipped',
+                                 'current_release'),
+            'repo/checks/pm.py': ('_release_findings',),
+        }
+        by_rel = {rel: path for rel, path in _sources()}
+        offenders, scanned = [], 0
+        for rel, wanted in surface.items():
+            self.assertIn(rel, by_rel, f'{rel} moved — this gate now scans nothing')
+            found = {n.name: n for n in ast.walk(_tree(by_rel[rel]))
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            for name in wanted:
+                self.assertIn(name, found,
+                              f'{rel}:{name} is gone — rename it here too, or '
+                              f'this gate silently stops checking it')
+                scanned += 1
+                for node in ast.walk(found[name]):
+                    # `.split(...)` / `int(...)` over a version is the shape a
+                    # comparator grows back as.
+                    if (isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Attribute)
+                            and node.func.attr == 'split'):
+                        offenders.append(f'{rel}:{name} splits a string')
+                    if (isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Name)
+                            and node.func.id == 'int'):
+                        offenders.append(f'{rel}:{name} calls int()')
+        # Rule 4: a gate scanning nothing FAILS rather than passing quietly.
+        self.assertGreaterEqual(scanned, 8,
+                                'the release surface collapsed — this gate is '
+                                'asserting emptiness over almost nothing')
+        self.assertEqual([], offenders,
+                         'a release helper took a version apart — "did it '
+                         'increase" is a position in `order`, never a parse')

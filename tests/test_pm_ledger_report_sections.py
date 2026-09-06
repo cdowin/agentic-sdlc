@@ -30,7 +30,27 @@ import json
 import pytest
 from support.pm import (bug, declaring, decision_line, dispatch_line,
                         put_ledger, run_cli, section_of, session_line, snapshot,
-                        status_line, tree, write, write_config)
+                        status_line, write, write_config)
+from support.pm import tree as _seed_tree
+
+from agentic_sdlc.repo.pm import model as _model
+
+# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
+# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
+# gives each kind the states its belt writes (a story: `building`, `done`), and
+# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
+# `in_progress` number whatever the word — so the tree keeps the declaration
+# the rows were written under rather than rewriting every row to a word that
+# proves nothing different. `support.pm.tree` is the builder; this only fixes
+# its `config`.
+LEGACY_FLOW = declaring(feature=_model.DEFAULT_FLOWS['milestone'],
+                        story=_model.DEFAULT_FLOWS['milestone'])
+
+
+def tree(**kwargs):
+    """`support.pm.tree` under the all-seven flow these ledgers assume."""
+    kwargs.setdefault('config', LEGACY_FLOW)
+    return _seed_tree(**kwargs)
 
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
@@ -199,13 +219,13 @@ target     feature    pass  findings
 0.1/gamma  0.1/beta      1         1"""
 
 REWORK_TABLE = """\
-[ledger:report] 0.1 — rework — 3 story(s), 1 reopen(s), 2 pass(es) with a verdict
+[ledger:report] 0.1 — rework — 3 story(s), 2 pass(es) with a verdict
 
 -- story (3)
-feature    story         reopens  after_review
-0.1/alpha  0.1/alpha/s0        1             2
-0.1/alpha  0.1/alpha/s1        -             -
-0.1/beta   0.1/beta/s0         -             -
+feature    story         after_review
+0.1/alpha  0.1/alpha/s0             2
+0.1/alpha  0.1/alpha/s1             -
+0.1/beta   0.1/beta/s0              -
 
 -- verdict distribution (2)
 verdict          passes
@@ -402,78 +422,11 @@ def test_a_delta_needs_both_ends_measured():
         '1500', '-']
 
 
-# --- the reopen column: a rule that cannot SEE a transition prints `-` --------
-# All four of these are defects that shipped. A `0` here says "nothing was
-# reopened" about transitions nobody looked for — the read-side sin with a
-# column header on it (rule 4). The REWORK golden above is the other half of
-# the claim: where the rule CAN see the transition, it counts it.
-
-def test_a_renamed_story_vocabulary_dashes_reopens_rather_than_zeroing():
-    """A reopen is `reviewing -> building`, both STOCK names. A project that
-    renamed either has a machine this rule cannot read."""
-    with tree(story_statuses=('shipped',)) as root:
-        write_config(root, declaring(story={
-            'todo': ('queued',), 'in_progress': ('doing', 'checking'),
-            'done': ('shipped',)}))
-        put_ledger(root,
-                   status_line('2026-09-03T10:00:00Z', A_S0, 'queued', 'doing'),
-                   status_line('2026-09-03T10:30:00Z', A_S0, 'checking',
-                               'doing'))
-        out = report(root, '0.1')[1]
-    assert row_of(out, REWORK, 'story (1)', ALPHA)[-2] == '-'
-    assert '- reopen(s)' in section_of(out, REWORK)
-
-
-def test_a_legacy_history_dashes_reopens_though_the_config_is_stock():
-    """The guard above is against a renamed CONFIG. The miss arrives through
-    HISTORY: every ledger row written before a consumer's pin bump spells the
-    pair `wip`/`review`, and the config it is read under is the new stock set —
-    so `reopenable` is true and the column fills with a number over a machine
-    this rule still cannot read. Two real reopens, reported as `0`."""
-    with tree(story_statuses=('building',)) as root:
-        put_ledger(root,
-                   status_line('2026-09-01T10:00:00Z', A_S0, 'wip', 'review'),
-                   status_line('2026-09-02T10:00:00Z', A_S0, 'review', 'wip'),
-                   status_line('2026-09-03T10:00:00Z', A_S0, 'wip', 'review'),
-                   status_line('2026-09-04T10:00:00Z', A_S0, 'review', 'wip'))
-        out = report(root, '0.1')[1]
-    assert row_of(out, REWORK, 'story (1)', ALPHA)[-2] == '-'
-    assert '- reopen(s)' in section_of(out, REWORK)
-
-
-def test_a_migrated_story_beside_a_legacy_one_does_not_re_arm_the_column():
-    """The guard is PER STORY, because the ledger it has to be right about
-    holds both spellings at once. One day after the bump, `s1` has a
-    `to: reviewing` row and `s0`'s history is still entirely legacy — a
-    ledger-WIDE test would find s1's row, re-arm the column, and print s0's
-    false `0` again. s1 keeps a real `0`: its rows WERE read in the vocabulary
-    the rule counts in, and none of them was a reopen."""
-    with tree(story_statuses=('building', 'building')) as root:
-        put_ledger(root,
-                   status_line('2026-09-01T10:00:00Z', A_S0, 'wip', 'review'),
-                   status_line('2026-09-02T10:00:00Z', A_S0, 'review', 'wip'),
-                   status_line('2026-09-05T10:00:00Z', A_S1, 'building',
-                               'reviewing'))
-        out = report(root, '0.1')[1]
-    assert {r[1]: r[-2] for r in block_rows(out, REWORK, 'story (2)')} == {
-        A_S0: '-', A_S1: '0'}
-
-
-def test_the_column_is_armed_by_a_ROW_and_not_by_a_readable_timestamp():
-    """`reopens` and `after_review` read the same rows for two different facts,
-    and only one of them needs the clock. The arrival row here is unreadable as
-    a TIME and perfectly readable as a TRANSITION: the reopen beneath it was
-    seen and counts, while `after_review` stays `-`. Collapsing the two onto
-    the parsed timestamp would drop a reopen this ledger states outright."""
-    with tree(story_statuses=('building',)) as root:
-        put_ledger(root,
-                   json.dumps({'ts': 'not-a-timestamp', 'kind': 'status',
-                               'grain': A_S0, 'from': 'building',
-                               'to': 'reviewing'}),
-                   status_line('2026-09-02T10:00:00Z', A_S0, 'reviewing',
-                               'building'))
-        out = report(root, '0.1')[1]
-    assert row_of(out, REWORK, 'story (1)', ALPHA)[-2:] == ['1', '-']
+# The `reopens` column and its four guard cases left with it (0.2.0): the
+# story seed no longer holds `reviewing`, so a column counting
+# `reviewing -> building` by name had no tree left to be a number on. What
+# remains of section 3's per-story table is `after_review`, whose `-` for a
+# story that never entered the review state the REWORK golden above holds.
 
 
 # --- nothing to report --------------------------------------------------------
@@ -494,7 +447,7 @@ def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted()
         assert section.splitlines()[1] == 'no data'
     assert ('yield per review pass — 0 record(s), 0 pass(es), '
             '0 finding(s)') in out
-    assert 'rework — 0 story(s), - reopen(s), 0 pass(es)' in out
+    assert 'rework — 0 story(s), 0 pass(es)' in out
     assert 'escapes — 0 bug(s) naming a cause, 0 feature(s)' in out
     assert ('overhead shape — 0 dispatch row(s), 0 decision row(s), '
             '0 session row(s)') in out
@@ -536,15 +489,13 @@ def test_the_seeded_ledger_produces_this_exact_json():
         'totals': {'records': 3, 'passes': 2, 'findings': 7}}
     assert data['rework'] == {
         'stories': [
-            {'grain': A_S0, 'feature': ALPHA, 'reopens': 1, 'after_review': 2},
-            {'grain': A_S1, 'feature': ALPHA, 'reopens': None,
-             'after_review': None},
-            {'grain': B_S0, 'feature': BETA, 'reopens': None,
-             'after_review': None},
+            {'grain': A_S0, 'feature': ALPHA, 'after_review': 2},
+            {'grain': A_S1, 'feature': ALPHA, 'after_review': None},
+            {'grain': B_S0, 'feature': BETA, 'after_review': None},
         ],
         'verdicts': [{'verdict': 'SHIP-WITH-FIXES', 'passes': 1},
                      {'verdict': 'HOLD', 'passes': 1}],
-        'totals': {'stories': 3, 'reopens': 1, 'passes': 2}}
+        'totals': {'stories': 3, 'passes': 2}}
     assert data['escapes'] == {
         'bugs': [
             {'caused_by': ALPHA, 'bug': '0.1/bugs/crash', 'status': 'open',

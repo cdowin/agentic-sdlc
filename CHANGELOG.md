@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Each kind declares its own states, and there is no transitions table
+
+- **The seed is per kind, and it is what the belts write.** `pm init` now writes a story
+  `planning ready | building | done obe`, a feature that adds `reviewing`, a milestone with all
+  seven, a bug `open | fixed | closed`. Under the all-seven seed this repo's own tree held
+  thirty stories at `reviewing`, a state no belt writes and no gate reads. A tree that adopted
+  the earlier seed keeps its declaration — `[pm.states.<kind>]` is the project's — and a grain
+  holding a word its kind no longer declares is D4's finding, repaired by `pm <kind> <state>`.
+- **`[pm.transitions.<kind>]` is gone and a leftover table is refused by name** (exit 2, naming
+  each `[pm.transitions.<kind>]` present and saying to remove it). It was read by nothing: a
+  belt writes the FIRST state of its kind's `done` list, and a hand move reaches any declared
+  state. `model.transition_target` and the `[pm] <kind>_transitions` wording went with it.
+- **`pm vocabulary` echoes each kind's states with their category and nothing else about flow**
+  (output-format change, rule 6): the `[pm.transitions.<kind>]` block, the `published steps`
+  list and the two flow notes are gone from the plain output; `--json` drops `published_steps`,
+  `grains.<kind>.flow.transitions` and `notes.transitions`/`notes.feature_done`. Every other
+  key keeps its meaning.
+- **`pm ledger report`'s `reopens` column is deleted** (output-format change): it counted
+  `reviewing -> building` by name, and with `reviewing` out of the story seed it could only
+  ever print `-`. Section 3's per-story table is `feature story after_review`; the summary line
+  reads `N story(s), M pass(es) with a verdict`; `--json` drops `rework.stories[].reopens` and
+  `rework.totals.reopens`.
+- **`pm list --kind milestone [--status …] [--category <c>]`** prints one tab-separated
+  `<id> <status> <category> <branch>` per milestone (`-` for no branch), census to stderr; and
+  `pm list` takes `--category todo|in_progress|done` for stories. New flags; the story listing is
+  unchanged.
+- **`tools/dev/agent-worktree.sh` asks the CLI for the integration branch** —
+  `make pm ARGS="list --kind milestone --category in_progress"`, through a new `PM_CMD` line in
+  its project-config header — instead of grepping `status: building` out of `milestone.md`, a
+  literal that stopped matching the day a project renamed the word. A CLI that cannot answer (no
+  PM tree, no flow, no `make pm`) is said on stderr and the base falls back to `FALLBACK_BASE`;
+  "answered" is the CLI's own census line, not the exit code, because `make pm` in a tree with no
+  Makefile exits 0 saying nothing. Re-install with `install-hooks --force`.
+
 ### The belt's findings land (D11)
 
 - **A callee's exit 2 is UNVERIFIABLE, never NOT-TRUE (D11).** A GATE or JUDGEMENT step that

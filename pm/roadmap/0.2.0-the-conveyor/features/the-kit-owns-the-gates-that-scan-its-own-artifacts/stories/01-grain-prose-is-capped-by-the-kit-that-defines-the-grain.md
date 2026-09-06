@@ -3,7 +3,7 @@ id: 0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts/01-grain-prose-is-c
 feature: 0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts
 milestone: "0.2.0"
 name: A PM tree's prose caps are checked by the package that defines the schema
-status: reviewing
+status: building
 owner:
 depends_on: []
 ---

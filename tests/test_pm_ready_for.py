@@ -193,9 +193,13 @@ class FeatureBelt(unittest.TestCase):
         # The direction the ruling reversed. `reviewing` is the builder saying
         # "look at this" — a story parked there is genuinely unfinished, and a
         # feature review started over it reviews work still in motion. The
-        # cascade flow (`pm feature done --cascade`) gets each one named here,
-        # which is the verb saying the cascade has not run yet.
-        with tree() as root:
+        # shipped story seed no longer holds the word, so this tree DECLARES
+        # it: the question is the category, and a project that keeps a review
+        # stint for stories gets the same answer.
+        with tree(config=declaring(story={
+                'todo': ('planning', 'ready'),
+                'in_progress': ('building', 'reviewing'),
+                'done': ('done', 'obe')})) as root:
             stories(root, s0='reviewing')
             code, out = run_cli(root, 'ready-for', 'feature', '0.1/alpha')
             self.assertEqual(code, 1, out)

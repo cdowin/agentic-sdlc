@@ -485,22 +485,67 @@ def test_worktree_done_keeps_an_unmerged_branch_and_deletes_a_merged_one(
     assert git(root, 'branch', '-d', 'feat/keeper').returncode == 0
 
 
-def test_worktree_new_bases_off_the_building_milestones_branch(tmp_path):
+def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML) -> None:
+    """A PM tree the worktree script can ASK about: one milestone at `status`
+    declaring `branch: feat/integration`, the flow, and the `make pm` target
+    the script's `PM_CMD` runs — routed to the CLI from source, the same
+    Makefile `ledger_repo` below plants."""
+    (root / 'devkit.toml').write_text(flow, encoding='utf-8')
+    (root / 'Makefile').write_text(
+        PM_MAKEFILE.format(src=REPO_ROOT / 'src', python=sys.executable),
+        encoding='utf-8')
+    milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
+    milestone.parent.mkdir(parents=True)
+    milestone.write_text(f'---\nid: "0.1.0"\nstatus: {status}\n'
+                         f'branch: feat/integration\n---\n', encoding='utf-8')
+
+
+def test_worktree_new_bases_off_the_in_progress_milestones_branch(tmp_path):
     """The devkit PM tree is the source for the integration branch: a
-    milestone declaring `branch:` while `building` is where agents branch
+    milestone declaring `branch:` while in progress is where agents branch
     from, not the trunk — basing off the trunk strands the agent behind every
-    commit the milestone already landed."""
+    commit the milestone already landed.
+
+    ASKED OF THE CLI BY CATEGORY, never grepped. The script used to grep
+    `status: building` out of milestone.md, so the second tree here — the
+    same milestone under a vocabulary that calls the state `doing` — is the
+    case the old script could not pass: it found no `building`, based the
+    agent off the trunk, and said nothing. `pm list --kind milestone
+    --category in_progress` answers both trees the same way.
+    """
+    for status, flow in (('building', FLOW_TOML),
+                         ('doing', FLOW_TOML.replace('"building"',
+                                                     '"doing"'))):
+        root = corpus_repo(tmp_path, name=f'repo-{status}')
+        assert git(root, 'branch', 'staging').returncode == 0
+        assert git(root, 'branch', 'feat/integration').returncode == 0
+        _pm_tree(root, status, flow)
+        done = worktree(root, 'new', 'based')
+        assert done.returncode == 0, done.stderr
+        marker = (Path(done.stdout.strip()) / MARKER).read_text(
+            encoding='utf-8')
+        assert 'base=feat/integration' in marker, (status, done.stderr)
+        assert 'could not answer' not in done.stderr, done.stderr
+
+
+def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
+    """No PM tree, no flow, no `make pm` — the three trees above start this
+    way — is not an error the worktree tool should die on: it says so on
+    stderr and bases off FALLBACK_BASE, which is what a tree with no PM
+    records means. A milestone the CLI cannot read (no flow declared) is the
+    same answer, said the same way, never a silent trunk base."""
     root = corpus_repo(tmp_path)
     assert git(root, 'branch', 'staging').returncode == 0
-    assert git(root, 'branch', 'feat/integration').returncode == 0
     milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text('---\nid: "0.1.0"\nstatus: building\n'
                          'branch: feat/integration\n---\n', encoding='utf-8')
-    done = worktree(root, 'new', 'based')
+    done = worktree(root, 'new', 'unasked')
     assert done.returncode == 0, done.stderr
+    assert 'could not answer' in done.stderr, done.stderr
+    assert 'basing off staging' in done.stderr, done.stderr
     marker = (Path(done.stdout.strip()) / MARKER).read_text(encoding='utf-8')
-    assert 'base=feat/integration' in marker
+    assert 'base=staging' in marker
 
 
 # --- fail-open posture, the PreToolUse hook -----------------------------------

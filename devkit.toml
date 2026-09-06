@@ -120,9 +120,12 @@ cases = { unit = 1250, integration = 800 }
 # called, which category each sits in, what order they appear in within it — is
 # ours, and changing a word here changes no code anywhere.
 #
-# The values reproduce 0.2.0's LIFECYCLE exactly, because this tree accepted
-# what `init` wrote. `accepted` and `packaging` are `in_progress`: a category
-# is about whether WORK REMAINS, not about whether the outcome is decided.
+# Each kind holds what the belts WRITE for it: a story is claimed (`building`)
+# and closed (`done`), a feature is additionally `reviewing` while its record
+# is written, and the milestone walks all seven — `accepted` and `packaging`
+# are milestone acts and `in_progress`: a category is about whether WORK
+# REMAINS, not about whether the outcome is decided. Thirty stories sat at
+# `reviewing` here under the all-seven seed, a state no belt writes.
 #
 # `obe` is in `done` for every kind that can hold it. It is FINISHED and not
 # DELIVERED, and those are different axes — Jira keeps `Won't Do` in the Done
@@ -137,12 +140,12 @@ done        = ["done", "obe"]
 
 [pm.states.feature]
 todo        = ["planning", "ready"]
-in_progress = ["building", "reviewing", "accepted", "packaging"]
+in_progress = ["building", "reviewing"]
 done        = ["done", "obe"]
 
 [pm.states.story]
 todo        = ["planning", "ready"]
-in_progress = ["building", "reviewing", "accepted", "packaging"]
+in_progress = ["building"]
 done        = ["done", "obe"]
 
 [pm.states.bug]

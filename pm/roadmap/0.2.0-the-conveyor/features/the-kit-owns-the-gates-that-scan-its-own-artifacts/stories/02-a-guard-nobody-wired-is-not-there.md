@@ -3,7 +3,7 @@ id: 0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts/02-a-guard-nobody-w
 feature: 0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts
 milestone: "0.2.0"
 name: The self-tests for this kit's own artifacts run by default
-status: reviewing
+status: building
 owner:
 depends_on: []
 ---

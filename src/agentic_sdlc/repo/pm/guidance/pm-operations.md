@@ -68,12 +68,16 @@ The seed `pm init` writes:
 
 | Grain | `todo` | `in_progress` | `done` |
 |---|---|---|---|
-| Milestone, Feature, Story | `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` |
+| Milestone | `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` |
+| Feature | `planning` `ready` | `building` `reviewing` | `done` `obe` |
+| Story | `planning` `ready` | `building` | `done` `obe` |
 | Bug | `open` | `fixed` | `closed` |
 
-A grain uses the states it needs and SKIPS the rest: packaging a feature is a
-different act from packaging a milestone, and a story routinely skips packaging
-altogether. `done` does not mean SHIPPED — the flip is itself a commit that has not
+Each kind holds the states its belt WRITES and no others: a story is claimed
+(`building`) and closed (`done`), a feature is additionally `reviewing` while its
+record is written, and acceptance and packaging are milestone acts. There is no
+step-to-state table — a belt writes the first state of its kind's `done` list, and
+`pm <kind> <state>` reaches any declared state by hand. `done` does not mean SHIPPED — the flip is itself a commit that has not
 shipped when it is written. It means everything inside the tree's authority is
 finished: changelog written, reviews closed, findings landed, gates green. `obe` sits
 beside it because abandoned work is finished too. Branch, PR, merge and tag are git

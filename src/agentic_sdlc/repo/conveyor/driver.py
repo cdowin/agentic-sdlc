@@ -286,9 +286,9 @@ The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set
 to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
 
-  story    the story exists; `verify --story` over its commit range is green;
-           nothing outside the roadmap directory is uncommitted; the story
-           carries a `done:` line.
+  story    the story exists; `verify --story` (the `[verify] story` make
+           target) is green; nothing outside the roadmap directory is
+           uncommitted; the story carries a `done:` line.
   feature  every story is in the `done` category (each one that is not is
            named, by `pm ready-for feature`); `reviewed:` points at a record
            that parses; no finding in it is `open`.

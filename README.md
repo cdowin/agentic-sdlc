@@ -197,8 +197,9 @@ steps = ["tree-clean", "gate"]                #   the check list, when not the s
 [release.commands]
 gate = "make milestone"                       # the command a named check runs
 prove-artifact = "uvx --from git+…@v{version} agentic-sdlc --version"
-[release.version_files]                       # every site `version-sync` reads
-"pyproject.toml" = '^version = "(.*)"$'
+[release.version_files]                       # a TABLE: one "<path>" = '<regex>' row per site
+"pyproject.toml" = '^version = "(.*)"$'       # `version-sync` reads every row
+"src/pkg/__init__.py" = "^__version__ = '(.*)'$"   # a second site, if you carry one
 [adopt]
 runner_targets = ["precommit", "milestone"]   # what `runner-targets-resolve` asks `make -n` about
 ours = [".github/workflows/verify.yml"]        # installed files this project OWNS: not graded, named every run

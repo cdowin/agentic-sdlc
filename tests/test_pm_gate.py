@@ -1948,6 +1948,59 @@ class AConfigErrorIsComplete(unittest.TestCase):
         finally:
             ctx.cleanup()
 
+    def test_five_defects_at_once_are_all_reported_flow_first(self):
+        """Review D2/D3: two defects INSIDE `load()` reported as one, and any
+        `load()` defect hid the whole retired-key sweep behind it. Each reader
+        is now asked separately."""
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n'
+            'checks = ["D8", "D99"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+            for needle in ('declares no flow', 'version_at', 'D8',
+                           'D99', 'review_slug_fallback'):
+                self.assertIn(needle, out)
+            self.assertEqual(out.count('[check:pm] ERROR'), 5, out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('version_at'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_every_pm_verb_reports_the_whole_set_not_just_check_pm(self):
+        """Review D1: `pm validate` on the motivating tree printed ONE line,
+        the cosmetic one, and never named the flow."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        from agentic_sdlc.core.project import load_config, repo_root
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(buf):
+                    code = pm_cli.main(['validate'])
+            finally:
+                os.chdir(previous)
+                repo_root.cache_clear()
+                load_config.cache_clear()
+            out = buf.getvalue()
+            self.assertEqual(code, 2, out)
+            self.assertIn('declares no flow', out)
+            self.assertIn('review_slug_fallback', out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('review_slug_fallback'), out)
+        finally:
+            ctx.cleanup()
+
     def test_a_roster_error_carries_what_the_named_gates_would_have_said(self):
         """The adoption split its roster, watched `make check` go green, and
         reported the bump complete over a PM CLI refusing every verb. The one

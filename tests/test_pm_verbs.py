@@ -1798,6 +1798,42 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
             self.assertFalse(model.set_list_field(path, 'order', ['x']))
             self.assertEqual(path.read_text(encoding='utf-8'), scalar)
 
+    def test_a_comment_or_a_blank_line_never_truncates_the_plan(self):
+        """Review A2. `releases.md` is edited on every ship, so spacing and
+        annotating it are the obvious things a human does — and truncating
+        there dropped every entry below, silently. `--append` then wrote a
+        DUPLICATE and reported a successful append.
+        """
+        annotated = ('---\n'
+                     'order:\n'
+                     '  # shipped\n'
+                     '  - "0.1.0"\n'
+                     '\n'
+                     '  - "0.2.0"\n'
+                     'owner: chris\n'
+                     '---\n')
+        with self._plan(annotated) as path:
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.2.0'])
+            self.assertTrue(model.set_list_field(
+                path, 'order', ['0.1.0', '0.2.0', '0.3.0']))
+            after = path.read_text(encoding='utf-8')
+            # No duplicate, the annotation kept, the neighbour untouched.
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.2.0', '0.3.0'])
+            self.assertEqual(after.count('- "0.2.0"'), 1, after)
+            self.assertIn('# shipped', after)
+            self.assertIn('owner: chris', after)
+
+    def test_an_inline_comment_is_not_read_into_the_value(self):
+        # Review A3: it was, and the value then failed to unquote — so ONE
+        # annotated entry silently changed the spelling of every version the
+        # reader returned.
+        with self._plan('---\norder:\n  - "0.1.0"  # the first\n'
+                        '  - "0.2.0"\n---\n') as path:
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.2.0'])
+
     def test_no_frontmatter_is_refused(self):
         with self._plan('no fence here\n') as path:
             self.assertFalse(model.set_list_field(path, 'order', ['x']))

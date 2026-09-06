@@ -617,39 +617,94 @@ def missing_flow_defect(sect: dict | None = None) -> str:
 def all_config_defects(sect: dict | None = None) -> list[str]:
     """EVERY defect in `[pm]`, flow first — not the first one encountered.
 
-    A real adoption is wrong in more than one way at once, and reporting one
-    defect per run makes the consumer pay a round trip to learn the next. The
-    ORDER is the point: a retired key is cosmetic and a missing flow stops
-    every work-moving verb in the package, and the tree that motivated this was
-    told about the retired key.
+    A real adoption is wrong in more than one way at once, and one defect per
+    run makes the consumer pay a round trip to learn the next. The ORDER is the
+    point: a retired key is cosmetic and a missing flow stops every work-moving
+    verb, and the tree that motivated this was told about the retired key.
+
+    Each reader is asked SEPARATELY and its refusal collected, rather than
+    letting `load()` raise at the first one — that made two defects inside
+    `load()` report as one, and let any `load()` defect hide the whole
+    retired-key sweep behind it (review D2, D3).
     """
     section = config_section('pm') if sect is None else sect
     out: list[str] = []
 
+    def add(msg: str) -> None:
+        if msg and msg not in out:
+            out.append(msg)
+
     flow = missing_flow_defect(section)
     if flow:
-        out.append(flow)
+        add(flow)
 
     for key in VOCABULARY_KEYS:
         if key in section:
-            out.append(f'[pm] {key} was retired and is refused — '
-                       f'{RETIRED_KEYS[key]}. Remove the key.')
+            add(f'[pm] {key} was retired and is refused — '
+                f'{RETIRED_KEYS[key]}. Remove the key.')
 
-    # Everything `load()` refuses, collected rather than raised at the first.
-    try:
-        load()
-    except ConfigError as err:
-        said = str(err)
-        if said not in out and not any(said in seen for seen in out):
-            out.append(said)
-    else:
-        # `load()` succeeded, so the stale-rule and retired-key sweep is the
-        # only reader left with anything to say.
+    # Each of `load()`'s own refusals, asked one at a time so that a second one
+    # is never lost behind the first.
+    def probe(reader) -> None:
         try:
-            out.extend(m for m in config_complaints(load(), section)
-                       if m not in out)
-        except ConfigError:
-            pass
+            reader()
+        except ConfigError as err:
+            add(str(err))
+
+    probe(lambda: str_tuple(section, 'pm', 'checks', DEFAULT_CHECKS))
+    probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
+    probe(lambda: flag(section, 'pm', 'story_ordinal_prefix', False))
+    for key, fallback in (('roadmap_dir', 'pm/roadmap'),
+                          ('review_dir', 'docs/reviews'),
+                          ('template_dir', '')):
+        probe(lambda k=key, f=fallback: relpath(section, 'pm', k, f))
+
+    pattern = section.get('version_pattern')
+    if isinstance(pattern, str):
+        try:
+            compiled = re.compile(pattern)
+        except re.error as err:
+            add(f'[pm] version_pattern is not a valid regex: {err}')
+        else:
+            if compiled.groups < 1:
+                add('[pm] version_pattern needs one capture group around '
+                    'the version itself')
+
+    at = section.get('version_at')
+    if at is not None and at not in VERSION_AT_CHOICES:
+        add(f'[pm] version_at must be one of {" ".join(VERSION_AT_CHOICES)}, '
+            f'got {at!r} — {VERSION_AT_START!r} is the first entry in `order` '
+            f'that has not shipped (bump at start), {VERSION_AT_SHIP!r} the '
+            f'last that has')
+
+    if 'scaffold' in section:
+        add("[pm.scaffold.*] was replaced by template FILES — set [pm] "
+            "template_dir and run `pm templates` to copy them out, then edit "
+            "the markdown")
+
+    # The retired-key and stale-rule sweep runs WHATEVER `load()` would have
+    # done, reading `checks` off the section rather than off a config that may
+    # not have loaded (review D3).
+    raw_checks = section.get('checks')
+    named = tuple(c for c in raw_checks
+                  if isinstance(c, str)) if isinstance(raw_checks, list) else DEFAULT_CHECKS
+    for check in named:
+        if check in RETIRED_CHECKS:
+            add(f'[pm] checks names {check}, which was retired — '
+                f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+    unknown = [c for c in named
+               if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
+    if unknown:
+        add(f'[pm] checks names unknown rule(s) {", ".join(unknown)} — '
+            f'known rules are {" ".join(KNOWN_CHECKS)}')
+    for key, why in RETIRED_KEYS.items():
+        if key in section and key not in VOCABULARY_KEYS:
+            add(f'[pm] {key} was retired and does nothing — {why}. '
+                f'Remove the key.')
+    for name, why in RETIRED_SECTIONS.items():
+        if section_declared(name):
+            add(f'[{name}] was retired and does nothing — {why}. '
+                f'Remove the section.')
     return out
 
 
@@ -752,6 +807,25 @@ def unquote(value: str) -> str:
 # `order` is edited constantly and reordering is the main edit, so one entry per
 # line keeps a diff showing what MOVED, where an inline `[a, b, c]` rewrites the
 # whole line.
+def _without_trailing_comment(value: str) -> str:
+    """`"0.1.0"  # the first` -> `"0.1.0"`.
+
+    An inline comment was read INTO the value, which then failed to unquote and
+    left the quotes on — so one annotated entry silently changed the spelling
+    of every version the reader returned (review A3). Only a `#` OUTSIDE the
+    quotes ends the value; a version is a literal, so a `#` inside quotes is
+    part of it.
+    """
+    value = value.strip()
+    if value[:1] in ('"', "'"):
+        close = value.find(value[0], 1)
+        if close != -1:
+            return value[:close + 1]
+        return value
+    head = value.split('#', 1)[0]
+    return head.strip() or value
+
+
 _LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
 
 
@@ -777,14 +851,18 @@ def list_field_of(path: Path, key: str) -> list[str]:
             return []
         out: list[str] = []
         for line in lines[i + 1:close_i]:
-            if not line.strip():
-                # Spacing a long plan is the obvious thing a human does to it;
-                # truncating there would drop every entry below the gap.
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                # Blank lines SPACE a long plan and comment lines ANNOTATE one,
+                # and both are the obvious things a human does to a file that
+                # is edited on every ship. Truncating at either dropped every
+                # entry below it — silently, and `--append` then wrote a
+                # duplicate and reported a successful append (review A2).
                 continue
             m = _LIST_ITEM.match(line)
             if m is None:
                 break
-            out.append(unquote(m.group('value')))
+            out.append(unquote(_without_trailing_comment(m.group('value'))))
         return out
     return []
 
@@ -862,6 +940,7 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
             break
 
     indent, quote, eol = '  ', '"', ''
+    kept: list[str] = []
     if key_i is None:
         # A plan that has no `order` yet: mint the key at the end of the block.
         eol = _eol(lines[close_i])
@@ -872,6 +951,16 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         eol = _eol(lines[key_i])
         end_i = key_i
         for j in range(key_i + 1, close_i):
+            stripped = lines[j].strip()
+            if not stripped or stripped.startswith('#'):
+                # The READER spans these, so the writer must too — stopping
+                # here left the entries below the comment in place and wrote
+                # the new list above them, which is a duplicate the verb then
+                # reported as a successful append (review A2). Spanned lines
+                # are kept, ahead of the rewritten items, so the author's
+                # annotations survive the edit.
+                kept.append(lines[j])
+                continue
             m = _LIST_ITEM.match(lines[j])
             if m is None:
                 break
@@ -889,7 +978,7 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         tail_from = end_i + 1
 
     items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
-    rewritten = lines[:key_i] + head + items + lines[tail_from:]
+    rewritten = lines[:key_i] + head + kept + items + lines[tail_from:]
     try:
         write_raw(path, '\n'.join(rewritten))
     except OSError:

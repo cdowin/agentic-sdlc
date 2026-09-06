@@ -42,5 +42,5 @@ string and `docs/sdlc-protocol.md` are held byte-current and had to move togethe
 
 ## Close
 
-done: 1285784 — a project declares what it owns, the belt grades the rest, and
+done: 1285784 f30549a 3d21718 — a project declares what it owns, the belt grades the rest, and
 the claim is printed every run so the list is visible rather than a hiding place.

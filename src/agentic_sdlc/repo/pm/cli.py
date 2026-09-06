@@ -2028,7 +2028,16 @@ def main(argv: list[str]) -> int:
     try:
         cfg = model.load()
     except model.ConfigError as err:
-        print(f'[pm] ERROR — {err}', file=sys.stderr)
+        # EVERY defect, flow first — one line each, exit 2 once. `load()` stops
+        # at the first, and the first is rarely the one that matters: the tree
+        # that motivated this was told about a retired key while its PM CLI was
+        # refusing every work-moving verb for want of a flow (review D1).
+        try:
+            defects = model.all_config_defects()
+        except Exception:  # noqa: BLE001 - the collector never masks the error
+            defects = []
+        for msg in defects or [str(err)]:
+            print(f'[pm] ERROR — {msg}', file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
     # Deferred: `ready_for` and `skills` import this module's shared

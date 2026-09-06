@@ -45,8 +45,8 @@ line count.
 ## The three questions. Only these.
 
 1. Is this the most straightforward way to do this, without over-inventing?
-2. Is it using the right built-in engine feature, shipped system, or standard
-   library — or did it re-roll one?
+2. Is it using the right built-in framework feature, shipped system, or
+   standard library — or did it re-roll one?
 3. Are we over-complicating?
 
 Everything you write must answer one of those.
@@ -62,7 +62,7 @@ pass, not its tail.
 
 ## What you are looking for, in priority order
 
-1. **Code that exists because nobody checked the engine or stdlib.** Actually
+1. **Code that exists because nobody checked the framework or stdlib.** Actually
    check the API before claiming something is bespoke, and actually check it
    before claiming a built-in exists — a wrong claim in either direction
    costs more than saying nothing.
@@ -77,8 +77,8 @@ pass, not its tail.
 4. **Ceremony.** Indirection layers, a manager that only forwards, state
    machines with fewer real states than members, comments explaining what a
    rename would make obvious.
-5. **Authored-vs-coded** (engine projects): could this be a placed node with
-   exported properties instead of a script that re-implements the editor?
+5. **Declared-vs-coded**: could this be data — a config entry, a template, a
+   table — instead of code that re-implements what the declaration would say?
 
 ## What is NOT over-complication
 

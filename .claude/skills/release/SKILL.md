@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a agentic-sdlc release by running the conveyor — `agentic-sdlc release <version>` walks the ordered step list, stops at the first step whose postcondition is not true, and says what would make it true. Use whenever changes are ready to ship to consumers.
+description: Cut a agentic-sdlc release by running the conveyor — `agentic-sdlc release <version>` walks the ordered step list to the end, names every step whose postcondition is not true, and says what would make it true. Use whenever changes are ready to ship to consumers.
 ---
 
 # Release
@@ -11,12 +11,15 @@ description: Cut a agentic-sdlc release by running the conveyor — `agentic-sdl
 agentic-sdlc release <version>
 ```
 
-It walks `[release] steps` in order and stops at the first step that is not
-true, naming what would make it true. Re-run after fixing: everything already
-true is skipped, and the position survives a context clear, an interruption or
-a handoff because it is re-derived from the tree rather than carried in
-anyone's head. Exit `0` the run completed, `1` it stopped on a step, `2` a
-usage or config error.
+It walks `[release] steps` in order TO THE END. No step halts the walk (D8):
+every step is a check, every check reports, each step that is not true is
+named with what would make it true, and the last line is a scoreboard —
+`[release] 19/21 true · 1 not true: gate · 1 unverifiable: ci-green`. Whether
+a not-true step should stop you is your question, not the machine's. Re-run
+after fixing: everything already true stays true, and the position survives a
+context clear, an interruption or a handoff because it is re-derived from the
+tree rather than carried in anyone's head. Exit `0` every postcondition holds,
+`1` one or more do not, `2` a usage or config error.
 
 The steps themselves — all of them, in order, with each one's kind and its
 postcondition — are in [`docs/sdlc-protocol.md`](../../../docs/sdlc-protocol.md),
@@ -35,7 +38,9 @@ to end, and a protocol re-copied into a skill file recreates it on day one.
 - **Answer the judgement steps.** `pr-open`, `ci-green` and `prove-artifact`
   need a GitHub client and a published artifact, and hard rule 1 is
   stdlib-only forever. Each runs a command this repo configures in
-  `[release.commands]`, and with none it refuses to advance rather than pass.
+  `[release.commands]` (`{version}` in the command is the release version),
+  and with none it is reported UNVERIFIABLE — never a pass — and the walk
+  finishes.
 - **Run the negative probe** for any gate whose SCOPING changed: introduce the
   drift class into a scratch copy of a `tests/fixtures/` repo and confirm the
   gate FAILS with the expected line shape, plus the config-equivalence pass (no
@@ -47,11 +52,15 @@ to end, and a protocol re-copied into a skill file recreates it on day one.
 
 ## Deviating
 
-`--skip <step> --reason "<why>"` writes a `deviation` row to the milestone's
-`ledger.jsonl` and walks on. Deviation stays possible; **invisible** deviation
-does not. `agentic-sdlc release <version> --status` prints what was recorded,
-so a close report quotes the machine rather than somebody's memory. If the same
-step is skipped every release, that step is wrong — say so rather than skipping
+There is no flag for it. Every step that is not true is already a `deviation`
+row in the milestone's `ledger.jsonl`, written by the machine and carrying the
+reason the step itself gave (D8 removed the flag that used to mint that row by
+hand: it existed to escape a refusal, and nothing refuses). Deviation stays
+possible — release on a red tree if you mean to; **invisible** deviation does
+not.
+`agentic-sdlc release <version> --status` prints what was recorded, so a close
+report quotes the machine rather than somebody's memory. If the same step is
+not true every release, that step is wrong — say so rather than walking past
 it again.
 
 ## The consumer follow-up, after the tag

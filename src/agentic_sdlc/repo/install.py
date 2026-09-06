@@ -339,12 +339,13 @@ _NEXT_STEP = {
                     'document rather than restating the steps there: a second '
                     'copy of an ordered list is the drift this verb exists to '
                     'end. Then run `agentic-sdlc release <version>` — it '
-                    'stops at the first step whose postcondition is not true '
-                    'and says what would make it true. Steps that need a tool '
-                    'this package will never ship (a GitHub client, your '
+                    'walks every step to the end, names each one whose '
+                    'postcondition is not true and says what would make it '
+                    'true; the last line is a scoreboard. Steps that need a '
+                    'tool this package will never ship (a GitHub client, your '
                     'artifact proof) are yours to name in '
-                    '`[release.commands]`; with none they refuse to advance '
-                    'rather than pass.',
+                    '`[release.commands]`; with none they are reported '
+                    'UNVERIFIABLE — never a pass, and the walk finishes.',
 }
 
 # The `.claude/settings.json` entries that FIRE the Claude Code half of the

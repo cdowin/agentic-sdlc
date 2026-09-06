@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/06-the-review-findings-land
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every finding in the 0.2.0 review records lands, and D11 is recorded
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -22,7 +22,7 @@ depends_on: []
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | exit 2 from a callee → UNVERIFIABLE, walk finishes | amend tests/test_conveyor_driver.py |
+| 1 | unit | exit 2 from a callee → UNVERIFIABLE, walk finishes | tests/test_conveyor_steps.py (`_own_verdict` lives in steps; no case asked it about exit 2) |
 | 2 | unit | ConfigError from a check() is exit 2 at the CLI | amend tests/test_conveyor_driver.py |
 | 3 | unit | `pm init` appends the flow to a config it did not write, byte-preserving | amend tests/test_init_verb.py |
 | 4 | unit | `{version}` substituted in a configured command | amend tests/test_conveyor_steps.py |

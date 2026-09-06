@@ -3,7 +3,7 @@ id: 0.2.0/the-middle-tier-splits/02-a-named-tier-that-resolves-to-nothing-is-lou
 feature: 0.2.0/the-middle-tier-splits
 milestone: "0.2.0"
 name: A gate list cannot get quietly shorter
-status: building
+status: done
 owner:
 depends_on: []
 ---

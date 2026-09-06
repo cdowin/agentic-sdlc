@@ -3,7 +3,7 @@ id: 0.2.0/the-middle-tier-splits/03-the-godot-roster-leaves
 feature: 0.2.0/the-middle-tier-splits
 milestone: "0.2.0"
 name: No installable in this kit names a Godot artifact
-status: building
+status: done
 owner:
 depends_on: []
 ---

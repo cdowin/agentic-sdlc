@@ -3,7 +3,7 @@ id: 0.2.0/the-release-is-a-conveyor/02-the-step-list-is-the-projects
 feature: 0.2.0/the-release-is-a-conveyor
 milestone: "0.2.0"
 name: The step list and its commands are config, and a typo is exit 2
-status: building
+status: done
 owner:
 depends_on: ["0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance"]
 ---

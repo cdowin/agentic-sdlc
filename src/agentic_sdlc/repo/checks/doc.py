@@ -1,24 +1,12 @@
 #!/usr/bin/env python3
-"""doc.py — verifies claims in the ALWAYS-LOADED docs against the live tree.
+"""check doc — the checkable claims in the always-loaded docs resolve against the tree.
 
-Shipped as `agentic-sdlc check doc`: a fast, static gate over the consuming
-repo's CLAUDE.md + .claude/rules/*.md + .claude/agents/*.md (the `[doc] scope`
-config key overrides that roster) that catches the objectively-checkable class
-of doc drift — a dead file path, a `make <target>` neither the Makefile nor
-anything it `include`s declares, a markdown link to a moved file, a skill written as a flat `.md`
-that never loads. NOT a substitute for a human/agent doc review (duplication,
-scope creep, "is this claim still true" symbol-identity checks) — just the
-subset a parser can answer: does this path/link/make-target resolve.
-
-Deliberately scoped to INLINE single-backtick spans and markdown links —
-fenced ``` code blocks are skipped entirely (they're illustrative command
-examples full of `<placeholder>` syntax, not precise claims: every real
-`make <target>` invocation in the docs this gate grew up on is
-backtick-wrapped, every bare "make sense"/"make it" false-positive is prose).
-An UNTERMINATED fence skips nothing and is REPORTED: a marker that hides the
-rest of a file must never do it in silence. A line ending in
-`<!-- doc-scan:allow -->` is never flagged (inline-marker doctrine).
-Pure parse — never writes, never boots Godot.
+Over `[doc] scope` (default CLAUDE.md, .claude/rules/*.md, .claude/agents/*.md): a dead
+path in a backtick span, a `make <target>` no Makefile or include declares, a dead
+markdown link, a flat `.claude/skills/<name>.md` that never loads. Fenced blocks are
+skipped; an unterminated fence is reported and masks nothing. A line ending in
+`<!-- doc-scan:allow -->` is never flagged. `[doc] ephemeral` names directories whose
+cited files are expected to be gone.
 
     agentic-sdlc check doc
 """
@@ -35,41 +23,23 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple, str_tuple
 
 REPO_ROOT = repo_root()
-# READ PER RUN, NEVER AT IMPORT. These were module-level constants until
-# 0.2.0, and that made a config error CONDITIONAL ON IMPORT ORDER: once
-# `doc.py` was in `sys.modules` — which `check all` does, and which any test
-# touching the gate roster does — a later run in a repo whose `[doc] scope` is
-# malformed used the FIRST repo's values and never raised. The gate then
-# reported findings, or none, instead of exit 2. That is rule 4's read-side sin
-# with a config file in front of it, and it was found by a test that passed
-# alone and failed after a peer module imported first.
-#
-# `config_section` and `load_config` are `lru_cache`d for the process and the
-# cwd never moves mid-run in production, so this costs one cached lookup per
-# run and buys the refusal being real every time rather than the first time.
-# `tests/test_boundaries.py` holds every module in `src/` to it.
+# Read per run, never at import, or a config error depends on import order.
 DEFAULT_SCOPE = ('CLAUDE.md', '.claude/rules/*.md', '.claude/agents/*.md')
 def scope_globs() -> tuple[str, ...]:
     return relpath_tuple(config_section('doc'), 'doc', 'scope', DEFAULT_SCOPE)
 ALLOW_MARKER = 'doc-scan:allow'
-# A skill is a DIRECTORY holding SKILL.md. A flat `.claude/skills/<name>.md`
-# does not load as a skill at all — its description never fires, so the file is
-# inert however good it is. A fact about where a file sits, checked by listing
-# one directory: `<name>/SKILL.md` legitimately sits beside references/,
-# scripts/ and assets/, so only a `.md` at depth 1 is the defect.
+# A skill is `<name>/SKILL.md`; only a `.md` at depth 1 is the defect.
 SKILL_DIR = '.claude/skills'
 SKILL_FILENAME = 'SKILL.md'
 
 INLINE_CODE = re.compile(r'`([^`]+)`')
-MD_LINK_TEXT = re.compile(r'`[^`]+`\]\(')  # a backtick span used as [`text`](href) link text —
-                                            # its path claim is the link's real href, checked separately
+MD_LINK_TEXT = re.compile(r'`[^`]+`\]\(')  # [`text`](href): the claim is the href
 MD_LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
 MAKE_INVOCATION = re.compile(r'\bmake\s+([a-zA-Z][a-zA-Z0-9_-]*)')
 PATH_CANDIDATE = re.compile(r'^[A-Za-z0-9_./-]+\.(gd|tscn|tres|py|sh|md)$')
 PLACEHOLDER_CHARS = ('<', '>', '*', '$')
 URL_PREFIXES = ('http://', 'https://', 'mailto:')
-# docs/reviews/ is create-resolve-DELETE by design (docs/reviews/README.md) — an
-# example filename cited there is expected to no longer exist, not a claim.
+# Review records are create-resolve-delete by design.
 DEFAULT_EPHEMERAL = ('docs/reviews/',)
 def ephemeral_dirs() -> tuple[str, ...]:
     return str_tuple(config_section('doc'), 'doc', 'ephemeral',
@@ -89,26 +59,13 @@ def scope_files() -> list[Path]:
 
 
 def real_make_targets() -> set[str]:
-    """Every recipe name `make` would actually resolve, includes followed.
-
-    One reader, `core.makefile`, shared with `verify --check`: a roster read
-    from the root file alone reports every `make check` in every doc as dead,
-    and one that stops at `include Makefile.devkit` reports every tier the
-    project's kit hangs off it as dead. Widening only.
-    """
+    """Every recipe name `make` would resolve, includes followed (shared with `verify --check`)."""
     return set(makefile.targets(REPO_ROOT))
 def is_allowed(line: str) -> bool:
     return ALLOW_MARKER in line
 
 
-# A `<scheme>://` prefix on a doc link names a RESOURCE, not a repo path, and
-# the part after it is the path inside whatever that scheme addresses. Written
-# generically since 0.2.0: it stripped ONE game engine's resource scheme, by
-# name, from inside a gate that reads markdown — exactly the shape decision D2
-# rules against, and the reason that engine's scheme is not spelled here now. `URL_PREFIXES` above has already taken the
-# external schemes out of the caller's hands, so anything reaching here with a
-# scheme is a project-local resource URI and the path after `://` is the thing
-# to look for on disk.
+# A project-local `<scheme>://` names a resource; the path after it is what is on disk.
 _SCHEME = re.compile(r'^[a-z][a-z0-9+.-]*://')
 
 
@@ -168,12 +125,7 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
 
 
 def skill_entries() -> tuple[list[Path], list[Path]]:
-    """(everything listed under `.claude/skills/`, the flat `.md` files in it).
-
-    Both halves, because rule 4: "0 flat skills" out of an empty directory and
-    out of twelve correctly-shaped ones are different reports, and only one of
-    them is worth printing.
-    """
+    """(everything listed under `.claude/skills/`, the flat `.md` files in it)."""
     listed = list(walk.children(REPO_ROOT / SKILL_DIR).kept)
     return listed, [p for p in listed if p.is_file() and p.suffix == '.md']
 
@@ -189,11 +141,6 @@ def run() -> int:
         lines, unterminated = non_fenced_lines(text)
         skipped += len(text.split('\n')) - len(lines)
         if unterminated:
-            # The fence masked nothing (core/markdown.py), so the claims below
-            # are still checked — but a document whose fences this gate cannot
-            # delimit is a document it has not honestly scanned, and saying so
-            # is the whole difference between this and the silent PASS a stray
-            # marker used to buy.
             defects.append(
                 f'{doc.relative_to(REPO_ROOT)}:{unterminated}  opens a code '
                 f'fence that is never terminated — the rest of the file was '
@@ -215,10 +162,6 @@ def run() -> int:
             part for part in (
                 f'{len(findings)} unresolved claim(s)' if findings else '',
                 f'{len(defects)} malformed doc(s)' if defects else '') if part)
-        # The census rides the FAIL line too, exactly as it rides the PASS. A
-        # verdict that does not say what was read is half a verdict whichever
-        # way it went — "1 malformed doc(s)" out of one doc and out of two
-        # hundred are different reports, and only one of them printed.
         print(f'[check:doc] FAIL — {counts}, across {len(docs)} doc(s), '
               f'{skipped} fenced line(s) skipped, {len(listed)} {SKILL_DIR}/ entr(ies)')
         for finding in sorted(defects) + sorted(findings):
@@ -228,14 +171,8 @@ def run() -> int:
         return 1
 
     if not docs:
-        # Rule 4 — a gate that scanned nothing must say so. A misconfigured
-        # exclude or a wrong root is indistinguishable from a clean tree,
-        # and that PASS is the most dangerous output this package emits.
         print('[check:doc] FAIL — scanned 0 docs; check [doc] scope')
         return 1
-    # The census counts FILES, and files are not what a fence hides. What was
-    # SKIPPED is the other half of "what did this gate actually read", and a
-    # PASS that never says it is a PASS over an unknown amount of unread text.
     print(f'[check:doc] PASS — {len(docs)} doc(s), {skipped} fenced line(s) '
           f'skipped, {len(listed)} {SKILL_DIR}/ entr(ies), 0 unresolved claims')
     return 0

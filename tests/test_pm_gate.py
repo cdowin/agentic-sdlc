@@ -1605,22 +1605,41 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         drift = [ln for ln in out_r.splitlines() if ln.startswith('  DRIFT  ')]
         self.assertFalse([ln for ln in drift if '1.0/normal' in ln], drift)
 
-    def test_pm_status_says_the_same_thing_about_both_trees(self):
-        def status(root):
-            return run_cli(root, 'status')
-        with self._copies() as (renamed, stock):
-            code_r, out_r = self._run(renamed, status)
-            code_s, out_s = self._run(stock, status)
-        self.assertEqual((code_r, code_s), (0, 0), out_r + out_s)
-        # Whitespace-normalised per line: the status column is padded to a
-        # width, and a longer word is a longer word (rule 6 covers the gate's
-        # line shapes, not this board's alignment).
+    def test_every_read_verb_says_the_same_thing_about_both_trees(self):
+        # Criterion 5 names the gate BEHAVIOUR, and `pm list`, `ready-for`
+        # ×3 and `vocabulary` are as much of it as `status` is (V5 of the
+        # feature review): each is byte-identical modulo the words, at the
+        # same exit code. `status` is the one exception, whitespace-squeezed:
+        # its status column is as wide as the longest word the project
+        # declared, and `reviewing` is a character longer than `checking`.
         import re
 
         def squeeze(text: str) -> list[str]:
             return [' '.join(re.sub(r'\s+\]', ']', ln).split())
                     for ln in text.splitlines()]
-        self.assertEqual(squeeze(self._unrename(out_r)), squeeze(out_s))
+        verbs = (('status',), ('list',), ('vocabulary',),
+                 ('vocabulary', '--json'),
+                 ('ready-for', 'feature', '1.0/normal'),
+                 ('ready-for', 'feature', '1.0/stalled'),
+                 ('ready-for', 'milestone', '1.0'),
+                 ('ready-for', 'tag', '1.0'))
+        for argv in verbs:
+            def verb(root, argv=argv):
+                return run_cli(root, *argv)
+            with self.subTest(verb=' '.join(argv)), \
+                    self._copies() as (renamed, stock):
+                code_r, out_r = self._run(renamed, verb)
+                code_s, out_s = self._run(stock, verb)
+                self.assertEqual(code_r, code_s, out_r + out_s)
+                self.assertTrue(out_r.strip(), argv)      # never two empties
+                if argv == ('status',):
+                    self.assertEqual(squeeze(self._unrename(out_r)),
+                                     squeeze(out_s))
+                else:
+                    self.assertEqual(self._unrename(out_r), out_s)
+        with self._copies() as (renamed, stock):
+            code_r, out_r = self._run(renamed, lambda root: run_cli(root, 'status'))
+        self.assertEqual(code_r, 0, out_r)
         self.assertIn('stories 2/2 done', out_r)          # shipped + dropped
         # D2 is the gate's WARN, so the board's marker says WARN too; a
         # dangling record stays a DRIFT marker (D1 is a finding).

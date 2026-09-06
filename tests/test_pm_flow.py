@@ -438,6 +438,7 @@ def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
 # as `cli.py:<line>`, not as a count that went from 0 to 1.
 
 SRC = REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo'
+PKG = SRC.parent
 
 # The words the seed spells. Any of these as a string CONSTANT in code outside
 # the seed is the engine comparing against a word.
@@ -500,8 +501,22 @@ SEED_WORD_READERS = {
 }
 
 
-def _module_path(dotted: str) -> Path:
-    return SRC / Path(*dotted.split('.')).with_suffix('.py')
+def _census_modules() -> list[tuple[str, Path]]:
+    """Every module in the package, `(dotted, path)`, recursively.
+
+    The first cut globbed three families one level deep and scanned 27 of 41
+    modules (V4 of the feature review): a seed word added to `core/config.py`
+    or `repo/init.py` would have been reported as nothing at all. `dotted` is
+    the name `SEED_ASSIGNMENTS` keys on — relative to `repo/` for the modules
+    that live there (`pm.model`), to the package otherwise (`core.config`).
+    """
+    out = []
+    for path in sorted(PKG.rglob('*.py')):
+        parts = path.relative_to(PKG).with_suffix('').parts
+        if parts[0] == 'repo' and len(parts) > 1:
+            parts = parts[1:]
+        out.append(('.'.join(parts), path))
+    return out
 
 
 def _string_constants(tree: ast.AST):
@@ -543,15 +558,6 @@ def _enclosing_names(tree: ast.AST) -> dict[int, tuple[str | None, str | None]]:
     return where
 
 
-def _census_modules() -> list[str]:
-    """Every module in the pm tracker, the gates and the verify family."""
-    out = []
-    for family in ('pm', 'checks', 'verify'):
-        for path in sorted((SRC / family).glob('*.py')):
-            out.append(f'{family}.{path.stem}')
-    return out
-
-
 def test_every_symbol_the_census_deleted_is_gone():
     import importlib
     for dotted, symbol in DELETED:
@@ -565,8 +571,13 @@ def test_no_state_literal_survives_outside_the_seed():
     """The census, enumerated: every string constant equal to a seed word, in
     every census module, is in a SEED assignment — or it is named here."""
     survivors = []
-    for dotted in _census_modules():
-        path = _module_path(dotted)
+    modules = _census_modules()
+    names = {dotted for dotted, _ in modules}
+    # The census is the claim (rule 4): one module from each side of the
+    # `core/` / `repo/` edge must be in it, or the walk is scanning the
+    # wrong root and every assertion below is over nothing.
+    assert {'pm.model', 'core.config', 'conveyor.driver'} <= names, sorted(names)
+    for dotted, path in modules:
         tree = ast.parse(path.read_text('utf-8'))
         where = _enclosing_names(tree)
         for line, value in _string_constants(tree):
@@ -584,9 +595,15 @@ def test_the_belts_spell_no_state_word():
     word the engine spelled; D12 deleted every automatic step and the site
     with it. What remains to hold is the whole package: a belt writes the
     first `done` state its kind's config lists, so no module under
-    `conveyor/` may carry a seed word as a string constant."""
+    `conveyor/` may carry a seed word as a string constant.
+
+    This is the NEGATIVE half of the R4 case it replaced. The positive half
+    — that the site read `model.flow_of` and not `model.LIFECYCLE` /
+    `BUILDING` / `REVIEWING` — is
+    `test_the_seeds_exported_words_have_exactly_the_named_readers` below,
+    package-wide rather than per site (V9 of the feature review)."""
     hits = []
-    for path in sorted((SRC / 'conveyor').glob('*.py')):
+    for path in sorted((SRC / 'conveyor').rglob('*.py')):
         tree = ast.parse(path.read_text('utf-8'))
         hits += [f'{path.name}:{v!r}' for _, v in _string_constants(tree)
                  if v in SEED_WORDS]

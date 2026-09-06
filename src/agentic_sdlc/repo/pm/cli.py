@@ -284,6 +284,12 @@ def _was(path: Path) -> str:
 
 
 def _set_status(cfg: model.PmConfig, path: Path, value: str, note: str = '') -> None:
+    """Write the `status:` line — and validate nothing.
+
+    Every caller has already asked `_movable` one frame up (V2 closed the one
+    write that had not, `pm set … status`); `cfg` is read only to name the
+    file in the failure line the way every message in this module does.
+    """
     if not model.set_field(path, 'status', value):
         raise Usage(f'could not rewrite status in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)'
@@ -831,6 +837,12 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         ids = sorted(mid for _, mid in known if mid)
         raise Usage(f'{only!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(ids)})')
+    # The status column is as wide as the longest word the project declared
+    # for a feature — it used to be a literal 8, the width of the seed's
+    # `planning`/`building`, which `reviewing` overflowed and a renamed
+    # vocabulary padded to (V6 of the feature review). A word declared
+    # nowhere (D4's finding) still prints whole; it just breaks the column.
+    width = max(len(word) for word in model.flow_of(cfg, 'feature').order)
     for mdir, mid in known:
         mfile = mdir / model.MILESTONE_DOC
         if only and only != mid:
@@ -852,7 +864,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
             # is the one spelling of it (the execution list sorts by it too).
             rows.append((model.phase_key(view.phase), view.phase, view,
                          f'  feature {view.fid.partition("/")[2]:<40} '
-                         f'[{view.status:<8}] stories {view.done_n}/{view.total} done{drift}'))
+                         f'[{view.status:<{width}}] stories {view.done_n}/{view.total} done{drift}'))
         if not rows:
             continue
         buckets: list[str] = []

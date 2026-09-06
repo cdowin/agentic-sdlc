@@ -99,6 +99,26 @@
 - **`pm status` marks `<WARN: …>` for D2** (a feature behind its own finished stories) and keeps
   `<DRIFT: …>` for D1 (a dangling record) — the board says what the gate says.
 
+### The review findings land: a flow-less tree exits 2, `pm set` refuses `status`
+
+`docs/reviews/2026-09-05-every-question-is-asked-of-a-category.md`, V1–V9.
+
+- **A tree that declares no `[pm.states.*]` exits 2 on one line from every `pm` verb** — the
+  same line `check pm` already printed, naming the key and `agentic-sdlc pm init`. It was a Python
+  traceback at exit 1 (rule 6's code for FINDINGS) from `pm status`, `list`, `ready-for`, the four
+  status verbs and `ledger report`: the absent-declaration refusal is raised mid-walk, after
+  dispatch, and `main` did not catch it there. This is the tree every consumer has on the day it
+  bumps its pin, before `pm init`.
+- **`pm set <id> status <word>` is refused at exit 2**, naming the `pm <kind> <word> <id>` that
+  does it right. `set` asked nothing of the declaration and stamped no ledger row, so it wrote any
+  word at exit 0 where the four status verbs refuse; every status write now goes through
+  `move_defect` and lands a row. Every other key is `set`'s as before.
+- **`pm status`'s feature status column is as wide as the longest word the project declared for a
+  feature**, instead of a fixed 8 that `reviewing` overflowed under the seed. Alignment only; the
+  row's words are unchanged.
+- The readiness warnings key on the CATEGORY alone — see the next section's first bullet, which
+  used to disclose an order dependence within `todo` and no longer needs to.
+
 ### ready is one command, and an empty ready is a warning
 
 - **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has left

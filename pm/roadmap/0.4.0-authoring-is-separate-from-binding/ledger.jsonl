@@ -97,3 +97,5 @@
 {"ts":"2026-09-06T23:12:42Z","kind":"status","grain":"0.4.0/the-read-verbs-compose","from":"planning","to":"building"}
 {"ts":"2026-09-06T23:12:42Z","kind":"status","grain":"0.4.0/the-read-verbs-compose/01-the-name-is-a-column-and-json-is-a-flag","from":"planning","to":"building"}
 {"ts":"2026-09-06T23:18:05Z","kind":"status","grain":"0.4.0/the-read-verbs-compose/01-the-name-is-a-column-and-json-is-a-flag","from":"building","to":"done"}
+{"ts":"2026-09-06T23:18:16Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry","from":"planning","to":"building"}
+{"ts":"2026-09-06T23:18:16Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing","from":"planning","to":"building"}

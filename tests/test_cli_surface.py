@@ -156,3 +156,35 @@ class TestAReadVerbNamesItsColumns:
         listing = said[said.index('  list '):said.index('  ready-for')]
         found = {tok for tok in re.findall(r'--[a-z-]+', listing)}
         assert found - {'--json'} == with_json, sorted(found)
+
+
+class TestTheSurfaceSaysTelemetry:
+    """0.4.0/the-surface-says-telemetry. Not a missing column — a MISSING WORD.
+
+    `pm --help`'s ledger lines said what the verbs do and never what they are,
+    so an agent asked for "telemetry — phasing, timings, token use, tool calls"
+    grepped the package for that word, found five design documents and a
+    vendored lexer, and hand-wrote a markdown table over a package that ships
+    `pm ledger report`.
+    """
+
+    LEDGER_VOCABULARY = ('telemetry', 'spend', 'cost', 'tokens', 'tool calls')
+
+    def test_the_help_names_the_ledger_in_the_words_people_search_for(self):
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        said = (pm_cli.USAGE or '').lower()
+        for word in self.LEDGER_VOCABULARY:
+            assert word in said, f'`pm --help` never says {word!r}'
+
+    def test_the_help_names_the_grainless_ledger_by_path(self):
+        """Rule 11: the second home is where a row goes when nobody could
+        attribute it, and a reader standing at `--help` must not have to find
+        that out from a runtime message."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        assert 'ledger.jsonl' in (pm_cli.USAGE or '')
+
+    def test_this_feature_added_no_verb_and_no_flag(self):
+        """The ship criterion, asserted: if a documentation feature grows a
+        capability it has misunderstood itself. The routed set is asked, never
+        listed."""
+        assert documented_verbs() == routed_verbs()

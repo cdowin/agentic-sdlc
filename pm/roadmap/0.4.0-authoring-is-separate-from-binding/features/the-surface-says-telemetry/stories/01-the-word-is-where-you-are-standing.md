@@ -3,8 +3,8 @@ id: 0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing
 feature: 0.4.0/the-surface-says-telemetry
 milestone: "0.4.0"
 name: The word telemetry is in every discovery surface
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

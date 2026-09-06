@@ -2,7 +2,7 @@
 id: 0.4.0/the-surface-says-telemetry
 milestone: "0.4.0"
 name: The surface says telemetry, at the moment of need
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

@@ -257,3 +257,17 @@
 {"ts":"2026-09-06T23:18:05Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":286,"rank":4}
 {"ts":"2026-09-06T23:18:05Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":155,"rank":5}
 {"ts":"2026-09-06T23:18:05Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7560,"census":769}
+{"ts":"2026-09-06T23:19:01Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2550}
+{"ts":"2026-09-06T23:19:09Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":488,"rank":1}
+{"ts":"2026-09-06T23:19:09Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":391,"rank":2}
+{"ts":"2026-09-06T23:19:09Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":294,"rank":3}
+{"ts":"2026-09-06T23:19:09Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":282,"rank":4}
+{"ts":"2026-09-06T23:19:09Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":164,"rank":5}
+{"ts":"2026-09-06T23:19:10Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8183,"census":769}
+{"ts":"2026-09-06T23:20:28Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":10135,"rank":1}
+{"ts":"2026-09-06T23:20:28Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9926,"rank":2}
+{"ts":"2026-09-06T23:20:28Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_an_underscore_prefix_is_how_a_non_hook_lives_there_legitimately","duration_ms":7711,"rank":3}
+{"ts":"2026-09-06T23:20:28Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_hook_without_its_exec_bit_is_named","duration_ms":7587,"rank":4}
+{"ts":"2026-09-06T23:20:28Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_directory_that_took_a_hooks_name_is_a_finding_not_a_subtraction","duration_ms":7549,"rank":5}
+{"ts":"2026-09-06T23:20:28Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":45937,"census":1163}
+{"ts":"2026-09-06T23:20:51Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2631}

@@ -179,14 +179,21 @@ every run; a state the project never declared is refused by name.
                                            comparable across trees. Refuses
                                            rather than filing a row with no
                                            duration)
-  ledger show <grain-id> [--json]         (that grain's rows oldest first, with
-                                           the seconds since the previous status
+  ledger show <grain-id> [--json]         (TELEMETRY for one grain — what it
+                                           cost and how long it took. That
+                                           grain's rows oldest first, with the
+                                           seconds since the previous status
                                            row; --json prints the raw lines.
                                            Reads the grain's milestone ledger
                                            AND the tree's, so it and `ledger
                                            report` cannot disagree about a row)
   ledger report [<milestone-id>] [--json] [--from <rev>]
-                                          (spend per grain from that milestone's
+                                          (THE TELEMETRY REPORT — token spend,
+                                           tool calls, wall-clock and gate cost,
+                                           per grain, from rows the tree already
+                                           recorded. Ask this before writing a
+                                           table of timings by hand.
+                                           Spend per grain from that milestone's
                                            rows: dispatches, tokens, tool calls,
                                            wall-clock and seconds in each
                                            CATEGORY (todo / in_progress / done),

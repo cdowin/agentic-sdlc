@@ -73,6 +73,46 @@ class Guidance(unittest.TestCase):
                 'the handoff skill is restating the template instead of '
                 'pointing at it')
 
+    def test_the_operations_skill_is_findable_by_the_telemetry_words(self):
+        """0.4.0/the-surface-says-telemetry. Asked for "full telemetry —
+        phasing, timings, token use, tool calls", the agent building that
+        milestone HAND-WROTE A MARKDOWN TABLE while the package sat on
+        `pm ledger`: seven row kinds, automatic per-session capture off the
+        transcript, and a per-grain spend report.
+
+        `grep -ril telemetry` over the package hit five design documents, four
+        tests and a vendored lexer — the archaeology of the feature, never the
+        verb that shipped from it. A skill is selected by its DESCRIPTION, so
+        the words a person actually types have to be in that block and not in
+        the body.
+        """
+        with tree() as root:
+            self.assertEqual(run_cli(root, 'install-skills')[0], 0)
+            text = (root / '.claude/skills/pm-operations/SKILL.md').read_text(
+                encoding='utf-8')
+            description = text.split('---')[1].lower()
+            for said in ('telemetry', 'spend', 'cost', 'how long did this take',
+                         'tokens'):
+                self.assertIn(said, description, description)
+            # And the description is not a promise the body does not keep.
+            self.assertIn('pm ledger report', text)
+            self.assertIn('pm ledger show', text)
+
+    def test_the_execution_rule_names_the_ledger_read_verbs(self):
+        """The file that AUTO-LOADS on every tree edit, and its read-verb list
+        omitted the ledger entirely — the word appeared twice in it, both times
+        as a side effect of a different verb, so it read as a passive byproduct
+        rather than something you can ask.
+        """
+        with tree() as root:
+            self.assertEqual(run_cli(root, 'install-skills')[0], 0)
+            rule = (root / '.claude/rules/pm-execution.md').read_text(
+                encoding='utf-8')
+            honest = rule.split('## Keeping the tree honest')[1]
+            for said in ('pm ledger show', 'pm ledger report', 'telemetry'):
+                self.assertIn(said, honest.lower() if said == 'telemetry'
+                              else honest, honest)
+
     def test_install_is_idempotent(self):
         with tree() as root:
             run_cli(root, 'install-skills')

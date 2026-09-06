@@ -39,6 +39,20 @@
   through its `tree` snapshot — so `show` and `report` had begun to disagree about the same row,
   with `report` billing a story for time `show` said did not exist.
 
+- **The word "telemetry" is now in the surfaces you are standing in when you need it.** It was in
+  none of them: not `pm --help`, not the rule that auto-loads on every tree edit, not either
+  shipped skill's `description:`. `grep -ril telemetry` over the package returned five design
+  documents, four tests and a vendored lexer — the archaeology of the feature, never the verb that
+  shipped from it. So an agent asked for *"full telemetry — phasing, timings, token use, tool
+  calls"* hand-wrote a markdown table while the package sat on `pm ledger`: seven row kinds,
+  automatic per-session capture off the transcript, and a per-grain spend report.
+
+  Three edits and **no new capability**: `pm --help`'s two ledger lines say what those verbs ARE;
+  `pm-execution.md`'s read-verb list names `pm ledger show` and `pm ledger report` and what each
+  answers; and `pm-operations`' skill `description:` carries the vocabulary a person actually types
+  — telemetry, spend, cost, tokens, *how long did this take* — because the description is the only
+  part a selector reads. A consumer gets all three on the bump (`pm install-skills --force`).
+
 - **`pm list` emits the NAME, and both listing forms take `--json`.** OUTPUT-SHAPE CHANGE, and
   it is a fifth column at the END of each row: `id status owner feature name` for stories,
   `id status category branch name` for milestones. **A consumer whose parser ends in a catch-all

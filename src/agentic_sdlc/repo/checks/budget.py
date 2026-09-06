@@ -146,6 +146,35 @@ def _age(stamp: str) -> str:
     return 'just now'
 
 
+def _slowest() -> dict[str, tuple[str, int]]:
+    """{tier: (nodeid, duration_ms)} — the rank-1 `test` row of the last run.
+
+    The `gate` row says a tier got slower; this says WHICH CASE, which is the
+    half you can act on. `tests/conftest.py` files the slowest few of every
+    gated run, and rank 1 is the one worth printing beside a ceiling.
+    """
+    cfg = model.load()
+    out: dict[str, tuple[str, int]] = {}
+    for _mid, _branch, mfile in model.building_milestones(cfg):
+        path = ledger.ledger_path(mfile.parent)
+        if not path.is_file():
+            continue
+        try:
+            rows = ledger.read_rows(path)
+        except ledger.LedgerError:
+            return {}
+        for row in rows:
+            data = row.data
+            if data.get('kind') != ledger.KIND_TEST or data.get('rank') != 1:
+                continue
+            tier, node = data.get('tier'), data.get('nodeid')
+            ms = data.get('duration_ms')
+            if isinstance(tier, str) and isinstance(node, str) \
+                    and isinstance(ms, int):
+                out[tier] = (node, ms)
+    return out
+
+
 def run() -> int:
     # No argv: `cli._run_check_inner` serves `--help` from this module's
     # docstring and refuses an unknown flag before dispatch, so every gate here
@@ -168,6 +197,7 @@ def run() -> int:
               f'tier has a ceiling; last measured: {measured or "nothing yet"}')
         return 0
 
+    slowest = _slowest()
     over: list[str] = []
     lines: list[str] = []
     for tier in sorted(budgets):
@@ -193,6 +223,11 @@ def run() -> int:
                 f'  ok          {tier} — {seconds:.1f}s of {ceiling}s{when}')
     for line in lines:
         print(line)
+    for tier in sorted(budgets):
+        worst = slowest.get(tier)
+        if worst:
+            nodeid, ms = worst
+            print(f'  slowest    {tier} — {ms / 1000:.1f}s  {nodeid}')
     if over:
         print(f'[check:{NAME}] FAIL — {len(over)} tier(s) over budget: '
               f'{", ".join(over)}. A tier that got slower is a finding: it '

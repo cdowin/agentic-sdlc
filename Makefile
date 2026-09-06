@@ -150,12 +150,15 @@ pm:
 # source reaches. It already existed to let the matrix skip spawning modules on
 # three of four interpreters; what it never had was a target, so the fast half
 # was unreachable from the command line and `precommit` ran everything.
+unit: export GDK_TEST_TIER = unit
 unit:
 	$(call gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) -m "not shell")
 
+integration: export GDK_TEST_TIER = integration
 integration:
 	$(call gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N) -m shell)
 
+test: export GDK_TEST_TIER = test
 test:
 	$(call gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N))
 

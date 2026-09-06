@@ -58,11 +58,28 @@ SCRIPTS = (LIBRARY,)
 VERDICT = '[PARSE] PASS (2 files) — full log: .gate-reports/parse.log'
 
 
-def run(*argv: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+def run(*argv: str, cwd: Path | None = None, skip_timing: bool = False
+        ) -> subprocess.CompletedProcess:
+    """Run a script. `skip_timing` sets `GDK_ST_SKIP_TIMING=1`.
+
+    Three cases in the corpus prove a bound by WAITING for it — a recorder that
+    hangs, one that forks, one parsed in front of the bound — and only the
+    clock can tell a fixed library from a broken one on those. They are ~3 s of
+    the corpus's 4.
+
+    NINE mutation tests drive that corpus, each reverting one line and
+    asserting one specific case reddens, and SEVEN of them have nothing to do
+    with timing. Paying 3 s of sleep to prove a verdict-shape mutant reddens is
+    21 s a run spent proving nothing (hard rule 10). The two that ARE about the
+    bound run the whole thing, and so does every consumer, because the skip is
+    a caller's optimisation and never the default.
+    """
     # The installed CI exports VERBOSE=1 for the whole `make milestone` step,
     # and the quiet-by-default cases below are asked of the DEFAULT — VERBOSE
     # unset. A case that wants the stream sets it in its own env.
     env = {k: v for k, v in os.environ.items() if k != 'VERBOSE'}
+    if skip_timing:
+        env['GDK_ST_SKIP_TIMING'] = '1'
     return subprocess.run(['bash', *argv], cwd=cwd, text=True,
                           capture_output=True, env=env)
 
@@ -86,7 +103,8 @@ def test_the_library_corpus_FAILS_when_the_verdict_shape_is_broken(tmp_path):
         LIBRARY.read_text(encoding='utf-8')
         .replace("'[%s] %s — full log: %s\\n'", "'[%s] %s - full log: %s\\n'"),
         encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    # Not a timing mutant: the wall-clock cases prove nothing here.
+    done = run(str(mutant), '--self-test', skip_timing=True)
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'SELF-TEST FAIL' in done.stderr, done.stderr
     assert 'the verdict line shape' in done.stderr, done.stderr
@@ -102,7 +120,8 @@ def test_the_library_corpus_FAILS_when_capture_stops_reading_PIPESTATUS(tmp_path
         LIBRARY.read_text(encoding='utf-8')
         .replace('GDK_GATE_EXIT="${PIPESTATUS[0]}"', 'GDK_GATE_EXIT="$?"'),
         encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    # Not a timing mutant: the wall-clock cases prove nothing here.
+    done = run(str(mutant), '--self-test', skip_timing=True)
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'capture reports the command exit code' in done.stderr, done.stderr
 
@@ -174,7 +193,8 @@ def test_the_library_corpus_FAILS_when_the_quoting_in_the_value_is_dropped(tmp_p
               ' || { printf "%s\\n" "$2" >&2; exit 121; }')
     assert source.count(parsed) == 1, 'the shim eval this mutant reverts moved'
     mutant.write_text(source.replace(parsed, 'prefix=($1)'), encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    # Not a timing mutant: the wall-clock cases prove nothing here.
+    done = run(str(mutant), '--self-test', skip_timing=True)
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'ONE argv element' in done.stderr, done.stderr
 
@@ -198,7 +218,8 @@ def test_the_library_corpus_FAILS_when_a_slot_files_its_last_captures_code(tmp_p
     assert source.count(of_the_slot) == 1, 'the slot verdict this mutant reverts moved'
     mutant.write_text(source.replace(of_the_slot, 'verdict="$(_gdk_ledger_verdict)"'),
                       encoding='utf-8')
-    done = run(str(mutant), '--self-test')
+    # Not a timing mutant: the wall-clock cases prove nothing here.
+    done = run(str(mutant), '--self-test', skip_timing=True)
     assert done.returncode == 1, done.stdout + done.stderr
     assert 'files FAIL, not PASS' in done.stderr, done.stderr
 
@@ -240,9 +261,12 @@ def test_a_self_test_verdict_is_one_line_whatever_the_ambient_verbose_says(scrip
     streamed its eight bytes INTO the verdict line — `01234567[gdk-gate]
     SELF-TEST OK …` — which is what a `VERBOSE=1` self-test, and so the
     installed CI, then read as the verdict."""
+    # The subject is the VERDICT LINE under an ambient VERBOSE, not the bound,
+    # so the wall-clock cases prove nothing here (hard rule 10).
     done = subprocess.run(['bash', str(script), '--self-test'], text=True,
                           capture_output=True,
-                          env=dict(os.environ, VERBOSE='1'))
+                          env=dict(os.environ, VERBOSE='1',
+                                   GDK_ST_SKIP_TIMING='1'))
     assert done.returncode == 0, done.stdout + done.stderr
     lines = done.stdout.splitlines()
     assert len(lines) == 1, done.stdout

@@ -81,7 +81,7 @@ Never hand-roll an incantation, and never run a rung wider than the thing you ch
 | you changed | run |
 |---|---|
 | the PM tree, or a doc | `make check` |
-| code, inner loop | `agentic-sdlc verify --story` — the paths decide |
+| code, inner loop | `agentic-sdlc verify --story` — `make unit`, the `[verify] story` target |
 | code, before a commit | `make precommit` — `check` + `unit` |
 | closing a story | `agentic-sdlc close story <id>` |
 | closing a feature | `agentic-sdlc close feature <id>` — `make test`, both tiers, is `[verify] feature` |

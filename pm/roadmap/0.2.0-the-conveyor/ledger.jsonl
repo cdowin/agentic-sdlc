@@ -774,3 +774,11 @@
 {"ts":"2026-09-06T04:43:04Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2366}
 {"ts":"2026-09-06T04:43:04Z","kind":"status","grain":"0.2.0/the-extraction-finishes/04-the-first-surfaces-describe-this-package","from":"building","to":"done"}
 {"ts":"2026-09-06T04:43:11Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2449}
+{"ts":"2026-09-06T04:56:59Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2617}
+{"ts":"2026-09-06T04:57:07Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":552,"rank":1}
+{"ts":"2026-09-06T04:57:07Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":422,"rank":2}
+{"ts":"2026-09-06T04:57:07Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":346,"rank":3}
+{"ts":"2026-09-06T04:57:07Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":285,"rank":4}
+{"ts":"2026-09-06T04:57:07Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":207,"rank":5}
+{"ts":"2026-09-06T04:57:07Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8527,"census":673}
+{"ts":"2026-09-06T04:57:07Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":11413}

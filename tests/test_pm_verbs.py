@@ -1377,14 +1377,45 @@ class Retire(unittest.TestCase):
     def test_a_non_done_milestone_is_reported_not_refused(self):
         with tree(milestone_status='building',
                   feature_status='building') as root:
-            self._seed_roadmap(root)
+            index = self._seed_roadmap(root)
             BugStatus._bug(root, 'seed-is-zero', 'open')
-            code, out = run_cli(root, 'retire', '0.1')
+            code, out = run_cli(root, 'retire', '0.1', 'pulled')
             self.assertEqual(code, 0, out)
             self.assertIn('noticed: milestone 0.1 is building, not done', out)
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
             self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            # ...and the row says the word it was retired in.
+            self.assertIn('| building — pulled |', index.read_text())
+
+    def test_retire_of_an_obe_milestone_writes_a_row_that_says_so(self):
+        """0.2.0/bugs/a-collapsed-milestone-has-no-verb: `retire` only knew
+        one ending, and a collapsed milestone got a row under "What shipped"
+        that said it shipped. Any `done`-category state retires without a
+        "not done" notice, and the row's last cell opens with the state the
+        file held — `obe` here — so the index never calls abandoned work
+        delivered. No existing case could fail for this: every retire case
+        used `done` and read the summary cell for its own words only."""
+        with tree(milestone_status='obe', feature_status='obe',
+                  story_statuses=('obe',)) as root:
+            index = self._seed_roadmap(root)
+            code, out = run_cli(root, 'retire', '0.1', 'collapsed into 0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('not done', out)
+            self.assertNotIn('noticed', out)
+            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            rows = [ln for ln in index.read_text().splitlines()
+                    if ln.startswith('| 0.1 |')]
+            self.assertEqual(len(rows), 1, index.read_text())
+            self.assertTrue(rows[0].endswith('| obe — collapsed into 0.2 |'),
+                            rows[0])
+        # ...and `done` says `done`, with an empty summary printing the word
+        # alone rather than a dangling dash.
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            index = self._seed_roadmap(root)
+            self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
+            self.assertIn('| done |', index.read_text())
 
     def test_dry_run_writes_nothing_byte_for_byte(self):
         with tree(milestone_status='done', feature_status='done',
@@ -1440,7 +1471,7 @@ class Retire(unittest.TestCase):
                 row = after[len(before):]
                 self.assertRegex(row, r'^\| 0\.1 \|[^\r\n]*\r\n$')
                 self.assertIn('2026-01-02', row)
-                self.assertIn('shipped X and Y', row)
+                self.assertIn('| done — shipped X and Y |', row)
                 self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
                 self.assertTrue((root / 'pm/roadmap/0.2-later').is_dir())
             finally:

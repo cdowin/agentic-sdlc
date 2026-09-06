@@ -138,6 +138,66 @@ def test_a_cap_named_for_one_kind_does_not_uncap_the_others():
 
 
 # --- the two ways a census lies ----------------------------------------------
+def test_the_slot_names_have_one_source():
+    """0.2.0/bugs/the-slot-names-are-spelled-in-six-places. `_kind_of` reads
+    a grain's kind from `model.STORIES_DIR` / `model.BUGS_DIR`; a second
+    spelling anywhere in the pm tracker or the gates is a kind read from a
+    literal in one module and a constant in another. This walks every string
+    constant in those modules (the census `tests/test_pm_flow.py` runs for
+    state words, pointed at slot words) and names the survivor by file and
+    line. No existing case could fail for this: every one reads a tree the
+    literals and the constants still agree about."""
+    import ast
+    from agentic_sdlc.repo.pm import model
+    src = Path(grain_shape.__file__).resolve().parents[1]
+    slots = (model.STORIES_DIR, model.BUGS_DIR)
+
+    def spells_a_slot(value: str) -> bool:
+        # A path piece: the word itself, or a segment ending in `/<slot>/` or
+        # opening with `<slot>/` — the shapes `mdir / 'bugs'`,
+        # `f'{mid}/bugs/{slug}'` and `'/bugs/' in gid` take. Prose that
+        # mentions the directory in passing is not a spelling of the fact.
+        return any(value == slot or value.endswith(f'/{slot}/')
+                   or value.startswith(f'{slot}/') for slot in slots)
+
+    survivors = []
+    for family in ('pm', 'checks'):
+        for path in sorted((src / family).glob('*.py')):
+            if path.name == 'model.py':
+                continue
+            tree = ast.parse(path.read_text('utf-8'))
+            # A payload KEY (`{'stories': rows}`, `section['bugs']`) is the
+            # report's contract with its reader, not a directory name that
+            # happens to match; the census is about paths.
+            keys = {id(k) for d in ast.walk(tree) if isinstance(d, ast.Dict)
+                    for k in d.keys}
+            keys |= {id(n.slice) for n in ast.walk(tree)
+                     if isinstance(n, ast.Subscript)}
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Constant)
+                        and isinstance(node.value, str)) or id(node) in keys:
+                    continue
+                if spells_a_slot(node.value):
+                    survivors.append(f'{path.name}:{node.lineno} {node.value!r}')
+    # Docstrings and comments are prose about the tree; a docstring's first
+    # statement is a constant too, so the census names only what is not one.
+    prose = set()
+    for family in ('pm', 'checks'):
+        for path in sorted((src / family).glob('*.py')):
+            tree = ast.parse(path.read_text('utf-8'))
+            for node in ast.walk(tree):
+                body = getattr(node, 'body', None)
+                if (isinstance(body, list) and body
+                        and isinstance(body[0], ast.Expr)
+                        and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)):
+                    prose.add(f'{path.name}:{body[0].value.lineno}')
+    survivors = [s for s in survivors if s.split(' ', 1)[0] not in prose]
+    assert survivors == [], '\n'.join(survivors)
+    assert grain_shape._kind_of(Path('0.1/features/f/stories/s.md')) == grain_shape.STORY
+    assert grain_shape._kind_of(Path('0.1/bugs/topic/b.md')) == grain_shape.BUG
+
+
 def test_a_repo_with_no_pm_tree_is_a_no_op_that_says_so():
     """Feature risk 2. This gate is in the STOCK `check all` roster, so a FAIL
     here would red every consumer without a PM tree at once — and a silent PASS

@@ -254,9 +254,13 @@ LEFT, RIGHT = 'left', 'right'
 # checks anything out. It reads a milestone that is no longer in the tree,
 # which is D6's answer to where a retired milestone's rows live: history is
 # git's job.
-FEATURES_DIR = 'features'
-STORIES_DIR = 'stories'
-BUGS_DIR = 'bugs'
+# The slot names are `model`'s — one spelling
+# (0.2.0/bugs/the-slot-names-are-spelled-in-six-places): this module used to
+# carry its own three literals for the git-source walk, which was the second
+# spelling the bug counted.
+FEATURES_DIR = model.FEATURES_DIR
+STORIES_DIR = model.STORIES_DIR
+BUGS_DIR = model.BUGS_DIR
 MD_SUFFIX = '.md'
 
 GIT = 'git'

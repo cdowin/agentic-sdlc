@@ -8,11 +8,8 @@
 
 [checks]
 # The roster `check all` runs HERE. The stock default is `doc` + `shell` — the
-# two that apply to any repo — and this file adds the two the stock roster
-# leaves off for reasons that do not hold here. (`shell` was an addition in
-# THIS file until 0.2.0, made when the repo started self-hosting its own hook
-# corpus under tools/ in 0.23.0; the .tscn/.tres-reading gates that used to
-# redden this roster over a 0-file census left with the scene half.)
+# two that apply to any repo — and this file adds the ones the stock roster
+# leaves off for reasons that do not hold here.
 #
 # `pm` is stock-OFF because it would fail a consumer for having no PM tree at
 # all. This tree IS one, self-hosted, so the gate is pointed at its author.
@@ -109,7 +106,7 @@ budget = { unit = 20, integration = 130, test = 150 }
 # the point is to make GROWTH a decision somebody argues rather than one that
 # happens. Today's counts sit well under them; lowering the ceilings toward
 # today's is a decision to take on purpose, not a drift to correct in passing.
-cases = { unit = 1250, integration = 800 }
+cases = { unit = 780, integration = 430 }
 # V6 is named on purpose, and it is the one rule here that is NOT stock. This
 # tree keeps generated execution lists and is small enough for `pm sync` to be
 # cheap, so the gate holds the view to the tree. A project whose lists go stale
@@ -119,15 +116,15 @@ cases = { unit = 1250, integration = 800 }
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
 # says nothing about the length of anybody's markdown.
 
-# --- THE FLOW, and it is this project's rather than the engine's --------------
+# --- THE FLOW, and it is this project's rather than the tool's ----------------
 # Written by `agentic-sdlc pm init`, read every run, never assumed. This is the
 # section hard rule 5 splits on: a GATE ships stock defaults and a repo with no
 # devkit.toml runs every gate byte-identically to one declaring them; a
 # WORKFLOW does not, because the states are the project's and that is the
-# entire point. A default nobody can see is the engine's opinion wearing the
+# entire point. A default nobody can see is the tool's opinion wearing the
 # project's clothes.
 #
-# The engine keeps three opinions and no more: the category set is
+# The tool keeps three opinions and no more: the category set is
 # `todo`/`in_progress`/`done`, they are ordered that way, and every declared
 # state maps to exactly one. Everything below — how many states, what they are
 # called, which category each sits in, what order they appear in within it — is
@@ -343,13 +340,3 @@ run   = "make unit"
 # `prove-artifact` ships with NO default, because the proof names a git URL and
 # a URL is a project's fact, not this package's (rule 8). Ours:
 prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
-
-# More words that mean FINISHED, beyond the last state in each grain's list.
-# Empty by default and empty here — this tree abandons nothing yet — but the
-# key is declared in the shipped project-devkit.toml template so a consumer
-# meets it before it bites them.
-#
-# It is the `done` CATEGORY with its members enumerated by hand.
-# docs/design/state-categories.md is the model: three categories (todo,
-# in_progress, done), hard, with the states inside them and their mapping
-# configurable. 0.3.0 builds it and reads this key into it.

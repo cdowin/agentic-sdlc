@@ -1085,36 +1085,41 @@ def check_narrow_verified(ctx: Context) -> Answer:
     if command:
         return run_command(ctx, 'narrow-verified', command)
     ignore = _belt_written_paths(ctx)
-    base = _story_range_base(ctx)
-    empty, why = _narrow_selects_nothing(ctx, ignore, base)
+    base, head = _story_range(ctx)
+    empty, why = _narrow_selects_nothing(ctx, ignore, base, head)
     if empty:
         return Answer.unverifiable(why)
     argv = ['verify', '--story']
     if base:
         argv += ['--ref', base]
+    if head:
+        argv += ['--to', head]
     for path in ignore:
         argv += ['--ignore', path]
     return _own_verdict(ctx, *argv,
                         found='the narrow rung [verify] names')
 
 
-def _story_range_base(ctx: Context) -> str:
-    """`<earliest hash in the story's `done:` line>^`, or '' when none.
+def _story_range(ctx: Context) -> tuple[str, str]:
+    """(`<earliest hash in the story's `done:` line>^`, `<latest hash>`), each
+    '' when none.
 
-    `in-place` yields no base, correctly: uncommitted work is still in the
-    diff. A hash git cannot resolve yields no base either — `evidence-written`
-    is the check with an opinion about the line.
+    The story's OWN range: a close that runs right after the commit and one
+    that runs after a hundred other commits verify the same edits. `in-place`
+    yields no base, correctly: uncommitted work is still in the diff. A hash
+    git cannot resolve yields nothing either — `evidence-written` is the check
+    with an opinion about the line.
     """
     try:
         path = _grain_file(ctx)
     except model.AmbiguousStory:
-        return ''
+        return '', ''
     if path is None:
-        return ''
+        return '', ''
     try:
         text = _read(path)
     except (OSError, UnicodeDecodeError):
-        return ''
+        return '', ''
     hashes: list[str] = []
     for raw in text.split('\n'):
         match = EVIDENCE_LINE.match(raw)
@@ -1123,11 +1128,16 @@ def _story_range_base(ctx: Context) -> str:
         for token in EVIDENCE_LANDED.findall(match.group('body')):
             if token.lower() != IN_PLACE.lower():
                 hashes.append(token)
+    resolved = []
     for candidate in hashes:
-        code, out = _git(ctx, 'rev-parse', '--verify', f'{candidate}^')
+        code, out = _git(ctx, 'rev-parse', '--verify', f'{candidate}^{{commit}}')
         if code == 0 and out:
-            return out.split('\n')[0].strip()
-    return ''
+            resolved.append(out.split('\n')[0].strip())
+    if not resolved:
+        return '', ''
+    code, out = _git(ctx, 'rev-parse', '--verify', f'{resolved[0]}^')
+    base = out.split('\n')[0].strip() if code == 0 and out else ''
+    return base, resolved[-1]
 
 
 def _belt_written_paths(ctx: Context) -> tuple[str, ...]:
@@ -1138,7 +1148,7 @@ def _belt_written_paths(ctx: Context) -> tuple[str, ...]:
 
 
 def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
-                            base: str = '') -> tuple[bool, str]:
+                            base: str = '', head: str = '') -> tuple[bool, str]:
     """(is the narrow selection empty, the sentence saying why) — asked of
     `verify`'s own library rather than by parsing the verb's prose."""
     from agentic_sdlc.repo.verify import main as verify_main
@@ -1147,7 +1157,7 @@ def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
     try:
         ruleset = verify_rules.read(config_section('verify'))
         selection = verify_main.plan_for(ruleset, ctx.root, base or None,
-                                         ignore=list(ignore))
+                                         ignore=list(ignore), to=head or None)
     except Exception as err:  # noqa: BLE001 — an answer, not a swallow
         # It could not decide; `_own_verdict` answers with the verb's own
         # exit code instead.

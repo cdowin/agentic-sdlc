@@ -38,13 +38,12 @@ from support import REPO_ROOT  # noqa: E402,F401  (puts src/ on the path)
 from agentic_sdlc.repo import install  # noqa: E402
 from agentic_sdlc.repo.pm import verdict  # noqa: E402
 
-# Every definition that instructs the block. `code-reviewer.md` is repo-local
-# (it reviews agentic-sdlc itself and has no installable counterpart), but it
-# writes review records like the rest, so it carries the same paragraph.
-LOCAL_REVIEWER = Path(REPO_ROOT) / '.claude' / 'agents' / 'code-reviewer.md'
+# Every definition that instructs the block — all installables; the repo-local
+# `code-reviewer.md` that used to sit beside them restated `reviewer.md` and
+# left in 0.2.0.
 INSTALLED_REVIEWERS = ('reviewer.md', 'simplifier.md',
                        'milestone-reviewer.md', 'verification-reviewer.md')
-ALL_DEFINITIONS = INSTALLED_REVIEWERS + (LOCAL_REVIEWER.name,)
+ALL_DEFINITIONS = INSTALLED_REVIEWERS
 
 HEADER_ROW = '| id | severity | disposition |'
 FENCE = '```'
@@ -439,10 +438,7 @@ def test_a_properly_fenced_block_is_not_disturbed_by_an_unfenced_near_miss():
 
 # --- it is there: the shipped definitions ask for the block -------------------
 def definition(name: str) -> str:
-    """Any of the five, installable or repo-local, read the way `install.py`
-    reads it."""
-    if name == LOCAL_REVIEWER.name:
-        return LOCAL_REVIEWER.read_text(encoding='utf-8')
+    """Any of the four installables, read the way `install.py` reads it."""
     return resources.files(install.PACKAGE).joinpath(name).read_text(encoding='utf-8')
 
 
@@ -486,7 +482,7 @@ PARAGRAPH = _verdict_paragraph(definition('reviewer.md'))
 @pytest.mark.parametrize('name', ALL_DEFINITIONS)
 def test_every_definition_carries_the_same_verdict_paragraph(name):
     """Five files, one contract. Near-copies drift, and the drift lands as a
-    record the report cannot read months later — `code-reviewer.md` especially,
+    record the report cannot read months later — the reviewers especially,
     which has no installable, so nothing else in the suite would notice it."""
     assert _verdict_paragraph(definition(name)) == PARAGRAPH, (
         f'{name} has drifted from the shared paragraph')
@@ -501,7 +497,6 @@ def test_every_definition_carries_the_same_verdict_paragraph(name):
     ('milestone-reviewer.md', 'EXECUTION-READY'),
     ('milestone-reviewer.md', 'READY-WITH-FIXES'),
     ('milestone-reviewer.md', 'NOT-READY'),
-    ('code-reviewer.md', 'RELEASE-SAFE or NOT'),
 ))
 def test_the_second_verdict_vocabulary_is_gone(name, retired):
     assert retired not in definition(name), (

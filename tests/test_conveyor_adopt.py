@@ -585,3 +585,66 @@ def test_the_verb_refusal_matrix_writes_nothing():
             with contextlib.redirect_stderr(buf):
                 assert driver.main(argv) == 2, argv
         assert snapshot(root) == before
+
+
+# --- the claim cannot become a hiding place (review O1/O2/O3) ------------------
+def test_claiming_every_gradeable_file_is_refused_not_passed():
+    """Milestone risk 2, arriving exactly as the record predicted it: "a project
+    can silence the check by claiming every file."
+
+    Naming the claims is what makes the list a STATEMENT. Refusing to grade
+    nothing is what stops it being a hiding place — `ok — 0 installed file(s)
+    are current` is rule 4's zero census wearing a pass.
+    """
+    from agentic_sdlc.repo import install
+    from agentic_sdlc.repo.pm import skills
+    every = [rel for plan in install.PLANS.values() for _, rel in plan]
+    every += [rel for _, rel in skills.GUIDANCE_PLAN]
+    claims = ',\n  '.join(f'"{rel}"' for rel in every)
+    with tree(config=f'[adopt]\nours = [\n  {claims}\n]\n') as root:
+        answer = check('installables-current', root)
+        assert not answer.is_true, answer.detail
+        assert 'NOTHING was graded' in answer.detail
+        assert 'rule 4' in answer.detail
+        # ...and it still names what was claimed, which is the other half.
+        assert 'claimed by [adopt] ours' in answer.detail
+
+
+def test_the_census_covers_all_six_installers_not_the_five_in_one_module():
+    """Review O2: `pm install-skills` is the sixth installer (CLAUDE.md's
+    self-hosting list) and its two files drifted invisibly — with no `ours` key
+    in play at all, which is worse than a claim, because nothing was even
+    declared."""
+    from agentic_sdlc.repo.pm import skills
+    guidance = [rel for _, rel in skills.GUIDANCE_PLAN]
+    installed = {rel: skills.guidance_body(name)
+                 for name, rel in skills.GUIDANCE_PLAN}
+    # Both present and byte-current: they must be COUNTED, not skipped.
+    with tree(files=installed) as root:
+        answer = check('installables-current', root)
+        graded = _drift_rels(root)
+        for rel in guidance:
+            assert rel in graded, f'{rel} is outside the census\n{answer.detail}'
+    # And one of them drifting must be FOUND rather than passed over.
+    installed[guidance[0]] = 'somebody edited this\n'
+    with tree(files=installed) as root:
+        answer = check('installables-current', root)
+        assert not answer.is_true, answer.detail
+        assert guidance[0] in answer.detail
+
+
+def test_a_claim_that_names_no_file_is_exit_2_before_any_check_runs():
+    # Review O3: `relpath_tuple` guards what LEAVES the checkout; these stay
+    # inside it and still name nothing, so they would sit in the config reading
+    # like a claim while matching no installed path.
+    for bad in ('""', '"."', '"./"', '"   "'):
+        with tree(config=f'[adopt]\nours = [{bad}]\n'):
+            code, out = adopt()
+            assert code == 2, f'{bad}: {out}'
+            assert 'names no file' in out, f'{bad}: {out}'
+
+
+def _drift_rels(root) -> set[str]:
+    from agentic_sdlc.repo.conveyor import driver, steps
+    ctx = driver.Context(root=root, operation='adopt', version=VERSION)
+    return {rel for _verb, rel, _v in steps._installable_drift(ctx)}

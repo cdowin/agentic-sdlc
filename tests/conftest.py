@@ -273,11 +273,16 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        for mid, _branch, mfile in model.in_progress_milestones(cfg):
+        # The SAME resolution the gate recorder and `check budget` use (review
+        # C2). Filing these against "the one milestone in progress" while the
+        # gate rows went to the current release split one ledger in two: the
+        # slowest-tier lines and the gate rows they sit beside described
+        # different runs, hours apart, in different files.
+        mdir, _why = model.release_ledger_dir(cfg)
+        if mdir is not None:
             for rank, report in enumerate(slowest, start=1):
-                ledger.append_row(mfile.parent, ledger.test_row(
+                ledger.append_row(mdir, ledger.test_row(
                     tier, report.nodeid, int(report.duration * 1000), rank))
-            break
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could
         # not write its own cost row would be telemetry outranking the thing it

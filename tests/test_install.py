@@ -1316,3 +1316,75 @@ class TestTheNameBothCommandsBlockIsOneWording:
         for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
                      'pm-operator.md'):
             assert self.OPEN not in install.body_of(name), name
+
+
+# --- the report is complete on the FAILING run too (review I1/I4/I5) ----------
+def _heads(out: str) -> list[str]:
+    return [ln for ln in out.split('\n') if ln.startswith('[install]')]
+
+
+def test_a_defect_still_heads_every_file_the_verb_owns():
+    """Review I1. `grep -c '^[install]'` answered 0 for a verb that owns two
+    files, on the path where a human most needs the list. The criterion is
+    "whatever its disposition", and a refusal is a disposition."""
+    with repo() as root:
+        (root / 'Makefile.devkit').mkdir()          # a DIRECTORY where a file goes
+        code, out = run('install-gates')
+        assert code == 1, out
+        heads = _heads(out)
+        assert len(heads) == 2, out
+        assert any('Makefile.devkit CANNOT be written' in h for h in heads), out
+        assert any('gdk_gate.sh was reachable' in h for h in heads), out
+
+
+def test_diff_refuses_a_directory_rather_than_calling_it_an_addition():
+    """Review I4: `--diff` said "does not exist — the whole file is an addition"
+    at exit 0 while a real run refused at exit 1. `--diff` is what a consumer
+    reads BEFORE the run, so the disagreement costs the most there."""
+    with repo() as root:
+        (root / 'Makefile.devkit').mkdir()
+        code, out = run('install-gates', '--diff')
+        assert code == 0, out
+        assert 'is a directory' in out, out
+        assert 'a real run REFUSES this' in out, out
+        assert 'the whole file is an addition' not in out.split('gdk_gate')[0], out
+
+
+def test_an_undecodable_destination_says_so_rather_than_differs():
+    # Review I5: the decode branch handed back an EMPTY defect string, so
+    # `if unreadable:` was dead for it and the file was reported as one that
+    # "differs" — which it does not, because it cannot be compared at all.
+    with repo() as root:
+        (root / 'Makefile.devkit').write_bytes(b'\x00\xff\xfe')
+        # A COLLISION, not a defect: `--force` can still replace it, which is
+        # useful. What changed is that the refusal says which of the two it is.
+        text, defect = install.read_destination(root / 'Makefile.devkit')
+        assert text is None and defect == ''
+        code, out = refuse('install-gates')
+        assert code == 1, out
+        assert install.UNDECODABLE_NOTE in out, out
+        # ...and specifically NOT the word the old path used for it.
+        assert 'Makefile.devkit exists and differs' not in out, out
+
+
+def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
+    """Review I2: `pm install-skills` is the sixth installer in CLAUDE.md's
+    self-hosting list, and it prefixed `[pm]`, so the documented
+    `grep '^[install]'` summary returned 0 for both of its files."""
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    with repo() as root:
+        (root / 'devkit.toml').write_text(_flow(), encoding='utf-8')
+        load_config.cache_clear()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            pm_cli.main(['install-skills'])
+        heads = _heads(buf.getvalue())
+        assert len(heads) == 2, buf.getvalue()
+        for rel in ('.claude/rules/pm-execution.md',
+                    '.claude/skills/pm-operations/SKILL.md'):
+            assert any(rel in h for h in heads), buf.getvalue()
+
+
+def _flow() -> str:
+    from support.pm import with_flow
+    return with_flow('')

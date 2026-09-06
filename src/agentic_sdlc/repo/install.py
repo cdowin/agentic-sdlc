@@ -268,6 +268,7 @@ HEADER_ONLY_NOTE = '   (project-config header only)'
 def collision_refusal(collisions: list[str],
                       wrote: list[str] | None = None,
                       header_only: tuple[str, ...] | list[str] = (),
+                      undecodable: tuple[str, ...] | list[str] = (),
                       ) -> tuple[str, str]:
     """(what collided, what that means), plural-correct; shared with `pm install-skills`.
 
@@ -275,8 +276,18 @@ def collision_refusal(collisions: list[str],
     confined to the editable block, whose repair is to do nothing.
     """
     flagged = set(header_only)
+    # Review I5: a file that cannot be decoded did not "differ" — it could not
+    # be compared. `--force` still replaces it, which is why it is a collision
+    # and not a defect, but the reader is told which of the two this is.
+    note = ('' if not undecodable else
+            '\n    ' + ', '.join(sorted(undecodable))
+            + f' {UNDECODABLE_NOTE}')
     if len(collisions) == 1:
         rel = collisions[0]
+        if rel in set(undecodable):
+            return (f'{rel} {UNDECODABLE_NOTE}',
+                    'Nothing was written. `--force` replaces it whole; there '
+                    'is no diff to read first.')
         if rel in flagged:
             head = (f'{rel} exists and differs ONLY inside its project-config '
                     f'header — the rest of the file is byte-current, so there '
@@ -334,8 +345,17 @@ def destination_defect(target: Path) -> str:
     return f'cannot be created: {first.path} {_PARENT_TEXT[first.reason]}'
 
 
+UNDECODABLE_NOTE = 'is not UTF-8 text, so it cannot be compared'
+
+
 def read_destination(target: Path) -> tuple[str | None, str]:
-    """(the file's text, or None when it cannot be decoded and so is a collision; a read defect)."""
+    """(the file's text, or None when it cannot be decoded; a read DEFECT, or '').
+
+    An undecodable file comes back as `(None, '')` on purpose: it is a
+    COLLISION, not a defect — `--force` can replace it and that is useful — and
+    the caller tells the two apart by `text is None` with no defect. What it is
+    NOT is a file that "differs", and the refusal now says which (review I5).
+    """
     try:
         return target.read_text(encoding='utf-8'), ''
     except UnicodeDecodeError:
@@ -430,6 +450,15 @@ def print_diff(rel: str, target: Path, body: str) -> None:
     Every disposition gets a header, the modified file included; writes nothing.
     """
     if not target.is_file():
+        # `is_file()` is false for a DIRECTORY and for an unwritable parent
+        # too, and calling either "an addition" at exit 0 disagrees with the
+        # real run, which refuses at exit 1 (review I4). `--diff` is what a
+        # consumer reads BEFORE the run, so it is the surface where the
+        # disagreement costs the most.
+        defect = destination_defect(target)
+        if defect:
+            _say(f'{rel} {defect} — a real run REFUSES this; no diff')
+            return
         _say(WOULD_ADD.format(rel=rel))
         existing = ''
     else:
@@ -639,6 +668,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     plan: list[tuple[str, Path, str, str]] = []   # (kind, target, rel, body)
     collisions: list[str] = []
     header_only: list[str] = []
+    undecodable: list[str] = []
     defects: list[str] = []
     for target, rel, body in entries:
         kind = 'write'
@@ -659,8 +689,11 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                 pass
             elif not force:
                 collisions.append(rel)
-                if existing is not None and header_only_difference(existing,
-                                                                   body):
+                if existing is None:
+                    # Review I5: not a file that "differs" — one that cannot be
+                    # compared at all, which is a different thing to be told.
+                    undecodable.append(rel)
+                elif header_only_difference(existing, body):
                     header_only.append(rel)
                 plan.append(('withheld', target, rel, body))
                 continue
@@ -668,9 +701,25 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
 
     # A defect refuses the whole command: it is not a decision the operator made.
     if defects:
+        # ...but it still HEADS every file this verb owns, because the report's
+        # completeness is the criterion (review I1). Refusing with zero
+        # `[install]` lines makes `grep -c '^\[install\]'` answer 0 for a verb
+        # that owns six files, which is the exact silence this feature exists to
+        # end — and it is worst on the path where a human most needs the list.
+        blocked = {d.split(' ', 1)[0] for d in defects}
+        for target, rel, body in entries:
+            if rel in blocked:
+                _say(f'{rel} CANNOT be written — the refusal on stderr says why')
+            elif rel in collisions:
+                _say(f'{rel} exists and differs; nothing was written because '
+                     f'another destination is unusable')
+            else:
+                _say(f'{rel} was reachable; nothing was written because '
+                     f'another destination is unusable')
         if collisions:
             head, tail = collision_refusal(collisions,
-                                           header_only=header_only)
+                                           header_only=header_only,
+                                           undecodable=undecodable)
             print(f'agentic-sdlc {command}: {head}\n'
                   f'agentic-sdlc {command}: {tail}', file=sys.stderr)
         print(_defect_refusal(command, defects, []), file=sys.stderr)
@@ -708,7 +757,8 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # Before the next-step paragraph, so the pasteable settings block stays last on stdout.
     if collisions:
         head, tail = collision_refusal(collisions, wrote=written,
-                                       header_only=header_only)
+                                       header_only=header_only,
+                                       undecodable=undecodable)
         print(f'agentic-sdlc {command}: {head}\n'
               f'agentic-sdlc {command}: {tail}', file=sys.stderr)
     if next_step:

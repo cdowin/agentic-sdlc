@@ -418,13 +418,13 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
              f'no `order` — nothing to grade {cfg.version_file} against; '
              f'`agentic-sdlc pm order --append <version>` writes the plan')
         return
-    current = model.current_release(cfg)
+    current, why = model.graded_release(cfg)
     if current is None:
-        at = cfg.version_at
-        why = ('every entry in `order` has shipped'
-               if at == model.VERSION_AT_START else 'no entry in `order` has shipped yet')
-        warn(f'R5 has no current release: {why} under [pm] version_at = '
-             f'{at!r} — nothing to grade {cfg.version_file} against')
+        # The reason is READ, never invented: saying "every entry has shipped"
+        # over a tree where none had was a confident wrong answer at exit 0
+        # (review B3).
+        warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
+             f'(under [pm] version_at = {cfg.version_at!r})')
         return
     version = model.shipped_version(cfg)
     if version is None:

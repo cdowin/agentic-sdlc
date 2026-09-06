@@ -159,6 +159,10 @@ KNOWN_CHECKS = tuple(dict.fromkeys(
 # "unknown": a consumer whose config still lists it is told where the rule
 # went, rather than being silently ungated by a typo-shaped message.
 RETIRED_CHECKS = {
+    'D7': 'was retired before 0.3.0 and did not come back. U1 is the '
+          'declared-but-unused state rule and it took a NEW letter precisely '
+          'so that a config still naming D7 is told it is gone rather than '
+          'silently given a different rule',
     'D8': 'became R5 — the version file is graded against the CURRENT entry in '
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
@@ -1359,32 +1363,64 @@ def last_shipped_index(cfg: PmConfig) -> int:
 
 
 def current_release(cfg: PmConfig) -> str | None:
-    """The version this tree is at, by POSITION in `order` — the first entry
-    not yet shipped under `version_at = "start"`, the last that has under
-    `"ship"`. None when the tree declares no order, or when the position it
-    names does not exist (everything shipped / nothing has).
+    """The release being WORKED ON: the first entry in `order` not yet shipped.
 
-    Unlike "the one milestone in progress" this cannot be SEVERAL — a position
-    in a list is one place. It can be None, and it does read `status`, one call
-    away in `release_is_shipped`; what it never does is read a version string
-    as a structure.
+    **This does not read `[pm] version_at`, and that separation is the point.**
+    `version_at` answers a DIFFERENT question — *which entry should the version
+    FILE equal* — and a project that bumps at CLOSE answers it with the last
+    SHIPPED release while working on the next one. Feeding that answer to "which
+    release am I working on" made `release` re-release a finished milestone and
+    filed gate cost rows into its closed ledger (review A1, B2, C1). One key,
+    one question; `graded_release` below is the other one.
+
+    An entry whose state cannot be established — no milestone claims it, or
+    several do — STOPS the walk rather than being stepped over. Skipping it
+    would answer with a release further down the plan than the tree can
+    support: a confident wrong answer where "I cannot tell" is the true one
+    (review B1).
+    """
+    for version in declared_order(cfg):
+        if release_is_shipped(cfg, version):
+            continue
+        if release_is_unverifiable(cfg, version):
+            # SKIPPED, and reported: `pm retire` deletes a finished milestone's
+            # record while its row survives in the plan on purpose, so after a
+            # retirement an entry that shipped is indistinguishable from one
+            # never written. Blocking on it would make `retire` break the
+            # ledger and the belt for every tree that prunes.
+            #
+            # The ambiguity is not resolved here because it CANNOT be — it is
+            # REPORTED, by R1, as UNVERIFIABLE, on every run. Two reviews of
+            # this milestone pulled opposite ways on it; decision D2 on
+            # `the-plan-and-the-tree-agree` records why the gate carries it
+            # rather than the resolver guessing.
+            continue
+        return version
+    return None
+
+
+def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
+    """(the entry `[pm] version_file` must equal, or None; why not).
+
+    R5's question, and R5's only. `start` is bump-at-START — the release being
+    worked on, so the file carries it while the work happens. `ship` is
+    bump-at-CLOSE — the last release that shipped, so the file still carries the
+    previous number until the release commit moves it.
     """
     order = declared_order(cfg)
     if not order:
-        return None
+        return None, 'the plan declares no `order`'
     if cfg.version_at == VERSION_AT_START:
-        for version in order:
-            if release_is_shipped(cfg, version):
-                continue
-            if release_is_unverifiable(cfg, version):
-                # Cannot be established, so it is not answered: a retired
-                # milestone's entry is history, and guessing it is the future
-                # grades the tree against a version regression.
-                continue
-            return version
-        return None
+        version = current_release(cfg)
+        if version is None:
+            return None, ('every entry in `order` has shipped, or the next one '
+                          'is claimed by no single milestone')
+        return version, ''
     shipped = [v for v in order if release_is_shipped(cfg, v)]
-    return shipped[-1] if shipped else None
+    if not shipped:
+        return None, ('no entry in `order` has shipped yet, so there is no '
+                      'previous release for the version file to carry')
+    return shipped[-1], ''
 
 
 def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
@@ -1423,9 +1459,21 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
                       f'there is no current release to file against — '
                       f'`agentic-sdlc pm order --append <version>` writes the '
                       f'plan')
-    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped '
-                  f'(or none has, under [pm] version_at = {cfg.version_at!r}), '
-                  f'so there is no current release to file against')
+    # The reason is read off the plan rather than asserted (review C4): an
+    # entry nothing claims stops the walk, and saying "everything shipped"
+    # about it would be false.
+    order = declared_order(cfg)
+    unverifiable = [v for v in order
+                    if not release_is_shipped(cfg, v)
+                    and release_is_unverifiable(cfg, v)]
+    if unverifiable:
+        return None, (f'{unverifiable[0]} is the next unshipped entry in '
+                      f'{cfg.rel(releases_file(cfg))} and no single milestone '
+                      f'claims it, so there is no ledger to file against — '
+                      f'`agentic-sdlc pm roadmap` shows the plan against the '
+                      f'tree')
+    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped, '
+                  f'so there is no release in progress to file against')
 
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:

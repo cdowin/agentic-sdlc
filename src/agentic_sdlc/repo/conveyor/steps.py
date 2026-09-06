@@ -439,7 +439,19 @@ def _ours_of(operation: str) -> tuple[str, ...]:
     claimed file MEANS is one thing only: `installables-current` does not
     grade it, and names it on every run.
     """
-    return relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
+    claims = relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
+    # `relpath_tuple` guards what LEAVES the checkout; these two stay inside it
+    # and still name no file (review O3). An empty string claims nothing and a
+    # `.` claims the repo root, and both would sit in the config reading like a
+    # claim while matching no installed path — a claim nobody can act on.
+    for claim in claims:
+        if not claim.strip() or claim.strip() in ('.', './'):
+            raise ConfigError(
+                f'[{operation}] ours contains {claim!r}, which names no file — '
+                f'a claim is one installed path this project has taken over, '
+                f'e.g. ".github/workflows/verify.yml". Remove the entry, or '
+                f'remove the key to claim nothing')
+    return claims
 
 
 def _runner_targets_of(operation: str) -> tuple[str, ...]:
@@ -717,9 +729,16 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
     claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
     from agentic_sdlc.repo import install
 
+    from agentic_sdlc.repo.pm import skills
+
     claimed = frozenset(_ours_of(ctx.operation))
     out: list[tuple[str, str, str]] = []
-    for verb, plan in install.PLANS.items():
+    # All SIX installers (CLAUDE.md's self-hosting list), not the five that
+    # happen to share a module: the two guidance files drifted invisibly here,
+    # with no `ours` key in play at all (review O2).
+    everything = list(install.PLANS.items()) + [
+        (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
+    for verb, plan in everything:
         for name, rel in plan:
             if rel in claimed:
                 # The project declared this file its own. Grading it would be
@@ -733,7 +752,9 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
                 continue
             text, _defect = install.read_destination(target)
             try:
-                body = install.resolve_body(name, rel)
+                body = (skills.guidance_body(name)
+                        if verb == skills.GUIDANCE_VERB
+                        else install.resolve_body(name, rel))
             except (OSError, UnicodeDecodeError, ConfigError) as err:
                 out.append((verb, rel, f'unrenderable({_clip(str(err), 60)})'))
                 continue
@@ -795,6 +816,18 @@ def check_installables_current(ctx: Context) -> Answer:
             + _clip(', '.join(f'{rel} ({verdict}; `agentic-sdlc {verb} '
                               f'--diff`)' for verb, rel, verdict in stale))
             + claims)
+    if not counted:
+        # Review O1, and milestone risk 2 arriving exactly as written: "a
+        # project can silence the check by claiming every file." Claiming all of
+        # them leaves NOTHING graded, and answering `ok — 0 installed file(s)
+        # are current` is rule 4's zero census wearing a pass. Naming the
+        # claims is what makes the list a statement; refusing to grade nothing
+        # is what stops it being a hiding place.
+        return Answer.no(
+            f'every installed file this belt would grade is claimed in '
+            f'[{ctx.operation}] ours, so NOTHING was graded — a verdict over an '
+            f'empty census is not a pass (CLAUDE.md rule 4). Un-claim the files '
+            f'this project has not actually taken over' + claims)
     return Answer.yes(f'{counted} installed file(s) are current with '
                       f'{__version__}' + claims)
 

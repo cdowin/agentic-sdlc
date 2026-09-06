@@ -1585,17 +1585,67 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self.assertEqual(model.declared_order(cfg), [])
             self.assertIsNone(model.current_release(cfg))
 
-    def test_current_is_the_first_unshipped_at_start_and_the_last_shipped_at_ship(self):
+    def test_the_release_worked_on_and_the_release_graded_are_two_questions(self):
+        """Review A1/B2/C1. `version_at` answers "what should the version FILE
+        say"; it was reused for "which release am I working on", and under
+        bump-at-close that made `release` re-release a shipped milestone and
+        filed gate cost rows into its closed ledger.
+        """
         with tree() as root:
             self._plan(root, '0.1.0', '0.2.0', '0.3.0')
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.2.0', 'done')
             self._milestone(root, 'c', '0.3.0', 'building')
+
+            # Worked on: the same answer under BOTH flows, because it is not
+            # version_at's question.
             self.assertEqual(loaded(root).version_at, model.VERSION_AT_START)
             self.assertEqual(model.current_release(loaded(root)), '0.3.0')
+            self.assertEqual(model.graded_release(loaded(root))[0], '0.3.0')
 
             write_config(root, '[pm]\nversion_at = "ship"\n')
-            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            self.assertEqual(model.current_release(loaded(root)), '0.3.0')
+            self.assertEqual(model.graded_release(loaded(root))[0], '0.2.0')
+
+    def test_graded_release_says_why_when_there_is_nothing_to_grade(self):
+        # Review B3: "every entry in `order` has shipped" was reported at exit 0
+        # over a tree where NONE had.
+        with tree() as root:
+            self._plan(root, '0.1.0')
+            self._milestone(root, 'a', '0.1.0', 'building')
+            write_config(root, '[pm]\nversion_at = "ship"\n')
+            version, why = model.graded_release(loaded(root))
+            self.assertIsNone(version)
+            self.assertIn('no entry in `order` has shipped yet', why)
+
+    def test_an_unverifiable_entry_is_skipped_and_reported_never_guessed_at(self):
+        """The ambiguity the tree cannot resolve, carried by the GATE.
+
+        `pm retire` deletes a finished milestone's record while its row survives
+        in the plan on purpose, so after a retirement an entry that shipped is
+        indistinguishable from one never written. Blocking on it breaks the
+        ledger and the belt for every tree that prunes; guessing it is history
+        answers with a release the tree cannot support. So the resolver walks
+        past it and R1 REPORTS it, every run. Decision D2 records why.
+        """
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            self._milestone(root, 'a', '0.1.0', 'done')
+            # 0.2.0 claimed by nobody; 0.3.0 claimed and building.
+            self._milestone(root, 'c', '0.3.0', 'building')
+            cfg = loaded(root)
+            self.assertTrue(model.release_is_unverifiable(cfg_for(root), '0.2.0'))
+            self.assertEqual(model.current_release(cfg), '0.3.0')
+            # ...and R1 names it on the same tree, so the skip is never
+            # silent. A WARN, not a finding: a dangling entry and a retired
+            # milestone's surviving row are indistinguishable, and reddening on
+            # a planned-but-unwritten release is what R1's own criterion 1
+            # refuses to do.
+            write_config(root, '[pm]\nchecks = ["R1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('UNBOUND', out)
+            self.assertIn('0.2.0', out)
 
     def test_an_entry_no_milestone_claims_is_unverifiable_not_unshipped(self):
         """Review F1: a RETIRED milestone and an unwritten one look identical

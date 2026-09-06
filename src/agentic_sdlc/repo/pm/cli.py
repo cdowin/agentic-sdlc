@@ -1999,19 +1999,25 @@ def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
         print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
               f'`agentic-sdlc pm order --append <version>` starts the plan')
         return 0
-    for version in entries:
-        if model.release_is_shipped(cfg, version):
-            continue
-        mid = model.milestone_of_version(cfg, version)
-        if mid is None:
-            print(f'{version}\t(unclaimed)\t'
-                  f'no milestone declares version: {version}')
-            return 0
-        mfile = model.milestone_file(cfg, mid)
-        status = model.field_of(mfile, 'status') if mfile else ''
-        print(f'{version}\t{mid}\t{status}')
+    # ONE resolver. `pm next` answering differently from what `release` and the
+    # ledger resolve, over the same tree, is two scoreboards (review B1).
+    version = model.current_release(cfg)
+    if version is None:
+        unverifiable = [v for v in entries
+                        if not model.release_is_shipped(cfg, v)
+                        and model.release_is_unverifiable(cfg, v)]
+        if unverifiable:
+            print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has '
+                  f'shipped; {len(unverifiable)} entry/ies are UNVERIFIABLE '
+                  f'(no single milestone claims them): '
+                  f'{", ".join(unverifiable)}')
+        else:
+            print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
         return 0
-    print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
+    mid = model.milestone_of_version(cfg, version)
+    mfile = model.milestone_file(cfg, mid) if mid else None
+    status = model.field_of(mfile, 'status') if mfile else ''
+    print(f'{version}\t{mid or "(unclaimed)"}\t{status}')
     return 0
 
 

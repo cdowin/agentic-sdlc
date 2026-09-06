@@ -36,3 +36,5 @@ The conveyor shrank from 4,318 to 2,347 source lines and its tests from 3,739 to
 ## Out of scope
 
 Any automatic step. Any belt writing a file it was not asked about.
+
+done: 549475f — every belt is its checks then one write; `state.py` and every `do()` deleted; the protocol renders from the four lists and the after-lists.

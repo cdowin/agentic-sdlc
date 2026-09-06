@@ -36,7 +36,18 @@ every run; a state the project never declared is refused by name.
                                           (a state in the `done` category
                                            closes: stamps `reviewed:` from the
                                            flag. No story file is touched —
-                                           the story belt closes each by name)
+                                           the story belt closes each by name.
+                                           This is the BARE WRITE and it
+                                           BYPASSES the belt: `agentic-sdlc
+                                           close feature <id>` is the same
+                                           close with its checks run first —
+                                           stories-done, findings-landed — and
+                                           it writes nothing when one of them
+                                           is false. Reach for this only when
+                                           the belt has already answered, or
+                                           say `close feature --force`, which
+                                           writes anyway and records the
+                                           deviation on the ledger)
   milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes the milestone directory and
@@ -1647,6 +1658,20 @@ def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
     # Absent, never 0: a `0` census is the zero-file scan rule 4 names.
     census = (_count_flag('--census', flags['--census'])
               if '--census' in flags else None)
+    # A tree with nowhere to file a gate row is a TRUE and unremarkable
+    # fact, and reporting it as a REFUSAL made every gate of every run
+    # print `the recorder exited 1`, which reads as a broken install
+    # (0.3.0 review X1). Information, not a failure: one line on stderr,
+    # exit 0, no row.
+    #
+    # 0.4.0/D3 narrows WHEN that happens to one case. A gate row names no
+    # grain, so it lands in the tree's own ledger — there is no plan to
+    # consult and no milestone to pick, and the only way to have nowhere
+    # to file is to have no PM tree at all.
+    if not cfg.roadmap.is_dir():
+        print(f'[pm] no gate row filed — there is no PM tree at '
+              f'{cfg.rel(cfg.roadmap)}', file=sys.stderr)
+        return 0
     mdir = _row_ledger_dir(cfg, None)
     try:
         ledger.append_row(mdir, ledger.gate_row(gate, verdict, duration,
@@ -2240,19 +2265,25 @@ def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
         print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
               f'`agentic-sdlc pm order --append <version>` starts the plan')
         return 0
-    for version in entries:
-        if model.release_is_shipped(cfg, version):
-            continue
-        mid = model.milestone_of_version(cfg, version)
-        if mid is None:
-            print(f'{version}\t(unclaimed)\t'
-                  f'no milestone declares version: {version}')
-            return 0
-        mfile = model.milestone_file(cfg, mid)
-        status = model.field_of(mfile, 'status') if mfile else ''
-        print(f'{version}\t{mid}\t{status}')
+    # ONE resolver. `pm next` answering differently from what `release` and the
+    # ledger resolve, over the same tree, is two scoreboards (review B1).
+    version = model.current_release(cfg)
+    if version is None:
+        unverifiable = [v for v in entries
+                        if not model.release_is_shipped(cfg, v)
+                        and model.release_is_unverifiable(cfg, v)]
+        if unverifiable:
+            print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has '
+                  f'shipped; {len(unverifiable)} entry/ies are UNVERIFIABLE '
+                  f'(no single milestone claims them): '
+                  f'{", ".join(unverifiable)}')
+        else:
+            print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
         return 0
-    print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
+    mid = model.milestone_of_version(cfg, version)
+    mfile = model.milestone_file(cfg, mid) if mid else None
+    status = model.field_of(mfile, 'status') if mfile else ''
+    print(f'{version}\t{mid or "(unclaimed)"}\t{status}')
     return 0
 
 
@@ -2263,7 +2294,16 @@ def main(argv: list[str]) -> int:
     try:
         cfg = model.load()
     except model.ConfigError as err:
-        print(f'[pm] ERROR — {err}', file=sys.stderr)
+        # EVERY defect, flow first — one line each, exit 2 once. `load()` stops
+        # at the first, and the first is rarely the one that matters: the tree
+        # that motivated this was told about a retired key while its PM CLI was
+        # refusing every work-moving verb for want of a flow (review D1).
+        try:
+            defects = model.all_config_defects()
+        except Exception:  # noqa: BLE001 - the collector never masks the error
+            defects = []
+        for msg in defects or [str(err)]:
+            print(f'[pm] ERROR — {msg}', file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
     # Deferred: `ready_for` and `skills` import this module's shared

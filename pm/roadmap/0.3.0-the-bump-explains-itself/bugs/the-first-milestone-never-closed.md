@@ -2,7 +2,7 @@
 id: 0.3.0/bugs/the-first-milestone-never-closed
 milestone: "0.3.0"
 name: 0.1.0 is still planning, and nothing in the package can tell
-status: open
+status: closed
 severity: medium
 caught_in: "0.3.0"
 ---
@@ -58,3 +58,28 @@ Two parts, and the second is the real one.
 `pm list --kind milestone` shows 0.1.0 `done`; the release record names which version carried it;
 and a rule reports the inverse case (a milestone that shipped with no release row) so this class
 cannot recur silently.
+
+
+## Fixed 2026-09-06
+
+Both parts, in the order the record asked for.
+
+**Immediately:** 0.1.0 is `done`. Its record now names `7ae552e` and `cb37e51` and says the work
+went out inside `v0.2.0` with no `v0.1.0` tag of its own. It is `done` rather than `obe` because
+the work happened and was delivered — just under someone else's version.
+
+**Structurally, and this was the real one:** R4 and R6 both fired on this tree on their FIRST run,
+before the record was touched —
+
+```
+DRIFT  history is not a prefix: 0.2.0 has shipped and sits AFTER 0.1.0, which has not (R4)
+DRIFT  0.1.0 sits at position 1, behind the last shipped release, and its milestone 0.1.0 is
+       'planning' — its work went out under someone else's version and the record never
+       moved (R6)
+```
+
+which is the `## Verified when` clause exactly: the inverse case is reported, so this class cannot
+recur silently. `pm list --kind milestone` now shows 0.1.0 `done`, and `pm roadmap` shows the
+version that carried it.
+
+done: fd1ea13 — closed by the rule that found it.

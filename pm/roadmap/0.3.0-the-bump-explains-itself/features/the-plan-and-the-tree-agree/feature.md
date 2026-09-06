@@ -2,8 +2,8 @@
 id: 0.3.0/the-plan-and-the-tree-agree
 milestone: "0.3.0"
 name: The plan and the tree are cross-checked, and ROADMAP.md retires
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-the-plan-and-the-tree-agree.md
 phase:
 depends_on: ["0.3.0/a-milestone-declares-its-version", "0.3.0/the-order-is-declared-and-appended"]
 consumed_by: []

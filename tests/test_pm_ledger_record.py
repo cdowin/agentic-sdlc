@@ -479,12 +479,18 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 # `append_row` creates the FILE but never the directory. Every other row this
 # roster used to carry ("no milestone is in progress", "several are", "the plan
 # declares no `order`") is a write now, each proven above.
+# 0.4.0/D3 + 0.3.0 review X1, merged. A gate row names no grain, so it lands in
+# the tree's own ledger: there is no plan to consult and no milestone to pick,
+# and the ONLY way to have nowhere to file it is to have no PM tree at all.
+# That case is INFORMATION, not a refusal — reporting it as one made every gate
+# of every run print `the recorder exited 1`, which reads as a broken install.
+# One line, exit 0, and still no row, which is the half that must not change.
 @pytest.mark.parametrize('kwargs,second_milestone', [
     (dict(), False),
     (dict(milestone_status='planning'), False),
     (dict(), True),
 ])
-def test_a_tree_with_no_roadmap_is_the_one_refusal_left(
+def test_a_tree_with_no_roadmap_is_information_not_a_refusal(
         kwargs, second_milestone):
     with tree(**kwargs) as root:
         if second_milestone:
@@ -492,7 +498,7 @@ def test_a_tree_with_no_roadmap_is_the_one_refusal_left(
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         shutil.rmtree(root / 'pm')
         got, out = record(root, *GATE)
-        assert (got, 'no PM tree' in out) == (1, True), out
+        assert (got, 'no PM tree' in out) == (0, True), out
         assert list(root.rglob('ledger.jsonl')) == []
 
 

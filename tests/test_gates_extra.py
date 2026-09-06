@@ -62,14 +62,20 @@ def run(*argv: str) -> tuple[int, str, str]:
 # --- the intended path --------------------------------------------------------
 def test_the_targets_are_printed_one_per_line_in_declaration_order():
     """`budget-check` rides along because it CONTAINS a gate name without being
-    one: the namespace refusal below is exact-match, never a substring. A
-    project target that wraps a devkit gate is an ordinary thing to own, and
-    refusing it would be this key's own version of the cardinal sin."""
+    one, and `Budget` because make targets are CASE-SENSITIVE so it genuinely
+    is not the `budget` gate: the namespace refusal below is exact-match, never
+    a substring and never case-folded. A project target that wraps or
+    capitalises a devkit gate is an ordinary thing to own, and refusing it
+    would be this key's own version of the cardinal sin.
+
+    Both halves have a case because the docstring's claim is an ABSOLUTE, and
+    SDLC §5 asks for hostile input against every "never" (review C3): a future
+    normalisation would otherwise start refusing a legal target in silence."""
     with repo_with('[gates]\nextra = '
-                   '["codex-check", "budget-check", "behaviors-check"]\n'):
+                   '["codex-check", "budget-check", "Budget", "behaviors-check"]\n'):
         code, out, _ = run()
     assert code == 0
-    assert out.splitlines() == ['codex-check', 'budget-check', 'behaviors-check']
+    assert out.splitlines() == ['codex-check', 'budget-check', 'Budget', 'behaviors-check']
 
 
 def test_a_repo_that_declares_nothing_prints_nothing_and_passes():

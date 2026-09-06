@@ -57,11 +57,18 @@ scope = [
 # off because a consumer's legacy tree would go red on upgrade day — this tree
 # has no legacy, so it takes all of them and stays inside them from entry one.
 #
-# D8 (project version == the building milestone's id) is the one rule that does
-# not apply, and it says so itself: it encodes bump-at-START, and this package
-# bumps at CLOSE, in the release commit, per the release skill. Enabling it here
-# would mean publishing 0.14.0 in pyproject.toml before 0.14.0 exists. A rule
-# that fits a different valid flow is not a rule to switch on and pad around.
+# D8 was the one rule that did not apply here: it welded the project version to
+# the id of whichever milestone was in progress, which encodes bump-at-START,
+# and this package bumps at CLOSE. R5 replaced it in 0.3.0 and the rule now
+# fits, because `version_at` says WHICH entry in the plan the version file is
+# graded against — `ship`, the last one that has shipped, is bump-at-close. So
+# the rule this repo could not run on itself is on, which is the point of
+# self-hosting: a gate nobody points at its author is a gate nobody has tested.
+#
+# R1-R4 and R6 are the release family, and R6 caught this tree's own 0.1.0 on
+# its first run: shipped inside v0.2.0, record saying `planning` ever since.
+# U1 reports a declared state no grain has ever held, and it is telling the
+# truth about its author — this package holds 3 of its 8 milestone states.
 #
 # D9 and D10 DO apply: work happens on `milestone/<id>` (SDLC.md §1), main is
 # merge-commit-only at close, and D3 (0.16.0) is the decision that caught this
@@ -73,11 +80,21 @@ scope = [
 # self-testing and firing. A courier fails open by design, so the only thing
 # that can say so is a gate somebody reads.
 checks = [
-    "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-    "D9", "D10", "D11",
-    "R1", "R2", "R3", "R4", "R6",
+    "D1", "D2", "D3", "D4", "D5", "D6",
+    "D9", "D10",
+    "U1", "U2",
+    "R1", "R2", "R3", "R4", "R5", "R6",
+    "V1", "V2", "V3", "V4", "V5", "V6",
     "V1", "V2", "V3", "V4", "V5", "V6",
 ]
+
+# R5 grades pyproject.toml against a POSITION in pm/roadmap/releases.md `order`,
+# and this is the key that says which position. `ship` is bump-at-CLOSE — the
+# LAST entry that has shipped — which is this repo's flow: the version moves in
+# the release commit, so while 0.3.0 is building the file correctly still reads
+# 0.2.0. `start` (the default, and what `pm init` seeds) is bump-at-START, which
+# is what most consumers do and what D8 used to assume for everyone.
+version_at = "ship"
 
 [tests]
 # THE CEILINGS, and they are ours rather than the package's. `check budget`

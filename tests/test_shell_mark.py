@@ -124,11 +124,6 @@ UNREAD_SPAWN_CALLS = frozenset({
     'check_output', 'check_call', 'getoutput', 'getstatusoutput',
 })
 
-# The single class the scan above steps over, and the reason is in
-# `_without_the_declared_evasion`. Spelled as a name so the exemption dies with
-# a rename rather than outliving what it was granted for.
-EVASION_IS_THE_POINT = 'TheUnitTierCannotSpawn'
-
 # A scratch suite covering the derivation's four answers, built under a copy of
 # the real conftest. `quiet` is the sharp one: it comes out of a module that
 # imports `subprocess`, and importing it is not a spawn.
@@ -160,25 +155,6 @@ SCRATCH_INI = '[pytest]\nmarkers =\n    shell: derived by conftest.py\n'
 
 def _modules() -> list[Path]:
     return sorted(TESTS.glob('test_*.py'))
-
-
-def _without_the_declared_evasion(tree: ast.Module) -> ast.Module:
-    """The one class in this suite whose whole job is to evade the derivation.
-
-    `TheUnitTierCannotSpawn` (0.3.0, tests/test_boundaries.py) proves the
-    conftest guard REFUSES a spawn — and it can only prove that from a module
-    the derivation leaves unmarked, so it reaches `subprocess` through a name
-    the AST cannot fold and its own docstring says so. The calls it makes are
-    refused before a process starts: spawn spellings that never spawn.
-
-    Exempted by CLASS, not by module or by line: a second unread spelling
-    anywhere else in the same file is still a finding, and a rename of the
-    class puts its body back under the scan.
-    """
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name == EVASION_IS_THE_POINT:
-            node.body = []
-    return tree
 
 
 def _census() -> tuple[list[str], list[str]]:
@@ -246,8 +222,8 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
         unmarked = [p for p in _modules() if not conftest.module_spawns(p)]
         offenders = []
         for path in unmarked + sorted(SUPPORT.glob('*.py')):
-            tree = ast.parse(path.read_text(encoding='utf-8'))
-            for node in ast.walk(_without_the_declared_evasion(tree)):
+            for node in ast.walk(ast.parse(
+                    path.read_text(encoding='utf-8'))):
                 if not isinstance(node, ast.Call):
                     continue
                 function = node.func
@@ -267,48 +243,21 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
                          'on three interpreters in silence. Teach the derivation, '
                          'or spawn through `subprocess`.')
 
-    # The exemption above is the one hole this gate has, so its SCOPE is
-    # asserted rather than described. Both claims in
-    # `_without_the_declared_evasion`'s docstring get a hostile case (SDLC § 5:
-    # every "only" and "still" gets input generated against it) — an exemption
-    # nobody probed is an exemption that quietly widens.
-    EVASION_SOURCE = '''\
-import subprocess
-
-
-class TheUnitTierCannotSpawn:
-    def test_a(self):
-        sp.check_output(['x'])
-
-
-class Elsewhere:
-    def test_b(self):
-        sp.check_output(['y'])
-'''
-
-    def _offenders(self, source: str) -> list[str]:
-        tree = _without_the_declared_evasion(ast.parse(source))
-        return [node.func.attr for node in ast.walk(tree)
-                if isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in UNREAD_SPAWN_CALLS]
-
-    def test_the_exemption_covers_that_class_and_nothing_beside_it(self):
-        # One spelling inside the exempt class, an identical one outside it.
-        # Exactly one survives, or the exemption is a file-wide amnesty.
-        self.assertEqual(self._offenders(self.EVASION_SOURCE), ['check_output'])
-
-    def test_renaming_the_class_revokes_the_exemption(self):
-        renamed = self.EVASION_SOURCE.replace(EVASION_IS_THE_POINT, 'Renamed')
-        self.assertEqual(self._offenders(renamed),
-                         ['check_output', 'check_output'],
-                         'the exemption outlived the class it was granted for')
-
-    def test_the_exempt_class_is_still_in_the_suite(self):
-        # An exemption for a class nobody has any more is a hole with no edges:
-        # it would silently start covering a future class of that name.
-        source = (TESTS / 'test_boundaries.py').read_text(encoding='utf-8')
-        self.assertIn(f'class {EVASION_IS_THE_POINT}', source)
+    # THE EXEMPTION IS GONE, and this is the record of why.
+    #
+    # 0.4.0 taught this scan to step over `TheUnitTierCannotSpawn` in
+    # test_boundaries.py — the one class in the suite that reached `subprocess`
+    # through a name the AST could not fold, on purpose, to prove the conftest
+    # guard refuses a spawn. Review W5 asked for the exemption's SCOPE to be
+    # proven, and one of the three cases it produced was "the exempt class is
+    # still in the suite", on the argument that an exemption for a class nobody
+    # has is a hole with no edges.
+    #
+    # It went red on the next merge: 0.3.0 had moved that proof out of
+    # test_boundaries.py. So the gate caught its own exemption going stale, the
+    # exemption was deleted rather than repointed, and the scan is unconditional
+    # again. **An allowance worth having is one that fails when its reason
+    # stops being true.**
 
 
 class ScratchSuite:
@@ -390,3 +339,55 @@ class HandApplicationIsRefused(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TheGuardBehindTheDerivation(unittest.TestCase):
+    """The RUNTIME half of the mark (0.3.0/bugs/a-unit-test-can-spawn-the-full-gate).
+
+    `module_spawns` reads a module's SOURCE, so it cannot see a spawn reached
+    INDIRECTLY — a unit test calling a library function that, frames down, runs
+    a belt whose `gate` check is `make milestone`. That happened, and `make
+    unit` went from 7 s to 153 s with nothing saying why.
+
+    So the tier is ENFORCED as well as derived: outside `shell`, a spawn fails
+    the test that made it. Proving that is an INTEGRATION concern by
+    construction — the thing under test is what a real pytest process does with
+    the real conftest — and doing it in-process would mean writing a spawn
+    spelling into an unmarked module, which is the hole `NoUnreadSpawnSpelling`
+    exists to close. So it runs out here, through `ScratchSuite`, like every
+    other end-to-end claim about the derivation.
+    """
+
+    SPAWNER = (
+        'def test_reaches_a_spawn_indirectly():\n'
+        '    import importlib\n'
+        '    helper = importlib.import_module("sub" + "process")\n'
+        '    helper.Popen(["true"])\n'
+    )
+
+    def test_a_spawn_outside_the_shell_tier_fails_by_nodeid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            # The module names no spawn spelling its source can be read for —
+            # which is exactly the case the static mark misses.
+            (root / 'test_indirect.py').write_text(self.SPAWNER, encoding='utf-8')
+            code, out = ScratchSuite.run(root, '-m', 'not shell', 'test_indirect.py')
+            self.assertEqual(code, 1, out)
+            self.assertIn('tried to spawn a process', out)
+            self.assertIn('test_reaches_a_spawn_indirectly', out)
+            self.assertIn('module_spawns', out)
+
+    def test_the_same_spawn_is_allowed_once_the_module_is_marked(self):
+        # The guard enforces the TIER, not a ban: a module the derivation marks
+        # spawns freely, which is what `make test` and the floor interpreter run.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            (root / 'test_marked.py').write_text(
+                'import subprocess\n\n'
+                'def test_spawns_openly():\n'
+                '    subprocess.run(["true"], check=True)\n',
+                encoding='utf-8')
+            code, out = ScratchSuite.run(root, '-m', 'shell', 'test_marked.py')
+            self.assertEqual(code, 0, out)

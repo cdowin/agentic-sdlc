@@ -11,6 +11,23 @@ effort: xhigh
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
+## Scope, and what holds the line
+
+**One pass, over THIS feature's changeset, against THIS feature's ship criterion.** Two questions:
+does the feature do what its criterion says, and does it commit either of the two cardinal sins —
+a gate that prints PASS over what it did not measure, or a write that looks legitimate and is not.
+A general audit of everything the change touched is the MILESTONE reviewer's job; doing it here
+costs the feature's clock and finds mostly taste.
+
+**Severity is a judgement you make on purpose.** `BLOCKER`/`CRITICAL`/`MAJOR` HOLD the close;
+everything below is recorded, reported and carried forward. So raise a `MINOR` you genuinely want
+to stop the line as `MAJOR` and say why — and write the cheap observations down as NITs freely,
+because they no longer cost anyone a round trip to clear.
+
+**You are on a stopwatch.** The feature is open until its findings are dispositioned, and every
+minute of this pass is a minute it stays open. Finish. A finding you are unsure of is a NIT with a
+sentence, not another hour of probing.
+
 ## Project config (yours to edit after install)
 
 ```text

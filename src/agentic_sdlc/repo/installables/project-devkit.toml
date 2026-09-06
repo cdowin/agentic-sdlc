@@ -82,10 +82,22 @@
 #                                   # the mainline). Both report over EVERY
 #                                   # milestone whose state is in `in_progress`
 #                                   # below.
-#                                   # R5 is the release rule: the version file
-#                                   # equals the CURRENT entry in
-#                                   # pm/roadmap/releases.md `order`. Which
-#                                   # entry is `version_at` below.
+#                                   # The RELEASE family holds the plan
+#                                   # (pm/roadmap/releases.md `order`) and the
+#                                   # tree to each other: R1 an entry no
+#                                   # milestone claims, or a `version:` on no
+#                                   # plan; R2 the backlog census; R3 two
+#                                   # milestones claiming one version; R4
+#                                   # history is a prefix; R5 the version file
+#                                   # equals the CURRENT entry (`version_at`
+#                                   # below picks which); R6 a release behind
+#                                   # the last shipped one whose milestone
+#                                   # never closed.
+#                                   # U1 is stock-ON: a state this project
+#                                   # DECLARED and no grain has ever held. A
+#                                   # WARN with the count, never a finding — a
+#                                   # tree mid-adoption legitimately has
+#                                   # unused states.
 # version_file    = "pyproject.toml"              # R5: where the version lives
 # version_pattern = '^version = "(.*)"$'          # R5: the line carrying it
 # version_at      = "start"                       # R5: which entry in `order`

@@ -289,6 +289,34 @@ class Guidance(unittest.TestCase):
             self.assertFalse((root / 'pm/roadmap/ROADMAP.md').exists())
             self.assertTrue((root / '.claude/rules/pm-execution.md').is_file())
 
+    def test_init_prints_the_ladder_against_the_tree(self):
+        """Review P1: the ladder IS this feature's ship criterion, and nothing
+        gated it — deleting `print_ladder(cfg)` from `cmd_init` passed every
+        test in the suite. A criterion nothing asserts is a criterion that
+        leaves on the next refactor.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'init')
+            self.assertEqual(code, 0, out)
+            self.assertIn('against the tree it has', out)
+            # Counted against the tree, not just recited from the config: this
+            # fixture holds one milestone, one feature and one story.
+            self.assertIn('milestone  declares 8; this tree uses 1 (building)', out)
+            self.assertIn('never held:', out)
+            # And the sentence that makes it a MEANING rather than a write.
+            self.assertIn('a flow you are not running', out)
+
+    def test_the_ladder_says_a_kind_has_no_grains_rather_than_all_unused(self):
+        """Review P3: `U1` skips a kind with no grains because "every state
+        unused" means the tree holds none of that kind — a different fact. The
+        ladder must agree, or the consumer meets the misleading surface FIRST,
+        at adoption, when nothing has been written yet."""
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'init')
+            self.assertEqual(code, 0, out)
+            self.assertIn('bug        declares 3; this tree holds no bug yet', out)
+            self.assertNotIn('never held: open, fixed, closed', out)
+
     def test_init_is_non_destructive_on_an_existing_tree(self):
         # It fills gaps but must never disturb grains that are already there.
         with tree(story_statuses=('ready',)) as root:

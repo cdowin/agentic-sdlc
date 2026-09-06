@@ -161,6 +161,18 @@ def test_a_tier_with_no_row_is_UNMEASURED_and_never_a_pass(tmp_path):
     assert 'within their time budget: unit;' in summary, out
     assert 'unmeasured: integration' in summary, out
     assert '2 tier' not in summary, out
+    # …and the HELP says the same thing, because the gate's contract is what a
+    # consumer READS, not what they measure. `both are findings, never a pass`
+    # arrived in a docs-only commit (081c8dd) that compressed this docstring to
+    # one screen: it collapsed "UNMEASURED is never counted as a pass" and "NOT
+    # GRADED IS a finding" into one sentence claiming both exit 1. It outlived
+    # the behaviour by a milestone, and an adopting consumer read it, believed
+    # this gate would redden a tree with nothing measured yet, and had to run
+    # the binary to learn the contract. tests/test_cli_surface.py holds the
+    # mechanical form of this over every `--help` in the package.
+    doc = budget.__doc__ or ''
+    assert 'both are findings' not in doc, doc
+    assert 'NOT a finding' in doc, doc
 
 
 def test_every_graded_row_carries_its_AGE(tmp_path):
@@ -273,3 +285,40 @@ def test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs(
         code, out = check()
     assert code == 1, out
     assert needle in out, out
+
+
+def test_a_declared_budget_with_no_gate_row_at_all_is_the_zero_census(tmp_path):
+    """Rule 4: a gate that measures nothing and prints PASS.
+
+    This is NOT the per-tier UNMEASURED case, which is exit 0 and right — a
+    tier that has not run has not got slower. This is ceilings declared and
+    the ledger holding not one `gate` row, where the verdict would be a PASS
+    over an empty census.
+    """
+    with tree(tmp_path, [], config=BUDGET):
+        code, out = check()
+        assert code == 1, out
+        assert 'no `gate` row at all' in out
+        assert 'rule 4' in out
+
+
+def test_a_row_that_is_not_a_gate_row_does_not_leave_the_zero_census(tmp_path):
+    """Review X2: the guard asked `if not rows` — ANY kind — while its own FAIL
+    line says "no `gate` row at all". One `status` row from an ordinary `pm`
+    write returned the gate to exit 0 having graded nothing, which is the census
+    sin the guard was added to close, reintroduced by the guard itself."""
+    from agentic_sdlc.repo.pm import ledger
+    with tree(tmp_path, [ledger.status_row('0.1/a/s', 'ready', 'done')],
+              config=BUDGET):
+        code, out = check()
+        assert code == 1, out
+        assert 'no `gate` row at all' in out
+
+
+def test_one_gate_row_is_enough_to_leave_the_zero_census(tmp_path):
+    """The boundary: the census is about whether anything was READ, not about
+    whether every declared tier ran."""
+    with tree(tmp_path, [gate_row('unit', 1000)], config=BUDGET):
+        code, out = check()
+        assert code == 0, out
+        assert 'UNMEASURED' in out

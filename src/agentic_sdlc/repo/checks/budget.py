@@ -1,18 +1,25 @@
 """check budget — a tier that got slower, grew, or shrank is a finding.
 
 Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
-tree's own ledger (`<roadmap>/ledger.jsonl` — a gate run names no grain); runs nothing. The newest row by timestamp is graded; a
-tier with no row is UNMEASURED, one whose newest run did not end PASS is NOT GRADED,
-and both are findings, never a pass. Ships no ceiling (a number is the project's, not
-this package's), so with nothing declared it reports the measured costs and exits 0.
+current release's ledger; runs nothing. The newest row by timestamp is graded.
+
+The two ways of not knowing are NOT the same finding, and this gate grades them
+apart. A tier whose newest run did not end PASS is NOT GRADED and that IS a
+finding: a run that stopped is cheaper and smaller than one that finished, so its
+duration and census are the cost of a stop, not measurements of the tier. A tier
+with no row at all is UNMEASURED — named in the verdict, never counted as within
+its ceiling, and NOT a finding, because a tier nobody ran has not got slower.
+Ships no ceiling (a number is the project's, not this package's), so with nothing
+declared it reports the measured costs and exits 0.
 
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier
     cases  = { unit = 1250, integration = 800 } # case-count ceiling, per tier
     floor  = { unit = 1000, integration = 600 } # case-count floor, per tier
 
-Exit codes: 0 nothing over and every declared tier graded, 1 a tier is over, under
-its floor, or not graded, 2 usage or config.
+Exit codes: 0 nothing is over its ceiling or under its floor, and a declared tier
+with no row is reported as unmeasured; 1 a tier is over, under its floor, or not
+graded; 2 usage or config.
 """
 from __future__ import annotations
 
@@ -65,14 +72,7 @@ def _budgets() -> dict[str, int]:
 
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """Every `gate` and `test` row this tree has, or the defect that stopped the read.
-
-    One file: `<roadmap>/ledger.jsonl`. Both kinds name no grain — a gate run
-    is not work somebody was dispatched to do, and a slow-test row belongs to a
-    tier — so 0.4.0/D3 files both at the root, and that is the SAME resolution
-    the recorder writes through, so the number a human sees and the number this
-    gate grades cannot disagree.
-    """
+    """Every row of the current release's ledger, or the defect that stopped the read."""
     cfg = model.load()
     path = ledger.grainless_path(cfg.roadmap)
     if not path.is_file():
@@ -188,6 +188,22 @@ def run() -> int:
     slowest, defect = _slowest(rows)
     if defect:
         print(f'[check:{NAME}] FAIL — {defect}')
+        return 1
+    # Rule 4's zero census, and the one case that is NOT the per-tier
+    # UNMEASURED above: ceilings are declared and there is not a single `gate`
+    # row to grade any of them against. The gate would print PASS having
+    # measured nothing at all, which is the sin the rule names. A tier that has
+    # not run yet is a fact; a gate with NOTHING to read is a gate that cannot
+    # answer, and it says so.
+    if not gates:
+        print(f'[check:{NAME}] FAIL — [tests] budget declares '
+              f'{len(set(ceilings) | set(floors) | set(budgets))} '
+              f'ceiling(s)/floor(s)/budget(s) and the '
+              f'current release\'s ledger holds no `gate` row at all, so '
+              f'nothing was graded. A verdict over an empty census is the one '
+              f'this package refuses to print (CLAUDE.md rule 4). Run a gated '
+              f'tier, or remove [tests] budget if this project does not grade '
+              f'its own cost')
         return 1
     counted_tiers = sorted(set(ceilings) | set(floors))
     over: list[str] = []

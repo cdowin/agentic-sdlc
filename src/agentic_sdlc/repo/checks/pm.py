@@ -2,7 +2,7 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6, D7, D9/D10 and the R family are opt-in).
+(default: D1-D6 + V1-V5; V6, U1, D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -20,8 +20,8 @@ WARN (a line, never the exit code; both grains and both categories named):
   D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
-  D7  a DECLARED state no grain of that kind has ever held, with the count in use
-  D11 the ledger couriers are wired in `.claude/settings.json` and the tree holds
+  U1  a DECLARED state no grain of that kind has ever held, with the count in use
+  U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:`,
          no `branch:`, or (a milestone) no `handoff.md` — the doc is never auto-minted,
@@ -262,7 +262,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
 
 
 def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
-    """D7 — a state the project DECLARED and no grain has ever held.
+    """U1 — a state the project DECLARED and no grain has ever held.
 
     A WARN with the count, never a finding: a tree mid-adoption legitimately has
     unused states, and a rule that reddens every fresh consumer is undone within
@@ -270,7 +270,7 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     scrolls away — the tool's most valuable idea, the conveyor, was invisible to
     the tool.
     """
-    if 'D7' not in enabled:
+    if 'U1' not in enabled:
         return
     for kind in model.FLOW_KINDS:
         counts = model.state_usage(cfg).get(kind)
@@ -285,7 +285,7 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'state(s) are in use; {", ".join(unused)} '
              f'{"has" if len(unused) == 1 else "have"} never been held by any '
              f'{kind} in this tree — declared and unused is a flow the project '
-             f'is not running (D7)')
+             f'is not running (U1)')
 
 
 def _tree_has_a_row(cfg: model.PmConfig) -> bool:
@@ -311,7 +311,7 @@ def _tree_has_a_row(cfg: model.PmConfig) -> bool:
 
 
 def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
-    """D11 — the ledger couriers are wired and the tree holds no row.
+    """U2 — the ledger couriers are wired and the tree holds no row.
 
     **This rule exists because the telemetry was off for a whole milestone and
     nobody could tell.** The hooks were installed, executable, self-testing and
@@ -332,7 +332,7 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     UNVERIFIABLE, not a failure — the standing convention for a pointer this
     gate cannot follow.
     """
-    if 'D11' not in enabled:
+    if 'U2' not in enabled:
         return
     settings = cfg.root / model.AGENT_SETTINGS
     if not settings.is_file():
@@ -343,7 +343,7 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
         warn(f'{model.AGENT_SETTINGS} could not be read '
              f'({err.__class__.__name__}), so whether the ledger couriers are '
              f'wired is UNVERIFIABLE — not a finding, and not a pass either '
-             f'(D11)')
+             f'(U2)')
         return
     wired = sorted(name for name in model.LEDGER_COURIERS if name in text)
     if not wired:
@@ -359,7 +359,7 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'`[pm.states.*]` is undeclared, so every work-moving verb refuses; '
          f'`python3` or the transcript path does not resolve; the entries name '
          f'a script that is not there. **`bash tools/hooks/'
-         f'cc-ledger-session.sh --self-test` answers all four** (D11)')
+         f'cc-ledger-session.sh --self-test` answers all four** (U2)')
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
@@ -509,13 +509,13 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
              f'no `order` — nothing to grade {cfg.version_file} against; '
              f'`agentic-sdlc pm order --append <version>` writes the plan')
         return
-    current = model.current_release(cfg)
+    current, why = model.graded_release(cfg)
     if current is None:
-        at = cfg.version_at
-        why = ('every entry in `order` has shipped'
-               if at == model.VERSION_AT_START else 'no entry in `order` has shipped yet')
-        warn(f'R5 has no current release: {why} under [pm] version_at = '
-             f'{at!r} — nothing to grade {cfg.version_file} against')
+        # The reason is READ, never invented: saying "every entry has shipped"
+        # over a tree where none had was a confident wrong answer at exit 0
+        # (review B3).
+        warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
+             f'(under [pm] version_at = {cfg.version_at!r})')
         return
     version = model.shipped_version(cfg)
     if version is None:

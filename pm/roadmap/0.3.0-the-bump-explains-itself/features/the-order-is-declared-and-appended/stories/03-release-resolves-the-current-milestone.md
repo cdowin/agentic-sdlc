@@ -3,7 +3,7 @@ id: 0.3.0/the-order-is-declared-and-appended/03-release-resolves-the-current-mil
 feature: 0.3.0/the-order-is-declared-and-appended
 milestone: "0.3.0"
 name: release with no argument takes the current milestone from the plan
-status: building
+status: done
 owner:
 depends_on: ["0.3.0/the-order-is-declared-and-appended/02-pm-order-and-pm-next"]
 ---

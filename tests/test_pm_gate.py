@@ -250,7 +250,12 @@ class DriftGate(unittest.TestCase):
         def warned(out: str) -> int:
             return int(re.search(r'; (\d+) warning\(s\)', out).group(1))
 
-        with tree(feature_status='planning', story_statuses=('done',)) as root:
+        # U1 is stock-ON and warns on any fixture tree holding one state per
+        # kind, so this case pins the roster to the rules it is actually about.
+        # Counting a constant would make the delta this asserts meaningless.
+        with tree(feature_status='planning', story_statuses=('done',),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
@@ -318,7 +323,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                                      ('planning', empty, False)):
             with self.subTest(status=status, filled=body is filled), \
                     tree(feature_status='building',
-                         story_statuses=('ready',)) as root:
+                         story_statuses=('ready',),
+                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
                 self._settle(root)
                 self._story(root, status, body)
                 code, out = run_gate(root)
@@ -331,7 +338,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # phase on each feature. A grain with NO such heading at all says so
         # in different words from an empty one.
         with tree(milestone_status='building', feature_status='building',
-                  story_statuses=()) as root:
+                  story_statuses=(),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             for needle in ("milestone 0.1 is 'building' with no branch:",
@@ -714,8 +723,8 @@ class FlowChecks(unittest.TestCase):
                 self.assertNotIn('unknown rule', out)
 
 
-class D11ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
-    """D11 — the ledger couriers are wired and the tree holds no row.
+class U2ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
+    """U2 — the ledger couriers are wired and the tree holds no row.
 
     **The rule this milestone opened on.** The hooks were installed,
     executable, self-testing and firing for the whole of the previous
@@ -738,7 +747,7 @@ class D11ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
         path.write_text(text, encoding='utf-8')
 
     def _gate(self, root):
-        write_config(root, '[pm]\nchecks = ["D11"]\n')
+        write_config(root, '[pm]\nchecks = ["U2"]\n')
         return run_gate(root)
 
     def test_wired_and_no_rows_warns_and_names_the_causes(self):
@@ -793,7 +802,7 @@ class D11ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             code, out = self._gate(root)
             self.assertEqual(code, 0, out)
-            self.assertNotIn('D11', out)
+            self.assertNotIn('U2', out)
 
     def test_a_settings_file_that_cannot_be_read_is_UNVERIFIABLE(self):
         """The standing convention for a pointer the gate cannot follow: said
@@ -1967,10 +1976,10 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
     def test_it_names_the_unused_states_with_the_count_in_use(self):
         with tree(milestone_status='building', feature_status='building',
                   story_statuses=('done',)) as root:
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)          # a WARN never decides the code
-            self.assertIn('(D7)', out)
+            self.assertIn('(U1)', out)
             self.assertIn('WARN', out)
             self.assertIn('declared state(s) are in use', out)
             # The milestone kind declares 8 and this tree holds one word.
@@ -1982,7 +1991,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         # kind — a different fact, and reporting it as flow drift would redden
         # (well, warn at) every tree that has not filed a bug yet.
         with tree() as root:
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('bug:', out)
@@ -1992,7 +2001,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             write_config(root, '[pm]\nchecks = ["D1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
-            self.assertNotIn('(D7)', out)
+            self.assertNotIn('(U1)', out)
 
     def test_an_undeclared_word_in_the_tree_is_D4s_and_not_counted_here(self):
         # The census counts DECLARED states only; a `wombat` in a file is D4's
@@ -2001,7 +2010,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         with tree(milestone_status='building') as root:
             model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
                             'status', 'wombat')
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('wombat', out)
@@ -2060,6 +2069,59 @@ class AConfigErrorIsComplete(unittest.TestCase):
             finally:
                 os.chdir(previous)
             self.assertEqual(code, 2, out)
+        finally:
+            ctx.cleanup()
+
+    def test_five_defects_at_once_are_all_reported_flow_first(self):
+        """Review D2/D3: two defects INSIDE `load()` reported as one, and any
+        `load()` defect hid the whole retired-key sweep behind it. Each reader
+        is now asked separately."""
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n'
+            'checks = ["D8", "D99"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+            for needle in ('declares no flow', 'version_at', 'D8',
+                           'D99', 'review_slug_fallback'):
+                self.assertIn(needle, out)
+            self.assertEqual(out.count('[check:pm] ERROR'), 5, out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('version_at'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_every_pm_verb_reports_the_whole_set_not_just_check_pm(self):
+        """Review D1: `pm validate` on the motivating tree printed ONE line,
+        the cosmetic one, and never named the flow."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        from agentic_sdlc.core.project import load_config, repo_root
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nversion_at = "whenever"\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(buf):
+                    code = pm_cli.main(['validate'])
+            finally:
+                os.chdir(previous)
+                repo_root.cache_clear()
+                load_config.cache_clear()
+            out = buf.getvalue()
+            self.assertEqual(code, 2, out)
+            self.assertIn('declares no flow', out)
+            self.assertIn('review_slug_fallback', out)
+            self.assertLess(out.index('declares no flow'),
+                            out.index('review_slug_fallback'), out)
         finally:
             ctx.cleanup()
 

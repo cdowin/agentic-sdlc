@@ -295,16 +295,25 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
             blockers.append(f'{UNVERIFIABLE} {rel}: '
                             f'{" ".join(str(err).split())}')
             continue
-        opened = [f.id for p in passes for f in p.findings
-                  if f.disposition_kind == verdict.OPEN]
+        opened = [f for p in passes for f in p.findings
+                   if f.disposition_kind == verdict.OPEN]
+        blocking = [f.id for f in opened
+                    if f.severity in verdict.BLOCKING_SEVERITIES]
+        carried = [f.id for f in opened
+                   if f.severity not in verdict.BLOCKING_SEVERITIES]
         mine = sum(len(p.findings) for p in passes)
         findings += mine
-        if opened:
-            blockers.append(f'{", ".join(opened)} open in {rel}')
+        if blocking:
+            blockers.append(f'{", ".join(blocking)} open in {rel}')
         else:
             # Printed on the passing path too, so an unopened record cannot
-            # look like a clean one.
-            print(f'{RECORD}{rel} — {mine} finding(s), none open')
+            # look like a clean one — and the non-blocking ones are NAMED, not
+            # swallowed: not holding the tag is not the same as not existing.
+            said = f'{RECORD}{rel} — {mine} finding(s), none blocking'
+            if carried:
+                said += (f'; {len(carried)} open below MAJOR carried forward: '
+                         f'{", ".join(carried)}')
+            print(said)
     if not records:
         blockers.append(
             f'{mid} points at no review record — the record set was empty, '
@@ -312,7 +321,7 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
             f'failure this verb exists to refuse')
     census = f'{len(records)} record(s), {findings} finding(s)'
     if not blockers:
-        census += ', none open'
+        census += ', none blocking'
     return _answer(f'{TAG} {mid}', blockers, census)
 
 

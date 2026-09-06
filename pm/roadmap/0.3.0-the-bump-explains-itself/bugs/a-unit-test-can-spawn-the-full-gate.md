@@ -2,7 +2,7 @@
 id: 0.3.0/bugs/a-unit-test-can-spawn-the-full-gate
 milestone: "0.3.0"
 name: a unit-tier test can spawn the full gate, and nothing says why
-status: fixed
+status: closed
 severity: high
 caught_in: "0.3.0"
 ---
@@ -47,9 +47,19 @@ which collects the spawning tier. **Prose held none of the three.**
 
 ## Verified when
 
-A unit-tier test that spawns fails by nodeid rather than running; `make unit` is
-back to ~7 s; and the guard is proven by `TheUnitTierCannotSpawn` in
-tests/test_boundaries.py, which reaches `subprocess` through `importlib` so the
-derivation cannot mark the module and switch the guard off.
+A unit-tier test that spawns fails by nodeid rather than running, and `make unit`
+is back to ~7 s. The guard is proven by `TheGuardBehindTheDerivation` in
+tests/test_shell_mark.py, which builds a scratch suite under a copy of the real
+conftest and runs a REAL pytest against it — one case reaching a spawn
+indirectly (and failing by nodeid), one spawning openly from a marked module
+(and passing, because the guard enforces the TIER, not a ban).
+
+The first attempt put that proof in `tests/test_boundaries.py` and reached
+`subprocess` through `importlib` so the derivation could not mark the module.
+`NoUnreadSpawnSpelling` failed it — correctly: a spawn spelling the derivation
+cannot read, inside an unmarked module, is the exact hole that gate exists to
+close, and writing one to test another gate is not a special case. Proving what
+a real pytest does with the real conftest is an integration concern, so it moved
+to the tier that already spawns.
 
 done: in-place — the guard, the driver fix, and the rung shape in three surfaces.

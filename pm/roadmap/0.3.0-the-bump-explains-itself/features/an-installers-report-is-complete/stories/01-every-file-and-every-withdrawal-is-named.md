@@ -3,7 +3,7 @@ id: 0.3.0/an-installers-report-is-complete/01-every-file-and-every-withdrawal-is
 feature: 0.3.0/an-installers-report-is-complete
 milestone: "0.3.0"
 name: every file gets a header and every withdrawal is named
-status: building
+status: done
 owner:
 depends_on: []
 ---
@@ -42,9 +42,19 @@ this would write` — the exact silence that hid it. 73 unit cases green.
 Back-filling a withdrawal record for versions before 0.2.0. The mechanism ships;
 inventing history it did not observe would be the lie rule 4 forbids.
 
+## A note on the commit reference
+
+The first version of this record said `done: 1285784`, which touches no
+installer file. That commit is `the-plan-and-the-tree-agree`'s, and it swept up
+this builder's in-flight work because the orchestrator staged with `git add -A`
+instead of an explicit pathspec (SDLC §2: "commits per feature by explicit
+pathspec"). Review I6 caught the wrong reference; the process error that
+produced it is recorded here because a record whose evidence pointer is wrong is
+worse than one with none.
+
 ## Close
 
-done: 1285784 — every disposition gets a header line, and an installer says what
+done: 48bf6d5 3d21718 — every disposition gets a header line, and an installer says what
 it withdrew. Built by a dispatched builder; verified against the tree, not its
 narration, because the builder was stopped for running wide gates before it
 reported.

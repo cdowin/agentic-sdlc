@@ -12,6 +12,34 @@ agent roster that executes it in consumer repos is installed by `agentic-sdlc in
 | **feature** | done writing; the stories are all `done` | a reviewer has looked at the whole feature and its findings are landed | the **feature review** → a review record → `done` |
 | **milestone** | done with features; they are all `done` | the cross-cutting review is landed and the FULL gate is green | the **milestone review**, then `make milestone` — in that order |
 
+### The review is part of the CLOSE, and the close is a stopwatch
+
+**Dispatch a feature's review the moment `pm ready-for feature <fid>` goes READY** — not at the
+end of the milestone. The belt already enforces the ordering (`close feature` refuses without a
+record); what it cannot enforce is WHEN you ask for one, and batching them is the failure mode.
+Measured on 0.3.0: eleven features built in 64 minutes, then 93 minutes of review-and-land, because
+nine reviews that could have overlapped the build ran after it. **Every grain is on a stopwatch
+from its first status write to its last**, and a feature held open waiting for a batched review is
+a feature whose clock is running for no reason. Just-in-time, one at a time, closed as fast as it
+can honestly close.
+
+**ONE review pass per grain.** A second pass is an emergency ripcord — for a feature whose review
+turned up something that changes the shape of the work — not a routine. Two passes over one
+changeset mostly finds the second reviewer's taste.
+
+**A feature review is scoped to the CHANGESET and the SHIP CRITERION**, and asks two questions:
+*does this feature do what its criterion says*, and *does it commit either of rule 4's sins*. It is
+not a general audit of everything the change touched. The cross-cutting pass at the milestone is
+where the wide questions live — §0's own rule, that each level asks a question the level below
+cannot.
+
+**Severity gates the hold** (0.3.0): `BLOCKER`, `CRITICAL` and `MAJOR` block a close; everything
+below is recorded, reported on every run, and carried. An open NIT used to hold a feature exactly
+as hard as a shipping bug, which taught reviewers to stop writing NITs — losing the cheap
+observation, which is the one you most want written down. **Bugs will come up after the close. That
+is fine; file them.** A milestone that ships with three known MINORs and a bug record beats one
+that ships a week later with none.
+
 ### The intent, in four sentences
 
 1. **Rip through stories:** done when the work is done and its unit slice is green.

@@ -59,7 +59,7 @@ class Flow:
 # reader assumes. It is the only place in this package a state word is spelled;
 # each kind seeds only the states its belt writes, plus `obe` in `done`
 # wherever work can be abandoned. `LIFECYCLE`, `BUILDING` and `REVIEWING`
-# survive for the frozen dispatch-snapshot keys in `pm/cli.py` (D7).
+# survive for the frozen dispatch-snapshot keys in `pm/cli.py` (U1).
 LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
              'packaging', 'done')
 BUILDING = LIFECYCLE[2]
@@ -127,22 +127,31 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # D9/D10 encode branch-per-milestone and are OFF by default; a trunk-shipping
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
-DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
+DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
                   'V1', 'V2', 'V3', 'V4', 'V5')
-# D7 (a declared state no grain has ever held) is OPT-IN, like every other
-# flow-shaped rule. It is a WARN and could not redden anyone, but stock-on it
-# adds three lines to every consumer's `check pm` output, and those line shapes
-# are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
-# prints the ladder against the tree unconditionally; D7 is how a project that
-# wants it kept visible afterwards asks for that.
-USAGE_CHECKS = ('D7', 'D11')
-# D11 (ledger couriers wired and no rows anywhere) is opt-in for the same
-# reason as D7 and one more: a tree that has not wired them is not broken, it
-# opted out, and this package does not conscript (0.4.0/D5). What it must never
-# be is SILENTLY opted out, which is what this tree was for a whole milestone —
-# hooks installed, executable, self-testing, firing, every call refused, the
-# refusal printed to a stderr nobody reads, zero rows and zero complaints.
+# The USAGE family: what the tree DOES with the vocabulary it declared, as
+# opposed to whether a word is declared at all (D4). U1 is its first member and
+# it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
+# reusing a retired id would silently enable a different rule for any consumer
+# whose config still names it, which is worse than the exit 2 they get today.
 #
+# U1 is STOCK-ON, and that was reversed on the milestone review's M2. It was
+# opt-in for one release-day: it adds warning lines to every consumer's
+# `check pm`, and those shapes are grepped (rule 6). But the milestone's
+# northstar is that a project can SEE whether it is using the flow it declared,
+# and an opt-in rule nobody enables answers that question with silence — which
+# is the exact failure the milestone was filed to end. A WARN cannot redden
+# anyone; the output change is the point, not a side effect.
+#
+# U2 (the ledger couriers are wired and the tree holds no row) is the same
+# question one layer out: not `is this word used` but `is this CAPABILITY
+# doing anything`. It takes a U rather than the next free D for the reason
+# above and one more — the D family is status drift, and this is not drift.
+# Stock-ON, and for U1's argument verbatim: a tree that wires the couriers
+# and records nothing cannot find that out from an opt-in rule, because an
+# opt-in warning about silence IS silence. A tree that wires nothing stays
+# quiet either way, so stock-on costs a non-adopter nothing (0.4.0/D5).
+USAGE_CHECKS = ('U1', 'U2')  # named for the family; already in DEFAULT_CHECKS
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -160,6 +169,10 @@ KNOWN_CHECKS = tuple(dict.fromkeys(
 # "unknown": a consumer whose config still lists it is told where the rule
 # went, rather than being silently ungated by a typo-shaped message.
 RETIRED_CHECKS = {
+    'D7': 'was retired before 0.3.0 and did not come back. U1 is the '
+          'declared-but-unused state rule and it took a NEW letter precisely '
+          'so that a config still naming D7 is told it is gone rather than '
+          'silently given a different rule',
     'D8': 'became R5 — the version file is graded against the CURRENT entry in '
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
@@ -168,7 +181,7 @@ RETIRED_CHECKS = {
 
 ARCHIVE_DIR_NAME = 'zz_archive'
 
-# D11's two halves, both readable without running anything. The settings file
+# U2's two halves, both readable without running anything. The settings file
 # is the consumer's own and hand-maintained (`install.py` says why it is
 # printed and never written); these are the script names the printed block
 # wires, so a tree that pasted the block matches.
@@ -633,39 +646,94 @@ def missing_flow_defect(sect: dict | None = None) -> str:
 def all_config_defects(sect: dict | None = None) -> list[str]:
     """EVERY defect in `[pm]`, flow first — not the first one encountered.
 
-    A real adoption is wrong in more than one way at once, and reporting one
-    defect per run makes the consumer pay a round trip to learn the next. The
-    ORDER is the point: a retired key is cosmetic and a missing flow stops
-    every work-moving verb in the package, and the tree that motivated this was
-    told about the retired key.
+    A real adoption is wrong in more than one way at once, and one defect per
+    run makes the consumer pay a round trip to learn the next. The ORDER is the
+    point: a retired key is cosmetic and a missing flow stops every work-moving
+    verb, and the tree that motivated this was told about the retired key.
+
+    Each reader is asked SEPARATELY and its refusal collected, rather than
+    letting `load()` raise at the first one — that made two defects inside
+    `load()` report as one, and let any `load()` defect hide the whole
+    retired-key sweep behind it (review D2, D3).
     """
     section = config_section('pm') if sect is None else sect
     out: list[str] = []
 
+    def add(msg: str) -> None:
+        if msg and msg not in out:
+            out.append(msg)
+
     flow = missing_flow_defect(section)
     if flow:
-        out.append(flow)
+        add(flow)
 
     for key in VOCABULARY_KEYS:
         if key in section:
-            out.append(f'[pm] {key} was retired and is refused — '
-                       f'{RETIRED_KEYS[key]}. Remove the key.')
+            add(f'[pm] {key} was retired and is refused — '
+                f'{RETIRED_KEYS[key]}. Remove the key.')
 
-    # Everything `load()` refuses, collected rather than raised at the first.
-    try:
-        load()
-    except ConfigError as err:
-        said = str(err)
-        if said not in out and not any(said in seen for seen in out):
-            out.append(said)
-    else:
-        # `load()` succeeded, so the stale-rule and retired-key sweep is the
-        # only reader left with anything to say.
+    # Each of `load()`'s own refusals, asked one at a time so that a second one
+    # is never lost behind the first.
+    def probe(reader) -> None:
         try:
-            out.extend(m for m in config_complaints(load(), section)
-                       if m not in out)
-        except ConfigError:
-            pass
+            reader()
+        except ConfigError as err:
+            add(str(err))
+
+    probe(lambda: str_tuple(section, 'pm', 'checks', DEFAULT_CHECKS))
+    probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
+    probe(lambda: flag(section, 'pm', 'story_ordinal_prefix', False))
+    for key, fallback in (('roadmap_dir', 'pm/roadmap'),
+                          ('review_dir', 'docs/reviews'),
+                          ('template_dir', '')):
+        probe(lambda k=key, f=fallback: relpath(section, 'pm', k, f))
+
+    pattern = section.get('version_pattern')
+    if isinstance(pattern, str):
+        try:
+            compiled = re.compile(pattern)
+        except re.error as err:
+            add(f'[pm] version_pattern is not a valid regex: {err}')
+        else:
+            if compiled.groups < 1:
+                add('[pm] version_pattern needs one capture group around '
+                    'the version itself')
+
+    at = section.get('version_at')
+    if at is not None and at not in VERSION_AT_CHOICES:
+        add(f'[pm] version_at must be one of {" ".join(VERSION_AT_CHOICES)}, '
+            f'got {at!r} — {VERSION_AT_START!r} is the first entry in `order` '
+            f'that has not shipped (bump at start), {VERSION_AT_SHIP!r} the '
+            f'last that has')
+
+    if 'scaffold' in section:
+        add("[pm.scaffold.*] was replaced by template FILES — set [pm] "
+            "template_dir and run `pm templates` to copy them out, then edit "
+            "the markdown")
+
+    # The retired-key and stale-rule sweep runs WHATEVER `load()` would have
+    # done, reading `checks` off the section rather than off a config that may
+    # not have loaded (review D3).
+    raw_checks = section.get('checks')
+    named = tuple(c for c in raw_checks
+                  if isinstance(c, str)) if isinstance(raw_checks, list) else DEFAULT_CHECKS
+    for check in named:
+        if check in RETIRED_CHECKS:
+            add(f'[pm] checks names {check}, which was retired — '
+                f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+    unknown = [c for c in named
+               if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
+    if unknown:
+        add(f'[pm] checks names unknown rule(s) {", ".join(unknown)} — '
+            f'known rules are {" ".join(KNOWN_CHECKS)}')
+    for key, why in RETIRED_KEYS.items():
+        if key in section and key not in VOCABULARY_KEYS:
+            add(f'[pm] {key} was retired and does nothing — {why}. '
+                f'Remove the key.')
+    for name, why in RETIRED_SECTIONS.items():
+        if section_declared(name):
+            add(f'[{name}] was retired and does nothing — {why}. '
+                f'Remove the section.')
     return out
 
 
@@ -768,6 +836,25 @@ def unquote(value: str) -> str:
 # `order` is edited constantly and reordering is the main edit, so one entry per
 # line keeps a diff showing what MOVED, where an inline `[a, b, c]` rewrites the
 # whole line.
+def _without_trailing_comment(value: str) -> str:
+    """`"0.1.0"  # the first` -> `"0.1.0"`.
+
+    An inline comment was read INTO the value, which then failed to unquote and
+    left the quotes on — so one annotated entry silently changed the spelling
+    of every version the reader returned (review A3). Only a `#` OUTSIDE the
+    quotes ends the value; a version is a literal, so a `#` inside quotes is
+    part of it.
+    """
+    value = value.strip()
+    if value[:1] in ('"', "'"):
+        close = value.find(value[0], 1)
+        if close != -1:
+            return value[:close + 1]
+        return value
+    head = value.split('#', 1)[0]
+    return head.strip() or value
+
+
 _LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
 
 
@@ -793,14 +880,18 @@ def list_field_of(path: Path, key: str) -> list[str]:
             return []
         out: list[str] = []
         for line in lines[i + 1:close_i]:
-            if not line.strip():
-                # Spacing a long plan is the obvious thing a human does to it;
-                # truncating there would drop every entry below the gap.
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                # Blank lines SPACE a long plan and comment lines ANNOTATE one,
+                # and both are the obvious things a human does to a file that
+                # is edited on every ship. Truncating at either dropped every
+                # entry below it — silently, and `--append` then wrote a
+                # duplicate and reported a successful append (review A2).
                 continue
             m = _LIST_ITEM.match(line)
             if m is None:
                 break
-            out.append(unquote(m.group('value')))
+            out.append(unquote(_without_trailing_comment(m.group('value'))))
         return out
     return []
 
@@ -878,6 +969,7 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
             break
 
     indent, quote, eol = '  ', '"', ''
+    kept: list[str] = []
     if key_i is None:
         # A plan that has no `order` yet: mint the key at the end of the block.
         eol = _eol(lines[close_i])
@@ -888,6 +980,16 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         eol = _eol(lines[key_i])
         end_i = key_i
         for j in range(key_i + 1, close_i):
+            stripped = lines[j].strip()
+            if not stripped or stripped.startswith('#'):
+                # The READER spans these, so the writer must too — stopping
+                # here left the entries below the comment in place and wrote
+                # the new list above them, which is a duplicate the verb then
+                # reported as a successful append (review A2). Spanned lines
+                # are kept, ahead of the rewritten items, so the author's
+                # annotations survive the edit.
+                kept.append(lines[j])
+                continue
             m = _LIST_ITEM.match(lines[j])
             if m is None:
                 break
@@ -905,7 +1007,7 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         tail_from = end_i + 1
 
     items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
-    rewritten = lines[:key_i] + head + items + lines[tail_from:]
+    rewritten = lines[:key_i] + head + kept + items + lines[tail_from:]
     try:
         write_raw(path, '\n'.join(rewritten))
     except OSError:
@@ -1281,6 +1383,12 @@ def plan_defect(cfg: PmConfig) -> str | None:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
     lines = _split(text)
     if _fence_bounds(lines) is None:
+        if lines and lines[0].startswith(BOM):
+            # Naming it "no frontmatter" sent the reader looking for a missing
+            # block when the block is there and three invisible bytes precede
+            # it (review B5).
+            return ('opens with a UTF-8 BOM before its `---`, so the '
+                    'frontmatter block is not the first line — strip the BOM')
         opens = bool(lines) and _FENCE.match(lines[0]) is not None
         return ('has an opening `---` with no closing one'
                 if opens else
@@ -1309,7 +1417,7 @@ def milestone_version(cfg: PmConfig, mid: str) -> str:
     and a milestone without one is BACKLOG, never a finding (R2).
     """
     mfile = milestone_file(cfg, mid)
-    return field_of(mfile, 'version') if mfile is not None else ''
+    return field_of(mfile, 'version').strip() if mfile is not None else ''
 
 
 def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
@@ -1319,7 +1427,11 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     """
     out = []
     for mdir, mid in known_milestones(cfg):
-        version = field_of(mdir / MILESTONE_DOC, 'version')
+        # `.strip()`: a whitespace-only `version:` is not a claim. Reading it as
+        # one put the milestone outside R2's backlog census while claiming a
+        # version nothing could match, and the R1 failure it produced then
+        # prescribed a `pm order --append` the verb refuses at exit 2 (B4).
+        version = field_of(mdir / MILESTONE_DOC, 'version').strip()
         if version:
             out.append((version, mid))
     return out
@@ -1379,32 +1491,64 @@ def last_shipped_index(cfg: PmConfig) -> int:
 
 
 def current_release(cfg: PmConfig) -> str | None:
-    """The version this tree is at, by POSITION in `order` — the first entry
-    not yet shipped under `version_at = "start"`, the last that has under
-    `"ship"`. None when the tree declares no order, or when the position it
-    names does not exist (everything shipped / nothing has).
+    """The release being WORKED ON: the first entry in `order` not yet shipped.
 
-    Unlike "the one milestone in progress" this cannot be SEVERAL — a position
-    in a list is one place. It can be None, and it does read `status`, one call
-    away in `release_is_shipped`; what it never does is read a version string
-    as a structure.
+    **This does not read `[pm] version_at`, and that separation is the point.**
+    `version_at` answers a DIFFERENT question — *which entry should the version
+    FILE equal* — and a project that bumps at CLOSE answers it with the last
+    SHIPPED release while working on the next one. Feeding that answer to "which
+    release am I working on" made `release` re-release a finished milestone and
+    filed gate cost rows into its closed ledger (review A1, B2, C1). One key,
+    one question; `graded_release` below is the other one.
+
+    An entry whose state cannot be established — no milestone claims it, or
+    several do — STOPS the walk rather than being stepped over. Skipping it
+    would answer with a release further down the plan than the tree can
+    support: a confident wrong answer where "I cannot tell" is the true one
+    (review B1).
+    """
+    for version in declared_order(cfg):
+        if release_is_shipped(cfg, version):
+            continue
+        if release_is_unverifiable(cfg, version):
+            # SKIPPED, and reported: `pm retire` deletes a finished milestone's
+            # record while its row survives in the plan on purpose, so after a
+            # retirement an entry that shipped is indistinguishable from one
+            # never written. Blocking on it would make `retire` break the
+            # ledger and the belt for every tree that prunes.
+            #
+            # The ambiguity is not resolved here because it CANNOT be — it is
+            # REPORTED, by R1, as UNVERIFIABLE, on every run. Two reviews of
+            # this milestone pulled opposite ways on it; decision D2 on
+            # `the-plan-and-the-tree-agree` records why the gate carries it
+            # rather than the resolver guessing.
+            continue
+        return version
+    return None
+
+
+def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
+    """(the entry `[pm] version_file` must equal, or None; why not).
+
+    R5's question, and R5's only. `start` is bump-at-START — the release being
+    worked on, so the file carries it while the work happens. `ship` is
+    bump-at-CLOSE — the last release that shipped, so the file still carries the
+    previous number until the release commit moves it.
     """
     order = declared_order(cfg)
     if not order:
-        return None
+        return None, 'the plan declares no `order`'
     if cfg.version_at == VERSION_AT_START:
-        for version in order:
-            if release_is_shipped(cfg, version):
-                continue
-            if release_is_unverifiable(cfg, version):
-                # Cannot be established, so it is not answered: a retired
-                # milestone's entry is history, and guessing it is the future
-                # grades the tree against a version regression.
-                continue
-            return version
-        return None
+        version = current_release(cfg)
+        if version is None:
+            return None, ('every entry in `order` has shipped, or the next one '
+                          'is claimed by no single milestone')
+        return version, ''
     shipped = [v for v in order if release_is_shipped(cfg, v)]
-    return shipped[-1] if shipped else None
+    if not shipped:
+        return None, ('no entry in `order` has shipped yet, so there is no '
+                      'previous release for the version file to carry')
+    return shipped[-1], ''
 
 
 def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
@@ -1416,8 +1560,10 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
     `in_progress`" refused on none and on several, and this tree spent a week
     planning two milestones with every cost row silently dropped.
 
-    `order` plus `version_at` answer with exactly one BY CONSTRUCTION — a
-    position in a list is one place — and read no status field to do it.
+    `order` answers with exactly one BY CONSTRUCTION — a position in a list is
+    one place. It does NOT read `[pm] version_at`: that key says which entry
+    the version FILE is graded against, which is a different question, and
+    conflating the two filed cost rows into a shipped milestone's ledger.
 
     The in-progress fallback is deliberate and is recorded as a decision: a
     consumer bumping the pin has a building milestone and no plan yet, and
@@ -1443,9 +1589,21 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
                       f'there is no current release to file against — '
                       f'`agentic-sdlc pm order --append <version>` writes the '
                       f'plan')
-    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped '
-                  f'(or none has, under [pm] version_at = {cfg.version_at!r}), '
-                  f'so there is no current release to file against')
+    # The reason is read off the plan rather than asserted (review C4): an
+    # entry nothing claims stops the walk, and saying "everything shipped"
+    # about it would be false.
+    order = declared_order(cfg)
+    unverifiable = [v for v in order
+                    if not release_is_shipped(cfg, v)
+                    and release_is_unverifiable(cfg, v)]
+    if unverifiable:
+        return None, (f'{unverifiable[0]} is the next unshipped entry in '
+                      f'{cfg.rel(releases_file(cfg))} and no single milestone '
+                      f'claims it, so there is no ledger to file against — '
+                      f'`agentic-sdlc pm roadmap` shows the plan against the '
+                      f'tree')
+    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped, '
+                  f'so there is no release in progress to file against')
 
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:

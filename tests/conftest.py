@@ -273,16 +273,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        # THE TREE's ledger, and this was the third router. A `test` row names
-        # no grain, so 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` — and
-        # until then this asked `in_progress_milestones`, which made three
-        # functions answering "which ledger owns this row" in a milestone whose
-        # thesis is that there should be one. It also meant the suite recorded
-        # nothing whenever no milestone was in progress, silently, which is the
-        # failure the milestone opened on.
+        # THE TREE's ledger, and both sides of this merge were reaching for
+        # the same thing: 0.3.0's review C2 asked that these land WHERE THE
+        # GATE ROWS LAND, because a slowest-tier line and the gate row it sits
+        # beside must describe one run. 0.4.0/D3 then made that one file for
+        # both — a `test` row names no grain, like a `gate` row — so the
+        # agreement C2 asked for is now structural rather than a resolution
+        # copied into two places.
         for rank, report in enumerate(slowest, start=1):
-            ledger.append_row(ledger.grainless_dir(cfg.roadmap), ledger.test_row(
-                tier, report.nodeid, int(report.duration * 1000), rank))
+            ledger.append_row(ledger.grainless_dir(cfg.roadmap),
+                              ledger.test_row(
+                                  tier, report.nodeid,
+                                  int(report.duration * 1000), rank))
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could
         # not write its own cost row would be telemetry outranking the thing it

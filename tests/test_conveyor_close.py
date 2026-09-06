@@ -66,10 +66,16 @@ RED_MAKEFILE = MAKEFILE.replace('unit:\n\t@true', 'unit:\n\t@exit 1')
 VERDICT_BLOCK = '''```
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| W1 | WARNING | landed in-place |
+| W1 | MAJOR | landed in-place |
 ```
 '''
+# MAJOR in the block above, so `open` here is a BLOCKING open finding — since
+# 0.3.0 severity gates the hold, and what this fixture is for is the easiest
+# false green in the belt, not the severity rule.
 OPEN_BLOCK = VERDICT_BLOCK.replace('landed in-place', 'open')
+
+# The other side: read, named, and not a blocker.
+NIT_OPEN_BLOCK = OPEN_BLOCK.replace('| W1 | MAJOR |', '| W1 | NIT |')
 
 
 def feature_doc(status: str = 'planning', reviewed: str = '') -> str:

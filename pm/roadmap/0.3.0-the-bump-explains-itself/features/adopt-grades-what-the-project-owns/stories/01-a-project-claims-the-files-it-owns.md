@@ -3,7 +3,7 @@ id: 0.3.0/adopt-grades-what-the-project-owns/01-a-project-claims-the-files-it-ow
 feature: 0.3.0/adopt-grades-what-the-project-owns
 milestone: "0.3.0"
 name: a project claims the files it owns and the rest are graded
-status: building
+status: done
 owner:
 depends_on: []
 ---
@@ -42,5 +42,5 @@ string and `docs/sdlc-protocol.md` are held byte-current and had to move togethe
 
 ## Close
 
-done: 1285784 — a project declares what it owns, the belt grades the rest, and
+done: 1285784 f30549a 3d21718 — a project declares what it owns, the belt grades the rest, and
 the claim is printed every run so the list is visible rather than a hiding place.

@@ -214,11 +214,11 @@ run   = "uv run -q python -m pytest tests/test_shell_mark.py -q"
 # suite, so there is no narrowing to be had and saying so is the honest answer.
 [[verify.narrow]]
 paths = "tests/support/**"
-run   = "uv run -q python -m pytest tests/ -q"
+run   = "uv run -q python -m pytest tests/ -q -n auto --dist loadgroup"
 
 [[verify.narrow]]
 paths = "tests/fixtures/**"
-run   = "uv run -q python -m pytest tests/ -q"
+run   = "uv run -q python -m pytest tests/ -q -n auto --dist loadgroup"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/pm/**"

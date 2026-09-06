@@ -209,9 +209,10 @@ check: ## Static gate: the devkit checks + this project's own ([gates] extra)
 	[ -z "$$extra" ] || $${MAKE:-make} GDK_IN_CHECK=1 $$extra
 
 # --- The tier seam ------------------------------------------------------------
-# The language kit's contribution, resolved at PARSE time. No sub-make, no
-# runtime cost, and prerequisites stay prerequisites — so `make -n precommit`
-# keeps its promise to run nothing while still listing everything.
+# The language kit's contribution, resolved at PARSE time: the tier LISTS are
+# read and guarded here, before any goal runs, so a bad list is refused before
+# `check` has cost anybody anything. What the lists are made INTO is the
+# compositions below.
 GDK_TIERS_MK        ?= Makefile.tiers
 GDK_PRECOMMIT_TIERS ?=
 GDK_MILESTONE_TIERS ?=
@@ -249,7 +250,10 @@ endif
 # directory ran `check` and `parse`, SKIPPED `test`, exited 0 and printed
 # nothing about it. The orphan check above cannot see that case: `test` IS a
 # defined target, so it is not an orphan — it is a defined target make decided
-# it did not need to build.
+# it did not need to build. The tiers are the GOALS of the composition's
+# sub-make now rather than its prerequisites, and a goal is skipped for a
+# same-named directory exactly the way a prerequisite was; the sub-make reads
+# this file too, so this one line still covers it.
 #
 # Found 2026-09-05 by the feature review, and it inverted this feature's own
 # ship criterion 2 — "a tier that resolves to no target is a LOUD failure, not
@@ -266,8 +270,8 @@ endif
 # language kit gates on `check` alone — but it is one gate where a tiered
 # project runs five, and an operator who cannot tell the two runs apart from
 # the output has been handed the cardinal sin in a Makefile. It is a
-# PREREQUISITE, not a recipe: the compositions themselves still print nothing
-# of their own, and it runs FIRST, before the gate it is describing.
+# PREREQUISITE, not part of the composition's recipe: it runs FIRST, before
+# the slot below opens, so the announcement is neither timed nor captured.
 define gdk_tiers_none
 @echo "[TIERS] $(1) is empty — this gate is \`check\` alone; $(GDK_TIERS_MK) $(if $(wildcard $(GDK_TIERS_MK)),declares no tier for it,is not present)"
 endef
@@ -278,8 +282,60 @@ gdk-tiers-none-precommit:
 gdk-tiers-none-milestone:
 	$(call gdk_tiers_none,GDK_MILESTONE_TIERS)
 
-# The per-change gate and the full gate, and the compositions print nothing of
-# their own: each member's verdict is the output.
-precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) check $(GDK_PRECOMMIT_TIERS) ## Per-change gate: check + GDK_PRECOMMIT_TIERS
+# --- The compositions ---------------------------------------------------------
+# `precommit` and `milestone` are `check` plus the tiers the kit declared, run
+# as the goals of ONE sub-make inside a gate slot of the composition's own
+# name — so the ledger gains a `gate` row called `precommit` / `milestone`
+# that times the whole target, beside the rows its members file for
+# themselves, and `verify --plan` can read the wide rungs' cost instead of
+# answering `unknown`.
+#
+# WHY A SUB-MAKE. These were prerequisite-only targets through 0.2.0 —
+# `precommit: check $(GDK_PRECOMMIT_TIERS)` — and make runs prerequisites
+# without ever entering a recipe, so nothing could open a slot; every member
+# filed a cost row and the composition filed none (0.2.0/bugs/
+# a-composition-has-no-slot). A recipe appended to that prerequisite list
+# does not fix it: prerequisites run first and the recipe after, so it
+# cannot time what preceded it. The members therefore run INSIDE the recipe,
+# as the goals of a sub-make, and the slot brackets the sub-make.
+#
+# WHAT REACHES THE CONSOLE: only what the members print. The capture is
+# forced loud for the composition alone (`VERBOSE=1` on the call, in effect
+# for that one function), while the sub-make is handed the VERBOSE the
+# operator set, so each member is as quiet or as loud as it would be typed
+# by hand. The composition's OWN verdict line goes to its transcript, never
+# the console: its outcome is already on the console as its members' lines
+# and in its exit code, and a closing line restating them would be a new
+# line shape for every consumer's grep to learn, carrying no new fact. The
+# row is the point, and the row needs no console line. One consequence: a
+# member's stderr rides the composition's stdout, as every captured gate's
+# does.
+#
+# `make -n precommit` STILL RUNS NOTHING. The sub-make is spelled
+# `$${MAKE:-make}` for the reason `check` gives, so a dry run prints the
+# composition's one recipe — which names every member, in order — and starts
+# nothing. What it no longer does is print each member's own recipe; `make -n
+# check` and `make -n <tier>` do that.
+#
+# THE LEDGER IS WIRED ONCE. GDK_LEDGER_CMD is exported, so the sub-make
+# inherits it and each member files its own row through its own slot; the
+# composition's slot is a different log, so its row is one more, never a
+# duplicate. Empty it and no row is filed by anybody, as before.
+#
+# $(call gdk_composition,<log slot>,<TAG>,<goals...>)
+define gdk_composition
+@set -o pipefail; . $(GDK_GATE_LIB); \
+log="$$(gdk_gate_log $(1))"; verbose="$$VERBOSE"; \
+VERBOSE=1 gdk_gate_capture "$$log" -- env VERBOSE="$$verbose" $${MAKE:-make} $(3); \
+status="$$GDK_GATE_EXIT"; \
+summary="PASS ($(strip $(3)))"; \
+[ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))"; \
+gdk_gate_verdict $(2) "$$summary" "$$log" >> "$$log"; \
+exit "$$status"
+endef
 
-milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) check $(GDK_MILESTONE_TIERS) ## Full gate: check + GDK_MILESTONE_TIERS
+precommit: $(if $(GDK_PRECOMMIT_TIERS),,gdk-tiers-none-precommit) ## Per-change gate: check + GDK_PRECOMMIT_TIERS
+	$(call gdk_composition,precommit,PRECOMMIT,check $(GDK_PRECOMMIT_TIERS))
+
+milestone: $(if $(GDK_MILESTONE_TIERS),,gdk-tiers-none-milestone) ## Full gate: check + GDK_MILESTONE_TIERS
+	$(call gdk_composition,milestone,MILESTONE,check $(GDK_MILESTONE_TIERS))

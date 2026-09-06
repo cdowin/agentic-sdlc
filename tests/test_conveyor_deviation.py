@@ -162,22 +162,21 @@ def test_a_run_where_something_is_not_true_reports_a_scoreboard():
 
 
 # --- the refusal matrix: exit code AND a byte-identical ledger -----------------
-@pytest.mark.parametrize('argv,expected', [
+def test_the_flag_refusal_matrix_is_exit_2_and_writes_no_row():
     # The removed flag is NAMED rather than swept into `unknown option`: a
     # consumer's script may still carry it, and "unknown option '--skip'"
     # would send them looking for a typo.
-    (('--skip', FALSE.name, '--reason', 'x'), 'was removed in 0.2.0'),
-    (('--skip',), 'was removed in 0.2.0'),
-    (('--reason', 'x'), 'was removed in 0.2.0'),
-    (('--nonsense',), 'unknown option'),
-])
-def test_the_flag_refusal_matrix_is_exit_2_and_writes_no_row(argv, expected):
     with tree() as root:
         before = (root / LEDGER).exists()
-        code, out = run(*argv)
-        assert code == 2, out
-        assert expected in out, out
-        assert (root / LEDGER).exists() == before, 'a refusal left a row'
+        for argv, expected in ((('--skip', FALSE.name, '--reason', 'x'),
+                                'was removed in 0.2.0'),
+                               (('--skip',), 'was removed in 0.2.0'),
+                               (('--reason', 'x'), 'was removed in 0.2.0'),
+                               (('--nonsense',), 'unknown option')):
+            code, out = run(*argv)
+            assert code == 2, (argv, out)
+            assert expected in out, (argv, out)
+            assert (root / LEDGER).exists() == before, f'{argv}: a refusal left a row'
 
 
 def test_a_run_against_an_unresolvable_version_writes_nothing():

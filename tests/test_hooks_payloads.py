@@ -71,35 +71,36 @@ def fire(root: Path, hook: str, command: str) -> int:
 
 
 # --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
-@pytest.mark.parametrize('command', [
+ALLOWED = (
     # pre-fix: all four false-BLOCKED (exit 2)
     'git commit --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=list.txt -m "msg"',
     'git commit -m "fix: x" --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=- -m "msg"',
-])
-def test_pathspec_from_file_names_paths_and_is_allowed(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+    # the exemptions that predate the fix
     'git commit -m "fix: x" -- a.py',      # explicit `--` pathspec
     'git commit -m "fix: x" a.py',         # bare path argument
     'git commit --amend',                  # exempt: another rule's territory
     'git commit --dry-run',                # exempt: writes nothing
     'git status',                          # not a commit at all
-])
-def test_pathspec_existing_exemptions_survive_the_fix(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+)
+BLOCKED = (
     'git commit -m "fix: x"',
     'git commit -am "sweep"',
     'git commit --all -m "sweep"',
-])
-def test_pathspec_a_pathless_commit_still_blocks(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 2
+)
+
+
+def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
+        hooks_repo):
+    """Twelve rows, one case, both directions: a hook that blocks everything
+    and a hook that is disarmed are equally broken, and only the pair tells
+    them apart. A row that answers wrongly names itself."""
+    wrong = ([f'BLOCKED: {c}' for c in ALLOWED
+              if fire(hooks_repo, PATHSPEC, c) != 0]
+             + [f'allowed: {c}' for c in BLOCKED
+                if fire(hooks_repo, PATHSPEC, c) != 2])
+    assert not wrong, wrong
 
 
 # =============================================================================
@@ -518,6 +519,45 @@ def test_a_hook_fed_garbage_or_another_tool_fails_open(hooks_repo, hook):
     other = subprocess.run(['bash', str(hooks_repo / hook)], input=event,
                            text=True, capture_output=True)
     assert other.returncode == 0
+
+
+# --- setup-hooks.sh: arms by glob, and the whole corpus ------------------------
+def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
+    """The forks this replaced did it two ways — a `cc-*.sh` glob, and two
+    named files. The glob is strictly better: it is tolerant of absence AND does
+    not have to be edited when a hook is added. core.hooksPath skips a
+    non-executable hook in silence, so a hook this misses is a guard nobody
+    knows is off. (From test_install.py, which spawns nothing now.)"""
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    previous = Path.cwd()
+    os.chdir(root)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        assert install.main('install-hooks', []) == 0
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+    disarmed = (PATHSPEC, STOP_GATE)
+    for rel in disarmed:
+        (root / rel).chmod(0o644)
+    (root / 'tools' / 'hooks' / 'cc-invented-later.sh').write_text(
+        '#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+    done = subprocess.run(['bash', 'tools/setup-hooks.sh'], cwd=root,
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    for rel in (*disarmed, 'tools/hooks/cc-invented-later.sh'):
+        assert os.access(root / rel, os.X_OK), rel
+    # The whole corpus is armed, not just the cc-* glob: the classic git
+    # hooks (skipped by core.hooksPath in silence when unexecutable) and
+    # the by-path tools.
+    for rel in ('tools/hooks/pre-push', 'tools/hooks/prepare-commit-msg',
+                WORKTREE):
+        assert os.access(root / rel, os.X_OK), rel
+    assert git(root, 'config', 'core.hooksPath').stdout.strip() == 'tools/hooks'
 
 
 # =============================================================================

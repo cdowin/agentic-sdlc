@@ -439,12 +439,11 @@ IS_A_DECISION = [
 ]
 
 
-@pytest.mark.parametrize('line', NOT_A_DECISION)
-def test_a_line_that_is_not_a_decision_for_this_path_does_not_satisfy_it(line):
+def test_decides_anchors_on_the_path_and_accepts_every_operator_spelling():
     """A2 — the test was `rel in line`, a SUBSTRING anywhere on the line.
 
     Measured on a scratch consumer with `tools/hooks/pre-push` drifted and the
-    first line above written under `## decisions`:
+    first NOT_A_DECISION line written under `## decisions`:
 
         JUDGEMENT ALREADY-TRUE — 1 drifted file(s), each decided in …
 
@@ -452,16 +451,17 @@ def test_a_line_that_is_not_a_decision_for_this_path_does_not_satisfy_it(line):
     trailing word counted as a decision for it. `install.PLANS` holds no
     substring pair today — which is what kept it latent — and "no two shipped
     paths are prefixes of each other" is not an invariant anything asserts.
+
+    The other direction is the half that makes the anchor a fix rather than a
+    refusal: a step that stopped accepting real decisions would be unusable,
+    and an operator would delete it from `[adopt] steps`. Both lists in one
+    case: a pure predicate costs nothing per row.
     """
-    assert not steps._decides(line, 'tools/hooks/pre-push'), line
-
-
-@pytest.mark.parametrize('line', IS_A_DECISION)
-def test_the_spellings_an_operator_writes_still_count_as_a_decision(line):
-    """The other direction, and it is the half that makes the anchor a fix
-    rather than a refusal: a step that stopped accepting real decisions would
-    be unusable, and an operator would delete it from `[adopt] steps`."""
-    assert steps._decides(line, 'tools/hooks/pre-push'), line
+    wrong = ([f'accepted: {line!r}' for line in NOT_A_DECISION
+              if steps._decides(line, 'tools/hooks/pre-push')]
+             + [f'refused: {line!r}' for line in IS_A_DECISION
+                if not steps._decides(line, 'tools/hooks/pre-push')])
+    assert not wrong, wrong
 
 
 def test_a_decision_for_a_longer_path_does_not_satisfy_the_shorter_one():
@@ -561,13 +561,19 @@ BROKEN_SECTIONS = [
 ]
 
 
-@pytest.mark.parametrize('section,config,expected', BROKEN_SECTIONS)
-def test_config_updated_refuses_every_section_it_names(section, config,
-                                                       expected):
+def reconfigure(root: Path, config: str) -> None:
+    """Rewrite the tree's devkit.toml (flow appended) and drop the cached
+    read, so one scratch repo serves a whole matrix instead of a `git init`
+    and a commit per row."""
+    (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
+    load_config.cache_clear()
+
+
+def test_config_updated_refuses_every_section_it_names():
     """A1 — the step asked SIX readers and reported a census of TEN sections.
 
     `checks`, `grain_shape`, `repo_hygiene` and `verify` were named in the pass
-    line and never asked, so each of these four `devkit.toml` files produced:
+    line and never asked, so each of those four `devkit.toml` files produced:
 
         TRUE — 6 reader(s) accept this repo's devkit.toml; declared here: <it>
 
@@ -576,11 +582,13 @@ def test_config_updated_refuses_every_section_it_names(section, config,
     all four measured). The detail line is what turned a gap into a lie: it
     named the broken section under the word "accept".
     """
-    with tree(config=config) as root:
-        answer = step('config-updated').check(ctx(root))
-    assert not answer.is_true, answer
-    assert section in answer.detail, answer.detail
-    assert expected in answer.detail, answer.detail
+    with tree() as root:
+        for section, config, expected in BROKEN_SECTIONS:
+            reconfigure(root, config)
+            answer = step('config-updated').check(ctx(root))
+            assert not answer.is_true, (section, answer)
+            assert section in answer.detail, (section, answer.detail)
+            assert expected in answer.detail, (section, answer.detail)
 
 
 # Every `devkit.toml` section this version reads, with a body the grammar
@@ -784,7 +792,7 @@ def test_a_deleted_run_file_costs_nothing():
 
 
 # --- the refusal matrix (SDLC.md §5) ------------------------------------------
-@pytest.mark.parametrize('config,expected', [
+CONFIG_REFUSALS = [
     ('[adopt]\nsteps = "pin-bumped"\n', 'list of strings'),
     ('[adopt]\nsteps = []\n', 'remove the key'),
     ('[adopt]\nsteps = ["pin-bumpd"]\n', 'no step is registered'),
@@ -807,13 +815,19 @@ def test_a_deleted_run_file_costs_nothing():
     ('[adopt]\npin_file = 3\n', 'pin_file'),
     ('[adopt]\nrunner_targets = "check"\n', 'runner_targets'),
     ('[adopt]\nrunner_targets = []\n', 'runner_targets'),
-])
-def test_the_config_refusal_matrix_is_exit_2_and_runs_no_step(config, expected):
-    with tree(config=config) as root:
-        with pytest.raises(ConfigError) as err:
-            driver.step_names('adopt')
-        assert expected in str(err.value), str(err.value)
-        assert not (root / '.agentic-sdlc').exists()
+]
+
+
+def test_the_config_refusal_matrix_is_exit_2_and_runs_no_step():
+    """Every row, one tree: each row is one config read that raises, and the
+    parametrize paid a `git init` and a commit per row for it."""
+    with tree() as root:
+        for config, expected in CONFIG_REFUSALS:
+            reconfigure(root, config)
+            with pytest.raises(ConfigError) as err:
+                driver.step_names('adopt')
+            assert expected in str(err.value), (config, str(err.value))
+            assert not (root / '.agentic-sdlc').exists(), config
 
 
 def test_no_devkit_toml_and_the_stock_list_declared_are_the_same_bytes():
@@ -828,17 +842,17 @@ def test_no_devkit_toml_and_the_stock_list_declared_are_the_same_bytes():
     assert absent == explicit == steps.DEFAULT_ADOPT_STEPS
 
 
-@pytest.mark.parametrize('argv,expected', [
-    (['adopt'], 2),
-    (['adopt', '--nope'], 2),
-    (['adopt', '0.2.0', 'extra'], 2),
-    (['adopt', '../etc'], 2),
-    (['adopt', '9.9.9', '--skip', 'checks-pass'], 2),
-])
-def test_the_verb_refusal_matrix(argv, expected, capsys):
+def test_the_verb_refusal_matrix(capsys):
+    """Usage errors over the same tree; the id grammar itself is proven row
+    by row in test_conveyor_driver.py's TheVersionRefusalMatrix."""
     with tree() as root:
-        assert driver.main(argv, root=root) == expected
-        assert not (root / '.agentic-sdlc').exists()
+        for argv in (['adopt'],
+                     ['adopt', '--nope'],
+                     ['adopt', '0.2.0', 'extra'],
+                     ['adopt', '../etc'],
+                     ['adopt', '9.9.9', '--skip', 'checks-pass']):
+            assert driver.main(argv, root=root) == 2, argv
+            assert not (root / '.agentic-sdlc').exists(), argv
     capsys.readouterr()
 
 

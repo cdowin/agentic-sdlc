@@ -39,8 +39,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
@@ -471,14 +469,17 @@ def test_the_preflight_carries_exactly_one_refusal():
         f'the suite asserts one — the git-repo check')
 
 
-@pytest.mark.parametrize('flag', ['--forse', '-f', 'install', '--diff=1', ''])
-def test_an_unknown_flag_is_a_usage_error_that_writes_nothing(flag):
+def test_an_unknown_flag_is_a_usage_error_that_writes_nothing():
+    """Five spellings, one project: a usage error writes nothing, so the
+    tree is as fresh for the second flag as for the first."""
     with fresh_project() as root:
-        done = devkit(root, 'init', flag)
-        left = set(census(root))
-    assert done.returncode == 2, done.stdout + done.stderr
-    assert 'unknown flag' in done.stderr
-    assert left == set(PRE_EXISTING), f'a usage error wrote: {sorted(left)}'
+        for flag in ('--forse', '-f', 'install', '--diff=1', ''):
+            done = devkit(root, 'init', flag)
+            left = set(census(root))
+            assert done.returncode == 2, (flag, done.stdout + done.stderr)
+            assert 'unknown flag' in done.stderr, flag
+            assert left == set(PRE_EXISTING), (
+                f'{flag!r}: a usage error wrote: {sorted(left)}')
 
 
 def test_help_prints_the_written_set_and_writes_nothing():

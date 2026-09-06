@@ -32,19 +32,25 @@ branch: milestone/0.3.0-the-bump-explains-itself
 
 **The bump reports itself** (seven features) — everything above, from the two adoptions.
 
-**The release becomes a thing the tree holds** (five). The adoptions exposed a hole underneath
-them: this package has a `release` BELT, a `[pm] version_file` and D8 saying the project version
-equals an in-progress milestone's id — three facts about versions, and nothing that IS one. So a
-version cannot be planned, ordered or pointed at, and `0.3.0/bugs/the-first-milestone-never-closed`
-is what that costs: 0.1.0's work shipped inside `v0.2.0` and its milestone has said `planning`
-ever since, because every rule asks a question INSIDE the tree and nothing relates a milestone to
-a release.
+**The milestone becomes a release the plan can order** (three). The adoptions exposed a hole
+underneath them: this package has a `release` BELT, a `[pm] version_file` and D8 welding the
+project version to a milestone's ID — three facts about versions, and no way to plan, order or
+point at one. `0.3.0/bugs/the-first-milestone-never-closed` is the cost: 0.1.0's work shipped
+inside `v0.2.0` and its milestone has said `planning` ever since, because every rule asks a
+question INSIDE the tree.
 
-A release becomes a grain with a state and a goal; `releases.toml` declares the order and nothing
-else; any grain names the release it ships in, and absence means unscheduled. The tool stops
-parsing version strings entirely — order comes from the list, so "did it increase" is a position
-and not a compare, which is both scheme-agnostic and immune to `0.90.10` sorting before `0.90.4`.
-D8 becomes R5 against the release, so a milestone id goes back to being a name.
+A first draft added a release grain. That was a second name for a fact the tree already holds —
+`accepted` and `packaging` are milestone-only states, words that mean nothing for a body of work
+and everything for a release; the milestone carries `branch:`; the belt already writes its status.
+**The milestone IS the release**, and what it lacks is one field and one list.
+
+`version:` separates the number from the id, so `0.90.4.1` — a version contorted to express where
+work sits — becomes a slug plus a field. `releases.toml` declares `order`, because order is a
+decision and sorting versions would need a comparator that cannot sort `0.90.3.2` and would
+re-couple the two facts anyway. Authoring and scheduling become separate acts: a milestone
+declares a version, `pm order --append` puts it on the plan, and the pair of lint rules catches an
+entry nobody claims or a version nobody scheduled. The engine never parses a version string —
+"did it increase" is a position in a list.
 
 The consumer-visible theme is **a bump that reports itself completely**. An installer that says
 which files it touched AND which targets it removed; a config error that names the namespace it

@@ -2,7 +2,7 @@
 id: 0.2.0/every-question-is-asked-of-a-category
 milestone: "0.2.0"
 name: The engine gets two verbs, and every question in the census is routed through them
-status: building
+status: reviewing
 reviewed:
 phase: 7
 depends_on: ["0.2.0/the-project-declares-its-flow", "0.2.0/the-belt-reports-and-finishes"]

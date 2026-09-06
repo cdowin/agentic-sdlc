@@ -420,9 +420,9 @@ Reviewer's token cost: ~180k.
 ```text
 verdict: HOLD
 | id | severity | disposition |
-| P1 | MAJOR | open: restate criterion 1 as integration under 50 s and drop the unit wall clock in favour of the case ceiling, or keep 5 s and accept the feature closes unmet |
-| P2 | MAJOR | open: restate criterion 2 as under 1100 collected and ratio under 1.5, carrying 700 and 1.2 forward as 0.3.0's target |
-| P3 | MAJOR | open: accept 3afa141 and 549475f as-is on the strength of the probes, and hold every future cut to the per-removal form 33a6f40 demonstrates |
+| P1 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
+| P2 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
+| P3 | MAJOR | rejected: close enough and directionally right — the number was a direction, not the goal (Chris, 2026-09-06)|
 | P4 | MINOR | open |
 | P5 | MINOR | open: lower cases to unit 800 and integration 500 now, or leave the ceilings and accept the suite may double back |
 | P6 | MINOR | open: gate the two template sections in check grain-shape, or accept them as unenforced prose |

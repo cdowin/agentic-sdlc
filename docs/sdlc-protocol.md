@@ -34,7 +34,7 @@ that does not parse — prints `unverifiable:` and counts as false: a write over
 a question nobody answered is the one thing this machine will not do.
 
 This tool reads and writes the PM tree and says what it saw. Whether a false
-check should stop you is YOUR question: the engine cannot know whether it is
+check should stop you is YOUR question: the tool cannot know whether it is
 wrong (descoped? a hotfix? deliberate?), which is what `--force` is for, on
 the record. `agentic-sdlc check <gate>` is the thing that FAILS a tree, in CI
 and pre-push, with an exit-code contract for exactly that.
@@ -104,7 +104,7 @@ and pre-push, with an exit-code contract for exactly that.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `stories-done` | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is in the `done` category (any state of it), and each one that is not is NAMED. |
-| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES (`pm/verdict.py`). Whether the review was any good is NOT checked and must not be. |
+| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES, through the same parser `pm ready-for` reads. Whether the review was any good is NOT checked and must not be. |
 | 3 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open` — the same question `pm ready-for tag` asks one grain up, through the same parser. |
 
 **Then, all true:** the feature's status → the first state of `[pm.states.feature] done` (`pm vocabulary` prints it), through `pm feature <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.

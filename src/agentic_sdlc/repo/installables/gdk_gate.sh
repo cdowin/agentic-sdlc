@@ -1,73 +1,31 @@
 #!/usr/bin/env bash
-# gdk_gate.sh — the shared gate-framework library every gate in this repo runs
-# through. Wire it as the thing your `tools/dev/*.sh` wrappers and your
-# `Makefile` recipes source.
-#
-# SOURCE this (do not execute it), except for `--self-test` / `--help`:
+# gdk_gate.sh — the gate-framework library every gate sources: quiet capture,
+# one verdict line naming a full log, a bounded-run contract, and a cost row.
 #
 #   source "$(dirname "${BASH_SOURCE[0]}")/gdk_gate.sh"
 #   log="$(gdk_gate_log parse)"            # this gate's transcript slot
 #   gdk_gate_capture "$log" -- make thing  # run it, quiet unless VERBOSE=1
 #   gdk_gate_verdict PARSE "PASS (12 files)" "$log"
 #
-# It exists because two consumer repos grew the same shell twice and then
-# drifted: quiet gate capture with a one-line verdict naming a full log, and a
-# bounded-run contract that can tell a hang from a failure. One definition
-# each, here, so a fix reaches both.
-#
-# It is LANGUAGE-NEUTRAL by contract. Everything here reads a command's exit
-# code, its output stream and the clock — nothing about what the command IS.
-# A language kit's own runners (the toolchain it drives, the artifacts it acts
-# on, the sandbox those artifacts need) ship in that kit and source this file;
-# a helper that names a toolchain does not belong in it.
-#
-# EVERY public function is prefixed `gdk_`; every private one `_gdk_`. A
-# consumer that renames them is forking the library and stranding the next fix.
+# `bash gdk_gate.sh --self-test` runs the contract corpus; `--help` lists the rest.
 #
 # --- project config (yours to edit after install — the file is your repo's) --
-# Each of these is an override-able default: set it in the environment, or edit
-# it here.
-#
-#   GDK_GATE_REPORT_DIR       where a gate's full transcript lands. Gitignore
-#                             it. Bounded by construction: the slot is named by
-#                             GATE and each run clears its own.
-#   GDK_LOG_CAP_BYTES         hard cap on a captured stream, so a runaway
-#                             command spewing to stdout cannot fill the disk.
-#                             50 MB is ~1000x a normal transcript.
-#   GDK_TIMEOUT_KILL_AFTER    grace period between the SIGTERM a bound fires
-#                             and the SIGKILL that guarantees no orphaned
-#                             child process survives.
-#   VERBOSE=1                 stream every captured gate to the console too.
-#
-#   GDK_LEDGER_CMD            the command this library files a gate's COST row
-#                             through, as a command STRING (`pm ledger record
-#                             …` is appended to it). EMPTY BY DEFAULT, and an
-#                             empty value spawns nothing at all — a consumer
-#                             with no PM tree pays zero. A sourced library
-#                             cannot see a make variable, so the Makefile that
-#                             owns the pin exports it:
-#                             `export GDK_LEDGER_CMD ?= $(DEVKIT)`.
-#   GDK_LEDGER_TIMEOUT        seconds the recorder is allowed. A recorder that
-#                             hangs must not hang every gate in a pre-push
-#                             hook, so the call is bounded like any other.
-#   GDK_GATE_CENSUS           how many things THIS run walked, set by the gate
-#                             before its verdict. Unset is an ABSENT column,
-#                             never a `0` — a `0` is a measurement, and a run
-#                             over 683 files filing `census: 0` is hard rule
-#                             4's cardinal sin with a number on it. The census
-#                             is NEVER parsed out of the verdict's prose.
-#   GDK_GATE_VERDICT          the run's outcome in the ledger's closed
-#                             vocabulary (PASS|FAIL|HANG|SKIP), for a runner
-#                             that publishes its own result and never went
-#                             through gdk_gate_capture. Unset, it is DERIVED
-#                             from what the captures against this run's LOG
-#                             SLOT reported — the first failing one, or the
-#                             last GDK_GATE_EXIT when none failed.
+# Defaults; set them in the environment or edit them here.
+#   GDK_GATE_REPORT_DIR     where transcripts land (gitignore it); one slot per gate.
+#   GDK_LOG_CAP_BYTES       hard cap on a captured stream.
+#   GDK_TIMEOUT_KILL_AFTER  grace between a bound's SIGTERM and its SIGKILL.
+#   VERBOSE=1               stream every capture to the console too.
+#   GDK_LEDGER_CMD          command STRING the cost row is filed through
+#                           (`pm ledger record …` appended); empty spawns nothing.
+#                           The Makefile exports it: `export GDK_LEDGER_CMD ?= $(DEVKIT)`.
+#   GDK_LEDGER_TIMEOUT      seconds the recorder is allowed.
+#   GDK_GATE_CENSUS         how many things this run walked; unset is an absent
+#                           column, never 0, and never parsed from the verdict.
+#   GDK_GATE_VERDICT        PASS|FAIL|HANG|SKIP for a runner that never captured;
+#                           unset, it is derived from the captures on this log slot.
 # -----------------------------------------------------------------------------
 
-# Guard against double-sourcing: a wrapper may source us once, and some chains
-# source transitively. `return` works when sourced; the `exit` is the executed
-# path, which only `--self-test` / `--help` ever take.
+# Double-source guard: `return` when sourced, `exit` on the executed path.
 if [ -n "${_GDK_GATE_SOURCED:-}" ]; then
 	# shellcheck disable=SC2317  # the `exit` is the EXECUTED path (--self-test)
 	return 0 2>/dev/null || exit 0
@@ -82,21 +40,12 @@ GDK_LEDGER_TIMEOUT="${GDK_LEDGER_TIMEOUT:-30}"
 GDK_GATE_CENSUS="${GDK_GATE_CENSUS:-}"
 GDK_GATE_VERDICT="${GDK_GATE_VERDICT:-}"
 
-# The tag every line this library prints on its OWN behalf carries, so a
-# consumer can tell the library's voice from its gate's.
+# The tag on every line this library prints on its own behalf.
 GDK_LIB_TAG="gdk-gate"
 
 # --- exit-hook dispatcher ----------------------------------------------------
-# Bash has ONE `trap … EXIT` slot per shell: a wrapper's own `trap cleanup EXIT`
-# silently CLOBBERS anything a library installed (and vice versa, depending on
-# source order). So there is exactly one EXIT trap in a wrapper — this
-# dispatcher — and everything else registers a hook.
-#
-#   RULE: inside a wrapper that sources this library, never write a bare
-#   `trap … EXIT`. Use `gdk_on_exit '<command>'`.
-#
-# Hooks run in registration order; a failing hook never masks the script's own
-# exit status.
+# Bash has ONE `trap … EXIT` slot, so a wrapper never writes a bare trap: it
+# registers with `gdk_on_exit`. Hooks run in order; none masks the exit status.
 _GDK_EXIT_HOOKS=()
 
 # shellcheck disable=SC2329  # invoked indirectly via `trap … EXIT`
@@ -116,14 +65,11 @@ gdk_on_exit() {
 }
 
 # --- bounded-run / hang-detection contract ----------------------------------
-# timeout(1) exits 124 when its own SIGTERM deadline fires and 137 (128+SIGKILL)
-# when --kill-after escalates. Either means the run hung.
+# timeout(1) exits 124 on its SIGTERM deadline and 137 when --kill-after escalates.
 GDK_EXIT_SIGTERM_TIMEOUT=124
 GDK_EXIT_SIGKILL_TIMEOUT=137
 
-# timeout binary: GNU coreutils ships `timeout`; on a stock macOS with Homebrew
-# coreutils it is `gtimeout`. Resolve once so every wrapper agrees. Empty if
-# neither is present — callers that require it check and fail loud.
+# GNU `timeout`, or Homebrew's `gtimeout`; empty when neither is on PATH.
 if command -v timeout >/dev/null 2>&1; then
 	GDK_TIMEOUT="timeout"
 elif command -v gtimeout >/dev/null 2>&1; then
@@ -132,18 +78,13 @@ else
 	GDK_TIMEOUT=""
 fi
 
-# gdk_timeout_is_hang <exit_code> — true if the code is a timeout kill. A
-# piped capture reads PIPESTATUS itself and cannot use gdk_run_bounded;
-# this is how it tells a HANG from a failing gate without respelling the codes.
+# gdk_timeout_is_hang <exit_code> — true if the code is a timeout kill.
 gdk_timeout_is_hang() {
 	local code="${1:?usage: gdk_timeout_is_hang <exit_code>}"
 	[ "$code" -eq "$GDK_EXIT_SIGTERM_TIMEOUT" ] || [ "$code" -eq "$GDK_EXIT_SIGKILL_TIMEOUT" ]
 }
 
-# gdk_run_bounded <seconds> -- <cmd...>
-# Run a NON-piped command under the shared timeout contract; returns its exit
-# code (124/137 on hang, 2 when no timeout binary exists). A piped capture
-# keeps its own PIPESTATUS idiom and references "$GDK_TIMEOUT" directly.
+# gdk_run_bounded <seconds> -- <cmd...> — run under the timeout contract; 2 with no binary.
 gdk_run_bounded() {
 	local secs="${1:?usage: gdk_run_bounded <seconds> -- <cmd...>}"; shift
 	[ "${1:-}" = "--" ] && shift
@@ -154,53 +95,20 @@ gdk_run_bounded() {
 	"$GDK_TIMEOUT" --kill-after="$GDK_TIMEOUT_KILL_AFTER" "${secs}s" "$@"
 }
 
-# --- gate output: a summary on the console, the full transcript on disk ------
-# A gate that STREAMS its whole run to the console prints hundreds of lines of
-# which two matter (the verdict, and any error line), and every agent pays
-# that on every run — so the default is the summary and the stream goes to a
-# file.
-#
-# The report dir cannot rot the way a per-job one does: the slot is named by
-# GATE, each run clears the slot it is about to write, and there is a handful
-# of gate names — so the directory is bounded BY CONSTRUCTION and there is no
-# reaper anyone can forget to call.
-
-# --- the cost row: what a gate run cost, filed once, failing OPEN ------------
-# A gate that nobody times is a gate that can double in cost unnoticed. So the
-# funnel that already owns the transcript also owns the clock.
-#
-# THE FUNNEL IS THE PAIR, KEYED ON THE LOG SLOT. Not `gdk_gate_capture` (a
-# publish-only runner never calls it, and a two-stage gate calls it twice) and
-# not `gdk_gate_verdict` alone (a runner with five alternative exits calls that
-# up to six times per run, which would file six rows for one gate). It is
-# `gdk_gate_log` → the FIRST `gdk_gate_verdict` naming the same slot: the log
-# is minted exactly once per run by every path that reports at all.
-#
-# The start time lives in a SIDECAR FILE beside the log, not in a variable,
-# because the caller spelling is `log="$(gdk_gate_log parse)"` — a command
-# substitution, whose shell dies with the assignment. A variable set there
-# would be gone by the time the verdict reads it, on every real caller.
-# The sidecar is the marker too: the first verdict consumes it, so every later
-# verdict for that run finds nothing and files nothing. It is bounded the same
-# way the log is — one per gate name, cleared by the next run of that gate.
-#
-# FAIL OPEN, OUT LOUD. Every path out of this block returns 0. A ledger that
-# cannot be written is a gap in the measurement and NEVER a gate failure: this
-# code is on the path of every gate in every consumer, and a bug here would red
-# all of them. That is the rule `cc-ledger-session.sh` already makes for
-# itself, for the same reason and in the same words. What it never does is fail
-# SILENTLY — each refusal says one line on stderr, because a ledger quietly
-# missing rows is hard rule 4's read-side sin with a library around it.
+# --- gate output and the cost row --------------------------------------------
+# The console gets one summary line; the stream goes to a per-gate slot that
+# each run clears, so the report dir is bounded by construction.
+# A slot's cost row is filed once, by the FIRST verdict naming it; the start
+# time lives in a sidecar file because the log path is minted inside a `$( )`.
+# Every path through the ledger code returns 0: a row that cannot be written
+# is one note on stderr, never a gate failure.
 
 # _gdk_ledger_note <what> — one line, on stderr, never on the verdict's stream.
 _gdk_ledger_note() {
 	printf '%s: %s — no cost row for this gate\n' "$GDK_LIB_TAG" "$1" >&2
 }
 
-# _gdk_ledger_sidecar <logfile> — where THIS slot's start time is parked.
-# Derived from the log path with parameter expansion rather than
-# `dirname`/`basename`: two spawns per gate to compute a name is a cost the
-# quiet path must not pay.
+# _gdk_ledger_sidecar <logfile> — this slot's start-time file; expansion, not spawns.
 _gdk_ledger_sidecar() {
 	case "$1" in
 		*/*) printf '%s/.%s.gdkms' "${1%/*}" "${1##*/}" ;;
@@ -208,13 +116,8 @@ _gdk_ledger_sidecar() {
 	esac
 }
 
-# The clock, resolved once. `date +%s%N` is GNU; BSD date hands back a literal
-# `N` and every duration computed from it would be garbage, so the result is
-# CHECKED rather than assumed. python3 is the fallback, and when neither
-# answers there is no millisecond clock and no row — a second-resolution
-# duration is not a cheaper answer to this question, it is a wrong one:
-# fourteen of the twenty gates this feature was planned from are under a
-# second, and each would file `0`.
+# The clock, resolved once: BSD date has no %N, python3 is the fallback, and
+# no millisecond clock means no row rather than a wrong one.
 _GDK_CLOCK=''
 
 _gdk_now_ms() {
@@ -239,9 +142,7 @@ _gdk_now_ms() {
 	esac
 }
 
-# _gdk_ledger_open <gate> <logfile> — start this slot's clock. Nothing at all
-# happens without GDK_LEDGER_CMD, which is criterion "a consumer with no PM
-# tree pays zero": no clock spawn, no sidecar, no subprocess.
+# _gdk_ledger_open <gate> <logfile> — start the slot's clock; nothing without GDK_LEDGER_CMD.
 _gdk_ledger_open() {
 	[ -n "$GDK_LEDGER_CMD" ] || return 0
 	local now side
@@ -251,59 +152,27 @@ _gdk_ledger_open() {
 		return 0
 	fi
 	side="$(_gdk_ledger_sidecar "$2")"
-	# The `2>/dev/null` comes FIRST on purpose: redirections are applied left to
-	# right, so a `>` that cannot create the file reports to an fd 2 that is
-	# already /dev/null. An unwritable report dir is not a gate failure.
+	# `2>/dev/null` first: an unwritable report dir must not become a gate failure.
 	printf '%s\n%s\n' "$now" "$1" 2>/dev/null > "$side" || true
 	return 0
 }
 
-# _gdk_ledger_fault <logfile> <exit code> — remember, ON THE SLOT, that a
-# capture against it failed.
-#
-# THE VERDICT IS THE SLOT'S, NOT THE LAST COMMAND'S. `gdk_gate_capture`
-# publishes each command's own code in GDK_GATE_EXIT and a runner reads it
-# there — that is the published contract and it stays last-write-wins. But a
-# runner that captures N times against ONE `gdk_gate_log` slot (this repo's own
-# `matrix` target loops one capture per interpreter) then leaves the LAST
-# command's code standing when the verdict closes the row, so a matrix that
-# failed on the first interpreter and passed on the last filed
-# `"verdict":"PASS"` under a console line reading `FAIL on first`. A durable
-# record that prints the opposite of what the gate found is hard rule 4's
-# read-side sin, in the feature whose whole job is honest measurement.
-#
-# FIRST NON-ZERO WINS, and it is parked in the sidecar rather than a variable
-# for the reason the sidecar exists at all: the state belongs to the SLOT, so
-# two interleaved slots cannot read each other's, and a global would. Appending
-# is the whole write — the first non-zero lands on line 3 and every later one
-# lands past it, unread, so "the first thing that went wrong" needs no compare.
+# _gdk_ledger_fault <logfile> <exit code> — remember on the slot that a capture
+# failed; the first non-zero wins, so a slot's verdict answers for every capture.
 _gdk_ledger_fault() {
 	[ -n "$GDK_LEDGER_CMD" ] || return 0
 	case "${2-}" in ''|*[!0-9]*) return 0 ;; esac
 	[ "$2" -ne 0 ] || return 0
 	local side
 	side="$(_gdk_ledger_sidecar "${1-}")"
-	# No sidecar means no open slot for this log; a capture must never MINT one
-	# (a row whose start time was never taken would be a fabricated duration).
+	# No sidecar means no open slot, and a capture never mints one.
 	[ -f "$side" ] || return 0
 	printf '%s\n' "$2" 2>/dev/null >> "$side" || true
 	return 0
 }
 
-# _gdk_ledger_verdict [slot exit code] — the run's outcome in the ledger's
-# CLOSED vocabulary, or nothing when this library would have to guess.
-#
-# The verdict never comes from the message. `gdk_gate_verdict`'s second
-# argument is prose a human wrote ("PASS (12 files)", "FAIL (exit 3) — 2
-# check(s) PASS"), and a durable column read out of prose is a column with five
-# spellings of one outcome. GDK_GATE_EXIT is the fact: `gdk_gate_capture`
-# publishes the command's own code, and 124/137 are the timeout pair the
-# bounded-run contract above already names. A runner that publishes its own
-# result without capturing says so in GDK_GATE_VERDICT.
-#
-# The argument is the SLOT's code when one was remembered (`_gdk_ledger_fault`),
-# and it outranks GDK_GATE_EXIT for the reason spelled out there: a slot's
-# verdict must reflect every capture against it, not the last.
+# _gdk_ledger_verdict [slot exit code] — PASS|FAIL|HANG from an exit code, never
+# from the message; GDK_GATE_VERDICT wins, then the slot's code, then GDK_GATE_EXIT.
 _gdk_ledger_verdict() {
 	case "$GDK_GATE_VERDICT" in
 		PASS|FAIL|HANG|SKIP) printf '%s' "$GDK_GATE_VERDICT"; return 0 ;;
@@ -324,30 +193,7 @@ _gdk_ledger_verdict() {
 	fi
 }
 
-# _gdk_ledger_run <argv...> — the recorder, BOUNDED. A broken recorder that
-# hangs would otherwise hang every gate in a consumer's pre-push hook, which is
-# the one failure mode worse than a missing row. With no timeout binary there
-# is no bound to give, so there is no row either — said out loud, once.
-#
-# THE BOUND IS ONLY HALF THE ANSWER, AND IT WAS THE HALF THAT ALREADY WORKED.
-# `timeout` bounds the recorder's own runtime; it does not bound how long this
-# library WAITS for it, and until 0.2.0 those were different numbers. The
-# caller read the recorder through `$( )`, whose pipe every grandchild
-# inherits, so a recorder that backgrounded anything held the gate open for as
-# long as the grandchild lived. Measured on the shipped file, GDK_LEDGER_TIMEOUT=3:
-#
-#   GDK_LEDGER_CMD="sh -c 'sleep 120 & exit 0'"   ->  120072 ms
-#
-# The deadline never even fired there. `timeout` returned 0 in under a
-# millisecond, because its direct child DID exit — isolated:
-#
-#   timeout 2 sh -c 'sleep 20 & exit 0'                    0 s
-#   out="$(timeout 2 sh -c 'sleep 20 & exit 0' 2>&1)"     20 s
-#   timeout 2 sh -c 'sleep 20 & exit 0' >"$f" 2>&1         0 s
-#
-# So killing the process group would have fixed nothing: there was no deadline
-# to fire and nothing to signal. The stall was the READER, and the fix is to
-# stop reading through a pipe — see `_gdk_ledger_record`.
+# _gdk_ledger_run <argv...> — the recorder, bounded; no timeout binary, no row.
 _gdk_ledger_run() {
 	if [ -z "$GDK_TIMEOUT" ]; then
 		return 1
@@ -355,35 +201,9 @@ _gdk_ledger_run() {
 	gdk_run_bounded "$GDK_LEDGER_TIMEOUT" -- "$@"
 }
 
-# THE VALUE IS PARSED INSIDE THE BOUND, NOT IN FRONT OF IT.
-# GDK_LEDGER_CMD is a command STRING, and the stock spelling carries shell
-# quoting (`uvx --from "git+https://…@$(DEVKIT_VERSION)" agentic-sdlc`), so a
-# bare word split would hand `uvx` a spec with literal quote characters in it.
-# `eval` into an array is the one shape that parses it the way the Makefile
-# recipe next to it does, and that quoting support is not negotiable.
-#
-# But a value is not inert text to `eval`: every `$( )` and backtick in it
-# EXECUTES while the array is built. That build used to happen in the GATE'S
-# OWN shell, before `timeout` was ever invoked. Measured on the shipped file,
-# GDK_LEDGER_TIMEOUT=3:
-#
-#   GDK_LEDGER_CMD='true $(sleep 20)'   ->  20062 ms, and NO note at all
-#
-# Same symptom as the fork case above — the recorder holds the gate open past
-# its bound — and a different mechanism, so that fix does not reach this one:
-# there the READER blocked on an inherited pipe, here the value ran during
-# parse. Refusing `$(`, a backtick and `${` BY SHAPE would close the three
-# spellings the review measured and not the class, because
-# `eval "prefix=(a); sleep 20; x=("` carries none of them and runs just as
-# long. So the parse moved inside the bound, where nothing it spells can
-# outlive the deadline.
-#
-# `exec` is what keeps the bound honest for the recorder too: the shim's last
-# act replaces itself with the recorder, so `timeout`'s direct child is still
-# the recorder's own process and the signal path is the one measured above.
-# 121 is the shim's OWN refusal — outside the codes a recorder plausibly
-# returns, and confirmed against the message it prints, so a value this shell
-# cannot parse is never reported as something the recorder did.
+# The value is parsed INSIDE the bound: `eval` runs any `$( )` in GDK_LEDGER_CMD
+# while the array is built, so the shim does it under `timeout` and `exec`s the
+# recorder. 121 is the shim's own refusal, outside any code a recorder returns.
 _GDK_LEDGER_PARSE_REFUSAL='GDK_LEDGER_CMD is not a command line this shell can parse'
 # shellcheck disable=SC2016  # $1/$2/$@ are the SHIM's positionals, not ours
 _GDK_LEDGER_SHIM='
@@ -393,14 +213,8 @@ shift 2
 exec "${prefix[@]}" "$@"
 '
 
-# _gdk_ledger_record <gate> <verdict> <duration_ms> [scratch]
-#
-# `scratch` is where the recorder's output is parked while it runs. It is a
-# path, not a pipe, and that is the whole of the fix above: a file has no
-# writer to wait for, so this returns when `timeout` returns whatever the
-# recorder forked. Given empty (or a path that cannot be created), the output
-# goes to /dev/null instead — a row without its refusal message is a
-# degradation; a gate that will not return is not.
+# _gdk_ledger_record <gate> <verdict> <duration_ms> [scratch] — scratch is a
+# FILE, not a pipe, so a forking recorder cannot hold the gate open.
 _gdk_ledger_record() {
 	local said='' rc=0 scratch="${4-}"
 	local -a argv
@@ -411,38 +225,23 @@ _gdk_ledger_record() {
 			_gdk_ledger_note "GDK_GATE_CENSUS=\"$GDK_GATE_CENSUS\" is not a count, so the row omits it" ;;
 		*) argv=("${argv[@]}" --census "$GDK_GATE_CENSUS") ;;
 	esac
-	# Both streams are captured: stdout must never reach the console, because a
-	# consumer greps the `[TAG] … full log:` line (hard rule 6) and a chatty
-	# recorder would sit in the middle of it. What the recorder said is not
-	# thrown away, though — a refusal it printed is the one thing a consumer
-	# needs, so its first line rides out on the note.
-	#
-	# TO A FILE. This was `said="$(_gdk_ledger_run … 2>&1)"` and that is the
-	# defect — see `_gdk_ledger_run`'s block above for the measurement. The
-	# probe is `: >"$scratch"`, run BEFORE the recorder: an unwritable report
-	# dir must degrade to /dev/null rather than turn a redirection failure into
-	# "the recorder exited 1", which would blame the recorder for the tree.
-	# The recorder's own argv is built HERE and parsed THERE — see
-	# `_GDK_LEDGER_SHIM`. Everything this file adds is a separate argv element,
-	# so a gate name with a space or a metacharacter is still ONE element and
-	# story 01's grammar is what refuses it.
+	# Both streams go to the file: stdout must never sit inside the `[TAG] …` line,
+	# and the recorder's first line rides out on the note. The argv is built here
+	# and parsed in the shim, so a gate name is ONE element whatever it contains.
 	local -a cmd
 	cmd=("${BASH:-bash}" -c "$_GDK_LEDGER_SHIM" _ \
 		"$GDK_LEDGER_CMD" "$_GDK_LEDGER_PARSE_REFUSAL" "${argv[@]}")
 	if [ -n "$scratch" ] && : 2>/dev/null > "$scratch"; then
 		_gdk_ledger_run "${cmd[@]}" > "$scratch" 2>&1 || rc=$?
-		# One line is all the note carries, so one line is all that is read —
-		# a recorder that printed a megabyte does not become a shell variable.
+		# One line is all the note carries.
 		IFS= read -r said < "$scratch" 2>/dev/null || said="${said-}"
-		# Unlinked immediately: anything the recorder forked still holds the
-		# fd and writes into an inode with no name, freed when it dies.
+		# Unlinked at once; a forked grandchild keeps writing to a nameless inode.
 		rm -f "$scratch" 2>/dev/null || true
 	else
 		_gdk_ledger_run "${cmd[@]}" > /dev/null 2>&1 || rc=$?
 	fi
 	if [ "$rc" -eq 121 ] && [ "$said" = "$_GDK_LEDGER_PARSE_REFUSAL" ]; then
-		# The shim refused the VALUE; no recorder ever ran, so it is not the
-		# recorder's exit code that gets reported.
+		# The shim refused the value; no recorder ran.
 		_gdk_ledger_note "$said"
 	elif [ "$rc" -ne 0 ]; then
 		_gdk_ledger_note "the recorder exited $rc: ${said%%$'\n'*}"
@@ -455,11 +254,9 @@ _gdk_ledger_close() {
 	[ -n "$GDK_LEDGER_CMD" ] || return 0
 	local side start='' gate='' fault='' now duration verdict
 	side="$(_gdk_ledger_sidecar "${1-}")"
-	# No sidecar: either no slot was opened for this log, or this run already
-	# filed its row and this is a second verdict line. Both are silent.
+	# No sidecar: no slot was opened, or the row is already filed.
 	[ -f "$side" ] || return 0
-	# Line 3 is the first failing capture against this slot, if there was one;
-	# a slot every capture passed has no line 3 and the chain simply stops.
+	# Line 3 is the first failing capture, if any.
 	{ read -r start && read -r gate && read -r fault; } < "$side" 2>/dev/null || true
 	rm -f "$side" 2>/dev/null || true
 	case "$start" in ''|*[!0-9]*) return 0 ;; esac
@@ -473,18 +270,12 @@ _gdk_ledger_close() {
 		_gdk_ledger_note "gate \"$gate\" published no verdict this library can name (set GDK_GATE_VERDICT, or report through gdk_gate_capture)"
 		return 0
 	fi
-	# The recorder's output is parked BESIDE the sidecar, which is the one
-	# directory this slot has already proved it can write to: no sidecar, no
-	# row (the guard above), so reaching here means `_gdk_ledger_open` created
-	# a file here. A `mktemp` would be a second spawn on the quiet path, and a
-	# fixed name under /tmp would be a shared-directory race.
+	# Parked beside the sidecar, the one directory this slot has proved writable.
 	_gdk_ledger_record "$gate" "$verdict" "$duration" "$side.out"
 	return 0
 }
 
-# gdk_gate_log <gate> — echo this run's transcript path, cleared and ready.
-# It is also where the cost clock starts: this is the ONE call every reporting
-# path makes exactly once per run.
+# gdk_gate_log <gate> — echo this run's transcript path, cleared; the cost clock starts here.
 gdk_gate_log() {
 	local gate="${1:?usage: gdk_gate_log <gate>}"
 	mkdir -p "$GDK_GATE_REPORT_DIR"
@@ -494,24 +285,11 @@ gdk_gate_log() {
 	printf '%s\n' "$path"
 }
 
-# gdk_gate_capture <logfile> -- <cmd...>
-# Run <cmd>, APPENDING its combined output to <logfile> under the shared byte
-# cap, and stream it to the console only under VERBOSE. Appends so a two-stage
-# gate (boot, then sweep) publishes one transcript.
-#
-# Sets GDK_GATE_EXIT to the COMMAND's own exit code — `head -c` is the last
-# pipe element and exits 0, so a caller must read that and never `$?`. That
-# variable is LAST-WRITE-WINS and stays that way; what a failing capture also
-# does is tell its LOG SLOT, so the row's verdict cannot be the last command's
-# alone — see `_gdk_ledger_fault`.
-#
-# errexit is suspended around the pipeline and restored after. A wrapper under
-# `set -euo pipefail` used to die ON this line: pipefail makes the pipeline's
-# status the failing command's, `-e` then kills the shell, and GDK_GATE_EXIT is
-# never read — the gate exited 3 having printed no verdict at all. Suspending
-# is the only shape that keeps PIPESTATUS readable; `|| true` and `if …; then
-# :; fi` both run a further simple command, which RESETS PIPESTATUS to (0) and
-# would report every gate as passing.
+# gdk_gate_capture <logfile> -- <cmd...> — run <cmd>, APPEND its output to
+# <logfile> under the byte cap, stream it under VERBOSE. Publishes the command's
+# own code in GDK_GATE_EXIT (last-write-wins) and tells the slot about a failure.
+# errexit is suspended around the pipeline: under `set -eo pipefail` the shell
+# would die on this line, and `|| true` would reset PIPESTATUS.
 gdk_gate_capture() {
 	local log="${1:?usage: gdk_gate_capture <log> -- <cmd...>}"; shift
 	[ "${1:-}" = "--" ] && shift
@@ -524,37 +302,23 @@ gdk_gate_capture() {
 	fi
 	# shellcheck disable=SC2034  # read by the sourcing wrapper, not here
 	GDK_GATE_EXIT="${PIPESTATUS[0]}"
-	# The slot remembers a failing capture, because GDK_GATE_EXIT is
-	# last-write-wins and a slot's verdict is not — see `_gdk_ledger_fault`.
-	# It sits BEFORE the errexit restore on purpose: after it, a bookkeeping
-	# call returning non-zero would kill a wrapper under `set -e` on the line
-	# that was supposed to make the gate reportable.
+	# Before the errexit restore, so a non-zero here cannot kill the wrapper.
 	_gdk_ledger_fault "$log" "$GDK_GATE_EXIT"
 	[ "$errexit_was_set" -eq 0 ] || set -e
 	return 0
 }
 
-# gdk_gate_publish <logfile> <transcript>
-# The capture-then-PARSE shape: a gate that must hold the whole transcript in a
-# variable to reconcile a test runner's counts before it can report cannot
-# stream through the pipeline above. Same contract — persist capped, echo under
-# VERBOSE.
+# gdk_gate_publish <logfile> <transcript> — the capture-then-parse shape; same cap, same VERBOSE.
 gdk_gate_publish() {
 	local log="${1:?usage: gdk_gate_publish <log> <transcript>}"
 	printf '%s\n' "${2-}" | head -c "$GDK_LOG_CAP_BYTES" > "$log"
 	[ "${VERBOSE:-0}" = "0" ] || printf '%s\n' "${2-}"
 }
 
-# gdk_gate_verdict <TAG> <message> <logfile>
-# The ONE shape a gate's result line takes, so the transcript is always named
-# in the same place and a failing run is one `sed -n` away:
+# gdk_gate_verdict <TAG> <message> <logfile> — the ONE result-line shape:
 #   [TAG] <message> — full log: <path>
-#
-# It also CLOSES this run's cost row — after the line, never before it. The
-# verdict is the gate's result and the row is bookkeeping about it; a
-# bookkeeping step in front of the result is a step that can delay or swallow
-# one. `return 0` is explicit for the same reason: a wrapper under `set -e`
-# must not learn about a ledger problem as its own death.
+# It closes the cost row AFTER the line, and returns 0 so a wrapper under
+# `set -e` never dies of a ledger problem.
 gdk_gate_verdict() {
 	printf '[%s] %s — full log: %s\n' \
 		"${1:?usage: gdk_gate_verdict <TAG> <message> <log>}" "${2-}" "${3-}"
@@ -562,12 +326,8 @@ gdk_gate_verdict() {
 	return 0
 }
 
-# --- --self-test — the contract, PROVEN rather than claimed ------------------
-# `bash gdk_gate.sh --self-test` runs a fake gate through capture → verdict and
-# checks every claim the comments above make. Same shape as the hook corpus: a
-# corpus that is re-run is the only reason to trust it six months later. It
-# runs entirely inside a scratch dir it makes and removes, so it can never
-# write into the repo it lives in.
+# --- --self-test — the contract corpus ---------------------------------------
+# Runs entirely inside a scratch dir it makes and removes.
 
 _GDK_ST_FAILURES=0
 _GDK_ST_CASES=0
@@ -611,17 +371,8 @@ _gdk_st_lacks() {
 	esac
 }
 
-# _gdk_st_gate <lib> <ledger cmd> <gate exit> — one whole gate, in a CHILD
-# shell under `set -euo pipefail`, with the recorder wired to <ledger cmd>.
-# Echoes what the gate said on stdout, then `exit=<its own code>`.
-#
-# The child is the point. This is the adversarial case against
-# `gdk_gate_capture`'s own comment block, which claims the errexit
-# suspend/restore is the only shape that keeps PIPESTATUS readable and that a
-# further simple command would reset it — the recorder IS a further simple
-# command, in that neighbourhood, and it now runs on every gate in every
-# consumer. A gate whose command exits 7 has to still reach its verdict and
-# still report 7 with a recorder present, whatever the recorder does.
+# _gdk_st_gate <lib> <ledger cmd> <gate exit> — one whole gate in a CHILD shell
+# under `set -euo pipefail`; echoes what it said, then `exit=<its own code>`.
 _gdk_st_gate() {
 	local out rc=0
 	# shellcheck disable=SC2016  # $1/$2/$3 are the CHILD shell's positionals
@@ -641,19 +392,13 @@ _gdk_st_gate() {
 
 _gdk_self_test() {
 	local scratch verdict log body status hung lib recorded ledger_case t0 elapsed
-	# Resolved BEFORE the cd below: the sub-shell cases re-source the library
-	# from a different working directory.
+	# Resolved before the cd: the sub-shell cases re-source from elsewhere.
 	lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 	scratch="$(mktemp -d "${TMPDIR:-/tmp}/gdk-gate-selftest.XXXXXX")" || return 1
 	cd "$scratch" || return 1
-	# The corpus proves BOTH settings, each pinned on its own case; the value
-	# the caller happens to export is not part of it. Left to inherit, a
-	# `VERBOSE=1` self-test — what the installed CI exports for the whole run —
-	# streamed the cap case's eight bytes straight into this corpus's own
-	# verdict line (`01234567[gdk-gate] SELF-TEST OK …`).
+	# Both settings are pinned by their own cases; an inherited VERBOSE=1 leaked into the verdict line.
 	VERBOSE=0
-	# Re-read it from the shell: a TMPDIR with a trailing slash yields `//` in
-	# the mktemp path, and every prefix comparison below would silently miss.
+	# Re-read: a TMPDIR with a trailing slash yields `//` and every prefix compare misses.
 	scratch="$PWD"
 
 	# --- gdk_gate_log: names the slot, creates it, clears it -----------------
@@ -682,8 +427,6 @@ second line' "$(cat "$log")"
 		'7' "$GDK_GATE_EXIT"
 
 	# --- capture survives a wrapper under `set -euo pipefail` ----------------
-	# pipefail + errexit used to kill the wrapper ON the capture line: no
-	# verdict, exit 3, and VERBOSE=1 showing only the stream.
 	body="$(cd "$scratch" && bash -c '
 		set -euo pipefail
 		# shellcheck source=/dev/null
@@ -696,12 +439,7 @@ second line' "$(cat "$log")"
 		'exit=7 reached-the-verdict' "$body"
 
 	# --- the byte cap is real ------------------------------------------------
-	# `env … bash -c`, never `( GDK_LOG_CAP_BYTES=8; … )`. A subshell
-	# ASSIGNMENT to a name the library also publishes makes `shellcheck -x`
-	# raise SC2031 at every CONSUMER site that reads that name — the consumer's
-	# own lint reddens on a line the library wrote, and the only local repair
-	# is a disable comment in a file whose author did nothing wrong. Scoping
-	# the value to a child process says the same thing with no such shadow.
+	# `env … bash -c`, not a subshell assignment: that trips SC2031 at consumer sites.
 	log="$(gdk_gate_log capped)"
 	# shellcheck disable=SC2016  # $1/$2 are the CHILD shell's positionals
 	env GDK_LOG_CAP_BYTES=8 bash -c '
@@ -752,10 +490,7 @@ second line' "$(cat "$log")"
 	_gdk_st_true 'a passing gate (exit 0) is NOT a hang' "$status"
 
 	# --- gdk_on_exit: registration order, and no hook masks the status -------
-	# The dispatcher exists because there is ONE `trap … EXIT` slot: two
-	# wrappers each writing their own is how a cleanup silently stops running.
-	# Order is contract — a hook that reads what an earlier hook wrote is the
-	# shape a language kit's sandbox restore depends on.
+	# Order is contract: a later hook may read what an earlier one wrote.
 	# shellcheck disable=SC2016  # $1 is the CHILD shell's positional
 	body="$(bash -c '
 		# shellcheck source=/dev/null
@@ -778,9 +513,7 @@ second line' "$(cat "$log")"
 	_gdk_st_eq 'a failing hook never masks the script exit status' '5' "$status"
 
 	# --- the cost row -------------------------------------------------------
-	# A recorder stub, so every case below asserts on the ARGV the library
-	# actually handed on rather than on a ledger it would need a PM tree to
-	# write. One line per invocation: `CALL ARG[x] ARG[y] …`.
+	# A recorder stub: every case asserts on the argv it was handed, one line per call.
 	GDK_ST_REC_LOG="$scratch/recorder.log"
 	export GDK_ST_REC_LOG
 	cat > "$scratch/rec.sh" <<'REC_EOF'
@@ -794,18 +527,8 @@ REC_EOF
 #!/usr/bin/env bash
 sleep 30
 HANG_EOF
-	# A recorder that EXITS CLEANLY and leaves something behind it. The stock
-	# GDK_LEDGER_CMD is a `uvx` line, whose subprocess behaviour this package
-	# does not control, so this is not a hypothetical shape.
-	# THE SLEEP IS 3 s AND THE CEILING 2000 ms, AND THAT IS DELIBERATE.
-	# The proof is a RATIO — a recorder that outlives its bound reddens the
-	# mutant whether it outlives it by 3x or by 20x — and the suite pays the
-	# difference in wall clock on every run, forever. This corpus used
-	# `sleep 20` against a 10000 ms ceiling, and the two mutation tests that
-	# drive it were 24 s and 23 s: half the wall clock of a 96 s suite, in two
-	# cases, setting a floor no amount of parallelism could get under.
-	# A bound of 1000 ms, a sleep of 3 s and a ceiling of 2000 ms keeps every
-	# margin wide (3x over the bound, 1.5x over the ceiling) and costs 3 s.
+	# A recorder that exits cleanly and leaves a child behind. sleep 3 against a
+	# 1 s bound and a 2000 ms ceiling keeps the margin wide and the suite fast.
 	cat > "$scratch/fork.sh" <<'FORK_EOF'
 #!/usr/bin/env bash
 sleep 3 &
@@ -813,10 +536,7 @@ exit 0
 FORK_EOF
 	: > "$GDK_ST_REC_LOG"
 
-	# UNSET SPAWNS NOTHING. A consumer with no PM tree pays zero: no clock, no
-	# sidecar, no subprocess. The sentinel the recorder would have written is
-	# the assertion, because "it was not configured" and "it ran and did
-	# nothing" are the two answers that must never look alike.
+	# Unset spawns nothing: the recorder's sentinel is the assertion.
 	GDK_LEDGER_CMD=''
 	log="$(gdk_gate_log quiet)"
 	status=0; [ ! -f "$(_gdk_ledger_sidecar "$log")" ] || status=1
@@ -847,9 +567,7 @@ FORK_EOF
 		"$GDK_ST_REC_LOG")" ] || status=1
 	_gdk_st_true 'the row carries an integer millisecond duration' "$status"
 
-	# THE CENSUS IS ABSENT, NEVER ZERO — and never read out of the prose. The
-	# message below is full of numbers on purpose: a regex over it is how a run
-	# that walked 683 files files `census: 0`.
+	# The census is absent, never zero, and never read out of the prose.
 	_gdk_st_lacks 'an unset census is an omitted flag' "$recorded" 'ARG[--census]'
 	: > "$GDK_ST_REC_LOG"
 	log="$(gdk_gate_log prose)"
@@ -864,9 +582,7 @@ FORK_EOF
 		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--census] ARG[683]'
 	GDK_GATE_CENSUS=''
 
-	# ONE ROW PER RUN, NOT ONE PER VERDICT LINE. A runner with alternative
-	# exits calls the verdict up to six times against one slot; six rows for
-	# one run would make the report average a gate against its own early exits.
+	# One row per run, not one per verdict line.
 	: > "$GDK_ST_REC_LOG"
 	log="$(gdk_gate_log multi)"
 	gdk_gate_verdict MULTI 'first'  "$log" >/dev/null 2>&1
@@ -875,12 +591,8 @@ FORK_EOF
 	_gdk_st_eq 'three verdicts on one slot file ONE row' '1' \
 		"$(grep -c '^CALL' "$GDK_ST_REC_LOG" | tr -d ' ')"
 
-	# ONE VERDICT PER SLOT, AND IT ANSWERS FOR EVERY CAPTURE — not the last.
-	# A runner that loops one capture per interpreter against one slot (this
-	# repo's own `matrix` target) used to leave the LAST command's code
-	# standing: console `[MATRIX] FAIL on first`, row `"verdict":"PASS"`. An
-	# output-only corpus cannot see that — the verdict LINE is right and the
-	# durable record is inverted — so the assertion is on the recorder's argv.
+	# One verdict per slot, answering for every capture, not the last; asserted
+	# on the argv, since the console line was right while the row was inverted.
 	: > "$GDK_ST_REC_LOG"
 	GDK_GATE_EXIT=''
 	log="$(gdk_gate_log mixed)"
@@ -893,8 +605,7 @@ FORK_EOF
 	_gdk_st_eq 'and a multi-capture slot is still exactly one row' '1' \
 		"$(grep -c '^CALL' "$GDK_ST_REC_LOG" | tr -d ' ')"
 
-	# ...and a slot every capture passed is still a PASS. An accumulator that
-	# cannot go back to green would file hard rule 4's sin from the other side.
+	# ...and a slot every capture passed is still a PASS.
 	: > "$GDK_ST_REC_LOG"
 	log="$(gdk_gate_log allgood)"
 	gdk_gate_capture "$log" -- sh -c 'exit 0' >/dev/null 2>&1
@@ -903,8 +614,7 @@ FORK_EOF
 	_gdk_st_has 'two passing captures on one slot file PASS' \
 		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--verdict] ARG[PASS]'
 
-	# A capture against a log NO slot was opened for mints nothing: a row whose
-	# start time was never taken would carry an invented duration.
+	# A capture against a log no slot was opened for mints nothing.
 	: > "$GDK_ST_REC_LOG"
 	: > "$GDK_GATE_REPORT_DIR/orphan.log"
 	gdk_gate_capture "$GDK_GATE_REPORT_DIR/orphan.log" -- sh -c 'exit 1' >/dev/null 2>&1
@@ -913,10 +623,7 @@ FORK_EOF
 	_gdk_st_true 'a capture never mints a slot its log never opened' "$status"
 	GDK_GATE_EXIT=0
 
-	# THE VALUE'S QUOTING SURVIVES WHATEVER BOUNDS ITS PARSE. The stock
-	# GDK_LEDGER_CMD is a `uvx` line carrying a quoted spec; a bare word split
-	# would hand the recorder a spec with literal quote characters in it, so
-	# "parse it somewhere safer" must never become "stop parsing it".
+	# The value's quoting survives the bounded parse.
 	: > "$GDK_ST_REC_LOG"
 	GDK_LEDGER_CMD="bash $scratch/rec.sh --from \"git+https://example.invalid/x@v0.0.0\" agentic-sdlc"
 	log="$(gdk_gate_log quoted)"
@@ -926,9 +633,7 @@ FORK_EOF
 		'ARG[--from] ARG[git+https://example.invalid/x@v0.0.0] ARG[agentic-sdlc]'
 	GDK_LEDGER_CMD="bash $scratch/rec.sh"
 
-	# THE PUBLISH-ONLY SHAPE. A runner that reconciles a transcript in a
-	# variable never calls gdk_gate_capture, so nothing sets GDK_GATE_EXIT and
-	# the timer cannot live there. It publishes its own verdict instead.
+	# The publish-only shape: nothing sets GDK_GATE_EXIT, so the runner publishes its own verdict.
 	: > "$GDK_ST_REC_LOG"
 	GDK_GATE_EXIT=''
 	GDK_GATE_VERDICT=FAIL
@@ -957,9 +662,7 @@ FORK_EOF
 		"$(cat "$GDK_ST_REC_LOG")" 'ARG[--verdict] ARG[HANG]'
 	GDK_GATE_EXIT=0
 
-	# A GATE NAME WITH A SPACE AND A METACHARACTER — one argv element, always.
-	# A mis-set tag must reach story 01's grammar and be refused there, never
-	# get word-split into a command this library did not mean to run.
+	# A gate name with a space and a metacharacter is one argv element, always.
 	: > "$GDK_ST_REC_LOG"
 	log="$(gdk_gate_log 'bad name;touch pwned')"
 	gdk_gate_verdict BAD 'PASS' "$log" >/dev/null 2>&1
@@ -968,12 +671,7 @@ FORK_EOF
 	status=0; [ ! -f "$scratch/pwned" ] || status=1
 	_gdk_st_true 'and nothing in it was executed' "$status"
 
-	# --- FAIL OPEN: the refusal matrix, each preserving the gate's own code --
-	# This block is the risk-1 test. The recorder is an input surface — a
-	# command string out of a Makefile — and it is on the path of every gate in
-	# every consumer, so each way it can break gets a case, and each case
-	# asserts the same two things: the verdict line still printed, and the
-	# gate's own exit code came through untouched.
+	# --- FAIL OPEN: the refusal matrix; the verdict prints and the gate's code survives
 	: > "$GDK_ST_REC_LOG"
 	for ledger_case in \
 		'' \
@@ -992,30 +690,12 @@ exit=7" "$body"
 exit=0" "$body"
 	done
 
-	# --- THE WALL-CLOCK CASES, and they are the only slow ones in here -------
-	#
-	# Three cases below prove a bound by WAITING for it: a recorder that hangs,
-	# one that forks, and one whose value is parsed in front of the bound. Only
-	# the clock can tell a fixed library from a broken one on those, so they
-	# cost real seconds — about 3 of this corpus's 4.
-	#
-	# `GDK_ST_SKIP_TIMING=1` runs everything else. That exists because the
-	# corpus is driven by NINE mutation tests, each of which reverts one line of
-	# this library and asserts one specific case reddens — and seven of those
-	# nine have nothing to do with timing. Paying 3 s of sleep to prove a
-	# verdict-shape mutant reddens is 21 s of a suite spent proving nothing, on
-	# every run, forever (hard rule 10).
-	#
-	# The two mutation tests that ARE about the bound run the whole corpus, and
-	# so does `--self-test` with nothing set — which is what a consumer runs and
-	# what `agentic-sdlc check hooks` replays. The skip is a caller's optimisation,
-	# never the default: a corpus that quietly stopped covering its slowest
-	# cases would be exactly the narrowing this library's own census exists to
-	# refuse.
+	# --- the wall-clock cases, the only slow ones ----------------------------
+	# Only the clock can tell a fixed library from a broken one here.
+	# GDK_ST_SKIP_TIMING=1 is a caller's optimisation for mutation tests that
+	# have nothing to do with timing; the default runs everything.
 	if [ -n "$GDK_TIMEOUT" ] && [ "${GDK_ST_SKIP_TIMING:-0}" != "1" ]; then
-		# EXPORTED: the bound is read by the library in the CHILD shell, and an
-		# assignment this shell merely holds would never reach it — the case
-		# would then take 30 s and pass for the wrong reason.
+		# Exported: the bound is read by the library in the CHILD shell.
 		export GDK_LEDGER_TIMEOUT=1
 		body="$(_gdk_st_gate "$lib" "bash $scratch/hang.sh" 7)"
 		unset GDK_LEDGER_TIMEOUT
@@ -1023,20 +703,8 @@ exit=0" "$body"
 			"[STRICT] done — full log: $GDK_GATE_REPORT_DIR/strict.log
 exit=7" "$body"
 
-		# AND A RECORDER THAT FORKS. The case above bounds a recorder that
-		# HANGS, and it passed all along; it is not the same question. Here the
-		# recorder exits 0 immediately and the deadline never fires — what used
-		# to hold the gate was the `$( )` the output was read through, whose
-		# pipe the forked grandchild inherited. Measured on the shipped file at
-		# GDK_LEDGER_TIMEOUT=3, `sh -c 'sleep 120 & exit 0'` cost 120072 ms; the
-		# same probe after the fix cost 52 ms.
-		#
-		# The assertion is WALL CLOCK, because the verdict line and the exit
-		# code were already correct across twelve hostile recorders and stayed
-		# correct through this one — an output-only corpus cannot see this
-		# defect at all. The threshold is 10 s against a 20 s sleep and a 1 s
-		# bound: wide enough that a loaded machine cannot redden it, narrow
-		# enough that the defect cannot hide under it.
+		# And a recorder that forks: it exits 0 and the deadline never fires, so only
+		# wall clock can see a gate held open by the pipe the grandchild inherited.
 		export GDK_LEDGER_TIMEOUT=1
 		t0="$(_gdk_now_ms)"
 		body="$(_gdk_st_gate "$lib" "bash $scratch/fork.sh" 7)"
@@ -1055,12 +723,7 @@ exit=7" "$body"
 			echo '  SKIP — no millisecond clock; the forking-recorder bound was not timed' >&2
 		fi
 
-		# AND A VALUE THAT EXECUTES WHILE IT IS PARSED. `eval` runs every
-		# `$( )` in the string as the array is built, and that build used to
-		# happen in the gate's own shell, in FRONT of `timeout`: measured
-		# 20062 ms against a 3 s bound, with no note at all. Wall clock for the
-		# third time, and for the third reason: the verdict line and the exit
-		# code were correct throughout, so nothing but the clock can see it.
+		# And a value that executes while parsed; wall clock again, since line and code stay right.
 		export GDK_LEDGER_TIMEOUT=1
 		t0="$(_gdk_now_ms)"
 		body="$(_gdk_st_gate "$lib" "bash $scratch/rec.sh \$(sleep 3)" 7)"
@@ -1100,9 +763,7 @@ gdk_gate_log, gdk_gate_capture, gdk_gate_publish, gdk_gate_verdict.
 USAGE_EOF
 }
 
-# Executed rather than sourced? Only --self-test and --help are supported, and
-# only one of them: an extra argument is a caller who thinks this takes options
-# it does not, and guessing at their intent is how a gate runs the wrong thing.
+# Executed rather than sourced: only --self-test and --help, and exactly one of them.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 	if [ "$#" -ne 1 ]; then
 		echo "$GDK_LIB_TAG: exactly one argument — got $#. See --help." >&2

@@ -38,12 +38,38 @@ would be worse than the open finding: whatever it is, a suite that can leave the
 repository unusable is a hazard, and rule 4's shape — something that looks legitimate
 and is not — is exactly what it wears.
 
+## Narrowed 2026-09-06, same session — it correlates with CONCURRENCY
+
+Measured after a third occurrence. Each git-spawning module was run on its own against
+this checkout, hashing `.git/config` before and after:
+
+```
+tests/test_conveyor_adopt.py   -m shell   config unchanged, bare=false
+tests/test_fresh_project.py    -m shell   config unchanged, bare=false
+tests/test_check_hooks.py      -m shell   config unchanged, bare=false
+tests/test_hooks_payloads.py   -m shell   config unchanged, bare=false
+tests/test_makefile_gates.py   -m shell   config unchanged, bare=false
+tests/test_gate_roster.py      -m shell   config unchanged, bare=false
+```
+
+**No module flips it alone.** All three occurrences happened while one or more SUBAGENTS
+were running their own test processes against this same worktree — the shared-worktree
+dispatch SDLC.md §2 describes. Git writes `.git/config` by taking a lock, writing a temp
+file and renaming; two processes doing that concurrently, one of them holding a stale
+read, is a shape that fits every observation and that a single-module run cannot
+reproduce.
+
+That is a HYPOTHESIS with good evidence, not a diagnosis. What is established: it is not
+any one test module in isolation, and it needs concurrency to appear.
+
 ## Next step for whoever picks this up
 
-Run `make test` (both tiers) with a `.git/config` watcher — `fswatch .git/config` or a
-loop hashing it — and capture the process tree at the moment it changes. The
-integration tier is the place to look; `test_fresh_project.py`, `test_check_hooks.py`
-and `test_hooks_payloads.py` are the modules that spawn `git` against a real repo.
+Reproduce under CONCURRENCY, since serial runs do not: two or three `make test` runs
+against this worktree at once, with a `.git/config` watcher (`fswatch .git/config`, or a
+loop hashing it) capturing the process tree at the moment it changes. If it is a
+lock/rename race, the fix is that no test may spawn `git` with this repository as its
+cwd or `GIT_DIR` — which is assertable as a boundary test over `tests/`, in the same
+family as `NoCodePathParsesAVersion`.
 
 ## Verified when
 

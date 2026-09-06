@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **`[adopt] ours`** — the installed files a project has taken over. `installables-current` grades
+  the REST and names what was claimed on every run, pass or fail. The installables INVITE local
+  edits (each ships a `Project config` section, "yours to edit after install"), so a project owning
+  eleven of them sat at 6/7 forever, which is the same as no belt. Claiming is visible in the belt's
+  own output every run, so the list is a statement rather than a hiding place. An unclaimed drifted
+  file is still false with its `install-* --diff`; a claim naming a file this version does not
+  install is REPORTED, not refused, because install plans change between versions; a malformed list
+  is exit 2 through the same path grammar every other path key uses.
+- **`adopt <version>` no longer requires a milestone directory named for the version.** A project
+  that folds the pin bump into an open milestone as a feature — a day of work inside a month of
+  game — could not run the belt at all: it refused with `no milestone directory pm/roadmap/<v>-*`
+  before the first check, so the belt for that exact job was unreachable and all seven checks got
+  done by hand in an invented order. `adopt` writes nothing (D12), so that directory is only where
+  a ledger row WOULD land; the run now says which it found and asks all seven checks either way.
+  `release` and `close story|feature`, which write a status, still refuse without it. The `adopt`
+  line in `--help` now says it adopts a devkit PIN, so it reads differently from `release <version>`
+  beside it.
+
 - **`pm init` reports a MEANING, not a write, and `check pm` gains D7.** `init` printed
   `appended the flow to devkit.toml` and a project adopted the conveyor as a CONFIG FIX — nobody
   then asked whether the tree USED the states, and one tree used three of its eight for its whole

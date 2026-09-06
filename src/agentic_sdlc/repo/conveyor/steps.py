@@ -1227,9 +1227,11 @@ STEP_DOC: dict[str, str] = {
         'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
         'version of the package that is running.',
     'installables-current':
-        'every installed file is byte-current with what this version ships, '
-        'or differs only in its project-config header; each that differs is '
-        'named with the `install-* --diff` that shows it.',
+        'every installed file the project has not claimed in `[<op>] ours` is '
+        'byte-current with what this version ships, or differs only in its '
+        'project-config header; each that differs is named with the '
+        '`install-* --diff` that shows it, and what was claimed is counted and '
+        'named beside it, on every run.',
     'config-updated':
         'every devkit.toml section this version reads accepts what this repo '
         'declares.',

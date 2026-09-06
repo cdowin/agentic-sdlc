@@ -9,6 +9,13 @@ SENTINEL FILE, never by reading the transcript.
 
 Under D12 `adopt` writes nothing at all: `--force` is refused, and the whole
 belt leaves the tree byte-identical. Every case here works on a scratch tree.
+
+Two of those cases are about REACH rather than verdict. The belt used to
+require a milestone directory named for the version, so a project folding the
+bump into an open milestone as a feature could not run it at all; and
+`installables-current` graded all 27 installed files, so a project that
+deliberately owns eleven of them was stuck at 6/7 forever. `tracks=AS_FEATURE`
+builds the first shape and `[adopt] ours` declares the second.
 """
 from __future__ import annotations
 
@@ -90,9 +97,10 @@ def tree(files: dict[str, str] | None = None, config: str = '',
             (roadmap / f'{VERSION}-scratch/milestone.md').write_text(
                 milestone_doc(VERSION), encoding='utf-8')
         else:
-            fdir = roadmap / f'{OPEN_VERSION}-open/features/adopt-the-devkit-pin'
+            open_dir = roadmap / f'{OPEN_VERSION}-open'
+            fdir = open_dir / 'features/adopt-the-devkit-pin'
             fdir.mkdir(parents=True)
-            (roadmap / f'{OPEN_VERSION}-open/milestone.md').write_text(
+            (open_dir / 'milestone.md').write_text(
                 milestone_doc(OPEN_VERSION), encoding='utf-8')
             (fdir / 'feature.md').write_text(BUMP_FEATURE, encoding='utf-8')
         (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
@@ -141,8 +149,8 @@ def adopt(*argv: str) -> tuple[int, str]:
 
 # `[adopt] ok: <name> — …`, `[adopt] error: <name>: …`, `[adopt]
 # unverifiable: <name>: …` — the three line shapes `driver.run` prints.
-CHECK_LINE = re.compile(r'^\[adopt\] (?:ok|error|unverifiable): ([a-z][a-z0-9-]*)',
-                        re.MULTILINE)
+CHECK_LINE = re.compile(
+    r'^\[adopt\] (?:ok|error|unverifiable): ([a-z][a-z0-9-]*)', re.MULTILINE)
 
 
 def asked(out: str) -> list[str]:
@@ -230,7 +238,7 @@ def test_a_belt_that_writes_still_needs_the_milestone_directory():
     one that writes nothing. `close feature` sets a status that lives in the
     milestone directory, and a forced one records there too; without the
     directory there is nowhere to write and nowhere to record, so it is
-    refused before the first check — which is also why no check spawns here."""
+    refused before the first check — which is also why nothing spawns here."""
     with tree(tracks=AS_FEATURE) as root:
         before = snapshot(root)
         buf = io.StringIO()
@@ -386,7 +394,8 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         reconfigure(root, f'[adopt]\nours = ["{GATE_MK}"]\n')
         claimed = check('installables-current', root)
         assert claimed.is_true, claimed
-        assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in claimed.detail, claimed.detail
+        assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in claimed.detail, (
+            claimed.detail)
 
 
 def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():

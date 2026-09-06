@@ -104,7 +104,7 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `verify --story \| --feature \| --milestone \| --plan \| --check` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `close story <id>`, `close feature <id>` | The inner belts: checks, then the grain's status set to the first state of its kind's `done` list, or nothing |
 | `release <version>` | The outer belt: tree clean, on the milestone branch, changelog non-empty, features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Retitle, push, PR, merge and tag are printed as `next:` — never performed |
-| `adopt <version>` | Checks only, nothing written: pin bumped, installables current, config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green |
+| `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone directory is only where a ledger row would land |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
 | `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, changelog-writer, doc-hygiene, pm-operator — each with a Project config section that is yours after install |
@@ -201,6 +201,7 @@ prove-artifact = "uvx --from git+…@v{version} agentic-sdlc --version"
 "pyproject.toml" = '^version = "(.*)"$'
 [adopt]
 runner_targets = ["precommit", "milestone"]   # what `runner-targets-resolve` asks `make -n` about
+ours = [".github/workflows/verify.yml"]        # installed files this project OWNS: not graded, named every run
 ```
 
 `agentic-sdlc pm vocabulary` prints your declared states with their categories and the rule ids

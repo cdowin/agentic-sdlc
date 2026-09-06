@@ -555,6 +555,43 @@ def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
         assert [(r['kind'], r['grain']) for r in rows] == [('session', other)]
 
 
+# --- D2: a dispatch that was TOLD its grain files a row that says so ----------
+def test_a_transcript_row_carries_the_grain_it_was_given():
+    """The numbers come from the transcript; `--grain` says what they were
+    spent ON. The two were exclusive until 0.4.0, which made every automatic
+    row unattributed — captured, and saying nothing about the work.
+
+    The `grain` key sits in `ROW_KEYS` position, and the row lands in the
+    GRAIN's milestone rather than the tree's, which is the whole point: this is
+    what moves a dispatch off the `rows naming no grain` line.
+    """
+    with tree() as root:
+        code, out = record(root, '--from-transcript', str(SUBAGENT),
+                           '--event', 'Stop', '--grain', STORY)
+        assert code == 0, out
+        row = only_row(root)
+        assert list(all_ledger_lines(root)) == [LEDGER_REL], out
+    assert row['grain'] == STORY
+    # Third key, as `ROW_KEYS` declares — a durable line's shape, not just its
+    # contents.
+    assert list(row)[:4] == ['ts', 'kind', 'grain', 'session_id']
+    # And the transcript's own numbers are untouched by the attribution.
+    assert row['tool_calls'] == 23 and row['duration_s'] == 80
+
+
+def test_the_row_carries_the_id_the_grain_declares_not_the_string_typed():
+    """Two rows naming one grain must spell it one way, or the report bills
+    two lines for one thing. `_ledger_id` is what every other row already
+    uses."""
+    with tree() as root:
+        write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
+              {'id': STORY, 'feature': '0.1/alpha', 'milestone': '"0.1"',
+               'name': 'S0', 'status': 'building', 'owner': ''})
+        assert record(root, '--from-transcript', str(SUBAGENT),
+                      '--event', 'SubagentStop', '--grain', STORY)[0] == 0
+        assert only_row(root)['grain'] == STORY
+
+
 def test_a_row_naming_no_grain_lands_in_the_trees_own_ledger():
     """D3. A transcript row carries no grain, so it has no milestone to belong
     to — and under the deleted lookup that made it a REFUSAL when nothing was
@@ -685,8 +722,14 @@ RECORD_REFUSALS = [
     (('--from-transcript', str(SUBAGENT)), '--event is required'),
     (('--grain', STORY, '--tokens-in=-1'), 'non-negative integer'),
     (('--grain', STORY, '--duration-s=3.5'), 'non-negative integer'),
-    (('--grain', STORY, '--from-transcript', str(SUBAGENT), '--event', 'Stop'),
-     'are exclusive'),
+    # NOT here any more: `--grain` with `--from-transcript` is the courier's
+    # own shape since 0.4.0/every-row-names-its-grain. It is a WRITE, proven
+    # below.
+    # An id that resolves to nothing is refused on the transcript form too —
+    # the same bar the hand form applies. A bad grain must never degrade to an
+    # omitted key: that is how a typo becomes silent misattribution.
+    (('--grain', '0.1/alpha/nope', '--from-transcript', str(SUBAGENT),
+      '--event', 'Stop'), 'no grain resolves'),
     (('--agent-type', 'developer'), 'needs --from-transcript'),
     (('--grain', '0.1/alpha/nope'), 'no grain resolves'),
     # The grain grammar, one representative per class: traversal, absolute,

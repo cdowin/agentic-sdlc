@@ -130,7 +130,7 @@ every run; a state the project never declared is refused by name.
                                            bug, any status; it must resolve, and
                                            an unresolvable one writes nothing)
   ledger record --from-transcript <path> --event SubagentStop|Stop
-                [--agent-id X] [--agent-type Y] [--session-id Z]
+                [--agent-id X] [--agent-type Y] [--session-id Z] [--grain <id>]
                                           (sum one Claude Code transcript and
                                            append a dispatch (SubagentStop) or
                                            session (Stop) row. A row is filed
@@ -138,7 +138,13 @@ every run; a state the project never declared is refused by name.
                                            GRAIN, at any status; no status is
                                            read, so a `planning` milestone
                                            records and two in flight are not a
-                                           refusal)
+                                           refusal. --grain says what the work
+                                           was ON — the couriers pass it from
+                                           GDK_LEDGER_GRAIN; an id that resolves
+                                           to nothing is refused rather than
+                                           dropped, and no --grain at all is an
+                                           absent key that lands in `rows naming
+                                           no grain`)
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N]
                 [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
@@ -1488,14 +1494,19 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
                     f'--gate <name> as well, or drop it: a flag this run '
                     f'parsed and dropped would change nothing and say so '
                     f'nowhere')
+    # `--from-transcript` and `--grain` answer two different questions and both
+    # may be asked at once: the transcript is where the NUMBERS come from, and
+    # `--grain` is what the work was ON. They were exclusive while a grain was
+    # something a hand entry supplied; a dispatched agent is TOLD its grain in
+    # the prompt that starts it, so the courier is copying a known fact rather
+    # than guessing (D2), and refusing the pair is refusing the whole point of
+    # the flag.
     source, grain = flags.get('--from-transcript'), flags.get('--grain')
-    if source and grain:
-        raise Usage('--from-transcript and --grain are exclusive: one row has '
-                    'one source, and a transcript already carries what --grain '
-                    'would be guessing at')
     if not source and not grain:
         raise Usage('ledger record needs --from-transcript <path> (a hook run) '
-                    'or --grain <id> (a hand entry)')
+                    'or --grain <id> (a hand entry), or both — a transcript '
+                    'carries the numbers and --grain carries what they were '
+                    'spent on')
     fields: dict[str, object] = {
         'session_id': flags.get('--session-id', ''),
         'agent_id': flags.get('--agent-id', ''),
@@ -1510,6 +1521,11 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
     if source:
         kind = _event_kind(_required(flags, '--event'))
         fields.update(_from_transcript(source, flags))
+        if gpath is not None:
+            # The id the GRAIN declares, not the string the caller typed —
+            # `_ledger_id` is what every other row is stamped with, so two rows
+            # naming one grain cannot spell it two ways.
+            fields['grain'] = _ledger_id(gpath, grain)
     else:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
         fields.update(_by_hand(gpath, grain, flags))

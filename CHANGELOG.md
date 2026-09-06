@@ -22,6 +22,26 @@
   fix they get for free: `pm retire` used to take a milestone's gate history away with its
   directory, so the next milestone printed `unknown` for its rungs until it had run each one.
 
+- **Every automatic ledger row can name the grain it came from.** The telemetry worked and landed
+  **unattributed**: `grain` has been `ROW_KEYS`' third key since the ledger shipped and neither
+  courier filled it, so every hook-written row went to `rows naming no grain` and the per-grain
+  spend table — the one a human actually reads — showed `0` dispatches against every feature and
+  story in the milestone. The numbers were captured; nothing said what they bought.
+
+  `--grain` is now accepted **alongside** `--from-transcript` rather than exclusive with it: the
+  transcript is where the numbers come from and `--grain` is what the work was ON. The couriers
+  pass it from **`GDK_LEDGER_GRAIN`** in their environment, exported by whoever started the
+  session or dispatch — not a payload field, because no hook event carries a grain, and the fact
+  already exists at the moment of dispatch. Unset is normal and passes no flag; an id that
+  resolves to nothing is refused rather than dropped, on both forms, because a typo silently
+  becoming an omitted key is how a row is misattributed forever.
+
+  **`pm ledger report` now reads `grain:` and prefers it to the tree snapshot**, which it had been
+  ignoring — so a row that says which story it was for lands on that story's line and on nobody
+  else's. The snapshot stays for the rows already written, and for a row that states its grain it
+  is not consulted at all: a dispatch billed for every other story that happened to be live is the
+  read-side of the drift rule.
+
 - **A ledger row is filed against the milestone that owns its GRAIN, at any status.** The
   telemetry writes went through a lookup that asked which milestone was `in_progress` and refused
   when none was and when several were — so **a tree recorded nothing at all while it was still

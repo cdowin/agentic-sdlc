@@ -628,12 +628,33 @@ def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
 
 def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
-    """The grains under this milestone that one dispatch row's `tree` names: a
-    story by being in progress, a feature by being in progress or owning a
-    named story. A row naming several grains is added to each whole (no
+    """The grains under this milestone that one dispatch row names.
+
+    Two ways, and the FIRST outranks the second because it is a statement
+    rather than an inference:
+
+      `grain`  what the dispatch was told it was working on (0.4.0/D2). The
+               couriers pass it from `GDK_LEDGER_GRAIN`; a hand entry passes
+               `--grain`. It says what the work was ON.
+      `tree`   the snapshot: a story by being in progress, a feature by being
+               in progress or owning a named story. An inference from what was
+               live at the instant of the row, and the only thing that existed
+               before 0.4.0.
+
+    They agree in the ordinary case and the snapshot is kept for the rows
+    already written, which are never rewritten. **A row that names its grain is
+    attributed by it and by nothing else** — the snapshot would otherwise add
+    every OTHER story that happened to be live, and a dispatch billed for work
+    it did not do is the read-side of rule 4.
+
+    A row naming several grains through the snapshot is added to each whole (no
     weighting, D5). Category keys when present; frozen keys only for an
     old-shape row.
     """
+    stated = row.get('grain')
+    if isinstance(stated, str) and stated in kinds:
+        return {stated} | {fid for fid, stories in owned.items()
+                           if stated in stories}
     buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
     return _named_through(row, buckets_by_kind, kinds, owned)
 
@@ -642,9 +663,11 @@ def frozen_only_grains(row: dict, kinds: dict[str, str],
                        owned: dict[str, set[str]]) -> set[str]:
     """The grains a new-shape row names through the frozen keys and not the
     category keys — what `named_grains` reads past, disclosed rather than
-    silent (rule 4). Empty for an old-shape row.
+    silent (rule 4). Empty for an old-shape row, and empty for a row that
+    STATES its grain, which reads past the snapshot entirely and is not a
+    silent drop: the row said which grain it was.
     """
-    if is_legacy(row):
+    if is_legacy(row) or isinstance(row.get('grain'), str):
         return set()
     return (_named_through(row, LEGACY_BUCKETS, kinds, owned)
             - _named_through(row, CATEGORY_BUCKETS, kinds, owned))

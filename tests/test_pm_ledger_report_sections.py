@@ -425,6 +425,52 @@ def test_a_delta_needs_both_ends_measured():
 
 # --- nothing to report --------------------------------------------------------
 
+def test_a_row_that_names_its_grain_is_on_that_grains_line():
+    """0.4.0/every-row-names-its-grain, read side. Until the couriers passed
+    `--grain`, every automatic row reached the report with nothing but a tree
+    SNAPSHOT to be attributed by — which works for a status flip and not for a
+    session, so the per-grain table showed 0 dispatches against every story in
+    the milestone. The numbers were captured; nothing said what they bought.
+
+    The snapshot is deliberately EMPTY here, so `grain:` is the only thing that
+    could attribute the row.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
+                                 tool_calls=9),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert '-- rows naming no grain (0)' in out, out
+
+
+def test_a_stated_grain_outranks_the_snapshot_and_bills_nobody_else():
+    """The row says `0.1/alpha/s1`; the snapshot says `0.1/alpha/s0` was live.
+
+    Both are true — the OTHER story was in progress at that instant — and only
+    one of them is what the dispatch was doing. Adding the snapshot's grains on
+    top would bill s0 for nine tool calls it never spent, which is rule 4 on
+    the read side. The stated grain wins, and it wins ALONE.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
+                                 tool_calls=9, tree=snapshot(stories_wip=[A_S0])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was, out
+    # And it is not a silent drop: `frozen_only` exists to disclose a snapshot
+    # the report read past, and a STATED grain is not that.
+    assert 'dispatch row(s)' in out
+
+
 # --- 0.4.0/D3: the report reads BOTH ledgers -----------------------------------
 def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
     """A milestone's report reads its own ledger AND `<roadmap>/ledger.jsonl`,

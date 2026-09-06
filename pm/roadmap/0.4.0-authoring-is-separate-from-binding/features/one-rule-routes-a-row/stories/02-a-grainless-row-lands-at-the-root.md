@@ -3,7 +3,7 @@ id: 0.4.0/one-rule-routes-a-row/02-a-grainless-row-lands-at-the-root
 feature: 0.4.0/one-rule-routes-a-row
 milestone: "0.4.0"
 name: A row naming no grain lands in the root ledger
-status: building
+status: done
 owner: claude
 depends_on: ["0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree"]
 ---
@@ -91,4 +91,13 @@ primary store: it is the residue, not the destination.
 
 ## Close
 
-<!-- done: <hash> — what shipped -->
+done: 8a6cf3d — `<roadmap>/ledger.jsonl` is the grainless home; `ledger_path(cfg.roadmap)` is the
+join, so no second path helper exists. `.gitattributes` is `**`, proven by `git check-attr` over
+both paths and a negative.
+AC5 answered: `ledger report` with no id reports the CURRENT RELEASE's milestone, from `order` plus
+`version_at`. Stated in `--help`. It is a missing ARGUMENT answered from the plan, not a route —
+no row is placed by it, and the rows themselves never consult it.
+finding: 0.3.0's `release_ledger_dir` routed the gate row. D7 records the reconciliation — it
+stops routing writes and keeps only the report's subject.
+finding: a FOURTH writer, `tests/conftest.py:278`, filed slow-test rows through
+`in_progress_milestones`. Three routers, not two; all four now read the row.

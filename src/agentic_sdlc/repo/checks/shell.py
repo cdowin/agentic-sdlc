@@ -1,9 +1,6 @@
-"""check shell — shellcheck over the repo's tooling shell scripts.
+"""check shell — `shellcheck -x` over every tracked `*.sh` (and shell-shebang file) under the roots.
 
-Lints every tracked *.sh under the configured roots, plus tracked
-extension-less files there whose shebang is a shell, with `shellcheck -x`.
-Soft-skips (exit 0, loud note) when shellcheck isn't installed — it's a
-SHOULD-have dev dependency, not a hard one.
+Soft-skips at exit 0 when shellcheck is not installed. A zero census FAILS.
 
 devkit.toml: [shell] roots = ["tools"]
 """
@@ -22,21 +19,12 @@ SHEBANGS = ('#!/usr/bin/env bash', '#!/bin/bash', '#!/usr/bin/env sh', '#!/bin/s
 
 
 def _untracked_scripts(root, roots) -> list[str]:
-    """`*.sh` present under the roots and absent from the index.
-
-    The one question that tells a WRONG ROOT from an UNCOMMITTED tree, and it is
-    asked only when the census is already zero — so a green run never pays for
-    it.
-    """
+    """`*.sh` present under the roots and absent from the index; asked only on a zero census."""
     found = []
     for rel in roots:
         base = root / rel
         if not base.is_dir():
             continue
-        # `core.walk`, not `rglob` — boundaries primitive 4. A walk that
-        # returns one list has nowhere to put what it dropped, and this
-        # question is asked precisely when a census already came back empty,
-        # which is the worst moment to lose a second one silently.
         found.extend(str(p.relative_to(root))
                      for p in walk.descendants(base, Kind.FILE, suffix='.sh'))
     return found
@@ -63,17 +51,7 @@ def run() -> int:
             if first in SHEBANGS:
                 targets.append(rel)
     if not targets:
-        # Rule 4 — a gate that scanned nothing must say so. A misconfigured
-        # exclude or a wrong root is indistinguishable from a clean tree, and
-        # that PASS is the most dangerous output this package emits.
-        #
-        # But it MUST name the right cause. This gate scans TRACKED files, and
-        # the commonest way to reach zero is not a wrong root: it is a fresh
-        # `agentic-sdlc init`, which writes eight scripts under `tools/` and
-        # does not `git add` them. Measured 2026-09-05 on a stock init — the
-        # gate failed, correctly, and sent the operator to `[shell] roots`,
-        # which was right all along. A verdict that names the wrong cause costs
-        # more than one that names none.
+        # The commonest zero is a fresh `init` that never `git add`ed, not a wrong root.
         on_disk = sorted(
             rel for rel in _untracked_scripts(root, roots))
         if on_disk:

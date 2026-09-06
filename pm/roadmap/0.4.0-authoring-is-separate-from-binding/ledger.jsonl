@@ -80,3 +80,4 @@
 {"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":178,"rank":5}
 {"ts":"2026-09-06T22:01:35Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8011,"census":655}
 {"ts":"2026-09-06T22:01:35Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":10543}
+{"ts":"2026-09-06T22:01:55Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2291}

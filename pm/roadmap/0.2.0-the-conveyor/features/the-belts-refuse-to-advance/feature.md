@@ -2,7 +2,7 @@
 id: 0.2.0/the-belts-refuse-to-advance
 milestone: "0.2.0"
 name: Each belt's entry condition is a READ verb that names every blocker
-status: building
+status: done
 reviewed: docs/reviews/2026-09-05-the-belts-refuse-to-advance.md
 risk: low
 size: s

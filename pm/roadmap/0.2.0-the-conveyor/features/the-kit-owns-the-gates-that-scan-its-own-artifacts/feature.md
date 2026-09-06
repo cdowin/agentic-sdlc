@@ -2,7 +2,7 @@
 id: 0.2.0/the-kit-owns-the-gates-that-scan-its-own-artifacts
 milestone: "0.2.0"
 name: A gate that scans an artifact this kit owns belongs to this kit, not to each consumer
-status: building
+status: done
 reviewed: docs/reviews/2026-09-05-the-kit-owns-the-gates-that-scan-its-own-artifacts.md
 risk: medium
 size: m

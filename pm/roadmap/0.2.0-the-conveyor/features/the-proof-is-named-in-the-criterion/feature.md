@@ -2,7 +2,7 @@
 id: 0.2.0/the-proof-is-named-in-the-criterion
 milestone: "0.2.0"
 name: A criterion names the one case that proves it, and the suite is that set
-status: planning
+status: done
 reviewed: docs/reviews/2026-09-05-the-proof-is-named-in-the-criterion.md
 phase: 7
 depends_on: ["0.2.0/the-suite-is-cheap-or-it-declares-itself"]

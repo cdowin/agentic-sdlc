@@ -86,6 +86,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_report_sections.py',
     'test_pm_ready_for.py',
     'test_pm_verbs.py',
+    'test_prose_census.py',
     'test_replay_migration.py',
     'test_verdict.py',
     'test_verify_declares.py',

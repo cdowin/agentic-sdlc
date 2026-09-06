@@ -1,28 +1,9 @@
-"""`shell` is derived here — from the source, at collection, never by hand.
+"""`shell` is derived here, from the source at collection, never by hand.
 
-`make matrix` replays this suite on four interpreters, and ~85% of that wall
-clock is `subprocess`: bash, make, git and the installed hook corpora, none of
-which an interpreter changes. The matrix runs everything on the floor and
-`-m "not shell"` on the other three, so the mark has to be true of every
-spawning module on every run, with nobody maintaining a list. Hence derivation.
-
-A module carries `shell` when its own source imports `subprocess`, or when it
-binds a `tests/support` name that reaches `subprocess`. The helper set is
-derived too — support's call graph walked to a fixpoint — so `commit()` counts
-because it calls `git()`, and a new helper that shells out drags its callers
-across on the next collection rather than on the next audit.
-
-Deliberately AST, not grep. `grep -l subprocess tests/test_*.py` gets both ends
-of the census wrong: it counts `test_boundaries.py`, which spells
-`subprocess.run` in a docstring and spawns nothing, and it misses every module
-that shells out only through `tree()` or `commit()` — which is most of the
-pm suite, and the bulk of the seconds this mark exists to move.
-
-The mark is a fact, so no module gets to assert it: an item that reaches this
-hook already carrying `shell` is refused by name. That holds even when the
-claim is TRUE, because one mechanism is the whole point — `pytest -m shell`
-should be a statement about what the source does, and a reader should never
-have to work out whether a given mark was derived or opined.
+A module carries the mark when its source imports `subprocess` or binds a
+`tests/support` name that reaches it (the helper set is a call-graph fixpoint).
+Decided by AST, not grep, so a docstring naming `subprocess` is not a spawn. A
+hand-written `shell` mark is refused by name: one mechanism is the point.
 """
 from __future__ import annotations
 

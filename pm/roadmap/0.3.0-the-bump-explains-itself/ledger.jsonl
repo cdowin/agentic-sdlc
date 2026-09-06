@@ -699,3 +699,4 @@
 {"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":8967,"rank":4}
 {"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":8602,"rank":5}
 {"ts":"2026-09-06T23:36:54Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":70051,"census":1152}
+{"ts":"2026-09-06T23:38:10Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2287}

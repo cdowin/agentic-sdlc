@@ -1,100 +1,127 @@
-# Handoff — two kits, one release SHIPPED, fresh pins
+# Handoff — 0.2.0 the conveyor
 
-**Rewritten 2026-09-04, end of session.** Four repos, checked out side by side in one workspace
-directory: `godot-devkit`, `agentic-sdlc`, `consumer_a`, `consumer_b`.
+**Written 2026-09-05, end of a long session. 19 commits on
+`milestone/0.2.0-the-conveyor` since `815de59`.**
 
-<!-- rule-8: migration document. This file names the four repos on purpose — it is the
-     record of a migration BETWEEN them, and a plan that cannot say which repo a step
-     happens in is not a plan. It is exempt from the CONSUMER-NAME clause of the rule-8
-     gate and from nothing else; the exemption is one exact path, declared in
-     tests/test_consumer_independence.py (MIGRATION_DOC) and again here, so it cannot be
-     taken without editing both sides. When the migration lands, delete this file AND
-     that entry — the gate fails if the entry outlives the file, or the file stops
-     needing it. Nothing in src/, tools/, .github/ or an installable may name a repo,
-     and this exemption cannot reach any of them: it is a single top-level .md. -->
+Read this, then `pm/roadmap/0.2.0-the-conveyor/milestone.md`, then
+`decisions.md` (D1-D10). Everything else is derivable.
 
-## State — everything below is committed and pushed
+---
 
-| repo | branch | state |
+## HOW TO WORK HERE — read this before you run anything
+
+**The single most expensive mistake in this repo is running a rung wider than
+the thing you changed.** It is the failure the whole milestone exists to end,
+and the last session made it four times by hand inside the feature that fixes
+it. The ladder, with MEASURED costs:
+
+| you changed | run | cost |
 |---|---|---|
-| **godot-devkit** | `milestone/0.25.0-the-godot-kit-alone` | **v0.24.0 RELEASED** — merged, tagged, artifact proven from a cold cache. 0.25.0 planned, not started. |
-| **agentic-sdlc** | `milestone/0.2.0-the-conveyor` | **0.1.0 merged to main**, suite green (1,430 pass / 1 skip / 348 subtests). 0.2.0 planned, not started. |
-| **consumer_a** | `feat/0.90.3-game-polish` | **pinned v0.24.0**, `make check` exit 0, 37 status words migrated. |
-| **consumer_b** | `chore/devkit-v0.24.0` | **pinned v0.24.0**, `check` + `precommit` exit 0, 25 migrated. **PR not opened.** |
+| the PM tree, or a doc | `make gates` | **~2 s** |
+| code, inner loop | `agentic-sdlc verify --story` | seconds |
+| code, before a commit | `make precommit` | **~10 s** |
+| closing a feature | `agentic-sdlc verify --feature` | **~36 s** |
+| closing a milestone | `make milestone` | minutes |
 
-## What is left, in order
+**Writing to the PM tree is `pm new`, an edit, `make gates`, a commit.** Two
+seconds. A planning step that costs a suite is one people batch up and stop
+doing.
 
-### 1 — Open consumer_b's PR
-The branch is pushed and nobody opened the PR. `main` there is release-only and auto-tags on push.
+**A story is build → unit → done, repeated.** `agentic-sdlc verify --plan`
+prints every rung with the cost it actually took, from the ledger. Ask it rather
+than guessing.
 
-### 2 — agentic-sdlc 0.2.0 — four features, all planned and measured
+Run the CLI as `PYTHONPATH=src python3 -m agentic_sdlc.cli …` —
+**never `uvx --from`**, which caches by version and serves stale code.
 
-- **`the-extraction-finishes`** — 0.1.0 is green and green is not clean. **A stock consumer's
-  `check all` exits 2**: `KNOWN_GATES` names eight removed gates and three sit in the DEFAULT roster,
-  so the path a new adopter takes is the broken one. The real defect is the **missing census** —
-  nothing asserts the declared roster equals what actually dispatches. Also `--help` advertising ~14
-  absent verbs, a 126 KB Godot ClassDB dump with zero readers shipping in the wheel, and
-  `devkit.toml` / `pyproject.toml` / `CLAUDE.md` still describing the half that left.
-- **`the-kit-owns-the-gates-that-scan-its-own-artifacts`** — 4 of a consumer's 20 gates scan artifacts
-  this kit owns; the other 16 are that game's own architecture and stay. Evidence: the second consumer
-  has no prose-cap gate at all, so a rule this kit defines is enforced in one tree of two by accident.
-- **`every-gate-reports-its-cost`** — `gdk_gate` is the single funnel; instrument there and gates that
-  do not exist yet are covered.
-- **`the-release-is-a-conveyor`** + **`design-the-three-belts.md`** — one belt per grain, each widening
-  verification by exactly one step. **A belt never runs a belt above it.**
+---
 
-### 3 — godot-devkit 0.25.0, blocked on ONE file
+## Where the milestone is
 
-Delete `src/godot_devkit/repo/`, keep `godot/` and a duplicated `core/`, pin `agentic-sdlc`, ship
-`install-runners`. Measured across the four install plans:
+Eight phases. 1-4 built and reviewed; 5-8 are the rebuild.
 
-| plan | files | Godot |
+| phase | feature | state |
 |---|---|---|
-| `install-ci` | 4 | 0 |
-| `install-agents` | 13 | 0 |
-| `install-hooks` | 11 | **1** — `cc-godot-sandbox.sh` |
-| `install-runners` | 13 | **12** |
+| 1 | `the-extraction-finishes` | reviewing |
+| 2 | `the-middle-tier-splits`, `the-kit-owns-the-gates…` | reviewing / building |
+| 3 | `every-gate-reports-its-cost`, `the-belts-refuse-to-advance`, `the-story-belt…` | building |
+| 4 | `the-release-is-a-conveyor`, `adopt-is-a-conveyor` | building / reviewing |
+| **5** | **`the-belt-reports-and-finishes`** → then `the-inner-levels-are-belts-too` | driver DONE, inner belts NOT BUILT |
+| **6** | `the-project-declares-its-flow` **done**; `the-suite-is-cheap…` **done** | |
+| **7** | `every-question-is-asked-of-a-category`, `the-proof-is-named-in-the-criterion` | **NEXT** |
+| 8 | `the-ledger-rows-carry-categories` | blocked on 7 |
 
-`install-runners` is a Godot verb, and its only non-Godot member is **`Makefile.devkit`** — which
-carries the gate FRAMEWORK and the Godot target ROSTER in one file. **That is the entire middle tier
-and the only design problem left in the split.**
+### Findings: 36 open at session start → **2**
 
-**Hard ordering:** this repo cannot green until `agentic-sdlc` is pinnable. The moment `repo/` goes,
-`pm`, `check pm` and `install-*` go with it, and this repo's own gates use them.
+`I2` (26 stories parked at `reviewing`; they close once the inner belts land)
+and `R4` (owned by phase 7, which deletes the line it is against). **Seven of
+the thirty-two were stale** — already fixed, never re-dispositioned. Verify by
+measurement before trusting any disposition in `docs/reviews/`.
 
-### 4 — Loose ends in the consumers
+---
 
-- **consumer_a:** `make doctor` FAILs on a stale uid index — 3 of 1199 tracked sidecars missing from
-  `.godot/uid_cache.bin`. A genuinely new 0.24.0 check finding a real condition: the one that makes
-  scenarios FAIL while printing PASS inside. Remedy `rm -rf .godot && make import-cache` re-serializes
-  tracked files, so it wants its own commit. Nothing gates on it today.
-- **consumer_b:** its `pm/README.md` convention was rewritten during the adoption — a no-build decision
-  story now stays `ready` instead of jumping to `review`, because that documented shortcut is exactly
-  what produced the tree's only D5 drift. **A convention change is the repo owner's to confirm.**
+## What is DONE, and the rulings behind it
 
-## Open questions
+Decisions D1-D10 in `pm/roadmap/0.2.0-the-conveyor/decisions.md` carry the
+reasoning and the rejected alternatives. The load-bearing ones:
 
-| # | question | blocks |
-|---|---|---|
-| 1 | How does `Makefile.devkit` split — framework here, Godot roster there? | godot-devkit 0.25.0 |
-| 2 | Which command is "narrow" per project — designed in `design-the-three-belts.md`, not built | the story belt's economics |
-| 3 | Does `cc-godot-sandbox.sh`'s corpus self-test follow it to godot-devkit? | tidy, not blocking |
+- **D8 — everything is a check.** No belt step halts. `_walk` records every
+  answer and returns a scoreboard; `release` over a red `make gates` reaches
+  `tag`. `--skip` is gone; the ledger row it wrote is now written by the machine
+  for every not-true step.
+- **D7 — the ledger keeps its frozen keys** and gains category keys beside them.
+- **D5 — D8/D9/D10 report over every `in_progress` milestone**, because "the
+  building milestone" is not expressible under three categories.
+- **D6 — the engine's two verbs exist.** `move` and `holds` in `model.py`. They
+  had never been built; the census is phase 7's acceptance test.
+- **D9 — a composition rung has no gate slot**, so `verify --plan` says
+  `unknown` for the wide rungs. Filed: `0.2.0/bugs/a-composition-has-no-slot`.
+- **D10 — the test tier is the ladder's bottom rung**, and a tier over its
+  ceiling is a gate failure.
 
-## Things that will bite
+**Phase 6 landed the northstar's core:** three categories, `[pm.states.<kind>]`
+and `[pm.transitions.<kind>]` declared per project, no runtime fallback,
+`pm vocabulary` as the pin-bump verb, and a live seed.
 
-- **A belt never runs a belt above it.** Measured: a full suite is 154 s, a single module 0.9 s —
-  **170x**. Eleven story-layer fixes verified at milestone scope cost **31 minutes**; re-checking the
-  same five modules at story scope cost **13 seconds**. **A dispatch naming only the wide command
-  teaches the wide command as the inner loop.** Name both, with costs, and say which is which.
-- **`tests/support/__init__.py` does `sys.path.insert(0, REPO_ROOT/'src')`**, so `PYTHONPATH=<old>
-  pytest` silently runs the WORKTREE source and reports a **false PASS**. Use `git archive HEAD | tar -x`.
-- **A gate reading a half-deleted tree produces a confident WRONG verdict**, not a crash. Measured:
-  `behavior-fan-scan` called three live allowlist entries stale while `awk` could not open a peer's
-  deleted files, and nearly cost three legitimate guards. **Stage deletions before believing a scan.**
-- **`git commit -- <path>` silently omits NEW files.** `git add` them explicitly first.
-- **A blanket rename sweeps files that legitimately name the thing being renamed.** It broke THIS
-  document twice. Exclude migration docs from any `godot-devkit → agentic-sdlc` sweep.
-- **`tools/hooks/extra-write-roots.local` is gitignored and has no backup.** Read before writing; one
-  was clobbered this session and reconstructed from inference.
-- The self-hosted `pre-push` blocks direct pushes to `main` in every repo here. A release is a PR merge
-  plus a tag.
+**The suite went 240 s → 36 s** and `make precommit` 240 s → 10 s, with the pass
+count going UP. Hard rule 10 is the counterweight rule 4 never had.
+
+---
+
+## NEXT, in order
+
+1. **Finish phase A/B of `the-proof-is-named-in-the-criterion`** — cut the suite
+   to what BITES. Phase C (the prevention) is already landed: templates, rule
+   10, the roster, `check budget`'s time AND case ceilings. The feature record
+   carries the "does it bite" table; use it as the criterion, not "which are
+   duplicates".
+2. **Phase 5's inner belts** (`the-inner-levels-are-belts-too`). It is unbuilt
+   and its record specifies belts that REFUSE — read its banner first; D8 means
+   they report. Closing it closes I2.
+3. **Phase 7** (`every-question-is-asked-of-a-category`) — the behaviour change.
+   Route the census through `holds`. **Every fixture tree already declares a
+   flow**, so this lands as a behaviour change rather than 400 fixture edits.
+4. **Phase 8**, then close the tree through the belts, review, and release
+   0.2.0 through `agentic-sdlc release 0.2.0` (criterion 10 — a conveyor whose
+   first release is done by hand has not been tested).
+
+---
+
+## Gotchas that cost the last session real time
+
+- **`repo_root()` no longer spawns git** — it walks up for `.git`. A test tree
+  only needs `(root/'.git').mkdir()`. `support.pm.tree` marks; `support.pm.git_tree`
+  initialises, and reaching for the second is what marks a module integration.
+- **`pytestmark` is one name.** Two assignments silently replace each other; use
+  a list.
+- **`check budget` must NOT go in `[checks] all`.** It grades the last recorded
+  run, and `check all` runs inside a test that spawns `make gates` against this
+  tree — nine tests went red over unrelated timing. It lives in `make milestone`.
+- **A `[verify]` rung that names a make target whose meaning changed is a silent
+  hole.** `feature = "make precommit"` stopped meaning "integration" the moment
+  `precommit` became narrow, and a feature closed running no integration for an
+  hour.
+- **Dispositions have a grammar** — `landed <hash>`, `rejected: <why>`,
+  `deferred: <grain-id>`, `open`, `open: <note>`. Prose after the hash makes
+  `pm ready-for tag` refuse the record.
+- **The scene half is gone.** Anything naming Godot in `src/` is drift (rule 8).

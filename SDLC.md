@@ -208,6 +208,46 @@ is the standing floor beneath both: it holds the whole CLI to
 refuse-or-contained-write; the matrix pins the new surface's specifics on
 top of it.
 
+### The matrix belongs to the GRAMMAR, not to each surface
+
+Amended 2026-09-05, because this section is a source of the growth §6 measures.
+Read literally, it asks every new input surface to enumerate traversal, empty
+segments, backslashes, globs, absolute paths, schemes, whitespace and length —
+and there are a dozen such surfaces sharing three grammars
+(`model.segment_is_literal`, `version_defect`, `subject_defect`). Twelve
+surfaces times twelve spellings is 144 cases proving one rule.
+
+**Enumerate the matrix once, where the grammar lives. A surface that REUSES a
+grammar proves that it reuses it** — one case showing the refusal arrives, and
+the grammar's own matrix carrying the spellings. A surface that invents a
+grammar is a finding before it is a test.
+
+## 6. A new test says why the old ones were not enough
+
+Acceptance criteria say what must be TRUE. They do not say what DEMONSTRATES
+it, and that gap is where a suite grows without anyone deciding to grow it: a
+builder proving a criterion writes as many cases as feels safe, each cheap
+alone, expensive only in aggregate, and nothing downstream asks about the
+total. Measured in this package on 2026-09-05: **7,241 executable statements of
+source against 13,023 of tests, and one test function per 4.9 statements.**
+
+So a story names, per criterion, the case that proves it and the TIER it runs
+in (`## How this is proven`). And before any new case is written:
+
+> **Name the test that already covers this, or the one that could be AMENDED
+> to. A new case is warranted only when neither exists.**
+
+*"I could not find one"* is an answer that has to have been looked for. Prefer,
+in order: amend an existing case → add a `parametrize` row → a new function →
+and only for a genuinely new surface, a new module.
+
+**The reviewer asks it, because nobody upstream will.** Every release review
+this package has ever had came back having found a false PASS, and not one of
+them mentioned test cost — a reviewer catches what the rules name. The
+questions are in the roster's reviewer definitions; the short form is: which
+existing test covers this, is this the same rule at a second altitude, and does
+what landed match the story's own table.
+
 ## Close protocol — GENERATED, not written here
 
 **The ordered steps live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which

@@ -129,3 +129,48 @@ drift that degrades a human's patience instead of a boolean, so nothing catches
 it unless something is watching the clock. Run the narrow rung after an edit;
 the wide one belongs to the close.
 <!-- END cheapest-proof -->
+
+## Before a new test: the search
+<!-- BEGIN search-before-a-new-test -->
+
+**Name the test that already covers this, or the one that could be AMENDED to.
+A new case is warranted only when neither exists** — and *"I could not find
+one"* is an answer that has to have been looked for, not the default.
+
+Say it out loud in your report, per case you added:
+
+    verify --check shadowed rule   NEW    nothing asserts first-match-wins
+    census counts the union        AMEND  test_verify_main.py::…scanned_of
+    a rule that is never first     NEW    the shadow question did not exist
+
+**The default is that a new test is NOT warranted.** A rule proven at three
+altitudes — the function, the CLI, the gate — is two altitudes of cost for no
+altitude of coverage, and it reads as thoroughness right up until somebody
+counts. One suite reached 1,478 test functions over 7,241 statements of source
+that way: every individual addition reasonable, nothing asking about the total.
+
+Prefer, in order: **amend an existing case** (one more assertion where the
+setup already stands) → **add a row to a `parametrize`** (a new input, not a
+new function) → **a new function** (a genuinely new question). Only reach for a
+new MODULE when the surface is new.
+
+And name the tier. Default to unit; reaching for one that spawns is a claim
+that the thing under test IS a process, and the review will read it as one.
+### And it has to BITE
+
+A test earns its place by gating something that would cost real time if it
+broke. **We test to be useful, not to say we have tests**, and 100% coverage is
+not the goal — coverage that bites is.
+
+Worth gating: a load-bearing module everything calls; a path run dozens of
+times a day; a defect that would ship SILENTLY and surface weeks later; and
+either of the two cardinal sins — a gate printing PASS over what it did not
+measure, a write that looks legitimate and is not.
+
+Not worth gating: a docstring claim; a grammar's twelfth spelling where eleven
+already pass; a rule already proven one altitude down; anything whose breakage
+the next run would catch anyway.
+
+The question, for any case: **if this were deleted and the thing it guards
+broke, what would that cost?** *"The next run catches it"* is a delete.
+<!-- END search-before-a-new-test -->

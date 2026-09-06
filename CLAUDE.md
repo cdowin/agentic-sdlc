@@ -29,7 +29,7 @@ change here lands in other projects' commit gates — treat the CLI as a publish
    A tool that refuses gets worked around invisibly, and then the protocol teaches nothing. `check <gate>` is the thing that FAILS a contradictory tree, in CI and pre-push, with an exit-code contract for exactly that. **`pm` moves and reports; `check` gates.** Conflating them is how the conveyor inherited a job it should never have had (0.2.0; `docs/design/state-categories.md` §7).
 
 
-10. **Prove it the cheapest way that can actually fail.** A test that spawns a process to check a pure function is an integration test by accident, and the suite pays for it forever. Default to a function call; a temp tree when the code reads files; a real repository, `make` or installed hook ONLY when the thing under test is one — and then say so, by reaching for the builder that spawns rather than passing a flag to one that might. **A tier that got slower is a finding**: it degrades a human's patience instead of a boolean, so no other gate will ever notice. This rule is the counterweight rule 4 never had — rule 4 says a gate must not print PASS over what it did not measure, and for two releases every judgement call resolved toward "more real" because nothing argued the other way. Measured 2026-09-05: 1842 tests, 240 s of wall clock with 150 s of CPU inside it, and `make precommit` running all of it after every edit — arrived at one honest fixture at a time, with every gate green the whole way down.
+10. **Test what BITES, the cheapest way that can actually fail.** We test to be useful, not to say we have tests. A test earns its place by gating something that would cost real time if it broke: a load-bearing module (`src/agentic_sdlc/core/walk.py`, `src/agentic_sdlc/core/config.py`, `src/agentic_sdlc/repo/pm/model.py`, `src/agentic_sdlc/repo/conveyor/driver.py`), a path a consumer runs dozens of times a day, or one of rule 4's two cardinal sins — a gate printing PASS over what it did not measure, a write that looks legitimate and is not. **100% coverage is not the goal and never was**; coverage that bites is. The question for any case: *if this were deleted and the thing it guards broke, what would that cost?* "The next run catches it anyway" means delete. Iteration and learning beat perfect engineering — which is only safe because the things that bite are gated hard. A test that spawns a process to check a pure function is an integration test by accident, and the suite pays for it forever. Default to a function call; a temp tree when the code reads files; a real repository, `make` or installed hook ONLY when the thing under test is one — and then say so, by reaching for the builder that spawns rather than passing a flag to one that might. **And prove it ONCE.** Before a new test, name the one that already covers this or the one that can be amended to; a new case is warranted only when neither exists. A rule proven at three altitudes is two altitudes of cost for no altitude of coverage. **A tier that got slower is a finding**: it degrades a human's patience instead of a boolean, so no other gate will ever notice. This rule is the counterweight rule 4 never had — rule 4 says a gate must not print PASS over what it did not measure, and for two releases every judgement call resolved toward "more real" because nothing argued the other way. Measured 2026-09-05: 1842 tests, 240 s of wall clock with 150 s of CPU inside it, and `make precommit` running all of it after every edit — arrived at one honest fixture at a time, with every gate green the whole way down.
 ## Where things live
 
 One family and a shared floor. The rule, not the inventory — `ls src/agentic_sdlc`
@@ -55,6 +55,15 @@ to solve quietly. Tool modules own their behavior and expose `main(argv)` or `ru
 - **New verb** = module + `cli.py` route + README table row + CHANGELOG line. A verb
   that WRITES additionally needs an explicit refusal path with a test proving it
   declines rather than mangles, and an idempotence test.
+- **New test** = **first, the search.** Name the test that already covers this,
+  or the one that could be AMENDED to. A new case is warranted only when
+  neither exists, and *"I could not find one"* is an answer that has to have
+  been looked for. Then: the cheapest tier that can fail (rule 10) — a function
+  call before a temp tree, a temp tree before a process — and a row in the
+  story's `## How this is proven` table saying which. **The default is that a
+  new test is NOT warranted**: this suite reached 1,478 functions over 7,241
+  statements of source, one per 4.9, because every individual addition was
+  reasonable and nothing asked about the total.
 - **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never `tuple(cfg.get(...))` —
   a bare string is iterable, and that is how seven gates shipped a silent PASS over an
   empty census in v0.9.0.

@@ -87,6 +87,16 @@ checks = [
 # the one that already happened here: 240 s of suite, arrived at one honest
 # fixture at a time, with every gate green the whole way down.
 budget = { unit = 20, integration = 130, test = 150 }
+
+# AND A CEILING ON SIZE, which the duration cannot see. A tier holds its wall
+# clock while doubling in case count — parallelism and a faster machine both
+# absorb it — and the number that then goes wrong is the reader's, not the
+# gate's. Measured 2026-09-05: 1,123 unit and 730 integration.
+#
+# Set ~10% above today, because the point is to make GROWTH a decision somebody
+# argues rather than one that happens. `0.2.0/the-proof-is-named-in-the-criterion`
+# is the pass that brings both numbers down; until it lands these hold the line.
+cases = { unit = 1250, integration = 800 }
 # V6 is named on purpose, and it is the one rule here that is NOT stock. This
 # tree keeps generated execution lists and is small enough for `pm sync` to be
 # cheap, so the gate holds the view to the tree. A project whose lists go stale

@@ -445,6 +445,39 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
             f'found {appends}. If the append is gone, delete the exception.')
 
 
+class OneRuleRoutesALedgerRow(unittest.TestCase):
+    """0.4.0/D1 — a row is filed against the milestone that owns its GRAIN, and
+    no write path reads a status to decide where bytes go.
+
+    The deleted lookup (`_building_ledger_dir`) asked which milestone was
+    `in_progress`: it refused when none was, which lost every row a tree wrote
+    while it was still planning, and refused when two were, which is the
+    workflow this package exists for. It was a SECOND answer to a question
+    `_stamp` had always answered from the grain.
+
+    A name test rather than a behaviour test, because the behaviour cases in
+    `test_pm_ledger_record.py` prove where a row lands and cannot prove that
+    the old mechanism is not sitting beside the new one, reachable from a path
+    nobody thought to cover.
+    """
+
+    # Spelled as a string so grepping for the retired name finds this case:
+    # the one hit in `src/` a reader gets is the gate that removed it.
+    RETIRED = '_building_ledger_dir'
+
+    def test_the_in_progress_lookup_is_not_in_the_source(self):
+        offenders, scanned = [], 0
+        for rel, path in _sources():
+            scanned += 1
+            if self.RETIRED in path.read_text(encoding='utf-8'):
+                offenders.append(rel)
+        self.assertEqual(offenders, [],
+                         f'{self.RETIRED} is back. A row is routed by its '
+                         f'grain (D1); a milestone status decides nothing '
+                         f'about where a row is written.')
+        self.assertGreaterEqual(scanned, MIN_SOURCES)
+
+
 class WalkHasNoLength(unittest.TestCase):
     """A census must not be able to reach a number without its narrowings.
 

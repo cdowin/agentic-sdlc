@@ -466,6 +466,76 @@ def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
         assert list(root.rglob('ledger.jsonl')) == []
 
 
+# --- D1: a row is routed by its GRAIN, and no status is read ------------------
+# The lookup these replace asked which milestone was `in_progress` and refused
+# on none and on several. Every case below is a write that used to be REFUSED
+# or MISFILED, so each one fails at the commit before this story.
+SECOND = 'pm/roadmap/0.2-next'
+SECOND_LEDGER = f'{SECOND}/ledger.jsonl'
+
+
+def two_milestones(root, other_status: str = 'planning') -> str:
+    """A second milestone with a feature of its own, so the milestone that owns
+    the GRAIN and the milestone that is BUILDING are two different directories.
+
+    Without that separation a case asserting "the row landed in 0.1" passes for
+    the old reason — 0.1 is also the one milestone in progress — and proves
+    nothing about what routed it. Returns the second feature's id.
+    """
+    write(root / f'{SECOND}/milestone.md',
+          {'id': '"0.2"', 'name': 'Next', 'status': other_status})
+    write(root / f'{SECOND}/features/beta/feature.md',
+          {'id': '0.2/beta', 'milestone': '"0.2"', 'name': 'Beta',
+           'status': 'planning', 'reviewed': ''})
+    return '0.2/beta'
+
+
+def test_a_grain_in_a_planning_milestone_records():
+    """Exit 1 with no write until this story: nothing was `in_progress` in
+    0.2, so the row that names 0.2's feature had nowhere to go. Design work IS
+    the milestone's work, and it is the first thing a milestone does."""
+    with tree(milestone_status='planning') as root:
+        write(root / 'pm/roadmap/0.1-demo/milestone.md',
+              {'id': '"0.1"', 'name': 'Demo', 'status': 'planning'})
+        code, out = record(root, '--grain', '0.1/alpha')
+        assert code == 0, out
+        assert [r['grain'] for r in ledger_rows(root)] == ['0.1/alpha']
+
+
+def test_two_milestones_in_progress_file_against_the_one_that_owns_the_grain():
+    """The refusal that said "which one owns this row is the one thing this
+    verb cannot know". The row knows: it names a grain, and the grain's
+    document sits under exactly one milestone."""
+    with tree() as root:
+        other = two_milestones(root, other_status='building')
+        assert record(root, '--grain', other)[0] == 0
+        assert record(root, '--grain', '0.1/alpha')[0] == 0
+        assert [r['grain'] for r in ledger_rows(root, SECOND_LEDGER)] == [other]
+        assert [r['grain'] for r in ledger_rows(root)] == ['0.1/alpha']
+
+
+def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
+    """The inversion of "lands in the building milestone", with the two pulled
+    apart: 0.1 is the only milestone in progress and the row still goes to
+    0.2, because 0.2 owns the grain. Under the old rule this row landed in
+    0.1 — the same file, for the wrong reason."""
+    with tree() as root:
+        other = two_milestones(root)
+        code, out = record(root, '--grain', other, '--event', 'Stop')
+        assert code == 0, out
+        assert ledger_lines(root) == [], 'the building milestone took the row'
+        rows = ledger_rows(root, SECOND_LEDGER)
+        assert [(r['kind'], r['grain']) for r in rows] == [('session', other)]
+
+
+def test_an_id_no_grain_carries_is_still_refused_and_writes_nothing():
+    """Routing by grain must not turn an unknown id into a new place to
+    write."""
+    with tree() as root:
+        refuses(root, '--grain', '0.1/nope', needle='no grain resolves')
+        assert list(root.rglob('ledger.jsonl')) == []
+
+
 def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed():
     """The loud half of the fail-open contract: the courier may discard this,
     but the verb must say it, or a ledger that stopped being written is

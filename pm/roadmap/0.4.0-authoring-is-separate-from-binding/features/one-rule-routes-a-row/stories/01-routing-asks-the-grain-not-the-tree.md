@@ -3,8 +3,8 @@ id: 0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree
 feature: 0.4.0/one-rule-routes-a-row
 milestone: "0.4.0"
 name: Routing asks the grain, and _building_ledger_dir is deleted
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

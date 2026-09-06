@@ -219,3 +219,49 @@ on files on disk.
 **The standing lesson: if you need a shared doc, scaffold it — don't author it.** This was the
 fifth instance in one session of a capability that shipped and was not found at the moment of need,
 and the first where the guidance was in the file's own first line.
+
+## D7 — 2026-09-06 — The gate and test rows join the grainless family, and release_ledger_dir stops routing writes
+
+**Created by the merge, not by the design.** D1 was written against a tree where
+`_building_ledger_dir` routed every telemetry write. 0.3.0 then shipped
+`model.release_ledger_dir` — "the milestone holding the current release, from `order` plus
+`version_at`, with the in-progress lookup as fallback" — and moved the gate row onto it. That is
+a strictly better answer to the question D1 deletes, and it is still an answer to it: a second
+mechanism for *which ledger owns this row*, reading tree state rather than the row.
+
+**The rule is unchanged and now covers three row kinds.** A row goes to the ledger of the
+milestone that owns the row's GRAIN; a row naming no grain goes to `pm/roadmap/ledger.jsonl`.
+`gate_row` carries no `grain` key by design and `test_row` carries none either, so both are
+grainless by construction and both land at the root. There is now one routing function for
+writes, and its input is the row.
+
+**Three writers move, and the third was not on anybody's list.** `_gate_ledger_dir` (cli.py) and
+the two readers that must follow the rows — `verify.main.gate_costs` and `checks.budget._rows` —
+were known. `tests/conftest.py:278` was not: it files the slow-test rows through
+`in_progress_milestones` directly, which made **three** functions answering one question in a
+milestone whose thesis is that there should be one. It joins the rule with the rest.
+
+**Neither reader loses anything.** Both take the NEWEST row per gate name — `verify` by file
+order, `budget` by parsed `ts` — so a root ledger accumulating across releases does not blunt
+either, and it gains: `retire` no longer destroys a milestone's gate history, so a budget has
+numbers on the day a milestone opens instead of after its first run.
+
+**`release_ledger_dir` survives, narrowed to reading.** It stops choosing where a row is WRITTEN
+and keeps one job: which milestone `pm ledger report` is about when nobody named one. That is a
+subject, not a route — the caller asked a question with a missing argument, and answering it from
+the plan is the same act as `pm next`. A milestone report reads its own ledger AND the root's, so
+the gate-cost section and the `rows naming no grain` bucket keep their contents.
+
+**Rejected: keeping gate rows bound to the current release.** It is 0.3.0's shipped answer and
+the argument for it is real — *"what did the gate cost during 0.3.0"* is a question people ask,
+and a root file cannot answer it per milestone. It loses on the milestone's own thesis: a binding
+is a FIELD, and `gate_row` has no field to bind by, so routing it by the plan is the path being
+the schema one level down. It also keeps a refusal path — a tree with no `order` and no single
+in-progress milestone refuses every gate row, which is the silent-loss mode D5 forbids. The
+question it answers stays answerable: a gate row carries `ts`, and `ledger report <mid> --from
+<tag>` reads the tree at that release.
+
+**Rejected: giving `gate_row` a `grain` key.** It would put gate rows back under a milestone
+without a second mechanism. It loses because a gate run is not work on a grain — `_record_gate`
+already refuses `--grain` with *"a gate run is not a dispatch, and one row has one subject"* —
+and inventing a binding so the routing rule has something to read is the tail wagging the dog.

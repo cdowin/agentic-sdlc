@@ -421,24 +421,53 @@ def test_the_refusal_matrix():
             assert needle in out, (argv, out)
 
 
-@pytest.mark.parametrize('kwargs,second,needle', [
-    (dict(milestone_status='planning'), False, 'is in progress'),
-    (dict(), True, '2 milestones are in progress'),
+@pytest.mark.parametrize('kwargs,second', [
+    (dict(milestone_status='planning'), False),
+    (dict(), True),
 ])
-def test_a_milestone_this_verb_cannot_choose_is_named(kwargs, second, needle):
-    """The one question the verb cannot answer, and it says so rather than
-    picking — with the spelling that would have answered it."""
+def test_a_bare_report_asks_the_plan_and_never_a_status(kwargs, second):
+    """0.4.0/D1 — INVERTED from `…cannot_choose_is_named`, deliberately.
+
+    Both rows used to BE the refusal: "no milestone is in progress" and "2
+    milestones are in progress". Neither is a question any more, on any path,
+    so the refusal that remains is the PLAN's — there is nothing to file
+    against because nothing was scheduled — and the two old sentences must not
+    appear, because nothing asked. Asserting their ABSENCE is the case: a
+    status lookup left behind on this path would still refuse here, with the
+    same exit code, and a needle-only assertion would pass over it.
+    """
     with tree(**kwargs) as root:
         if second:
             write(root / 'pm/roadmap/0.2-next/milestone.md',
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         code, out = report(root)
         assert code == 2, out
-        assert needle in out
-        if second:
-            assert '0.1 0.2' in out
-            assert 'pm ledger report <milestone-id>' in out
-            assert report(root, '0.1')[0] == 0
+        assert 'declares no `order`' in out
+        assert 'in progress' not in out, 'a status lookup survived'
+        assert 'pm ledger report <milestone-id>' in out
+        assert report(root, '0.1')[0] == 0
+
+
+def test_two_milestones_in_progress_is_answered_from_the_plan():
+    """The situation that was the loudest refusal, now an answer.
+
+    Two milestones building is the workflow this package exists for, and the
+    bare report used to call it "the one thing this verb cannot know". The
+    plan knows: `order` names the current release and one milestone claims it.
+    """
+    with tree() as root:
+        write(root / 'pm/roadmap/0.2-next/milestone.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building',
+               'version': '0.2.0'})
+        write(root / 'pm/roadmap/0.1-demo/milestone.md',
+              {'id': '"0.1"', 'name': 'Demo', 'status': 'building',
+               'version': '0.1.0'})
+        (root / 'pm/roadmap/releases.md').write_text(
+            '---\nid: releases\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n\n'
+            '# Releases\n', encoding='utf-8')
+        code, out = report(root)
+        assert code == 0, out
+        assert '0.1' in out
 
 
 # --- the boundary: rows written before the snapshot carried categories --------

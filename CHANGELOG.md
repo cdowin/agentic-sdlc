@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **A ledger row is filed against the milestone that owns its GRAIN, at any status.** The
+  telemetry writes went through a lookup that asked which milestone was `in_progress` and refused
+  when none was and when several were — so **a tree recorded nothing at all while it was still
+  planning, and said so only on a hook's stderr**, and two milestones in flight (the workflow this
+  package is built for) refused every row with *"which one owns this row is the one thing this
+  verb cannot know"*. The row knows: it names a grain, and the grain's document sits under exactly
+  one milestone. `_stamp` had routed that way since the ledger shipped; this deletes the second
+  mechanism rather than the first. **No status is read on any write path**, so a `planning`
+  milestone records, and nothing that used to be written is now refused. `pm ledger report` with
+  no id reports the CURRENT RELEASE's milestone — from `order` plus `[pm] version_at`, the same
+  answer `pm next` gives — instead of "the one milestone in progress"; a tree with no plan is
+  refused in the plan's own words, naming the argument that answers it.
+
 - **A `devkit.toml` read reports EVERY defect, and the flow first.** The messages were already
   good and arrived one at a time in an order nothing ranked: a tree with a retired `[pm]` key AND
   no `[pm.states.*]` was told about the retired key — the cosmetic one — and had to fix it and

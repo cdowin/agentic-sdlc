@@ -133,10 +133,12 @@ every run; a state the project never declared is refused by name.
                 [--agent-id X] [--agent-type Y] [--session-id Z]
                                           (sum one Claude Code transcript and
                                            append a dispatch (SubagentStop) or
-                                           session (Stop) row to the ONE
-                                           in_progress milestone's ledger.jsonl
-                                           — none or several is a refusal that
-                                           names them)
+                                           session (Stop) row. A row is filed
+                                           against the milestone that owns its
+                                           GRAIN, at any status; no status is
+                                           read, so a `planning` milestone
+                                           records and two in flight are not a
+                                           refusal)
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N]
                 [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
@@ -161,9 +163,13 @@ every run; a state the project never declared is refused by name.
                                            rows: dispatches, tokens, tool calls,
                                            wall-clock and seconds in each
                                            CATEGORY (todo / in_progress / done),
-                                           per story/feature/bug. Defaults to the
-                                           one in_progress milestone. Never
-                                           exits non-zero on a number.
+                                           per story/feature/bug. With no id it
+                                           reports the CURRENT release's
+                                           milestone (`pm next`'s answer, from
+                                           the plan) — the rows themselves are
+                                           routed by their grain, never by a
+                                           status. Never exits non-zero on a
+                                           number.
                                            --from <rev> reads the ledger and the
                                            grain docs out of git at that rev
                                            instead of the tree, for a milestone
@@ -1364,27 +1370,29 @@ def _event_kind(raw: str) -> str:
     return kind
 
 
-def _building_ledger_dir(cfg: model.PmConfig, subject: str = 'this row',
-                        hint: str = '') -> Path:
-    """The milestone directory whose ledger `subject` belongs to (D6): exactly
-    one milestone in `in_progress`. None and several are refusals that name
-    the situation — the engine never picks (D5).
+def _row_ledger_dir(cfg: model.PmConfig, path: Path | None) -> Path:
+    """The ledger this row belongs to: the milestone that owns the row's GRAIN,
+    read from the grain's own document and from nothing else (D1).
+
+    **No status is consulted on any write path.** The lookup this replaced
+    asked which milestone was `in_progress` and refused on none and on several
+    — so a tree mid-planning lost every row it wrote, silently, and two
+    milestones in flight (the workflow this package exists for) lost all of
+    them. `_stamp` had routed by grain since the ledger shipped; the telemetry
+    half did not, which is two mechanisms for one fact.
+
+    `path` is None for a row that names no grain. Those are PARKED where they
+    have always landed until `02-a-grainless-row-lands-at-the-root` gives them
+    `<roadmap>/ledger.jsonl`; nothing that used to be written is refused here.
     """
-    live = model.in_progress_milestones(cfg)
-    if not live:
-        words = ', '.join(model.flow_of(cfg, 'milestone')
-                          .by_category.get(model.IN_PROGRESS, ()))
-        raise Usage(f'no milestone in {cfg.roadmap_dir} is in progress '
-                    f'({words}), so there is no ledger {subject} belongs to — '
-                    f'move one there with `pm milestone <state> <id>`{hint} '
-                    f'and re-run')
-    if len(live) > 1:
-        ids = ' '.join(sorted(model.unquote(mid) for mid, _, _ in live))
-        raise Usage(f'{len(live)} milestones are in progress ({ids}) — which '
-                    f'one owns {subject} is the one thing this verb cannot '
-                    f'know, so it is not guessing; run it where exactly one '
-                    f'milestone is in progress{hint}')
-    return live[0][2].parent
+    if path is None:
+        return _gate_ledger_dir(cfg)
+    mdir = model.milestone_dir_of(cfg, path)
+    if mdir is None:
+        raise Refused(f'{cfg.rel(path)} sits under no milestone directory in '
+                      f'{cfg.roadmap_dir}, so there is no ledger its row '
+                      f'belongs to; no row was written')
+    return mdir
 
 
 def _tree_snapshot(cfg: model.PmConfig) -> dict:
@@ -1487,14 +1495,18 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
         'agent_type': flags.get('--agent-type', ''),
         'tree': _tree_snapshot(cfg),
     }
+    # Resolved BEFORE the row is built, because it is both the row's `grain`
+    # and the row's address: one resolution, so the id a reader sees and the
+    # ledger it sits in cannot disagree.
+    gpath = _grain_file(cfg, grain) if grain else None
     if source:
         kind = _event_kind(_required(flags, '--event'))
         fields.update(_from_transcript(source, flags))
     else:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
-        fields.update(_by_hand(cfg, grain, flags))
+        fields.update(_by_hand(gpath, grain, flags))
     row = ledger.usage_row(kind, **fields)
-    mdir = _building_ledger_dir(cfg)
+    mdir = _row_ledger_dir(cfg, gpath)
     try:
         ledger.append_row(mdir, row)
     except OSError as err:
@@ -1614,12 +1626,12 @@ def _from_transcript(source: str, flags: dict[str, str]) -> dict:
     return {k: v for k, v in summary.items() if v is not None}
 
 
-def _by_hand(cfg: model.PmConfig, grain: str, flags: dict[str, str]) -> dict:
-    """The hand form's fields; `--grain` must resolve through `_grain_file`,
-    because a typo'd id in a ledger row is a lie nothing downstream can
-    check.
+def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:
+    """The hand form's fields, over the already-resolved grain document —
+    `--grain` resolves through `_grain_file` in the caller, because a typo'd id
+    in a ledger row is a lie nothing downstream can check, and because the same
+    path is what routes the row.
     """
-    path = _grain_file(cfg, grain)
     usage = {}
     for key, flag in (('input', '--tokens-in'), ('output', '--tokens-out')):
         if flag in flags:
@@ -1710,7 +1722,6 @@ def _gap(earlier, later) -> int | None:
 # The report is the caller the ledger leaves judgement to: sum, count, subtract
 # and group over rows on disk, and nothing else (D5 — no weight, price, score
 # or label). It reads and never writes.
-REPORT_SUBJECT = 'this report'
 REPORT_HINT = ', or name one: `pm ledger report <milestone-id>`'
 
 # `--from <rev>` reads the milestone out of git (D6); the rev is always the
@@ -1763,7 +1774,7 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
             mdir = _report_milestone_dir_at(cfg, src, rest[0])
         else:
             mdir = (_report_milestone_dir(cfg, rest[0]) if rest
-                    else _building_ledger_dir(cfg, REPORT_SUBJECT, REPORT_HINT))
+                    else _report_default_dir(cfg))
         mid = _ledger_id(mdir / model.MILESTONE_DOC, mdir.name, src)
         path = ledger.ledger_path(mdir)
         try:
@@ -1822,6 +1833,22 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.Source,
     return mdir
 
 
+def _report_default_dir(cfg: model.PmConfig) -> Path:
+    """Which milestone a bare `ledger report` is ABOUT — the current release's,
+    from `order` plus `[pm] version_at`.
+
+    Not a routing rule and not `_row_ledger_dir`'s twin: no row is placed by
+    this, and nothing here decides where anything is written (D1/D7). It
+    answers a MISSING ARGUMENT from the plan, which is the same act as
+    `pm next`, and it refuses with the plan's own words when the plan cannot
+    answer.
+    """
+    mdir, why = model.release_ledger_dir(cfg)
+    if mdir is None:
+        raise Usage(f'{why}{REPORT_HINT}')
+    return mdir
+
+
 def _report_milestone_dir(cfg: model.PmConfig, mid: str) -> Path:
     """The directory of an explicitly named milestone, or exit 2; a feature or
     story id is the wrong noun, since the ledger is per milestone.
@@ -1830,7 +1857,7 @@ def _report_milestone_dir(cfg: model.PmConfig, mid: str) -> Path:
     if path.name != model.MILESTONE_DOC:
         raise Usage(f'{mid!r} is a {_grain_kind(mid)}, not a milestone — the '
                     f'ledger is per milestone (D6), so name one (or run it '
-                    f'with no id where exactly one milestone is building)')
+                    f'bare for the current release\'s)')
     mdir = model.milestone_dir_of(cfg, path)
     if mdir is None:
         raise Usage(f'{cfg.rel(path)} is not inside a milestone directory, so '

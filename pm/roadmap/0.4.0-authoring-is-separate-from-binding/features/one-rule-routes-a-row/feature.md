@@ -2,7 +2,7 @@
 id: 0.4.0/one-rule-routes-a-row
 milestone: "0.4.0"
 name: One rule routes a row, and the in-progress lookup is deleted
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

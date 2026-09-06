@@ -3,7 +3,7 @@ id: 0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted
 feature: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: An unnamed grain resolves from the tree, or is omitted
-status: building
+status: done
 owner: claude
 depends_on: ["0.4.0/every-row-names-its-grain/01-the-couriers-carry-the-grain"]
 ---
@@ -95,4 +95,16 @@ widening of this one.
 
 ## Close
 
-<!-- done: <hash> — what shipped -->
+done: 2dd13e7 — `_grain_from_tree` reads the row's OWN snapshot; a resolved grain routes as well as
+names. `_resolved_grain_file` holds the deliberate asymmetry: a grain the VERB guessed at never
+refuses a row, while `--grain` still does.
+finding: 4f4e3cd's M1 belongs here as much as to the other feature — a row this story leaves
+unattributed can still NAME a grain through its snapshot, which is why `ledger show` had to learn
+about the tree's ledger.
+open, for the milestone review: `report.named_grains` still attributes an UNATTRIBUTED row through
+its snapshot, so a row this story deliberately left ambiguous is billed to BOTH live stories. That
+contradicts this feature's ship criterion ("stays in that bucket") and it also contradicts 0.2.0's
+D5 ("a row naming several grains is added to each whole"), which is a recorded decision — so it is
+raised rather than changed. The reading that reconciles them: the per-grain table is *spend while
+this grain was live*, not *spend on this grain*. If that is the intent it should be said on the
+table; if it is not, the fix is one clause in `named_grains` and a decision.

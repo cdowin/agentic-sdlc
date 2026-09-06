@@ -201,3 +201,9 @@
 {"ts":"2026-09-06T23:09:14Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one","duration_ms":4898,"rank":5}
 {"ts":"2026-09-06T23:09:14Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":43630,"census":1152}
 {"ts":"2026-09-06T23:09:41Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2687}
+{"ts":"2026-09-06T23:10:36Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":489,"rank":1}
+{"ts":"2026-09-06T23:10:36Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":389,"rank":2}
+{"ts":"2026-09-06T23:10:36Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":298,"rank":3}
+{"ts":"2026-09-06T23:10:36Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":267,"rank":4}
+{"ts":"2026-09-06T23:10:36Z","kind":"test","tier":"unit","nodeid":"tests/test_grain_shape.py::test_the_slot_names_have_one_source","duration_ms":156,"rank":5}
+{"ts":"2026-09-06T23:10:36Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8055,"census":763}

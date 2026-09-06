@@ -3,7 +3,7 @@ id: 0.2.0/the-inner-levels-are-belts-too
 milestone: "0.2.0"
 name: Closing a story and closing a feature are step lists, not prose
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-05-the-inner-levels-are-belts-too.md
 phase: 5
 depends_on: ["0.2.0/the-release-is-a-conveyor", "0.2.0/the-belts-refuse-to-advance", "0.2.0/the-story-belt-knows-what-verifies-this-edit", "0.2.0/the-belt-reports-and-finishes"]
 consumed_by: []

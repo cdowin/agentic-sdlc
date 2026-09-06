@@ -3,7 +3,7 @@ id: 0.2.0/the-middle-tier-splits
 milestone: "0.2.0"
 name: The gate framework ships without a Godot roster in it
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-05-the-middle-tier-splits.md
 risk: medium
 size: m
 phase: 2

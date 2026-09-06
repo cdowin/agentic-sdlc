@@ -67,7 +67,7 @@ scope = [
 #
 # R1-R4 and R6 are the release family, and R6 caught this tree's own 0.1.0 on
 # its first run: shipped inside v0.2.0, record saying `planning` ever since.
-# D7 reports a declared state no grain has ever held, and it is telling the
+# U1 reports a declared state no grain has ever held, and it is telling the
 # truth about its author — this package holds 3 of its 8 milestone states.
 #
 # D9 and D10 DO apply: work happens on `milestone/<id>` (SDLC.md §1), main is
@@ -75,7 +75,7 @@ scope = [
 # tree working on main while telling its consumers not to — D10 is what stops
 # that recurring silently.
 checks = [
-    "D1", "D2", "D3", "D4", "D5", "D6", "D7",
+    "D1", "D2", "D3", "D4", "D5", "D6", "U1",
     "D9", "D10",
     "R1", "R2", "R3", "R4", "R5", "R6",
     "V1", "V2", "V3", "V4", "V5", "V6",

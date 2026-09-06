@@ -1106,3 +1106,10 @@
 {"ts":"2026-09-06T05:39:08Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":76}
 {"ts":"2026-09-06T05:39:08Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":46650}
 {"ts":"2026-09-06T05:39:08Z","kind":"status","grain":"0.2.0","from":"building","to":"done"}
+{"ts":"2026-09-06T22:15:10Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":6017}
+{"ts":"2026-09-06T22:15:30Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":19456,"census":749}
+{"ts":"2026-09-06T22:15:30Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":26028}
+{"ts":"2026-09-06T22:16:09Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2339}
+{"ts":"2026-09-06T22:17:23Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":36109,"census":1130}
+{"ts":"2026-09-06T22:20:21Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":39042,"census":1134}
+{"ts":"2026-09-06T22:22:05Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":36570,"census":1135}

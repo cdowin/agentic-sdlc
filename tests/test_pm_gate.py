@@ -1852,10 +1852,10 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
     def test_it_names_the_unused_states_with_the_count_in_use(self):
         with tree(milestone_status='building', feature_status='building',
                   story_statuses=('done',)) as root:
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)          # a WARN never decides the code
-            self.assertIn('(D7)', out)
+            self.assertIn('(U1)', out)
             self.assertIn('WARN', out)
             self.assertIn('declared state(s) are in use', out)
             # The milestone kind declares 8 and this tree holds one word.
@@ -1867,7 +1867,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         # kind — a different fact, and reporting it as flow drift would redden
         # (well, warn at) every tree that has not filed a bug yet.
         with tree() as root:
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('bug:', out)
@@ -1877,7 +1877,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             write_config(root, '[pm]\nchecks = ["D1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
-            self.assertNotIn('(D7)', out)
+            self.assertNotIn('(U1)', out)
 
     def test_an_undeclared_word_in_the_tree_is_D4s_and_not_counted_here(self):
         # The census counts DECLARED states only; a `wombat` in a file is D4's
@@ -1886,7 +1886,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         with tree(milestone_status='building') as root:
             model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
                             'status', 'wombat')
-            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('wombat', out)

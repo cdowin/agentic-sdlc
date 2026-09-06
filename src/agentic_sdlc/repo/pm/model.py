@@ -59,7 +59,7 @@ class Flow:
 # reader assumes. It is the only place in this package a state word is spelled;
 # each kind seeds only the states its belt writes, plus `obe` in `done`
 # wherever work can be abandoned. `LIFECYCLE`, `BUILDING` and `REVIEWING`
-# survive for the frozen dispatch-snapshot keys in `pm/cli.py` (D7).
+# survive for the frozen dispatch-snapshot keys in `pm/cli.py` (U1).
 LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
              'packaging', 'done')
 BUILDING = LIFECYCLE[2]
@@ -129,13 +129,19 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
                   'V1', 'V2', 'V3', 'V4', 'V5')
-# D7 (a declared state no grain has ever held) is OPT-IN, like every other
+# The USAGE family: what the tree DOES with the vocabulary it declared, as
+# opposed to whether a word is declared at all (D4). U1 is its first member and
+# it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
+# reusing a retired id would silently enable a different rule for any consumer
+# whose config still names it, which is worse than the exit 2 they get today.
+#
+# U1 (a declared state no grain has ever held) is OPT-IN, like every other
 # flow-shaped rule. It is a WARN and could not redden anyone, but stock-on it
 # adds three lines to every consumer's `check pm` output, and those line shapes
 # are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
-# prints the ladder against the tree unconditionally; D7 is how a project that
+# prints the ladder against the tree unconditionally; U1 is how a project that
 # wants it kept visible afterwards asks for that.
-USAGE_CHECKS = ('D7',)
+USAGE_CHECKS = ('U1',)
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')

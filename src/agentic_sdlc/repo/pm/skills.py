@@ -195,7 +195,7 @@ def print_ladder(cfg: model.PmConfig) -> None:
             print(f'  {"":<10} never held: {", ".join(never)}')
     print()
     print('  A state you declare and never use is a flow you are not running.')
-    print('  `check pm` D7 keeps saying so after this scrolls away, as a WARN')
+    print('  `check pm` U1 keeps saying so after this scrolls away, as a WARN')
     print('  with the count — never a finding, because a tree mid-adoption')
     print('  legitimately has unused states.')
 

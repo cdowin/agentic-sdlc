@@ -41,15 +41,15 @@
   so the number a human sees and the number the gate grades cannot disagree. A tree that can answer
   from neither the plan nor a single in-progress milestone still refuses, naming `pm order`.
 
-- **`pm init` reports a MEANING, not a write, and `check pm` gains D7.** `init` printed
+- **`pm init` reports a MEANING, not a write, and `check pm` gains U1.** `init` printed
   `appended the flow to devkit.toml` and a project adopted the conveyor as a CONFIG FIX — nobody
   then asked whether the tree USED the states, and one tree used three of its eight for its whole
   life with every gate green. D4 asks "is this word declared", never "is this word used". `init`
   now prints the ladder it wrote AGAINST THE TREE — per kind, how many states are declared, how
   many the tree uses, and which have never been held — so the sentence *"this project now declares
-  8 milestone states; your tree uses 3"* is on screen at the moment of adoption. **D7** keeps
+  8 milestone states; your tree uses 3"* is on screen at the moment of adoption. **U1** keeps
   saying it after the install scrolls away, as a WARN with the count, never a finding: a tree
-  mid-adoption legitimately has unused states. D7 is OPT-IN like every other flow-shaped rule —
+  mid-adoption legitimately has unused states. U1 is OPT-IN like every other flow-shaped rule —
   stock-on it would add three lines to every consumer's `check pm`, and those shapes are grepped.
   A kind with no grains at all is silent rather than reporting every word unused.
 
@@ -513,7 +513,7 @@ defect one layer down.
 
 ### The ledger rows carry categories
 
-**Data-format change, additive** (decision D7 — "keep and extend"). The dispatch snapshot a
+**Data-format change, additive** (decision U1 — "keep and extend"). The dispatch snapshot a
 `ledger record` writes — the `tree` on every dispatch and session row — now carries three
 category keys beside the five it always had:
 

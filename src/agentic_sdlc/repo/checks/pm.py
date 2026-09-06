@@ -2,7 +2,7 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6, D7, D9/D10 and the R family are opt-in).
+(default: D1-D6 + V1-V5; V6, U1, D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -20,7 +20,7 @@ WARN (a line, never the exit code; both grains and both categories named):
   D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
-  D7  a DECLARED state no grain of that kind has ever held, with the count in use
+  U1  a DECLARED state no grain of that kind has ever held, with the count in use
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:` or no `branch:`
   R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
 
@@ -245,7 +245,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
 
 
 def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
-    """D7 — a state the project DECLARED and no grain has ever held.
+    """U1 — a state the project DECLARED and no grain has ever held.
 
     A WARN with the count, never a finding: a tree mid-adoption legitimately has
     unused states, and a rule that reddens every fresh consumer is undone within
@@ -253,7 +253,7 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     scrolls away — the tool's most valuable idea, the conveyor, was invisible to
     the tool.
     """
-    if 'D7' not in enabled:
+    if 'U1' not in enabled:
         return
     for kind in model.FLOW_KINDS:
         counts = model.state_usage(cfg).get(kind)
@@ -268,7 +268,7 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'state(s) are in use; {", ".join(unused)} '
              f'{"has" if len(unused) == 1 else "have"} never been held by any '
              f'{kind} in this tree — declared and unused is a flow the project '
-             f'is not running (D7)')
+             f'is not running (U1)')
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:

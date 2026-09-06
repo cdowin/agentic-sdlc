@@ -33,7 +33,6 @@ from support.pm import (LEDGER_REL, bug, commit, dispatch_line, git,
                         write)
 from support.pm import git_tree as tree
 
-from agentic_sdlc.repo.pm import skills
 
 STORY, QUIET, FEATURE, BUG = ('0.1/alpha/s0', '0.1/alpha/s1', '0.1/alpha',
                               '0.1/bugs/crash')
@@ -105,9 +104,11 @@ def seeded(root) -> None:
 
 
 def roadmap(root) -> None:
-    """The index `pm retire` appends its prune row to."""
-    (root / 'pm/roadmap/ROADMAP.md').write_text(skills.ROADMAP_SEED,
-                                                encoding='utf-8')
+    """0.3.0: `ROADMAP.md` retired and `pm retire` no longer appends to it, so
+    there is no index to seed. Kept as a no-op rather than deleted from the two
+    call sites, because what those cases are ABOUT is reading a report out of
+    git at a tag after the milestone directory is gone — the prune row was
+    never the subject."""
 
 
 def stripped(out: str, rev: str = TAG) -> str:

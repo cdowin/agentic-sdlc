@@ -185,13 +185,20 @@ fuzz:
 gates:
 	$(call gate,gates,GATES,$(SUM_GATES),$(DEVKIT) check all)
 
-# `check` IS `gates`, and the alias is self-hosting rather than convenience.
-# `Makefile.devkit` — the composition this package installs — names the static
+# `check` IS `gates`, and this alias is a STOPGAP over a real defect:
+# `0.2.0/bugs/the-repo-forks-the-framework-it-ships`.
+#
+# `Makefile.devkit` — the composition this package INSTALLS — names the static
 # gate `check`, and the guidance it installs tells a consumer to run `make
-# check` after a PM-tree edit. This repo called the same thing `gates` and had
-# no `check` at all, so we shipped an instruction we could not follow
-# ourselves. `check doc` caught it in two seconds, on the narrow rung, which is
-# the whole argument for the narrow rung.
+# check`. This repo called the same thing `gates` and had no `check` at all, so
+# we shipped an instruction we could not follow ourselves. `check doc` caught it
+# in two seconds on the narrow rung.
+#
+# The alias makes that one NAME agree. It does not make the compositions agree:
+# this whole file is a parallel implementation of the framework it ships, and
+# `make precommit` here and `make precommit` in a consumer are two different
+# programs. Chris: "This repo and anyone that pins it should be doing exactly
+# the same things, no difference." The bug carries what it takes to get there.
 check: gates
 
 # ARM this checkout. `install-hooks` writes the corpus; writing it is not arming

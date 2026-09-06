@@ -3,7 +3,7 @@ id: 0.2.0/the-extraction-finishes/02-help-describes-what-ships
 feature: 0.2.0/the-extraction-finishes
 milestone: "0.2.0"
 name: --help names only verbs this package routes
-status: building
+status: done
 owner:
 depends_on: []
 ---

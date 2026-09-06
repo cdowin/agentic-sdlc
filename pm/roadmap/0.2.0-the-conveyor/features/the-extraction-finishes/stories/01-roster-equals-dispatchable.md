@@ -3,7 +3,7 @@ id: 0.2.0/the-extraction-finishes/01-roster-equals-dispatchable
 feature: 0.2.0/the-extraction-finishes
 milestone: "0.2.0"
 name: The gate roster a stock consumer sees is the set that actually runs
-status: building
+status: done
 owner: orchestrator
 depends_on: []
 ---

@@ -3,7 +3,7 @@ id: 0.2.0/the-extraction-finishes/04-the-first-surfaces-describe-this-package
 feature: 0.2.0/the-extraction-finishes
 milestone: "0.2.0"
 name: README, CLAUDE.md and the config describe the half that stayed
-status: building
+status: done
 owner: builder-docs
 depends_on: []
 ---

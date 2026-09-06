@@ -724,6 +724,77 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
     return True
 
 
+def set_list_field(path: Path, key: str, values: list[str]) -> bool:
+    """Rewrite the block list under `key`, preserving every other byte.
+
+    The list-aware sibling to `set_field`. `order` is edited constantly — every
+    ship, insertion and re-sequence — so this is the writer that has to be
+    byte-honest: a diff that shows what MOVED is the whole reason the plan is a
+    grain and not TOML.
+
+    The file's own conventions are kept rather than normalised: the indent and
+    the quote character come from the first item already there, so a hand-edited
+    plan is not reformatted underneath its author. An empty `values` leaves the
+    key with no items, which is a plan that declares nothing — never the key's
+    deletion, because a caller that wanted the key gone would say so.
+    """
+    try:
+        text = read_raw(path)
+    except (OSError, UnicodeDecodeError):
+        return False
+    lines = _split(text)
+    bounds = _fence_bounds(lines)
+    if bounds is None:
+        return False
+    open_i, close_i = bounds
+
+    key_i = None
+    for i in range(open_i + 1, close_i):
+        if lines[i].startswith(f'{key}:'):
+            rest = lines[i][len(key) + 1:].strip()
+            if rest and not rest.startswith('#'):
+                # A scalar sits there. Rewriting it as a block would be this
+                # writer deciding the file meant something else.
+                return False
+            key_i = i
+            break
+
+    indent, quote, eol = '  ', '"', ''
+    if key_i is None:
+        # A plan that has no `order` yet: mint the key at the end of the block.
+        eol = _eol(lines[close_i])
+        key_i = close_i
+        head = [f'{key}:{eol}']
+        tail_from = close_i
+    else:
+        eol = _eol(lines[key_i])
+        end_i = key_i
+        for j in range(key_i + 1, close_i):
+            m = _LIST_ITEM.match(lines[j])
+            if m is None:
+                break
+            if end_i == key_i:
+                # Copy the file's own shape off its first item.
+                raw = lines[j]
+                indent = raw[:len(raw) - len(raw.lstrip(' \t'))]
+                value = m.group('value')
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                    quote = value[0]
+                else:
+                    quote = ''
+            end_i = j
+        head = [lines[key_i]]
+        tail_from = end_i + 1
+
+    items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
+    rewritten = lines[:key_i] + head + items + lines[tail_from:]
+    try:
+        write_raw(path, '\n'.join(rewritten))
+    except OSError:
+        return False
+    return True
+
+
 # --- id <-> path --------------------------------------------------------------
 # Milestone dirs carry a human suffix (`0.28-chronicle`); the id is the
 # version, globbed active tree first, then the archive.

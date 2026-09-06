@@ -1650,3 +1650,104 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))
+
+
+class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
+    """`set_list_field` — the list-aware sibling to `set_field`.
+
+    `order` is rewritten on every ship, insertion and re-sequence, so this is
+    the writer byte fidelity actually matters for: rule 3's "a write touches
+    only what it was asked to touch", proven as BYTES rather than as a reparse.
+    """
+
+    PLAN = ('---\n'
+            'goal: ship the thing\n'
+            'order:\n'
+            '  - "0.1.0"\n'
+            '  - "0.2.0"\n'
+            'owner: chris\n'
+            '---\n'
+            '\n'
+            '# The plan\n'
+            '\n'
+            'Prose the writer must not touch.\n')
+
+    @contextlib.contextmanager
+    def _plan(self, text: str = ''):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'releases.md'
+            path.write_bytes((text or self.PLAN).encode('utf-8'))
+            yield path
+
+    def test_an_append_rewrites_only_the_list(self):
+        with self._plan() as path:
+            self.assertTrue(model.set_list_field(
+                path, 'order', ['0.1.0', '0.2.0', '0.3.0']))
+            after = path.read_text(encoding='utf-8')
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.2.0', '0.3.0'])
+            for kept in ('goal: ship the thing', 'owner: chris', '# The plan',
+                         'Prose the writer must not touch.'):
+                self.assertIn(kept, after)
+            # The untouched halves are byte-identical, not merely present.
+            self.assertEqual(after.split('order:')[0],
+                             self.PLAN.split('order:')[0])
+            self.assertEqual(after.split('---\n')[2], self.PLAN.split('---\n')[2])
+
+    def test_insert_and_remove_move_one_entry_and_nothing_else(self):
+        with self._plan() as path:
+            model.set_list_field(path, 'order', ['0.1.0', '0.1.5', '0.2.0'])
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.1.5', '0.2.0'])
+            model.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
+            self.assertEqual(path.read_text(encoding='utf-8'), self.PLAN)
+
+    def test_the_write_is_idempotent(self):
+        with self._plan() as path:
+            model.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
+            once = path.read_bytes()
+            model.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
+            self.assertEqual(path.read_bytes(), once)
+
+    def test_a_crlf_plan_stays_crlf(self):
+        # `pm` rewrites one line and preserves the file's convention; a plan
+        # authored on Windows must not come back with mixed endings.
+        crlf = self.PLAN.replace('\n', '\r\n')
+        with self._plan(crlf) as path:
+            model.set_list_field(path, 'order', ['0.1.0', '0.2.0', '0.3.0'])
+            raw = path.read_bytes()
+            self.assertNotIn(b'\r\r', raw)
+            self.assertEqual(raw.count(b'\n'), raw.count(b'\r\n'))
+            self.assertEqual(model.list_field_of(path, 'order'),
+                             ['0.1.0', '0.2.0', '0.3.0'])
+
+    def test_the_files_own_indent_and_quoting_survive(self):
+        # A hand-edited plan is not reformatted underneath its author.
+        plain = '---\norder:\n    - 0.1.0\n---\n'
+        with self._plan(plain) as path:
+            model.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
+            after = path.read_text(encoding='utf-8')
+            self.assertIn('    - 0.1.0', after)
+            self.assertIn('    - 0.2.0', after)
+            self.assertNotIn('"', after)
+
+    def test_the_key_is_minted_when_the_plan_has_none(self):
+        with self._plan('---\ngoal: ship\n---\n\nBody\n') as path:
+            self.assertTrue(model.set_list_field(path, 'order', ['9.9']))
+            self.assertEqual(model.list_field_of(path, 'order'), ['9.9'])
+            self.assertIn('goal: ship', path.read_text(encoding='utf-8'))
+            self.assertIn('Body', path.read_text(encoding='utf-8'))
+
+    def test_a_scalar_on_the_key_line_is_refused_and_nothing_is_written(self):
+        # Rewriting it as a block would be the writer deciding the file meant
+        # something else — rule 3: a verb that cannot guarantee a correct
+        # result refuses and says why.
+        scalar = '---\norder: 0.1.0\n---\n'
+        with self._plan(scalar) as path:
+            self.assertFalse(model.set_list_field(path, 'order', ['x']))
+            self.assertEqual(path.read_text(encoding='utf-8'), scalar)
+
+    def test_no_frontmatter_is_refused(self):
+        with self._plan('no fence here\n') as path:
+            self.assertFalse(model.set_list_field(path, 'order', ['x']))
+            self.assertEqual(path.read_text(encoding='utf-8'), 'no fence here\n')

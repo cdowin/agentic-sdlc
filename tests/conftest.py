@@ -238,7 +238,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        for mid, _branch, mfile in model.building_milestones(cfg):
+        for mid, _branch, mfile in model.in_progress_milestones(cfg):
             for rank, report in enumerate(slowest, start=1):
                 ledger.append_row(mfile.parent, ledger.test_row(
                     tier, report.nodeid, int(report.duration * 1000), rank))

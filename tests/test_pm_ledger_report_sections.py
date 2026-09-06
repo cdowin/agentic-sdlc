@@ -28,9 +28,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from support.pm import (bug, decision_line, dispatch_line, put_ledger, run_cli,
-                        section_of, session_line, snapshot, status_line, tree,
-                        write, write_config)
+from support.pm import (bug, declaring, decision_line, dispatch_line,
+                        put_ledger, run_cli, section_of, session_line, snapshot,
+                        status_line, tree, write, write_config)
 
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
@@ -412,9 +412,9 @@ def test_a_renamed_story_vocabulary_dashes_reopens_rather_than_zeroing():
     """A reopen is `reviewing -> building`, both STOCK names. A project that
     renamed either has a machine this rule cannot read."""
     with tree(story_statuses=('shipped',)) as root:
-        write_config(root,
-                     '[pm]\nstory_states = ["queued", "doing", "checking", '
-                     '"shipped"]\n')
+        write_config(root, declaring(story={
+            'todo': ('queued',), 'in_progress': ('doing', 'checking'),
+            'done': ('shipped',)}))
         put_ledger(root,
                    status_line('2026-09-03T10:00:00Z', A_S0, 'queued', 'doing'),
                    status_line('2026-09-03T10:30:00Z', A_S0, 'checking',

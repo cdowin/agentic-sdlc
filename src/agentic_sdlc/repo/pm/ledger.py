@@ -619,8 +619,20 @@ def usage_row(kind: str, **fields: object) -> dict:
     "the source did not say", and a key that is not on the row is the only
     honest way to write that. A ZERO, an empty dict and an empty list all mean
     "the source said none", so all three are KEPT — `tools: {}` is a dispatch
-    that called no tool, and `tree.stories_wip: []` is D3's true statement that
-    nothing was `wip` when the hook fired.
+    that called no tool, and `tree.stories_in_progress: []` is D3's true
+    statement that nothing was in progress when the hook fired.
+
+    THE `tree` SNAPSHOT CARRIES TWO KEY FAMILIES (decision D7, 2026-09-05).
+    The category keys — `milestones_in_progress`, `features_in_progress`,
+    `stories_in_progress` — are what the row means, and `report.py` attributes
+    a dispatch by them. The frozen keys — `milestones_building`,
+    `features_building`, `features_review`, `stories_wip`, `stories_review`
+    — are **DEPRECATED**: matched by the seed's words, kept because they are
+    inside rows already written in every consumer tree, and removed at the
+    next major. A reader meets three shapes: both families (this version),
+    the frozen five alone (before 0.2.0 — read as written, and disclosed by
+    `pm ledger report` where it names nothing), and no `tree` at all (a hand
+    entry that never snapshotted).
     """
     fields['kind'] = kind
     fields.setdefault('ts', utc_now())
@@ -632,40 +644,35 @@ def usage_row(kind: str, **fields: object) -> dict:
 
 
 # --- where a grain ENDS (D8) --------------------------------------------------
-# D8 calls a grain's end its row into its terminal state, and `pm ledger show`
-# prints a first-row-to-terminal-row total only once that row exists.
+# D8 calls a grain's end its row into a FINISHED state, and `pm ledger show`
+# prints a first-row-to-finished-row total only once that row exists.
 #
-# `done` is NAMED here rather than read as `cfg.<kind>_states[-1]`, and that is
-# the whole point of this constant. The stock lifecycle ends at `done`, so the
-# two agree by default and part company the moment a project overrides a set:
-# `[-1]` is wherever that list happens to stop — a `blocked` or a `parked`
-# hung off the end, or a hand-written union carrying two vocabularies at once
-# — and a grain that finished would print no total while one that stalled
-# printed one. `done` is also the state every drift rule in model.py already
-# treats as terminal (D2, D3, D5), so this agrees with the gate rather than
-# inventing a second opinion about what "finished" means.
+# Finished is the `done` CATEGORY of the grain's own kind, asked of
+# `model.category_of` — never a word. This constant used to be `'done'`, named
+# rather than read as `cfg.<kind>_states[-1]` so that a `parked` hung off the
+# end of a list did not count as finished; that was the right instinct with
+# the wrong tool, because a project whose finished word is `shipped` got no
+# total at all. The category is what "finished" IS, and the drift rules in
+# model.py (D2, D3, D5) ask the same one, so `show`, `report` and the gate
+# cannot come to three answers about where a grain ended.
 #
-# The ORDER of a set IS load-bearing — model.py's LIFECYCLE says why: D5 places
-# "at work" by index within each grain's own set — and it is separately what
-# `pm vocabulary` prints for consumers to read. Neither of those makes the LAST
-# entry a terminal state, which is why the answer here is to name the state and
-# not to reason from a position.
-TERMINAL_STATE = 'done'
-
-# Bugs are the exception, and they are configured rather than named: their
-# machine is `open -> fixed -> closed` and the last entry of `[pm] bug_states`
-# is the one a project can legitimately rename (D8 says so in as many words).
+# Bugs stopped being the exception. Their machine is `[pm.states.bug]` like
+# every other kind's, so the same question answers for them.
 GRAIN_BUG = 'bug'
 
 
-def terminal_state(cfg, grain_kind: str) -> str:
-    """The state whose row ENDS this grain kind. `done`, except for bugs.
+def ends_grain(cfg, grain_kind: str, to_state) -> bool:
+    """Does a status row INTO `to_state` finish a grain of this kind?
 
     One home for the rule, because a report that disagreed with `show` about
     where a grain finished would produce two different durations for one grain
-    and no way to tell which was meant.
+    and no way to tell which was meant. A `to` that is not a string — this
+    file is `merge=union` and rows arrive from anywhere — finishes nothing.
     """
-    return cfg.bug_states[-1] if grain_kind == GRAIN_BUG else TERMINAL_STATE
+    from agentic_sdlc.repo.pm import model
+    if not isinstance(to_state, str):
+        return False
+    return model.category_of(cfg, grain_kind, to_state) == model.DONE_CATEGORY
 
 
 def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
@@ -690,8 +697,7 @@ def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
     contributes no arithmetic for the same reason: a fabricated interval is
     worse than a missing one.
     """
-    if not status or status[-1].data.get('to') != terminal_state(
-            cfg, grain_kind):
+    if not status or not ends_grain(cfg, grain_kind, status[-1].data.get('to')):
         return None
     first, last = status[0], status[-1]
     if first is last:

@@ -71,13 +71,14 @@ this document exists to describe and a machine cannot hold.
 ## 1. Milestone-branch SDLC
 
 - **Work happens on `milestone/<id>`.** The milestone's `branch:` frontmatter
-  declares it — that is rule **D9** (`agentic-sdlc check pm`): a `building`
+  declares it — that is rule **D9** (`agentic-sdlc check pm`): an in-progress
   milestone with no `branch:` stamp leaves a fresh session guessing at
   `git branch -a`.
 - **`main` is merge-commit-only, at close.** No direct commits to main while a
   milestone is building; close = merge-commit + tag, via the `/release` skill.
-- **D10 (opt-in) holds a building milestone off the mainline:** a `building`
-  milestone's `branch:` must not equal the `[repo_hygiene] mainline`. This
+- **D10 (opt-in) holds an in-progress milestone off the mainline:** a milestone
+  in `in_progress` must not declare a `branch:` equal to the `[repo_hygiene]
+  mainline`. This
   repo turns it on for itself — the single-maintainer work-on-main carve-out
   is exactly how the divergence from the consumers' SDLC went unnoticed
   (decision D3, 0.16.0).

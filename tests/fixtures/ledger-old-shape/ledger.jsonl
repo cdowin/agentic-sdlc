@@ -1,0 +1,6 @@
+{"ts":"2026-09-03T10:00:00Z","kind":"status","grain":"0.1/alpha/s0","from":"ready","to":"building"}
+{"ts":"2026-09-03T10:05:00Z","kind":"dispatch","agent_type":"developer","duration_s":300,"tool_calls":12,"usage":{"input":100,"output":2000},"tree":{"milestones_building":["0.1"],"features_building":["0.1/alpha"],"features_review":[],"stories_wip":["0.1/alpha/s0"],"stories_review":[]}}
+{"ts":"2026-09-03T10:10:00Z","kind":"status","grain":"0.1/alpha/s0","from":"building","to":"review"}
+{"ts":"2026-09-03T10:20:00Z","kind":"dispatch","agent_type":"reviewer","duration_s":120,"tool_calls":3,"usage":{"input":50,"output":700},"tree":{"milestones_building":["0.1"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[]}}
+{"ts":"2026-09-03T10:25:00Z","kind":"dispatch","agent_type":"reviewer","duration_s":60,"tool_calls":1,"usage":{"input":20,"output":300},"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[]}}
+{"ts":"2026-09-03T10:30:00Z","kind":"status","grain":"0.1/alpha/s0","from":"review","to":"done"}

@@ -104,7 +104,7 @@ def _counts() -> dict[str, int]:
     """
     cfg = model.load()
     out: dict[str, int] = {}
-    for _mid, _branch, mfile in model.building_milestones(cfg):
+    for _mid, _branch, mfile in model.in_progress_milestones(cfg):
         path = ledger.ledger_path(mfile.parent)
         if not path.is_file():
             continue
@@ -149,12 +149,12 @@ def _last_costs() -> tuple[dict[str, tuple[int, str, str]], str]:
     """
     cfg = model.load()
     out: dict[str, tuple[int, str, str]] = {}
-    # `building_milestones` yields (id, branch, milestone.md) — the DIRECTORY
+    # `in_progress_milestones` yields (id, branch, milestone.md) — the DIRECTORY
     # is the file's parent, and the ledger sits beside it. Asked of the model
     # rather than joined by hand: `ledger_path` is the one place that name is
     # built, and a second spelling here would be a second answer to where a
     # ledger lives.
-    for _mid, _branch, mfile in model.building_milestones(cfg):
+    for _mid, _branch, mfile in model.in_progress_milestones(cfg):
         path = ledger.ledger_path(mfile.parent)
         if not path.is_file():
             continue
@@ -208,7 +208,7 @@ def _slowest() -> dict[str, tuple[str, int]]:
     """
     cfg = model.load()
     out: dict[str, tuple[str, int]] = {}
-    for _mid, _branch, mfile in model.building_milestones(cfg):
+    for _mid, _branch, mfile in model.in_progress_milestones(cfg):
         path = ledger.ledger_path(mfile.parent)
         if not path.is_file():
             continue

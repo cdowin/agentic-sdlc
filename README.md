@@ -100,7 +100,7 @@ So none of these rungs is "run the biggest thing", and a belt never runs a belt 
 | You are doing | Verb | Scope |
 |---|---|---|
 | editing — the inner loop | `verify --changed` | only the paths you touched. Seconds |
-| closing a story | `pm ready-for feature <fid>` | are this feature's sibling stories finished? |
+| closing a story | `pm ready-for feature <fid>` | is every sibling story in the `done` CATEGORY — by whichever word your flow puts there? |
 | closing a feature | `verify --feature` | the composition your `[verify] feature` names. Tens of seconds |
 | closing a milestone | `verify --milestone` | everything, every interpreter. Minutes, paid **once** |
 | tagging | `pm ready-for tag <mid>` | is every review finding at a disposition other than `open`? |
@@ -196,35 +196,45 @@ runs, asserted by a test rather than by two lists agreeing.
 Milestones → features → stories, as markdown with YAML frontmatter under `pm/roadmap/`. The CLI writes
 ONE line and touches nothing else — no line endings, no adjacent fields, no file the caller did not name.
 
-**One vocabulary, closed states, open transitions.** Milestone, feature and story all hold
-`planning` `ready` `building` `reviewing` `accepted` `packaging` `done`, and each grain uses the
-states it needs and skips the rest — packaging a feature is a different act from packaging a
-milestone, and a story routinely skips packaging. `done` does not mean SHIPPED and cannot: the flip
-is itself a commit that has not shipped when it is written. It means everything inside the tree's
-authority is finished — changelog written, reviews closed, findings landed, gates green. Bugs are a
-different machine (`open` `fixed` `closed`). The state you ask for is validated against that grain's
-vocabulary: `pm milestone butterfly 0.1` is exit 2 naming the set. The state the file currently holds
-is never validated — it is read for the message — so `pm milestone done 0.1` works from any state,
-including a hand-edited `status: wombat`, which it prints as `wombat -> done` and repairs. There is no
-transition graph and nothing checks an EDGE; a graph would only tax whoever used the sanctioned tool
-while a `sed` of the same line reached the state it refused.
+**Your words, three categories, and every question is asked of the category.** The engine's
+whole opinion about states is that there are three categories — `todo`, `in_progress`, `done` —
+in that order, and that every state you declare sits in exactly one. Which words, how many, and
+in what order within a category is `[pm.states.<kind>]` in your `devkit.toml`: `pm init` writes
+the seed — `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` for
+milestone, feature and story, `open` | `fixed` | `closed` for a bug — and every run reads what is
+there. **Nothing here compares a status against a word.** "Is this feature's work finished" is
+*are its stories all in `done`*; "has this story started under a feature that has not" is *the
+story has left `todo` and the feature is still in it*; "which milestone's ledger" is *the one in
+`in_progress`*. Rename every word and every answer is unchanged — `tests/fixtures/renamed-vocabulary/`
+is that tree, and the gate is proven byte-identical over it. `done` does not mean SHIPPED and
+cannot: the flip is itself a commit that has not shipped when it is written. It means everything
+inside the tree's authority is finished — changelog written, reviews closed, findings landed, gates
+green — and `obe` sits beside it because abandoned work is finished too (delivered-or-not is a
+different axis). The state you ask for is validated against your declaration: `pm milestone
+butterfly 0.1` is exit 2 naming `[pm.states.milestone]`. The state the file currently holds is never
+validated — it is read for the message — so `pm milestone done 0.1` works from any state, including
+a hand-edited `status: wombat`, which it prints as `wombat -> done` and repairs. There is no edge
+graph and nothing checks an EDGE; a graph would only tax whoever used the sanctioned tool while a
+`sed` of the same line reached the state it refused.
 
-**The deprecation window is closed.** `todo`, `wip`, `blocked` and `review` — the words this
-vocabulary replaced — rode in the stock set for one release so that no tree turned red on the pin
-bump alone; 0.2.0 trims them, and a grain still holding one is now a D4 finding naming the seven
-words above. Rewrite `todo` → `ready`, `wip` → `building`, `review` → `reviewing`, and `blocked`
-→ `building` (nothing replaces `blocked`: record what is blocking the work in the grain itself).
-A project that declares its OWN `story_states` containing `todo` was never in the window and is
-untouched by any of this. **The verbs report what they noticed and
-refuse nothing on process** — stories not at `reviewing`, features not done, named in the output.
-`check pm` catches an invalid state from any route, hand-edit included.
+**The deprecation window is closed, and so are the flat lists.** `todo`, `wip`, `blocked` and
+`review` — the words the seed replaced — rode in the stock set for one release so that no tree
+turned red on the pin bump alone; 0.2.0 trims them, and a grain still holding one is a D4 finding
+naming your declared words. Rewrite `todo` → `ready`, `wip` → `building`, `review` → `reviewing`,
+and `blocked` → `building` (nothing replaces `blocked`: record what is blocking the work in the
+grain itself) — or declare them in a category and keep them. `[pm] story_states` and its three
+siblings, `[pm] also_done` (the `done` category enumerated by hand before the category existed)
+and `[pm] review_slug_fallback` (a review record guessed from a filename) are retired and refused
+by name. **The verbs report what they noticed and refuse nothing on process** — stories not in
+`done`, features not in `done`, named in the output with the word each file holds. `check pm`
+catches an undeclared state from any route, hand-edit included.
 
 | Command | What it does |
 |---|---|
 | `pm init` · `pm new <milestone\|feature\|story\|bug> …` | Stand up a tree; scaffold a grain — its own frontmatter file and nothing else. **No directory and no shared doc is minted**: git stores no empty directory, and a shared doc appears on first WRITE. `new milestone`/`new feature` are idempotent — re-run to fill gaps. Every failure out is a refusal, never a stack trace |
-| `pm story\|bug\|feature\|milestone <status> <id>` | Set a grain's status to any value in its vocabulary; anything else is exit 2 naming the set. A bug id is `<milestone>/bugs/<slug>`. Appends one timestamped row to the milestone's `ledger.jsonl` — after the write lands, never before, and even for a no-op flip |
-| `pm feature reviewing <id>` | Move to `reviewing` and REPORT the stories that are not there |
-| `pm feature done <id> [--cascade] [--review-record <path>]` | Close the feature. **Touches no story file** unless `--cascade`, which also closes that feature's stories at `reviewing`. A `--review-record` naming no file IS refused, whole — stamping a pointer to nothing is the drift D1 reports |
+| `pm story\|bug\|feature\|milestone <status> <id>` | Set a grain's status to any state in its `[pm.states.<kind>]`; anything else is exit 2 naming the declaration. A bug id is `<milestone>/bugs/<slug>`. Appends one timestamped row to the milestone's `ledger.jsonl` — after the write lands, never before, and even for a no-op flip |
+| `pm feature <in-progress-state> <id>` | Move, and REPORT the stories not in `done` — on every move into `in_progress`, not on one word |
+| `pm feature <done-state> <id> [--review-record <path>]` | Close the feature — any state in the `done` category is the close. **Touches no story file**; the stories not in `done` are named, and the story belt (`agentic-sdlc close story <id>`) closes each by name. A `--review-record` naming no file IS refused, whole — stamping a pointer to nothing is the drift D1 reports |
 | `pm status [<milestone>]` | Tree report, drift-aware, grouped by the optional `phase:` bucket |
 | `pm list [--status <s>[,<s>…]] [--owner <n>] [--milestone <id>]` | One tab-separated `<story-id> <status> <owner> <feature-id>` per story, filtered. Deliberately **no `pm next`**: a verb that picks THE next thing is the tool having an opinion about your priorities. Rows to stdout, census to stderr |
 | `pm validate` | Frontmatter well-formed, ids match paths, parentage consistent, `depends_on`/`consumed_by` resolve, the feature graph acyclic. A ref into a milestone no longer in the tree is UNVERIFIABLE, never failed — git history is the archive |
@@ -278,25 +288,28 @@ roots = ["tools"]
 roadmap_dir  = "pm/roadmap"     # the tree, relative to the repo root
 template_dir = "pm/templates"   # REQUIRED to override a grain template
 review_dir   = "docs/reviews"   # where review records live
-review_slug_fallback = false    # also accept <review_dir>/<feature-slug>*.md
 story_ordinal_prefix = false    # also resolve stories/NN-<slug>.md
 checks = ["D1","D2","D3","D4","D5","D6",   # drift rules       — the stock default.
           "V1","V2","V3","V4","V5"]        # integrity rules    V6 and the FLOW rules
-                                           # D8 (version == the building milestone's
-                                           # id), D9 (a building milestone declares
+                                           # D8 (version == an in-progress milestone's
+                                           # id), D9 (an in-progress milestone declares
                                            # `branch:`) and D10 (that branch: is not
                                            # empty or the [repo_hygiene] mainline)
-                                           # are opt-in — name them here.
-bug_states      = ["open", "fixed", "closed"]   # D4: the bug vocabulary
+                                           # are opt-in — name them here. Each reports
+                                           # over EVERY milestone in `in_progress`.
 version_file    = "project.godot"               # D8: where the version lives
 version_pattern = '^config/version="(.*)"$'     # D8: the line that carries it
-# milestone_states / feature_states / story_states are overridable too — what D4
-# holds a grain to, and what the status verbs accept. All three default to the
-# ONE seven-state lifecycle above. A custom set's ORDER is its lifecycle order:
-# D5 places "at work" by index within each grain's own set, at `building`, so
-# list the states in the order the work moves through them — an alphabetical
-# list is a different lifecycle, not the same one tidied. Drop `building` and
-# D5 has nothing to compare; `check pm` says so rather than passing in silence.
+
+# THE FLOW — written by `pm init`, LIVE (no runtime fallback), and yours. Every
+# state you use, each in exactly one of the three categories the engine knows.
+# Order within a category is presentation; no rule keys on it. `[pm.transitions.
+# <kind>]` maps a conveyor step name (`pm vocabulary` lists them) to the exact
+# state that step writes.
+[pm.states.milestone]
+todo        = ["planning", "ready"]
+in_progress = ["building", "reviewing", "accepted", "packaging"]
+done        = ["done", "obe"]
+# ...and the same three lines for feature, story and bug (open / fixed / closed).
 ```
 
 `agentic-sdlc pm vocabulary` prints the rule ids in full. `bugs/` and `stories/` are walked

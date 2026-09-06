@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from support.pm import ledger_lines, ledger_rows, run_cli, tree, write
+from support.pm import ledger_lines, ledger_rows, loaded, run_cli, tree, write
 
 from agentic_sdlc.repo.pm import ledger
 
@@ -60,9 +60,14 @@ TS = '2026-09-03T10:00:00Z'
 GATE = ('--gate', 'check', '--verdict', 'PASS', '--duration-ms', '12')
 
 # The tree `support.pm.tree()` builds: one milestone `building`, one feature
-# `building`, and whatever story statuses the case asked for.
+# `building`, and whatever story statuses the case asked for. Two key
+# families (decision D7): the frozen five, DEPRECATED and matched by the
+# seed's words, and the three category keys the report attributes by.
 STOCK_TREE = {'milestones_building': ['0.1'], 'features_building': ['0.1/alpha'],
-              'features_review': [], 'stories_wip': [], 'stories_review': []}
+              'features_review': [], 'stories_wip': [], 'stories_review': [],
+              'milestones_in_progress': ['0.1'],
+              'features_in_progress': ['0.1/alpha'],
+              'stories_in_progress': []}
 
 
 def fresh(**over) -> dict:
@@ -149,7 +154,7 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
         'tool_calls_before_first_write': 20,
         'usage': {'input': 72, 'output': 5829, 'cache_creation': 165473,
                   'cache_read': 1820260},
-        'tree': fresh(stories_wip=[STORY]),
+        'tree': fresh(stories_wip=[STORY], stories_in_progress=[STORY]),
     }
     # `ROW_KEYS` order, minus the keys nothing supplied: the durable line's
     # own shape, not just its contents.
@@ -274,8 +279,12 @@ def test_a_transcript_stamp_is_normalised_to_full_utc_seconds(raw, expected):
 def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
     """Every bucket present, populated ones verbatim and empty ones EMPTY
     rather than absent — the report attributes a dispatch by reading these, so
-    a missing bucket is a dispatch silently attributed to nothing."""
-    with tree(story_statuses=('building', 'done')) as root:
+    a missing bucket is a dispatch silently attributed to nothing.
+
+    Both key families on one row (decision D7): the category keys hold every
+    grain in `in_progress` — `accepted` included, a word no frozen key can
+    spell — and the frozen keys hold exactly what they always held."""
+    with tree(story_statuses=('building', 'done', 'accepted')) as root:
         beta = root / 'pm/roadmap/0.1-demo/features/beta'
         write(beta / 'feature.md',
               {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
@@ -292,6 +301,32 @@ def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
         'features_review': ['0.1/beta'],
         'stories_wip': [STORY],
         'stories_review': ['0.1/beta/b0'],
+        'milestones_in_progress': ['0.1'],
+        'features_in_progress': ['0.1/alpha', '0.1/beta'],
+        'stories_in_progress': [STORY, '0.1/alpha/s2', '0.1/beta/b0'],
+    }
+
+
+def test_a_renamed_vocabulary_fills_the_category_keys_and_empties_the_frozen():
+    """The row shape's honest statement under a renamed vocabulary: the frozen
+    keys can spell none of the words, so they are empty — never absent — and
+    the category keys carry the tree. An old reader sees an idle tree; the
+    report reads the category keys and sees the work."""
+    from support.pm import declaring, write_config
+    renamed = {'todo': ('queued',), 'in_progress': ('doing',),
+               'done': ('shipped',)}
+    with tree(milestone_status='doing', feature_status='doing',
+              story_statuses=('doing', 'queued')) as root:
+        write_config(root, declaring(milestone=renamed, feature=renamed,
+                                     story=renamed))
+        assert record(root, '--grain', STORY)[0] == 0
+        snap = only_row(root)['tree']
+    assert snap == {
+        'milestones_building': [], 'features_building': [],
+        'features_review': [], 'stories_wip': [], 'stories_review': [],
+        'milestones_in_progress': ['0.1'],
+        'features_in_progress': ['0.1/alpha'],
+        'stories_in_progress': [STORY],
     }
 
 
@@ -308,10 +343,11 @@ def test_the_archived_tree_is_not_the_live_tree():
         assert record(root, '--from-transcript', str(SUBAGENT),
                       '--event', 'SubagentStop')[0] == 0
         snap = only_row(root)['tree']
-    # Every bucket present and the three empty ones EMPTY, not absent.
+    # Every bucket present and the four empty ones EMPTY, not absent.
     assert snap == fresh()
     assert [k for k, v in snap.items() if v == []] == [
-        'features_review', 'stories_wip', 'stories_review']
+        'features_review', 'stories_wip', 'stories_review',
+        'stories_in_progress']
 
 
 # --- the hand and gate forms: exactly what they were given, and nothing else ---
@@ -325,7 +361,8 @@ def test_the_archived_tree_is_not_the_live_tree():
      {'kind': 'dispatch', 'grain': STORY, 'agent_type': 'reviewer',
       'duration_s': 812, 'tool_calls': 37,
       'usage': {'input': 1200, 'output': 38000},
-      'tree': STOCK_TREE | {'stories_wip': [STORY]}}),
+      'tree': STOCK_TREE | {'stories_wip': [STORY],
+                            'stories_in_progress': [STORY]}}),
     # Nothing given: every number is a key the row does not carry.
     (dict(), ('--grain', STORY),
      {'kind': 'dispatch', 'grain': STORY, 'tree': STOCK_TREE}),
@@ -387,8 +424,8 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 
 @pytest.mark.parametrize('kwargs,remove_pm,second_milestone,code,needle', [
     (dict(), True, False, 1, 'no PM tree'),
-    (dict(milestone_status='planning'), False, False, 1, 'is `building`'),
-    (dict(), False, True, 2, '2 milestones are building'),
+    (dict(milestone_status='planning'), False, False, 1, 'is in progress'),
+    (dict(), False, True, 2, '2 milestones are in progress'),
 ])
 def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
         kwargs, remove_pm, second_milestone, code, needle):
@@ -604,12 +641,12 @@ def test_no_total_line_while_the_grain_is_still_in_flight():
 
 
 def test_done_ends_a_story_and_blocked_does_not():
-    """`done` is NAMED, never `story_states[-1]` — which is `blocked`.
+    """Finished is the `done` CATEGORY, never the last word in a list.
 
-    Reading the tuple's last entry would have printed a total for a story that
-    STALLED and none for a story that finished. The order is `pm vocabulary`'s
-    output and a consumer contract, so the state is named instead — and `done`
-    is the one every drift rule in model.py already treats as terminal.
+    `blocked` is a word this project never declared, so it is in no category
+    and ends nothing; reading a list's last entry would have printed a total
+    for a story that STALLED and none for one that finished. The category is
+    the one every drift rule in model.py asks, so `show` agrees with the gate.
     """
     with tree() as root:
         timeline(root, last_to='done')
@@ -644,14 +681,22 @@ def test_only_status_rows_bound_the_total():
     assert '4500s' not in before
 
 
-def test_the_terminal_state_rule_lives_in_ledger_py_and_nowhere_else():
+def test_the_finished_rule_lives_in_ledger_py_and_is_the_done_category():
     """One home, because a report that disagreed with `show` about where a
-    grain finished would produce two durations for one grain."""
-    cfg = type('C', (), {'bug_states': ('open', 'fixed', 'shut')})()
-    assert ledger.terminal_state(cfg, 'story') == 'done'
-    assert ledger.terminal_state(cfg, 'feature') == 'done'
-    assert ledger.terminal_state(cfg, 'milestone') == 'done'
-    assert ledger.terminal_state(cfg, ledger.GRAIN_BUG) == 'shut'
+    grain finished would produce two durations for one grain — and it is the
+    kind's `done` CATEGORY: `obe` ends a story, a bug's own `closed` ends a
+    bug, and a word the project never declared ends nothing."""
+    with tree() as root:
+        cfg = loaded(root)
+    assert ledger.ends_grain(cfg, 'story', 'done')
+    assert ledger.ends_grain(cfg, 'story', 'obe')
+    assert ledger.ends_grain(cfg, 'feature', 'done')
+    assert ledger.ends_grain(cfg, 'milestone', 'done')
+    assert ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'closed')
+    assert not ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'fixed')
+    assert not ledger.ends_grain(cfg, 'story', 'reviewing')
+    assert not ledger.ends_grain(cfg, 'story', 'shut')
+    assert not ledger.ends_grain(cfg, 'story', {'to': 'done'})
 
 
 def test_json_prints_the_raw_lines_and_nothing_else():

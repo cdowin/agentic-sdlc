@@ -20,7 +20,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support.pm import frontmatter, run_cli, run_gate
+from support.pm import frontmatter, run_cli, run_gate, write_config
 from support.pm import git_tree as tree
 
 
@@ -292,7 +292,9 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
     ORDINAL_ON = '[pm]\nstory_ordinal_prefix = true\n'
 
     def _enable(self, root: Path) -> None:
-        (root / 'devkit.toml').write_text(self.ORDINAL_ON, encoding='utf-8')
+        # Through `write_config`, so the flow declaration rides along: a
+        # status verb asks `move_defect`, which reads `[pm.states.story]`.
+        write_config(root, self.ORDINAL_ON)
 
     def test_the_id_drops_the_prefix_and_validate_passes(self):
         with tree(story_statuses=('ready',)) as root:

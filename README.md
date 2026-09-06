@@ -310,7 +310,7 @@ skipped.
 
 ```bash
 uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.2.0" agentic-sdlc init
-make doctor && make help
+make help
 ```
 
 **Your Makefile is two lines plus what is yours.** The pin is the one line that must differ per
@@ -324,12 +324,14 @@ my-scan: ## a gate this project owns
 	@bash tools/dev/checks/my_scan.sh
 ```
 
-`Makefile.devkit` is devkit-owned and carries the standard set — `help` `doctor` · `parse` `lint`
-`warnings` · `unit` `integration` `integration-all` `integration-diff` `integration-list` `scenario` `smoke` `capture` `import-cache` ·
-`refs` `scene` `scene-diff` `orphans` `autoloads` `pm` · `pm-scan` `uid-scan` `hermetic-scan`
-`hooks-self-test` `runners-self-test` · `check` `precommit` `milestone`. **Every gate prints ONE
-verdict line** naming its full transcript under `.gate-reports/`; `VERBOSE=1` streams the whole
-thing. `make help` is the authoritative list and shows your targets beside the standard ones.
+`Makefile.devkit` is devkit-owned and carries the framework set — `help` `pm` · `check`
+`precommit` `milestone` — and nothing a language owns. Your build and test tiers arrive through
+`Makefile.tiers`, a file your language kit (or you) writes beside it: it defines the targets and
+declares which compositions they join with `GDK_PRECOMMIT_TIERS` / `GDK_MILESTONE_TIERS`. A
+project with no tier file gets a working `check`, `precommit` and `milestone` that say they are
+`check` alone. **Every gate prints ONE verdict line** naming its full transcript under
+`.gate-reports/`; `VERBOSE=1` streams the whole thing. `make help` is the authoritative list and
+shows your targets beside the standard ones.
 
 **Your own gates join `check` by config, never by a fork of the include:**
 
@@ -338,10 +340,9 @@ thing. `make help` is the authoritative list and shows your targets beside the s
 extra = ["my-scan"]
 ```
 
-**Per-change vs close-time is the split that matters.** `make precommit` (`check` + `parse` + `lint`
-+ `unit` + `integration-diff` — the scenarios whose `## covers:` header names a path the change
-against `REF` touched, plus smoke; on a clean tree exactly smoke) belongs in your pre-commit or
-pre-push hook; `make milestone` is the full gate and what the installed CI runs; `check repo-hygiene`
+**Per-change vs close-time is the split that matters.** `make precommit` (`check` + your
+`GDK_PRECOMMIT_TIERS`) belongs in your pre-commit or pre-push hook; `make milestone` (`check` +
+your `GDK_MILESTONE_TIERS`) is the full gate and what the installed CI runs; `check repo-hygiene`
 belongs at milestone close, because it hits the network and judges the state a close leaves behind.
 
 ## Northstar
@@ -389,20 +390,23 @@ engine-specific half stayed; nothing here knows what a game engine is.
 
 ## Development
 
-`make help` lists every target. Never hand-roll an incantation; if the check you need is not a target,
-add the target.
+This repo is its own first consumer: its `Makefile` sets `DEVKIT` to `uv run -q agentic-sdlc`
+— the working tree, installed on itself — and includes the same `Makefile.devkit` that
+`install-gates` writes for everybody; `Makefile.tiers` adds the Python tiers the way a language
+kit would. `make help` lists every target. Never hand-roll an incantation; if the check you need
+is not a target, add the target.
 
 ```sh
-make test        # the suite on the 3.11 floor (pytest, via uv)
-make gates       # agentic-sdlc check all, on this repo
-make hooks-self-test  # the self-hosted hooks that ship a corpus, replayed
-make precommit   # gates + hooks-self-test + test — the per-change gate
-make milestone   # gates + hooks-self-test + matrix — the full gate, and what CI runs
+make check       # agentic-sdlc check all, on this repo — ~2 s
+make unit        # the inner loop: no subprocess, one process — ~7 s
+make precommit   # check + unit — the per-change gate
+make test        # both tiers on the 3.11 floor — what a feature close runs
+make milestone   # check + matrix + budget — the full gate, and what CI runs
 ```
 
 `make matrix` runs the whole suite on `PY_FLOOR` and the Python-only slice (`-m "not shell"`)
-on every other claimed interpreter, and reports which one failed; `make fuzz`
-runs the seeded differential + replay harnesses alone.
+on every other claimed interpreter, each in its own `.venv-<version>`, and reports which one
+failed; `make fuzz` runs the seeded differential + replay harnesses alone.
 
 **Every target here is self-contained.** Nothing in this repo reads a path outside its own checkout,
 names a project that consumes it, or asks whether some other repo happens to be cloned on the machine

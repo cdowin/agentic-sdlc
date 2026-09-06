@@ -113,13 +113,13 @@ because story 05's `## Close` found the same gap by other means):
 """
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
+from agentic_sdlc.core import makefile
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo.verify import declares, rules, select
@@ -153,10 +153,7 @@ RUNG_BLURB = {STORY: 'the edit', FEATURE: 'the range', MILESTONE: 'the close'}
 # What `--check` reads to answer "does this target exist". TEXT, parsed — never
 # `make -n`, which would run a build to answer a question about a name (hard
 # rule 2: nothing here boots anything).
-MAKEFILE = 'Makefile'
-MAKE_INCLUDE = re.compile(r'^-?include\s+(.+)$')
-# `target:` or `target: deps`, and never `target := value`, which is a variable.
-MAKE_TARGET = re.compile(r'^([A-Za-z0-9][A-Za-z0-9._+-]*)\s*:(?!=)')
+MAKEFILE = makefile.MAKEFILE
 MAKE_PROGRAM = 'make'
 
 # A rev arrives from argv and goes to git as one element. These three shapes
@@ -600,7 +597,7 @@ def _target_of(command: str) -> str | None:
     """The make target a command names, or None when it is not a make call."""
     words = command.split()
     if len(words) >= 2 and words[0] == MAKE_PROGRAM \
-            and MAKE_TARGET.match(words[1] + ':'):
+            and makefile.TARGET.match(words[1] + ':'):
         return words[1]
     return None
 
@@ -681,35 +678,12 @@ def _ratio(story_ms: int | None, milestone_ms: int | None,
 def make_targets(root: Path) -> tuple[frozenset[str], str]:
     """(every target the root Makefile and its includes declare, the file read).
 
-    TEXT, parsed. Never `make -n`: hard rule 2 says nothing here boots
-    anything, and asking make whether a name exists means letting make decide
-    to build something first.
+    `core.makefile` is the one reader; `check doc` asks it the same question.
     """
     path = root / MAKEFILE
     if not path.is_file():
         return frozenset(), ''
-    names: set[str] = set()
-    pending = [path]
-    seen: set[Path] = set()
-    while pending:
-        current = pending.pop()
-        if current in seen or not current.is_file():
-            continue
-        seen.add(current)
-        for line in current.read_text(encoding='utf-8',
-                                      errors='replace').splitlines():
-            hit = MAKE_TARGET.match(line)
-            if hit:
-                names.add(hit.group(1))
-                continue
-            included = MAKE_INCLUDE.match(line.strip())
-            if included:
-                for word in included.group(1).split():
-                    if '$' not in word:
-                        pending.append(root / word)
-    return frozenset(names), str(path)
-
-
+    return makefile.targets(root), str(path)
 def _first_claims(ruleset: RuleSet, files: Sequence[str],
                   resolver: select.ReverseResolver | None) -> dict[str, int]:
     """tracked path -> the index of the rule that is FIRST for it. S1's answer.

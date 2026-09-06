@@ -1,7 +1,8 @@
 __pycache__/
 *.pyc
-# uv-run residue: the package is stdlib-only, so a lockfile pins nothing it ships.
-uv.lock
+# The environments `uv run` installs this tree into: .venv on the floor, and one
+# per interpreter under `make matrix`.
+.venv*/
 
 # Gate transcripts: one slot per gate, cleared per run, bounded by construction.
 .gate-reports/

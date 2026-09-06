@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### The repo is a consumer of what it ships
+
+- **This repo's Makefile is now a consumer's Makefile** — `DEVKIT := uv run -q agentic-sdlc`
+  (the working tree installed on itself, editable, re-synced every call) and
+  `include Makefile.devkit`, with the Python tiers in a `Makefile.tiers` on the same seam a
+  language kit uses. `make precommit` here and in a consumer are one program. The `gates`,
+  `hooks-self-test` and `hooks` targets are gone: `check` is the static gate, `check hooks`
+  inside it replays the corpora, and `bash tools/setup-hooks.sh` arms a tree. Closes
+  `0.2.0/bugs/the-repo-forks-the-framework-it-ships`.
+- **`Makefile.devkit`: a project may set `DEVKIT` itself and skip the pin.** `DEVKIT_VERSION`
+  is required only when the include has to build the `uvx` command. Re-install with
+  `install-gates --force`.
+- **`Makefile.devkit`: `gdk_gate` takes an optional fifth argument, the census** — a command
+  run over the transcript that prints how many things the gate walked. It lands on the
+  gate's ledger row (`--census`) and `check budget` holds it to `[tests] cases`. Four-argument
+  calls are unchanged.
+- **`check doc` and `verify --check` follow the tier seam.** Both readers stopped at
+  `include Makefile.devkit` and skipped `-include $(GDK_TIERS_MK)`, so every tier target a
+  language kit adds was reported as an unknown make target in every consumer's docs and
+  rungs. One reader now (`core/makefile.py`), resolving a plain `$(VAR)` in an include path
+  from the assignments already read. Widening only.
+
 ### The belts report, and the walk always finishes
 
 **Behaviour change, and it is the largest one in this release.** `release`, `adopt`,

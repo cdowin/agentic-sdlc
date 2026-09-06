@@ -45,13 +45,13 @@ it. The ladder, with MEASURED costs:
 
 | you changed | run | cost |
 |---|---|---|
-| the PM tree, or a doc | `make gates` | **~2 s** |
+| the PM tree, or a doc | `make check` | **~2 s** |
 | code, inner loop | `agentic-sdlc verify --story` | seconds |
-| code, before a commit | `make precommit` | **~10 s** |
-| closing a feature | `agentic-sdlc verify --feature` | **~36 s** |
+| code, before a commit | `make precommit` (`check` + `unit`) | **~10 s** |
+| closing a feature | `agentic-sdlc verify --feature` (`make test`) | **~40 s** |
 | closing a milestone | `make milestone` | minutes |
 
-**Writing to the PM tree is `pm new`, an edit, `make gates`, a commit.** Two
+**Writing to the PM tree is `pm new`, an edit, `make check`, a commit.** Two
 seconds. A planning step that costs a suite is one people batch up and stop
 doing.
 
@@ -59,8 +59,9 @@ doing.
 prints every rung with the cost it actually took, from the ledger. Ask it rather
 than guessing.
 
-Run the CLI as `PYTHONPATH=src python3 -m agentic_sdlc.cli …` —
-**never `uvx --from`**, which caches by version and serves stale code.
+Run the CLI as `uv run -q agentic-sdlc …` — this tree installed on itself,
+re-synced every call — **never `uvx --from`**, which caches by version and
+serves stale code. The Makefile's `DEVKIT` is that same command.
 
 ---
 
@@ -127,12 +128,14 @@ count going UP. Hard rule 10 is the counterweight rule 4 never had.
    aggressive cut safe. Closing this is what triggers `verify --feature` and
    the wide rung — once, as part of the close.
 
-2. **`0.2.0/bugs/the-repo-forks-the-framework-it-ships`** — this repo does not
-   `include Makefile.devkit`. It hand-writes a parallel framework, so
-   `make precommit` here and in a consumer are two different programs sharing a
-   name. D1's `-include` + `GDK_*_TIERS` mechanism is the one thing its own
-   author does not use. The bug says what has to be decided before it can be
-   fixed: which half of this Makefile is framework and which is this project's.
+2. ~~`0.2.0/bugs/the-repo-forks-the-framework-it-ships`~~ **FIXED.** The
+   Makefile is `DEVKIT := uv run -q agentic-sdlc` + `include Makefile.devkit`;
+   `Makefile.tiers` carries the Python tiers; `Makefile.devkit` and
+   `tools/dev/gdk_gate.sh` are installed here by `install-gates` and held
+   byte-current. `gates`, `hooks-self-test` and `hooks` are gone. Fixing it
+   found that BOTH Makefile readers (`check doc`, `verify --check`) skipped the
+   `-include $(GDK_TIERS_MK)` seam, so every tier target read as dead in every
+   consumer — one reader now, `core/makefile.py`.
 3. **Phase 5's inner belts** (`the-inner-levels-are-belts-too`). It is unbuilt
    and its record specifies belts that REFUSE — read its banner first; D8 means
    they report. Closing it closes I2.
@@ -163,10 +166,6 @@ count going UP. Hard rule 10 is the counterweight rule 4 never had.
   `deferred: <grain-id>`, `open`, `open: <note>`. Prose after the hash makes
   `pm ready-for tag` refuse the record.
 - **The scene half is gone.** Anything naming Godot in `src/` is drift (rule 8).
-- **`make check` here is an ALIAS for `gates`**, and it is a stopgap over
-  `0.2.0/bugs/the-repo-forks-the-framework-it-ships`. Do not read this repo's
-  `precommit`/`milestone` as evidence of what a consumer gets — they are a
-  parallel implementation.
 - **The suite tiers on the `shell` mark, DERIVED** from what a module's source
   reaches. `support.pm.tree` marks a tree with `.git`; `support.pm.git_tree`
   runs `git init`. Reaching for the second is what puts a module in the slow
@@ -183,8 +182,8 @@ Measured 2026-09-05, end of session. `check budget` gates the first two and
 
 | | |
 |---|---|
-| `make check` / `gates` | ~2 s |
-| `make precommit` | **~10 s** (gates + hooks + unit) |
+| `make check` | ~2 s |
+| `make precommit` | **~10 s** (check + unit) |
 | unit tier | **736 cases, 7 s** — ceiling 1250 / 20 s |
 | integration tier | **~40 s** — ceiling 800 / 130 s |
 | whole suite | **~40 s**, 1,415 collected |

@@ -4,7 +4,7 @@ milestone: "0.2.0"
 name:
 status: open
 caught_in: "0.2.0"
-fix_milestone: "0.4.0"
+fix_milestone: 0.4.0
 caused_by:
 ---
 

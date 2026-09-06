@@ -1,15 +1,18 @@
 """check grain-shape — grain documents stay inside the caps this kit defines.
 
 Measures the BODY (after the closing `---`, trailing blanks trimmed) of every grain
-document under `[pm] roadmap_dir`, in one read per file. A `.md` without frontmatter is
-a note and is disclosed, not measured; `decisions.md` and `handoff.md` are measured
-because their templates open no frontmatter. A damaged frontmatter block measures the
-whole file rather than zero.
+document under `[pm] roadmap_dir` and every review record under `[pm] review_dir`, in
+one read per file. A `.md` without frontmatter under the roadmap is a note and is
+disclosed, not measured; `decisions.md` and `handoff.md` are measured because their
+templates open no frontmatter. A damaged frontmatter block measures the whole file.
 
 devkit.toml:
 
     [grain_shape]
-    caps = { story = 300 }   # every kind not named keeps its shipped default
+    caps = { story = 100 }   # every kind not named keeps its shipped default
+
+Stock caps: story 60, feature 80, bug 50, milestone 120, decisions 300, handoff 120,
+note 250, review 120.
 
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
@@ -17,6 +20,7 @@ no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.config import (ConfigError, config_section, number_table,
@@ -35,19 +39,21 @@ BUG = 'bug'
 DECISIONS = 'decisions'
 HANDOFF = 'handoff'
 NOTE = 'note'
+REVIEW = 'review'
 
 # Minted without a frontmatter block, so the grain filter would drop them.
 FRONTMATTERLESS_SLOTS = (model.DECISION_FILE_NAME, model.HANDOFF_FILE_NAME)
 
 # Body lines; `decisions` runs highest because it is append-only for a whole milestone.
 DEFAULT_CAPS: dict[str, int] = {
-    BUG: 150,
-    DECISIONS: 500,
-    FEATURE: 200,
+    BUG: 50,
+    DECISIONS: 300,
+    FEATURE: 80,
     HANDOFF: 120,
-    MILESTONE: 200,
+    MILESTONE: 120,
     NOTE: 250,
-    STORY: 200,
+    REVIEW: 120,
+    STORY: 60,
 }
 
 LABEL_WIDTH = len('UNREADABLE')
@@ -108,31 +114,48 @@ def _body_lines(lines: list[str]) -> int:
     return len(body)
 
 
+def _read(path: Path, lines_of: dict[Path, list[str] | None]) -> list[str] | None:
+    """The file's lines, read once into `lines_of`; None when it cannot be opened."""
+    if path not in lines_of:
+        try:
+            lines_of[path] = model._split(model.read_raw(path))
+        except (OSError, UnicodeDecodeError):
+            lines_of[path] = None
+    return lines_of[path]
+
+
+def _not_dotted(base: Path) -> Callable[[Path], bool]:
+    return lambda p: not any(part.startswith('.')
+                             for part in p.relative_to(base).parts)
+
+
 def _walk(roadmap: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
     """Every grain document under the PM tree; `lines_of` is filled here so nothing is read twice."""
-    def readable(path: Path) -> list[str] | None:
-        if path not in lines_of:
-            try:
-                lines_of[path] = model._split(model.read_raw(path))
-            except (OSError, UnicodeDecodeError):
-                lines_of[path] = None
-        return lines_of[path]
-
     def in_scope(path: Path) -> bool:
         # Read unconditionally: `run()` reads `lines_of` back for every kept path.
-        lines = readable(path)
+        lines = _read(path, lines_of)
         if path.name in FRONTMATTERLESS_SLOTS:
             return True
         return True if lines is None else model._opens_frontmatter(lines)
 
     return (walk.descendants(roadmap, Kind.FILE, suffix='.md')
-            .filter(lambda p: not any(part.startswith('.')
-                                      for part in p.relative_to(roadmap).parts),
-                    SkipReason.DOTTED_NAME)
+            .filter(_not_dotted(roadmap), SkipReason.DOTTED_NAME)
             .filter(lambda p: model.ARCHIVE_DIR_NAME
                     not in p.relative_to(roadmap).parts,
                     SkipReason.EXCLUDED_PATH)
             .filter(in_scope, SkipReason.NO_FRONTMATTER))
+
+
+def _review_walk(reviews: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
+    """Every markdown file under `[pm] review_dir`; a review record is not a grain, so
+    nothing is filtered on frontmatter. A missing directory is an empty walk."""
+    if not reviews.is_dir():
+        return Walk(())
+    found = (walk.descendants(reviews, Kind.FILE, suffix='.md')
+             .filter(_not_dotted(reviews), SkipReason.DOTTED_NAME))
+    for path in found:
+        _read(path, lines_of)
+    return found
 
 
 def _measured_line(seen: dict[str, int], caps: dict[str, int]) -> str:
@@ -146,6 +169,7 @@ def run() -> int:
     root = repo_root()
     # The same `relpath` read `repo/pm/model.load` makes, so the two readers agree.
     roadmap_dir = relpath(config_section('pm'), 'pm', 'roadmap_dir', 'pm/roadmap')
+    review_dir = relpath(config_section('pm'), 'pm', 'review_dir', 'docs/reviews')
     roadmap = root / roadmap_dir
 
     if not roadmap.is_dir():
@@ -155,9 +179,12 @@ def run() -> int:
 
     lines_of: dict[Path, list[str] | None] = {}
     found = _walk(roadmap, lines_of)
-    docs = list(found)
-    census = found.census(f'PM document(s) under {roadmap_dir}/')
-    if not docs:
+    reviews = _review_walk(root / review_dir, lines_of)
+    docs = [(path, _kind_of(path.relative_to(roadmap))) for path in found]
+    docs += [(path, REVIEW) for path in reviews]
+    census = (f'{found.census(f"PM document(s) under {roadmap_dir}/")}, '
+              f'{reviews.census(f"review record(s) under {review_dir}/")}')
+    if not found.kept:
         # A walk that kept nothing while leaving entries unexamined cannot tell
         # an empty tree from a scope that lost one.
         if found.unexamined():
@@ -172,9 +199,8 @@ def run() -> int:
 
     findings: list[tuple[str, str]] = []
     seen: dict[str, int] = {}
-    for path in docs:
+    for path, kind in docs:
         rel = path.relative_to(root)
-        kind = _kind_of(path.relative_to(roadmap))
         seen[kind] = seen.get(kind, 0) + 1
         lines = lines_of[path]
         if lines is None:

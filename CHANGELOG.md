@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **`check grain-shape` stock caps tightened** — story 60, feature 80, bug 50, milestone 120,
+  decisions 300 (were 200 / 200 / 150 / 200 / 500), plus a new `review` kind capped at 120 over
+  every markdown file under `[pm] review_dir`. A consumer whose records are over these goes red
+  on the pin bump: raise `[grain_shape] caps` in devkit.toml, visibly, or split the records.
 - **`verify --story --to <rev>`** closes the range at a commit: `--ref <first>^ --to <last>` is
   the story's own edits, and `close story` now passes both from the `done:` line, so a story
   closed after other work has landed is verified against what it changed rather than against

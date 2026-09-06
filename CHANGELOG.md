@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+### A belt is its checks, then one write or a clean error (D12)
+
+- **Every belt — `close story`, `close feature`, `release`, `adopt` — is a check list followed
+  by AT MOST ONE write.** Every check runs and prints one line; all true → the subject grain's
+  status is set to the FIRST state of its kind's `done` category (`[pm.states.<kind>] done`,
+  read from the config, never a literal), exit 0; any false → nothing written, exit 1.
+  `--force` writes anyway. `adopt` writes nothing and refuses `--force`. **Nothing else is
+  written, moved, bumped, retitled, pushed or tagged by a belt** — every `do()` is gone: the
+  status flips of other grains (`claimed`, `milestone-reviewing/accepted/packaging`,
+  `feature-reviewing`), `version-sync`'s bump, `readme-pins`' rewrite, `changelog-retitle`,
+  `push-branch`, `tag`, and the `pr-open` / `ci-green` / `merge` / `prove-artifact`
+  judgements. What a caller must still do is printed as `next:` lines after a successful
+  write, and rendered into `docs/sdlc-protocol.md` under each belt.
+- **New line shapes (minor bump at least, rule 6).** One per check —
+  `[<op>] ok: <check> — <detail>`, `[<op>] error: <check>: <what is false>`,
+  `[<op>] unverifiable: <check>: <why>` (D11; counts as false for the write) — then one of
+  `[<op>] ok — <grain> → <state>`, `[<op>] error — N check(s) false; nothing written`,
+  `[<op>] forced — <grain> → <state> over N false check(s)`, or for `adopt`
+  `[adopt] ok — N check(s) true; nothing to write`; then `next: …` lines on success. The
+  `ALREADY-TRUE` / `SAID` / `DONE` / `NOT-TRUE` / `CORRECTED` / `REFUSED` lines and the
+  scoreboard are gone.
+- **The check lists.** `close story`: `story-exists`, `narrow-verified` (`verify --story` over
+  the story's own commit range), `committed` (nothing outside the roadmap directory
+  uncommitted), `evidence-written` (a `done:` line). `close feature`: `stories-done`
+  (`pm ready-for feature`), `review-recorded` (`reviewed:` points at a record that parses),
+  `findings-landed` (none `open`); `feature-verified` (`verify --feature`) stays registered
+  and is opt-in through `[feature] steps`. `release`: `tree-clean`, `on-milestone-branch`,
+  `changelog-unreleased-nonempty`, `features-done` (`pm ready-for milestone`),
+  `findings-resolved` (`pm ready-for tag`), `version-sync` (READS every configured site),
+  `gate`. `adopt`: `pin-bumped`, `installables-current` (every installed file byte-current
+  with what this version ships, each drifted one named with its `install-* --diff`),
+  `config-updated`, `hooks-self-test`, `runner-targets-resolve`, `checks-pass`,
+  `pm-validates`. Gone from the lists: `review-landed` (asked once, as `findings-resolved`),
+  `main-merged`, `readme-pins`, `installables-diffed` and `installable-decisions-recorded`
+  (both read a report the belt itself used to write).
+- **Two ledger rows at most per run**: the `status` row `pm <kind> <state> <id>` mints, and
+  on `--force` one `deviation` row with `outcome: forced`, `step` naming every false check
+  and `reason` carrying each one's own sentence. A run that writes nothing writes no row —
+  the per-step `not-true` / `unverifiable` rows are gone.
+- **The run-state cache under `.agentic-sdlc/run/` is gone** — every run re-reads the tree —
+  and with it `--status`. `--skip`, `--reason` and `--status` are refused by name.
+- **`[release.commands]` accepts `gate` and the three after-belt commands** (`pr-open`,
+  `ci-green`, `prove-artifact` — printed on their `next:` line, `{version}` filled in);
+  `[adopt.commands]` / `[story.commands]` / `[feature.commands]` accept a command only for
+  a check that runs something (`hooks-self-test`, `runner-targets-resolve`, `checks-pass`,
+  `pm-validates`, `narrow-verified`, `feature-verified`). A command for a check that reads
+  the tree is exit 2: two authorities over one fact. `[release] pin_files` is gone with
+  `readme-pins`.
+- **`docs/sdlc-protocol.md` renders from the four check lists, the state each belt writes
+  and each belt's after-list**; a tree that has declared no flow renders the absence rather
+  than exiting 2. Re-render with `install-sdlc --force`.
+
 ### The belt's findings land (D11)
 
 - **A callee's exit 2 is UNVERIFIABLE, never NOT-TRUE (D11).** A GATE or JUDGEMENT step that

@@ -1,13 +1,12 @@
 # The protocol, as the machine runs it
 
-<!-- Written by `agentic-sdlc install-sdlc`. Do not hand-edit: the ordered
+<!-- Written by `agentic-sdlc install-sdlc`. Do not hand-edit: the check
      lists below are RENDERED from `[story]`, `[feature]`, `[release]` and
-     `[adopt]` steps in this repo's devkit.toml and from the step registry
-     that walks them, so
-     the only way to change them is to change the config or the code and
-     re-run the verb. A hand-written document describing the steps is the
-     second home for the protocol, and a second home drifts — which is the
-     failure this file exists to end. -->
+     `[adopt]` steps in this repo's devkit.toml, from the registry that runs
+     them, and from `[pm.states.<kind>] done`, so the only way to change them
+     is to change the config or the code and re-run the verb. A hand-written
+     document describing the checks is the second home for the protocol, and
+     a second home drifts — which is the failure this file exists to end. -->
 
 Run it — one verb per level, and none of them is "run the biggest thing":
 
@@ -18,116 +17,118 @@ agentic-sdlc release       <version>       once its features are done
 agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
 ```
 
-It walks the list below in order **to the end**, and for every step whose
-postcondition is not true it says so by name and says what would make it
-true. It is resumable: the position is a cache under `.agentic-sdlc/run/`,
-every step is re-checked against the tree on every run, and deleting that
-file costs nothing. Exit `0` every postcondition holds, `1` one or more do not
-(the walk still finished), `2` a usage or config error — the declaration
-could not be read, before the walk or at the step whose reader met it.
+**A belt is its checks, then one write or a clean error** (D12). Every check
+in the list runs and prints one line — `ok: <check> — <detail>`, or
+`error: <check>: <what is false>` — and then the belt writes AT MOST ONE
+thing: the status of the grain it was asked about, set to the first state of
+that kind's `done` category, as this repo declares it. All true → the write,
+exit `0`. Any false → no write, exit `1`, every false check named. `--force`
+writes anyway, and the milestone's `ledger.jsonl` gets one `deviation` row
+naming the checks that were false. Exit `2` is the declaration that could not
+be read — a bad id, an unknown check name, a config value of the wrong shape.
 
-Three kinds of step, and the third one is the honest limit:
+Nothing else is written, moved, bumped, retitled, pushed or tagged. What is
+yours to do after a write is printed as `next:` lines and listed under each
+belt below. A check that cannot be decided — a callee that exited 2, a record
+that does not parse — prints `unverifiable:` and counts as false: a write over
+a question nobody answered is the one thing this machine will not do.
 
-- **AUTOMATIC** — code performs it, then re-asks the postcondition. `do()`'s
-  own report is never what marks it done.
-- **GATE** — a command; exit 0 is true. It has no `do()`, because a gate is not
-  made true by running it again.
-- **JUDGEMENT** — code cannot perform it. It reads the ARTIFACT of a judgement,
-  or a command the project configures. With neither, it answers UNVERIFIABLE,
-  which is never a pass and is counted apart from a plain no.
+This tool reads and writes the PM tree and says what it saw. Whether a false
+check should stop you is YOUR question: the engine cannot know whether it is
+wrong (descoped? a hotfix? deliberate?), which is what `--force` is for, on
+the record. `agentic-sdlc check <gate>` is the thing that FAILS a tree, in CI
+and pre-push, with an exit-code contract for exactly that.
 
-**No step halts the walk.** Every step is a check, every check reports, the run
-reaches its last step whatever any check said, and the final line is a
-scoreboard: `19/21 true · 1 not true: gate`. Whether a not-true step should
-stop you is YOUR question — the engine cannot know whether it is wrong
-(descoped? a hotfix? deliberate?), and a machine that blocks on a question it
-cannot ask is asserting an answer. `agentic-sdlc check <gate>` is the thing
-that FAILS a tree, in CI and pre-push, with an exit-code contract for exactly
-that.
+## `release` — the checks
 
-Every step that is not true is written to the milestone's `ledger.jsonl` as a
-`deviation` row carrying the reason the step itself gave. Deviation stays
-possible; invisible deviation does not. `--status` prints what has been
-recorded.
+| # | check | runs | what must be true |
+|---|---|---|---|
+| 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` is empty. |
+| 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
+| 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the changelog's `## Unreleased` section holds at least one bullet. |
+| 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category, and no open bug names the milestone; each one that is not is NAMED. |
+| 5 | `findings-resolved` | `agentic-sdlc pm ready-for tag <id>` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — every finding in every record the milestone's grains point at has a disposition other than `open`. The records STAY: they are what `reviewed:` points at. |
+| 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version. READ, never bumped: the bump is the release commit, and it is yours. |
+| 7 | `gate` | `make milestone` | the configured gate command exits 0. |
 
-## `release` — the ordered list
+**Then, all true:** the milestone's status → the first state of `[pm.states.milestone] done` (`pm vocabulary` prints it), through `pm milestone <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
-| # | step | kind | command | what makes it true |
-|---|---|---|---|---|
-| 1 | `tree-clean` | JUDGEMENT | — *(operator)* | `git status --porcelain` is empty. |
-| 2 | `on-milestone-branch` | JUDGEMENT | — *(operator)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
-| 3 | `main-merged` | JUDGEMENT | — *(operator)* | the mainline is an ancestor of HEAD. |
-| 4 | `changelog-unreleased-nonempty` | JUDGEMENT | — *(operator)* | the changelog's `## Unreleased` section holds at least one bullet. |
-| 5 | `review-landed` | JUDGEMENT | — *(operator)* | `pm ready-for tag <milestone>` exits 0 — every review finding is dispositioned. This is the step that makes the gate's position structural rather than remembered. |
-| 6 | `version-sync` | AUTOMATIC | — | every configured version site names the release version. |
-| 7 | `readme-pins` | AUTOMATIC | — | every `vX.Y.Z` pin inside a fenced code block names the release version. Prose naming an older tag is history and is never rewritten. |
-| 8 | `features-done` | JUDGEMENT | — *(operator)* | `pm ready-for milestone <milestone>` exits 0. |
-| 9 | `milestone-reviewing` | AUTOMATIC | — | the milestone status is `reviewing` or later. |
-| 10 | `gate` | GATE | `make milestone` | the configured gate command exits 0. It has no `do()`: a gate is not made true by running it again. |
-| 11 | `milestone-accepted` | AUTOMATIC | — | the milestone status is `accepted` or later. |
-| 12 | `changelog-retitle` | AUTOMATIC | — | a `## v<version> — <ISO date>` heading exists with a fresh empty `## Unreleased` above it. |
-| 13 | `milestone-packaging` | AUTOMATIC | — | the milestone status is `packaging` or later. |
-| 14 | `findings-resolved` | JUDGEMENT | — *(operator)* | `pm ready-for tag <milestone>` exits 0 — every finding in every record the milestone's grains point at has a disposition other than `open`. The same question `review-landed` asked, re-asked after the gate and the changelog moved. The records STAY: they are what `reviewed:` points at, and deleting one leaves `check pm` D1 red. |
-| 15 | `milestone-done` | AUTOMATIC | — | the milestone status is `done`. |
-| 16 | `push-branch` | AUTOMATIC | — | the branch tip equals its upstream tip. It refuses on the mainline and pushes nothing there. |
-| 17 | `pr-open` | JUDGEMENT | — *(operator)* | the configured `pr-open` command exits 0. With none, the operator is asked and the step is reported UNVERIFIABLE — never a pass, counted apart from a plain no; the walk finishes. |
-| 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the step is reported UNVERIFIABLE — never a pass, counted apart from a plain no; the walk finishes. |
-| 19 | `merge` | JUDGEMENT | — *(operator)* | the mainline contains this branch's tip. |
-| 20 | `tag` | AUTOMATIC | — | the tag exists locally AND on the remote. It is never force-moved. |
-| 21 | `prove-artifact` | JUDGEMENT | `uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version` | the configured `prove-artifact` command exits 0. This package ships no default: the proof names a git URL, and a URL is the project's own fact (hard rule 8). |
+**Yours, after the write** (printed as `next:` lines):
 
-## `adopt` — the ordered list
+- retitle the changelog: `## Unreleased` becomes `## v<version> — <ISO date>`, with a fresh empty `## Unreleased` above it
+- commit the roadmap directory and the changelog as the release commit
+- push the branch: `git push -u origin <branch>` — never the mainline
+- open the PR from <branch> to <mainline>
+- wait for the required checks on the PR to go green
+- merge it as a MERGE COMMIT — the mainline is merge-commit-only, and a squash loses the milestone's range
+- tag the merge commit and push the TAG ref only: `git tag v<version> && git push origin refs/tags/v<version>` — a published tag is never force-moved
+- prove the published artifact reports <version> from a cold cache: `uvx --from git+https://github.com/cdowin/agentic-sdlc@v<version> agentic-sdlc --version`
+- open the next milestone, so the next release's notes have somewhere to go from the first commit
 
-| # | step | kind | command | what makes it true |
-|---|---|---|---|---|
-| 1 | `pin-bumped` | JUDGEMENT | — *(operator)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. It is a line in a file this package does not own, so the step states the edit and writes nothing. |
-| 2 | `installables-diffed` | AUTOMATIC | — | the diff between what this version ships and what is installed here has been produced, and the recorded census still describes the tree (each file with a digest, so an edit made after the diff makes it stale). |
-| 3 | `installable-decisions-recorded` | JUDGEMENT | — *(operator)* | every file that differs carries a decision in the run's record. `--force` is whole-set and has no per-file option, so take / hand-apply / keep is a call only the consumer can make. |
-| 4 | `config-updated` | JUDGEMENT | — *(operator)* | every devkit.toml section this version still READS accepts what this repo declares. There is no retired-key table: a section this package no longer reads may be another kit's, and telling those apart would mean knowing the consumer (hard rule 8). |
-| 5 | `hooks-self-test` | GATE | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards are armed, executable, still start, and still return the verdicts their own corpus asserts. A guard that fails OPEN is not there, and a config diff cannot see it. |
-| 6 | `runner-targets-resolve` | GATE | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`. A tier named with no tier file FAILS here naming the file; an empty tier list passes and SAYS it was empty — `-include`'s silence is never a pass. |
-| 7 | `checks-pass` | GATE | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0. NOT `make check`, not `make precommit`, not `[gates] extra`: those verify the consumer's code against the consumer's rules, and a version bump here cannot change their verdict. |
-| 8 | `pm-validates` | GATE | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0 — the PM tree is still good against the new version. A repo with no PM tree is refused, never vacuously fine. |
+## `adopt` — the checks
 
-## `story` — the ordered list
+| # | check | runs | what must be true |
+|---|---|---|---|
+| 1 | `pin-bumped` | — *(reads the tree)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. A line in a file this package does not own, so it is read and never written. |
+| 2 | `installables-current` | — *(reads the tree)* | every installed file is byte-current with what this version ships, or differs only in its project-config header. Each that differs is named with the `install-* --diff` that shows it; take, hand-apply or keep is your call per file, and this reads the result. |
+| 3 | `config-updated` | — *(reads the tree)* | every devkit.toml section this version still READS accepts what this repo declares. There is no retired-key table: a section this package no longer reads may be another kit's (hard rule 8). |
+| 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards are armed, executable, still start, and still return the verdicts their own corpus asserts. |
+| 5 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`. A tier named with no tier file FAILS here naming the file; an empty tier list passes and SAYS it was empty. |
+| 6 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0. NOT `make check`: that verifies your code against your rules, and a version bump here cannot change its verdict. |
+| 7 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0. A repo with no PM tree is refused, never vacuously fine. |
 
-| # | step | kind | command | what makes it true |
-|---|---|---|---|---|
-| 1 | `claimed` | AUTOMATIC | — | the story's status is `building` or later. The flip goes through `pm story building <id>`, never a regex over frontmatter. |
-| 2 | `narrow-verified` | GATE | `agentic-sdlc verify --story` *(shipped)* | the narrow rung exits 0 — `agentic-sdlc verify --story`, which is a function of the CHANGED PATHS and of `[[verify.narrow]]`. The command is never named in the step: what proves an edit is the project's own fact. On a committed tree the rung says `no changed paths` and that sentence is quoted rather than summarised as a pass. |
-| 3 | `committed` | JUDGEMENT | — *(operator)* | nothing is uncommitted outside the roadmap directory. It NAMES what is, and it never commits — a story closed by a machine that also wrote the commit is a story nobody reviewed. The roadmap directory is excluded because this belt writes there itself. |
-| 4 | `evidence-written` | JUDGEMENT | — *(operator)* | the story file carries `done: <hash(es)> — <what shipped>` (pm-execution.md step 6). READ, never written: the sentence is the author's, and a generated one would be a second scoreboard saying what the commit already says. |
-| 5 | `story-done` | AUTOMATIC | — | the story's status is `done`, through `pm story done`. |
+**Then:** nothing. `adopt` writes nothing; it is checks only, and `--force` is refused.
 
-## `feature` — the ordered list
+**Yours, after the write** (printed as `next:` lines):
 
-| # | step | kind | command | what makes it true |
-|---|---|---|---|---|
-| 1 | `stories-done` | JUDGEMENT | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is `done`, and each one that is not is NAMED. Never re-implemented: the verb owns that question. |
-| 2 | `feature-reviewing` | AUTOMATIC | — | the feature's status is `reviewing` or later — the hand-off that says a reviewer runs now, once, over the whole feature. |
-| 3 | `feature-verified` | GATE | `agentic-sdlc verify --feature` *(shipped)* | the range rung exits 0 — `agentic-sdlc verify --feature`, the composition the project names for that rung. |
-| 4 | `review-recorded` | JUDGEMENT | — *(operator)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES (`pm/verdict.py`). Whether the review was any good is NOT checked and must not be: a step pretending to check it would be this package's cardinal sin wearing a protocol. A record that does not parse is UNVERIFIABLE — a refusal, never a pass. |
-| 5 | `findings-landed` | JUDGEMENT | — *(operator)* | no finding in that record sits at `disposition: open`. The same question `pm ready-for tag` asks one grain up, through the same parser, so the two cannot disagree. |
-| 6 | `feature-done` | AUTOMATIC | — | the feature's status is `done`, through `pm feature done <id> --review-record <path>`. |
+- commit the pin bump and every installable you took or hand-applied
 
-## Not steps, and why
+## `story` — the checks
 
-A step earns its place by having a CHECKABLE POSTCONDITION. What follows is real protocol with none, so the machine states it and does not pretend to enforce it.
+| # | check | runs | what must be true |
+|---|---|---|---|
+| 1 | `story-exists` | — *(reads the tree)* | the story id resolves to exactly one document. |
+| 2 | `narrow-verified` | `agentic-sdlc verify --story` *(shipped)* | the narrow rung exits 0 — `agentic-sdlc verify --story` over the story's own commit range (the base is the earliest hash in its `done:` line). A census of zero is UNVERIFIABLE, never a pass. |
+| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory. It NAMES what is, and it never commits. |
+| 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>` (pm-execution.md step 6). READ, never written: the sentence is the author's. |
 
-**The judgement runs first, and the gate answers for its result.** When a gate and a judgement both bear on one decision, the judgement runs first. A gate that runs before the review answers for a tree nobody will ship, and every fix landed afterwards voids it while it still reads as readiness. `review-landed` sits above `gate` in the list for exactly this reason, and the machine will not walk past it.
+**Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
-**Pick the bump yourself.** Patch, minor or major is a semver judgement about the interface, and no step can make it. Output-line-shape changes are minor at least; anything a consumer must edit for is major.
+**Yours, after the write** (printed as `next:` lines):
 
-**The negative probe for a gate whose scoping changed.** Introduce the drift class into a scratch copy of a fixture repo and confirm the gate FAILS. It is not a step: the artifact is a judgement made in scratch, with nothing in the tree to check.
+- commit the roadmap directory — the status line and the ledger row this belt wrote
+- when every story of the feature is done: `agentic-sdlc close feature <feature-id>`
 
-**The consumer follow-up.** A consumer bumps its pin, runs `install-* --diff`, and decides PER FILE. It is not a step: those are instructions for somebody in another repo, and this package gates on no other repo's state (hard rule 8).
+## `feature` — the checks
+
+| # | check | runs | what must be true |
+|---|---|---|---|
+| 1 | `stories-done` | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is in the `done` category (any state of it), and each one that is not is NAMED. |
+| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES (`pm/verdict.py`). Whether the review was any good is NOT checked and must not be. |
+| 3 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open` — the same question `pm ready-for tag` asks one grain up, through the same parser. |
+
+**Then, all true:** the feature's status → the first state of `[pm.states.feature] done` (`pm vocabulary` prints it), through `pm feature <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
+
+**Yours, after the write** (printed as `next:` lines):
+
+- commit the roadmap directory — the status line and the ledger row this belt wrote
+- when every feature of the milestone is done: `agentic-sdlc release <version>`
+
+## Not checks, and why
+
+A check earns its place by having something to READ in the tree. What follows is real protocol with nothing to read, so the machine states it and does not pretend to enforce it.
+
+**Pick the bump yourself.** Patch, minor or major is a semver judgement about the interface, and no check can make it. Output-line-shape changes are minor at least; anything a consumer must edit for is major.
+
+**The negative probe for a gate whose scoping changed.** Introduce the drift class into a scratch copy of a fixture repo and confirm the gate FAILS. It is not a check: the artifact is a judgement made in scratch, with nothing in the tree to read.
+
+**The consumer follow-up.** A consumer bumps its pin, runs `install-* --diff`, and decides PER FILE. It is not a check: those are instructions for somebody in another repo, and this package gates on no other repo's state (hard rule 8).
 
 **Forward only.** Nothing pushed is ever amended, rebased, reset or force-pushed. A botched commit is repaired with another commit, and a bad release is a new patch version — never a rewritten tag.
 
-**Open the next milestone.** After the tag, so the next release's notes have somewhere to go from the first commit. It is not a step: it needs a name only a human has.
-
 ## Changing this document
 
-Edit `[release] steps` (or `[release.commands]`) in `devkit.toml` and re-run
-`agentic-sdlc install-sdlc --force`. There is nothing to edit here: every line
-of the lists above is derived from the config and the registry that runs it.
+Edit `[<operation>] steps` (or `[<operation>.commands]`) in `devkit.toml` and
+re-run `agentic-sdlc install-sdlc --force`. There is nothing to edit here:
+every line of the lists above is derived from the config and the registry
+that runs it.

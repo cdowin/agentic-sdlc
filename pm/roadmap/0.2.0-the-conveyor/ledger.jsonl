@@ -326,3 +326,5 @@
 {"ts":"2026-09-06T02:40:46Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":5741,"rank":5}
 {"ts":"2026-09-06T02:40:47Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":47014,"census":1412}
 {"ts":"2026-09-06T02:41:15Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2433}
+{"ts":"2026-09-06T02:50:29Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit/04-a-belt-is-its-checks-then-one-write","from":"planning","to":"building"}
+{"ts":"2026-09-06T03:13:35Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2172}

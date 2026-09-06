@@ -774,3 +774,4 @@
 {"ts":"2026-09-06T04:43:04Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2366}
 {"ts":"2026-09-06T04:43:04Z","kind":"status","grain":"0.2.0/the-extraction-finishes/04-the-first-surfaces-describe-this-package","from":"building","to":"done"}
 {"ts":"2026-09-06T04:43:11Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2449}
+{"ts":"2026-09-06T04:47:22Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2109}

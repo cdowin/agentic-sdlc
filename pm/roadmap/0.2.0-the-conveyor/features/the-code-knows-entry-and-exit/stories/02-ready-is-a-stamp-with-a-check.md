@@ -26,3 +26,7 @@ depends_on: []
 ## Out of scope
 
 A `plan` belt, a readiness verb, anything that stamps `ready` for you. One command, by hand.
+
+## Close
+
+done: 33a4f62 — `check pm` warns on a grain past todo with empty criteria, no stories, an unphased feature or no branch; keyed on category, never order

@@ -33,3 +33,7 @@ depends_on: []
 ## Out of scope
 
 Re-litigating a finding the record already rejected.
+
+## Close
+
+done: 524d3ff fe680e6 9a8b226 ecf4c0b b23bf9d 7d38251 — every finding in the belt-reports, project-declares-flow, suite-is-cheap, categories and ledger-rows records dispositioned; D11 recorded

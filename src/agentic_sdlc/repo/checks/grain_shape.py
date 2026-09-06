@@ -179,9 +179,9 @@ def _kind_of(rel: Path) -> str:
     # so `bugs/<topic>/<doc>.md` and `stories/<topic>/<doc>.md` are real shapes
     # and a check of the parent alone would file both under `note`.
     parts = rel.parts[:-1]
-    if 'stories' in parts:
+    if model.STORIES_DIR in parts:
         return STORY
-    if 'bugs' in parts:
+    if model.BUGS_DIR in parts:
         return BUG
     return NOTE
 

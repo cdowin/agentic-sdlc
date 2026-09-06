@@ -108,6 +108,50 @@ defect one layer down.
    96 s ->  62 s   two corpus constants in `gdk_gate.sh --self-test`
    62 s ->  39 s   `--dist loadgroup`, and the tests that share this repo saying so
 
+### Every question is asked of a category
+
+**Behaviour change.** No question the engine asks about a status is asked of the word any more —
+every predicate in the pm tracker, the gates and the ledger goes through `holds(grains, category)`
+or `move_defect(kind, to_state)`, over the three categories your `[pm.states.<kind>]` maps your
+words into. A project that renames every state gets identical answers, proven byte-for-byte on
+`tests/fixtures/renamed-vocabulary/`; the inference census is enumerated in `tests/test_pm_flow.py`
+and no state literal survives outside the seed `pm init` writes.
+
+**What a consumer STOPS seeing** — the categories are coarser than the seven old positions:
+
+- **D2 no longer reports a `building` feature whose stories are all done**, and **D6 no longer
+  reports a `building` milestone whose features are all done.** Both fire only while the parent is
+  still in `todo` (`planning`/`ready` in the seed). A parent in `in_progress` over finished children
+  has started, and which in-progress word it should hold is not a question the gate asks. D5 lost
+  nothing: it always compared across the one split, and that split IS the `todo` boundary.
+- **D8, D9 and D10 report over EVERY milestone in `in_progress`** (`reviewing`, `accepted`,
+  `packaging` included), not over the one at `building`. A tree with two in progress gets two
+  answers; D8's "2 milestones are building — close one" is gone, because that was the engine
+  deciding there can only be one. The messages say `in-progress milestone`.
+- **`pm ledger record`, `pm ledger report`, `check budget` and `verify --plan` find the ledger by the
+  one milestone in `in_progress`**; none or several is a refusal naming them, as before.
+- **`pm feature done --cascade` is removed.** Which stories to move and to what was the engine's
+  opinion about two words; the story belt (`agentic-sdlc close story <id>`) closes each by name, and
+  the close reports the stories not in `done` with that hint. A move into ANY `done`-category state
+  (`obe` too) is the close and stamps `--review-record`. The advisory "N story/ies not finished"
+  now prints on every feature move into `in_progress`, not on `reviewing` alone.
+- **`pm ready-for feature` and `pm ready-for milestone` ask the `done` category.** An `obe` story no
+  longer holds its feature open (the `also_done` two-call-site disagreement, P9, is gone because
+  there is one call site), and the exit-2 refusal for a vocabulary without the word `done` is gone
+  because there is no word to lack.
+- **`pm retire` reports a bug as still open when it is not in `done`** (`fixed` included), where it
+  used to look for the literal `open`.
+- **`[pm] milestone_states`, `feature_states`, `story_states`, `bug_states`, `also_done` and
+  `review_slug_fallback` are retired** and refused by name by `check pm` and `pm validate` — the
+  vocabulary is `[pm.states.<kind>]`, the `done` category is its `done` list, and a review record is
+  the `reviewed:` pointer and nothing else. `pm vocabulary`'s flat per-kind list is now the declared
+  order (category-major) and reads `(undeclared)` for a tree with no flow.
+- **`pm status` and the execution list no longer know the phase word `seam`.** Numbered phases
+  first, then named phases in your own spelling, then unphased; `seam` sorts where any name does,
+  which is where it sorted before.
+- `pm --help` opens with the category question; the conveyor's milestone status step reads the
+  declared flow and reports an undeclared step word as UNVERIFIABLE instead of crashing (R4).
+
 ### The project declares its flow
 
 **New config, and it is the one section that ships LIVE rather than commented.** `[pm.states.<kind>]`

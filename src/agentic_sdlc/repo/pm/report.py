@@ -649,14 +649,6 @@ class GitSource(Source):
         if pointer and pointer != 'null' and not pointer.startswith('/'):
             if self.is_file(cfg.root / pointer):
                 return pointer
-        if cfg.review_slug_fallback:
-            slug = fid.partition('/')[2]
-            rdir = cfg.root / cfg.review_dir
-            pattern = f'{slug}*{MD_SUFFIX}'
-            for name in sorted(n for kind, n in self._ls(rdir, False)
-                               if kind == BLOB and slug
-                               and fnmatch.fnmatchcase(n, pattern)):
-                return cfg.rel(rdir / name)
         return None
 
     def field_of(self, path: Path, key: str) -> str:
@@ -843,22 +835,19 @@ def state_columns(cfg: model.PmConfig, kind: str) -> tuple[str, ...]:
     its reading order and not a prefix of it — a column set cut at the
     terminal state's INDEX would drop every state that happens to sit after it.
 
-    The terminal state alone has no column: it is where the grain ENDED, so
-    the seconds after it are a running clock rather than a duration, and
+    The finished states have no column: they are where the grain ENDED, so
+    the seconds after one are a running clock rather than a duration, and
     `total_s` beside these columns is the span that ends there.
-    `ledger.terminal_state` is the one home for which state that is, so the
-    columns and the total cannot come to different answers. A vocabulary that
-    does not contain its terminal state at all (a consumer without `done`)
-    gets a column for every state rather than none.
+    `ledger.ends_grain` is the one home for which states those are — the
+    kind's `done` category — so the columns and the total cannot come to
+    different answers.
 
     A grain that RE-ENTERED a state — reopened, unblocked and blocked again —
     sums both stints into the one column. That is addition over the rows the
     ledger already holds, and the stints themselves are `pm ledger show`.
     """
-    states = {KIND_STORY: cfg.story_states, KIND_FEATURE: cfg.feature_states,
-              KIND_BUG: cfg.bug_states}[kind]
-    terminal = ledger.terminal_state(cfg, kind)
-    return tuple(state for state in states if state != terminal)
+    return tuple(state for state in model.flow_of(cfg, kind).order
+                 if not ledger.ends_grain(cfg, kind, state))
 
 
 def in_time_order(rows: list) -> list:
@@ -1372,7 +1361,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             'status': src.field_of(bfile, 'status') or None,
             'feature_status': fstatus or None,
             'feature_done': (None if not fstatus
-                             else fstatus == ledger.TERMINAL_STATE)})
+                             else ledger.ends_grain(cfg, KIND_FEATURE, fstatus))})
     out.sort(key=lambda e: (e['caused_by'], e['bug']))
     return {SECTION_ESCAPES: {
         'bugs': out,

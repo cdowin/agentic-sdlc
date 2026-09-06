@@ -6,21 +6,30 @@ read/write, THE definition of "a feature has a review record", and the drift
 predicates. Two readers, one definition — the gate and the tool cannot describe
 "reviewed" or "drift" differently.
 
-Config: `[pm]` in the consuming repo's devkit.toml. Every key has a stock
-default, so a repo with no devkit.toml behaves identically to one declaring the
-defaults.
+Config: `[pm]` in the consuming repo's devkit.toml. Every GATE key has a stock
+default, so a repo with no devkit.toml runs the gate identically to one
+declaring the defaults. The FLOW — `[pm.states.<kind>]` and
+`[pm.transitions.<kind>]` — has none: `pm init` writes it, every run reads it,
+and a tree without it is refused by name (hard rule 5, as it now reads).
 
     [pm]
     roadmap_dir  = "pm/roadmap"    # the tree, relative to the repo root
     review_dir   = "docs/reviews"  # where review records live
-    review_slug_fallback = false   # also accept <review_dir>/<feature-slug>*.md
     story_ordinal_prefix = false   # also resolve stories/NN-<slug>.md
-    milestone_states      = [...]  # vocabulary overrides
-    feature_states        = [...]
-    story_states          = [...]
-    bug_states            = [...]  # D4: the bug vocabulary
     checks = ["D1","D2","D3","D4","D5","D6",        # which rules run — this
               "V1","V2","V3","V4","V5"]             #   IS the stock default
+
+    [pm.states.story]              # written by `pm init`; the project's words,
+    todo        = ["planning", "ready"]             # each in ONE of the three
+    in_progress = ["building", "reviewing", ...]    # categories the engine
+    done        = ["done", "obe"]                   # asks its questions of
+
+EVERY QUESTION THIS ENGINE ASKS OF A STATUS IS ASKED OF ITS CATEGORY — `todo`,
+`in_progress` or `done` — through `holds`, and every move is checked against
+the declaration through `move_defect`. It never asks about the word. The
+inference census (`docs/design/state-categories.md` §6) is enumerated in
+`tests/test_pm_flow.py`, and that test is the proof: no state literal survives
+in this package outside the SEED below, which is what `pm init` writes.
 """
 from __future__ import annotations
 
@@ -34,57 +43,6 @@ from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
                                        section_declared, flag, str_tuple,
                                        str_tuple_table, text)
-
-# --- stock policy -------------------------------------------------------------
-# ONE vocabulary, in order, for milestone / feature / story. There is still no
-# transition graph: nothing here decides which move is allowed next, because a
-# `sed` of the `status:` line reaches any state the CLI would have refused and
-# no rule checks an EDGE — so the graph taxed whoever used the sanctioned tool
-# and stopped nobody else. What IS checked is END STATE, by D3/D4/D5, on the
-# tree as it stands. A grain uses the states it needs and SKIPS the rest:
-# packaging a feature is a different act from packaging a milestone, and a
-# story routinely skips packaging altogether.
-#
-# `done` does not mean SHIPPED and cannot: the flip is itself a commit that has
-# not shipped at the moment it is written, so a tree can never observe its own
-# release. It means everything inside this tree's authority is finished —
-# changelog written, reviews closed, findings landed, gates green. Branch, PR,
-# merge and tag are git events, outside the tree, after `done`.
-#
-# The ORDER is load-bearing, and it is what one shared vocabulary buys: while a
-# story said `wip` and a feature said `building`, "is this story ahead of its
-# feature?" was not a question that could be asked, and D5 could only test
-# equality with `done`.
-LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
-             'packaging', 'done')
-
-# The deprecation window is CLOSED. `todo`, `wip`, `blocked` and `review` rode
-# in the stock default set for exactly one release (0.24.0) so that no consumer
-# tree turned red on the pin bump alone; 0.2.0 is the release that trims them.
-# A grain still holding one is a D4 finding now, which is the state the window
-# bought a release to migrate out of rather than the one it made permanent.
-DEFAULT_MILESTONE_STATES = LIFECYCLE
-DEFAULT_FEATURE_STATES = LIFECYCLE
-DEFAULT_STORY_STATES = LIFECYCLE
-
-# The two words read BY NAME rather than by position, so each has one spelling
-# the gate, the CLI and the reports all reach for. `BUILDING` is the pivot: it
-# is where the shaping half ends and the work starts, which is the split D5
-# compares a story against its feature across. `REVIEWING` is the one state the
-# feature verb has behaviour of its own for (it reports the stories not there
-# yet, and `--cascade` closes the ones that are).
-BUILDING = 'building'
-REVIEWING = 'reviewing'
-# D2's question — a feature holding one of these while every story is done has
-# not advanced. Derived from the pivot rather than re-listed: a re-listed tuple
-# is a second spelling of the vocabulary, and it goes stale silently.
-STALLED_IF_ALL_STORIES_DONE = LIFECYCLE[:LIFECYCLE.index(REVIEWING)]
-# Bugs have no transition graph — they are filed and they close. A DIFFERENT
-# machine, untouched by the lifecycle above. The vocabulary exists so D4 covers
-# a bug's status the way it covers every other grain's: a typo'd status is a
-# finding rather than a silent "closed" (rule 4).
-DEFAULT_BUG_STATES = ('open', 'fixed', 'closed')
-
 
 # --- the flow a project DECLARES ----------------------------------------------
 # THE CLOSED SET, and it is the engine's whole opinion about states.
@@ -200,10 +158,26 @@ class Flow:
 # it safe to seed rather than a behaviour change: an unused state is an unused
 # state. §4's ruling is that `obe` is a `done` state — finished, not
 # delivered — and delivered-vs-not is an outcome on a different axis.
+#
+# THE SEED IS THE ONLY PLACE IN THIS PACKAGE A STATE WORD IS SPELLED. Every
+# question the engine asks is asked of a category through `holds`; every move
+# is checked through `move_defect`; nothing below this block compares a status
+# against a word. `tests/test_pm_flow.py` enumerates the inference census and
+# holds that line — a literal added anywhere else fails it by name.
+#
+# `LIFECYCLE`, `BUILDING` and `REVIEWING` are the seed's words exported under
+# the names the 0.2.0 vocabulary published. Their ONE remaining reader is
+# `conveyor/steps.py` (`CLAIMED` / `REVIEWING` / `DONE`, the belts' step words),
+# which is the milestone belt's `[pm.transitions.<kind>]` declaration still to
+# land; nothing in the pm tracker or the gates reads them.
+LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
+             'packaging', 'done')
+BUILDING = LIFECYCLE[2]
+REVIEWING = LIFECYCLE[3]
 _LIFECYCLE_CATEGORIES = {
-    TODO: ('planning', 'ready'),
-    IN_PROGRESS: ('building', 'reviewing', 'accepted', 'packaging'),
-    DONE_CATEGORY: ('done', 'obe'),
+    TODO: LIFECYCLE[:2],
+    IN_PROGRESS: LIFECYCLE[2:6],
+    DONE_CATEGORY: LIFECYCLE[6:] + ('obe',),
 }
 
 DEFAULT_FLOWS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -325,6 +299,13 @@ HANDOFF_FILE_NAME = 'handoff.md'
 MILESTONE_DOC = 'milestone.md'
 FEATURE_DOC = 'feature.md'
 ROADMAP_DOC = 'ROADMAP.md'
+# The slot DIRECTORIES, spelled once for the same reason: a grain's KIND is
+# read from which slot its document sits in (`checks/grain_shape._kind_of`,
+# `report.py`'s walkers), and a kind read from a literal in one module and a
+# constant in another is the half-declared convention the census named.
+FEATURES_DIR = 'features'
+STORIES_DIR = 'stories'
+BUGS_DIR = 'bugs'
 
 # PERMITTED, never required, MINTED ON FIRST WRITE. A shared doc scaffolded
 # empty is sprawl the tool made: across one consumer's tree `pm new`'s mandatory
@@ -385,31 +366,18 @@ class PmConfig:
     root: Path
     roadmap_dir: str = 'pm/roadmap'
     review_dir: str = 'docs/reviews'
-    review_slug_fallback: bool = False
     story_ordinal_prefix: bool = False
-    milestone_states: tuple[str, ...] = DEFAULT_MILESTONE_STATES
-    feature_states: tuple[str, ...] = DEFAULT_FEATURE_STATES
-    story_states: tuple[str, ...] = DEFAULT_STORY_STATES
-    bug_states: tuple[str, ...] = DEFAULT_BUG_STATES
-    # MORE WORDS THAT MEAN FINISHED. `obe`, `wontfix`, `duplicate`,
-    # `cancelled` — a grain that will never reach the last state and is not
-    # going to be worked on either. Empty by default, so a tree declaring
-    # nothing behaves exactly as it did.
-    #
-    # It is the `done` CATEGORY with its members enumerated by hand, and that
-    # is the whole of what it is. Every question of the shape "is this grain
-    # finished" should ask a category; in 0.2.0 the engine has no categories,
-    # so it asks a list. `docs/design/state-categories.md` is the model —
-    # three categories, hard, with the states and their mapping configurable —
-    # and 0.3.0 builds it. When `[pm.states.<kind>] done = [...]` lands, this
-    # key is read into it and deleted.
-    #
-    # Why it could not wait: `ready-for feature` asked for the bare word
-    # `done`, so a story at `obe` held its feature open FOREVER. Jira ships
-    # that exact mistake as a documented training problem — `status = Done`
-    # returns one issue where `statusCategory = Done` returns every issue that
-    # finished. The answer there is not a better word either.
-    also_done: tuple[str, ...] = ()
+    # THE DECLARED ORDER, per kind — `flows[kind].order`, copied out by `load`
+    # so a reader that only wants the words (the conveyor's status steps, a
+    # refusal naming what the project declares) need not reach into `Flow`.
+    # Category-major, then the project's own list order; empty when the tree
+    # declared nothing, which `flow_of` refuses by name the moment a question
+    # is asked. NEVER read from `[pm] <kind>_states` — those keys are retired,
+    # because a second declaration of the same words is a second scoreboard.
+    milestone_states: tuple[str, ...] = ()
+    feature_states: tuple[str, ...] = ()
+    story_states: tuple[str, ...] = ()
+    bug_states: tuple[str, ...] = ()
     checks: tuple[str, ...] = DEFAULT_CHECKS
     # D8 only: where the shipped version lives, and the line that carries it.
     #
@@ -460,6 +428,19 @@ def load() -> PmConfig:
 
     checks = tup('checks', DEFAULT_CHECKS)
 
+    # A retired VOCABULARY key is refused HERE, at load, where every other
+    # retired key is a `config_complaints` finding the gate reports. The
+    # difference: a stale rule id is what a pin bump produces and must not
+    # take `pm status` down, but `[pm] story_states` beside `[pm.states.story]`
+    # is a second declaration of the words — and a reader that quietly took
+    # one of them would be the second scoreboard this feature exists to end.
+    # The tree already has to run `pm init` for the new section; dropping the
+    # flat list is one line in the same edit, and the message names it.
+    for key in VOCABULARY_KEYS:
+        if key in sect:
+            raise ConfigError(f'[pm] {key} was retired and is refused — '
+                              f'{RETIRED_KEYS[key]}. Remove the key.')
+
     # Compile here, not at use: an invalid regex or a missing capture group is
     # a CONFIG error (exit 2), never a finding (exit 1). Deferring it meant CI
     # read a devkit.toml typo as "PM drift found".
@@ -496,24 +477,23 @@ def load() -> PmConfig:
         # deep, in the reader every other PM caller comes through.
         roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
         review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
-        review_slug_fallback=flag(sect, 'pm', 'review_slug_fallback', False),
         story_ordinal_prefix=flag(sect, 'pm', 'story_ordinal_prefix', False),
-        milestone_states=tup('milestone_states', DEFAULT_MILESTONE_STATES),
-        feature_states=tup('feature_states', DEFAULT_FEATURE_STATES),
-        story_states=tup('story_states', DEFAULT_STORY_STATES),
-        bug_states=tup('bug_states', DEFAULT_BUG_STATES),
-        # NOT through `tup`: its rule is "absent is not empty", and here the
-        # DEFAULT is empty — a project that drops nothing declares nothing.
-        # Read only when the key is present, so `also_done = []` is still
-        # the refusal `tup` makes it everywhere else.
-        also_done=(tup('also_done', ('obe',))
-                        if 'also_done' in sect else ()),
+        milestone_states=_order_of(flows, 'milestone'),
+        feature_states=_order_of(flows, 'feature'),
+        story_states=_order_of(flows, 'story'),
+        bug_states=_order_of(flows, 'bug'),
         checks=checks,
         template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
         version_pattern=version_pattern,
         flows=flows,
     )
+
+
+def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
+    """The declared order for `kind`, or () when the tree declared nothing."""
+    flow = flows.get(kind)
+    return flow.order if flow is not None else ()
 
 
 def _load_flows(sect: dict) -> dict[str, Flow]:
@@ -745,14 +725,41 @@ RETIRED_KEYS = {
     'trunk_branches': 'read only by the retired branch-placement flow — the '
                       'id D10 was later reused for a different rule (branch '
                       'discipline: a building milestone off the mainline)',
-    'bug_open_states': 'read only by the retired D14; `bug_states` still gates '
-                       'a bug\'s status through D4',
-    'milestone_transitions': 'there is no transition graph — `milestone_states` '
-                             'is the closed set, and nothing constrains order',
-    'feature_transitions': 'there is no transition graph — `feature_states` is '
-                           'the closed set, and nothing constrains order',
-    'story_transitions': 'there is no transition graph — `story_states` is the '
-                         'closed set, and nothing constrains order',
+    'bug_open_states': 'read only by the retired D14; [pm.states.bug] still '
+                       'gates a bug\'s status through D4',
+    'milestone_transitions': 'there is no edge graph — [pm.transitions.milestone] '
+                             'names which state each belt step writes',
+    'feature_transitions': 'there is no edge graph — [pm.transitions.feature] '
+                           'names which state each belt step writes',
+    'story_transitions': 'there is no edge graph — [pm.transitions.story] '
+                         'names which state each belt step writes',
+    # THE VOCABULARY IS DECLARED ONCE. `[pm.states.<kind>]` carries every word
+    # AND its category; a flat list beside it would be a second declaration of
+    # the same words that the engine would have to reconcile — or, worse,
+    # silently prefer one of. `also_done` was the `done` category enumerated by
+    # hand before the category existed; the category exists now.
+    'milestone_states': 'the vocabulary is [pm.states.milestone], with each '
+                        'word in its category — run `pm init` to write it',
+    'feature_states': 'the vocabulary is [pm.states.feature], with each word '
+                      'in its category — run `pm init` to write it',
+    'story_states': 'the vocabulary is [pm.states.story], with each word in '
+                    'its category — run `pm init` to write it',
+    'bug_states': 'the vocabulary is [pm.states.bug], with each word in its '
+                  'category — run `pm init` to write it',
+    'also_done': 'the `done` category is [pm.states.<kind>] done = [...] — '
+                 'list `obe` (or any word for abandoned work) there',
+    'review_slug_fallback': 'a review record is the `reviewed:` pointer and '
+                            'nothing else — a record found by glob was the '
+                            'engine guessing which file a review was',
+}
+
+# The retired keys that DECLARED WORDS. `load()` refuses these outright rather
+# than leaving them to `config_complaints`, because they are a second
+# declaration of the vocabulary and not merely a dead knob.
+VOCABULARY_KEYS = ('milestone_states', 'feature_states', 'story_states',
+                   'bug_states', 'also_done')
+
+_RETIRED_KEYS_REST = {
     # The close ceremony stopped judging content. All ten were read from `[pm]`
     # at v0.14.0 and are read by nothing at HEAD; without an entry here each was
     # a silent PASS, and the first one cost a project its review-prose floor
@@ -777,6 +784,7 @@ RETIRED_KEYS = {
     'closed_log_lines_max': 'the six line caps went with the prose ratchet — this '
                             'package does not manage the length of your markdown',
 }
+RETIRED_KEYS.update(_RETIRED_KEYS_REST)
 
 # Whole `devkit.toml` SECTIONS a release retired. Same reasoning as the keys
 # above, one level up: `check agents` is gone, so every key under `[agents]` is
@@ -1014,7 +1022,7 @@ def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
     d = milestone_dir(cfg, mid)
     if d is None:
         return None
-    fdir = d / 'features' / slug
+    fdir = d / FEATURES_DIR / slug
     return fdir if fdir.is_dir() else None
 
 
@@ -1076,7 +1084,7 @@ def story_file(cfg: PmConfig, sid: str) -> Path | None:
         return None
     exact: list[Path] = []
     prefixed: list[Path] = []
-    for path in grain_docs(fdir / 'stories'):
+    for path in grain_docs(fdir / STORIES_DIR):
         stem = path.name[:-len(path.suffix)]
         if stem == sslug:
             exact.append(path)
@@ -1118,7 +1126,7 @@ def orphan_dirs(cfg: PmConfig) -> list[tuple[Path, str]]:
         if d in orphaned:
             out.append((d, 'milestone dir with no milestone.md'))
             continue
-        _, orphan_features = walk.children(d / 'features', Kind.DIR).partition(
+        _, orphan_features = walk.children(d / FEATURES_DIR, Kind.DIR).partition(
             _has_feature_file, SkipReason.NO_GRAIN_FILE)
         out += [(f, 'feature dir with no feature.md') for f in orphan_features]
     return out
@@ -1302,13 +1310,13 @@ def grain_docs(gdir: Path) -> list[Path]:
 
 
 def feature_files(mdir: Path) -> list[Path]:
-    return [d / FEATURE_DOC for d in walk.children(mdir / 'features', Kind.DIR)
+    return [d / FEATURE_DOC for d in walk.children(mdir / FEATURES_DIR, Kind.DIR)
             .filter(_has_feature_file, SkipReason.NO_GRAIN_FILE).kept]
 
 
 def story_files(ffile: Path) -> list[Path]:
     """Every story document under one feature, in reading order."""
-    return grain_docs(ffile.parent / 'stories')
+    return grain_docs(ffile.parent / STORIES_DIR)
 
 
 def tree_walk(cfg: PmConfig) -> Walk:
@@ -1320,9 +1328,9 @@ def tree_walk(cfg: PmConfig) -> Walk:
     """
     found = Walk(())
     for mdir in milestone_dirs(cfg):
-        found = found.merge(slot_walk(mdir / 'bugs'))
+        found = found.merge(slot_walk(mdir / BUGS_DIR))
         for ffile in feature_files(mdir):
-            found = found.merge(slot_walk(ffile.parent / 'stories'))
+            found = found.merge(slot_walk(ffile.parent / STORIES_DIR))
     return found
 
 
@@ -1337,23 +1345,6 @@ def record_resolves(path: Path) -> bool:
     much a reviewer needed to write is not a fact about anything.
     """
     return path.is_file()
-
-
-def is_terminal(cfg: 'PmConfig', status: str, states: tuple[str, ...]) -> bool:
-    """Is this grain FINISHED — by any route?
-
-    The last declared state, or anything in `[pm] also_done`. Two routes,
-    one question, and keeping them apart is the point: `done` is *finished and
-    delivered*, `dropped` is *finished and not delivered*, and a rollup that
-    counts them together reports a milestone fully shipped when a third of it
-    was abandoned.
-
-    This is what every "is the parent unblocked" question should ask, and in
-    0.2.0 only `pm ready-for feature` and the conveyor's `stories-done` do.
-    `docs/design/state-categories.md` has the rest, and 0.3.0 makes every
-    engine question a category question rather than a word one.
-    """
-    return bool(states) and (status == states[-1] or status in cfg.also_done)
 
 
 def _pointer_escapes(pointer: str) -> bool:
@@ -1375,11 +1366,11 @@ def _pointer_escapes(pointer: str) -> bool:
 def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     """The feature's resolved review record, or None if it has none.
 
-    The `reviewed:` frontmatter pointer is the mechanism. `review_slug_fallback`
-    additionally accepts `<review_dir>/<feature-slug>*.md` for projects that
-    name records after the slug; projects with ordinal-named records leave it
-    off, because there the glob resolves nothing and would be a silent no-op
-    masquerading as a fallback.
+    The `reviewed:` frontmatter pointer is the WHOLE mechanism. There used to
+    be a `review_slug_fallback` that also accepted `<review_dir>/<slug>*.md`,
+    and that was the engine guessing which file a review was from a filename
+    shape — a record is a pointer the feature carries, or it is not a record
+    (inference census; the key is retired by name).
     """
     ffile = feature_file(cfg, fid)
     if ffile is None:
@@ -1400,23 +1391,25 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
             return None
         if record_resolves(cfg.root / pointer):
             return pointer
-    if cfg.review_slug_fallback:
-        slug = fid.partition('/')[2]
-        rdir = cfg.root / cfg.review_dir
-        if slug and rdir.is_dir():
-            for cand in walk.matching(rdir, f'{slug}*.md', Kind.FILE).kept:
-                if record_resolves(cand):
-                    return cfg.rel(cand)
     return None
 
 
-# --- flow helpers (D8/D9/D10) --------------------------------------------------
-def building_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
-    """(id, branch, milestone.md) for every ACTIVE milestone at `building`."""
+# --- flow helpers (D8/D9/D10, and the ledger's home) --------------------------
+def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
+    """(id, branch, milestone.md) for every ACTIVE milestone in `in_progress`.
+
+    Decision D5: there is no "the building milestone". Under three categories
+    `in_progress` may hold several states and several milestones, so every
+    reader of this — D8/D9/D10, the ledger verbs, `check budget`, the plan's
+    cost reader — REPORTS OVER EVERY ONE, or refuses by naming them all when
+    it needs exactly one. The engine never picks; a project that wants one
+    narrows its own declaration.
+    """
     out = []
     for mdir in milestone_dirs(cfg):
         mfile = mdir / MILESTONE_DOC
-        if field_of(mfile, 'status') != 'building':
+        status = field_of(mfile, 'status')
+        if category_of(cfg, 'milestone', status) != IN_PROGRESS:
             continue
         out.append((field_of(mfile, 'id'), field_of(mfile, 'branch'), mfile))
     return out
@@ -1478,84 +1471,60 @@ def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     return f'reviewed: {pointer!r} resolves to nothing'
 
 
-def drift_stalled(fstat: str, done_n: int, total: int) -> str | None:
-    """D2 — every story done, but the feature never advanced (a forgotten flip).
+def drift_stalled(cfg: PmConfig, view: 'FeatureView') -> str | None:
+    """D2 — every story finished, but the feature never started (a forgotten flip).
 
-    A feature at `reviewing` or later with all-done stories is the valid state
-    of a feature that HAS advanced — its remaining work is review, acceptance
-    and packaging, none of which a story tracks.
+    `holds(stories, done)` and the feature in `todo`. The feature at ANY
+    `in_progress` state with finished stories is the valid shape of a feature
+    that has advanced — its remaining work is building, review, acceptance or
+    packaging, none of which a story tracks, and which of those it is at is
+    the project's word and not this rule's question.
+
+    THIS REPORTS LESS THAN IT DID. The 0.2.0 rule sliced the lifecycle at
+    `reviewing`, so a `building` feature over finished stories was a finding;
+    over categories `building` is work in progress and it is not. A
+    resolution that only existed while nobody renamed a word was a resolution
+    about to be wrong (CHANGELOG, as a behaviour change).
     """
-    if total == 0 or done_n != total:
+    if view.total == 0 or view.done_n != view.total:
         return None
-    if fstat in STALLED_IF_ALL_STORIES_DONE:
-        return f'all stories done, feature still {fstat}'
+    if category_of(cfg, 'feature', view.status) == TODO:
+        return f'all stories done, feature still {view.status}'
     return None
 
 
-def work_started(status: str, states: tuple[str, ...]) -> bool | None:
-    """Is `status` at or past `BUILDING` within `states`? `None` = unreadable.
-
-    The one question D5 is built out of, asked inside ONE vocabulary so it is
-    always an index comparison in a single ordered list rather than a guess
-    across two. `None` when this set cannot place the pivot at all (a project
-    renamed its vocabulary and dropped `building`) or does not contain the
-    status (which is D4's finding, already reported) — never `False`, because a
-    "no" here reads as "this grain has not started" and saying that about a
-    grain whose position is unknown is the invented measurement rule 4 bans.
-    """
-    if BUILDING not in states or status not in states:
-        return None
-    return states.index(status) >= states.index(BUILDING)
-
-
-def drift_ahead_of_parent(child: str, child_states: tuple[str, ...],
-                          parent: str, parent_states: tuple[str, ...]) -> bool:
+def drift_ahead_of_parent(cfg: PmConfig, child: str, parent: str) -> bool:
     """D5 — the child is at work while its parent says it has not started.
 
     NOT "the child is further along than its parent". A story reaching `done`
     while its feature is still `reviewing`, `accepted` or `packaging` is the
     NORMAL path — the feature's remaining work is not story work — and a rule
     that reported it would fire on every feature in every tree. What is a
-    genuine disagreement is a story at work under a feature that says it is
-    still being shaped: the work has started in one place and not the other.
+    genuine disagreement is a story that has LEFT `todo` under a feature that
+    is still IN it: the work has started in one place and not the other.
 
-    So the comparison is across the ONE split each vocabulary carries, not
-    across every state. Both halves are read inside their own grain's set, so
-    a project that renamed one set and not the other still gets a true answer
-    for the set it kept — and `False` when either side is unreadable, which
-    `split_blind_vocabularies` reports so the silence is never mistaken for a
-    clean tree.
-
-    Two grains holding the SAME WORD are never a disagreement, whatever the
-    two sets say about where that word sits. This is a real config, not a
-    hypothetical: the split is an index comparison, so a custom set authored
-    in a different order (alphabetically, or as a hand-written union during a
-    vocabulary migration) moves the pivot for one grain and not the other, and
-    the finding that fell out said "the story is at work and the feature says
-    it has not started" about `planning` and `planning`. A finding whose two
-    halves are the same word cannot be acted on, and D5's whole claim is that
-    two places in this tree disagree.
+    Asked of the two categories, so it is the same question in every
+    vocabulary and there is no split it could fail to place — the 0.2.0 rule
+    indexed each grain's word list for `building` and had to report itself
+    blind when a project dropped the word. A status the project never declared
+    is D4's finding and no disagreement here; a category is always placeable.
     """
-    if child == parent:
+    child_cat = category_of(cfg, 'story', child)
+    parent_cat = category_of(cfg, 'feature', parent)
+    if child_cat is None or parent_cat is None:
         return False
-    return (work_started(child, child_states) is True
-            and work_started(parent, parent_states) is False)
-
-
-def split_blind_vocabularies(cfg: PmConfig) -> list[str]:
-    """The `[pm]` state sets D5 cannot place `BUILDING` in — what it CANNOT see.
-
-    A rule that reports nothing must say why, or its silence reads as a clean
-    tree (rule 4). Named as config keys because that is what the reader edits.
-    """
-    return [name for name, states in (('story_states', cfg.story_states),
-                                      ('feature_states', cfg.feature_states))
-            if BUILDING not in states]
+    return parent_cat == TODO and child_cat != TODO
 
 
 @dataclass
 class FeatureView:
-    """One feature plus the tallies every reader needs. Read once, reuse."""
+    """One feature plus the tallies every reader needs. Read once, reuse.
+
+    `done_n` counts stories in the `done` CATEGORY — `holds`' census, never a
+    word. This is P9's second call site: `ready-for feature` and `check pm`
+    D2 used to count "finished" through two predicates, and an `obe` story was
+    finished by one and not the other.
+    """
     fid: str
     status: str
     phase: str
@@ -1568,7 +1537,7 @@ class FeatureView:
         return len(self.stories)
 
 
-def read_feature(ffile: Path) -> FeatureView:
+def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
     view = FeatureView(
         fid=unquote(field_of(ffile, 'id')),
         status=field_of(ffile, 'status'),
@@ -1576,8 +1545,34 @@ def read_feature(ffile: Path) -> FeatureView:
         path=ffile,
         stories=story_files(ffile),
     )
-    view.done_n = sum(1 for s in view.stories if field_of(s, 'status') == 'done')
+    finished = holds(cfg, 'story',
+                     ((s, field_of(s, 'status')) for s in view.stories),
+                     DONE_CATEGORY)
+    view.done_n = finished.counted - len(finished.blockers)
     return view
+
+
+def phase_key(phase: str) -> tuple:
+    """The board's reading order for a feature's `phase:` — numbered first.
+
+    Numbered phases in numeric order, then every NAMED phase in the project's
+    own spelling (alphabetically), then the unphased. The engine used to know
+    a word here — `seam`, sorted between the numbers and the rest — which was
+    the tool holding an opinion about a project's PHASE vocabulary; a project
+    that wants a named bucket names it, and it sorts where any name would.
+    """
+    if phase.isdigit():
+        return (0, int(phase), '')
+    if phase:
+        return (1, 0, phase)
+    return (2, 0, '')
+
+
+def phase_label(phase: str) -> str:
+    """How `pm status` and the execution list head a phase bucket."""
+    if phase.isdigit():
+        return f'phase {phase}'
+    return phase or 'unphased'
 
 # --- shared-doc headers -------------------------------------------------------
 def header_of(path: Path) -> str:
@@ -1599,11 +1594,11 @@ def header_of(path: Path) -> str:
 # as "closed" and passes in silence, which is rule 4's cardinal sin.
 def bug_files(mdir: Path) -> list[Path]:
     """Every bug document under one milestone, in reading order."""
-    return grain_docs(mdir / 'bugs')
+    return grain_docs(mdir / BUGS_DIR)
 
 
 def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
-    """(findings, bugs scanned) — every bug whose status is outside `bug_states`.
+    """(findings, bugs scanned) — every bug whose status the project never declared.
 
     The walk is RECURSIVE and case-insensitive on the extension, because a bug
     parked in `bugs/<topic>/` or written as `.MD` is still a bug: an
@@ -1616,10 +1611,25 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
         for bfile in bug_files(mdir):
             scanned += 1
             bstat = field_of(bfile, 'status')
-            if bstat not in cfg.bug_states:
+            if category_of(cfg, 'bug', bstat) is None:
+                # The bug line's shape predates `undeclared_status` and is
+                # grepped (rule 6), so it is kept verbatim.
                 out.append((bfile, f'bug status {bstat!r} is not in '
-                                   f'({" ".join(cfg.bug_states)})'))
+                                   f'({" ".join(flow_of(cfg, "bug").order)})'))
     return out, scanned
+
+
+def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:
+    """D4's one sentence: the word, and the words the project did declare.
+
+    None when `status` is in some category. The gate reports this for every
+    grain kind through the same function, so a milestone, a feature, a story
+    and a bug are all held to their own `[pm.states.<kind>]` in one wording.
+    """
+    if category_of(cfg, kind, status) is not None:
+        return None
+    return (f'status {status!r} not in '
+            f'({" ".join(flow_of(cfg, kind).order)})')
 
 
 # --- appending a decision heading (`pm decide`) -------------------------------

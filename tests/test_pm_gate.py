@@ -29,6 +29,7 @@ from support.pm import (
     bug,
     cfg_for,
     damage,
+    declaring,
     run_cli,
     run_gate,
     tree,
@@ -107,21 +108,38 @@ class DriftGate(unittest.TestCase):
     """
 
     # (rule, tree kwargs, the line the finding must carry)
+    #
+    # D2 and D6 fire on a parent still in `todo` — `ready` here. A parent at
+    # `building` over finished children is NOT drift any more: `building` is
+    # `in_progress`, and which in-progress word a parent holds is the
+    # project's business (the D2/D5 resolution loss the CHANGELOG names).
     RULES = (
-        ('D2', dict(feature_status='building', story_statuses=('done',)),
-         'all stories done, feature still building'),
+        ('D2', dict(feature_status='ready', story_statuses=('done',)),
+         'all stories done, feature still ready'),
         ('D3', dict(milestone_status='done', feature_status='building'),
          'is done but feature'),
-        # The set the tree is judged against: the one lifecycle, and nothing
+        # The set the tree is judged against: the declared order, and nothing
         # else now that the deprecation window has closed.
         ('D4', dict(feature_status='bogus'),
-         'not in (planning ready building reviewing accepted packaging done)'),
+         'not in (planning ready building reviewing accepted packaging done obe)'),
         ('D5', dict(feature_status='planning', story_statuses=('done',)),
          'two places in this tree disagree'),
-        ('D6', dict(milestone_status='building', feature_status='done',
+        ('D6', dict(milestone_status='ready', feature_status='done',
                     story_statuses=('done',)),
          'all 1 features are done'),
     )
+
+    def test_a_parent_in_progress_over_finished_children_is_not_drift(self):
+        # The resolution D2 and D6 GAVE UP: a `building` feature over done
+        # stories, a `building` milestone over done features. Under three
+        # categories both parents have started, and "which in-progress word
+        # should it hold" is not a question this gate asks.
+        for kwargs in (dict(feature_status='building', story_statuses=('done',)),
+                       dict(milestone_status='building', feature_status='done',
+                            story_statuses=('done',))):
+            with self.subTest(**kwargs), tree(**kwargs) as root:
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
 
     def test_clean_tree_passes_and_prints_a_census(self):
         with tree(story_statuses=('ready',)) as root:
@@ -171,15 +189,15 @@ class DriftGate(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
-    def test_d4_reports_every_grain_against_the_same_seven_words(self):
-        # The census half of D4: three grains, three findings, one set. A rule
-        # that reached only two of the three would still fire and still pass a
-        # single-grain assertion.
+    def test_d4_reports_every_grain_against_its_own_declared_words(self):
+        # The census half of D4: three grains, three findings, one declared
+        # order. A rule that reached only two of the three would still fire
+        # and still pass a single-grain assertion.
         with tree(milestone_status='bogus', feature_status='bogus',
                   story_statuses=('bogus',)) as root:
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
-            expected = f'not in ({" ".join(model.LIFECYCLE)})'
+            expected = f'not in ({" ".join(model.LIFECYCLE)} obe)'
             self.assertEqual(out.count(expected), 3, out)
 
     def test_d6_goes_quiet_the_moment_the_milestone_advances(self):
@@ -209,38 +227,12 @@ class DriftGate(unittest.TestCase):
             self.assertIn('two places in this tree disagree', out)
 
 
-class OneLifecycleAcrossGrains(unittest.TestCase):
-    """`planning ready building reviewing accepted packaging done` — one
-    ordered vocabulary for milestone, feature AND story, written out rather
-    than derived.
-
-    A golden that computes itself from the code under test passes whatever
-    that code says. The equality below is what makes "is this story ahead of
-    its feature?" askable at all (D5), and it subsumes every per-word absence
-    assertion this class used to carry: a set that EQUALS these seven words
-    holds none of the four the 0.24.0 window carried. That the tool refuses a
-    retired word is asserted once, behaviourally, in tests/test_pm_verbs.py
-    `StatusVerbQuartet`, and that the gate reports one is D4's row above.
-    """
-
-    LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
-                 'packaging', 'done')
-
-    def test_all_three_grains_hold_the_one_ordered_vocabulary(self):
-        self.assertEqual(model.LIFECYCLE, self.LIFECYCLE)
-        for name in ('DEFAULT_MILESTONE_STATES', 'DEFAULT_FEATURE_STATES',
-                     'DEFAULT_STORY_STATES'):
-            with self.subTest(states=name):
-                self.assertEqual(getattr(model, name), self.LIFECYCLE)
-        # The pivot and the terminal are read BY NAME (D5's split, the
-        # ledger's total), so a vocabulary edit that dropped either would
-        # leave a live reader pointing at a word the set no longer holds.
-        self.assertEqual(model.BUILDING, 'building')
-        self.assertEqual(model.REVIEWING, 'reviewing')
-        self.assertEqual(model.LIFECYCLE[-1], 'done')
-        # Bugs are filed and they close. A different machine, not a shorter
-        # lifecycle — nothing above reaches it.
-        self.assertEqual(model.DEFAULT_BUG_STATES, ('open', 'fixed', 'closed'))
+# The one ordered vocabulary the SEED writes — and that it is the seed, not a
+# default the reader falls back to — is pinned once, in tests/test_pm_flow.py
+# (`test_the_seed_is_the_installables_LIVE_section_and_a_tree_seeded_with_it_LOADS`).
+# The `OneLifecycleAcrossGrains` golden that lived here pinned the same seven
+# words as `DEFAULT_*_STATES` and the pivot/terminal names D5 and the ledger
+# read BY NAME; no rule reads a name now, and those constants are gone.
 
 
 class D5AStoryAheadOfItsFeature(unittest.TestCase):
@@ -249,7 +241,9 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
     The rule D5 USED to be ("a done story under a non-done feature") reported
     the normal path under this lifecycle: a story finishes while its feature is
     still `reviewing`, `accepted` or `packaging`, so every feature in every
-    tree would have carried a finding. The comparison replaces the equality.
+    tree would have carried a finding. Asked of the two CATEGORIES — the story
+    has left `todo`, the feature is still in it — it is the same question in
+    every vocabulary.
 
     Every fixture below carries TWO stories so D2 stays quiet (it fires only
     when they are ALL done) — the exit code then belongs to D5 alone.
@@ -291,49 +285,43 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
                     self.assertIn(f"is still {fstat!r}", out)
                     self.assertIn('the story is at work', out)
 
-    def test_a_vocabulary_with_no_split_point_says_so_instead_of_going_quiet(self):
-        # A project may rename the vocabulary. If its story set has no
-        # `building`, D5 cannot place "at work" in it and reports NOTHING —
-        # which must be said out loud rather than read as a clean tree. The
-        # second half is the control: a renamed set that KEEPS the split still
-        # fires, so the disclosure is not just a dead rule.
-        for states, expect_finding in (('["queued", "doing", "done"]', False),
-                                       ('["queued", "building", "done"]', True)):
-            with self.subTest(states=states), \
-                    tree(feature_status='planning',
-                         story_statuses=('done',)) as root:
-                write_config(root, f'[pm]\nstory_states = {states}\n'
-                                   'checks = ["D4","D5"]\n')
-                code, out = run_gate(root)
-                if expect_finding:
-                    self.assertEqual(code, 1, out)
-                    self.assertIn(self.MSG, out)
-                    self.assertNotIn('D5 cannot place', out)
-                else:
-                    self.assertEqual(code, 0, out)
-                    self.assertNotIn(self.MSG, out)
-                    self.assertIn('D5 cannot place', out)
-                    self.assertIn('story_states', out)
+    def test_a_vocabulary_without_the_word_building_still_answers(self):
+        # A project may rename the vocabulary. The 0.2.0 rule indexed each
+        # list for `building` and, finding none, printed a NOTE that it was
+        # reporting nothing — a category is always placeable, so there is no
+        # blind vocabulary and no note. `done` under a `queued` feature is the
+        # disagreement whatever the words are.
+        renamed = {'todo': ('queued',), 'in_progress': ('doing',),
+                   'done': ('done',)}
+        with tree(feature_status='queued', story_statuses=('done', 'queued')) \
+                as root:
+            write_config(root, declaring('[pm]\nchecks = ["D4","D5"]\n',
+                                         story=renamed, feature=renamed))
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn(self.MSG, out)
+            self.assertNotIn('cannot place', out)
 
-    # The split is an INDEX comparison inside each grain's own set, so a custom
-    # set authored in a different order moves the pivot for one grain and not
-    # the other. What that must never produce is a finding whose two halves
-    # hold the SAME WORD: "the story is at work and the feature says it has
-    # not started", said of `planning` and `planning`, is not a disagreement
-    # any reader can act on. The first two sets below hold the same seven words
-    # in a different ORDER (so D4 stays silent and the case is about ordering
-    # alone) and they move the pivot in OPPOSITE directions — the child-side
-    # re-order trips on `planning`/`ready`, the parent-side one on `accepted`,
-    # and a case list built from either alone would have read as complete. The
-    # third is the set the review reproduced with, verbatim.
-    SORTED_STORY_SET = ('[pm]\nstory_states = '
-                        + json.dumps(sorted(model.LIFECYCLE))
-                        + '\nchecks = ["D4","D5"]\n')
-    SORTED_FEATURE_SET = ('[pm]\nfeature_states = '
-                          + json.dumps(sorted(model.LIFECYCLE))
-                          + '\nchecks = ["D4","D5"]\n')
-    REVIEW_REPRO = ('[pm]\nstory_states = ["blocked","building","done",'
-                    '"planning","ready","reviewing"]\nchecks = ["D5"]\n')
+    # The question is asked of two CATEGORIES, so the ORDER a project lists
+    # its words in within a category cannot move anything: the 0.2.0 rule was
+    # an index comparison and a set authored alphabetically moved the pivot
+    # for one grain and not the other, producing "the story is at work and the
+    # feature says it has not started" about `planning` and `planning`. The
+    # two declarations below hold the seed's words alphabetised inside each
+    # category, one per grain kind, and the third is the review's repro set
+    # (a `blocked` word in `in_progress`, the rest alphabetical).
+    def _alphabetised(kind: str) -> dict:
+        return {cat: tuple(sorted(states))
+                for cat, states in model.DEFAULT_FLOWS[kind].items()}
+
+    SORTED_STORY_SET = declaring('[pm]\nchecks = ["D4","D5"]\n',
+                                 story=_alphabetised('story'))
+    SORTED_FEATURE_SET = declaring('[pm]\nchecks = ["D4","D5"]\n',
+                                   feature=_alphabetised('feature'))
+    REVIEW_REPRO = declaring('[pm]\nchecks = ["D5"]\n', story={
+        'todo': ('planning', 'ready'),
+        'in_progress': ('blocked', 'building', 'reviewing'),
+        'done': ('done',)})
 
     def _gate_with(self, config, feature_status, story_statuses):
         with tree(milestone_status='building', feature_status=feature_status,
@@ -355,8 +343,8 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
         self.assertEqual(code, 0, out)
 
     def test_the_rule_still_fires_when_the_two_words_really_differ(self):
-        # The other half: the guard is about IDENTITY, not about muting D5
-        # under a custom set. Same config, a genuine disagreement, still a
+        # The other half: the guard is about the CATEGORIES, not about muting
+        # D5 under a custom set. Same config, a genuine disagreement, still a
         # finding — otherwise the case above would pass over a dead rule.
         code, out = self._gate_with(self.SORTED_STORY_SET, 'planning',
                                     ('building', 'ready'))
@@ -492,7 +480,7 @@ class FlowChecks(unittest.TestCase):
         # (checks, branch, version, extra config, the line the finding carries)
         rows = (
             ('["D8","D9"]', 'staging', '9.9.9', '',
-             'does not match the building milestone'),
+             'does not match the in-progress milestone'),
             ('["D8","D9"]', '', '0.1', '', 'declares no branch:'),
             ('["D10"]', 'main', '0.1', '', 'the mainline itself'),
             ('["D10"]', '', '0.1', '', 'needs a branch off the mainline'),
@@ -527,17 +515,22 @@ class FlowChecks(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertNotIn('unknown rule', out)
 
-    def test_d8_refuses_when_two_milestones_are_building(self):
+    def test_d8_reports_over_every_in_progress_milestone(self):
         # A matching sibling used to mask the exact drift D8 exists for.
+        # Decision D5: the rule is asked of EVERY milestone in `in_progress`,
+        # so the one the version names is clean and the other one is the
+        # finding — never "two are building, close one", which was the engine
+        # deciding there can only be one.
         with tree(milestone_status='building', story_statuses=('ready',)) as root:
             write(root / 'pm/roadmap/0.2-two/milestone.md',
-                  {'id': '"0.2"', 'name': 'Two', 'status': 'building',
+                  {'id': '"0.2"', 'name': 'Two', 'status': 'packaging',
                    'branch': 'staging'})
             building_milestone(root, branch='staging', version='0.1')
             write_config(root, '[pm]\nchecks = ["D8"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 1)
-            self.assertIn('milestones are building', out)
+            self.assertIn("does not match the in-progress milestone '0.2'", out)
+            self.assertNotIn("milestone '0.1'", out)
 
     def _d8_tree_with_version(self, version: str, released: str = '0.0.9'):
         # 0.1 is building; `released` is the DONE milestone retire's lag-by-one
@@ -1316,3 +1309,120 @@ class MarkdownFences(unittest.TestCase):
             self.assertIn('malformed doc(s)', out)
             self.assertIn('1 doc(s)', out.splitlines()[0])
             self.assertIn('fenced line(s) skipped', out.splitlines()[0])
+
+
+class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
+    """Ship criterion 5 of `every-question-is-asked-of-a-category` — the
+    northstar, measured rather than asserted.
+
+    `tests/fixtures/renamed-vocabulary/` is a PM tree in which not one state
+    word is the seed's (hard rule 8: vendored here). It trips D1, D2, D3, D4,
+    D5, D6, D9 and D10 and carries the clean shapes beside them. The STOCK
+    twin is built from it by substitution — the same tree, the seed's words —
+    and the gate's transcript over the renamed tree, with the rename undone,
+    must be byte-identical to its transcript over the twin. Every rule fires
+    on both (rule 4: two empty transcripts would also be equal).
+
+    Why this and not `test_pm_flow.py`'s renamed-flow case: that one proves
+    the READER maps renamed words to categories; this proves that nothing
+    between the reader and the verdict line asks about a word. The gate runs
+    in process on a copy — no spawn, no fixture written in place.
+    """
+
+    FIXTURE = Path(__file__).parent / 'fixtures' / 'renamed-vocabulary'
+    # renamed -> seed, one entry per word the fixture declares
+    RENAME = {
+        'queued': 'planning', 'shaped': 'ready', 'doing': 'building',
+        'checking': 'reviewing', 'blessed': 'accepted', 'boxing': 'packaging',
+        'shipped': 'done', 'dropped': 'obe',
+        'filed': 'open', 'patched': 'fixed', 'shut': 'closed',
+    }
+
+    def _unrename(self, text: str) -> str:
+        for renamed, stock in self.RENAME.items():
+            text = text.replace(renamed, stock)
+        return text
+
+    @contextlib.contextmanager
+    def _copies(self):
+        """(renamed copy, stock twin), each a marked tree in scratch."""
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            renamed = Path(tmp) / 'renamed'
+            stock = Path(tmp) / 'stock'
+            shutil.copytree(self.FIXTURE, renamed)
+            shutil.copytree(self.FIXTURE, stock)
+            for path in stock.rglob('*'):
+                if path.is_file() and path.suffix in ('.md', '.toml'):
+                    path.write_text(self._unrename(path.read_text('utf-8')),
+                                    encoding='utf-8')
+            for root in (renamed, stock):
+                (root / '.git').mkdir()
+            yield renamed, stock
+
+    def _run(self, root: Path, verb) -> tuple[int, str]:
+        previous = Path.cwd()
+        os.chdir(root)
+        try:
+            return verb(root)
+        finally:
+            os.chdir(previous)
+
+    def test_the_fixture_is_wholly_renamed_and_the_twin_is_wholly_stock(self):
+        # A fixture that had drifted back toward the seed's words would make
+        # the comparison below prove less than it claims.
+        import tomllib
+        config = tomllib.loads((self.FIXTURE / 'devkit.toml').read_text('utf-8'))
+        declared = {st for kind in config['pm']['states'].values()
+                    for states in kind.values() for st in states}
+        self.assertEqual(declared, set(self.RENAME))
+        seed = {st for kind in model.DEFAULT_FLOWS.values()
+                for states in kind.values() for st in states}
+        self.assertEqual(set(self.RENAME.values()), seed)
+        self.assertFalse(declared & seed)
+
+    def test_check_pm_says_the_same_thing_about_both_trees(self):
+        with self._copies() as (renamed, stock):
+            code_r, out_r = self._run(renamed, run_gate)
+            code_s, out_s = self._run(stock, run_gate)
+        self.assertEqual(code_r, 1, out_r)
+        self.assertEqual(code_s, 1, out_s)
+        self.assertEqual(self._unrename(out_r), out_s)
+        # Every rule the fixture is built to trip, tripped — on the RENAMED
+        # tree, whose output is the one that could have gone quiet.
+        for needle in ('resolves to nothing',                         # D1
+                       'all stories done, feature still shaped',      # D2
+                       'milestone 0.9 is done but feature',           # D3
+                       "status 'wombat' not in",                      # D4 feature
+                       "status 'wobmat' not in",                      # D4 story
+                       "bug status 'fidel' is not in",                # D4 bug
+                       'two places in this tree disagree',            # D5
+                       "milestone 2.0 is 'queued' but all 1 features are done",  # D6
+                       'in-progress milestone 1.1 declares no branch',  # D9/D10
+                       'D10'):
+            self.assertIn(needle, out_r, needle)
+        # D5 fires per story that has started under a `todo` feature: both
+        # finished stories of `stalled`, the one `doing` story of `ahead`.
+        self.assertEqual(out_r.count('two places in this tree disagree'), 3)
+        # ...and the normal path is silent: a `dropped` story is finished.
+        self.assertNotIn('normal', out_r.split('\n[check:pm]')[-1])
+        self.assertNotIn('1.0/normal', out_r)
+
+    def test_pm_status_says_the_same_thing_about_both_trees(self):
+        def status(root):
+            return run_cli(root, 'status')
+        with self._copies() as (renamed, stock):
+            code_r, out_r = self._run(renamed, status)
+            code_s, out_s = self._run(stock, status)
+        self.assertEqual((code_r, code_s), (0, 0), out_r + out_s)
+        # Whitespace-normalised per line: the status column is padded to a
+        # width, and a longer word is a longer word (rule 6 covers the gate's
+        # line shapes, not this board's alignment).
+        import re
+
+        def squeeze(text: str) -> list[str]:
+            return [' '.join(re.sub(r'\s+\]', ']', ln).split())
+                    for ln in text.splitlines()]
+        self.assertEqual(squeeze(self._unrename(out_r)), squeeze(out_s))
+        self.assertIn('stories 2/2 done', out_r)          # shipped + dropped
+        self.assertIn('<DRIFT: all stories done, feature still shaped>', out_r)

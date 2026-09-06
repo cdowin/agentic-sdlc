@@ -1,0 +1,31 @@
+# A project that renamed EVERY state word. The gate's answers over this tree
+# must be identical, word for word after the rename, to its answers over the
+# same tree spelled in the seed's words — tests/test_pm_gate.py builds the
+# stock twin from this one by substitution and compares.
+#
+# Not a word below is in the seed. `shipped` is finished-and-delivered,
+# `dropped` finished-and-not; both are `done`, because a category is about
+# whether WORK REMAINS (docs/design/state-categories.md §4).
+[pm]
+checks = ["D1", "D2", "D3", "D4", "D5", "D6", "D9", "D10",
+          "V1", "V2", "V3", "V4", "V5"]
+
+[pm.states.milestone]
+todo        = ["queued", "shaped"]
+in_progress = ["doing", "checking", "blessed", "boxing"]
+done        = ["shipped", "dropped"]
+
+[pm.states.feature]
+todo        = ["queued", "shaped"]
+in_progress = ["doing", "checking", "blessed", "boxing"]
+done        = ["shipped", "dropped"]
+
+[pm.states.story]
+todo        = ["queued", "shaped"]
+in_progress = ["doing", "checking", "blessed", "boxing"]
+done        = ["shipped", "dropped"]
+
+[pm.states.bug]
+todo        = ["filed"]
+in_progress = ["patched"]
+done        = ["shut"]

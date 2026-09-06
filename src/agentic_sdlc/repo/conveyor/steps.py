@@ -847,6 +847,19 @@ def _pm(ctx: Context, *argv: str) -> str:
 
 
 def _status_at_or_past(ctx: Context, wanted: str) -> Answer:
+    """Is the milestone at `wanted`, or later in the DECLARED order?
+
+    R4: this used to index `cfg.milestone_states` for `wanted` with no guard,
+    so a project whose vocabulary lacked the word crashed with
+    `ValueError: tuple.index(x): x not in tuple` — its later twin
+    `_grain_status_at_or_past` had the guard and this did not. Both now read
+    the project's `[pm.states.milestone]` through `model.flow_of`: the order
+    is category-major, then the project's own list order within a category,
+    which is a declaration being READ rather than a tuple of words the engine
+    spelled. A `wanted` the project never declared is UNVERIFIABLE by name —
+    the belt's step words belong in `[pm.transitions.milestone]`, and until
+    that lands this is the seam where a renamed vocabulary says so.
+    """
     cfg = _pm_cfg(ctx)
     path = model.milestone_file(cfg, ctx.version)
     if path is None:
@@ -854,11 +867,16 @@ def _status_at_or_past(ctx: Context, wanted: str) -> Answer:
             f'no milestone document for {ctx.version} under '
             f'{cfg.roadmap_dir}/ — nothing carries a status to read')
     status = model.field_of(path, 'status')
-    states = cfg.milestone_states
+    states = model.flow_of(cfg, 'milestone').order
     if status not in states:
         return Answer.unverifiable(
             f'{cfg.rel(path)} carries status {status!r}, which is not one of '
             f'{", ".join(states)}')
+    if wanted not in states:
+        return Answer.unverifiable(
+            f'devkit.toml [pm.states.milestone] does not declare {wanted!r} '
+            f'({", ".join(states)}), so this step has no answer in this '
+            f'project')
     if states.index(status) >= states.index(wanted):
         return Answer.yes(f'{cfg.rel(path)} is {status!r}')
     return Answer.no(f'{cfg.rel(path)} is {status!r}, not {wanted!r} or later')

@@ -40,7 +40,7 @@ milestone moves, triage, reports, roadmap maintenance.
 ## Tooling contract
 
 **Status transitions go through the pm CLI** (`story <status>`, `bug <status>`,
-`feature <status>` / `feature done [--cascade]`, `milestone <status>`) — it is
+`feature <status>` / `feature <done-state> [--review-record]`, `milestone <status>`) — it is
 the ONLY sanctioned way to flip a `status:` field; the pm drift gate catches a
 hand-edited one. `pm --help` is the authoritative verb roster; the rest of it:
 

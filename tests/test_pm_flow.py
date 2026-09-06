@@ -26,6 +26,7 @@ vocabulary, which is the northstar expressed as a test.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import json
@@ -413,3 +414,195 @@ def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
     assert absent['flow_declared'] is False
     assert absent['grains']['story']['flow'] is None
     assert absent['seed'] == model.render_seed()
+
+
+# --- the inference census (ship criterion 2; decision D6) ---------------------
+# `docs/design/state-categories.md` §6 counted the places the engine inferred
+# from a state WORD; the feature record's table names every one. This is that
+# table as a test: every symbol it said would be deleted is gone, every key it
+# said would be retired is refused by name, and no state literal survives in
+# the pm tracker, the gates or the verify family outside the SEED — the block
+# `pm init` writes, which is the one place a word is allowed to be spelled.
+#
+# It fails BY NAME. A literal `'done'` added to `cli.py` next year is reported
+# as `cli.py:<line>`, not as a count that went from 0 to 1.
+
+SRC = REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo'
+
+# The words the seed spells. Any of these as a string CONSTANT in code outside
+# the seed is the engine comparing against a word.
+SEED_WORDS = frozenset(st for kind in model.DEFAULT_FLOWS.values()
+                       for states in kind.values() for st in states)
+
+# Deleted, per criterion 3 and the census rows that said "deleted".
+DELETED = (
+    ('pm.model', 'STALLED_IF_ALL_STORIES_DONE'),
+    ('pm.model', 'work_started'),              # `at_or_past(BUILDING)`
+    ('pm.model', 'split_blind_vocabularies'),  # `states_without_building`
+    ('pm.model', 'is_terminal'),               # the `also_done` shim's reader
+    ('pm.model', 'building_milestones'),       # D8/D9/D10's one line
+    ('pm.model', 'DEFAULT_MILESTONE_STATES'),
+    ('pm.model', 'DEFAULT_FEATURE_STATES'),
+    ('pm.model', 'DEFAULT_STORY_STATES'),
+    ('pm.model', 'DEFAULT_BUG_STATES'),
+    ('pm.ledger', 'TERMINAL_STATE'),
+    ('pm.ledger', 'terminal_state'),
+    ('pm.ready_for', '_needs_state'),
+    ('pm.execlist', '_phase_key'),             # `seam`
+    ('pm.cli', 'cmd_feature_reviewing'),       # `model.REVIEWING`'s verb
+)
+
+# Retired `[pm]` keys: a second declaration of the words, or an inference.
+RETIRED = ('also_done', 'review_slug_fallback', 'milestone_states',
+           'feature_states', 'story_states', 'bug_states')
+
+# Where a state word MAY be spelled: the seed, the category whose name happens
+# to be a word, and one HOMONYM — `verdict.OPEN` is a review FINDING's
+# disposition (`pm ready-for tag` asks it), which shares its spelling with the
+# bug seed's first state and has nothing to do with a grain's status.
+SEED_ASSIGNMENTS = {
+    'pm.model': frozenset({'LIFECYCLE', '_LIFECYCLE_CATEGORIES',
+                           'DEFAULT_FLOWS', 'DONE_CATEGORY'}),
+    'pm.verdict': frozenset({'OPEN'}),
+}
+
+# The seed's exported words (`model.LIFECYCLE` / `BUILDING` / `REVIEWING`)
+# and who may still read them, by module and function. Each is a declared
+# exception with its decision beside it; a reader added anywhere else fails.
+SEED_WORD_READERS = {
+    # the belts' step words — `[pm.transitions.<kind>]`'s job, not this
+    # feature's; the R4 site in the same module reads the flow instead
+    ('conveyor.steps', None),
+    # `reopens` is `reviewing -> building` by name, printing `-` for a
+    # vocabulary without those words: the precedent D7 cites
+    ('pm.report', 'rework_data'),
+    # D7: the dispatch snapshot's frozen keys, deprecated, removal at the next
+    # major — phase 8 lands the category keys beside them
+    ('pm.cli', '_tree_snapshot'),
+}
+
+
+def _module_path(dotted: str) -> Path:
+    return SRC / Path(*dotted.split('.')).with_suffix('.py')
+
+
+def _string_constants(tree: ast.AST):
+    """(line, value) for every string constant that is not a docstring."""
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                docstrings.add(id(body[0].value))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docstrings):
+            yield node.lineno, node.value
+
+
+def _enclosing_names(tree: ast.AST) -> dict[int, tuple[str | None, str | None]]:
+    """line -> (top-level assignment target, enclosing function name)."""
+    where: dict[int, tuple[str | None, str | None]] = {}
+    for node in tree.body:
+        target = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            target = node.targets[0].id
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target = node.target.id
+        func = node.name if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)) else None
+        for line in range(node.lineno, node.end_lineno + 1):
+            where[line] = (target, func)
+        if isinstance(node, ast.ClassDef):
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for line in range(sub.lineno, sub.end_lineno + 1):
+                        where[line] = (None, sub.name)
+    return where
+
+
+def _census_modules() -> list[str]:
+    """Every module in the pm tracker, the gates and the verify family."""
+    out = []
+    for family in ('pm', 'checks', 'verify'):
+        for path in sorted((SRC / family).glob('*.py')):
+            out.append(f'{family}.{path.stem}')
+    return out
+
+
+def test_every_symbol_the_census_deleted_is_gone():
+    import importlib
+    for dotted, symbol in DELETED:
+        module = importlib.import_module(f'agentic_sdlc.repo.{dotted}')
+        assert not hasattr(module, symbol), f'{dotted}.{symbol} survives'
+    for key in RETIRED:
+        assert key in model.RETIRED_KEYS, f'[pm] {key} is not refused by name'
+
+
+def test_no_state_literal_survives_outside_the_seed():
+    """The census, enumerated: every string constant equal to a seed word, in
+    every census module, is in a SEED assignment — or it is named here."""
+    survivors = []
+    for dotted in _census_modules():
+        path = _module_path(dotted)
+        tree = ast.parse(path.read_text('utf-8'))
+        where = _enclosing_names(tree)
+        for line, value in _string_constants(tree):
+            if value not in SEED_WORDS:
+                continue
+            target, _ = where.get(line, (None, None))
+            if target in SEED_ASSIGNMENTS.get(dotted, ()):
+                continue
+            survivors.append(f'{path.relative_to(REPO_ROOT)}:{line} {value!r}')
+    assert survivors == [], '\n'.join(survivors)
+
+
+def test_the_r4_site_reads_the_flow_and_spells_no_word():
+    """`conveyor/steps.py` keeps the belts' step words for `[pm.transitions]`
+    to take; the one census row in it is `_status_at_or_past`, and that
+    function reads `model.flow_of` and holds no literal or tuple index of a
+    word the engine spelled."""
+    path = SRC / 'conveyor' / 'steps.py'
+    tree = ast.parse(path.read_text('utf-8'))
+    func = next(n for n in tree.body
+                if isinstance(n, ast.FunctionDef)
+                and n.name == '_status_at_or_past')
+    literals = [v for _, v in _string_constants(func) if v in SEED_WORDS]
+    assert literals == []
+    reads = {f'{n.value.id}.{n.attr}' for n in ast.walk(func)
+             if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)}
+    assert 'model.flow_of' in reads
+    assert not reads & {'model.LIFECYCLE', 'model.BUILDING', 'model.REVIEWING',
+                        'cfg.milestone_states'}
+
+
+def test_the_seeds_exported_words_have_exactly_the_named_readers():
+    """`model.LIFECYCLE` / `BUILDING` / `REVIEWING` are the seed's words under
+    0.2.0's names. Whoever reads them is asking about a word, and each such
+    reader is a declared exception above — never a silent one."""
+    readers = set()
+    for family in ('pm', 'checks', 'verify', 'conveyor'):
+        for path in sorted((SRC / family).glob('*.py')):
+            dotted = f'{family}.{path.stem}'
+            if dotted == 'pm.model':
+                continue
+            tree = ast.parse(path.read_text('utf-8'))
+            where = _enclosing_names(tree)
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Attribute)
+                        and isinstance(node.value, ast.Name)
+                        and node.value.id == 'model'
+                        and node.attr in ('LIFECYCLE', 'BUILDING', 'REVIEWING')):
+                    _, func = where.get(node.lineno, (None, None))
+                    readers.add((dotted, func))
+    unexpected = {(m, f) for m, f in readers
+                  if (m, f) not in SEED_WORD_READERS
+                  and (m, None) not in SEED_WORD_READERS}
+    assert unexpected == set(), sorted(unexpected)
+    # ...and the named exceptions are real, so this list cannot go stale.
+    assert ('pm.cli', '_tree_snapshot') in readers
+    assert ('pm.report', 'rework_data') in readers

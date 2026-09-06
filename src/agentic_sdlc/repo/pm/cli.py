@@ -36,7 +36,18 @@ every run; a state the project never declared is refused by name.
                                           (a state in the `done` category
                                            closes: stamps `reviewed:` from the
                                            flag. No story file is touched —
-                                           the story belt closes each by name)
+                                           the story belt closes each by name.
+                                           This is the BARE WRITE and it
+                                           BYPASSES the belt: `agentic-sdlc
+                                           close feature <id>` is the same
+                                           close with its checks run first —
+                                           stories-done, findings-landed — and
+                                           it writes nothing when one of them
+                                           is false. Reach for this only when
+                                           the belt has already answered, or
+                                           say `close feature --force`, which
+                                           writes anyway and records the
+                                           deviation on the ledger)
   milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes the milestone directory and

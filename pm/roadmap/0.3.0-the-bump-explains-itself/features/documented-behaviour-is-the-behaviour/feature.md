@@ -2,7 +2,7 @@
 id: 0.3.0/documented-behaviour-is-the-behaviour
 milestone: "0.3.0"
 name: Every documented exit code and verb is the one that runs
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

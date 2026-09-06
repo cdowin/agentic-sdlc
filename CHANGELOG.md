@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **`check budget --help` no longer documents an exit code the gate does not return.** It said a
+  tier with no `gate` row was UNMEASURED and that "both are findings, never a pass"; the gate exits
+  0 for it and always has. The claim arrived in a docs-only commit that compressed the docstring to
+  one screen and fused two true sentences — *UNMEASURED is never counted as a pass* and *NOT GRADED
+  is a finding* — into one false one. A consumer read it, believed the gate would redden a tree with
+  nothing measured yet, and had to run the binary to learn the contract. The BEHAVIOUR is unchanged
+  and deliberate: a run that stopped is a finding because its numbers are the cost of a stop, and a
+  tier nobody ran has not got slower. **What DID change: ceilings declared with not one `gate` row
+  in the whole ledger is now a FAIL** — that is rule 4's zero census, a verdict over nothing, and it
+  is a different condition from a single tier not having run.
+- **`tests/test_cli_surface.py` holds every `--help` in the package to the exit codes it claims.**
+  It enumerates 21 surfaces, reads the exit contract each one states, and RUNS the condition to
+  compare — the expected code is read out of the help at run time rather than restated in the test,
+  so the pair under test is the documentation against the binary. A zero census fails loudly.
+- **`pm --help` names the belt beside the path that bypasses it.** `pm feature <done-state> <id>
+  --review-record <path>` writes the status and stamps `reviewed:` in one go, skipping `close
+  feature`'s `stories-done` and `findings-landed`, and it is the command every older consumer doc
+  already contains. The entry now says so and points at `close feature`, and at `--force` for the
+  deliberate deviation.
+
 - **A `devkit.toml` read reports EVERY defect, and the flow first.** The messages were already
   good and arrived one at a time in an order nothing ranked: a tree with a retired `[pm]` key AND
   no `[pm.states.*]` was told about the retired key — the cosmetic one — and had to fix it and

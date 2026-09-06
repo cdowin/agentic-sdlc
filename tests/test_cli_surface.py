@@ -10,10 +10,41 @@ documentation rather than as a mistake.
 Both directions are asserted, and the verb list is PARSED out of the docstring
 rather than restated here. A hand-written roster in a test is the same defect
 one layer down: it goes stale in exactly the way the thing it guards does.
+
+## And the same question asked of the EXIT CODES
+
+Through 0.2.0 every case here asked whether a help text NAMES what ships. None
+asked whether what it names is what happens, and the gap cost a consumer a
+day: `check budget --help` said a tier with no `gate` row was a finding, "never
+a pass", and the code exited 0 for it. The claim had arrived in a docs-only
+commit that compressed the docstring to one screen; nothing read the sentence
+and the exit code together, so it outlived the behaviour by a milestone and the
+consumer had to run the binary to learn the contract.
+
+So the second half of this module reads both. It enumerates every `--help` this
+package prints, extracts the exit codes each one CLAIMS, and — for the claims a
+temp tree can realise — runs the condition and compares. The expected code is
+never written down here: it is read out of the help text at run time, so the
+pair under test is the documentation and the binary rather than the
+documentation and a second copy of itself.
 """
 from __future__ import annotations
 
+import contextlib
+import dataclasses
+import functools
+import io
 import re
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+# The budget fixture, not a second one (hard rule 10): `tree()` writes a
+# marked tree with a ledger and a devkit.toml and calls the gate in it, which
+# is exactly what a probe here needs. A parallel copy would drift from the
+# module that actually gates `check budget`.
+from test_check_budget import BUDGET, check as budget_check, gate_row, tree
 
 from agentic_sdlc import cli
 
@@ -49,6 +80,156 @@ def routed_verbs() -> set[str]:
     """
     return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
             *cli.install_commands(), *cli.conveyor_verbs()}
+
+
+# --- the exit-code surface, enumerated the same way the verbs are ------------
+
+# `check` is a FAMILY, not a surface: `check --help` reads `--help` as a gate
+# name and exits 2 naming the roster. Its menu is the root docstring's "Static
+# gates" block, and every gate answers `check <gate> --help` for itself, which
+# is what the census below walks.
+FAMILY_VERBS = frozenset({'check'})
+
+
+def help_surfaces() -> dict[str, tuple[str, ...]]:
+    """{what a reader types: the argv that prints it}.
+
+    Derived from the same two rosters `routed_verbs()` asks, plus one entry per
+    gate in `KNOWN_GATES`. A new verb or a new gate joins this census the day it
+    ships, with nothing to update here.
+    """
+    surfaces = {'agentic-sdlc --help': ('--help',)}
+    for verb in sorted(routed_verbs() - FAMILY_VERBS):
+        surfaces[f'{verb} --help'] = (verb, '--help')
+    for gate in cli.KNOWN_GATES:
+        surfaces[f'check {gate} --help'] = ('check', gate, '--help')
+    return surfaces
+
+
+@functools.cache
+def help_corpus() -> dict[str, tuple[int, str]]:
+    """{surface: (exit code, everything it printed)}, from RUNNING each one.
+
+    Off the run rather than off `__doc__`, because two of the biggest surfaces
+    print a module-level `USAGE` constant instead — a corpus built from
+    docstrings would silently skip `pm` and `gates-extra`, which is this
+    module's own cardinal sin.
+
+    Cached, and every caller reads it BEFORE entering a temp tree: a `--help`
+    is answered from constants, but building the corpus inside somebody's
+    fixture would make the cache hold whatever that tree said.
+    """
+    corpus: dict[str, tuple[int, str]] = {}
+    for name, argv in help_surfaces().items():
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(list(argv))
+        corpus[name] = (code, out.getvalue() + err.getvalue())
+    return corpus
+
+
+# --- reading the exit codes a help text CLAIMS -------------------------------
+
+# Rule 6's closed vocabulary; a help naming anything else documents a code the
+# router cannot produce.
+CONTRACT_CODES = frozenset({0, 1, 2})
+
+# The sentence a surface states its exit codes in — `Exit codes: …` or `Exit: …`
+# — to the end of its paragraph. Both spellings are in the shipped corpus.
+_EXIT_CONTRACT = re.compile(
+    r'(?m)^[ \t]*Exit(?: codes)?:(?P<body>.*(?:\n(?![ \t]*\n).*)*)')
+
+# A code in CLAIM POSITION: opening the contract, or introduced by a clause
+# separator. `verify`'s "A target's own exit 2 is reported as 1" is prose
+# INSIDE a clause and opens none, which is why a digit has to be introduced
+# rather than merely present.
+_CODE_MARK = re.compile(r'(?:\A|[;|·,]\s*)(?P<code>\d+)(?=[\s=])')
+
+
+def exit_contract(text: str) -> str:
+    """The exit-code sentence in `text`, whitespace-normalised, or ''.
+
+    Normalised because the sentence wraps: a clause quoted in CLAIMS would
+    otherwise have to carry whichever line break the source happens to have.
+    """
+    found = _EXIT_CONTRACT.search(text)
+    return ' '.join(found.group('body').split()) if found else ''
+
+
+def claimed_codes(contract: str) -> list[int]:
+    """Every exit code the contract opens a clause with, in order."""
+    return [int(m.group('code')) for m in _CODE_MARK.finditer(contract)]
+
+
+def claimed_code(contract: str, clause: str) -> int:
+    """The exit code the contract states FOR `clause` — the one opening the
+    clause the phrase sits in. Read out of the help, never restated in a test.
+    """
+    assert clause in contract, (
+        f'the help no longer says {clause!r}. Its exit contract now reads:\n'
+        f'  {contract}\n'
+        f'A reworded claim needs its probe looked at, which is why the clause '
+        f'is quoted rather than paraphrased.')
+    at = contract.index(clause)
+    opened = [m for m in _CODE_MARK.finditer(contract) if m.end() <= at]
+    assert opened, (
+        f'{clause!r} sits in front of every exit code in {contract!r}, so the '
+        f'help states no code for it')
+    return int(opened[-1].group('code'))
+
+
+# --- the claims a temp tree can realise --------------------------------------
+@dataclasses.dataclass(frozen=True)
+class ExitClaim:
+    """One clause of one `--help`, and the cheapest way to make it come true.
+
+    No expected code: it is read out of the live help text, so what is compared
+    is the documentation against the binary.
+    """
+    surface: str
+    says: str
+    probe: Callable[[Path], int]
+
+
+def _budget_unmeasured(tmp_path: Path) -> int:
+    """`integration` is declared and has no `gate` row anywhere in the ledger."""
+    with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET):
+        return budget_check()[0]
+
+
+def _budget_not_graded(tmp_path: Path) -> int:
+    """Both tiers have a row, and the newest `unit` one ended FAIL."""
+    with tree(tmp_path, [gate_row('unit', 1_000, verdict='FAIL'),
+                         gate_row('integration', 1_000)], BUDGET):
+        return budget_check()[0]
+
+
+def _gates_extra_silent(tmp_path: Path) -> int:
+    """A tree that declares no `[gates]` section at all."""
+    with tree(tmp_path, []):
+        return cli.main(['gates-extra'])
+
+
+def _gates_extra_unusable(tmp_path: Path) -> int:
+    """`extra` holding a number, which is not a roster of make targets."""
+    with tree(tmp_path, [], '[gates]\nextra = 5\n'):
+        return cli.main(['gates-extra'])
+
+
+# Two surfaces, and both directions of each: a clause the help files under 0
+# and one it files under 1 or 2. `check budget` is the finding this section was
+# written for; `gates-extra` is here because one surface proves a reader, two
+# prove it is not shaped around one docstring.
+CLAIMS = (
+    ExitClaim('check budget --help',
+              'a declared tier with no row is reported as unmeasured',
+              _budget_unmeasured),
+    ExitClaim('check budget --help', 'not graded', _budget_not_graded),
+    ExitClaim('gates-extra --help', 'printed (possibly nothing)',
+              _gates_extra_silent),
+    ExitClaim('gates-extra --help', 'the value is not a usable roster',
+              _gates_extra_unusable),
+)
 
 
 class TestTheHelpDescribesWhatShips:
@@ -100,5 +281,137 @@ class TestTheHelpDescribesWhatShips:
             assert cli.main([flag]) == 0
             assert capsys.readouterr().out.strip()
 
+    def test_every_help_surface_asked_for_exits_0_and_prints_something(self):
+        """The same claim, over the whole surface rather than the root.
+
+        Widened rather than duplicated: the root was the only surface asked,
+        and a family whose `--help` exits 2 or prints nothing is a menu the
+        reader cannot get to. `check` itself is excluded and why is at
+        FAMILY_VERBS.
+        """
+        for name, (code, text) in sorted(help_corpus().items()):
+            assert code == 0, f'`{name}` exited {code}: {text.strip()[:200]}'
+            assert text.strip(), f'`{name}` printed nothing'
+
     def test_no_arguments_is_usage_not_help(self):
         assert cli.main([]) == 2
+
+
+class TestTheDocumentedExitCodeIsTheOneThatRuns:
+    """No `--help` documents an exit code the code does not return."""
+
+    def test_the_exit_contract_census_is_not_zero(self):
+        """Hard rule 4: a gate scanning 0 files FAILS and says so.
+
+        The reader below is a regex over prose, and the way it dies is
+        silently — one reworded `Exit codes:` line and it matches nothing,
+        passes everything, and says PASS over a corpus it never read. So the
+        census is asserted before anything is graded, and the surfaces the
+        CLAIMS name are asserted to be inside it.
+        """
+        corpus = help_corpus()
+        assert corpus, 'help_surfaces() enumerated nothing to read'
+        with_contract = sorted(name for name, (_code, text) in corpus.items()
+                               if exit_contract(text))
+        assert with_contract, (
+            f'the exit-contract reader matched 0 of {len(corpus)} `--help` '
+            f'surfaces. Either every surface stopped stating its exit codes, '
+            f'or _EXIT_CONTRACT stopped matching the sentence they state them '
+            f'in — and a reader with a zero census that passes is the sin '
+            f'this module exists to catch.')
+        unread = sorted({c.surface for c in CLAIMS} - set(with_contract))
+        assert unread == [], (
+            f'{unread} carry a claim in CLAIMS and no exit contract the '
+            f'reader can find; every claim below would be graded against '
+            f'nothing')
+
+    def test_no_help_names_an_exit_code_outside_the_contract(self):
+        """Rule 6: 0 pass, 1 findings, 2 usage or config, and nothing else.
+
+        A fourth code in a help text is a code the router has no branch for —
+        the same phantom as a menu entry with no verb behind it, one column
+        over.
+        """
+        strays = {}
+        for name, (_code, text) in sorted(help_corpus().items()):
+            named = set(claimed_codes(exit_contract(text)))
+            if named - CONTRACT_CODES:
+                strays[name] = sorted(named - CONTRACT_CODES)
+        assert strays == {}, (
+            f'{strays} document exit codes outside {sorted(CONTRACT_CODES)}')
+
+    @pytest.mark.parametrize(
+        'claim', CLAIMS, ids=[f'{c.surface}::{c.says}'[:60] for c in CLAIMS])
+    def test_the_documented_exit_code_is_the_one_the_code_returns(
+            self, claim, tmp_path):
+        """The whole point: the sentence and the exit code, read together.
+
+        `check budget --help` said an unmeasured tier was a finding "never a
+        pass" while `run()` returned 0 for it, and every case in this suite
+        agreed with one side or the other without ever comparing them.
+        """
+        # The corpus is read BEFORE the probe builds a tree and chdirs into it.
+        contract = exit_contract(help_corpus()[claim.surface][1])
+        documented = claimed_code(contract, claim.says)
+        actual = claim.probe(tmp_path)
+        assert actual == documented, (
+            f'`{claim.surface}` documents exit {documented} for '
+            f'{claim.says!r} and the code returned {actual}. One of the two is '
+            f'wrong, and a consumer reads the help.')
+
+    def test_a_help_that_files_a_condition_under_the_wrong_code_is_caught(self):
+        """The deliberately-broken probe: this reader is a gate, so it is shown
+        FAILING on the drift class it exists for.
+
+        The text below is the shape `check budget` shipped through 0.2.0 — the
+        unmeasured condition filed under 1. Against it, `_budget_unmeasured`'s
+        real 0 is a mismatch the case above would report, rather than the
+        agreement it reports today. The third assertion is the other way this
+        reader can rot: a clause quietly reworded out of the help must be a
+        loud failure, never a claim that silently stops being checked.
+        """
+        planted = exit_contract(
+            'Exit codes: 0 every declared tier is graded; 1 a tier is over, '
+            'under its floor, or unmeasured; 2 usage or config.\n')
+        assert claimed_codes(planted) == [0, 1, 2], planted
+        assert claimed_code(planted, 'every declared tier is graded') == 0
+        assert claimed_code(planted, 'unmeasured') == 1, (
+            'the reader must attribute a clause to the code that OPENS it, or '
+            'a condition filed under the wrong one reads as agreement')
+        with pytest.raises(AssertionError, match='no longer says'):
+            claimed_code(planted, 'reported as unmeasured')
+
+
+# `pm --help` is the pm module's own surface rather than one `main()` routes to,
+# and it is here for the reason the rest of this file exists: it is the menu a
+# reader is handed, and what it leaves out is what they do not know.
+#
+# THIS FAILS UNTIL THE USAGE REPLACEMENT IS APPLIED. The builder that wrote it
+# does not own `src/agentic_sdlc/repo/pm/cli.py`, so the text ships in the
+# report and the marker below disarms itself the moment it lands — no XPASS to
+# chase, nothing to remember.
+_BELT_NAMED_IN_PM_HELP = 'close feature' in help_corpus()['pm --help'][1]
+
+
+class TestTheHelpNamesTheBeltBesideThePathThatBypassesIt:
+
+    @pytest.mark.xfail(not _BELT_NAMED_IN_PM_HELP, strict=True,
+                       reason='pending: the `pm --help` USAGE replacement for '
+                              '0.3.0/documented-behaviour-is-the-behaviour is '
+                              'not applied yet')
+    def test_the_feature_close_entry_names_close_feature_and_the_bypass(self):
+        """Two ways to close a feature, and the shorter one skips the belt.
+
+        `pm feature done <id> --review-record <path>` writes the status and
+        stamps `reviewed:` in one go, skipping `close feature`'s `stories-done`
+        and `findings-landed`. It is also the command every older consumer doc
+        already contains, so a bump leaves the belt-skipping path as the
+        well-trodden one — and nothing in the menu said the belt existed.
+        """
+        text = help_corpus()['pm --help'][1]
+        entry = text.split('feature <done-state>', 1)[-1]
+        entry = entry.split('\n  milestone ', 1)[0]
+        for named in ('close feature', 'stories-done', 'findings-landed'):
+            assert named in entry, (
+                f'the `feature <done-state>` entry in `pm --help` never says '
+                f'{named!r}:\n{entry}')

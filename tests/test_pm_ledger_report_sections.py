@@ -219,13 +219,7 @@ target     feature    pass  findings
 0.1/gamma  0.1/beta      1         1"""
 
 REWORK_TABLE = """\
-[ledger:report] 0.1 — rework — 3 story(s), 2 pass(es) with a verdict
-
--- story (3)
-feature    story         after_review
-0.1/alpha  0.1/alpha/s0             2
-0.1/alpha  0.1/alpha/s1             -
-0.1/beta   0.1/beta/s0              -
+[ledger:report] 0.1 — rework — 2 pass(es) with a verdict
 
 -- verdict distribution (2)
 verdict          passes
@@ -422,11 +416,11 @@ def test_a_delta_needs_both_ends_measured():
         '1500', '-']
 
 
-# The `reopens` column and its four guard cases left with it (0.2.0): the
-# story seed no longer holds `reviewing`, so a column counting
-# `reviewing -> building` by name had no tree left to be a number on. What
-# remains of section 3's per-story table is `after_review`, whose `-` for a
-# story that never entered the review state the REWORK golden above holds.
+# Section 3's per-story table left (0.2.0): `reopens` counted
+# `reviewing -> building` by name, `after_review` counted dispatches after the
+# first move into `reviewing` by name, and the story seed no longer holds the
+# word, so neither had a tree left to be a number on. What remains is the
+# verdict distribution the REWORK golden above holds.
 
 
 # --- nothing to report --------------------------------------------------------
@@ -447,14 +441,14 @@ def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted()
         assert section.splitlines()[1] == 'no data'
     assert ('yield per review pass — 0 record(s), 0 pass(es), '
             '0 finding(s)') in out
-    assert 'rework — 0 story(s), 0 pass(es)' in out
+    assert 'rework — 0 pass(es) with a verdict' in out
     assert 'escapes — 0 bug(s) naming a cause, 0 feature(s)' in out
     assert ('overhead shape — 0 dispatch row(s), 0 decision row(s), '
             '0 session row(s)') in out
     # The keys stay, with empty lists behind them: a consumer that has to
     # branch on a missing key is a consumer this report broke.
     assert data['yield']['records'] == []
-    assert data['rework']['stories'] == []
+    assert data['rework']['verdicts'] == []
     assert data['escapes']['bugs'] == []
     assert data['overhead']['sessions'] == []
 
@@ -488,14 +482,9 @@ def test_the_seeded_ledger_produces_this_exact_json():
         ],
         'totals': {'records': 3, 'passes': 2, 'findings': 7}}
     assert data['rework'] == {
-        'stories': [
-            {'grain': A_S0, 'feature': ALPHA, 'after_review': 2},
-            {'grain': A_S1, 'feature': ALPHA, 'after_review': None},
-            {'grain': B_S0, 'feature': BETA, 'after_review': None},
-        ],
         'verdicts': [{'verdict': 'SHIP-WITH-FIXES', 'passes': 1},
                      {'verdict': 'HOLD', 'passes': 1}],
-        'totals': {'stories': 3, 'passes': 2}}
+        'totals': {'passes': 2}}
     assert data['escapes'] == {
         'bugs': [
             {'caused_by': ALPHA, 'bug': '0.1/bugs/crash', 'status': 'open',

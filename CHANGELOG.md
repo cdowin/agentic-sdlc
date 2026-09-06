@@ -134,6 +134,12 @@
   ever print `-`. Section 3's per-story table is `feature story after_review`; the summary line
   reads `N story(s), M pass(es) with a verdict`; `--json` drops `rework.stories[].reopens` and
   `rework.totals.reopens`.
+- **`pm ledger report`'s section 3 per-story table is deleted** (output-format change): the
+  `after_review` column counted dispatches after a story's first move into `reviewing`, by
+  name, and could only ever print `-` beside the `reopens` column that already left. A reader
+  stops seeing the `story (N)` block with `feature story after_review`; the summary line reads
+  `M pass(es) with a verdict`; `--json` drops `rework.stories` and `rework.totals.stories`. The
+  verdict distribution and `rework.verdicts` / `rework.totals.passes` are unchanged.
 - **`pm list --kind milestone [--status …] [--category <c>]`** prints one tab-separated
   `<id> <status> <category> <branch>` per milestone (`-` for no branch), census to stderr; and
   `pm list` takes `--category todo|in_progress|done` for stories. New flags; the story listing is

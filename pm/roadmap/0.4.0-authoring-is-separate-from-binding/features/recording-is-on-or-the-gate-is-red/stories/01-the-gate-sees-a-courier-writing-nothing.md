@@ -3,7 +3,7 @@ id: 0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-
 feature: 0.4.0/recording-is-on-or-the-gate-is-red
 milestone: "0.4.0"
 name: A tree with hooks wired and no rows says so
-status: building
+status: done
 owner: claude
 depends_on: []
 ---
@@ -43,6 +43,18 @@ the rule that auto-loads.
 | 4 | unit | a fourth row with a truncated settings.json | the unverifiable convention is asserted for `--review-record`; this reuses the shape |
 | 5 | unit | `test_pm_guidance.py` already pins the shipped rule text | amend |
 | 6 | integration | `test_hooks_payloads.py` is unchanged and still green | existing, unamended — that IS the claim |
+
+## Close
+
+done: 56d80ee — D11, opt-in, a WARN, on in this repo's roster. Six cases, including the opt-out
+and the empty-file shape.
+finding: an EMPTY `ledger.jsonl` is not "has rows". It is exactly what a courier leaves when it
+created the file and then refused, so `is_file()` would have made the rule pass over its own
+failure mode.
+finding: an unreadable SETTINGS file is UNVERIFIABLE; an unreadable LEDGER answers "has rows".
+The asymmetry is deliberate — reporting a silent tree over a file the gate could not open is rule
+4's first sin, and it is worth more than a stricter census here.
+AC5 landed as a clause on `pm-execution.md` step 1: the flip is bookkeeping and never the switch.
 
 ## Out of scope
 

@@ -292,3 +292,9 @@
 {"ts":"2026-09-06T23:24:07Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[does-not-exist]@the-real-repo","duration_ms":6007,"rank":5}
 {"ts":"2026-09-06T23:24:07Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":41154,"census":1169}
 {"ts":"2026-09-06T23:24:44Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2603}
+{"ts":"2026-09-06T23:25:04Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":512,"rank":1}
+{"ts":"2026-09-06T23:25:04Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":414,"rank":2}
+{"ts":"2026-09-06T23:25:04Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":327,"rank":3}
+{"ts":"2026-09-06T23:25:04Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":290,"rank":4}
+{"ts":"2026-09-06T23:25:04Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":191,"rank":5}
+{"ts":"2026-09-06T23:25:04Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8491,"census":780}

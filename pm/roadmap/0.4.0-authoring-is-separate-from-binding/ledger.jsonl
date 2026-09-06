@@ -102,3 +102,4 @@
 {"ts":"2026-09-06T23:21:10Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing","from":"building","to":"done"}
 {"ts":"2026-09-06T23:21:23Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red","from":"planning","to":"building"}
 {"ts":"2026-09-06T23:21:24Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing","from":"planning","to":"building"}
+{"ts":"2026-09-06T23:25:04Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing","from":"building","to":"done"}

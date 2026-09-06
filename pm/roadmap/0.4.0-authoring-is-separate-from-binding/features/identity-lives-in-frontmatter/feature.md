@@ -45,6 +45,58 @@ the prefix is for the human reading the id alone.
 (`nul-`) is constant within a repo so it earns nothing on disk. Cross-repo disambiguation is a
 display concern — a config for output and export, never part of a filename.
 
+## What this deletes, by name
+
+The addressing layer exists BECAUSE the path is the schema, and it is roughly twenty functions
+that are one function with a kind baked in. Naming them here so whoever builds this can see the
+payoff rather than take it on faith.
+
+**Path arithmetic — gone outright.** An id no longer names a location, so nothing joins it to one.
+
+    id_is_literal          segment_is_literal     milestone_dir     milestone_file
+    feature_dir            feature_file           story_file        story_slug_of
+    milestone_dir_of       AmbiguousStory
+
+Six resolvers become one `grain_file(cfg, kind, gid)` — walk the pool, read `id:`, match.
+`milestone_dir_of` ("which milestone holds this document") becomes `field_of(path, 'milestone')`.
+`AmbiguousStory` — *"two files claim one story id"* — cannot occur once slugs are unique, so a
+whole failure mode leaves with it.
+
+**And the sharpest one is a security note, not a tidiness note.** `model.py` today: *"Ids reach
+glob() as patterns, so an id must be a literal, never a pattern."* **An id is currently
+interpolated into a glob pattern and joined onto a directory**, which is why
+`segment_is_literal` has to reject `.`, `..`, `/`, `\` and every glob character. Match-by-field
+never builds a path from user input, so the guard has nothing left to guard and the attack
+surface goes with it.
+
+**Per-kind child listings — five become one.** Children are found by their binding field, not by
+which directory they sit in:
+
+    feature_files(mdir)    story_files(ffile)    bug_files(mdir)
+    grain_docs(gdir)       slot_walk(gdir)                → children(cfg, kind, parent_id)
+
+**Directory-shape validation — gone.** There are no grain directories left to be malformed:
+
+    orphan_dirs    _has_milestone_file    _has_feature_file    _milestone_candidates
+
+The real check survives in simpler form — `_is_grain_doc` already asks "does this file open
+frontmatter", which is the flat-pool version of the same question.
+
+**Pool walking — three become one.** `milestone_walk`, `milestone_dirs` and `known_milestones`
+become `pool_walk(cfg, kind)`.
+
+## This is MORE flexible, not less
+
+The count going down is not the point and could be read backwards. **The twenty are the hard
+opinions**: `milestone_dir` works for milestones and nothing else; `story_file` knows one
+three-segment shape; adding a fifth kind means writing four more functions and a fifth `*_files`.
+The three that replace them take `kind` as an argument and work for a kind nobody has invented
+yet, with `[pm.contains]` declaring the shape instead of the code assuming it.
+
+**No user-facing verb is removed by this feature.** These are internal resolvers. The verb surface
+gets more general, not smaller — `pm set <id> <key> <value>` already works for any key; the
+resolvers are what stop the same generality reaching any KIND.
+
 ## Ship criterion
 
 `id:` and `kind:` are read from frontmatter and the path is not consulted for either. A grain whose

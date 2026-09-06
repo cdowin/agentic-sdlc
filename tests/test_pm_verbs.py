@@ -1014,18 +1014,29 @@ class Decide(unittest.TestCase):
             self.assertIn('## M28 — ', self._log(root))
 
     def test_the_prose_under_a_heading_is_never_touched(self):
-        # No field schema means the body is the author's. An append that
-        # rewrote or refused hand-written prose would be the old verb again.
+        """The log after is the log before plus ONE heading, byte for byte.
+
+        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): with
+        this test asserting only `hand.strip() in body`, a `decide` that
+        normalised CRLF to LF, or stripped trailing whitespace off every
+        existing line, still passed — the prose was "in" the body, rewritten.
+        That is rule 3's line-ending clause and rule 4's write-side sin, so
+        the fixture now carries both hazards (CRLF endings, a line with
+        trailing spaces) and the assertion is equality on the whole file.
+        """
         with tree() as root:
             self._scaffolded(root)
             log = root / self.MDIR / 'decisions.md'
             hand = ('## D9 — 2026-01-01 — a hand-written entry\n'
-                    'Free prose, no fields, several\nlines of it.\n')
-            model.write_raw(log, f'{model.SLOT_HEADER["decisions.md"]}\n\n{hand}')
+                    'Free prose, no fields, several  \nlines of it.\n')
+            before = (f'{model.SLOT_HEADER["decisions.md"]}\n\n{hand}'
+                      .replace('\n', '\r\n'))
+            model.write_raw(log, before)
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
-            body = self._log(root)
-            self.assertIn(hand.strip(), body)
-            self.assertIn('## D10 — ', body)
+            today = datetime.now(timezone.utc).date().isoformat()
+            self.assertEqual(
+                log.read_bytes(),
+                (before + f'\r\n## D10 — {today} — the next one\r\n').encode())
 
     def test_a_flag_shaped_title_is_refused_not_written(self):
         # The retired four-field interface (`--title X --chose A --over B …`)
@@ -1307,7 +1318,18 @@ class Retire(unittest.TestCase):
         index.write_text(skills.ROADMAP_SEED, encoding='utf-8')
         return index
 
-    def test_the_two_impossibilities_refuse_and_leave_the_tree_standing(self):
+    def test_every_refusal_leaves_the_tree_standing(self):
+        """The two usage impossibilities, and the one obstruction the plan
+        must DECIDE before either byte moves.
+
+        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): with
+        only the two usage cases here, dropping `plan.decide()` from
+        `cmd_retire` reddened nothing — no case put an obstruction in the
+        plan's way. The order is delete-then-append, so without the decision
+        a read-only ROADMAP.md let the directory go and the row fail: a
+        milestone gone with no row to say where. The third block is that
+        obstruction, and it is the case that proves whole-or-nothing.
+        """
         with tree() as root:
             self._seed_roadmap(root)
             code, out = run_cli(root, 'retire', '9.9')
@@ -1324,6 +1346,21 @@ class Retire(unittest.TestCase):
             self.assertIn('does not exist', out)
             self.assertIn('pm/roadmap', out)
             self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+            return  # permission bits are not an obstruction as root
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            index = self._seed_roadmap(root)
+            before = index.read_bytes()
+            index.chmod(0o444)
+            try:
+                code, out = run_cli(root, 'retire', '0.1')
+            finally:
+                index.chmod(0o644)
+            self.assertEqual(code, 1, out)
+            self.assertIn('nothing was retired', out)
+            self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
+            self.assertEqual(index.read_bytes(), before)
 
     def test_a_non_done_milestone_is_reported_not_refused(self):
         with tree(milestone_status='building',
@@ -1357,6 +1394,17 @@ class Retire(unittest.TestCase):
             self.assertEqual(before_files, after_files)
 
     def test_retire_appends_exactly_one_row_and_removes_exactly_the_dir(self):
+        """The index after is the index before plus ONE row, byte for byte.
+
+        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): with
+        this test counting `| 0.1 |` rows, a `retire` that REPLACED the
+        seeded table with its one row still passed (one row found), and so
+        did one that rewrote the index's CRLF endings to LF. Both are the
+        write-side sin — a ROADMAP.md that looks appended-to and is not — so
+        the seed is written with CRLF and the assertion is equality on the
+        whole file. The `| 0.2 |` row being absent is the census: the other
+        milestone's directory stands and no row was minted for it.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             write(root / 'pm/roadmap/0.1-demo/milestone.md',
@@ -1370,15 +1418,17 @@ class Retire(unittest.TestCase):
             os.chdir(root)
             try:
                 index = self._seed_roadmap(root)
+                before = skills.ROADMAP_SEED.replace('\n', '\r\n')
+                index.write_bytes(before.encode())
                 code, out = run_cli(root, 'retire', '0.1', 'shipped',
                                     'X', 'and', 'Y')
                 self.assertEqual(code, 0, out)
-                rows = [line for line in
-                        index.read_text(encoding='utf-8').split('\n')
-                        if line.startswith('| 0.1 |')]
-                self.assertEqual(len(rows), 1, rows)
-                self.assertIn('2026-01-02', rows[0])
-                self.assertIn('shipped X and Y', rows[0])
+                after = index.read_bytes().decode()
+                self.assertTrue(after.startswith(before), after)
+                row = after[len(before):]
+                self.assertRegex(row, r'^\| 0\.1 \|[^\r\n]*\r\n$')
+                self.assertIn('2026-01-02', row)
+                self.assertIn('shipped X and Y', row)
                 self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
                 self.assertTrue((root / 'pm/roadmap/0.2-later').is_dir())
             finally:
@@ -1394,7 +1444,7 @@ class Move(unittest.TestCase):
     whole-or-nothing verb through the machinery the templates already own.
     """
 
-    NEW_REL = 'pm/roadmap/0.1-demo/features/beta/stories/s0.md'
+    NEW_REL = 'pm/roadmap/0.2-next/features/gamma/stories/s0.md'
 
     @staticmethod
     def _second_feature(root: Path) -> None:
@@ -1402,21 +1452,37 @@ class Move(unittest.TestCase):
               {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
                'status': 'building', 'reviewed': ''})
 
+    @staticmethod
+    def _second_milestone(root: Path) -> None:
+        write(root / 'pm/roadmap/0.2-next/milestone.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
+        write(root / 'pm/roadmap/0.2-next/features/gamma/feature.md',
+              {'id': '0.2/gamma', 'milestone': '"0.2"', 'name': 'Gamma',
+               'status': 'building', 'reviewed': ''})
+
     def test_a_story_moves_whole_and_every_other_byte_survives(self):
+        """Across milestones, so all THREE rewritten keys have to change.
+
+        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): this
+        case used to move `0.1/alpha/s0` to `0.1/beta`, where the milestone
+        key already held the right value — so a `move` that stopped
+        rewriting `milestone` passed, and would have shipped stories whose
+        `milestone:` named the tree they left. The target is now a feature
+        under a second milestone, and the byte-exact expectation carries the
+        third replacement.
+        """
         with tree(story_statuses=('ready',)) as root:
-            self._second_feature(root)
+            self._second_milestone(root)
             before = (root / STORY_REL).read_text(encoding='utf-8')
-            code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/beta')
+            code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.2/gamma')
             self.assertEqual(code, 0, out)
             new = root / self.NEW_REL
             self.assertFalse((root / STORY_REL).exists())
             self.assertTrue(new.is_file())
-            self.assertEqual(model.field_of(new, 'id'), '0.1/beta/s0')
-            self.assertEqual(model.field_of(new, 'feature'), '0.1/beta')
-            self.assertEqual(model.field_of(new, 'milestone'), '0.1')
-            self.assertIn('milestone: "0.1"', new.read_text(encoding='utf-8'))
-            expected = (before.replace('feature: 0.1/alpha', 'feature: 0.1/beta')
-                              .replace('id: 0.1/alpha/s0', 'id: 0.1/beta/s0'))
+            expected = (before.replace('feature: 0.1/alpha', 'feature: 0.2/gamma')
+                              .replace('id: 0.1/alpha/s0', 'id: 0.2/gamma/s0')
+                              .replace('milestone: "0.1"', 'milestone: "0.2"'))
+            self.assertNotEqual(expected, before)
             self.assertEqual(expected, new.read_text(encoding='utf-8'))
 
     def test_an_unresolvable_end_is_a_usage_error_that_moves_nothing(self):

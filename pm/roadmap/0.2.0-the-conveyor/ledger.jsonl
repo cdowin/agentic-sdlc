@@ -459,3 +459,9 @@
 {"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":175,"rank":5}
 {"ts":"2026-09-06T03:37:14Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6980,"census":732}
 {"ts":"2026-09-06T03:37:42Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2132}
+{"ts":"2026-09-06T03:38:41Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":8524,"rank":1}
+{"ts":"2026-09-06T03:38:41Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7293,"rank":2}
+{"ts":"2026-09-06T03:38:41Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":5613,"rank":3}
+{"ts":"2026-09-06T03:38:41Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":5343,"rank":4}
+{"ts":"2026-09-06T03:38:41Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":5303,"rank":5}
+{"ts":"2026-09-06T03:38:41Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":41046,"census":1228}

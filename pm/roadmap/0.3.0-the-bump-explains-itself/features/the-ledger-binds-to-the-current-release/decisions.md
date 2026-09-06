@@ -29,3 +29,18 @@ criterion asked that a STATUS stop being the axis, and it has.
 
 Rejected: dropping the refusal entirely. A tree with no plan and no milestone in progress has
 genuinely nowhere to file a row, and saying so while naming `pm order` is the honest answer.
+
+**Amended after review (C3): the fallback fires wider than this decision first described.**
+
+The text above says the fallback is for "a consumer bumping the pin [who] has a building milestone
+and no plan yet". It is not conditioned on the plan being ABSENT. `release_ledger_dir` reaches the
+single-in-progress fallback whenever the plan cannot answer at all — no `order`, every entry
+shipped, or the next entry claimed by no single milestone. The reviewer was right that the recorded
+scope and the code's scope were different sentences.
+
+**The wider scope is kept, and this is the record of it.** Each of those cases is a tree that has
+somewhere obvious to file a row and no way to say so through the plan, and dropping the row instead
+would be the same silent loss the feature was filed to end. What changes is the writing-down: the
+rule is *"the plan first; a single in-progress milestone when the plan cannot answer; a refusal
+naming `pm order` when neither can"*, and the refusal now reads its reason off the tree rather than
+asserting that everything shipped (C4).

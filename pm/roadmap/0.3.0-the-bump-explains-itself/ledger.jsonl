@@ -537,3 +537,4 @@
 {"ts":"2026-09-06T22:52:41Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7407,"rank":4}
 {"ts":"2026-09-06T22:52:41Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":5456,"rank":5}
 {"ts":"2026-09-06T22:52:41Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":51338,"census":1150}
+{"ts":"2026-09-06T22:53:26Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2079}

@@ -79,7 +79,7 @@
 # version_file    = "pyproject.toml"              # D8: where the version lives
 # version_pattern = '^version = "(.*)"$'          # D8: the line carrying it
 #                                   # A project that keeps its version in an
-#                                   # engine or framework file names that file
+#                                   # framework's own file names that file
 #                                   # and the line that carries it, e.g.
 #                                   #   version_file    = "<its project file>"
 #                                   #   version_pattern = '^<key>="(.*)"$'
@@ -114,7 +114,7 @@
 # freshly-initialised tree refused on its first `pm` call. That is the whole
 # reason it is live, and it is the only section that has one.
 #
-# YOURS, and changing a word here changes no code anywhere. The engine keeps
+# YOURS, and changing a word here changes no code anywhere. The tool keeps
 # three opinions and no more: the category set is `todo` / `in_progress` /
 # `done`, they are ordered that way, and every declared state maps to exactly
 # one. How many states, what they are called, which category each sits in and
@@ -170,10 +170,10 @@ done        = ["closed"]
 #                        devkit roster. Static, same as the rest of `check`.
 #   Makefile.tiers     — GDK_PRECOMMIT_TIERS / GDK_MILESTONE_TIERS, the target
 #                        lists `precommit` and `milestone` compose from. This
-#                        is where a build, an engine, a linter or a test tier
+#                        is where a build, a linter or a test tier
 #                        belongs: it can boot, because it is not a devkit gate.
 #
-# A gate that reads one language's or one engine's file format is a gate that
+# A gate that reads one language's file format is a gate that
 # kit owns, and it configures itself in its own section of this file.
 
 # --- more words that mean FINISHED --------------------------------------------

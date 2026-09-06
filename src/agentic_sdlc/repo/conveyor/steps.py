@@ -1444,8 +1444,8 @@ STEP_DOC: dict[str, str] = {
         'not is NAMED.',
     'review-recorded':
         'the feature\'s `reviewed:` record exists, is repo-relative, and its '
-        'verdict block PARSES (`pm/verdict.py`). Whether the review was any '
-        'good is NOT checked and must not be.',
+        'verdict block PARSES, through the same parser `pm ready-for` reads. '
+        'Whether the review was any good is NOT checked and must not be.',
     'findings-landed':
         'no finding in that record sits at `disposition: open` — the same '
         'question `pm ready-for tag` asks one grain up, through the same '

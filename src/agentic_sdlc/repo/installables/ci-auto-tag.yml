@@ -45,7 +45,7 @@ permissions:
 #   Cargo.toml       ^version[[:space:]]*=[[:space:]]*"([^"]+)".*$
 #   VERSION          ^([0-9][^[:space:]]*)$
 #
-# An engine or framework that keeps the version in its own project file is the
+# A framework that keeps the version in its own project file is the
 # same job: name that file, and write the pattern that pulls the value out.
 #
 # THE SAME FILE IS `[pm] version_file` in devkit.toml — the pm tracker reads it

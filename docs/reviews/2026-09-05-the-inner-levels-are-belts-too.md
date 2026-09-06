@@ -240,7 +240,7 @@ Reviewer's token cost: ~148k (shared across all three feature records).
 verdict: HOLD
 | id | severity | disposition |
 | I1 | BLOCKER | landed 2b29b7b |
-| I2 | BLOCKER | open: the 26 parked stories close through the belts in phase 5 |
+| I2 | BLOCKER | open: closed by the orchestrator's close pass |
 | I3 | MINOR | landed 2b29b7b |
-| I4 | NIT | landed 52a4d8e |
+| I4 | NIT | landed d4e94a0 |
 ```

@@ -68,8 +68,8 @@ recorded.
 | 14 | `findings-resolved` | JUDGEMENT | — *(operator)* | no document under the review directory names this milestone — every record resolved and deleted. |
 | 15 | `milestone-done` | AUTOMATIC | — | the milestone status is `done`. |
 | 16 | `push-branch` | AUTOMATIC | — | the branch tip equals its upstream tip. It refuses on the mainline and pushes nothing there. |
-| 17 | `pr-open` | JUDGEMENT | — *(operator)* | the configured `pr-open` command exits 0. With none, the operator is asked and the run refuses to advance. |
-| 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the run refuses to advance. |
+| 17 | `pr-open` | JUDGEMENT | — *(operator)* | the configured `pr-open` command exits 0. With none, the operator is asked and the step is reported not true; the walk finishes. |
+| 18 | `ci-green` | JUDGEMENT | — *(operator)* | the configured `ci-green` command exits 0. With none, the operator is asked and the step is reported not true; the walk finishes. |
 | 19 | `merge` | JUDGEMENT | — *(operator)* | the mainline contains this branch's tip. |
 | 20 | `tag` | AUTOMATIC | — | the tag exists locally AND on the remote. It is never force-moved. |
 | 21 | `prove-artifact` | JUDGEMENT | `uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version` | the configured `prove-artifact` command exits 0. This package ships no default: the proof names a git URL, and a URL is the project's own fact (hard rule 8). |

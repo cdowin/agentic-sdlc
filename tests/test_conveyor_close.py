@@ -236,8 +236,8 @@ def test_no_close_step_ships_a_command_default():
 # --- close story: the budget --------------------------------------------------
 def test_a_clean_story_closes_well_under_a_second():
     """Risk 2, measured. Four of the five steps read a line already on disk;
-    the fifth shells out once to the narrow rung, which on a committed tree
-    reports `no changed paths` and returns."""
+    the fifth shells out once to the narrow rung, pointed at the story's own
+    commit range (I1) rather than at an empty diff against HEAD."""
     with tree() as root:
         started = time.monotonic()
         code = close('story', STORY_ID)

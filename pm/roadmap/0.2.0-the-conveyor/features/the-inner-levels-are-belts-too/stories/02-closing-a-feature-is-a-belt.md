@@ -15,8 +15,7 @@ depends_on: []
 ## Acceptance criteria
 
 <!-- Filed 2026-09-05 against I4. Sourced from the title, feature.md's ship criteria 3-4 and
-     risk 1, and the Close evidence below. Re-scoped voice, per feature.md's banner: "refuses"
-     reads "warns, names what is open, and finishes". -->
+     risk 1, and the Close evidence below, in D8's voice: reported, never a halt. -->
 
 1. `agentic-sdlc close feature <id>` walks six declared steps — `stories-done`,
    `feature-reviewing`, `feature-verified`, `review-recorded`, `findings-landed`,
@@ -38,9 +37,11 @@ depends_on: []
 
 ## Out of scope
 
-<!-- Left empty deliberately — see story 01. Nothing here supports a boundary that would not be
-     invented, and a guessed exclusion is worse than an absent section. -->
-
+- Judging whether the review was any good: `review-recorded` checks that a record exists and
+  parses, and nothing more (feature.md risk 1).
+- Re-implementing `pm ready-for feature` or `verdict.parse`; the steps call them.
+- Closing the stories themselves: `feature-done` moves the feature, and each story closed
+  through story 01's belt.
 
 ## Close
 

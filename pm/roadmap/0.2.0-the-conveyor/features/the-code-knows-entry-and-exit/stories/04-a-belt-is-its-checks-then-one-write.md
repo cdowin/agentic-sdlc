@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/04-a-belt-is-its-checks-then-one-write
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: A belt is its checks, then one write or a clean error (D12)
-status: building
+status: done
 owner:
 depends_on: []
 ---

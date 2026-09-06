@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/06-the-review-findings-land
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every finding in the 0.2.0 review records lands
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -23,10 +23,12 @@ depends_on: []
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | `check budget` grades a FAIL row as FAIL; picks the newest by timestamp; names measured tiers only; reads a shrink | amend tests/test_check_budget.py |
-| 2 | unit | `pm init` appends the flow to a config it did not write, byte-preserving | amend tests/test_init_verb.py |
-| 3 | unit | `{version}` substituted in a configured command | amend tests/test_conveyor_steps.py |
-| 4 | integration | no shipped surface says the walk stops | amend tests/test_install_sdlc.py |
+| 1 | unit | exit 2 from a callee → UNVERIFIABLE, walk finishes | tests/test_conveyor_steps.py |
+| 2 | unit | ConfigError from a check() is exit 2 at the CLI | amend tests/test_conveyor_driver.py |
+| 3 | unit | `check budget` grades a FAIL row as FAIL; picks the newest by timestamp; names measured tiers only; reads a shrink | amend tests/test_check_budget.py |
+| 4 | unit | `pm init` appends the flow to a config it did not write, byte-preserving | amend tests/test_init_verb.py |
+| 5 | unit | `{version}` substituted in a configured command | amend tests/test_conveyor_steps.py |
+| 6 | integration | no shipped surface says the walk stops | amend tests/test_install_sdlc.py |
 
 ## Out of scope
 

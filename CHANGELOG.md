@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### The belt's findings land (D11)
+
+- **A callee's exit 2 is UNVERIFIABLE, never NOT-TRUE (D11).** A GATE or JUDGEMENT step that
+  runs this package's own CLI (`narrow-verified`, `feature-verified`, `checks-pass`,
+  `hooks-self-test`) and gets exit 2 back — a config or usage error in the callee — is now
+  reported `UNVERIFIABLE … nothing was decided (D11)` and counted in that column; it used to be
+  folded into `NOT-TRUE`, and a `close story` then stamped the story `done` over a narrow check
+  that never ran. The walk still finishes. Configured `[<operation>.commands]` strings are
+  unchanged: exit 0 is true and nothing else is, because `make` says 2 for a failed recipe.
+- **A `ConfigError` met DURING a walk is one line at exit 2, never a traceback at exit 1.** A key
+  only one step reads (`[release.version_files]`, at `version-sync`) used to escape `main` as a
+  stack trace with exit 1 — hard rule 6's code for findings — and the steps already walked
+  printed nothing. Now the transcript so far is printed, one
+  `[release] REFUSED — step 6/21 'version-sync' (AUTOMATIC): …` names the step and the key, the
+  run state is saved, and the CLI exits 2 with one line on stderr. Nothing after that step walks.
+- **`{version}` in a configured command is substituted with the walk's subject** — the release
+  or pin version, the grain id on a close belt — so
+  `prove-artifact = "uvx --from git+…@v{version} pkg --version"` works as written. A
+  `{placeholder}` this package cannot fill is refused at exit 2 naming the known set; the shell's
+  own braces (`${HOME}`, `{}`, `awk '{print $1}'`) pass through untouched.
+- **A step that is not true and gave no reason still writes its ledger row**, carrying
+  `the step answered NOT-TRUE and gave no reason — a defect in the step, not a fact about the
+  tree`; the row used to be silently skipped while the scoreboard counted the step.
+- **`--status` says when the ledger row and the run cache disagree** — the row is written once
+  (the machine's first account) and the cache on every walk, so a step that is true now still has
+  its NOT-TRUE row; the two lines used to sit adjacent contradicting each other with nothing
+  saying so.
+- **Every shipped surface stops describing the machine D8 removed**: the rendered
+  `docs/sdlc-protocol.md` (its intro said the walk *stops at the first step* sixteen lines above
+  *no step halts the walk*), `install-sdlc`'s closing message, `SDLC.md`, the release skill (which
+  still taught `--skip`, exit 2 since 0.2.0), the `close story` belt's own `SAID` line for
+  `committed` (which printed `--skip --reason` as live advice), and the `findings-resolved` row,
+  which told the operator to delete the review record `check pm` D1 needs to resolve. Re-render
+  with `install-sdlc --force`.
+
 ### The repo is a consumer of what it ships
 
 - **This repo's Makefile is now a consumer's Makefile** — `DEVKIT := uv run -q agentic-sdlc`

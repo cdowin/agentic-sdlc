@@ -216,16 +216,39 @@ def test_a_step_name_cannot_smuggle_markdown_through_the_config():
 
 
 # --- self-hosting -------------------------------------------------------------
-def test_this_repos_own_protocol_document_is_byte_current():
+# The sentences the OLD machine was described with, and D8 removed. Each one
+# was measured in a shipped surface AFTER the walk stopped halting (B4, M1,
+# M2, B1 in `docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`): the
+# rendered document contradicted itself 16 lines apart, the release skill
+# taught a flag that exits 2, a belt PRINTED that flag as live advice, and
+# the shipped `findings-resolved` row told the operator to delete the record
+# that leaves `check pm` red. Byte-current with the renderer proved nothing
+# here — the renderer and the tree agreed, and both were wrong.
+HALTED = ('stops at the first', 'stopped on a step', 'refuse to advance',
+          'refuses to advance', '--skip', 'resolved and deleted')
+
+
+def test_this_repos_own_protocol_document_is_byte_current_and_never_halts():
     """The same bar `tests/test_install.py` holds the installed agent
     definitions to. A generated document that has gone stale is the drift this
-    verb exists to end, arriving through the back door."""
+    verb exists to end, arriving through the back door — and so is a document
+    that is byte-current with a renderer describing a machine that no longer
+    exists, which is what byte-current alone let through (B4)."""
     target = REPO_ROOT / DEST
     assert target.is_file(), (
         f'{DEST} is not in this repo — run `agentic-sdlc install-sdlc`')
-    assert target.read_text(encoding='utf-8') == sdlc_doc.render(), (
+    rendered = target.read_text(encoding='utf-8')
+    assert rendered == sdlc_doc.render(), (
         f'{DEST} differs from the renderer — re-run '
         f'`agentic-sdlc install-sdlc --force`')
+    surfaces = {
+        DEST: rendered,
+        'install-sdlc closing message': install._NEXT_STEP[VERB],
+        'SDLC.md': (REPO_ROOT / 'SDLC.md').read_text(encoding='utf-8'),
+    }
+    for name, text in surfaces.items():
+        for phrase in HALTED:
+            assert phrase not in text, f'{name} still says {phrase!r}'
 
 
 def test_the_shrunk_release_skill_points_at_the_document_and_lists_no_steps():
@@ -236,6 +259,8 @@ def test_the_shrunk_release_skill_points_at_the_document_and_lists_no_steps():
         encoding='utf-8')
     assert DEST in text, 'the skill does not point at the generated document'
     assert 'agentic-sdlc release' in text
+    for phrase in HALTED:  # M1: the skill taught `--skip`, which exits 2
+        assert phrase not in text, f'the release skill still says {phrase!r}'
     named = [n for n in steps.DEFAULT_RELEASE_STEPS if f'`{n}`' in text]
     # The three the operator must answer are named as JUDGEMENTS the machine
     # hands back; the ordered list is not restated.

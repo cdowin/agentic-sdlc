@@ -3,7 +3,7 @@ id: 0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing
 feature: 0.4.0/the-surface-says-telemetry
 milestone: "0.4.0"
 name: The word telemetry is in every discovery surface
-status: building
+status: done
 owner: claude
 depends_on: []
 ---
@@ -41,6 +41,17 @@ itself.
 | 5 | unit | `test_cli_surface.py`'s verb roster is unchanged | existing, unamended |
 
 Deliberately cheap. A large proof budget on a documentation feature would be the wrong signal.
+
+## Close
+
+done: c467642 — the word is in `pm --help`, in `pm-execution.md`'s read-verb list (landed 4f4e3cd
+as the previous review's D1) and in `pm-operations`' `description:`.
+decision: extended `pm-operations` rather than shipping a third skill. Rule 11 says fix at the
+cheapest layer, and the only thing that had to change is a block a selector already reads.
+finding: criterion 4 (the class stated once in CLAUDE.md) landed in 05c8364 as hard rule 11's read
+side — `the-read-verbs-compose` got there first, which is what "one class, stated once" looks like
+when two features would both have written it.
+AC5 held: `test_cli_surface.py` asserts the routed verb set is unchanged.
 
 ## Out of scope
 

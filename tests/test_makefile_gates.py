@@ -177,20 +177,63 @@ def recorder(tmp_path):
     return script, rows
 
 
-def test_a_real_gate_run_files_exactly_one_cost_row(recorder):
+def precommit_tiers() -> list[str]:
+    """The per-change tier list, asked of the tier file rather than repeated
+    here — a roster change must not turn this case into a lie about it."""
+    match = re.search(r'^GDK_PRECOMMIT_TIERS\s*:?=\s*(.*)$',
+                      TIERS.read_text(encoding='utf-8'), re.M)
+    assert match and match.group(1).split(), 'no GDK_PRECOMMIT_TIERS in the tier file'
+    return match.group(1).split()
+
+
+def test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own(recorder):
+    """The whole per-change gate through the real funnel: `check` and each
+    tier file a row through their own slot, and the composition files
+    exactly ONE more under its own name, timing all of it — while the console
+    still carries only the members' verdict lines.
+
+    Why the old case did not catch the slot bug: it ran `make check` alone, a
+    gate with a recipe of its own, so it proved the funnel on the one target
+    that never had the defect. `precommit` and `milestone` were
+    prerequisite-only and opened no slot — 47 gate rows on this repo and
+    none named a composition, and `verify --plan` said `unknown` for both
+    wide rungs (0.2.0/bugs/a-composition-has-no-slot). pytest is stood in by
+    `PYTEST=true`: the subject is the funnel, not the suite, and the unit
+    tier inside the unit tier is minutes for no altitude of coverage."""
     script, rows = recorder
-    done = make('check', GDK_LEDGER_CMD=f'bash {script}', GDK_TEST_ROWS=str(rows))
+    done = make('precommit', 'PYTEST=true',
+                GDK_LEDGER_CMD=f'bash {script}', GDK_TEST_ROWS=str(rows))
     assert done.returncode == 0, done.stdout + done.stderr
     filed = rows.read_text(encoding='utf-8').splitlines()
-    assert len(filed) == 1, filed
-    assert 'ARG[ledger] ARG[record]' in filed[0], filed[0]
-    assert 'ARG[--gate] ARG[check]' in filed[0], filed[0]
-    assert 'ARG[--verdict] ARG[PASS]' in filed[0], filed[0]
-    assert re.search(r'ARG\[--duration-ms\] ARG\[[0-9]+\]', filed[0]), filed[0]
-    # No census was set by this gate, so the flag is OMITTED — never a `0`.
-    assert 'ARG[--census]' not in filed[0], filed[0]
+    by_gate = {}
+    for row in filed:
+        gate = re.search(r'ARG\[--gate\] ARG\[([^\]]+)\]', row)
+        assert gate, row
+        assert gate.group(1) not in by_gate, f'{gate.group(1)} filed twice: {filed}'
+        by_gate[gate.group(1)] = row
+    # One per member, then the composition's — it closes last because its
+    # verdict comes after the sub-make.
+    assert list(by_gate) == ['check', *precommit_tiers(), 'precommit'], filed
+    for gate, row in by_gate.items():
+        assert 'ARG[ledger] ARG[record]' in row, row
+        assert 'ARG[--verdict] ARG[PASS]' in row, row
+        assert re.search(r'ARG\[--duration-ms\] ARG\[[0-9]+\]', row), (gate, row)
+    # No census was set by `check` or by the composition, so the flag is
+    # OMITTED — never a `0`.
+    for gate in ('check', 'precommit'):
+        assert 'ARG[--census]' not in by_gate[gate], by_gate[gate]
+
+    def ms(gate: str) -> int:
+        return int(re.search(r'ARG\[--duration-ms\] ARG\[([0-9]+)\]',
+                             by_gate[gate]).group(1))
+    assert ms('precommit') >= max(ms(g) for g in by_gate if g != 'precommit'), (
+        'the composition row does not bracket its members', filed)
     lines = done.stdout.splitlines()
-    assert len(lines) == 1 and VERDICT.match(lines[0]), done.stdout
+    assert len(lines) == 1 + len(precommit_tiers()), done.stdout
+    assert VERDICT.match(lines[0]), lines[0]
+    assert all(ln.startswith('[') and 'full log: .gate-reports/' in ln
+               for ln in lines[1:]), done.stdout
+    assert '[PRECOMMIT]' not in done.stdout, done.stdout
 
 
 @pytest.mark.parametrize('broken', ['exits-nonzero', 'does-not-exist'])

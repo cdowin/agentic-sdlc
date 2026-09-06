@@ -15,11 +15,14 @@ variables a kit sets. So the contract under test is:
     `GDK_MILESTONE_TIERS`, an EMPTY list announces itself, and a NAMED tier
     that resolves to no target is a parse-time failure naming the variable.
     Those two cases are held apart on exactly one condition, and a check that
-    fires on both is as wrong as one that fires on neither.
+    fires on both is as wrong as one that fires on neither;
+  * each composition OPENS A SLOT of its own name around one sub-make of its
+    members, so the ledger carries a `precommit` / `milestone` row beside the
+    members' rows — and the console still carries only the members' lines.
 
 `make -n` is the whole engine story here: nothing in this file builds anything,
-and the dry runs are asserted to stay dry — which is why the sub-make in
-`check` is not spelled `$(MAKE)`.
+and the dry runs are asserted to stay dry — which is why neither sub-make, the
+one in `check` nor the one in each composition, is spelled `$(MAKE)`.
 """
 from __future__ import annotations
 
@@ -149,12 +152,17 @@ def make(root: Path, *args: str, **env_extra: str) -> subprocess.CompletedProces
     # stream passes VERBOSE='1' explicitly.
     for leaked in ('MAKELEVEL', 'MAKEFLAGS', 'MFLAGS', 'VERBOSE'):
         env.pop(leaked, None)
-    # The cost recorder is OFF unless a case asks for it. `make gates` files
+    # The cost recorder is OFF unless a case asks for it. `make check` files
     # a real `kind: gate` row through `GDK_LEDGER_CMD`, and a suite that
     # left it on would append one to this repo's own milestone ledger on
-    # every run — a test writing into the tree it grades. An EMPTY value
-    # is still a defined make variable, so the Makefile's `?=` keeps it.
-    env.setdefault('GDK_LEDGER_CMD', '')
+    # every run — a test writing into the tree it grades. ASSIGNED, not
+    # `setdefault`: the include EXPORTS it, so under `make test` the
+    # environment already carries the real recorder, and every fixture gate
+    # here was spawning `uv run` against a fixture with no PM tree and
+    # printing a "recorder exited 2" note — on stderr, where nothing read it,
+    # until the compositions started carrying a member's stderr on stdout.
+    # An EMPTY value is still a defined make variable, so the `?=` keeps it.
+    env['GDK_LEDGER_CMD'] = ''
     env.update(env_extra)
     return subprocess.run(['make', *args], cwd=root, text=True,
                           capture_output=True, env=env, timeout=120)
@@ -162,6 +170,34 @@ def make(root: Path, *args: str, **env_extra: str) -> subprocess.CompletedProces
 
 def stubbed(root: Path) -> str:
     return f'DEVKIT=bash {root}/devkit-stub'
+
+
+# A stand-in ledger recorder: appends the argv it was handed, one call per
+# line. What the composition cases read is WHICH gate names got a row and how
+# many times — never this repo's own ledger.
+RECORDER = """#!/usr/bin/env bash
+{ printf 'CALL'; for a in "$@"; do printf ' ARG[%s]' "$a"; done; printf '\\n'
+} >> "$GDK_TEST_ROWS"
+"""
+
+
+def recording(root: Path) -> dict[str, str]:
+    """Env that wires the stand-in recorder into a fixture run."""
+    (root / 'recorder.sh').write_text(RECORDER, encoding='utf-8')
+    (root / 'rows.txt').write_text('', encoding='utf-8')
+    return {'GDK_LEDGER_CMD': f'bash {root}/recorder.sh',
+            'GDK_TEST_ROWS': str(root / 'rows.txt')}
+
+
+def rows_filed(root: Path) -> list[tuple[str, str]]:
+    """(gate, verdict) per recorder call, in filing order."""
+    found = []
+    for line in (root / 'rows.txt').read_text(encoding='utf-8').splitlines():
+        gate = re.search(r'ARG\[--gate\] ARG\[([^\]]+)\]', line)
+        verdict = re.search(r'ARG\[--verdict\] ARG\[([^\]]+)\]', line)
+        found.append((gate.group(1) if gate else '?',
+                      verdict.group(1) if verdict else '?'))
+    return found
 
 
 def declared_targets() -> list[str]:
@@ -362,32 +398,81 @@ def test_milestone_with_no_tiers_names_its_own_variable():
 
 
 def test_tiers_compose_into_both_gates_in_declaration_order():
-    """`-include` resolves at parse time and prerequisites stay prerequisites,
-    so the dry run lists the whole composition without running any of it."""
+    """`-include` resolves at parse time, so the dry run names the whole
+    composition — `check`, then the tiers in the order the kit declared —
+    without running any of it.
+
+    Why the old case did not catch the slot bug: it asserted that `make -n`
+    printed each MEMBER's recipe, which is what a prerequisite-only target
+    expands to — and a prerequisite-only target is the one shape that can
+    never open a slot. The members are now the goals of the composition's
+    sub-make, so the dry run prints ONE recipe naming them, and the members'
+    own recipes are `make -n check` / `make -n kit-parse`'s to print."""
     with project(tiers=TIERS_MK) as root:
         pre = make(root, '-n', 'precommit', stubbed(root))
         mil = make(root, '-n', 'milestone', stubbed(root))
     assert pre.returncode == 0, pre.stdout + pre.stderr
     assert mil.returncode == 0, mil.stdout + mil.stderr
-    # The `check` recipe is the devkit CLI; each tier is its own echo. Order is
-    # the order the kit declared, after `check`.
-    def echoed(out: str) -> list[str]:
-        return re.findall(r'^echo "\[(KIT-[A-Z]+)\] PASS"$', out, re.M)
-    assert 'check all' in pre.stdout, pre.stdout
-    assert echoed(pre.stdout) == ['KIT-PARSE', 'KIT-UNIT'], pre.stdout
-    assert 'check all' in mil.stdout, mil.stdout
-    assert echoed(mil.stdout) == ['KIT-PARSE', 'KIT-LINT', 'KIT-UNIT'], mil.stdout
+
+    def goals(out: str) -> list[str]:
+        found = re.findall(r'\$\{MAKE:-make\} ([a-z -]+?);', out)
+        assert len(found) == 1, out
+        return found[0].split()
+    assert goals(pre.stdout) == ['check', 'kit-parse', 'kit-unit'], pre.stdout
+    assert goals(mil.stdout) == ['check', 'kit-parse', 'kit-lint', 'kit-unit'], mil.stdout
+    # Dry means dry: the sub-make must not be one `-n` would execute, and no
+    # member's recipe ran or was printed as if it had.
+    assert '$(MAKE)' not in pre.stdout + mil.stdout
+    assert 'echo "[KIT-' not in pre.stdout + mil.stdout, pre.stdout + mil.stdout
+    assert 'gdk_gate_log precommit' in pre.stdout, pre.stdout
+    assert 'gdk_gate_log milestone' in mil.stdout, mil.stdout
     # A declared list is not an empty one: no announcement in either.
     assert '[TIERS]' not in pre.stdout + mil.stdout, pre.stdout + mil.stdout
 
 
-def test_tiers_actually_run_in_the_composition():
+def test_tiers_actually_run_in_the_composition_and_the_composition_files_a_row():
+    """The members run, in order, and their lines are the WHOLE console; the
+    ledger gets one row per slot that opened, and the composition's own row
+    — named `precommit`, verdict PASS, filed once — is among them.
+
+    Why the old case did not catch the slot bug: it ran the recorder OFF, so
+    it proved the members ran and never asked what got filed — and the
+    answer was "every member and never the composition", which is why
+    `verify --plan` said `unknown` for the wide rungs on every project
+    (0.2.0/bugs/a-composition-has-no-slot). The kit tiers here are plain
+    echos that open no slot, so they file nothing; the one-per-member count
+    against tiers that do open slots is test_makefile_gates.py's, on this
+    repo's real `unit` tier."""
     with project(tiers=TIERS_MK) as root:
-        done = make(root, 'precommit', stubbed(root))
-    assert done.returncode == 0, done.stdout + done.stderr
+        done = make(root, 'precommit', stubbed(root), **recording(root))
+        assert done.returncode == 0, done.stdout + done.stderr
+        filed = rows_filed(root)
+        assert (root / '.gate-reports' / 'precommit.log').is_file()
+        transcript = (root / '.gate-reports' / 'precommit.log').read_text(encoding='utf-8')
     lines = [ln for ln in done.stdout.splitlines() if ln.strip()]
     assert lines[0].startswith('[CHECK]'), done.stdout
     assert lines[1:] == ['[KIT-PARSE] PASS', '[KIT-UNIT] PASS'], done.stdout
+    assert filed == [('check', 'PASS'), ('precommit', 'PASS')], filed
+    # The composition's verdict line is in its transcript, not on the console.
+    assert '[PRECOMMIT] PASS (check kit-parse kit-unit)' in transcript, transcript
+    assert '[PRECOMMIT]' not in done.stdout, done.stdout
+
+
+def test_a_failing_member_fails_the_composition_and_its_row_says_so():
+    """The row that matters most is the one for a run that FAILED: a
+    composition row reading PASS above a member that did not is a durable
+    record contradicting the console, hard rule 4's read-side sin. The
+    composition exits non-zero, adds nothing to the console beyond what the
+    member printed, and files exactly one row, verdict FAIL."""
+    failing = (TIERS_MK.replace('@echo "[KIT-UNIT] PASS"',
+                                '@echo "[KIT-UNIT] FAIL"; exit 3'))
+    with project(tiers=failing) as root:
+        done = make(root, 'precommit', stubbed(root), **recording(root))
+        filed = rows_filed(root)
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert filed == [('check', 'PASS'), ('precommit', 'FAIL')], filed
+    assert '[KIT-UNIT] FAIL' in done.stdout, done.stdout
+    assert '[PRECOMMIT]' not in done.stdout, done.stdout
 
 
 def test_neither_tier_path_warns_about_an_undefined_variable():
@@ -504,12 +589,27 @@ def test_a_tool_with_no_verdict_of_its_own_gets_one_here():
         f'{bare} print whatever their tool prints instead of one verdict line')
 
 
-def test_the_compositions_add_no_output_of_their_own():
-    """The empty-tier announcement is a PREREQUISITE, not a recipe on the
-    composition: each member's verdict is still the whole output."""
+def test_the_compositions_open_a_slot_of_their_own_name():
+    """Why the old case did not catch the slot bug: it asserted the
+    compositions had NO recipe at all, as the guarantee that they printed
+    nothing of their own — and a target with no recipe is precisely one that
+    can never open a slot, so the assertion pinned the bug in place. The
+    shape now: each composition's recipe is `gdk_composition`, which opens a
+    slot under the composition's name, runs the members through one sub-make
+    inside the capture, and sends its own verdict to its transcript rather
+    than the console. "Nothing of their own on the console" is proven by
+    the run cases above, on output, where it belongs; the empty-tier
+    announcement stays a PREREQUISITE, ahead of the slot."""
     bodies = recipes()
     for name in ('precommit', 'milestone'):
-        assert bodies[name].strip() == '', f'{name} grew a recipe: {bodies[name]}'
+        assert f'$(call gdk_composition,{name},' in bodies[name], bodies[name]
+    text = INCLUDE.read_text(encoding='utf-8')
+    define = text.split('define gdk_composition\n', 1)[1].split('\nendef', 1)[0]
+    for helper in ('gdk_gate_log $(1)', 'gdk_gate_capture', 'gdk_gate_verdict $(2)'):
+        assert helper in define, define
+    assert '$(MAKE)' not in define, 'a literal $(MAKE) runs the members under -n'
+    assert re.search(r'gdk_gate_verdict [^\n]* >> "\$\$log"', define), (
+        'the composition verdict goes to its transcript, not the console')
 
 
 def test_phony_lists_this_files_targets_AND_the_declared_tiers():

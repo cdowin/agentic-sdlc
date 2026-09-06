@@ -206,22 +206,22 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
         m_cat = model.category_of(cfg, 'milestone', mstat)
-        m_ready = model.readied(cfg, 'milestone', mstat)
+        m_started = model.left_todo(cfg, 'milestone', mstat)
 
         if 'D4' in enabled:
             reason = model.undeclared_status(cfg, 'milestone', mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
 
-        if m_ready:
+        if m_started:
             if not model.unquote(model.field_of(mfile, 'branch')):
-                warn(f'milestone {mid} is {mstat!r} with no branch: — readied, '
-                     f'and a fresh checkout cannot find where its work lives'
-                     f'  [{cfg.rel(mfile)}]')
+                warn(f'milestone {mid} is {mstat!r} with no branch: — past '
+                     f'todo, and a fresh checkout cannot find where its work '
+                     f'lives  [{cfg.rel(mfile)}]')
             why = model.empty_section(mfile, model.SHIP_HEADING)
             if why:
-                warn(f'milestone {mid} is {mstat!r} and {why} — readied, and '
-                     f'nothing says what done means  [{cfg.rel(mfile)}]')
+                warn(f'milestone {mid} is {mstat!r} and {why} — past todo, '
+                     f'and nothing says what done means  [{cfg.rel(mfile)}]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(mdir)]
@@ -257,18 +257,18 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
 
-            if m_ready and not view.phase:
+            if m_started and not view.phase:
                 warn(f'milestone {mid} is {mstat!r} and feature {view.fid} '
-                     f'carries no phase: — readied, and the board cannot '
+                     f'carries no phase: — past todo, and the board cannot '
                      f'order it  [{frel}]')
-            if model.readied(cfg, 'feature', view.status):
+            if model.left_todo(cfg, 'feature', view.status):
                 if view.total == 0:
                     warn(f'feature {view.fid} is {view.status!r} with no '
-                         f'stories — readied, and nothing to build  [{frel}]')
+                         f'stories — past todo, and nothing to build  [{frel}]')
                 why = model.empty_section(view.path, model.SHIP_HEADING)
                 if why:
                     warn(f'feature {view.fid} is {view.status!r} and {why} — '
-                         f'readied, and nothing says what done means'
+                         f'past todo, and nothing says what done means'
                          f'  [{frel}]')
 
             for sfile in view.stories:
@@ -279,10 +279,10 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     reason = model.undeclared_status(cfg, 'story', sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
-                if model.readied(cfg, 'story', sstat):
+                if model.left_todo(cfg, 'story', sstat):
                     why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
                     if why:
-                        warn(f'story {sid} is {sstat!r} and {why} — readied, '
+                        warn(f'story {sid} is {sstat!r} and {why} — past todo, '
                              f'and nothing says what must be true  [{srel}]')
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):

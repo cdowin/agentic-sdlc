@@ -1622,22 +1622,21 @@ def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:
 # --- ready: a stamp, and what `check pm` says about an empty one -------------
 # `ready` is ONE COMMAND — `pm <kind> ready <id>` — and nothing else writes it
 # (story 02 of the-code-knows-entry-and-exit; Chris: "nothing fancy and
-# automatic"). What `ready` MEANS is a WARNING `check pm` prints, never a gate:
-# a grain that has been readied and says nothing about what must be true is
-# worth a line, not an exit code.
+# automatic"). What leaving `todo` MEANS is a WARNING `check pm` prints, never
+# a gate: a grain whose work has started and that says nothing about what
+# must be true is worth a line, not an exit code.
 #
-# "Readied" is asked of the DECLARATION, not of a word: the grain has left its
-# kind's FIRST `todo` state. Under the seed that is `ready` and everything
-# after it; under `todo = ["queued", "shaped"]` it is `shaped`; under a
-# single-word `todo` it is every grain, because that project declared no
-# "still being shaped" state to be in. A word the project never declared is
-# D4's finding and not readied.
-def readied(cfg: PmConfig, kind: str, status: str) -> bool:
-    """True when `status` is declared and is past the kind's first `todo`."""
-    flow = flow_of(cfg, kind)
-    if flow.category(status) is None:
-        return False
-    return status != flow.by_category[TODO][0]
+# Asked of the CATEGORY and of nothing else: the status is declared and sits
+# in `in_progress` or `done`. Order WITHIN `todo` is the project's
+# presentation (`Flow.order`) and no gate keys on it — the first cut of this
+# predicate did ("past the kind's FIRST `todo` state"), so swapping two `todo`
+# words changed the warning count with no word renamed or moved (V3 of the
+# feature review). A word the project never declared is D4's finding and is
+# not asked.
+def left_todo(cfg: PmConfig, kind: str, status: str) -> bool:
+    """True when `status` is declared for `kind` and its category is not `todo`."""
+    category = category_of(cfg, kind, status)
+    return category is not None and category != TODO
 
 
 # The three sections `pm new` scaffolds and this reads — nothing else is

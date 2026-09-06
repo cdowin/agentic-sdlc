@@ -108,6 +108,18 @@ LOG_PATHS = ('pm/', 'docs/reviews/', 'CHANGELOG.md')
 # forgetting.
 NOT_CONTENT = {'.git', '.gate-reports', '.pytest_cache', '.ruff_cache', '.venv',
                '__pycache__', 'node_modules', '.mypy_cache'}
+# The matrix installs one environment per interpreter (`.venv-3.12`), and
+# tools/dev/agent-worktree.sh parks whole checkouts under .claude/worktrees/ —
+# each one a repo of its own, scanned by its own run of this suite. Both are
+# gitignored; both are tool output.
+NOT_CONTENT_PREFIXES = ('.venv', '.claude/worktrees')
+
+
+def is_tool_output(rel: str) -> bool:
+    """ONE answer to "is this path tool output", asked by the census and by the
+    independent walk that audits it — two spellings drifted the moment a
+    second exclusion shape arrived."""
+    return bool(set(Path(rel).parts) & NOT_CONTENT) or rel.startswith(NOT_CONTENT_PREFIXES)
 
 # The tombstones: files allowed to spell a banned name, because banning it is
 # what they do. Every entry carries its reason — an allowlist without one is
@@ -260,7 +272,7 @@ def take_census(root: Path = REPO_ROOT) -> Census:
             continue
         census.walked.append(path)
         rel = path.relative_to(root).as_posix()
-        if set(Path(rel).parts) & NOT_CONTENT:
+        if is_tool_output(rel):
             census.tool_output.append(path)
         elif _is_log(rel):
             census.log.append(path)
@@ -343,7 +355,7 @@ def test_the_census_accounts_for_every_file_it_walked():
     census = take_census()
     independent = {path for path in REPO_ROOT.rglob('*')
                    if path.is_file() and not path.is_symlink()
-                   and not set(path.relative_to(REPO_ROOT).parts) & NOT_CONTENT}
+                   and not is_tool_output(path.relative_to(REPO_ROOT).as_posix())}
     unclassified = sorted(independent - census.content())
     assert not unclassified, (
         f'{len(unclassified)} file(s) left the census unclassified — the walk '

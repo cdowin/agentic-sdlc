@@ -51,6 +51,13 @@
 # [shell]
 # roots = ["tools"]
 
+# `check grain-shape` holds every grain body and every review record to a cap, in
+# lines. Stock: story 60, feature 80, bug 50, milestone 120, decisions 300,
+# review 120. A kind not named keeps its stock cap; raise one here, visibly, or
+# split the record. `review` reads `[pm] review_dir`.
+# [grain_shape]
+# caps = { story = 60 }
+
 # `check repo-hygiene` is CLOSE-TIME and fetches from the network.
 # [repo_hygiene]
 # mainline = "origin/main"

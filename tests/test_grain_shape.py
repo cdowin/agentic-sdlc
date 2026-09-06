@@ -1,33 +1,6 @@
-"""test_grain_shape.py — the prose cap the kit that DEFINES the grain enforces.
-
-The rule this gate exists for: a gate that scans an artifact this kit owns
-belongs to this kit. A prose-cap script enforcing this package's grain schema
-was authored by a consumer and lives in one game repo; the other consumer does
-not have it at all. So the cases here are about the two ways that gate can lie
-once it moves — a cap that never fires, and a census that reports on nothing.
-
-Three of them are the CLAUDE.md gate-semantics bar, and they are the reason the
-rest exist:
-
-  * a deliberately-broken probe — a document over its cap, and the gate FAILS;
-  * a scope that DROPPED every file it found FAILS rather than passes;
-  * a bad value in this gate's config section is exit 2, never 1.
-
-And two that are the opposite risk, since this gate is in the STOCK roster: a
-repo with no PM tree, and a PM tree with no grain WRITTEN YET, must both be
-no-ops that SAY SO. A failure on the first reds every consumer without a PM tree
-on the day it bumps its pin; a failure on the second reds every consumer on the
-day it runs `init`, which is worse — and did happen, on 2026-09-05, which is why
-the second case exists.
-
-**Barely cut in 0.2.0 (feature `the-proof-is-named-in-the-criterion`, phase B),
-deliberately.** This gate has had M1, M2 and K1 against it — a false PASS over a
-tree it never walked — so every census and disclosure case here is proven to
-bite, and every one of them stayed. What went was the cap ARITHMETIC asserted
-twice (`_body_lines` restating what the over-cap probe demonstrates) and the
-`--help` case, which asserted a docstring rather than a behaviour. Two more were
-folded into the tree that already built the fixture they needed.
-"""
+"""`check grain-shape`: the two ways a cap gate lies, a cap that never fires and a
+census that reports on nothing, plus the two no-ops a stock-roster gate must say
+out loud (no PM tree; a tree with no grain yet)."""
 from __future__ import annotations
 
 import contextlib
@@ -458,6 +431,26 @@ def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
         code, out = gate()
     assert code == 1, out
     assert 'decisions.md' in out and 'decisions cap 10' in out, out
+
+
+def test_a_review_record_over_its_cap_reddens_and_the_census_counts_it():
+    """A review record is not a grain, so it is its own walk over `[pm] review_dir`;
+    the probe is what keeps the `review` cap from being a knob that never fires."""
+    with pmfx.tree() as root:
+        record = root / 'docs/reviews/alpha.md'
+        record.write_text(record.read_text(encoding='utf-8') + body(400),
+                          encoding='utf-8')
+        code, out = gate()
+        assert code == 1, out
+        assert 'OVER CAP' in out and 'docs/reviews/alpha.md' in out, out
+        assert f'review cap {grain_shape.DEFAULT_CAPS["review"]}' in out, out
+        assert '1 review record(s) under docs/reviews/' in out, out
+
+        config(root, '[grain_shape]\ncaps = { review = 500 }\n')
+        code, out = gate()
+    assert code == 0, out
+    assert '1 review record(s) under docs/reviews/' in out, out
+    assert 'review 1/500' in out, out
 
 
 def test_the_archive_and_dot_prefixed_paths_are_excluded_and_disclosed():

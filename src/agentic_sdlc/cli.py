@@ -87,33 +87,33 @@ Static gates (exit 1 on findings; run from anywhere inside the repo):
                                     # devkit ones. The include shells out to
                                     # this rather than parsing TOML in make.
 
-The conveyors (`[release]` / `[adopt]` in devkit.toml) — a step list that
-REFUSES TO ADVANCE, so the position lives on disk instead of in an operator's
-head and survives a context clear, an interruption or a handoff:
-    agentic-sdlc release <version>  # the milestone belt's tail: tree, review,
-                                    # gate, changelog, bump, merge, tag, and
-                                    # the artifact proven from a cold cache
-    agentic-sdlc adopt              # a devkit pin bump, scoped to the
-                                    # ADOPTION — this package's checks, the
-                                    # installable diffs, the hook corpus — and
-                                    # never the project's own gate set, which a
-                                    # version bump here cannot change
-    agentic-sdlc close story <id>   # the INNER belts (SDLC.md §0), and the
-    agentic-sdlc close feature <id> # ones that run constantly. `close story`
-                                    # is five steps and well under a second:
-                                    # claimed, the narrow rung green, the work
-                                    # committed, the `done:` evidence written,
-                                    # `done`. `close feature` names any story
-                                    # that is not finished (asked of `pm
-                                    # ready-for feature`), and any review
-                                    # record that is absent, unparseable or
-                                    # holds a finding at `disposition: open`
-    (EVERY STEP IS A CHECK and no belt halts: the walk finishes and the last
-     line is a scoreboard of what is true and what is not. Every step that is
-     not true becomes a `deviation` row in the milestone's ledger.jsonl,
-     carrying the reason the step gave; `--status` prints them. Whether a
-     not-true step should stop you is your question — `check <gate>` is the
-     thing that FAILS a tree, in CI and pre-push.)
+The belts (`[release]` / `[adopt]` / `[story]` / `[feature]` in devkit.toml)
+— each is its CHECKS, then ONE write or a clean error (D12): every check
+runs and prints `ok: <check>` or `error: <check>: <what is false>`; all true
+→ the grain's status is set to the first state of its kind's `done` category
+and exit 0; any false → nothing written, exit 1. `--force` writes anyway and
+the ledger's `deviation` row names the false checks. Nothing else is written,
+bumped, retitled, pushed or tagged: what is yours next is printed as `next:`.
+    agentic-sdlc release <version>  # tree clean, on the milestone branch,
+                                    # `## Unreleased` non-empty, features
+                                    # done, findings dispositioned, version
+                                    # sites named, gate green → milestone done
+    agentic-sdlc adopt <version>    # a devkit pin bump, scoped to the
+                                    # ADOPTION — the pin, the installables,
+                                    # this package's checks, the hook corpus —
+                                    # never the project's own gate set. Checks
+                                    # only; it writes nothing
+    agentic-sdlc close story <id>   # the INNER belts (SDLC.md §0). story:
+    agentic-sdlc close feature <id> # exists, the narrow rung green over its
+                                    # range, committed, `done:` evidence →
+                                    # done. feature: every story in the
+                                    # `done` category (each that is not is
+                                    # named by `pm ready-for feature`), a
+                                    # review record that parses, no finding
+                                    # `open` → done
+    (`check <gate>` is the thing that FAILS a tree, in CI and pre-push; a
+     belt reads, names, and writes one status — whether a false check should
+     stop you is your question, and `--force` is the answer on the record.)
 
 Per-project config: devkit.toml at the consuming repo root (see each tool's
 module docstring for its section).

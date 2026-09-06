@@ -243,11 +243,12 @@ install-gates   tools/dev/gdk_gate.sh — the shell library your gate targets
                 Makefile.tiers this include `-include`s. With no such file a
                 project gets `check` alone, and says so. Both files carry
                 --help and --self-test.
-install-sdlc    docs/sdlc-protocol.md — YOUR release protocol, rendered from
-                `[release] steps` (and `[adopt] steps`) in your devkit.toml
-                and from the registry that walks them. It is the document for
-                the list `agentic-sdlc release` actually runs, so it cannot
-                drift from it: change the config, re-run this verb. The only
+install-sdlc    docs/sdlc-protocol.md — YOUR protocol, rendered from the
+                `[story]` / `[feature]` / `[release]` / `[adopt]` check lists
+                in your devkit.toml, the registry that runs them, and the
+                `[pm.states.<kind>] done` state each belt writes. It is the
+                document for the checks the belts actually run, so it cannot
+                drift from them: change the config, re-run this verb. The only
                 install verb whose body is GENERATED rather than copied.
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
@@ -331,21 +332,19 @@ _NEXT_STEP = {
                      'way — the stock recipes source it. Then edit the '
                      '`project config` header: the files are yours now.',
     'install-sdlc': 'docs/sdlc-protocol.md is GENERATED — it is the one '
-                    'installed file you do not edit. Its ordered lists come '
-                    'from `[release] steps` in devkit.toml and from the step '
-                    'registry that walks them, so the way to change the '
-                    'protocol is to change the config (or a step) and re-run '
+                    'installed file you do not edit. Its check lists come '
+                    'from `[<operation>] steps` in devkit.toml and from the '
+                    'registry that runs them, so the way to change the '
+                    'protocol is to change the config (or a check) and re-run '
                     'this verb with --force. Link to it from your own SDLC '
-                    'document rather than restating the steps there: a second '
-                    'copy of an ordered list is the drift this verb exists to '
-                    'end. Then run `agentic-sdlc release <version>` — it '
-                    'walks every step to the end, names each one whose '
-                    'postcondition is not true and says what would make it '
-                    'true; the last line is a scoreboard. Steps that need a '
-                    'tool this package will never ship (a GitHub client, your '
-                    'artifact proof) are yours to name in '
-                    '`[release.commands]`; with none they are reported '
-                    'UNVERIFIABLE — never a pass, and the walk finishes.',
+                    'document rather than restating the checks there: a '
+                    'second copy of an ordered list is the drift this verb '
+                    'exists to end. Then run `agentic-sdlc release <version>` '
+                    '— every check runs and prints, all true → the milestone '
+                    'is written `done` and the `next:` lines say what is yours '
+                    '(retitle, push, PR, tag, prove), any false → nothing is '
+                    'written and each false check is named; `--force` writes '
+                    'anyway and the ledger row names them.',
 }
 
 # The `.claude/settings.json` entries that FIRE the Claude Code half of the

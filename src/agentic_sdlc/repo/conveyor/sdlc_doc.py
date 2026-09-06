@@ -1,30 +1,24 @@
-"""sdlc_doc.py — the protocol document, RENDERED from the list that runs.
+"""sdlc_doc.py — the protocol document, RENDERED from the lists that run.
 
-`agentic-sdlc install-sdlc` writes `docs/sdlc-protocol.md`. Every ordered line
-in it comes from `[<operation>] steps` and from the step registry those names
-resolve against — never from a table of prose kept here. Change the config,
-re-run the verb, and the document changes with it.
+`agentic-sdlc install-sdlc` writes `docs/sdlc-protocol.md`. Every check line
+in it comes from `[<operation>] steps` and the registry those names resolve
+against, every "then:" line from `steps.AFTER`, and the write from the
+project's own `[pm.states.<kind>] done` — never from a table of prose kept
+here. Change the config, re-run the verb, and the document changes with it.
+A hand-written document DESCRIBING the checks recreates the drift this
+package measured three times in one milestone.
 
-That is not a documentation chore. It is `the-release-is-a-conveyor` risk 2:
-*a hand-written doc DESCRIBING the steps recreates the drift immediately*. The
-drift is measured, not hypothetical — `SDLC.md` § *Close protocol* and
-`.claude/skills/release/SKILL.md` disagreed with each other and with the code,
-in this repo, in the milestone that built this module.
+Two rules this module is written to:
 
-## Two rules this module is written to
+1. **It holds no per-check text.** The sentences live in `steps.STEP_DOC`,
+   beside the `check()` that asks them; the after-lists in `steps.AFTER`; the
+   not-a-check guidance in `steps.GUIDANCE`.
+2. **It writes a WHOLE file it owns.** It never splices into `SDLC.md`
+   (rule 3); `SDLC.md` LINKS here.
 
-1. **It holds no per-step text.** The postcondition sentences live in
-   `steps.STEP_DOC`, beside the `check()` that enforces them, and the
-   not-a-step guidance lives in `steps.GUIDANCE`. A second copy here would be
-   the second home again, one indirection further along.
-2. **It writes a WHOLE file it owns.** It never splices a section into
-   `SDLC.md`: that would be a write verb editing lines it was not asked to
-   edit, inside a file an author owns (rule 3). `SDLC.md` LINKS here instead,
-   and keeps the doctrine that is not a step list.
-
-The output is a function of CONFIG ALONE. Nothing here reads the clock, the
+The output is a function of CONFIG ALONE: nothing here reads the clock, the
 environment or the working tree, so two repos with the same config render
-byte-identical documents and a second run of the verb is `already current`.
+byte-identical documents.
 """
 from __future__ import annotations
 
@@ -43,58 +37,75 @@ OPERATIONS = driver.OPERATIONS
 
 
 def _cell(text: str) -> str:
-    """One markdown table cell. A `|` inside a cell would open a column that is
-    not there — and a step NAME can never carry one (the name grammar is
-    `[a-z][a-z0-9-]*`), so this only ever guards the prose halves."""
+    """One markdown table cell. A `|` inside would open a column that is not
+    there; a check NAME can never carry one (the grammar is `[a-z][a-z0-9-]*`)
+    so this only guards the prose halves."""
     return text.replace('|', '\\|').replace('\n', ' ')
 
 
-def _table(operation: str) -> list[str]:
-    """The ordered list for one operation, as rows, or why there is none.
+def _write_line(operation: str) -> str:
+    """What the belt writes when every check is true. The WORD is not
+    rendered — it is `[pm.states.<kind>] done`'s first entry, read by the
+    belt at run time and printed by `pm vocabulary` — so this document stays
+    a function of the check lists alone: `init` renders it before `pm init`
+    has written the flow, and a project that renames a state does not leave
+    a stale document behind."""
+    kind = driver.WRITES[operation]
+    if not kind:
+        return ('**Then:** nothing. `adopt` writes nothing; it is checks '
+                'only, and `--force` is refused.')
+    return (f'**Then, all true:** the {kind}\'s status → the first state of '
+            f'`[pm.states.{kind}] done` (`pm vocabulary` prints it), through '
+            f'`pm {kind} <state> <id>`, which mints the ledger\'s `status` '
+            f'row. Any check false → `error:` lines, exit 1, nothing written. '
+            f'`--force` writes anyway and the ledger\'s `deviation` row '
+            f'names the false checks.')
 
-    An operation with no configured list gets a SENTENCE saying so — never an
-    empty section, which reads as a protocol that is complete and has no steps.
-    """
+
+def _table(operation: str) -> list[str]:
+    """The ordered check list for one operation, as rows, or why there is
+    none — a SENTENCE, never an empty section that reads as complete."""
     known = driver.registry_for(operation)
-    # A `ConfigError` PROPAGATES. It is exit 2 from the verb, before a byte is
-    # rendered — never a document with a note where a list should be, which
-    # would install a protocol whose broken half looks like a rendered one.
+    # A `ConfigError` PROPAGATES: exit 2 from the verb before a byte is
+    # rendered, never a document with a note where a list should be.
     names = steps.steps_for(operation, known)
     if not names:
         return [f'> `[{operation}] steps` is not configured in this repo, and '
                 f'this package ships no default list for `{operation}`. '
-                f'Nothing walks it.']
+                f'Nothing runs it.']
     commands = steps.commands_for(operation, names, known)
-    out = ['| # | step | kind | command | what makes it true |',
-           '|---|---|---|---|---|']
+    out = ['| # | check | runs | what must be true |',
+           '|---|---|---|---|']
     for index, name in enumerate(names, start=1):
-        step = known[name]
         command = commands.get(name, '')
-        # A configured command wins, then the action the step SHIPS, and only
-        # then the operator. A gate that runs something by default read as
-        # "*(operator)*" here, which is the one thing this column must never
-        # say about a step that acts on its own.
         shipped = steps.SHIPPED_ACTION.get(name, '')
         if command:
             shown = f'`{_cell(command)}`'
         elif shipped:
             shown = f'`{_cell(shipped)}` *(shipped)*'
         else:
-            shown = ('— *(operator)*'
-                     if step.kind is not driver.StepKind.AUTOMATIC else '—')
+            shown = '— *(reads the tree)*'
         doc = steps.STEP_DOC.get(
-            name, '*(this step ships no postcondition sentence)*')
-        out.append(f'| {index} | `{name}` | {step.kind.name} | {shown} | '
-                   f'{_cell(doc)} |')
+            name, '*(this check ships no sentence)*')
+        out.append(f'| {index} | `{name}` | {shown} | {_cell(doc)} |')
+    out.append('')
+    out.append(_write_line(operation))
+    after = steps.after_lines(operation, commands, version='<version>',
+                              branch='<branch>', mainline='<mainline>')
+    if after:
+        out.append('')
+        out.append('**Yours, after the write** (printed as `next:` lines):')
+        out.append('')
+        out.extend(f'- {line}' for line in after)
     return out
 
 
 def _guidance() -> list[str]:
-    out = ['## Not steps, and why',
+    out = ['## Not checks, and why',
            '',
-           'A step earns its place by having a CHECKABLE POSTCONDITION. What '
-           'follows is real protocol with none, so the machine states it and '
-           'does not pretend to enforce it.',
+           'A check earns its place by having something to READ in the tree. '
+           'What follows is real protocol with nothing to read, so the '
+           'machine states it and does not pretend to enforce it.',
            '']
     for title, body in steps.GUIDANCE:
         out.append(f'**{title}.** {body}')
@@ -108,7 +119,7 @@ def render() -> str:
         encoding='utf-8')
     body: list[str] = []
     for operation in OPERATIONS:
-        body.append(f'## `{operation}` — the ordered list')
+        body.append(f'## `{operation}` — the checks')
         body.append('')
         body.extend(_table(operation))
         body.append('')

@@ -251,25 +251,35 @@ what landed match the story's own table.
 
 ## Close protocol — GENERATED, not written here
 
-**The ordered steps live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which
-`agentic-sdlc install-sdlc` RENDERS from `[release] steps` and the registry that
-walks them.** It is not hand-maintained and must not be edited: a document
-describing the steps is a second home for the protocol, and this package spent
-three incidents proving that a second home drifts. Run
-`agentic-sdlc release <version>`; it walks every step to the end, names each
-one whose postcondition is not true and says what would make it true, and the
-last line is a scoreboard (D8 — no step halts the walk).
+**The check lists live in [`docs/sdlc-protocol.md`](docs/sdlc-protocol.md), which
+`agentic-sdlc install-sdlc` RENDERS from `[story]` / `[feature]` / `[release]` /
+`[adopt]` steps, the registry that runs them, and the `[pm.states.<kind>] done`
+state each belt writes.** It is not hand-maintained and must not be edited: a
+document describing the checks is a second home for the protocol, and this
+package spent three incidents proving that a second home drifts.
 
-What stays here is the part that is NOT a step — the judgement the machine
+**A belt is its checks, then one write or a clean error** (D12). Run
+`agentic-sdlc close story <id>`, `close feature <id>` or `release <version>`:
+every check in its list runs and prints one line — `ok: <check>` or
+`error: <check>: <what is false>` — and then the belt writes AT MOST ONE thing,
+the grain's status, set to the first state of its kind's `done` category. All
+true → the write, exit 0, and `next:` lines naming what is yours (for a
+release: retitle the changelog, push, open the PR, merge, tag, prove the
+artifact). Any false → nothing written, exit 1, every false check named.
+`--force` writes anyway and the ledger's `deviation` row names the false checks.
+Nothing else is written, moved, bumped, retitled, pushed or tagged by a belt.
+`adopt` is checks only.
+
+What stays here is the part that is NOT a check — the judgement the machine
 cannot make and the rule that orders it:
 
 1. **Cross-cutting review** — a fresh strong reviewer over the milestone's
    whole commit range (adversarial input, RUN — never diff-reading). The
-   conveyor's `review-landed` step reads the ARTIFACT of that review; it cannot
-   perform it, and until the artifact exists it is reported not true by name
-   while the walk finishes.
+   release belt's `findings-resolved` check reads the ARTIFACT of that review
+   through `pm ready-for tag`; it cannot perform it, and until the artifact
+   exists the check is false by name and the milestone is not written.
 2. **Land every finding** it raised, or defer each one explicitly and in
-   writing. `review-landed` passes only when no finding sits at
+   writing. `findings-resolved` is true only when no finding sits at
    `disposition: open`.
 3. **When a gate and a judgement both bear on one decision, the judgement runs
    first and the gate answers for its result.** Chris, 2026-09-04, after this
@@ -278,16 +288,16 @@ cannot make and the rule that orders it:
    gate that runs before the review answers for a tree nobody will ship: every
    fix landed afterwards voids it, and it reads as readiness while doing so.
 
-   **That ordering is now structural rather than remembered** — `review-landed`
-   precedes `gate` in the shipped step list, and a registry that omits the
-   dependency is a test failure, watched failing: with the list `('gate',)` the
-   recorder file the gate touches exists; with `('review-landed', 'gate')` it
-   does not.
+   **Under D12 every check runs every time**, so the gate cannot be skipped by
+   ordering — but it still answers for the tree it ran on: land the findings
+   first, then run the belt, and the `gate` check's answer is about the tree
+   you will ship.
 4. **The semver call** — patch, minor or major (hard rule 7). Code cannot make
    it; `version-sync` only checks that the number you chose is written in every
-   place that carries it.
+   place that carries it, and the bump itself is the release commit — yours.
 
-Everything else in the old numbered list — the tree checks, the changelog
-retitle, the version sync, the status flips, the push, the merge, the tag, the
-artifact proof — is a step in the generated document, with its own
-postcondition, and re-stating it here is exactly what this milestone removed.
+Everything else in the old numbered list — the tree checks, the changelog, the
+version sites, the findings, the gate — is a check in the generated document;
+the retitle, the push, the PR, the merge, the tag and the artifact proof are the
+`next:` lines a successful `release` prints, listed in the same document. The
+milestone's status is the one thing the belt writes.

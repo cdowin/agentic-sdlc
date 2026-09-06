@@ -371,3 +371,6 @@
 {"ts":"2026-09-06T22:10:43Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":205,"rank":5}
 {"ts":"2026-09-06T22:10:43Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7925,"census":749}
 {"ts":"2026-09-06T22:10:43Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":10560}
+{"ts":"2026-09-06T22:11:22Z","kind":"status","grain":"0.3.0/pm-init-teaches-the-conveyor","from":"planning","to":"building"}
+{"ts":"2026-09-06T22:11:22Z","kind":"status","grain":"0.3.0/pm-init-teaches-the-conveyor/01-init-reports-a-meaning-and-D7-keeps-saying-it","from":"planning","to":"building"}
+{"ts":"2026-09-06T22:11:29Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":6709}

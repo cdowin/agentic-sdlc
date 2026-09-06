@@ -2,7 +2,7 @@
 id: 0.3.0/pm-init-teaches-the-conveyor
 milestone: "0.3.0"
 name: pm init teaches the conveyor, and an unused state is drift
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

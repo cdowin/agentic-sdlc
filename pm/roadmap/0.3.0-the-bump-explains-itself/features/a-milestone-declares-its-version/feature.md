@@ -2,8 +2,8 @@
 id: 0.3.0/a-milestone-declares-its-version
 milestone: "0.3.0"
 name: A milestone declares the version it ships as, and its id goes back to being a name
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-a-milestone-declares-its-version.md
 phase:
 depends_on: []
 consumed_by: []

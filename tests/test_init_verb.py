@@ -233,7 +233,6 @@ IGNORE_OWNERS = {
     '.gate-reports/': ('gdk_gate.sh', 'GDK_GATE_REPORT_DIR'),
     '.agent-scope': ('agent-worktree.sh', 'SCOPE_MARKER'),
     '.claude/worktrees/': ('agent-worktree.sh', 'WORKTREE_PARENT'),
-    '.agentic-sdlc/': None,
 }
 
 
@@ -243,7 +242,7 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
     rename on either side fails this rather than silently committing a
     consumer's run artifacts.
 
-    FOUR ENTRIES, UP FROM ONE (R3,
+    THREE ENTRIES (R3,
     `docs/reviews/2026-09-05-the-release-is-a-conveyor.md`). It was
     `.gate-reports/` alone while three other paths this package's own files
     write were left tracked, and `.agentic-sdlc/` is the one that bit: the
@@ -261,8 +260,6 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
     over nothing, so emptiness is a failure here before the equality below is
     even asked.
     """
-    from agentic_sdlc.repo.conveyor import state as run_state
-
     assert init.IGNORED, 'init.IGNORED is empty — this test would prove nothing'
     assert set(init.IGNORED) == set(IGNORE_OWNERS)
     for entry, owner in IGNORE_OWNERS.items():
@@ -275,23 +272,19 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
         assert (f'{variable}="${{{variable}:-{entry.rstrip("/")}}}"' in body
                 or f'{variable}="{entry.rstrip("/")}"' in body), (
             f'{shipped} no longer defaults {variable} to {entry}')
-    assert run_state.STATE_DIRNAME == '.agentic-sdlc/'.rstrip('/'), (
-        'the conveyor writes its run state somewhere else now, and init '
-        'ignores a directory nothing writes')
 
 
 def test_every_run_artifact_this_package_writes_is_ignored():
     """R3's second half: the SWEEP, not just the one entry that was found.
 
-    `state.py:11-13` says gitignoring is what keeps `tree-clean` answerable, so
+    Gitignoring is what keeps `tree-clean` answerable (under D12 a belt keeps
+    no run state, so the directory it once wrote is gone from this sweep), so
     a path this package's own files write and `init` does not ignore is a
     `tree-clean` this package falsifies in every consumer. Asked of the
     installables' own constants rather than restated, so a renamed marker fails
     here instead of quietly re-opening the hole.
     """
-    from agentic_sdlc.repo.conveyor import state as run_state
-
-    writes = {f'{run_state.STATE_DIRNAME}/'}
+    writes: set[str] = set()
     body = install.body_of('agent-worktree.sh')
     for variable in ('SCOPE_MARKER', 'WORKTREE_PARENT'):
         found = re.search(rf'^{variable}="([^"]+)"', body, re.MULTILINE)

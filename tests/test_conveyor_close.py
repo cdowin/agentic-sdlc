@@ -251,14 +251,10 @@ def test_the_written_state_is_the_configs_word_not_the_literal_done(capsys):
     """Bites: `done` spelled in the driver. A tree whose `done` category
     opens with `shipped` gets `shipped`, through `pm story shipped <id>`."""
     # Rewrite the STORY block's `done` list only, by locating its header. The
-    # legacy `[pm] story_states` vocabulary `pm story <state>` still validates
-    # against is widened to match: the belt hands `pm` the flow's word, and a
-    # `pm` that refuses it is a refused write, reported — not a write.
-    vocabulary = ('[pm]\nstory_states = ["planning", "ready", "building", '
-                  '"reviewing", "accepted", "packaging", "shipped", "done", '
-                  '"obe"]\n\n')
-    head, marker, tail = with_flow(vocabulary + CONFIG).partition(
-        '[pm.states.story]')
+    # flow is the one vocabulary `pm story <state>` validates against (the
+    # `[pm] story_states` key is retired and refused), so the belt hands `pm`
+    # the flow's word and `pm` accepts it because the flow declares it.
+    head, marker, tail = with_flow(CONFIG).partition('[pm.states.story]')
     tail = re.sub(r'^(\s*done\s*=\s*\[)', r'\1"shipped", ', tail, count=1,
                   flags=re.MULTILINE)
     flow = head + marker + tail

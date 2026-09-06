@@ -114,7 +114,6 @@ GITIGNORE_HEADER = '# agentic-sdlc run artifacts (agentic-sdlc init)'
 # package writes and does not ignore is a `tree-clean` this package falsifies.
 IGNORED = (
     '.gate-reports/',       # GDK_GATE_REPORT_DIR      (gdk_gate.sh)
-    '.agentic-sdlc/',       # STATE_DIRNAME            (conveyor/state.py)
     '.agent-scope',         # SCOPE_MARKER             (agent-worktree.sh)
     '.claude/worktrees/',   # WORKTREE_PARENT          (agent-worktree.sh)
 )

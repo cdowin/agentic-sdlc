@@ -29,7 +29,7 @@ changed — if the check you need is not a target, add the target.
 | you changed | run |
 |---|---|
 | the PM tree, or a doc | `make check` |
-| code, inner loop | `agentic-sdlc verify --story` — the paths decide |
+| code, inner loop | `agentic-sdlc verify --story` — what `[verify] story` names |
 | code, before a commit | `make precommit` — `check` + this project's `GDK_PRECOMMIT_TIERS` |
 | closing a story | `agentic-sdlc close story <id>` |
 | closing a feature | `agentic-sdlc close feature <id>` — what `[verify] feature` names |

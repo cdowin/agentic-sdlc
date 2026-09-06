@@ -14,10 +14,10 @@ paths:
 ## Writing the tree down is CHEAP, and it is meant to be
 
 Adding a milestone, a feature, a story or a bug is `pm new`, an edit, `make
-check`, a commit. **A couple of seconds of gate.** Point a `[[verify.narrow]]`
-rule at `pm/roadmap/**` and `verify --story` runs that and nothing else, so
-planning never pays for a test suite — and a planning step that costs a suite
-is a planning step people batch up and stop doing.
+check`, a commit. **A couple of seconds of gate.** The story rung is whatever
+`[verify] story` names — `make unit` in the seed — and it is the same command
+every time, so planning never pays for a test suite, and a planning step that
+costs a suite is a planning step people batch up and stop doing.
 
 Write it down, commit, move on. The tree is a record, not a deliverable.
 
@@ -26,7 +26,7 @@ Write it down, commit, move on. The tree is a record, not a deliverable.
 The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
 
     a PM-tree or doc edit   make check                  the static gates alone
-    an edit, inner loop     verify --story              the paths decide
+    an edit, inner loop     verify --story              what [verify] story names
     before a commit         make precommit              check + your narrow tier
     closing a story         close story <id>            its checks, then `done`
     closing a feature       close feature <id>          runs what [verify] feature names

@@ -15,9 +15,10 @@ paths:
 
 Adding a milestone, a feature, a story or a bug is `pm new`, an edit, `make
 check`, a commit. **A couple of seconds of gate.** The story rung is whatever
-`[verify] story` names — `make unit` in the seed — and it is the same command
-every time, so planning never pays for a test suite, and a planning step that
-costs a suite is a planning step people batch up and stop doing.
+`[verify] story` names — one make target of yours, your unit tier — and it is
+the same command every time, so planning never pays for a test suite, and a
+planning step that costs a suite is a planning step people batch up and stop
+doing.
 
 Write it down, commit, move on. The tree is a record, not a deliverable.
 

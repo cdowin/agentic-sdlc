@@ -1071,3 +1071,5 @@
 {"ts":"2026-09-06T05:35:48Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":225,"rank":5}
 {"ts":"2026-09-06T05:35:48Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6752,"census":655}
 {"ts":"2026-09-06T05:35:48Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":8898}
+{"ts":"2026-09-06T05:36:07Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit/07-the-tree-closes-through-its-own-belts","from":"planning","to":"building"}
+{"ts":"2026-09-06T05:36:10Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":1973}

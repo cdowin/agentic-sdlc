@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/07-the-tree-closes-through-its-own-belts
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every story, feature and the milestone close through the belts they built
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -25,3 +25,7 @@ depends_on: []
 ## Out of scope
 
 Doing any of it by hand.
+
+## Close
+
+done: bc06971 a7c5598 2fee466 693d409 — 39 stories through close story, 15 features through close feature, HANDOFF.md gone; the milestone through release

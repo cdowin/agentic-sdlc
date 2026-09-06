@@ -288,26 +288,35 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'is not running (U1)')
 
 
-def _tree_has_a_row(cfg: model.PmConfig) -> bool:
-    """Does ANY ledger in the tree hold a row? Both homes — one per milestone
-    for attributed rows, and the tree's own for the rest (0.4.0/D3) — because
-    the question is whether recording is happening at all, and a row in either
-    answers it. Existence is not enough: an empty file is what a courier
-    leaves when it created the file and refused the row.
+def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
+    """(does any ledger hold a row, the ledgers this could not read).
+
+    Both homes — one per milestone for attributed rows, and the tree's own for
+    the rest (0.4.0/D3) — because the question is whether recording is
+    happening at all and a row in either answers it. Existence is not enough:
+    an empty file is exactly what a courier leaves when it created the file and
+    then refused the row.
+
+    **An unreadable ledger is neither answer**, and getting that backwards was
+    the review's M1. Returning `True` for it silenced this rule for the WHOLE
+    tree, on the first path that raised, with no line printed — over precisely
+    the artifact the paragraph above names. That IS rule 4's first sin: missing
+    drift and printing PASS. It is now reported as unverifiable and the scan
+    continues, so a readable ledger elsewhere still answers.
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]
     paths += [ledger.ledger_path(mdir) for mdir in model.milestone_dirs(cfg)]
+    found, unreadable = False, []
     for path in paths:
+        if not path.is_file():
+            continue
         try:
-            if path.is_file() and path.read_text(encoding='utf-8').strip():
-                return True
+            if path.read_text(encoding='utf-8').strip():
+                found = True
         except (OSError, UnicodeDecodeError):
-            # Unreadable is not "no rows": a gate that answered `False` here
-            # would report a tree recording nothing over a file it could not
-            # open, which is rule 4's first sin.
-            return True
-    return False
+            unreadable.append(cfg.rel(path))
+    return found, unreadable
 
 
 def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
@@ -348,7 +357,13 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     wired = sorted(name for name in model.LEDGER_COURIERS if name in text)
     if not wired:
         return
-    if _tree_has_a_row(cfg):
+    found, unreadable = _tree_has_a_row(cfg)
+    if unreadable:
+        warn(f'{", ".join(unreadable)} could not be read, so whether this tree '
+             f'is recording is UNVERIFIABLE — not a finding, and not a pass '
+             f'either (U2)')
+        return
+    if found:
         return
     warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} wired in '
          f'{model.AGENT_SETTINGS} and {cfg.roadmap_dir} holds no ledger row at '

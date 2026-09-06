@@ -2,7 +2,7 @@
 id: 0.4.0/the-read-verbs-compose
 milestone: "0.4.0"
 name: A read verb emits every field you would filter on
-status: building
+status: reviewing
 reviewed:
 phase:
 depends_on: []

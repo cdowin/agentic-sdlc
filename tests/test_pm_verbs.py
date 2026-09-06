@@ -104,6 +104,58 @@ class StatusMoves(unittest.TestCase):
             self.assertIn('  WARN  story 0.1/alpha/s0', out)
             self.assertIn('two places in this tree disagree', out)
 
+    def test_a_move_breadcrumbs_the_belt_that_closes_it_and_its_checks(self):
+        """0.4.0/every-move-breadcrumbs-the-next-step. 0.3.0 built eleven
+        features in 64 minutes and spent 93 more reviewing them, because nine
+        reviews were batched to the end — and the tool said nothing at the
+        moment of each move. Prose in three documents had already failed once
+        to stop a builder running wide gates. What holds is what the tool SAYS
+        at the moment of the act.
+        """
+        from agentic_sdlc.repo.conveyor import steps
+        with tree(feature_status='ready', story_statuses=('ready',)) as root:
+            # in_progress -> the belt that closes THIS grain
+            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('close feature', out)
+            for check in steps.registry_for('feature'):
+                self.assertIn(check, out)
+            # done -> the belt above it
+            code, out = run_cli(root, 'story', 'done', '0.1/alpha/s0')
+            self.assertEqual(code, 0, out)
+            self.assertIn('close feature', out)
+            # a milestone's `done` has no belt above it, and inventing a
+            # sentence for that would be the engine having an opinion.
+            code, out = run_cli(root, 'milestone', 'done', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('next:', out)
+
+    def test_every_word_of_a_breadcrumb_is_derived(self):
+        """Hard rule 9 is the whole design: the tool never decides what a move
+        MEANS or what should happen next, so a breadcrumb ships only if it can
+        be traced to `[pm.states.<kind>]` or to `registry_for`. This asserts
+        the trace rather than the sentence — a hardcoded next-step passes a
+        substring check and fails here."""
+        from agentic_sdlc.repo.conveyor import steps
+        with tree(feature_status='ready') as root:
+            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            said = [ln for ln in out.splitlines() if 'next:' in ln][0]
+            named = said.split('asks')[1]
+            registry = set(steps.registry_for('feature'))
+            for word in (w.strip() for w in named.split(',')):
+                self.assertIn(word, registry,
+                              f'{word!r} is in no belt registry — a breadcrumb '
+                              f'that is not derived is an opinion')
+
+    def test_breadcrumbs_false_turns_it_off_in_one_line(self):
+        """Rule 6: a consumer parsing output strictly gets one key. Stock is
+        ON, because a breadcrumb nobody sees teaches nobody."""
+        with tree(feature_status='ready') as root:
+            write_config(root, '[pm]\nbreadcrumbs = false\n')
+            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('next:', out)
+
     def test_a_feature_move_prints_what_it_wrote_and_nothing_else(self):
         """Amended from the case that asserted the advisory (`not finished:
         s0.md(...)`) on every move into `in_progress` — it could not fail once
@@ -114,7 +166,10 @@ class StatusMoves(unittest.TestCase):
             with self.subTest(to=to), \
                     tree(feature_status='ready',
                          story_statuses=('ready', 'building')) as root:
-                code, out = run_cli(root, 'feature', to, '0.1/alpha')
+                # STDOUT ONLY, and that is the claim: 0.4.0's conveyor
+                # breadcrumb is on stderr precisely so this stays one line.
+                code, out = run_cli(root, 'feature', to, '0.1/alpha',
+                                    stdout_only=True)
                 self.assertEqual(code, 0, out)
                 self.assertEqual(out.strip().splitlines(),
                                  [f'[pm] feature 0.1/alpha: ready -> {to}'])

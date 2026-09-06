@@ -33,6 +33,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from support.pm import cfg_for, put_ledger  # noqa: F401
 from support.pm import (
     damage,
     ledger_lines,
@@ -103,7 +104,9 @@ def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
     line a consumer's hook has to learn to skip.
     """
     with tree(story_statuses=('ready',)) as root:
-        code, out = run_cli(root, 'story', 'building', STORY)
+        # STDOUT ONLY: the breadcrumb 0.4.0 added is on stderr, which is what
+        # keeps this assertion the contract it was written to be.
+        code, out = run_cli(root, 'story', 'building', STORY, stdout_only=True)
         assert code == 0, out
         assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
         lines = ledger_lines(root)
@@ -471,3 +474,58 @@ def test_a_row_of_an_unknown_future_kind_survives_byte_identical(tmp_path):
                                                 ts=GATE_TS))
     assert path.read_bytes()[:len(foreign)] == foreign.encode('utf-8')
     assert [r.data['kind'] for r in ledger.read_rows(path)] == ['wombat', 'gate']
+
+
+# --- 0.4.0/every-grain-is-on-a-stopwatch --------------------------------------
+def test_an_in_flight_grain_is_measured_and_an_unmoved_one_is_not():
+    """`total_seconds` answers the CLOSED question and returns None while a
+    grain is in flight, which left the number that creates pressure
+    unmeasured: 0.3.0 built eleven features in 64 minutes and spent 93 more
+    reviewing them, with every one of those features sitting `building` and
+    nothing anywhere saying so.
+
+    The sharp half is the third row. **A grain nobody has moved is UNMEASURED,
+    never zero** — `0` would read as "moved a moment ago", which is a different
+    fact (rule 4).
+    """
+    now = datetime(2026, 9, 6, 12, 0, 0, tzinfo=timezone.utc)
+
+    class Row:
+        def __init__(self, ts, to):
+            self.data = {'kind': 'status', 'grain': STORY, 'ts': ts, 'to': to}
+
+    with tree(story_statuses=('building',)) as root:
+        cfg = cfg_for(root)
+        moved = [Row('2026-09-06T09:00:00Z', 'building')]
+        assert ledger.open_seconds(cfg, 'story', moved, now) == 3 * 3600
+        # Closed: `total_seconds`' question, and not this one's.
+        closed = moved + [Row('2026-09-06T11:00:00Z', 'done')]
+        assert ledger.open_seconds(cfg, 'story', closed, now) is None
+        # Never moved: absent, not zero.
+        assert ledger.open_seconds(cfg, 'story', [], now) is None
+
+
+@pytest.mark.parametrize('seconds,said', [
+    (None, '-'), (0, '0s'), (45, '45s'), (750, '12m 30s'),
+    (3 * 3600 + 900, '3h 15m'), (2 * 86400 + 4 * 3600, '2d 4h'),
+])
+def test_a_duration_is_two_units_at_most(seconds, said):
+    """A number a human reads at a glance is the point; `271431s` is not one."""
+    assert ledger.human_duration(seconds) == said
+
+
+def test_pm_status_prints_the_age_and_nothing_gates_on_it():
+    """The report, and the claim that it is only a report: a very old open
+    grain changes no exit code. A ceiling on how long a feature may stay open
+    would be this package having an opinion about somebody's week (rule 9)."""
+    with tree(story_statuses=('building',)) as root:
+        # A FEATURE, because `pm status` prints milestone and feature lines —
+        # a story's age has nowhere to land there, and `pm list` is the verb
+        # that enumerates stories.
+        put_ledger(root, ledger.dumps(ledger.status_row(
+            '0.1/alpha', 'ready', 'building', ts='2020-01-01T00:00:00Z')))
+        code, out = run_cli(root, 'status')
+        assert code == 0, out
+        assert 'open ' in out, out
+        # Years old, and still exit 0: the number is a report (rule 9).
+        assert 'd ' in out.split('open ')[1], out

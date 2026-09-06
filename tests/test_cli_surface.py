@@ -326,8 +326,11 @@ class TestAReadVerbNamesItsColumns:
         rather than restated — a hand-written roster here goes stale exactly
         the way the thing it guards does."""
         from agentic_sdlc.repo.pm import cli as pm_cli
-        after = (pm_cli.USAGE or '').split(f'columns IN ORDER:')
-        assert len(after) == 3, 'the help stopped naming its columns in order'
+        after = (pm_cli.USAGE or '').split('columns IN ORDER:')
+        # `>= 3`, not `== 3`: the ship criterion says EVERY read verb names its
+        # columns, so an exact count reddened on its own fix — a case that
+        # punishes the criterion being met is worse than no case (review M1).
+        assert len(after) >= 3, 'the help stopped naming its columns in order'
         which = after[1] if kind == 'story' else after[2]
         return tuple(which.strip().split('\n')[0].split())
 
@@ -383,11 +386,24 @@ class TestTheSurfaceSaysTelemetry:
         from agentic_sdlc.repo.pm import cli as pm_cli
         assert 'ledger.jsonl' in (pm_cli.USAGE or '')
 
-    def test_this_feature_added_no_verb_and_no_flag(self):
-        """The ship criterion, asserted: if a documentation feature grows a
-        capability it has misunderstood itself. The routed set is asked, never
-        listed."""
-        assert documented_verbs() == routed_verbs()
+    ROUTED_AT_0_4_0 = 14
+
+    def test_this_feature_added_no_verb(self):
+        """The ship criterion, asserted. Review M2: `documented == routed` is
+        the conjunction of the two cases above and would pass a verb that was
+        added AND documented — it proved the wrong thing. The COUNT is what the
+        criterion actually claims."""
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0, sorted(routed_verbs())
+
+    def test_every_read_verb_names_its_columns(self):
+        """Review M1: the criterion says EVERY read verb, and `next`,
+        `roadmap` and bare `order` all emit tab-separated rows. Asserted as a
+        count against the verbs that emit them, so a sixth such verb has to
+        name its columns too."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        said = pm_cli.USAGE or ''
+        assert said.count('columns IN ORDER:') >= 5, said.count(
+            'columns IN ORDER:')
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 

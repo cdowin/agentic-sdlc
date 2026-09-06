@@ -479,6 +479,46 @@ def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
         return None
     return int((end - start).total_seconds())
 
+def open_seconds(cfg, grain_kind: str, status: list,
+                 now: datetime | None = None) -> int | None:
+    """First status row -> NOW, for a grain that has NOT reached a terminal
+    state; `None` for one that has, and `None` for one nobody has moved.
+
+    `total_seconds` above answers the closed question and deliberately returns
+    None while a grain is in flight — which left the number that actually
+    creates pressure unmeasured. 0.3.0 built eleven features in 64 minutes and
+    spent 93 more reviewing them because nine reviews were batched to the end,
+    and every one of those features sat `building` the whole time with nothing
+    anywhere saying so.
+
+    **A grain with no status row is UNMEASURED, never zero** (rule 4): it has
+    not been moved, which is a different fact from having been moved a moment
+    ago, and a `0` here would read as the second.
+    """
+    if not status or ends_grain(cfg, grain_kind, status[-1].data.get('to')):
+        return None
+    start = parse_ts(status[0].data.get('ts'))
+    if start is None:
+        return None
+    when = datetime.now(timezone.utc) if now is None else now
+    return max(0, int((when - start).total_seconds()))
+
+
+def human_duration(seconds: int | None) -> str:
+    """`3d 4h`, `12m`, `-`. Two units at most: a number a human reads at a
+    glance is the point, and `271431s` is not one."""
+    if seconds is None:
+        return '-'
+    units = (('d', 86400), ('h', 3600), ('m', 60), ('s', 1))
+    parts = []
+    left = seconds
+    for name, size in units:
+        if left >= size and len(parts) < 2:
+            parts.append(f'{left // size}{name}')
+            left %= size
+    return ' '.join(parts) or '0s'
+
+
 def row_names(row: dict, names: set[str]) -> bool:
     """True when this row names the grain — in `grain`, or anywhere in `tree`.
     Every value is type-checked first: rows arrive from other branches and

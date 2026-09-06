@@ -870,6 +870,7 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
     return {'section': SECTION_SPEND, 'grains': out,
+            'in_flight': _in_flight_ages(cfg, kinds, status),
             'unattributed': unattributed,
             'stated_elsewhere': elsewhere,
             'legacy': {'rows': legacy_rows,
@@ -961,6 +962,10 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
             if entry.get('frozen_only'):
                 out.append(f'   {entry["grain"]} {FROZEN_ONLY_NOTE}: '
                            f'{entry["frozen_only"]} dispatch row(s)')
+    for entry in data.get('in_flight') or []:
+        out.append(f'   {entry["in_flight"]} {entry["kind"]}(s) in flight — '
+                   f'median {ledger.human_duration(entry["median_s"])}, worst '
+                   f'{ledger.human_duration(entry["worst_s"])}')
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',
@@ -1057,6 +1062,42 @@ def _section(mid: str, title: str, census: str,
     for btitle, headers, aligns, rows in blocks:
         out.append('')
         out.extend(_table(btitle, headers, aligns, rows))
+    return out
+
+
+def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
+                    status: list) -> list[dict]:
+    """Per kind: how many grains have not reached a terminal state, their
+    median age and the worst.
+
+    The distribution behind `pm status`' per-grain column, and the number that
+    would have made nine batched reviews visible while they were happening
+    (0.4.0/every-grain-is-on-a-stopwatch). Read off the same status rows the
+    dwell columns use; a grain nobody has moved contributes nothing, because it
+    is UNMEASURED rather than young.
+
+    A report and nothing else: no threshold, no colour, no exit code. A ceiling
+    on how long a grain may stay in flight is this package having an opinion
+    about somebody's week (rule 9).
+    """
+    by_grain: dict[str, list] = {}
+    for row in status:
+        gid = row.data.get('grain')
+        if isinstance(gid, str) and gid in kinds:
+            by_grain.setdefault(gid, []).append(row)
+    ages: dict[str, list[int]] = {}
+    for gid, rows in by_grain.items():
+        rows.sort(key=lambda r: str(r.data.get('ts') or ''))
+        seconds = ledger.open_seconds(cfg, kinds[gid], rows)
+        if seconds is not None:
+            ages.setdefault(kinds[gid], []).append(seconds)
+    out = []
+    for kind in KIND_ORDER:
+        found = sorted(ages.get(kind, ()))
+        if found:
+            out.append({'kind': kind, 'in_flight': len(found),
+                        'median_s': found[len(found) // 2],
+                        'worst_s': found[-1]})
     return out
 
 

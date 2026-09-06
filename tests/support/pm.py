@@ -289,19 +289,27 @@ def cfg_for(root: Path) -> model.PmConfig:
     return loaded(root)
 
 
-def run_cli(root: Path, *argv: str) -> tuple[int, str]:
+def run_cli(root: Path, *argv: str, stdout_only: bool = False) -> tuple[int, str]:
+    """Run one `pm` invocation; both streams merged, or stdout alone.
+
+    `stdout_only` is for the cases asserting *a write prints what it wrote and
+    nothing else* — a claim about STDOUT, which is what a consumer parses.
+    0.4.0 put the conveyor breadcrumb on stderr precisely so that claim stays
+    true, and a merged read would have made the two indistinguishable.
+    """
     # repo_root()/load_config() are lru_cached on purpose in production, where
     # the cwd never moves mid-run. Tests move it every case.
     from agentic_sdlc.core.project import load_config, repo_root
     repo_root.cache_clear()
     load_config.cache_clear()
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), \
+            contextlib.redirect_stderr(out if not stdout_only else err):
         try:
             code = cli.main(list(argv))
         except SystemExit as exc:  # pragma: no cover - defensive
             code = int(exc.code or 0)
-    return code, buf.getvalue()
+    return code, out.getvalue()
 
 
 def run_gate(root: Path) -> tuple[int, str]:

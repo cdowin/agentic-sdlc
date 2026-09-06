@@ -109,7 +109,8 @@ every run; a state the project never declared is refused by name.
   order [--append <v> | --insert <v> --before <v> | --remove <v>]
                                           (the release plan — `order` in
                                            pm/roadmap/releases.md. Bare, it
-                                           prints the plan. Authoring and
+                                           prints the plan, columns IN ORDER:
+                                             version  milestone  state. Authoring and
                                            SCHEDULING are separate acts: a
                                            milestone declares `version:` without
                                            joining the plan, and this verb puts
@@ -124,14 +125,17 @@ every run; a state the project never declared is refused by name.
                                            there)
   next                                    (the first entry in `order` that has
                                            not shipped, with the milestone that
-                                           claims it. Writes nothing)
+                                           claims it. columns IN ORDER:
+                                             version  milestone  status
+                                           Writes nothing)
   roadmap                                 (the whole plan: every scheduled
                                            release with its milestone and state,
-                                           then the backlog. What `pm status`
-                                           does for one milestone, for the
-                                           sequence — and what replaced the
-                                           hand-maintained ROADMAP.md. Writes
-                                           nothing)
+                                           then the backlog. columns IN ORDER:
+                                             version  milestone  state
+                                           What `pm status` does for one
+                                           milestone, for the sequence — and
+                                           what replaced the hand-maintained
+                                           ROADMAP.md. Writes nothing)
   validate                                (structural + referential integrity)
   install-skills [--force] [--diff]       (write the shared rule + operations skill)
   init                                    (scaffold a fresh tree + install guidance)
@@ -249,6 +253,57 @@ class Usage(Exception):
 
 def _ok(msg: str) -> None:
     print(f'[pm] {msg}')
+
+
+# Which belt closes a grain of each kind, and which belt the grain ABOVE it
+# needs next. Both are `steps.registry_for` keys, and that is the whole of the
+# mapping this module holds: the CHECKS each belt asks are read from the
+# registry at runtime and never restated here, so a check added to a belt turns
+# up in the breadcrumb without anybody remembering to add it.
+CLOSES = {'story': 'story', 'feature': 'feature', 'milestone': 'release'}
+# A milestone's `done` names nothing above it — there is no belt over a
+# milestone, and inventing a sentence for that case would be the engine having
+# an opinion about what somebody does after a release.
+ABOVE = {'story': 'feature', 'feature': 'release'}
+
+
+def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
+    """One line after a status write: what the conveyor asks NEXT, DERIVED.
+
+    Hard rule 9 says the tool never decides what a move MEANS or what should
+    happen next, and a breadcrumb survives that rule only by being read rather
+    than written. Two sources, both at runtime: the project's own
+    `[pm.states.<kind>]` for which category the new state is in, and
+    `steps.registry_for(<belt>)` for the checks that belt will actually ask.
+
+        `close feature` asks stories-done, feature-verified, review-recorded
+
+    is the engine reading its own registry back. *"You should run a review
+    now"* is the engine having an opinion, and it does not ship. **If a
+    sentence cannot be traced to config or to the registry, it is not a
+    breadcrumb.**
+
+    Why at the move at all: 0.3.0 built eleven features in 64 minutes and spent
+    93 more reviewing them, because nine reviews were batched to the end. The
+    doctrine went into SDLC.md and the shipped reviewer contract, and prose in
+    three documents had already failed once to stop a builder running wide
+    gates for 21 minutes. What holds is what the tool SAYS at the moment of the
+    act.
+    """
+    if not cfg.breadcrumbs:
+        return
+    category = model.flow_of(cfg, kind).category(to)
+    belt = (CLOSES.get(kind) if category == model.IN_PROGRESS
+            else ABOVE.get(kind) if category == model.DONE_CATEGORY else None)
+    if belt is None:
+        return
+    from agentic_sdlc.repo.conveyor import steps
+    checks = list(steps.registry_for(belt))
+    if not checks:
+        return
+    verb = 'release' if belt == 'release' else f'close {belt}'
+    print(f'[pm] next: `agentic-sdlc {verb} <id>` asks {", ".join(checks)}',
+          file=sys.stderr)
 
 
 def _check_slug(kind: str, value: str) -> str:
@@ -381,10 +436,12 @@ def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
         _stamp_status(cfg, sf, cur, to, sid)
+        _breadcrumb(cfg, 'story', to)
         return 0
     _set_status(cfg, sf, to)
     _ok(f'story {sid}: {cur} -> {to}')
     _stamp_status(cfg, sf, cur, to, sid)
+    _breadcrumb(cfg, 'story', to)
     return 0
 
 
@@ -406,10 +463,12 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     if cur == to:
         _ok(f'bug {bid} already {to} (no-op)')
         _stamp_status(cfg, bf, cur, to, bid)
+        _breadcrumb(cfg, 'bug', to)
         return 0
     _set_status(cfg, bf, to)
     _ok(f'bug {bid}: {cur} -> {to}')
     _stamp_status(cfg, bf, cur, to, bid)
+    _breadcrumb(cfg, 'bug', to)
     return 0
 
 
@@ -433,10 +492,12 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
     if cur == to:
         _ok(f'feature {fid} already {to} (no-op)')
         _stamp_status(cfg, ff, cur, to, fid)
+        _breadcrumb(cfg, 'feature', to)
         return 0
     _set_status(cfg, ff, to)
     _ok(f'feature {fid}: {cur} -> {to}')
     _stamp_status(cfg, ff, cur, to, fid)
+    _breadcrumb(cfg, 'feature', to)
     return 0
 
 
@@ -519,6 +580,7 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
             + (f' (review record: {record})' if record
                else ' (no review record)'))
     _stamp_status(cfg, ff, cur, to, fid)
+    _breadcrumb(cfg, 'feature', to)
     return 0
 
 
@@ -548,10 +610,12 @@ def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
     if cur == to:
         _ok(f'milestone {mid} already {to} (no-op)')
         _stamp_status(cfg, mf, cur, to, mid)
+        _breadcrumb(cfg, 'milestone', to)
         return 0
     _set_status(cfg, mf, to)
     _ok(f'milestone {mid}: {cur} -> {to}')
     _stamp_status(cfg, mf, cur, to, mid)
+    _breadcrumb(cfg, 'milestone', to)
     # No advisory about the features left behind: D3 asks that of the tree.
     return 0
 
@@ -734,6 +798,41 @@ def cmd_move(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 # --- status -------------------------------------------------------------------
+def _open_for(cfg: model.PmConfig, mdir: Path) -> dict[str, str]:
+    """{grain id: how long it has been open}, for the grains in one milestone
+    that have not reached a terminal state.
+
+    Read once per milestone, off the two ledgers that milestone's rows can be
+    in, so `pm status` costs one pass over each file rather than one per grain.
+    A grain with no status row is simply absent here and prints `-`: it has not
+    been moved, which is a different fact from having been moved a moment ago
+    (rule 4).
+    """
+    rows: list = []
+    for path in (ledger.ledger_path(mdir), ledger.grainless_path(cfg.roadmap)):
+        try:
+            rows += ledger.read_rows(path)
+        except ledger.LedgerError:
+            # A ledger this reader cannot parse costs the DURATION column, not
+            # `pm status`: the statuses are in the frontmatter and are what the
+            # verb is actually for.
+            continue
+    by_grain: dict[str, list] = {}
+    for row in rows:
+        if row.data.get('kind') != ledger.KIND_STATUS:
+            continue
+        gid = row.data.get('grain')
+        if isinstance(gid, str) and gid:
+            by_grain.setdefault(gid, []).append(row)
+    out = {}
+    for gid, status in by_grain.items():
+        status.sort(key=lambda r: str(r.data.get('ts') or ''))
+        seconds = ledger.open_seconds(cfg, _grain_kind(gid), status)
+        if seconds is not None:
+            out[gid] = ledger.human_duration(seconds)
+    return out
+
+
 def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
     only = args[0] if args else ''
     # Rule 4: a scan that saw nothing says so instead of an empty print at exit
@@ -754,7 +853,15 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         mfile = mdir / model.MILESTONE_DOC
         if only and only != mid:
             continue
-        print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]')
+        # 0.4.0/every-grain-is-on-a-stopwatch: how long each open grain has
+        # been open, so "what is aging" is a question the tree answers rather
+        # than one somebody reconstructs after the fact. A REPORT — nothing is
+        # gated on it, because a ceiling on how long a feature may stay open is
+        # this package having an opinion about somebody's week (rule 9).
+        opened = _open_for(cfg, mdir)
+        mopen = opened.get(mid, '')
+        print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]'
+              + (f'  open {mopen}' if mopen else ''))
         rows = []
         for ffile in model.feature_files(mdir):
             view = model.read_feature(cfg, ffile)
@@ -768,7 +875,10 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
             # order.
             rows.append((model.phase_key(view.phase), view.phase, view,
                          f'  feature {view.fid.partition("/")[2]:<40} '
-                         f'[{view.status:<{width}}] stories {view.done_n}/{view.total} done{drift}'))
+                         f'[{view.status:<{width}}] stories '
+                         f'{view.done_n}/{view.total} done'
+                         + (f'  open {opened[view.fid]}'
+                            if view.fid in opened else '') + drift))
         if not rows:
             continue
         buckets: list[str] = []

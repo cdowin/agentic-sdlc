@@ -71,7 +71,7 @@ it becomes true, rather than batching flips at the end.
    and only bookkeeping: **the flip does not turn recording on.** A ledger row is
    filed against the milestone that owns the row's grain, at any status, so work on a
    `planning` milestone records too — and a tree whose couriers are wired and whose
-   ledgers are empty is `check pm`'s D11, not something a status flip fixes.
+   ledgers are empty is `check pm`'s U2, not something a status flip fixes.
 2. **Commit atomically.** One logical unit per commit.
 3. **Ready for review.** `pm story reviewing <id>`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in

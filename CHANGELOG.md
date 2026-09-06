@@ -63,6 +63,25 @@
   `pm-execution.md`'s claim step now says the flip is bookkeeping and **not** what turns recording
   on — it never was after the routing change, and reading it that way is how the silence lasted.
 
+- **Every status write breadcrumbs what the conveyor asks next**, and every read verb names its
+  columns. `pm story building <id>` now prints, on stderr, the belt that closes that grain and the
+  checks the belt will actually run — `close feature` asks stories-done, feature-verified,
+  review-recorded, findings-landed — read from the belt registry and from `[pm.states.<kind>]` at
+  runtime. **A breadcrumb that is not DERIVED does not ship**: *"you should run a review now"* is
+  the engine having an opinion, which is what hard rule 9 forbids. A project declaring different
+  state words gets its own words back. `[pm] breadcrumbs = false` turns it off; stock is ON,
+  because a breadcrumb nobody sees teaches nobody. **STDOUT is byte-identical** — the status line
+  is still the one line a consumer parses.
+
+- **`pm status` says how long each open grain has been open, and `pm ledger report` gives the
+  distribution.** The ledger already timestamped every move and `total_seconds` deliberately
+  answered `None` while a grain was in flight, so the number that creates pressure was the one
+  nothing measured: 0.3.0 built eleven features in 64 minutes and spent 93 more reviewing them,
+  with every one of those features sitting `building` and nothing anywhere saying so. `ledger
+  open_seconds` is first-status-row-to-now; a grain nobody has moved is **UNMEASURED, never zero**.
+  Nothing is gated on the number — a ceiling on how long a feature may stay open is this package
+  having an opinion about somebody's week.
+
 - **The word "telemetry" is now in the surfaces you are standing in when you need it.** It was in
   none of them: not `pm --help`, not the rule that auto-loads on every tree edit, not either
   shipped skill's `description:`. `grep -ril telemetry` over the package returned five design

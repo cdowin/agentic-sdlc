@@ -126,7 +126,12 @@ SPEND_TITLE = 'spend per grain'
 # Section 1's keys in `--json`, and the one key each later section adds.
 # `legacy` landed with the category keys (decision D7): how many dispatch rows
 # predate them, and how many of those named nothing.
-SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed',
+SPEND_KEYS = ('milestone', 'section', 'grains',
+              # 0.4.0/every-grain-is-on-a-stopwatch: per kind, how many
+              # grains have not reached a terminal state and how long
+              # they have been in flight. A report; nothing gates on it.
+              'in_flight',
+              'unattributed',
               # 0.4.0/D8: a row STATING a grain this milestone does not
               # hold, counted apart from the ones naming none — the
               # tree's shared ledger is read by every milestone's
@@ -344,6 +349,10 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
                          'tool_calls': 2, 'duration_s': None},
         'legacy': {'rows': 0, 'unattributed': 0},
         'stated_elsewhere': 0,
+        # Everything the seeded fixture touches is closed, so nothing is in
+        # flight — and an EMPTY list rather than an absent key, because "none
+        # in flight" is an answer and a missing key is not.
+        'in_flight': [],
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
                    'usage': dict(full, input=1205), 'tool_calls': 39,
                    'duration_s': 812},

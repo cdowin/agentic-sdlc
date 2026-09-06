@@ -278,6 +278,10 @@ class PmConfig:
     roadmap_dir: str = 'pm/roadmap'
     review_dir: str = 'docs/reviews'
     story_ordinal_prefix: bool = False
+    # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
+    # exists to prevent is a move nobody followed up on. Off in one line for a
+    # consumer parsing `pm` output strictly (rule 6).
+    breadcrumbs: bool = True
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses. Never read from the retired
     # `[pm] <kind>_states`.
@@ -373,6 +377,7 @@ def load() -> PmConfig:
         roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
         review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
         story_ordinal_prefix=flag(sect, 'pm', 'story_ordinal_prefix', False),
+        breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
         milestone_states=_order_of(flows, 'milestone'),
         feature_states=_order_of(flows, 'feature'),
         story_states=_order_of(flows, 'story'),
@@ -683,6 +688,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: str_tuple(section, 'pm', 'checks', DEFAULT_CHECKS))
     probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
     probe(lambda: flag(section, 'pm', 'story_ordinal_prefix', False))
+    probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
                           ('review_dir', 'docs/reviews'),
                           ('template_dir', '')):

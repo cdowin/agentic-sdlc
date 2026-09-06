@@ -144,9 +144,13 @@ requires the two readings to agree.
   review record) and `<WARN: …>` (a feature behind its own finished stories) off the
   same predicates the gate reports on. Never hand-copy a tally out of it into a doc;
   that is a second scoreboard and it will lie.
-- **`pm list [--status …] [--owner …] [--milestone …]`** — one tab-separated
-  `<story-id>  <status>  <owner>  <feature-id>` per story. It is the "what is open"
-  read; `pm status` is the "what is everything doing" read.
+- **`pm list [--status …] [--owner …] [--milestone …] [--json]`** — one tab-separated
+  `<id>  <status>  <owner>  <feature>  <name>` per story, `-` for an empty cell.
+  `--kind milestone` gives `<id>  <status>  <category>  <branch>  <name>`. It is the
+  "what is open" read; `pm status` is the "what is everything doing" read.
+  **Read verbs emit LINES and composition is the shell's job** — `pm list | grep`
+  is the search, and if you cannot pipe something the missing thing is a COLUMN,
+  never a new verb. `--json` gives the same fields keyed by those names.
 - **`pm validate`** — ids match paths, parentage is consistent, refs resolve, the graph
   is acyclic. **UNVERIFIABLE** in its summary is not a failure: it
   counts refs into milestones no longer in the working tree, which is expected.

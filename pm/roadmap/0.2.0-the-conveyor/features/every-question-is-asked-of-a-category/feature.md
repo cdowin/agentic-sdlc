@@ -112,7 +112,7 @@ about to be wrong — but it **is** a trade, and P7 is right that the design sol
 ## Ship criterion
 
 1. **`move(grain, to_state)` and `holds(grains, category|state)` exist as the engine's two verbs**,
-   with their own tests, and `move` refuses an undeclared transition at exit 2.
+   with their own tests, and `move` refuses an undeclared target state at exit 2.
 2. **Every row of the census above routes through one of them.** A test enumerates the census and
    asserts no state literal survives outside the config reader — the census is the acceptance
    criterion, not a to-do list.

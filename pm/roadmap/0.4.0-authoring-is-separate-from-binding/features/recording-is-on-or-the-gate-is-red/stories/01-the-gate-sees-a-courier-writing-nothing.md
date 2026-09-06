@@ -3,8 +3,8 @@ id: 0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-
 feature: 0.4.0/recording-is-on-or-the-gate-is-red
 milestone: "0.4.0"
 name: A tree with hooks wired and no rows says so
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

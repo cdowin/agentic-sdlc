@@ -39,6 +39,27 @@
   through its `tree` snapshot — so `show` and `report` had begun to disagree about the same row,
   with `report` billing a story for time `show` said did not exist.
 
+- **`check pm` gains D11: the ledger couriers are wired and this tree holds no row.** OPT-IN, and
+  a **WARN** — never the exit code. The telemetry in this repo recorded nothing for a whole
+  milestone with the hooks installed, executable, self-testing and firing: the verb they called
+  refused every row, and a courier fails open by design (it must never block a session stop), so
+  the refusal went to a stderr nobody reads. Zero rows, zero complaints, for weeks.
+
+  `one-rule-routes-a-row` deleted that specific cause and none of the class. The rest all produce
+  the same silence: the entries were never pasted; the `pm` make target is not `.PHONY`, so `make`
+  exits 0 without ever reaching the verb; `[pm.states.*]` is undeclared, so every work-moving verb
+  refuses; `python3` or the transcript path does not resolve. The warning names all four in the
+  order they cost people time and names the one command that answers them —
+  `bash tools/hooks/cc-ledger-session.sh --self-test`.
+
+  **A tree that wires nothing stays silent.** It opted out, and this package does not conscript; a
+  `.claude/settings.json` that will not parse is UNVERIFIABLE, never a failure. An EMPTY
+  `ledger.jsonl` counts as no rows, because that is exactly what a courier leaves behind when it
+  created the file and then refused the row.
+
+  `pm-execution.md`'s claim step now says the flip is bookkeeping and **not** what turns recording
+  on — it never was after the routing change, and reading it that way is how the silence lasted.
+
 - **The word "telemetry" is now in the surfaces you are standing in when you need it.** It was in
   none of them: not `pm --help`, not the rule that auto-loads on every tree edit, not either
   shipped skill's `description:`. `grep -ril telemetry` over the package returned five design

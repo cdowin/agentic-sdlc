@@ -2,7 +2,7 @@
 id: 0.4.0/recording-is-on-or-the-gate-is-red
 milestone: "0.4.0"
 name: A tree that is not recording says so
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: ["0.4.0/one-rule-routes-a-row"]

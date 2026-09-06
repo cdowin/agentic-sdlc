@@ -67,9 +67,14 @@ scope = [
 # merge-commit-only at close, and D3 (0.16.0) is the decision that caught this
 # tree working on main while telling its consumers not to — D10 is what stops
 # that recurring silently.
+#
+# D11 is on because this tree is the one it was written for: the telemetry
+# recorded NOTHING for the whole of 0.3.0 with the hooks installed, executable,
+# self-testing and firing. A courier fails open by design, so the only thing
+# that can say so is a gate somebody reads.
 checks = [
     "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-    "D9", "D10",
+    "D9", "D10", "D11",
     "R1", "R2", "R3", "R4", "R6",
     "V1", "V2", "V3", "V4", "V5", "V6",
 ]

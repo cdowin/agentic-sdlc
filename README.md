@@ -172,7 +172,10 @@ roadmap_dir  = "pm/roadmap"
 template_dir = "pm/templates"                 # `pm templates` copies the stock ones here
 review_dir   = "docs/reviews"
 story_ordinal_prefix = false                  # stories/NN-<slug>.md keeps NN in the file, not the id
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", "V1", "V2", "V3", "V4", "V5"]  # + D9 D10 R5 V6, opt-in
+checks = ["D1", "D2", "D3", "D4", "D5", "D6", "V1", "V2", "V3", "V4", "V5"]  # + D7 D9 D10 D11
+                                              # R5 V6, opt-in. D11: the ledger couriers are
+                                              # wired and the tree holds no row — recording
+                                              # that goes nowhere, which is silent otherwise
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
 version_pattern = '^version = "(.*)"$'
 version_at      = "start"                     # R5: which entry in `order` the version file

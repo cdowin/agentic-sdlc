@@ -714,6 +714,107 @@ class FlowChecks(unittest.TestCase):
                 self.assertNotIn('unknown rule', out)
 
 
+class D11ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
+    """D11 — the ledger couriers are wired and the tree holds no row.
+
+    **The rule this milestone opened on.** The hooks were installed,
+    executable, self-testing and firing for the whole of the previous
+    milestone; the verb they called refused every row; and a courier fails
+    open by design, so the refusal went to a stderr nobody reads. Zero rows,
+    zero complaints, for weeks.
+
+    The four cases are the whole contract, and the third is the one a rule
+    written from its own bug gets wrong: a tree that wires NOTHING is silent,
+    because it opted out and this package does not conscript (0.4.0/D5).
+    """
+
+    SETTINGS = '.claude/settings.json'
+    WIRED = ('{"hooks": {"Stop": [{"hooks": [{"type": "command", '
+             '"command": "bash tools/hooks/cc-ledger-session.sh"}]}]}}')
+
+    def _settings(self, root, text: str) -> None:
+        path = root / self.SETTINGS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
+
+    def _gate(self, root):
+        write_config(root, '[pm]\nchecks = ["D11"]\n')
+        return run_gate(root)
+
+    def test_wired_and_no_rows_warns_and_names_the_causes(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            code, out = self._gate(root)
+            # A WARN, never the exit code: recording is a posture, not a
+            # requirement, and a rule that reddens a fresh consumer is undone
+            # within a version.
+            self.assertEqual(code, 0, out)
+            self.assertIn('recording NOTHING', out)
+            self.assertIn('.PHONY', out)
+            self.assertIn('[pm.states.*]', out)
+            self.assertIn('--self-test', out)
+
+    def test_wired_with_a_row_anywhere_is_silent(self):
+        # Either home satisfies it (0.4.0/D3): the question is whether
+        # recording is happening at all, and a row in either answers it.
+        for rel in ('pm/roadmap/ledger.jsonl',
+                    'pm/roadmap/0.1-demo/ledger.jsonl'):
+            with self.subTest(rel=rel), tree(story_statuses=('ready',)) as root:
+                self._settings(root, self.WIRED)
+                (root / rel).write_text(
+                    '{"ts":"2026-09-06T00:00:00Z","kind":"gate","gate":"check",'
+                    '"verdict":"PASS","duration_ms":1}\n', encoding='utf-8')
+                code, out = self._gate(root)
+                self.assertEqual(code, 0, out)
+                self.assertNotIn('recording NOTHING', out)
+
+    def test_an_empty_ledger_file_is_not_a_row(self):
+        """What a courier leaves behind when it created the file and then
+        refused the row — the exact shape of the failure, so existence must
+        not be mistaken for recording."""
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            (root / 'pm/roadmap/ledger.jsonl').write_text('', encoding='utf-8')
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('recording NOTHING', out)
+
+    def test_a_tree_that_wires_nothing_is_silent(self):
+        """THE OPT-OUT, and the case a rule written from its own bug gets
+        wrong. No hooks wired is not a broken tree; it is a choice, and this
+        package does not conscript."""
+        for text in ('{}', '{"hooks": {"Stop": []}}'):
+            with self.subTest(text=text), tree(story_statuses=('ready',)) as root:
+                self._settings(root, text)
+                code, out = self._gate(root)
+                self.assertEqual(code, 0, out)
+                self.assertNotIn('recording NOTHING', out)
+        # And no settings file at all.
+        with tree(story_statuses=('ready',)) as root:
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('D11', out)
+
+    def test_a_settings_file_that_cannot_be_read_is_UNVERIFIABLE(self):
+        """The standing convention for a pointer the gate cannot follow: said
+        out loud, never counted as a pass and never a failure."""
+        with tree(story_statuses=('ready',)) as root:
+            path = root / self.SETTINGS
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'\xff\xfe not utf-8 \x00')
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('UNVERIFIABLE', out)
+
+    def test_it_is_off_unless_named(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            write_config(root, '[pm]\nchecks = ["D1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('recording NOTHING', out)
+
+
 class R5GradesTheCurrentRelease(unittest.TestCase):
     """R5 — the version file equals the CURRENT entry in `order`.
 

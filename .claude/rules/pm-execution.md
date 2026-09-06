@@ -67,7 +67,11 @@ while its status never moved — the tree and the work disagreeing. Move the sta
 it becomes true, rather than batching flips at the end.
 
 1. **Claim.** `pm story building <id>` when you begin editing files for a story, and
-   set `owner:` in the same edit (`pm set <id> owner <name>`).
+   set `owner:` in the same edit (`pm set <id> owner <name>`). This is bookkeeping,
+   and only bookkeeping: **the flip does not turn recording on.** A ledger row is
+   filed against the milestone that owns the row's grain, at any status, so work on a
+   `planning` milestone records too — and a tree whose couriers are wired and whose
+   ledgers are empty is `check pm`'s D11, not something a status flip fixes.
 2. **Commit atomically.** One logical unit per commit.
 3. **Ready for review.** `pm story reviewing <id>`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in

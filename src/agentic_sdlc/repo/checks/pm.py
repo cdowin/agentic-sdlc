@@ -21,6 +21,8 @@ WARN (a line, never the exit code; both grains and both categories named):
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
   D7  a DECLARED state no grain of that kind has ever held, with the count in use
+  D11 the ledger couriers are wired in `.claude/settings.json` and the tree holds
+      no row at all — recording that goes nowhere, which is silent by construction
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:`,
          no `branch:`, or (a milestone) no `handoff.md` — the doc is never auto-minted,
          so its absence is the signal and `pm new handoff <id>` is the fix
@@ -108,6 +110,7 @@ def _run() -> int:
 
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
+    _recording_findings(cfg, enabled, warn)
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V6: structural + referential integrity ------------------------
@@ -283,6 +286,80 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'{"has" if len(unused) == 1 else "have"} never been held by any '
              f'{kind} in this tree — declared and unused is a flow the project '
              f'is not running (D7)')
+
+
+def _tree_has_a_row(cfg: model.PmConfig) -> bool:
+    """Does ANY ledger in the tree hold a row? Both homes — one per milestone
+    for attributed rows, and the tree's own for the rest (0.4.0/D3) — because
+    the question is whether recording is happening at all, and a row in either
+    answers it. Existence is not enough: an empty file is what a courier
+    leaves when it created the file and refused the row.
+    """
+    from agentic_sdlc.repo.pm import ledger
+    paths = [ledger.grainless_path(cfg.roadmap)]
+    paths += [ledger.ledger_path(mdir) for mdir in model.milestone_dirs(cfg)]
+    for path in paths:
+        try:
+            if path.is_file() and path.read_text(encoding='utf-8').strip():
+                return True
+        except (OSError, UnicodeDecodeError):
+            # Unreadable is not "no rows": a gate that answered `False` here
+            # would report a tree recording nothing over a file it could not
+            # open, which is rule 4's first sin.
+            return True
+    return False
+
+
+def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """D11 — the ledger couriers are wired and the tree holds no row.
+
+    **This rule exists because the telemetry was off for a whole milestone and
+    nobody could tell.** The hooks were installed, executable, self-testing and
+    firing; the verb they called refused every row for a reason that was true
+    at the time; and a courier fails open by design — it must never block a
+    stop — so the refusal went to a stderr nobody reads. `pm/roadmap/` held one
+    `ledger.jsonl`, from two milestones earlier.
+
+    `0.4.0/one-rule-routes-a-row` deleted THAT cause. It closed none of the
+    class: entries never pasted, a `pm` target that is not `.PHONY` so `make`
+    exits 0 without reaching the verb, an undeclared `[pm.states.*]` that makes
+    the CLI inert, `python3` missing. Every one produces zero rows and zero
+    visible complaint, and the shape is a fail-open courier with no fail-loud
+    counterpart anywhere.
+
+    **A tree that wires nothing is SILENT.** It opted out, and this package
+    does not conscript (0.4.0/D5). A settings file that will not parse is
+    UNVERIFIABLE, not a failure — the standing convention for a pointer this
+    gate cannot follow.
+    """
+    if 'D11' not in enabled:
+        return
+    settings = cfg.root / model.AGENT_SETTINGS
+    if not settings.is_file():
+        return
+    try:
+        text = model.read_raw(settings)
+    except (OSError, UnicodeDecodeError) as err:
+        warn(f'{model.AGENT_SETTINGS} could not be read '
+             f'({err.__class__.__name__}), so whether the ledger couriers are '
+             f'wired is UNVERIFIABLE — not a finding, and not a pass either '
+             f'(D11)')
+        return
+    wired = sorted(name for name in model.LEDGER_COURIERS if name in text)
+    if not wired:
+        return
+    if _tree_has_a_row(cfg):
+        return
+    warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} wired in '
+         f'{model.AGENT_SETTINGS} and {cfg.roadmap_dir} holds no ledger row at '
+         f'all — this tree is recording NOTHING, silently, because a courier '
+         f'fails open by design. Four causes, in the order they cost people '
+         f'time: the `pm` make target is not .PHONY (a PM tree IS a `pm/` '
+         f'directory, so make exits 0 without reaching the verb); '
+         f'`[pm.states.*]` is undeclared, so every work-moving verb refuses; '
+         f'`python3` or the transcript path does not resolve; the entries name '
+         f'a script that is not there. **`bash tools/hooks/'
+         f'cc-ledger-session.sh --self-test` answers all four** (D11)')
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:

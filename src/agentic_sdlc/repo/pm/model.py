@@ -135,7 +135,14 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
 # are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
 # prints the ladder against the tree unconditionally; D7 is how a project that
 # wants it kept visible afterwards asks for that.
-USAGE_CHECKS = ('D7',)
+USAGE_CHECKS = ('D7', 'D11')
+# D11 (ledger couriers wired and no rows anywhere) is opt-in for the same
+# reason as D7 and one more: a tree that has not wired them is not broken, it
+# opted out, and this package does not conscript (0.4.0/D5). What it must never
+# be is SILENTLY opted out, which is what this tree was for a whole milestone —
+# hooks installed, executable, self-testing, firing, every call refused, the
+# refusal printed to a stderr nobody reads, zero rows and zero complaints.
+#
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -160,6 +167,13 @@ RETIRED_CHECKS = {
 }
 
 ARCHIVE_DIR_NAME = 'zz_archive'
+
+# D11's two halves, both readable without running anything. The settings file
+# is the consumer's own and hand-maintained (`install.py` says why it is
+# printed and never written); these are the script names the printed block
+# wires, so a tree that pasted the block matches.
+AGENT_SETTINGS = '.claude/settings.json'
+LEDGER_COURIERS = ('cc-ledger-session.sh', 'cc-ledger-subagent.sh')
 
 # --- the canonical grain slots ------------------------------------------------
 # One shape, every grain, all lowercase. `handoff.md` and `bugs/` are

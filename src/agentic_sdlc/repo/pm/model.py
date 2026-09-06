@@ -146,6 +146,19 @@ REVIEW_FILE_NAME = 'review.md'
 HANDOFF_FILE_NAME = 'handoff.md'
 # The id<->path convention is this module's, so the names are spelled here
 # once.
+# The plan: `order` is a declared sequence of versions, not a sort. It lives in
+# the roadmap dir beside the milestones it sequences, and it is grain-shaped so
+# the byte-preserving frontmatter writer can edit it (0.3.0).
+RELEASES_DOC = 'releases.md'
+ORDER_KEY = 'order'
+
+# R5: which entry in `order` the version file must match. `start` is
+# bump-at-START (the first entry not yet shipped) and the seed default;
+# `ship` is bump-at-CLOSE (the last entry that has).
+VERSION_AT_START = 'start'
+VERSION_AT_SHIP = 'ship'
+VERSION_AT_CHOICES = (VERSION_AT_START, VERSION_AT_SHIP)
+
 MILESTONE_DOC = 'milestone.md'
 FEATURE_DOC = 'feature.md'
 ROADMAP_DOC = 'ROADMAP.md'
@@ -212,6 +225,9 @@ class PmConfig:
     template_dir: str = ''
     version_file: str = 'pyproject.toml'
     version_pattern: str = r'^version = "(.*)"$'
+    # R5 only: which milestone in the declared `order` the version file is
+    # graded against. Never a parse — a position in a list.
+    version_at: str = VERSION_AT_START
     # What the project declared, per kind; empty is the absence itself, which
     # `flow_of` turns into a refusal naming the fix (hard rule 5: a workflow
     # ships no default).
@@ -271,6 +287,16 @@ def load() -> PmConfig:
             'the markdown (a template can change a grain\'s whole shape, not '
             'just its frontmatter defaults)')
 
+    # A position, not a parse. An unknown value is exit 2 rather than a
+    # silent fallback to `start`, which would grade against the wrong entry.
+    version_at = text(sect, 'pm', 'version_at', VERSION_AT_START)
+    if version_at not in VERSION_AT_CHOICES:
+        raise ConfigError(
+            f'[pm] version_at must be one of '
+            f'{" ".join(VERSION_AT_CHOICES)}, got {version_at!r} — '
+            f'{VERSION_AT_START!r} is the first entry in `order` that has not '
+            f'shipped (bump at start), {VERSION_AT_SHIP!r} the last that has')
+
     flows = _load_flows(sect)
 
     return PmConfig(
@@ -289,6 +315,7 @@ def load() -> PmConfig:
         template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
         version_pattern=version_pattern,
+        version_at=version_at,
         flows=flows,
     )
 
@@ -601,6 +628,43 @@ def unquote(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
         return value[1:-1]
     return value
+
+
+# A block-style list is the only non-scalar frontmatter this package reads:
+# `order` is edited constantly and reordering is the main edit, so one entry per
+# line keeps a diff showing what MOVED, where an inline `[a, b, c]` rewrites the
+# whole line.
+_LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
+
+
+def list_field_of(path: Path, key: str) -> list[str]:
+    """Block-style list under `key` in the leading frontmatter, or [].
+
+    `key:` must carry nothing but a comment on its own line; a scalar on it is
+    a different shape and reads as no list at all, never as a one-element one.
+    """
+    try:
+        lines = _split(read_raw(path))
+    except (OSError, UnicodeDecodeError):
+        return []
+    bounds = _fence_bounds(lines)
+    if bounds is None:
+        return []
+    open_i, close_i = bounds
+    for i in range(open_i + 1, close_i):
+        if not lines[i].startswith(f'{key}:'):
+            continue
+        rest = lines[i][len(key) + 1:].strip()
+        if rest and not rest.startswith('#'):
+            return []
+        out: list[str] = []
+        for line in lines[i + 1:close_i]:
+            m = _LIST_ITEM.match(line)
+            if m is None:
+                break
+            out.append(unquote(m.group('value')))
+        return out
+    return []
 
 
 def set_field(path: Path, key: str, value: str) -> bool:
@@ -981,6 +1045,84 @@ def shipped_version(cfg: PmConfig) -> str | None:
     except (OSError, UnicodeDecodeError):
         return None
     return None
+
+
+# --- the plan: a declared order of versions, and the grain that claims each ---
+# Nothing here parses, compares or increments a version string. "Did it
+# increase" is a POSITION in `order`; `"1.1.1"` and `"cow"` are equally valid.
+def releases_file(cfg: PmConfig) -> Path:
+    """`pm/roadmap/releases.md` — the plan. Absent until `pm order` writes it."""
+    return cfg.roadmap / RELEASES_DOC
+
+
+def declared_order(cfg: PmConfig) -> list[str]:
+    """The declared sequence of versions, or [] when the tree has no plan."""
+    return list_field_of(releases_file(cfg), ORDER_KEY)
+
+
+def milestone_version(cfg: PmConfig, mid: str) -> str:
+    """The version a milestone declares it ships as, or '' — it is optional,
+    and a milestone without one is BACKLOG, never a finding (R2).
+    """
+    mfile = milestone_file(cfg, mid)
+    return field_of(mfile, 'version') if mfile is not None else ''
+
+
+def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
+    """(version, milestone id) for every milestone that declares one, in tree
+    order. A list rather than a dict: R3 asks whether two milestones claim the
+    same version, and a dict would have eaten the duplicate.
+    """
+    out = []
+    for mdir, mid in known_milestones(cfg):
+        version = field_of(mdir / MILESTONE_DOC, 'version')
+        if version:
+            out.append((version, mid))
+    return out
+
+
+def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
+    """The first milestone claiming `version`, or None — an entry nothing
+    claims is DANGLING (R1) and, once its directory is retired, UNVERIFIABLE.
+    """
+    for claimed, mid in version_claims(cfg):
+        if claimed == version:
+            return mid
+    return None
+
+
+def release_is_shipped(cfg: PmConfig, version: str) -> bool:
+    """Has the milestone claiming `version` finished? An entry no milestone
+    claims has not shipped: it cannot be behind us if nothing carries it.
+    """
+    mid = milestone_of_version(cfg, version)
+    if mid is None:
+        return False
+    mfile = milestone_file(cfg, mid)
+    if mfile is None:
+        return False
+    return category_of(cfg, 'milestone', field_of(mfile, 'status')) == DONE_CATEGORY
+
+
+def current_release(cfg: PmConfig) -> str | None:
+    """The version this tree is at, by POSITION in `order` — the first entry
+    not yet shipped under `version_at = "start"`, the last that has under
+    `"ship"`. None when the tree declares no order, or when the position it
+    names does not exist (everything shipped / nothing has).
+
+    By construction this is never zero-or-several the way "the one milestone in
+    progress" was: it does not read a status field at all.
+    """
+    order = declared_order(cfg)
+    if not order:
+        return None
+    if cfg.version_at == VERSION_AT_START:
+        for version in order:
+            if not release_is_shipped(cfg, version):
+                return version
+        return None
+    shipped = [v for v in order if release_is_shipped(cfg, v)]
+    return shipped[-1] if shipped else None
 
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:

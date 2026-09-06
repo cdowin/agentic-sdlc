@@ -28,6 +28,7 @@ from support.pm import (
     cfg_for,
     declaring,
     ledger_lines,
+    loaded,
     run_cli,
     run_gate,
     tree,
@@ -1580,3 +1581,72 @@ class Move(unittest.TestCase):
                 self.assertFalse((target_dir / 'stories' / 's0.md').exists())
             finally:
                 target_dir.chmod(0o755)
+
+
+class ThePlanIsADeclaredOrder(unittest.TestCase):
+    """`order` is read as a block list, and the current release is a POSITION.
+
+    The sin guarded here is the resolver quietly answering with the wrong entry:
+    every rule downstream (R5, the ledger's home, `pm next`) grades against
+    whatever this returns, so a silent off-by-one mis-grades the whole tree.
+    """
+
+    @staticmethod
+    def _plan(root: Path, *versions: str) -> None:
+        body = '\n'.join(f'  - "{v}"' for v in versions)
+        (root / 'pm' / 'roadmap' / 'releases.md').write_text(
+            f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+
+    @staticmethod
+    def _milestone(root: Path, mid: str, version: str, status: str) -> None:
+        front = {'id': f'"{mid}"', 'name': mid, 'status': status}
+        if version:
+            front['version'] = f'"{version}"'
+        write(root / 'pm' / 'roadmap' / f'{mid}-m' / 'milestone.md', front)
+
+    def test_block_list_reads_in_order_and_a_scalar_is_not_a_list(self):
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            cfg = cfg_for(root)
+            self.assertEqual(model.declared_order(cfg),
+                             ['0.1.0', '0.2.0', '0.3.0'])
+            # A scalar on the key line is a DIFFERENT shape, and reading it as
+            # a one-element list would make `order: 0.1.0` silently a plan.
+            (root / 'pm' / 'roadmap' / 'releases.md').write_text(
+                '---\norder: 0.1.0\n---\n', encoding='utf-8')
+            self.assertEqual(model.declared_order(cfg), [])
+
+    def test_no_plan_at_all_is_no_current_release(self):
+        with tree() as root:
+            cfg = cfg_for(root)
+            self.assertEqual(model.declared_order(cfg), [])
+            self.assertIsNone(model.current_release(cfg))
+
+    def test_current_is_the_first_unshipped_at_start_and_the_last_shipped_at_ship(self):
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            self._milestone(root, 'a', '0.1.0', 'done')
+            self._milestone(root, 'b', '0.2.0', 'done')
+            self._milestone(root, 'c', '0.3.0', 'building')
+            self.assertEqual(loaded(root).version_at, model.VERSION_AT_START)
+            self.assertEqual(model.current_release(loaded(root)), '0.3.0')
+
+            write_config(root, '[pm]\nversion_at = "ship"\n')
+            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+
+    def test_an_entry_no_milestone_claims_has_not_shipped(self):
+        # R1 reports it DANGLING; the resolver must not step over it, or the
+        # tree would be graded against a version further down the plan.
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0')
+            self._milestone(root, 'a', '0.1.0', 'done')
+            self.assertIsNone(model.milestone_of_version(cfg_for(root), '0.2.0'))
+            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+
+    def test_version_at_refuses_a_value_it_does_not_know(self):
+        with tree() as root:
+            write_config(root, '[pm]\nversion_at = "whenever"\n')
+            with self.assertRaises(model.ConfigError) as caught:
+                loaded(root)
+            self.assertIn('version_at', str(caught.exception))
+            self.assertIn('whenever', str(caught.exception))

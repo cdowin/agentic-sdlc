@@ -2,8 +2,8 @@
 id: 0.4.0/recording-is-on-or-the-gate-is-red
 milestone: "0.4.0"
 name: A tree that is not recording says so
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-06-0.4.0-the-telemetry-surfaces.md
 phase:
 depends_on: ["0.4.0/one-rule-routes-a-row"]
 consumed_by: []

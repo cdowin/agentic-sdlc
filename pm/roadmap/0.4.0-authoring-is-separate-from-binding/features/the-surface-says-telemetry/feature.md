@@ -2,8 +2,8 @@
 id: 0.4.0/the-surface-says-telemetry
 milestone: "0.4.0"
 name: The surface says telemetry, at the moment of need
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-06-0.4.0-the-telemetry-surfaces.md
 phase:
 depends_on: []
 consumed_by: []

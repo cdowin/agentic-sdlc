@@ -2,8 +2,8 @@
 id: 0.4.0/the-read-verbs-compose
 milestone: "0.4.0"
 name: A read verb emits every field you would filter on
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-06-0.4.0-the-read-verbs-compose.md
 phase:
 depends_on: []
 consumed_by: []

@@ -116,3 +116,9 @@
 {"ts":"2026-09-06T23:56:59Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing","from":"done","to":"done"}
 {"ts":"2026-09-06T23:57:07Z","kind":"status","grain":"0.4.0/every-move-breadcrumbs-the-next-step/01-a-move-prints-what-the-conveyor-asks-next","from":"building","to":"done"}
 {"ts":"2026-09-06T23:57:16Z","kind":"status","grain":"0.4.0/every-grain-is-on-a-stopwatch/01-an-open-grain-says-how-long-it-has-been-open","from":"building","to":"done"}
+{"ts":"2026-09-06T23:57:24Z","kind":"status","grain":"0.4.0/the-read-verbs-compose","from":"reviewing","to":"reviewing"}
+{"ts":"2026-09-06T23:57:58Z","kind":"status","grain":"0.4.0/the-read-verbs-compose","from":"reviewing","to":"done"}
+{"ts":"2026-09-06T23:57:58Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry","from":"building","to":"reviewing"}
+{"ts":"2026-09-06T23:58:30Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry","from":"reviewing","to":"done"}
+{"ts":"2026-09-06T23:58:31Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red","from":"building","to":"reviewing"}
+{"ts":"2026-09-06T23:59:05Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red","from":"reviewing","to":"done"}

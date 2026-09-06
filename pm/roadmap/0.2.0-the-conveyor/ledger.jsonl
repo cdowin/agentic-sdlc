@@ -279,3 +279,4 @@
 {"ts":"2026-09-06T02:11:22Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9820,"rank":4}
 {"ts":"2026-09-06T02:11:22Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one","duration_ms":9596,"rank":5}
 {"ts":"2026-09-06T02:11:23Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":96583,"census":1401}
+{"ts":"2026-09-06T02:20:08Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2232}

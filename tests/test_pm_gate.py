@@ -300,12 +300,14 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
     def test_each_warning_fires_on_the_scaffold_and_is_silent_on_a_filled_grain(self):
         empty = f'# S0\n\n## Acceptance criteria\n\n{self.PROMPT}\n\n## Out of scope\n'
         filled = empty.replace(self.PROMPT, '- the gate says so\n')
-        # A story at `ready` whose section holds only the template's prompt
+        # A story past `todo` whose section holds only the template's prompt
         # warns; the same story with one line under the heading does not; a
-        # story that never left `planning` is not asked. Exit 0 throughout.
-        for status, body, expect in (('ready', empty, True),
-                                     ('building', empty, True),
-                                     ('ready', filled, False),
+        # story still in `todo` — `planning` OR `ready`, the category and not
+        # the word — is not asked. Exit 0 throughout.
+        for status, body, expect in (('building', empty, True),
+                                     ('done', empty, True),
+                                     ('building', filled, False),
+                                     ('ready', empty, False),
                                      ('planning', empty, False)):
             with self.subTest(status=status, filled=body is filled), \
                     tree(feature_status='building',
@@ -318,18 +320,18 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                 self.assertEqual(line in out, expect, out)
                 self.assertEqual('warning(s)' in out, expect, out)
         # The feature's and the milestone's own sections, plus the two
-        # frontmatter facts a readied milestone needs: a branch, and a phase
-        # on each feature. A grain with NO such heading at all says so in
-        # different words from an empty one.
-        with tree(milestone_status='ready', feature_status='ready',
+        # frontmatter facts a milestone past `todo` needs: a branch, and a
+        # phase on each feature. A grain with NO such heading at all says so
+        # in different words from an empty one.
+        with tree(milestone_status='building', feature_status='building',
                   story_statuses=()) as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
-            for needle in ("milestone 0.1 is 'ready' with no branch:",
-                           "milestone 0.1 is 'ready' and has no `## Ship criterion` section",
-                           "milestone 0.1 is 'ready' and feature 0.1/alpha carries no phase:",
-                           "feature 0.1/alpha is 'ready' with no stories",
-                           "feature 0.1/alpha is 'ready' and has no `## Ship criterion` section"):
+            for needle in ("milestone 0.1 is 'building' with no branch:",
+                           "milestone 0.1 is 'building' and has no `## Ship criterion` section",
+                           "milestone 0.1 is 'building' and feature 0.1/alpha carries no phase:",
+                           "feature 0.1/alpha is 'building' with no stories",
+                           "feature 0.1/alpha is 'building' and has no `## Ship criterion` section"):
                 self.assertIn(f'  WARN  {needle}', out, out)
             self.assertIn('; 5 warning(s)', out)
             self.assertNotIn('DRIFT', out)
@@ -337,10 +339,10 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             # one story under the feature — silent, and the verdict line is
             # the plain one.
             write(root / FFILE_REL, {'id': '0.1/alpha', 'milestone': '"0.1"',
-                                     'name': 'Alpha', 'status': 'ready',
+                                     'name': 'Alpha', 'status': 'building',
                                      'reviewed': '', 'phase': '1'}, self.SHIP)
             write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
-                                     'status': 'ready',
+                                     'status': 'building',
                                      'branch': 'milestone/0.1'}, self.SHIP)
             self._story(root, 'planning', 'x')
             code, out = run_gate(root)
@@ -348,28 +350,37 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             self.assertNotIn('WARN', out)
             self.assertNotIn('warning(s)', out)
 
-    def test_readied_is_the_declaration_not_the_word(self):
-        # "At or past `ready`" is "past the kind's FIRST `todo` state": under
-        # `todo = ["queued", "shaped"]` a `shaped` story is asked and a
-        # `queued` one is not, and the seed's word appears nowhere.
-        renamed = {'todo': ('queued', 'shaped'), 'in_progress': ('doing',),
-                   'done': ('shipped',)}
-        for status, expect in (('shaped', True), ('queued', False)):
-            with self.subTest(status=status), \
-                    tree(feature_status='building',
-                         story_statuses=('ready',)) as root:
-                write_config(root, declaring(story=renamed))
-                self._settle(root)
-                self._story(root, status, 'x')
-                code, out = run_gate(root)
-                self.assertEqual(code, 0, out)
-                self.assertEqual(
-                    f"story 0.1/alpha/s0 is {status!r} and has no "
-                    f"`## Acceptance criteria` section" in out, expect, out)
-                cfg = cfg_for(root)
-                self.assertTrue(model.readied(cfg, 'story', 'shaped'))
-                self.assertFalse(model.readied(cfg, 'story', 'queued'))
-                self.assertFalse(model.readied(cfg, 'story', 'wombat'))
+    def test_left_todo_is_the_category_not_the_order_within_it(self):
+        # "Has left `todo`" is asked of the CATEGORY: under a renamed flow a
+        # `doing` story is asked, neither `todo` word is, and swapping the two
+        # `todo` words — no word renamed, none moved — changes no count. The
+        # first cut keyed on "past the FIRST todo word", and the swap alone
+        # took this repo's own tree from 7 WARN to 13 (V3 of the review).
+        counts = []
+        for order in (('queued', 'shaped'), ('shaped', 'queued')):
+            renamed = {'todo': order, 'in_progress': ('doing',),
+                       'done': ('shipped',)}
+            for status, expect in (('doing', True), ('shaped', False),
+                                   ('queued', False)):
+                with self.subTest(order=order, status=status), \
+                        tree(feature_status='building',
+                             story_statuses=('ready',)) as root:
+                    write_config(root, declaring(story=renamed))
+                    self._settle(root)
+                    self._story(root, status, 'x')
+                    code, out = run_gate(root)
+                    self.assertEqual(code, 0, out)
+                    self.assertEqual(
+                        f"story 0.1/alpha/s0 is {status!r} and has no "
+                        f"`## Acceptance criteria` section" in out, expect, out)
+                    counts.append((status, out.count('  WARN  ')))
+                    cfg = cfg_for(root)
+                    self.assertTrue(model.left_todo(cfg, 'story', 'doing'))
+                    self.assertTrue(model.left_todo(cfg, 'story', 'shipped'))
+                    self.assertFalse(model.left_todo(cfg, 'story', 'shaped'))
+                    self.assertFalse(model.left_todo(cfg, 'story', 'queued'))
+                    self.assertFalse(model.left_todo(cfg, 'story', 'wombat'))
+        self.assertEqual(counts[:3], counts[3:], counts)
 
     def test_the_section_reader_stops_at_the_next_heading_and_sees_through_comments(self):
         text = ('---\nstatus: ready\n---\n# T\n\n## Acceptance criteria\n'
@@ -1594,22 +1605,41 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         drift = [ln for ln in out_r.splitlines() if ln.startswith('  DRIFT  ')]
         self.assertFalse([ln for ln in drift if '1.0/normal' in ln], drift)
 
-    def test_pm_status_says_the_same_thing_about_both_trees(self):
-        def status(root):
-            return run_cli(root, 'status')
-        with self._copies() as (renamed, stock):
-            code_r, out_r = self._run(renamed, status)
-            code_s, out_s = self._run(stock, status)
-        self.assertEqual((code_r, code_s), (0, 0), out_r + out_s)
-        # Whitespace-normalised per line: the status column is padded to a
-        # width, and a longer word is a longer word (rule 6 covers the gate's
-        # line shapes, not this board's alignment).
+    def test_every_read_verb_says_the_same_thing_about_both_trees(self):
+        # Criterion 5 names the gate BEHAVIOUR, and `pm list`, `ready-for`
+        # ×3 and `vocabulary` are as much of it as `status` is (V5 of the
+        # feature review): each is byte-identical modulo the words, at the
+        # same exit code. `status` is the one exception, whitespace-squeezed:
+        # its status column is as wide as the longest word the project
+        # declared, and `reviewing` is a character longer than `checking`.
         import re
 
         def squeeze(text: str) -> list[str]:
             return [' '.join(re.sub(r'\s+\]', ']', ln).split())
                     for ln in text.splitlines()]
-        self.assertEqual(squeeze(self._unrename(out_r)), squeeze(out_s))
+        verbs = (('status',), ('list',), ('vocabulary',),
+                 ('vocabulary', '--json'),
+                 ('ready-for', 'feature', '1.0/normal'),
+                 ('ready-for', 'feature', '1.0/stalled'),
+                 ('ready-for', 'milestone', '1.0'),
+                 ('ready-for', 'tag', '1.0'))
+        for argv in verbs:
+            def verb(root, argv=argv):
+                return run_cli(root, *argv)
+            with self.subTest(verb=' '.join(argv)), \
+                    self._copies() as (renamed, stock):
+                code_r, out_r = self._run(renamed, verb)
+                code_s, out_s = self._run(stock, verb)
+                self.assertEqual(code_r, code_s, out_r + out_s)
+                self.assertTrue(out_r.strip(), argv)      # never two empties
+                if argv == ('status',):
+                    self.assertEqual(squeeze(self._unrename(out_r)),
+                                     squeeze(out_s))
+                else:
+                    self.assertEqual(self._unrename(out_r), out_s)
+        with self._copies() as (renamed, stock):
+            code_r, out_r = self._run(renamed, lambda root: run_cli(root, 'status'))
+        self.assertEqual(code_r, 0, out_r)
         self.assertIn('stories 2/2 done', out_r)          # shipped + dropped
         # D2 is the gate's WARN, so the board's marker says WARN too; a
         # dangling record stays a DRIFT marker (D1 is a finding).

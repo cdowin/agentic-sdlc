@@ -362,16 +362,64 @@ reader does not rediscover it as a regression.
 
 Reviewer's token cost: ~230k.
 
+## Landed — 2026-09-06, branch `feat/pm-findings`
+
+Chris's rule for the whole set: *`pm` writes one status. `check` reads and warns. If levels
+disagree that's a warn, not a fail, no action. Nothing keys on the order of words — the config
+owns every word, the code knows three categories.*
+
+- **V1 — `fe680e6`.** `cli.py` `main` catches `model.ConfigError` beside `Usage` and
+  `AmbiguousStory`: one `[pm] ERROR — …` line at exit 2, the same line `check pm` prints.
+  `tests/test_pm_flow.py::test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name`
+  now also runs `pm status` through `cli.main` on a scratch tree with the flow stripped and
+  asserts exit 2, no traceback, the key and `agentic-sdlc pm init` named. Fails without the
+  clause, passes with it, my run.
+- **V2 — `9a8b226`.** `cmd_set` refuses the `status` key by name before resolving the grain and
+  prints the exact `pm <kind> <word> <id>`. The two docstring claims are true as written now;
+  `cmd_bug`'s is amended to say `set` closed the second route. `tests/test_pm_verbs.py`'s `set`
+  case asserts exit 2 for all four kinds plus a declared word, the file byte-identical and the
+  ledger unchanged. `tests/test_fuzz_inputs.py`'s `set` argv moved from `status` to `owner` so the
+  containment property keeps exercising `set`'s write path.
+- **V3 — `ecf4c0b`.** `model.readied` deleted; `model.left_todo(cfg, kind, status)` asks
+  `category_of` and nothing else — declared, and not `todo`. The three `check pm` sites read it;
+  the WARN lines say `past todo`. Probed as this record did, on a scratch copy of this tree with
+  the two `todo` words swapped: **7 WARN and 7 WARN**, transcripts identical (it was 7 → 13).
+  `tests/test_pm_gate.py::test_left_todo_is_the_category_not_the_order_within_it` carries the
+  swap; story 02's criterion reads "has left `todo`"; the CHANGELOG bullet, the guidance sentence
+  and its installed skill copy follow. `Flow.order`'s docstring and `devkit.toml:121` are true
+  as written.
+- **V4 — `b23bf9d`.** `_census_modules` rglobs `src/agentic_sdlc` (41 modules, was 27) and the
+  census test asserts `pm.model`, `core.config` and `conveyor.driver` are in it.
+- **V5 — `b23bf9d`.** The twin compares `pm list`, `vocabulary`, `vocabulary --json` and
+  `ready-for feature|milestone|tag` beside `check pm` and `status` — byte-identical modulo the
+  words at equal exit codes, never two empties.
+- **V6 — `b23bf9d`.** The column is `max(len(w) for w in flow_of(cfg, 'feature').order)`. The
+  twin's whitespace squeeze **stays, for `status` alone**: the width now follows the longest
+  DECLARED word, and `reviewing` is a character longer than `checking`, so the two boards differ
+  in padding by construction — the squeeze comment says so.
+- **V7 — open.** The feature record is the closer's file, not this branch's: criterion 1 in
+  `every-question-is-asked-of-a-category/feature.md:114-116` still says "transition" and should
+  say "target state"; one line at close.
+- **V8 — `b23bf9d`.** `_set_status` carries a docstring saying it validates nothing, that every
+  caller asked `_movable` one frame up, and that `cfg` only names the file. The signature stays:
+  five call sites passing a string instead of the config, for a nit, is churn.
+- **V9 — `b23bf9d`.** `test_the_belts_spell_no_state_word`'s docstring names
+  `test_the_seeds_exported_words_have_exactly_the_named_readers` as the positive half.
+
+Not done here: `make milestone` / `make matrix` (out of scope by instruction); the belts were
+not driven against a renamed vocabulary; the fuzz harness's `set` change is in
+`tests/test_fuzz_inputs.py`, outside the files this branch was given.
+
 ```
 verdict: HOLD
 | id | severity | disposition |
-| V1 | BLOCKER | open |
-| V2 | MAJOR | open |
-| V3 | MAJOR | open |
-| V4 | MINOR | open |
-| V5 | MINOR | open |
-| V6 | MINOR | open |
-| V7 | QUESTION | open |
-| V8 | NIT | open |
-| V9 | NIT | open |
+| V1 | BLOCKER | landed fe680e6 |
+| V2 | MAJOR | landed 9a8b226 |
+| V3 | MAJOR | landed ecf4c0b |
+| V4 | MINOR | landed b23bf9d |
+| V5 | MINOR | landed b23bf9d |
+| V6 | MINOR | landed b23bf9d |
+| V7 | QUESTION | open: the feature record is the closer's file — criterion 1 says "transition" and should say "target state", one line at close |
+| V8 | NIT | landed b23bf9d |
+| V9 | NIT | landed b23bf9d |
 ```

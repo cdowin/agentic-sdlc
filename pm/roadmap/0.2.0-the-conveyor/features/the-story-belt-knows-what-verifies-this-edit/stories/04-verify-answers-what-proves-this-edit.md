@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit/04-verify-answers-what-pr
 feature: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: verify --changed, --plan and --check answer from the tree
-status: reviewing
+status: building
 owner:
 depends_on: ["0.2.0/the-story-belt-knows-what-verifies-this-edit/02-one-capture-runs-one-command", "0.2.0/the-story-belt-knows-what-verifies-this-edit/03-a-test-declares-what-it-covers"]
 ---

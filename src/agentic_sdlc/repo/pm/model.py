@@ -8,9 +8,11 @@ predicates. Two readers, one definition — the gate and the tool cannot describ
 
 Config: `[pm]` in the consuming repo's devkit.toml. Every GATE key has a stock
 default, so a repo with no devkit.toml runs the gate identically to one
-declaring the defaults. The FLOW — `[pm.states.<kind>]` and
-`[pm.transitions.<kind>]` — has none: `pm init` writes it, every run reads it,
-and a tree without it is refused by name (hard rule 5, as it now reads).
+declaring the defaults. The FLOW — `[pm.states.<kind>]` — has none: `pm init`
+writes it, every run reads it, and a tree without it is refused by name (hard
+rule 5, as it now reads). There is no transitions table: a belt writes the
+FIRST state of its kind's `done` list, and a hand move (`pm <kind> <state>`)
+reaches any declared state directly.
 
     [pm]
     roadmap_dir  = "pm/roadmap"    # the tree, relative to the repo root
@@ -98,9 +100,9 @@ FLOW_KINDS = ('milestone', 'feature', 'story', 'bug')
 
 @dataclass(frozen=True)
 class Flow:
-    """One grain kind's DECLARED states, their categories, and its transitions.
+    """One grain kind's DECLARED states and their categories.
 
-    Read from `[pm.states.<kind>]` and `[pm.transitions.<kind>]` every run.
+    Read from `[pm.states.<kind>]` every run.
     **There is no runtime fallback** — see `DEFAULT_FLOWS` for why the shipped
     table is a SEED that `init` writes rather than a default the reader assumes.
 
@@ -114,7 +116,6 @@ class Flow:
     kind: str
     by_category: dict[str, tuple[str, ...]]
     category_of: dict[str, str]
-    transitions: dict[str, str]
 
     @property
     def order(self) -> tuple[str, ...]:
@@ -167,9 +168,18 @@ class Flow:
 #
 # `LIFECYCLE`, `BUILDING` and `REVIEWING` are the seed's words exported under
 # the names the 0.2.0 vocabulary published. Their ONE remaining reader is
-# `conveyor/steps.py` (`CLAIMED` / `REVIEWING` / `DONE`, the belts' step words),
-# which is the milestone belt's `[pm.transitions.<kind>]` declaration still to
-# land; nothing in the pm tracker or the gates reads them.
+# `conveyor/steps.py` (`CLAIMED` / `REVIEWING` / `DONE`, the belts' step
+# words); nothing in the pm tracker or the gates reads them.
+#
+# EACH KIND DECLARES ITS OWN STATES, and the seed's lists are what the belts
+# WRITE. A story is claimed (`building`) and closed (`done`) and nothing
+# reviews or packages a story on its own; a feature is additionally
+# `reviewing` while its review record is being written; a milestone walks all
+# seven, because acceptance and packaging are milestone acts. A word a kind
+# never holds is not seeded for it — the 0.2.0 seed gave every kind the whole
+# lifecycle, and thirty stories then sat at `reviewing`, a state no belt
+# writes and no gate reads. `obe` stays in `done` for every kind that can
+# abandon work.
 LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
              'packaging', 'done')
 BUILDING = LIFECYCLE[2]
@@ -182,8 +192,10 @@ _LIFECYCLE_CATEGORIES = {
 
 DEFAULT_FLOWS: dict[str, dict[str, tuple[str, ...]]] = {
     'milestone': dict(_LIFECYCLE_CATEGORIES),
-    'feature': dict(_LIFECYCLE_CATEGORIES),
-    'story': dict(_LIFECYCLE_CATEGORIES),
+    'feature': {TODO: LIFECYCLE[:2], IN_PROGRESS: LIFECYCLE[2:4],
+                DONE_CATEGORY: LIFECYCLE[6:] + ('obe',)},
+    'story': {TODO: LIFECYCLE[:2], IN_PROGRESS: LIFECYCLE[2:3],
+              DONE_CATEGORY: LIFECYCLE[6:] + ('obe',)},
     'bug': {TODO: ('open',), IN_PROGRESS: ('fixed',),
             DONE_CATEGORY: ('closed',)},
 }
@@ -216,8 +228,7 @@ def render_seed(flows=None) -> str:
     return '\n'.join(out)
 
 
-def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]],
-                 transitions: dict[str, str]) -> str:
+def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
     """'' when this declaration is readable, else why it is not.
 
     Every branch is a fact about the INPUT, which rule 9 names as the one thing
@@ -243,11 +254,6 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]],
                         f'{seen[state]!r} and {category!r} — every state maps '
                         f'to exactly one category')
             seen[state] = category
-    for step, target in transitions.items():
-        if target not in seen:
-            return (f'[pm.transitions.{kind}] {step} = {target!r}, which '
-                    f'[pm.states.{kind}] does not declare — a transition to a '
-                    f'state that does not exist can never be taken')
     return ''
 
 
@@ -397,9 +403,9 @@ class PmConfig:
     # `flow_of` turns into a refusal that names the command that fixes it.
     #
     # Hard rule 5 as it now reads: a GATE ships stock defaults, a WORKFLOW does
-    # not. `init` writes the states and the transitions, every run reads them,
-    # and a tree without them is refused by name. A default nobody can see is
-    # the engine's opinion wearing the project's clothes.
+    # not. `init` writes the states, every run reads them, and a tree without
+    # them is refused by name. A default nobody can see is the engine's
+    # opinion wearing the project's clothes.
     flows: dict[str, Flow] = field(default_factory=dict)
 
     @property
@@ -496,8 +502,15 @@ def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
     return flow.order if flow is not None else ()
 
 
+# `[pm.transitions.<kind>]` shipped in one 0.2.0 build as "the state each
+# conveyor step writes", read by nothing, and left. Refused BY NAME rather than
+# ignored, for the reason every retired key here is: a key that silently does
+# nothing leaves its author believing it took effect.
+TRANSITIONS_KEY = 'transitions'
+
+
 def _load_flows(sect: dict) -> dict[str, Flow]:
-    """`[pm.states.<kind>]` and `[pm.transitions.<kind>]`, read and validated.
+    """`[pm.states.<kind>]`, read and validated.
 
     ABSENT IS ABSENT — an empty dict, never the seed. `DEFAULT_FLOWS` is what
     `init` WRITES; a reader that fell back to it would make the shipped words
@@ -505,24 +518,26 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
     flow they claim to be.
 
     Malformed is exit 2, before anything else happens. A category outside the
-    closed set, a state in two categories, a transition to a state nobody
-    declared: all facts about the INPUT, which rule 9 names as the one thing
-    this package is always allowed to refuse.
+    closed set, a state in two categories, a leftover transitions table: all
+    facts about the INPUT, which rule 9 names as the one thing this package
+    is always allowed to refuse.
     """
-    states = sect.get('states')
-    transitions = sect.get('transitions')
-    if states is None and transitions is None:
-        return {}
-    if states is None:
+    if TRANSITIONS_KEY in sect:
+        kinds = sect[TRANSITIONS_KEY]
+        named = (', '.join(f'[pm.{TRANSITIONS_KEY}.{k}]' for k in kinds)
+                 if isinstance(kinds, dict) and kinds
+                 else f'[pm.{TRANSITIONS_KEY}]')
         raise ConfigError(
-            '[pm.transitions.*] is declared and [pm.states.*] is not — a '
-            'transition names a state, so the states have to exist first')
+            f'{named} was retired and is refused — there is no step-to-state '
+            f'table: a belt writes the FIRST state of its kind\'s '
+            f'[pm.states.<kind>] done list, and `pm <kind> <state>` reaches '
+            f'any declared state directly. Remove the table.')
+    states = sect.get('states')
+    if states is None:
+        return {}
     if not isinstance(states, dict):
         raise ConfigError(f'[pm.states] must be a table of grain kinds, got '
                           f'{states!r}')
-    if transitions is not None and not isinstance(transitions, dict):
-        raise ConfigError(f'[pm.transitions] must be a table of grain kinds, '
-                          f'got {transitions!r}')
 
     unknown = sorted(set(states) - set(FLOW_KINDS))
     if unknown:
@@ -530,31 +545,19 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
             f'[pm.states] names grain kind(s) {", ".join(unknown)} — this '
             f'package knows {" ".join(FLOW_KINDS)}, and a flow for a kind it '
             f'never walks would never be read')
-    unknown = sorted(set(transitions or {}) - set(FLOW_KINDS))
-    if unknown:
-        raise ConfigError(
-            f'[pm.transitions] names grain kind(s) {", ".join(unknown)} — '
-            f'this package knows {" ".join(FLOW_KINDS)}')
 
     out: dict[str, Flow] = {}
     for kind in FLOW_KINDS:
         if kind not in states:
             continue
         by_category = str_tuple_table(states, 'pm.states', kind, {})
-        moves = {}
-        for step, target in (transitions or {}).get(kind, {}).items():
-            if not isinstance(target, str):
-                raise ConfigError(
-                    f'[pm.transitions.{kind}] {step} must be a state name, '
-                    f'got {target!r}')
-            moves[step] = target
-        defect = _flow_defect(kind, by_category, moves)
+        defect = _flow_defect(kind, by_category)
         if defect:
             raise ConfigError(defect)
         category_of = {st: cat for cat, sts in by_category.items()
                        for st in sts}
         out[kind] = Flow(kind=kind, by_category=by_category,
-                         category_of=category_of, transitions=moves)
+                         category_of=category_of)
     missing = [k for k in FLOW_KINDS if k not in out]
     if missing:
         raise ConfigError(
@@ -568,7 +571,7 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
 # --- the engine's two verbs ---------------------------------------------------
 # `docs/design/state-categories.md` §6, and this is the whole architecture:
 #
-#     move(grain, to_state)     is this transition declared? then write it.
+#     move(grain, to_state)     is the target a declared state? then write it.
 #     holds(grains, category)   are they all there? yes or no, and name who is not.
 #
 # **Two verbs. Everything a belt does is a sequence of those plus commands the
@@ -670,25 +673,6 @@ def move_defect(cfg: PmConfig, kind: str, to_state: str) -> str:
             f'{", ".join(flow.order)} in [pm.states.{kind}]')
 
 
-def transition_target(cfg: PmConfig, kind: str, step: str) -> str | None:
-    """Which state this project's `[pm.transitions.<kind>]` maps `step` to.
-
-    ASK BY CATEGORY, WRITE BY NAME. A category holds several states, so a belt
-    step that wrote "the done category" would make the engine guess a member —
-    strictly worse than what it replaces. So a step declares the exact word.
-
-    The KEY SET is the engine's, and saying so is the honest version of this
-    table: the keys are step names shipped in `conveyor/steps.py`, a project
-    cannot invent one, and presented as pure project declaration that would be
-    the engine's opinion with a config file in front of it. **The step registry
-    is this package's published API surface, versioned like the CLI and read at
-    a pin bump through `pm vocabulary`** — the project declares its flow over a
-    vocabulary the engine publishes, which is exactly the shape a project
-    selecting and ordering `[release] steps` already works in.
-    """
-    return flow_of(cfg, kind).transitions.get(step)
-
-
 # THE REFUSAL, in ONE place, and it is a WORKFLOW refusal rather than a gate
 # one. `check doc`, `check shell` and `check repo-hygiene` never come through
 # here: hard rule 5 says a GATE ships stock defaults and a repo with no
@@ -707,9 +691,9 @@ def flow_of(cfg: PmConfig, kind: str) -> Flow:
     if flow is None:
         raise ConfigError(
             f'this tree declares no flow: [pm.states.{kind}] is not in '
-            f'devkit.toml, and there is no default — the states and the '
-            f'transitions are how THIS project works, so the engine reads '
-            f'them and never assumes them (CLAUDE.md hard rule 5). Run '
+            f'devkit.toml, and there is no default — the states are how '
+            f'THIS project works, so the engine reads them and never '
+            f'assumes them (CLAUDE.md hard rule 5). Run '
             f'`agentic-sdlc pm init` to write them; it appends to a '
             f'devkit.toml it did not create and rewrites nothing.')
     return flow
@@ -727,12 +711,15 @@ RETIRED_KEYS = {
                       'discipline: a building milestone off the mainline)',
     'bug_open_states': 'read only by the retired D14; [pm.states.bug] still '
                        'gates a bug\'s status through D4',
-    'milestone_transitions': 'there is no edge graph — [pm.transitions.milestone] '
-                             'names which state each belt step writes',
-    'feature_transitions': 'there is no edge graph — [pm.transitions.feature] '
-                           'names which state each belt step writes',
-    'story_transitions': 'there is no edge graph — [pm.transitions.story] '
-                         'names which state each belt step writes',
+    'milestone_transitions': 'there is no edge graph and no step-to-state '
+                             'table — a belt writes the first state of '
+                             '[pm.states.milestone] done',
+    'feature_transitions': 'there is no edge graph and no step-to-state '
+                           'table — a belt writes the first state of '
+                           '[pm.states.feature] done',
+    'story_transitions': 'there is no edge graph and no step-to-state table '
+                         '— a belt writes the first state of '
+                         '[pm.states.story] done',
     # THE VOCABULARY IS DECLARED ONCE. `[pm.states.<kind>]` carries every word
     # AND its category; a flat list beside it would be a second declaration of
     # the same words that the engine would have to reconcile — or, worse,

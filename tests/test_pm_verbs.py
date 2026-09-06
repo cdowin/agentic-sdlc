@@ -388,7 +388,7 @@ class ListFindsTheNail(unittest.TestCase):
                 if '\t' in line]
 
     def _tree(self):
-        return tree(story_statuses=('ready', 'building', 'reviewing', 'done'))
+        return tree(story_statuses=('ready', 'building', 'obe', 'done'))
 
     def test_every_story_one_tab_separated_row_and_every_filter_narrows(self):
         with self._tree() as root:
@@ -400,17 +400,63 @@ class ListFindsTheNail(unittest.TestCase):
             self.assertEqual(rows[0][1], 'ready')
             self.assertEqual(rows[0][3], '0.1/alpha')
 
-            code, out = run_cli(root, 'list', '--status', 'building,reviewing')
+            code, out = run_cli(root, 'list', '--status', 'building,obe')
             self.assertEqual(code, 0, out)
             self.assertEqual([r[1] for r in self._rows(out)],
-                             ['building', 'reviewing'])
+                             ['building', 'obe'])
             self.assertIn('2 of 4 story/ies', out)
+
+            # `--category` asks the same question every other reader asks —
+            # `obe` is finished — so the two `done`-category stories are one
+            # answer, and a word the project never declared is exit 2 rather
+            # than an empty match (a typo'd filter must not read as "nothing
+            # is open").
+            code, out = run_cli(root, 'list', '--category', 'done')
+            self.assertEqual(code, 0, out)
+            self.assertEqual([r[1] for r in self._rows(out)], ['obe', 'done'])
+            code, out = run_cli(root, 'list', '--category', 'finished')
+            self.assertEqual(code, 2, out)
+            self.assertIn('todo in_progress done', out)
+            code, out = run_cli(root, 'list', '--status', 'reviewing')
+            self.assertEqual(code, 2, out)
+            self.assertIn('[pm.states.story]', out)
 
             self.assertEqual(
                 run_cli(root, 'set', '0.1/alpha/s1', 'owner', 'ada')[0], 0)
             code, out = run_cli(root, 'list', '--owner', 'ada')
             self.assertEqual(code, 0, out)
             self.assertEqual([r[2] for r in self._rows(out)], ['ada'])
+
+    def test_kind_milestone_lists_every_milestone_with_its_category_and_branch(self):
+        """`--kind milestone` is what a SCRIPT asks instead of grepping
+        `status: building` out of milestone.md — the worktree tool did exactly
+        that and stopped matching the day a project renamed the word. Four
+        columns always, `-` for an absent branch, so a shell `read` never
+        misaligns; `--category` filters on the category, whatever the word."""
+        with tree(milestone_status='building') as root:
+            mfile = root / MFILE
+            model.set_field(mfile, 'branch', 'milestone/0.1')
+            write(root / 'pm/roadmap/0.2-later/milestone.md',
+                  {'id': '"0.2"', 'name': 'Later', 'status': 'planning'})
+            code, out = run_cli(root, 'list', '--kind', 'milestone')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self._rows(out), [
+                ['0.1', 'building', 'in_progress', 'milestone/0.1'],
+                ['0.2', 'planning', 'todo', '-']])
+            self.assertIn('2 of 2 milestone(s)', out)
+            code, out = run_cli(root, 'list', '--kind', 'milestone',
+                                '--category', 'in_progress')
+            self.assertEqual(code, 0, out)
+            self.assertEqual([r[0] for r in self._rows(out)], ['0.1'])
+            self.assertIn('1 of 2 milestone(s)', out)
+            # The story filters do not apply, and a kind this verb does not
+            # list names the two it does.
+            code, out = run_cli(root, 'list', '--kind', 'milestone',
+                                '--owner', 'ada')
+            self.assertEqual(code, 2, out)
+            code, out = run_cli(root, 'list', '--kind', 'bug')
+            self.assertEqual(code, 2, out)
+            self.assertIn('story or milestone', out)
 
     def test_the_milestone_filter_selects_and_names_its_set(self):
         # `--milestone 0.2` on a tree holding only 0.1 printed `0 of 0` at exit
@@ -795,8 +841,8 @@ class Vocabulary(unittest.TestCase):
     changelog — which is also why this verb keeps running when `[pm] checks`
     names an id the release retired.
 
-    What has NOT come back is an edge table: `[pm.transitions]` maps a STEP to
-    a state, never a state to a state. The flow half is proven in
+    What has NOT come back is an edge table, and the step-to-state table one
+    build carried is refused by name now. The flow half is proven in
     tests/test_pm_flow.py; this keeps the pin-bump surface.
     """
 
@@ -807,6 +853,8 @@ class Vocabulary(unittest.TestCase):
             self.assertEqual(code, 0, out)
             data = json.loads(out)
             self.assertEqual(data['grains']['story']['states'],
+                             ['planning', 'ready', 'building', 'done', 'obe'])
+            self.assertEqual(data['grains']['milestone']['states'],
                              list(model.LIFECYCLE) + ['obe'])
             self.assertEqual(data['grains']['bug']['states'],
                              ['open', 'fixed', 'closed'])
@@ -820,9 +868,10 @@ class Vocabulary(unittest.TestCase):
             # so the payload carries it. The ABSENCE half — `flow_declared:
             # false` and a null `flow` — is proven in tests/test_pm_flow.py.
             self.assertIs(data['flow_declared'], True)
-            self.assertEqual(data['grains']['story']['flow']['order'],
+            self.assertEqual(data['grains']['milestone']['flow']['order'],
                              list(model.LIFECYCLE) + ['obe'])
             self.assertNotIn('->', out)
+            self.assertNotIn('transitions', out)
 
             # ...and it is the PROJECT's vocabulary, never the stock one.
             write_config(root, declaring(story={

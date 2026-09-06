@@ -3,7 +3,7 @@ id: 0.2.0/the-story-belt-knows-what-verifies-this-edit/01-the-verify-declaration
 feature: 0.2.0/the-story-belt-knows-what-verifies-this-edit
 milestone: "0.2.0"
 name: A verify rule set is read once, and an unusable one exits 2
-status: reviewing
+status: building
 owner:
 depends_on: []
 ---

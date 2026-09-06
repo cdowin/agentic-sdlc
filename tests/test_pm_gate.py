@@ -118,10 +118,10 @@ class DriftGate(unittest.TestCase):
          'all stories done, feature still ready'),
         ('D3', dict(milestone_status='done', feature_status='building'),
          'is done but feature'),
-        # The set the tree is judged against: the declared order, and nothing
-        # else now that the deprecation window has closed.
+        # The set the tree is judged against: the FEATURE's declared order,
+        # and nothing else now that the deprecation window has closed.
         ('D4', dict(feature_status='bogus'),
-         'not in (planning ready building reviewing accepted packaging done obe)'),
+         'not in (planning ready building reviewing done obe)'),
         ('D5', dict(feature_status='planning', story_statuses=('done',)),
          'two places in this tree disagree'),
         ('D6', dict(milestone_status='ready', feature_status='done',
@@ -190,15 +190,21 @@ class DriftGate(unittest.TestCase):
             self.assertEqual(code, 0, out)
 
     def test_d4_reports_every_grain_against_its_own_declared_words(self):
-        # The census half of D4: three grains, three findings, one declared
-        # order. A rule that reached only two of the three would still fire
-        # and still pass a single-grain assertion.
+        # The census half of D4: three grains, three findings, and each names
+        # ITS OWN kind's declared order — the seed gives each kind the states
+        # its belt writes, so the three lines differ. A rule that reached
+        # only two of the three would still fire and still pass a
+        # single-grain assertion.
         with tree(milestone_status='bogus', feature_status='bogus',
                   story_statuses=('bogus',)) as root:
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
-            expected = f'not in ({" ".join(model.LIFECYCLE)} obe)'
-            self.assertEqual(out.count(expected), 3, out)
+            for kind in ('milestone', 'feature', 'story'):
+                order = ' '.join(model.DEFAULT_FLOWS[kind][cat][i]
+                                 for cat in model.CATEGORIES
+                                 for i in range(len(model.DEFAULT_FLOWS[kind][cat])))
+                self.assertEqual(out.count(f'not in ({order})'), 1,
+                                 (kind, out))
 
     def test_d6_goes_quiet_the_moment_the_milestone_advances(self):
         # The deadlock: the release gate could not run until the milestone was
@@ -258,12 +264,12 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
 
     def test_the_normal_path_is_not_drift(self):
         # THE regression: a story finishing while its feature is still under
-        # review, accepted or packaging is how every feature closes. Plus the
+        # review (or still building) is how every feature closes. Plus the
         # other quiet shape — a PO writing stories against a feature that is
-        # still being shaped.
+        # still being shaped. The seed's feature flow holds `building` and
+        # `reviewing`; `accepted`/`packaging` are milestone acts now.
         for fstat, stories in (('reviewing', ('done', 'ready')),
-                               ('accepted', ('done', 'ready')),
-                               ('packaging', ('done', 'ready')),
+                               ('building', ('done', 'ready')),
                                ('planning', ('planning', 'ready'))):
             with self.subTest(feature=fstat, stories=stories):
                 code, out = self._gate(fstat, stories)
@@ -275,9 +281,11 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
         # `done` is no longer the only story state the rule can see. A story
         # BUILDING under a feature that says it has not started is the same
         # disagreement, and the old equality was blind to it.
+        started = [st for cat in (model.IN_PROGRESS, model.DONE_CATEGORY)
+                   for st in model.DEFAULT_FLOWS['story'][cat]]
+        assert started == ['building', 'done', 'obe'], started
         for fstat in ('planning', 'ready'):
-            for sstat in ('done', 'building', 'reviewing', 'accepted',
-                          'packaging'):
+            for sstat in started:
                 with self.subTest(feature=fstat, story=sstat):
                     code, out = self._gate(fstat, (sstat, 'ready'))
                     self.assertEqual(code, 1, out)
@@ -329,9 +337,17 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
             write_config(root, config)
             return run_gate(root)
 
+    # The words BOTH kinds declare: the same word on a story and its feature
+    # is only askable where both flows hold it (a story never holds
+    # `accepted`; that is D4's finding, not D5's question).
+    SHARED = [st for st in model.LIFECYCLE
+              if all(any(st in sts for sts in model.DEFAULT_FLOWS[k].values())
+                     for k in ('story', 'feature'))]
+
     def test_one_word_on_both_sides_is_never_a_disagreement(self):
+        assert self.SHARED == ['planning', 'ready', 'building', 'done']
         for config in (self.SORTED_STORY_SET, self.SORTED_FEATURE_SET):
-            for status in model.LIFECYCLE:
+            for status in self.SHARED:
                 with self.subTest(config=config.split('\n')[1], status=status):
                     code, out = self._gate_with(config, status,
                                                 (status, status))

@@ -200,9 +200,12 @@ ONE line and touches nothing else — no line endings, no adjacent fields, no fi
 whole opinion about states is that there are three categories — `todo`, `in_progress`, `done` —
 in that order, and that every state you declare sits in exactly one. Which words, how many, and
 in what order within a category is `[pm.states.<kind>]` in your `devkit.toml`: `pm init` writes
-the seed — `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` for
-milestone, feature and story, `open` | `fixed` | `closed` for a bug — and every run reads what is
-there. **Nothing here compares a status against a word.** "Is this feature's work finished" is
+the seed — **each kind holds the states its belt writes**: a story `planning` `ready` | `building` |
+`done` `obe`; a feature adds `reviewing`; a milestone walks all seven (`planning` `ready` |
+`building` `reviewing` `accepted` `packaging` | `done` `obe`); a bug `open` | `fixed` | `closed` —
+and every run reads what is there. There is no step-to-state table: a belt writes the FIRST state
+of its kind's `done` list, and a leftover `[pm.transitions.<kind>]` is refused by name.
+**Nothing here compares a status against a word.** "Is this feature's work finished" is
 *are its stories all in `done`*; "has this story started under a feature that has not" is *the
 story has left `todo` and the feature is still in it*; "which milestone's ledger" is *the one in
 `in_progress`*. Rename every word and every answer is unchanged — `tests/fixtures/renamed-vocabulary/`
@@ -236,10 +239,11 @@ catches an undeclared state from any route, hand-edit included.
 | `pm feature <in-progress-state> <id>` | Move, and REPORT the stories not in `done` — on every move into `in_progress`, not on one word |
 | `pm feature <done-state> <id> [--review-record <path>]` | Close the feature — any state in the `done` category is the close. **Touches no story file**; the stories not in `done` are named, and the story belt (`agentic-sdlc close story <id>`) closes each by name. A `--review-record` naming no file IS refused, whole — stamping a pointer to nothing is the drift D1 reports |
 | `pm status [<milestone>]` | Tree report, drift-aware, grouped by the optional `phase:` bucket |
-| `pm list [--status <s>[,<s>…]] [--owner <n>] [--milestone <id>]` | One tab-separated `<story-id> <status> <owner> <feature-id>` per story, filtered. Deliberately **no `pm next`**: a verb that picks THE next thing is the tool having an opinion about your priorities. Rows to stdout, census to stderr |
+| `pm list [--status <s>[,<s>…]] [--category <c>] [--owner <n>] [--milestone <id>]` | One tab-separated `<story-id> <status> <owner> <feature-id>` per story, filtered; `--category` asks the category (`todo`/`in_progress`/`done`), whatever the word. Deliberately **no `pm next`**: a verb that picks THE next thing is the tool having an opinion about your priorities. Rows to stdout, census to stderr |
+| `pm list --kind milestone [--status …] [--category <c>]` | One tab-separated `<id> <status> <category> <branch>` per milestone (`-` for no branch). What a script asks instead of grepping a status word out of `milestone.md` — `tools/dev/agent-worktree.sh` finds the integration branch this way, and answers the same under any vocabulary |
 | `pm validate` | Frontmatter well-formed, ids match paths, parentage consistent, `depends_on`/`consumed_by` resolve, the feature graph acyclic. A ref into a milestone no longer in the tree is UNVERIFIABLE, never failed — git history is the archive |
 | `pm get <id> <key>` · `pm set <id> <key> <value>` | Read/write one frontmatter field through code, not a regex — every other byte and the line endings preserved |
-| `pm vocabulary [--json]` | **What this version publishes, and what your project declared.** The closed CATEGORY set (`todo`/`in_progress`/`done`), your `[pm.states.<kind>]` mapping and your `[pm.transitions.<kind>]` table, the **step names a transitions table may key on** — read from the conveyor registry, because that key set is the ENGINE's and a project selects from it rather than inventing one — the states each grain may hold, and the rule ids `[pm] checks` may name. Its audience is the **pin bump**: it is how you find out what a new release added. A tree that has declared no flow gets the absence named plus the seed `init` would write, at exit 0 — a discovery verb that refused until you had already discovered the answer would be a closed loop |
+| `pm vocabulary [--json]` | **What this version publishes, and what your project declared.** The closed CATEGORY set (`todo`/`in_progress`/`done`), each kind's states with the category each sits in — and nothing else about flow — plus the rule ids `[pm] checks` may name. Its audience is the **pin bump**: it is how you find out what a new release added. A tree that has declared no flow gets the absence named plus the seed `init` would write, at exit 0 — a discovery verb that refused until you had already discovered the answer would be a closed loop |
 | `pm sync [--check]` | Re-render the execution lists (feature order, story order) from `phase:` + `depends_on`. Opt-in per file; **V6** gates the same thing and is itself opt-in |
 | `pm templates [--force]` | Copy the packaged templates into `[pm] template_dir` to edit. A file present there wins; anything missing falls back |
 | `pm decide <id> <title…>` | Append one dated, ordinal-stamped heading to that grain's `decisions.md`, minting the log if it is the first. The reasoning under it is yours |
@@ -302,14 +306,14 @@ version_pattern = '^config/version="(.*)"$'     # D8: the line that carries it
 
 # THE FLOW — written by `pm init`, LIVE (no runtime fallback), and yours. Every
 # state you use, each in exactly one of the three categories the engine knows.
-# Order within a category is presentation; no rule keys on it. `[pm.transitions.
-# <kind>]` maps a conveyor step name (`pm vocabulary` lists them) to the exact
-# state that step writes.
+# Order within a category is presentation; no rule keys on it. There is no
+# step-to-state table: a belt writes the first state of its kind's `done` list.
 [pm.states.milestone]
 todo        = ["planning", "ready"]
 in_progress = ["building", "reviewing", "accepted", "packaging"]
 done        = ["done", "obe"]
-# ...and the same three lines for feature, story and bug (open / fixed / closed).
+# ...and per kind what its belt writes: a feature `building`/`reviewing`, a
+# story `building` alone, a bug open / fixed / closed.
 ```
 
 `agentic-sdlc pm vocabulary` prints the rule ids in full. `bugs/` and `stories/` are walked
@@ -368,10 +372,10 @@ belongs at milestone close, because it hits the network and judges the state a c
 
 Expressing the flow is the power. *Deciding what it means to move through the flow is a separate
 problem*, and it belongs to whatever is running the flow — an agent with a dispatch, a reviewer, a
-person who can be asked. So the engine has two verbs: **move a grain, if the transition is
-declared**, and **ask which grains are in a category, and name the ones that are not.** Your
-states, your transitions, your flow; `init` writes them into `devkit.toml`, every run reads them,
-and nothing here has an opinion about your words (hard rule 9).
+person who can be asked. So the engine has two verbs: **move a grain, if the target is a state
+you declared**, and **ask which grains are in a category, and name the ones that are not.** Your
+states, your flow; `init` writes them into `devkit.toml`, every run reads them, and nothing here
+has an opinion about your words (hard rule 9).
 
 For a **human**, the ritual stops being a thing to remember and the diffs stay reviewable. For an
 **LLM**: a small stable vocabulary of verbs to compose instead of inventing a bespoke `sed`;

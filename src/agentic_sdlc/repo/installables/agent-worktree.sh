@@ -52,12 +52,20 @@ WARM_SIDECAR_GLOB=""
 # Where an agent branches from when no milestone declares an integration
 # branch (see integration_branch below).
 FALLBACK_BASE="staging"
+# The devkit PM CLI, as `make pm` — the target Makefile.devkit ships, which
+# takes its arguments through ARGS=. A project that calls the CLI directly
+# replaces the array and the one call site in integration_branch.
+PM_CMD=(make -s pm)
 # -----------------------------------------------------------------------------
 
 # integration_branch [toplevel]
 # Echo the ACTIVE milestone's integration branch, or nothing when no milestone
-# is building. Read from the devkit PM tree — the `branch:` stamp on the
-# milestone whose status is `building`.
+# is in progress. Asked of the devkit PM CLI — `pm list --kind milestone
+# --category in_progress`, one `<id> <status> <category> <branch>` line per
+# milestone — never grepped out of milestone.md: the status WORD is the
+# project's (`[pm.states.milestone]` in devkit.toml) and a literal `building`
+# here stopped matching the day a project renamed it. The CLI answers by
+# CATEGORY, so this reads the same under any vocabulary.
 #
 # There are THREE kinds of branch here, and conflating the middle one with the
 # last is what has stranded an integration branch in a worktree:
@@ -67,25 +75,47 @@ FALLBACK_BASE="staging"
 #   per-agent feat/<slug>              — worktree-only, branched from and merged
 #                                        back into the integration branch
 #
-# More than one milestone may be `building` — a long-running umbrella declaring
-# a trunk branch alongside a sub-milestone on its own branch. So this does NOT
-# take the first building milestone: it collects the ones declaring a NON-trunk
+# More than one milestone may be in progress — a long-running umbrella
+# declaring a trunk branch alongside a sub-milestone on its own branch. So this
+# does NOT take the first one: it collects the ones declaring a NON-trunk
 # branch. Exactly one is the answer; zero means the trunk simply stays put; two
 # or more is genuinely ambiguous and yields nothing, because a tool that
 # guesses wrong here either strands an agent or mis-bases one.
+#
+# A CLI that cannot answer (no PM tree, no flow declared, no `make pm` here)
+# is said on stderr and treated as "no milestone in progress": the base falls
+# back to FALLBACK_BASE, which is what a tree with no PM records means anyway.
+# "Answered" is the CLI's own census line — `[pm] N of M milestone(s)`, which
+# `pm list` prints even for an empty match — and NOT the exit code alone:
+# `make pm` in a tree with no Makefile exits 0 saying nothing, because a
+# `pm/` directory is a target that is "up to date". An empty answer and no
+# answer must not be the same silence.
 integration_branch() {
 	local root="${1:-$MAIN_ROOT}"
-	local mfile branch found="" count=0
-	for mfile in "$root"/pm/roadmap/*/milestone.md; do
-		[ -f "$mfile" ] || continue
-		grep -qE '^status: *"?building"? *$' "$mfile" || continue
-		branch="$(sed -n 's/^branch: *"\{0,1\}\(.*[^"]\)"\{0,1\} *$/\1/p' "$mfile" | head -1)"
+	local ask="list --kind milestone --category in_progress"
+	local out line _id _status _cat branch found="" count=0 answered=0
+	out="$(cd "$root" && "${PM_CMD[@]}" ARGS="$ask" 2>&1)" || out=""
+	while IFS= read -r line; do
+		case "$line" in
+			"[pm] "*" of "*" milestone(s)") answered=1; continue ;;
+			*"	"*) ;;
+			*) continue ;;
+		esac
+		IFS=$'\t' read -r _id _status _cat branch <<-EOF
+		$line
+		EOF
 		case "$branch" in
-			"" | staging | main) continue ;;
+			"" | - | staging | main) continue ;;
 		esac
 		found="$branch"
 		count=$((count + 1))
-	done
+	done <<-EOF
+	$out
+	EOF
+	if [ "$answered" -ne 1 ]; then
+		echo "agent-worktree: '${PM_CMD[*]} ARGS=\"$ask\"' could not answer (no census line) — basing off ${FALLBACK_BASE}" >&2
+		return 0
+	fi
 	[ "$count" -eq 1 ] && printf '%s' "$found"
 	return 0
 }

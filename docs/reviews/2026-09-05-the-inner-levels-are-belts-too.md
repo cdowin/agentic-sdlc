@@ -240,7 +240,7 @@ Reviewer's token cost: ~148k (shared across all three feature records).
 verdict: HOLD
 | id | severity | disposition |
 | I1 | BLOCKER | landed 2b29b7b |
-| I2 | BLOCKER | open: closed by the orchestrator's close pass |
+| I2 | BLOCKER | landed bc06971|
 | I3 | MINOR | landed 2b29b7b |
 | I4 | NIT | landed d4e94a0 |
 ```

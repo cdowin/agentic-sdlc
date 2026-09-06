@@ -174,34 +174,21 @@ def test_a_no_op_flip_still_appends_a_from_equals_to_row(kwargs, argv,
     assert (row['from'], row['to']) == expected
 
 
-# --- the cascade --------------------------------------------------------------
+# --- a feature close touches one grain, so it writes one row ------------------
 
-def test_the_feature_row_comes_first_then_one_row_per_closed_story():
-    """And the story the cascade did not touch gets no row: three grains in the
-    tree, two closed, exactly two story rows."""
+def test_a_feature_close_writes_the_feature_row_and_no_story_row():
+    """Three grains in the tree, one closed, exactly one row. The `--cascade`
+    that used to add a story row per `reviewing` story is gone — the story
+    belt closes stories by name — so a story row here would be a write the
+    caller never asked for."""
     with tree(feature_status='reviewing',
               story_statuses=('reviewing', 'reviewing', 'ready')) as root:
-        code, out = run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')
+        code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
         assert code == 0, out
-        rows = ledger_rows(root)
-    assert len(rows) == 3, rows
-    assert [(r['grain'], r['from'], r['to']) for r in rows] == [
-        ('0.1/alpha', 'reviewing', 'done'),
-        ('0.1/alpha/s0', 'reviewing', 'done'),
-        ('0.1/alpha/s1', 'reviewing', 'done')]
-
-
-def test_the_second_cascade_run_adds_only_its_own_no_op_row():
-    """Idempotence, in the one place it can go wrong twice: a second run must
-    not re-close a story it already closed."""
-    with tree(feature_status='reviewing', story_statuses=('reviewing',)) as root:
-        assert run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')[0] == 0
-        assert run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')[0] == 0
+        assert 'NOT touched' in out
         rows = ledger_rows(root)
     assert [(r['grain'], r['from'], r['to']) for r in rows] == [
-        ('0.1/alpha', 'reviewing', 'done'),
-        ('0.1/alpha/s0', 'reviewing', 'done'),
-        ('0.1/alpha', 'done', 'done')]
+        ('0.1/alpha', 'reviewing', 'done')]
 
 
 # --- a refused flip appends nothing -------------------------------------------
@@ -237,25 +224,6 @@ def test_a_frontmatter_write_that_FAILS_writes_no_row():
         code, out = run_cli(root, 'story', 'building', STORY)
         assert code == 2, out
         assert ledger_lines(root) == []
-
-
-def test_a_cascade_that_cannot_close_a_story_still_records_what_landed():
-    """The half that DID land is a fact. The cascade aborts on the unwritable
-    story, and the story it already closed keeps its row — with no row for the
-    feature, whose own flip never happened."""
-    with tree(feature_status='reviewing',
-              story_statuses=('reviewing', 'reviewing')) as root:
-        blocked = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s1.md'
-        blocked.chmod(0o444)
-        try:
-            code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
-                                '--cascade')
-        finally:
-            blocked.chmod(0o644)
-        assert code == 2, out
-        rows = ledger_rows(root)
-    assert [(r['grain'], r['from'], r['to']) for r in rows] == [
-        ('0.1/alpha/s0', 'reviewing', 'done')]
 
 
 def test_a_ledger_that_cannot_be_written_never_fails_the_verb_that_wrote():

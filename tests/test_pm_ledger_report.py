@@ -26,6 +26,7 @@ What is pinned here, and why each of these would COST something if it broke:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from support.pm import (bug, decision_line, dispatch_line, put_ledger, run_cli,
@@ -79,21 +80,21 @@ TABLE = """\
 [ledger:report] 0.1 — spend per grain — 3 dispatch row(s), 5 status row(s), 4 grain(s)
 
 -- story (2)
-grain         size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  planning  ready  building  reviewing  accepted  packaging  total_s
-0.1/alpha/s0                 2  1200  38500        210000     9100000          37         812         -      -       600        120         -          -      720
+grain         size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/alpha/s0                 2  1200  38500        210000     9100000          37         812     -          720     -      720
   developer                  1  1200  38000        210000     9100000          37         812
   reviewer                   1     -    500             -           -           -           -
-0.1/alpha/s1  m              0     -      -             -           -           -           -         -      -         -          -         -          -        -
+0.1/alpha/s1  m              0     -      -             -           -           -           -     -            -     -        -
 
 -- feature (1)
-grain        size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  planning  ready  building  reviewing  accepted  packaging  total_s
-0.1/alpha                   2  1200  38500        210000     9100000          37         812         -      -         -          -         -          -        -
+grain        size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/alpha                   2  1200  38500        210000     9100000          37         812     -            -     -        -
   developer                 1  1200  38000        210000     9100000          37         812
   reviewer                  1     -    500             -           -           -           -
 
 -- bug (1)
-grain           size  dispatches  in  out  cache_create  cache_read  tool_calls  duration_s  open  fixed  total_s
-0.1/bugs/crash                 0   -    -             -           -           -           -     -     30       30
+grain           size  dispatches  in  out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/bugs/crash                 0   -    -             -           -           -           -     -           30     -       30
 
 -- rows naming no grain (1)
 dispatches  in  out  cache_create  cache_read  tool_calls  duration_s
@@ -103,7 +104,10 @@ dispatches  in  out  cache_create  cache_read  tool_calls  duration_s
 
 SPEND_TITLE = 'spend per grain'
 # Section 1's keys in `--json`, and the one key each later section adds.
-SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed', 'totals')
+# `legacy` landed with the category keys (decision D7): how many dispatch rows
+# predate them, and how many of those named nothing.
+SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed', 'legacy',
+              'totals')
 SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead', 'gates')
 
 
@@ -144,21 +148,23 @@ def test_the_report_prints_every_section_in_the_milestones_order():
         'overhead shape', 'gate cost']
 
 
-# The state columns and `total_s`, for the ledgers that could produce a number
-# nobody measured. Every expectation below is the story's last seven cells:
-# planning ready building reviewing accepted packaging total_s.
+# The category columns and `total_s`, for the ledgers that could produce a
+# number nobody measured. Every expectation below is the story's last four
+# cells: todo in_progress done total_s. Three columns whatever the vocabulary
+# (ship criterion 3 of `the-ledger-rows-carry-categories`): a stint in
+# `building` and a stint in `reviewing` are one `in_progress` number.
 CLOCKS = [
     # In flight: a running clock is not a duration, so no total.
     (('reviewing', 'ready'),
      (status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
       status_line('2026-09-03T10:10:00Z', STORY, 'building', 'reviewing')),
-     ['-', '-', '600', '-', '-', '-', '-']),
+     ['-', '600', '-', '-']),
     # One row is an INSTANT. A span needs two rows, and the `0` a subtraction
     # produces here reads as "this was done in no time at all" — a measurement
     # nobody made, in the one column a reader compares grains by.
     (('done', 'ready'),
      (status_line('2026-09-03T10:00:00Z', STORY, 'reviewing', 'done'),),
-     ['-'] * 7),
+     ['-'] * 4),
     # R3: a `decision` row NAMES a grain but does not move it, and a dispatch
     # after the terminal row cannot extend the span. Measuring from "the first
     # row that mentions it" read 4222s against 1799s of measured status time on
@@ -169,22 +175,31 @@ CLOCKS = [
       status_line('2026-09-03T10:15:00Z', STORY, 'building', 'done'),
       dispatch_line('2026-09-03T11:00:00Z',
                     tree=snapshot(stories_wip=[STORY]))),
-     ['-', '-', '900', '-', '-', '-', '900']),
+     ['-', '900', '-', '900']),
     # `merge=union` (D6) interleaves two branches' appends by BRANCH, so the
     # file's order is not the clock's. Read in file order this bills 3600s of
     # `reviewing` backwards and 10800s to a `building` the story spent 7200s in
-    # — two numbers that look like measurements and are not.
+    # — two numbers that look like measurements and are not. Both stints are
+    # `in_progress`, so the one column sums them.
     (('done', 'ready'),
      (status_line('2026-09-03T12:00:00Z', STORY, 'building', 'reviewing'),
       status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
       status_line('2026-09-03T13:00:00Z', STORY, 'reviewing', 'done')),
-     ['-', '-', '7200', '3600', '-', '-', '10800']),
+     ['-', '10800', '-', '10800']),
     # A stamp that will not parse contributes no arithmetic, and no arithmetic
     # is `-`. A `0` would say the story passed through the state instantly.
     (('building', 'ready'),
      (status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
       status_line('not-a-timestamp', STORY, 'building', 'reviewing')),
-     ['-'] * 7),
+     ['-'] * 4),
+    # REOPENED: `done` has a column because a grain can leave it. The stint
+    # it spent finished before the reopen is a duration; the running clock
+    # after its last row is not, and `obe` sits in `done` with it.
+    (('done', 'ready'),
+     (status_line('2026-09-03T10:00:00Z', STORY, 'building', 'obe'),
+      status_line('2026-09-03T10:30:00Z', STORY, 'obe', 'ready'),
+      status_line('2026-09-03T10:40:00Z', STORY, 'ready', 'done')),
+     ['600', '-', '1800', '2400']),
 ]
 
 
@@ -195,7 +210,7 @@ def test_the_clock_is_a_subtraction_and_never_a_fabricated_interval(
         put_ledger(root, *lines)
         out = report(root, '0.1')[1]
     line = next(ln for ln in out.splitlines() if ln.startswith(STORY))
-    assert line.split()[-7:] == expected
+    assert line.split()[-4:] == expected
 
 
 def test_a_snapshot_id_from_another_milestone_names_nothing_here():
@@ -245,13 +260,10 @@ def test_an_empty_no_grain_block_still_says_zero():
     assert '-- rows naming no grain (0)' in out
 
 
-# The story/feature dwell columns with nothing measured in any of them.
-# Written out rather than derived from the vocabulary — a golden that computes
-# itself from the code under test passes whatever that code says, which is how
-# the four words of the 0.24.0 deprecation window could have outlived their
-# release here unnoticed. Six keys: the lifecycle minus its terminal `done`.
-EMPTY_STATES = {'planning': None, 'ready': None, 'building': None,
-                'reviewing': None, 'accepted': None, 'packaging': None}
+# The dwell columns with nothing measured in any of them. Written out rather
+# than derived from the code under test — a golden that computes itself passes
+# whatever that code says. Three keys, one per CATEGORY, for every grain kind.
+EMPTY_STATES = {'todo': None, 'in_progress': None, 'done': None}
 
 
 def test_the_seeded_ledger_produces_this_exact_json_object():
@@ -283,28 +295,29 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
             {'grain': STORY, 'kind': 'story', 'size': None,
              'dispatches': 2, 'usage': full, 'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
-             'states': {'planning': None, 'ready': None,
-                        'building': 600, 'reviewing': 120,
-                        'accepted': None, 'packaging': None},
+             'states': {'todo': None, 'in_progress': 720, 'done': None},
+             'unplaced_s': None,
              'total_s': 720},
             {'grain': QUIET, 'kind': 'story', 'size': 'm',
              'dispatches': 0, 'usage': blank_usage(), 'tool_calls': None,
              'duration_s': None, 'agent_types': [],
-             'states': EMPTY_STATES,
+             'states': EMPTY_STATES, 'unplaced_s': None,
              'total_s': None},
             {'grain': FEATURE, 'kind': 'feature', 'size': None,
              'dispatches': 2, 'usage': full, 'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
-             'states': EMPTY_STATES,
+             'states': EMPTY_STATES, 'unplaced_s': None,
              'total_s': None},
             {'grain': BUG, 'kind': 'bug', 'size': None, 'dispatches': 0,
              'usage': blank_usage(), 'tool_calls': None,
              'duration_s': None, 'agent_types': [],
-             'states': {'open': None, 'fixed': 30}, 'total_s': 30},
+             'states': {'todo': None, 'in_progress': 30, 'done': None},
+             'unplaced_s': None, 'total_s': 30},
         ],
         'unattributed': {'dispatches': 1,
                          'usage': dict(blank_usage(), input=5),
                          'tool_calls': 2, 'duration_s': None},
+        'legacy': {'rows': 0, 'unattributed': 0},
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
                    'usage': dict(full, input=1205), 'tool_calls': 39,
                    'duration_s': 812},
@@ -389,8 +402,8 @@ def test_the_refusal_matrix():
 
 
 @pytest.mark.parametrize('kwargs,second,needle', [
-    (dict(milestone_status='planning'), False, 'is `building`'),
-    (dict(), True, '2 milestones are building'),
+    (dict(milestone_status='planning'), False, 'is in progress'),
+    (dict(), True, '2 milestones are in progress'),
 ])
 def test_a_milestone_this_verb_cannot_choose_is_named(kwargs, second, needle):
     """The one question the verb cannot answer, and it says so rather than
@@ -406,3 +419,63 @@ def test_a_milestone_this_verb_cannot_choose_is_named(kwargs, second, needle):
             assert '0.1 0.2' in out
             assert 'pm ledger report <milestone-id>' in out
             assert report(root, '0.1')[0] == 0
+
+
+# --- the boundary: rows written before the snapshot carried categories --------
+OLD_SHAPE = Path(__file__).parent / 'fixtures' / 'ledger-old-shape' / 'ledger.jsonl'
+
+
+def test_an_old_shape_ledger_is_read_where_it_can_be_and_disclosed_where_not():
+    """Ship criteria 2 and 4 of `the-ledger-rows-carry-categories`, on a
+    vendored ledger written under the OLD key shape (decision D7).
+
+    An old row that names a grain through the frozen keys is attributed as it
+    always was. An old row that names nothing is EITHER a dispatch over an
+    idle tree OR one over a tree whose words the old shape could not spell,
+    and the rows cannot tell which — so the report says how many such rows
+    there are, in the table and in `--json`, and never counts them as empty.
+    A stint in a word the declaration does not name lands in no category
+    column and is disclosed by grain.
+
+    Why here and not amended into the seeded golden: the golden pins the
+    CURRENT shape, and a case about the boundary has to read rows this
+    package no longer writes — which is exactly what a vendored fixture is
+    for (hard rule 8).
+    """
+    with tree(story_statuses=('done', 'ready')) as root:
+        put_ledger(root, *OLD_SHAPE.read_text('utf-8').splitlines())
+        code, out = report(root, '0.1')
+        assert code == 0, out
+        data = json.loads(report(root, '0.1', '--json')[1])
+    story = next(e for e in data['grains'] if e['grain'] == STORY)
+    # Readable: the `stories_wip` row is the story's, as it always was.
+    assert story['dispatches'] == 1
+    assert story['usage']['output'] == 2000
+    # Disclosed: two of the three dispatch rows predate categories and name
+    # nothing; the third predates them too and is readable.
+    assert data['legacy'] == {'rows': 3, 'unattributed': 2}
+    assert data['unattributed']['dispatches'] == 2
+    assert '-- rows naming no grain (2)' in out
+    assert ('   2 of these predate category keys and name no grain — '
+            'unreadable under a renamed vocabulary, and not counted as empty'
+            in out)
+    # The stint at `review` — a word the seed does not declare — is in no
+    # column, and it is said so rather than summed into `in_progress`.
+    assert story['states'] == {'todo': None, 'in_progress': 600, 'done': None}
+    assert story['unplaced_s'] == 1200
+    assert (f'   {STORY} spent time in a state this declaration does not name '
+            f'— seconds in no category column, not zero: 1200 s' in out)
+    assert story['total_s'] == 1800
+
+
+def test_a_current_shape_ledger_discloses_no_boundary():
+    """The disclosure line is for the boundary and nothing else: a ledger
+    whose every dispatch row carries the category keys prints no such line,
+    and `legacy` reports zero rows — a number, never an absent key."""
+    with tree(story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        code, out = report(root, '0.1')
+        data = json.loads(report(root, '0.1', '--json')[1])
+    assert code == 0, out
+    assert 'predate category keys' not in out
+    assert data['legacy'] == {'rows': 0, 'unattributed': 0}

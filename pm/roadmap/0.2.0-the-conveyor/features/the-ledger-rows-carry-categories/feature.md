@@ -2,7 +2,7 @@
 id: 0.2.0/the-ledger-rows-carry-categories
 milestone: "0.2.0"
 name: A renamed vocabulary does not silently empty the ledger
-status: planning
+status: reviewing
 reviewed:
 phase: 8
 depends_on: ["0.2.0/every-question-is-asked-of-a-category"]

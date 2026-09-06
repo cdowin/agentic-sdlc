@@ -107,6 +107,38 @@ def with_flow(config: str = '') -> str:
     return config + FLOW_TOML
 
 
+def declaring(config: str = '', **kinds: dict) -> str:
+    """`config` plus a flow whose table for each kind NAMED here is `kinds[kind]`.
+
+    The seed for every kind not named, so a case about the story vocabulary
+    declares the story flow and inherits the rest. `kinds` values are
+    `{category: (state, ...)}` — the same shape `model.DEFAULT_FLOWS` holds —
+    and `model.render_seed` is the one renderer, so a case cannot hand-type a
+    table the reader would not read.
+    """
+    flows = {**model.DEFAULT_FLOWS, **{k: dict(v) for k, v in kinds.items()}}
+    if config and not config.endswith('\n'):
+        config += '\n'
+    return config + model.render_seed(flows)
+
+
+def loaded(root: Path) -> model.PmConfig:
+    """`model.load()` for a tree, caches cleared — the config the verbs read.
+
+    `cfg_for` builds a BARE `PmConfig(root=…)` with no flow, which is right
+    for `validate` (it asks no category) and wrong for anything that does.
+    """
+    from agentic_sdlc.core.project import load_config, repo_root
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    previous = Path.cwd()
+    os.chdir(root)
+    try:
+        return model.load()
+    finally:
+        os.chdir(previous)
+
+
 def write_config(root: Path, config: str = '') -> Path:
     """Write `root/devkit.toml` as `config` PLUS the flow declaration.
 
@@ -253,7 +285,8 @@ def ledger_rows(root: Path, rel: str = LEDGER_REL) -> list[dict]:
 
 
 def cfg_for(root: Path) -> model.PmConfig:
-    return model.PmConfig(root=root)
+    """The config a `tree()` READS — flow included — for a direct model call."""
+    return loaded(root)
 
 
 def run_cli(root: Path, *argv: str) -> tuple[int, str]:
@@ -290,13 +323,39 @@ def run_gate(root: Path) -> tuple[int, str]:
 MILESTONE_ID = '0.1'
 
 # D3's snapshot as the hook writes it: every bucket present, empty lists when
-# empty. A row naming no grain has all five empty.
+# empty. Two key families (decision D7): the frozen five — deprecated, matched
+# by the seed's words — and the three category keys the report attributes by.
+# A row naming no grain has every list but the milestone's empty.
 EMPTY_TREE = {'milestones_building': [MILESTONE_ID], 'features_building': [],
-              'features_review': [], 'stories_wip': [], 'stories_review': []}
+              'features_review': [], 'stories_wip': [], 'stories_review': [],
+              'milestones_in_progress': [MILESTONE_ID],
+              'features_in_progress': [], 'stories_in_progress': []}
+
+# The OLD shape — what every row written before 0.2.0's category keys holds.
+# `snapshot_legacy(...)` builds one for a case about the reader's boundary.
+LEGACY_TREE = {'milestones_building': [MILESTONE_ID], 'features_building': [],
+               'features_review': [], 'stories_wip': [], 'stories_review': []}
+
+
+def snapshot_legacy(**over: list) -> dict:
+    snap = dict(LEGACY_TREE)
+    snap.update(over)
+    return snap
 
 
 def snapshot(**over: list) -> dict:
+    """A CURRENT-shape snapshot. A frozen key given alone is mirrored into its
+    category key, so a case that says `stories_wip=[s]` builds the row the
+    writer would build for a `building` story — both families agreeing."""
     snap = dict(EMPTY_TREE)
+    mirror = {'stories_wip': 'stories_in_progress',
+              'stories_review': 'stories_in_progress',
+              'features_building': 'features_in_progress',
+              'features_review': 'features_in_progress',
+              'milestones_building': 'milestones_in_progress'}
+    for key, ids in over.items():
+        if key in mirror and mirror[key] not in over:
+            snap[mirror[key]] = sorted(set(snap[mirror[key]]) | set(ids))
     snap.update(over)
     return snap
 

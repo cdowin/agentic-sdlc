@@ -130,9 +130,11 @@ from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _grain_kind, _ok
 FEATURE, MILESTONE, TAG = 'feature', 'milestone', 'tag'
 KINDS = (FEATURE, MILESTONE, TAG)
 
-# Derived, never re-listed: a second spelling of the vocabulary goes stale in
-# silence, which is how D2's tuple used to drift.
-DONE = model.LIFECYCLE[-1]
+# THE QUESTION IS A CATEGORY. "Finished" is `[pm.states.<kind>] done`, asked
+# through `model.holds` — the one predicate `check pm` D2 also asks, so the
+# two cannot disagree about whether an `obe` story holds its feature open
+# (they did, once: P9's two call sites). There is no word here to go stale.
+DONE = model.DONE_CATEGORY
 
 # How many blockers are NAMED before the rest are disclosed as a remainder. A
 # cap is needed (200 blocking stories is a scroll, not a report) and a silent
@@ -193,23 +195,6 @@ def _grain(cfg: model.PmConfig, kind: str, gid: str, doc: str, noun: str,
         raise Usage(f'{gid!r} is a {_grain_kind(gid)}, not a {noun} — '
                     f'`ready-for {kind}` asks {asks}')
     return path
-
-
-def _needs_state(state: str, states: tuple[str, ...], grain: str,
-                 key: str) -> None:
-    """Refuse (exit 2) when the project's vocabulary cannot express the question.
-
-    A project that renamed its lifecycle out from under `reviewing` or `done`
-    leaves this predicate with nothing to compare, and a predicate that reports
-    nothing must say why — silence over an unanswerable question reads as a
-    clean tree (rule 4).
-    """
-    if state not in states:
-        raise Usage(f'devkit.toml [pm] {key} does not carry {state!r} '
-                    f'({", ".join(states)}), '
-                    f'so "is every {grain} at {state}" has no answer in this '
-                    f'project — this verb cannot report on a vocabulary that '
-                    f'cannot express it')
 
 
 # --- the review-record payload ------------------------------------------------
@@ -306,40 +291,38 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
 
 # --- story -> feature ---------------------------------------------------------
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
-    """Is every story under this feature FINISHED — by any route?
+    """Is every story under this feature in the `done` CATEGORY?
 
-    `done`, or anything in `[pm] also_done`. Not `reviewing` — see the
-    module docstring for the day that changed and why the stricter question was
-    the right one, and `docs/design/state-categories.md` for why asking about a
-    WORD at all is the next thing to go: a story at `obe` is finished and is
-    never going to be `done`, and under a bare-word predicate it holds its
-    feature open forever.
+    Not at a word. Not `reviewing` — see the module docstring for the day that
+    changed and why the stricter question was the right one — and not `done`
+    either: a story at `obe` is finished and is never going to be `done`, and
+    under a bare-word predicate it held its feature open forever. Which words
+    are finished is the project's `[pm.states.story] done` list.
 
     Exit 1 names each story that is not, with the status word the file
-    ACTUALLY holds — including one outside the vocabulary (the D4 drift
-    `check pm` reports). This verb reports what the file says and never
-    repairs it.
+    ACTUALLY holds — including one the project never declared (the D4 drift
+    `check pm` reports), which `holds` counts as a blocker rather than a pass.
+    This verb reports what the file says and never repairs it.
 
     A feature with NO stories is READY; see the module docstring for why both
     vacuity rulings are stated together.
     """
-    _needs_state(DONE, cfg.story_states, 'story', 'story_states')
     ffile = _grain(cfg, FEATURE, fid, model.FEATURE_DOC, FEATURE,
                    "about a feature's stories")
-    walk = model.slot_walk(ffile.parent / 'stories')
-    blockers = []
-    for sfile in walk.kept:
-        status = model.field_of(sfile, 'status') or '(no status:)'
-        if not model.is_terminal(cfg, status, cfg.story_states):
-            sid = model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile)
-            blockers.append(f'{sid} is {status}')
+    walk = model.slot_walk(ffile.parent / model.STORIES_DIR)
+    held = model.holds(
+        cfg, 'story',
+        ((model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile),
+          model.field_of(sfile, 'status') or '(no status:)')
+         for sfile in walk.kept),
+        DONE)
+    blockers = list(held.names)
     census = walk.census('story/ies')
     if not walk.kept:
         census += (f' — {VACUOUS}: an empty set is satisfied, and refusing it '
                    f'would make this verb unusable on a doc-only feature')
     elif not blockers:
-        census += (f', all {DONE}' if not cfg.also_done
-                   else f', all finished ({DONE} or dropped)')
+        census += f', all {DONE}'
     return _answer(f'{FEATURE} {fid}', blockers, census)
 
 
@@ -356,7 +339,7 @@ def _features(cfg: model.PmConfig, mdir: Path) -> list[tuple[str, Path]]:
 
 
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
-    """Is every feature `done`, each with a resolving, NON-EMPTY review record?
+    """Is every feature in `done`, each with a resolving, NON-EMPTY review record?
 
     Exit 1 names each blocker and which of the two conditions it failed. A
     milestone with ZERO features exits 1 — the opposite of the empty-story
@@ -365,7 +348,6 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     Bugs do not participate. An open bug that blocked a milestone whose
     features were all closed would be unexplainable from this output.
     """
-    _needs_state(DONE, cfg.feature_states, 'feature', 'feature_states')
     mfile = _grain(cfg, MILESTONE, mid, model.MILESTONE_DOC, MILESTONE,
                    "about a milestone's features")
     features = _features(cfg, mfile.parent)
@@ -379,11 +361,18 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
                         f'not satisfy this belt; a mis-typed id looks exactly '
                         f'like this'],
                        '0 feature(s)')
+    # Asked of the FEATURE flow. The 0.2.0 verb asked `feature done` against
+    # `story_states`, which agreed only while both lists were the stock one.
+    held = model.holds(
+        cfg, 'feature',
+        ((fid, model.field_of(ffile, 'status') or '(no status:)')
+         for fid, ffile in features),
+        DONE)
+    unfinished = dict(held.blockers)
     blockers = []
     for fid, ffile in features:
-        status = model.field_of(ffile, 'status') or '(no status:)'
-        if not model.is_terminal(cfg, status, cfg.story_states):
-            blockers.append(f'{fid} is {status}')
+        if fid in unfinished:
+            blockers.append(f'{fid} is {unfinished[fid]}')
             continue
         _, defect = _record(cfg, model.unquote(model.field_of(ffile, 'reviewed')))
         if defect is not None:

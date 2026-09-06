@@ -45,11 +45,14 @@ to end.
 whose statuses contradict each other. Neither has an opinion about which state may
 follow which — the ORDER below is a shape that works, not something the tool enforces.
 
-Milestone, feature and story share ONE vocabulary — `planning` `ready` `building`
-`reviewing` `accepted` `packaging` `done` — and each skips the states it does not
-need. `done` is the LAST state, not the state that follows the work: it means
+The states are this project's — `[pm.states.<kind>]` in `devkit.toml`, written by
+`pm init` (the seed: `planning` `ready` | `building` `reviewing` `accepted` `packaging` |
+`done` `obe`) — and every question the tool asks is asked of a state's CATEGORY,
+`todo` / `in_progress` / `done`, never of the word. Each grain skips the states it does
+not need. A `done`-category state is not the state that follows the work: it means
 everything inside this tree's authority is finished (changelog written, reviews
-closed, findings landed, gates green). Shipping is a git event, after `done`.
+closed, findings landed, gates green) — or, for `obe`, abandoned, which is finished
+too. Shipping is a git event, after `done`.
 
 **Verify→flip is one action.** The failure worth avoiding is code that was verified
 while its status never moved — the tree and the work disagreeing. Move the status when
@@ -59,10 +62,11 @@ it becomes true, rather than batching flips at the end.
    set `owner:` in the same edit (`pm set <id> owner <name>`).
 2. **Commit atomically.** One logical unit per commit.
 3. **Ready for review.** `pm story reviewing <id>`.
-4. **Close the feature.** `pm feature done <id> --review-record <path>` sets the
-   feature's status and **touches nothing else**. Add `--cascade` to also move that
-   feature's stories at `reviewing` to `done` in the same run. Either way it prints
-   the stories it did not touch.
+4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
+   the `done` category is the close — sets the feature's status and **touches nothing
+   else**. It prints the stories not in `done`; each is closed by name through the
+   story belt (`agentic-sdlc close story <id>`), never by a command aimed at the
+   feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves
    every other byte, including the file's line endings. Creation too: `pm new
    milestone|feature|story|bug` scaffolds to the schema.
@@ -78,15 +82,17 @@ It refuses facts about the INPUT. Everything else it reports, while doing what i
 asked:
 
 - **The status you ASK for is checked; the one in the file is not.** `butterfly` is not
-  a story status — that is an error naming the set. `wombat` sitting in the file is
-  simply what it says now, so `pm story reviewing <id>` prints `wombat -> reviewing`
-  and repairs it. That is the same drift `check pm` D4 reports.
+  a state this project declared — that is an error naming `[pm.states.story]`.
+  `wombat` sitting in the file is simply what it says now, so `pm story reviewing <id>`
+  prints `wombat -> reviewing` and repairs it. That is the same drift `check pm` D4
+  reports.
 - **`--review-record <path>` naming no file is refused**, whole: no stamp, no story
   touched. A pointer resolving to nothing is what `check pm` D1 reports. There is no
   bar beyond "the file is there".
-- **`pm feature reviewing` and `pm milestone done` REPORT, never refuse.** Stories not
-  at `reviewing`, features not done — the verb names them and does what it was asked.
-  What the tree is then left holding is D3/D5's question, asked of the tree.
+- **A feature move into `in_progress` and a milestone move into `done` REPORT, never
+  refuse.** Stories not in `done`, features not in `done` — the verb names them with
+  the word each file holds and does what it was asked. What the tree is then left
+  holding is D3/D5's question, asked of the tree.
 - **Malformed frontmatter is refused**, because a file with no `---` block has nowhere
   to put the field.
 

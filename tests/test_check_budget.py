@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from support.pm import with_flow
+
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import budget
@@ -30,7 +32,12 @@ MILESTONE = '---\nid: "1.0"\nname: M\nstatus: building\n---\n\n# M\n'
 
 @contextlib.contextmanager
 def tree(tmp_path: Path, rows: list[dict], config: str = ''):
-    """A marked tree with a milestone, a ledger and a config. Never a repo."""
+    """A marked tree with a milestone, a ledger and a config. Never a repo.
+
+    The config DECLARES ITS FLOW (`with_flow`): the gate finds the ledger by
+    asking which milestone is in `in_progress`, and a tree that declared no
+    categories is refused by name before any row is read.
+    """
     root = tmp_path / 'repo'
     mdir = root / 'pm' / 'roadmap' / '1.0-m'
     mdir.mkdir(parents=True)
@@ -38,8 +45,7 @@ def tree(tmp_path: Path, rows: list[dict], config: str = ''):
     (mdir / 'milestone.md').write_text(MILESTONE, encoding='utf-8')
     (mdir / 'ledger.jsonl').write_text(
         ''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
-    if config:
-        (root / 'devkit.toml').write_text(config, encoding='utf-8')
+    (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
     previous = Path.cwd()
     os.chdir(root)
     repo_root.cache_clear()

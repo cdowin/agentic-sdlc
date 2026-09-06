@@ -80,7 +80,7 @@ def _header_wanted(path: Path, slot: str) -> str:
     if want is None:
         return ''
     got = model.header_of(path)
-    return '' if got == want or got in set(model.SLOT_HEADER.values()) else want
+    return '' if got == want or got in model.KNOWN_SLOT_HEADERS else want
 
 
 def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None:

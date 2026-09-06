@@ -46,6 +46,33 @@ class Guidance(unittest.TestCase):
             # when someone thinks to ask for it, which defeats the purpose.
             self.assertIn('paths:', rule.read_text().split('---')[1])
 
+    def test_the_handoff_skill_is_findable_by_the_words_people_type(self):
+        """A skill is selected by its DESCRIPTION, and this one exists because
+        nothing else fires at the moment someone asks for a handoff: a template
+        guides only once you open it, a header only once the file exists, a cap
+        only after you have written too much.
+
+        So the description is the feature. If it stops carrying the words a
+        person actually says, the skill is unreachable and the 194-line
+        hand-authored handoff happens again.
+        """
+        with tree() as root:
+            code, out = run_cli(root, 'install-skills')
+            self.assertEqual(code, 0, out)
+            skill = root / '.claude/skills/handoff/SKILL.md'
+            self.assertTrue(skill.is_file(), out)
+            text = skill.read_text(encoding='utf-8')
+            description = text.split('---')[1]
+            for said in ('handoff', 'context clear', 'cold', 'fresh session'):
+                self.assertIn(said, description.lower(), description)
+            # It ROUTES. A skill that restates the template has reproduced the
+            # bug it exists to prevent (0.4.0 decisions.md D6).
+            self.assertIn('pm new handoff', text)
+            self.assertLess(
+                len(text.splitlines()), 100,
+                'the handoff skill is restating the template instead of '
+                'pointing at it')
+
     def test_install_is_idempotent(self):
         with tree() as root:
             run_cli(root, 'install-skills')

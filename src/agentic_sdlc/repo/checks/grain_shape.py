@@ -16,6 +16,10 @@ note 250, review 120.
 
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
+
+Shared docs (`decisions.md`, `handoff.md`) are also checked for the instruction line
+`model.SLOT_HEADER` gives them — the one channel that reaches a dispatched subagent.
+Any KNOWN header passes, matching what the scaffolder accepts.
 """
 from __future__ import annotations
 
@@ -103,6 +107,16 @@ def _kind_of(rel: Path) -> str:
     if model.BUGS_DIR in parts:
         return BUG
     return NOTE
+
+
+def _header_line(lines: list[str]) -> str:
+    """The doc's first non-blank line, stripped — `model.header_of` computed off
+    lines already read, so the header check costs no second open.
+    """
+    for line in lines:
+        if line.strip():
+            return line.strip()
+    return ''
 
 
 def _body_lines(lines: list[str]) -> int:
@@ -209,12 +223,26 @@ def run() -> int:
                 f'{rel} is a grain document this gate cannot open, so its '
                 f'length is unknown — it is counted, never assumed to fit'))
             continue
+        # The instruction line is the one channel that reaches a dispatched
+        # subagent, so a shared doc that lost it is silently unguided. ANY
+        # known header passes, matching what the scaffolder accepts: a gate
+        # stricter than the writer would red a doc `pm new` calls correct.
+        want = model.SLOT_HEADER.get(path.name)
+        if want is not None and _header_line(lines) not in model.KNOWN_SLOT_HEADERS:
+            findings.append((
+                'NO HEADER',
+                f'{rel} does not open with its slot instruction line — the one '
+                f'channel that reaches a dispatched subagent. `pm new '
+                f'milestone <id>` restores it, or prepend it yourself: '
+                f'{want!r}'))
         length = _body_lines(lines)
         if length > caps[kind]:
             findings.append((
                 'OVER CAP',
                 f'{rel} — {length} body line(s), {kind} cap {caps[kind]} '
-                f'(raise it in [{SECTION}] {CAPS_KEY} or split the document)'))
+                f'(raise it in [{SECTION}] {CAPS_KEY} or split the document). '
+                f'A doc that keeps hitting its cap is usually restating '
+                f'something a command already answers'))
 
     scope = f'{census}; measured {_measured_line(seen, caps)}'
     if findings:

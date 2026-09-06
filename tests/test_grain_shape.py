@@ -17,6 +17,7 @@ from support import pm as pmfx                                  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli as devkit_cli                      # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape                # noqa: E402
+from agentic_sdlc.repo.pm import model as pm_model              # noqa: E402
 
 STORY = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
 FEATURE = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
@@ -480,3 +481,62 @@ def test_it_reads_each_document_once_and_spawns_nothing():
     assert source.count('read_raw') == 1, (
         'a second read of the same document — the cache exists so the '
         'frontmatter question and the length question share one open')
+
+
+HANDOFF = 'pm/roadmap/0.1-demo/handoff.md'
+
+
+def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():
+    """`SLOT_HEADER`'s comment calls that line "the one channel that reaches a
+    dispatched subagent". A doc that lost it is SILENTLY unguided — the writer
+    (`templates._header_wanted`) has always known how to spot that, and it only
+    ran on `pm new`, so a hand-authored or hand-trimmed doc was never asked.
+
+    This is the probe for that. It is also the case that would have caught the
+    0.4.0 handoff, which was authored by hand and opened with its own `#` title.
+    """
+    with pmfx.tree() as root:
+        (root / HANDOFF).write_text('# 0.1 demo — handoff\n\nnotes\n',
+                                    encoding='utf-8')
+        code, out = gate()
+        assert code == 1, out
+        assert 'NO HEADER' in out, out
+        assert HANDOFF in out, out
+        # The finding names the repair AND the literal line, so it is fixable
+        # without opening the source.
+        assert 'pm new milestone' in out, out
+        assert 'Cold-start only' in out, out
+
+
+def test_a_doc_opening_with_a_RETIRED_header_still_passes():
+    """The gate must not out-strict the writer, and rewording an entry in
+    `SLOT_HEADER` must not red every doc written under the old words.
+
+    Both halves are one fact: `_header_wanted` treats any KNOWN header as
+    present so `_fill_header` cannot stack a second line onto an existing doc.
+    If this case fails, a consumer's tree goes red on upgrade day AND `pm new`
+    starts growing two headers on the same file.
+    """
+    retired = sorted(pm_model.RETIRED_SLOT_HEADERS)
+    assert retired, 'a retired wording must stay recognised once one exists'
+    for header in retired:
+        with pmfx.tree() as root:
+            (root / HANDOFF).write_text(f'{header}\n\n# 0.1 demo\n',
+                                        encoding='utf-8')
+            code, out = gate()
+        assert code == 0, out
+        assert 'NO HEADER' not in out, out
+
+
+def test_the_writer_and_the_gate_read_ONE_known_header_set():
+    """A local copy in either module is a second name for the same fact, and
+    the two would drift the first time a header is reworded — the gate reddening
+    docs the scaffolder calls correct.
+    """
+    writer = (REPO_ROOT / 'src/agentic_sdlc/repo/pm/templates/__init__.py'
+              ).read_text(encoding='utf-8')
+    assert 'model.KNOWN_SLOT_HEADERS' in writer, writer
+    text = MODULE.read_text(encoding='utf-8')
+    assert 'model.KNOWN_SLOT_HEADERS' in text, text
+    assert 'frozenset(model.SLOT_HEADER' not in text, (
+        'the gate rebuilt the set locally instead of reading the one source')

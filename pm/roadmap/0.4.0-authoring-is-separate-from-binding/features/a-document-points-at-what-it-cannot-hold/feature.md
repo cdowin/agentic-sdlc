@@ -2,7 +2,7 @@
 id: 0.4.0/a-document-points-at-what-it-cannot-hold
 milestone: "0.4.0"
 name: A shared doc is scaffolded, and its absence is visible
-status: planning
+status: done
 reviewed:
 phase:
 depends_on: []
@@ -45,10 +45,26 @@ idempotent, and disclosed only in a parenthetical clause on a verb whose name ar
 `pm status 0.4.0` prints thirteen features and does not mention that a `building` milestone has no
 handoff. The knowledge lives only on the path you take if you already knew to take it.
 
+**Then building the fix broke the premise above.** `pm new milestone` would not have produced the
+template either: `scaffold()` renders one only for `file_slots` (a milestone's is `milestone.md`
+alone), while optional slots get an EXISTING file's header repaired and are never created.
+`decisions.md` had a minting verb (`pm decide`); `handoff.md` had none. **The template shipped,
+`SLOT_TEMPLATE` registered it, `[grain_shape]` capped it, and no code path could produce it** —
+reachable only via `pm templates --install`, which copies it out for a consumer to edit.
+
+So this was never bypassed guidance. It is a **stranded capability**: built, registered,
+documented and gated, with nothing connecting it to a caller. Grep finds it; reading finds it;
+only running the code proves it dead. That is a different class from "nobody could find it", and
+it changes the fix — layer 0 below is a minting path, and it did not exist.
+
 ## Four layers, cheapest first
 
+**0. There is a way to get the template.** `pm new handoff <id>` renders it, id and name filled.
+**On demand only** — `pm new milestone` still creates nothing, because an absent handoff is exactly
+what layer 1 warns on and auto-minting would put an unwritten template in every milestone.
+
 **1. The absence is visible.** A milestone in an `in_progress` category with no `handoff.md` is a
-`check pm` WARN naming `pm new milestone <id>`. This is the layer that would actually have caught
+`check pm` WARN naming `pm new handoff <id>`. This is the layer that would actually have caught
 it: the absence was on screen, in an `ls`, and read as *nothing to see*. `MILESTONE_OPTIONAL_SLOTS`
 already enumerates what should be there — the reader side just never asks.
 
@@ -81,19 +97,29 @@ standing hazard on this milestone.
 three constructs carry, in the milestone about deleting second names. **Chris's call is to build
 it, and the reason it survives that objection is layer 1 through 3 do not fire at the moment
 someone types "write me a handoff" — a skill description is the only surface that does.** So its
-job is not to teach handoff-writing. It is to **route**: run `pm new milestone <id>` first, the
+job is not to teach handoff-writing. It is to **route**: run `pm new handoff <id>` first, the
 template is the answer, here is what counts as derivable. A skill that restates the template's
 content instead of pointing at it has reproduced this feature's own bug, and review should reject
 it on exactly that ground.
 
-## Ship criterion
+## Ship criterion — met
 
-`check pm` WARNs on an `in_progress` milestone with no `handoff.md`, and on a shared doc missing
-its `SLOT_HEADER`; both name `pm new <kind> <id>` as the repair. `templates/handoff.md` carries the
-orient pipeline in section 2 and prompts for the absolute tree path in section 1. The header names
-the class of derivable content, not one verb. A `handoff` skill exists whose description carries the
-words someone types, and whose body routes to the template rather than restating it. All of it
-reaches consumers on bump, because the templates and the gate live in the wheel.
+`pm new handoff <id>` mints the template on demand and never automatically. `check pm` WARNs on an
+`in_progress` milestone with no `handoff.md`; `check grain-shape` finds a shared doc missing its
+`SLOT_HEADER`; both name the repair. The template carries the orient pipeline and prompts for the
+absolute tree path. A `handoff` skill's description carries the words someone types, and its body
+routes rather than restates. All of it reaches consumers on bump: templates, guidance and gates
+live in the wheel.
+
+**This section originally read "no skill is added, and no new verb". Both were added, and both
+earned it:**
+
+- **The verb**, because the premise was wrong — nothing wrote the template. A capability with no
+  caller is not a second name for anything; it is decoration. `pm new handoff` is the caller it
+  never had.
+- **The skill**, on Chris's call, argued and overruled in `decisions.md` D6. Its shape is the
+  concession: a router, held under a length ceiling by its own test, because a skill that restates
+  the template reproduces this feature's bug.
 
 ## Proof budget
 
@@ -112,4 +138,6 @@ reaches consumers on bump, because the templates and the gate live in the wheel.
 Making `handoff.md` a required slot. It is optional by design and a milestone nobody hands off
 does not need one — the WARN is for a milestone that is `in_progress`, which is when someone might.
 Renaming `pm new`. The naming defect is real and named here, but a rename is a verb-surface change
-with consumer cost, and layer 1 removes the need to know the verb at all.
+with consumer cost, and layer 1 removes the need to know the verb at all. A `RETIRED_SLOT_HEADERS`
+entry per future reword: the set exists, and adding to it is the reword's own cost, not this
+feature's.

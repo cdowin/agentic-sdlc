@@ -233,6 +233,11 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
         ('pm-execution.md', cfg.root / '.claude' / 'rules' / 'pm-execution.md'),
         ('pm-operations.md',
          cfg.root / '.claude' / 'skills' / 'pm-operations' / 'SKILL.md'),
+        # A skill, not a rule: nothing path-triggers on "write me a handoff",
+        # and a skill description is the only surface that matches the words
+        # somebody types. It routes to `pm new handoff` and the template.
+        ('handoff.md',
+         cfg.root / '.claude' / 'skills' / 'handoff' / 'SKILL.md'),
     ]
     # Decided for both entries before either is written, so "nothing was
     # written" is true of the whole command; --diff prints off the same helper
@@ -306,7 +311,7 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
             + '. Fix the path and re-run — the command is idempotent.')
     wrote = len(written)
     if wrote:
-        _ok(f'agentic-sdlc v{__version__} — these two carry only what the pm CLI '
+        _ok(f'agentic-sdlc v{__version__} — these carry only what the pm CLI '
             f'itself enforces and explains. Your project\'s SDLC (branching, '
             f'versioning, release, dispatch, review rosters) stays in your own '
             f'rules and agents.')

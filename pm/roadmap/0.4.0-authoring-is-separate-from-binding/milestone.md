@@ -61,8 +61,8 @@ believe otherwise.
 
 ## Pre-work — the telemetry, before anything else is built
 
-Five features were added after the milestone opened, and they run FIRST, because everything after
-them should be measured and today nothing is.
+Six features were added after the milestone opened. Five run FIRST, because everything after them
+should be measured and today nothing is; the sixth is already done.
 
 The trigger: asked for telemetry on this build, the agent hand-wrote a markdown table while the
 package sat on `pm ledger` — seven row kinds, automatic per-session token and tool-call capture
@@ -82,6 +82,12 @@ In build order:
     the-surface-says-telemetry           the word "telemetry" is in no discovery surface at all
     telemetry-arrives-with-the-bump      settings.json is printed, never written — so a consumer
                                          bumps to 0.4.0 and records nothing, as this tree did
+
+And one that shipped in the same session it was found, because it was in the way:
+
+    a-document-points-at-what-it-cannot-hold   DONE. The handoff template shipped, SLOT_TEMPLATE
+                                         registered it, [grain_shape] capped it — and no code path
+                                         could produce it. A stranded capability, not a hidden one
 
 They belong in THIS milestone rather than a later one for two reasons. The first is ordinary: the
 migration is the riskiest work here and it should be the best-measured thing this package has ever

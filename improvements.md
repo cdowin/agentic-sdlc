@@ -210,7 +210,12 @@ source calls *"the one channel that reaches a dispatched subagent"*.
    — re-run to fill**"*.
 3. `ls` showing no `handoff.md`.
 
-From (3) I concluded "I author it". **I never asked how the file normally comes into existence.**
+From (3) I concluded "I author it". **I never asked how the file normally comes into existence** —
+and when I finally did, the answer was that it does not. `scaffold()` renders a template only for
+`file_slots` (for a milestone, `milestone.md` alone); optional slots get their header repaired if
+the file already exists, and are never created. `decisions.md` had a minting verb (`pm decide`);
+`handoff.md` had none. **The template shipped, `SLOT_TEMPLATE` registered it, `[grain_shape]`
+capped it, and no code path could produce it.**
 
 Two causes, and the second is the reusable one:
 
@@ -222,12 +227,18 @@ Two causes, and the second is the reusable one:
   milestone*; 0.4.0 already existed, so it looked inapplicable. Its refill behaviour is real,
   idempotent, and disclosed in a parenthetical on a verb called `new`.
 
-**Fix:** `0.4.0/a-document-points-at-what-it-cannot-hold`, four layers — the absence becomes a
-`check pm` WARN, the header becomes enforced, the template carries the orient pipeline instead of
-only forbidding a status dump, and a `handoff` skill routes to all three. Not a rename: layer 1
-removes the need to know the verb.
+**So this is a different class from F1-F3, and worth its own name: a STRANDED capability.** Not
+one nobody could find — one that was built, registered, documented and gated, with nothing
+connecting it to a caller. Grep finds it. Reading finds it. Only running it proves it dead.
 
-**The standing lesson: if you need a shared doc, scaffold it — don't author it.**
+**Fixed and shipped** in `0.4.0/a-document-points-at-what-it-cannot-hold`: `pm new handoff <id>`
+mints it (on demand only — never automatically, so an absent handoff stays a signal), a `check pm`
+WARN names the absence once a milestone is `in_progress`, `check grain-shape` enforces the
+instruction line, the template carries the orient pipeline, and a `handoff` skill routes to all of
+it.
+
+**The standing lesson: if you need a shared doc, scaffold it — don't author it.** And the sharper
+one: **a construct that ships with no caller is not guidance, it is decoration.**
 
 ### F8 — being rooted in the wrong repo does not cost a prefix, it disables the guarded write path
 

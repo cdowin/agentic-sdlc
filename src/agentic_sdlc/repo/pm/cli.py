@@ -93,6 +93,12 @@ every run; a state the project never declared is refused by name.
                                           (under [pm] story_ordinal_prefix
                                            a slug may lead with `NN-`: the
                                            FILE keeps it, the id never does)
+  new handoff <milestone>                 (mint handoff.md from the template, ON
+                                           DEMAND — `new milestone` never creates
+                                           it, because an absent handoff is what
+                                           `check pm` warns on once a milestone is
+                                           in progress. Never clobbers an existing
+                                           one)
   new bug <milestone> <slug> [--caused-by <feature-id>]
                                           (--caused-by stamps caused_by: — the
                                            feature whose change produced the
@@ -1185,6 +1191,39 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
                     f'block) — set it with `pm set {bid} '
                     f'{CAUSED_BY} {cause}`')
             _ok(f'{bid}: {CAUSED_BY} {cause!r}')
+        return 0
+    if grain == 'handoff':
+        # ON DEMAND ONLY. `new milestone` deliberately does NOT mint this doc:
+        # an absent handoff.md is the signal `check pm` warns on when a
+        # milestone moves into an `in_progress` state, and a template auto-
+        # written into every milestone would destroy that signal — every tree
+        # would carry a handoff nobody wrote. This verb is what the warning's
+        # hint names, so the absence stays meaningful and the fix stays one
+        # command.
+        if len(rest) != 1:
+            raise Usage(USAGE)
+        mid = rest[0]
+        mdir = model.milestone_dir(cfg, mid)
+        if mdir is None:
+            raise Usage(f'no milestone resolves from {mid!r}')
+        doc = mdir / model.HANDOFF_FILE_NAME
+        if model.dir_entries(mdir).get(model.HANDOFF_FILE_NAME) == 'file':
+            # Never clobbered: the traps section is the one thing in the tree
+            # no command can regenerate.
+            _ok(f'{cfg.rel(doc)} already exists (no-op) — `pm new milestone '
+                f'{mid}` restores its header line if that is what is missing')
+            return 0
+        try:
+            body = templates.render(
+                templates.load(cfg,
+                               model.SLOT_TEMPLATE[model.HANDOFF_FILE_NAME]),
+                {'id': mid,
+                 'name': model.field_of(mdir / model.MILESTONE_DOC, 'name')})
+        except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
+            raise Usage(f'the handoff template cannot be read ({err}) — '
+                        f'{cfg.rel(doc)} was not created') from err
+        _mint(cfg, doc, body)
+        _ok(f'created {cfg.rel(doc)}')
         return 0
     raise Usage(USAGE)
 

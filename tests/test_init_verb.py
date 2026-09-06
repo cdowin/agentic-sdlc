@@ -73,6 +73,10 @@ WRITES = (
     'pm/roadmap/ROADMAP.md',
     '.claude/rules/pm-execution.md',
     '.claude/skills/pm-operations/SKILL.md',
+    # A skill rather than a rule: nothing path-triggers on "write me a
+    # handoff", and a skill description is the only surface that matches
+    # the words somebody types (0.4.0 decisions.md D6).
+    '.claude/skills/handoff/SKILL.md',
     'Makefile',
     'Makefile.devkit',
     'tools/dev/gdk_gate.sh',
@@ -172,10 +176,13 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
     from_tables = {rel for entries in install.PLANS.values()
                    for _, rel in entries}
     from_tables |= {rel for _, rel in init.SEEDS}
-    # The PM tree and .gitignore have no plan table — they are the two writes
-    # init owns outright, and they are named here for exactly that reason.
-    owned = {'pm/roadmap/ROADMAP.md', '.claude/rules/pm-execution.md',
-             '.claude/skills/pm-operations/SKILL.md', '.gitignore'}
+    # No `install.PLANS` entry: the PM tree and .gitignore are init's own
+    # writes, and the guidance files come from `skills.py`'s own plan. Named
+    # here for exactly that reason.
+    owned = {'pm/roadmap/ROADMAP.md', '.gitignore',
+             '.claude/rules/pm-execution.md',
+             '.claude/skills/pm-operations/SKILL.md',
+             '.claude/skills/handoff/SKILL.md'}
     assert set(WRITES) == from_tables | owned, (
         f'roster drift: {sorted(set(WRITES) ^ (from_tables | owned))}')
 

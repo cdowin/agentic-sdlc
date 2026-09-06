@@ -15,7 +15,9 @@ WARN (a line, never the exit code; both grains and both categories named):
   D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
-  READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:` or no `branch:`
+  READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:`,
+         no `branch:`, or (a milestone) no `handoff.md` — the doc is never auto-minted,
+         so its absence is the signal and `pm new handoff <id>` is the fix
 
 Archived milestones are out of scope; a zero census FAILS.
 """
@@ -132,6 +134,18 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
             if why:
                 warn(f'milestone {mid} is {mstat!r} and {why} — past todo, '
                      f'and nothing says what done means  [{cfg.rel(mfile)}]')
+            # The doc is deliberately never auto-minted, so its ABSENCE is the
+            # signal; the hint names the one verb that fills it. IN_PROGRESS
+            # only, not every started milestone: a handoff is a cold-start aid
+            # and nobody picks up a finished milestone, so warning on `done`
+            # would fire once per historical milestone on every consumer's tree.
+            if (m_cat == model.IN_PROGRESS
+                    and model.dir_entries(mfile.parent)
+                    .get(model.HANDOFF_FILE_NAME) != 'file'):
+                warn(f'milestone {mid} is {mstat!r} with no '
+                     f'{model.HANDOFF_FILE_NAME} — past todo, and a cold '
+                     f'session has nowhere to start; `pm new handoff {mid}` '
+                     f'mints one  [{cfg.rel(mfile.parent)}/]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(mdir)]

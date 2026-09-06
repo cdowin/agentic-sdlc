@@ -200,15 +200,21 @@ The argument, kept because it decides the skill's SHAPE. `src/agentic_sdlc/repo/
 three-section shape and *"Not a status dump"* written into it;
 `model.SLOT_HEADER['handoff.md']` is **"Cold-start only. Never restate what `pm status`
 computes."**, described in source as *"the one channel that reaches a dispatched subagent"*; and
-`[grain_shape]`'s cap caught the violation twice. **All three were bypassed by creating the file
-with `Write` instead of `pm new`**, which is idempotent and fills empty slots. A skill would be the
-fourth name for a fact three constructs already carry — in the milestone about deleting second
-names.
+`[grain_shape]`'s cap caught the violation twice.
 
-**What is missing is enforcement, not guidance**, and that is
-`0.4.0/a-document-points-at-what-it-cannot-hold`: a `check pm` rule that a shared doc opening
-without its `SLOT_HEADER` is a finding. The comparison already exists in
-`templates/__init__.py:79-83` and runs only on `pm new`; this points it at files on disk.
+**And building the fix turned up something sharper than a missed lookup: NO CODE PATH WROTE THAT
+TEMPLATE.** `scaffold()` renders a template only for `file_slots` — for a milestone, `milestone.md`
+alone. Optional slots get the header of an EXISTING file repaired and are never created.
+`decisions.md` had a minting verb (`pm decide`); `handoff.md` had none, so the template was
+reachable only through `pm templates --install`, which copies it out for a consumer to edit. It
+shipped, `SLOT_TEMPLATE` registered it, `[grain_shape]` capped it — and nothing could produce it.
+
+So the correction to the paragraph above: it was not bypassed guidance. **A skill would have been
+a fourth name for a fact three constructs carried, except the constructs were not connected to a
+caller.** What was missing was a minting path AND enforcement — `pm new handoff <id>`, plus a
+`check pm` WARN on the absence and a `check grain-shape` finding on a missing header. The header
+comparison already existed in `templates/__init__.py:79-83` and ran only on `pm new`; it now runs
+on files on disk.
 
 **The standing lesson: if you need a shared doc, scaffold it — don't author it.** This was the
 fifth instance in one session of a capability that shipped and was not found at the moment of need,

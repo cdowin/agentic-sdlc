@@ -296,6 +296,13 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
                                  'status': 'building',
                                  'branch': 'milestone/0.1'}, self.SHIP)
+        # An `in_progress` milestone also wants its handoff; it is never
+        # auto-minted, so the fixture writes one or the milestone's own line
+        # drowns the story's.
+        (root / MFILE_REL).parent.joinpath(
+            model.HANDOFF_FILE_NAME).write_text(
+                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+                encoding='utf-8')
 
     def test_each_warning_fires_on_the_scaffold_and_is_silent_on_a_filled_grain(self):
         empty = f'# S0\n\n## Acceptance criteria\n\n{self.PROMPT}\n\n## Out of scope\n'
@@ -331,9 +338,12 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                            "milestone 0.1 is 'building' and has no `## Ship criterion` section",
                            "milestone 0.1 is 'building' and feature 0.1/alpha carries no phase:",
                            "feature 0.1/alpha is 'building' with no stories",
-                           "feature 0.1/alpha is 'building' and has no `## Ship criterion` section"):
+                           "feature 0.1/alpha is 'building' and has no `## Ship criterion` section",
+                           # Never auto-minted, so the ABSENCE is the signal —
+                           # and the line names the verb that fills it.
+                           "milestone 0.1 is 'building' with no handoff.md"):
                 self.assertIn(f'  WARN  {needle}', out, out)
-            self.assertIn('; 5 warning(s)', out)
+            self.assertIn('; 6 warning(s)', out)
             self.assertNotIn('DRIFT', out)
             # Filled: the sections written, the branch and the phase stamped,
             # one story under the feature — silent, and the verdict line is
@@ -344,6 +354,10 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
                                      'status': 'building',
                                      'branch': 'milestone/0.1'}, self.SHIP)
+            (root / MFILE_REL).parent.joinpath(
+                model.HANDOFF_FILE_NAME).write_text(
+                    model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+                    encoding='utf-8')
             self._story(root, 'planning', 'x')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)

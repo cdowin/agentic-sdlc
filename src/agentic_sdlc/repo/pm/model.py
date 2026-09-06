@@ -176,8 +176,20 @@ SLOT_TEMPLATE = {
 SLOT_HEADER = {
     'decisions.md': 'Append with `agentic-sdlc pm decide <grain-id>` — never by '
                     'hand; the command stamps the date and the next ordinal.',
-    'handoff.md': 'Cold-start only. Never restate what `pm status` computes.',
+    'handoff.md': 'Cold-start only. Everything derivable is a command — never '
+                  'restate `pm status`, `git log` or `pm ledger report`.',
 }
+
+# Wordings that shipped before and still open real documents. RECOGNISED, never
+# written: `_header_wanted` treats any known header as present, so rewording an
+# entry above can neither stack a second line onto an existing doc nor red a
+# consumer's tree on upgrade day. `pm new` still rewrites nothing it did not
+# have to.
+RETIRED_SLOT_HEADERS = frozenset({
+    'Cold-start only. Never restate what `pm status` computes.',
+})
+
+KNOWN_SLOT_HEADERS = frozenset(SLOT_HEADER.values()) | RETIRED_SLOT_HEADERS
 
 
 def dir_entries(path: Path) -> dict[str, str]:

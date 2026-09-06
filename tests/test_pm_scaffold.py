@@ -62,6 +62,55 @@ class Scaffolding(unittest.TestCase):
             self.assertIn('already has every canonical slot', out)
             self.assertEqual(ff.read_text(encoding='utf-8'), before)
 
+    def test_new_handoff_mints_the_template_and_never_clobbers(self):
+        """The gap that made 0.4.0's handoff a hand-authored 194-line restatement
+        of `pm status`: the template SHIPPED, `SLOT_TEMPLATE` registered it, and
+        no code path wrote it. `decisions.md` had a minting verb (`pm decide`);
+        `handoff.md` had none, so an absent one was an empty canvas rather than
+        an unfilled slot.
+
+        Both halves matter. It mints from the template — otherwise the shape is
+        reinvented every time. And it never clobbers: section 3 (`Traps this
+        milestone has already sprung`) is the one thing in the tree no command
+        can regenerate.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            doc = root / 'pm/roadmap/0.1-demo' / model.HANDOFF_FILE_NAME
+            self.assertFalse(doc.exists())
+            code, out = run_cli(root, 'new', 'handoff', '0.1')
+            self.assertEqual(code, 0, out)
+            body = doc.read_text(encoding='utf-8')
+            # Rendered, not copied: the placeholders are filled from the tree.
+            self.assertTrue(
+                body.startswith(model.SLOT_HEADER[model.HANDOFF_FILE_NAME]),
+                body)
+            self.assertIn('0.1', body)
+            self.assertNotIn('{id}', body)
+            self.assertNotIn('{name}', body)
+            self.assertIn('Traps this milestone has already sprung', body)
+
+            # Second run is a no-op over the author's own bytes.
+            doc.write_text(body + '\n- the trap that cost two hours\n',
+                           encoding='utf-8')
+            keep = doc.read_text(encoding='utf-8')
+            code, out = run_cli(root, 'new', 'handoff', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('already exists', out)
+            self.assertEqual(doc.read_text(encoding='utf-8'), keep)
+
+    def test_new_milestone_does_NOT_mint_a_handoff(self):
+        """Deliberate, and the whole reason `check pm` can warn on the absence:
+        a handoff auto-written into every milestone would put an unwritten
+        template in every tree and destroy the signal. If this case ever fails,
+        the warning it protects has become noise.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            doc = root / 'pm/roadmap/0.1-demo' / model.HANDOFF_FILE_NAME
+            doc.unlink(missing_ok=True)
+            self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
+            self.assertFalse(doc.exists(),
+                             'new milestone minted a handoff nobody wrote')
+
     def test_a_legacy_uppercase_slot_is_refused_never_renamed_or_twinned(self):
         # The uppercase->lowercase migration is COMPLETE in every consumer and
         # the rename machinery is retired. The CHOSEN successor behavior: a

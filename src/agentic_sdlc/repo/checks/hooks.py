@@ -1,114 +1,13 @@
-"""check hooks — the tracked hook corpus is ARMED, and every hook still runs.
+"""check hooks — the tracked hook corpus under `tools/hooks/` is armed and every hook runs.
 
-`install-hooks` writes the guard corpus under `tools/hooks/`; writing it is not
-arming it. git runs nothing there until `core.hooksPath` points at the
-directory, and it silently skips any entry missing an exec bit — so a corpus
-that is on disk, tracked and reviewed can be guarding nothing at all, with no
-signal anywhere. This package told its consumers the corpus was self-hosted
-HERE while `core.hooksPath` was unset in every checkout of it, for two releases
-(0.24.0/bugs/self-hosting-has-no-arm-or-verify-target).
+Five questions per entry: `core.hooksPath` points here; the entry is a regular file;
+it carries an exec bit; it starts (a `cc-*` hook fails open on unreadable input, any
+other parses under `bash -n`); and one naming `--self-test` replays its corpus and
+prints `SELF-TEST OK`. Which hooks carry a corpus, and which can block (`exit 2`), is
+derived from each hook's text, never a roster. `_*` and `*.local` are excluded and
+disclosed. Zero hooks, or zero replays, is a finding.
 
-Five questions, and the last three are the ones a path check alone gets wrong:
-
-  ARMED       `core.hooksPath` resolves to this repo's `tools/hooks`.
-  A FILE      the entry is a regular file at all. Git's hook universe is every
-              entry in the directory, so a directory or a broken symlink there
-              is a name git tries and cannot exec — the guard that name stands
-              for runs nothing. Enumerating only regular files does not merely
-              miss it, it SUBTRACTS it: the census reads smaller than the
-              directory and no line says why, which is the shape this gate was
-              written against.
-  EXECUTABLE  every entry carries an exec bit — git skips one that does not,
-              in silence, which is a disarmed guard with nothing red.
-  RUNS        the file still executes at all. Measured on this package's own
-              history: grafting `cc-godot-sandbox.sh`'s 0.16.0 project-config
-              header onto its current body drops four keys the body reads under
-              `set -u`, so the hook dies on `unbound variable` before deciding
-              anything and exits 1 — where only exit 2 is a BLOCK. It is on
-              disk, it is executable, it looks installed, and it stops nothing.
-              A gate that asks only where a path points calls that tree armed.
-  STILL SAYS  a hook that ships its own block/allow corpus still returns the
-  NO          verdicts that corpus asserts. `--self-test` replays it, and the
-              hook prints `SELF-TEST OK` when every case came back the way the
-              corpus says it must.
-
-THE REPLAY IS HERE, not in each consumer's Makefile. This kit installs the
-corpus, so this kit owns the gate over it (0.2.0/D2's rule, one level up: the
-kit that owns the ARTIFACT owns the gate). It used to be twenty per-consumer
-make targets each repo had to remember to wire, and **a guard nobody wired is a
-guard that is not there** — the same failure this package already shipped once,
-with hooks that were installed, executable, and stopping nothing.
-
-It stayed part of THIS gate rather than becoming a second one. Both halves need
-the corpus on disk, both are wanted by exactly the repos that ran
-`install-hooks`, and both walk `tools/hooks/` — a second gate would be a second
-enumeration of one directory, which is the shape that lets two censuses of the
-same tree disagree. Two roster names that are on and off together are two names
-for one decision.
-
-WHICH HOOKS CARRY A CORPUS IS DERIVED, never a roster — a roster silently skips
-the hook added after it was written, which is exactly how `HOOKS_WITH_CORPUS`
-in one Makefile emptied out and kept passing. A hook is a CANDIDATE when its
-source names `--self-test` on a line that is not a comment; the candidate is
-then RUN, and only `SELF-TEST OK` on exit 0 is a pass. The text probe is
-deliberately generous because the run is the proof: a file that merely mentions
-the flag becomes a finding, never a silent green.
-
-**LOUD ON ZERO.** A corpus in which NOTHING declares a self-test is a finding,
-not a quiet pass: from here, an uninstalled tree and a passing one look
-identical, and `0 hook(s) SELF-TEST OK` printed as a PASS is the exact defect
-this package's own `make hooks-self-test` carried until 0.2.0.
-
-**AND LOUD ON HOW FEW.** `2 replay their own --self-test corpus` is a true
-number that reads as coverage of the GUARDS, and in the shape this kit ships it
-is coverage of the two ledger COURIERS — which judge nothing and whose every
-path out is exit 0. The three hooks that actually say no
-(`cc-commit-pathspec.sh`, `cc-stop-gate.sh`, `cc-write-confine.sh`) declare no
-corpus, so the fifth question above has zero blocking coverage and the verdict
-line said nothing about it (K3, 0.2.0/the-kit-owns-the-gates review).
-
-That gap is ACCEPTED, not a finding: D2 ruled the engine-boot guard out of this
-kit and wrote down the cost — *"`make hooks-self-test` loses a corpus and this
-repo's `HOOKS_WITH_CORPUS` narrows to the two ledger couriers"* — with loudness
-on zero as the condition. Refusing here would be this package deciding that a
-consumer's corpus is too small, which is a judgement it cannot make and which
-hard rule 9 puts on the caller. So the line SPLITS the count instead: which
-hooks can BLOCK, and how many of those replay anything. An operator reading
-`NONE of the 3 that can BLOCK` knows what the number covers; an operator
-reading `2 replay` does not.
-
-WHICH HOOKS CAN BLOCK IS DERIVED FROM SHAPE, like everything else here — a
-non-comment `exit 2` line, `2` being the one exit git and Claude Code both read
-as a refusal. Generous in the same direction as the self-test probe: it
-over-nominates rather than under-nominates, because the failure this reports on
-is a count that reads bigger than the coverage it stands for.
-
-The RUNS probe is derived from each hook's SHAPE, never a roster — a roster
-silently skips the hook added after it was written:
-
-  `cc-*.sh`   a Claude Code hook. Every one documents the same contract for
-              input it cannot act on: fail OPEN, exit 0, say why on stderr. Fed
-              a payload that is not JSON it must exit 0 — and answering that
-              runs the whole file, project-config header included, which is
-              exactly what catches the header above.
-  anything    a git hook. Its argv and stdin contract belong to git and differ
-  else        per hook name, so there is no single call this gate could make
-              that would be the real one. It is PARSED (`bash -n`), and the
-              verdict says so rather than implying more was asked.
-
-`_*` (sourced libraries) and `*.local` (config drop-ins) are excluded — the two
-shapes doctor.sh excludes, for the same reason: neither is a hook git runs.
-
-Deliberately NOT a second hook suite. Behaviour is proven by
-`tests/test_hooks_payloads.py`, and for the three hooks that ship one by their
-own `--self-test` corpus. What is asked here is the question none of those can
-answer, because every one of them runs a COPY in a temp repo: is THIS
-checkout's corpus wired to git, able to start, and still returning the verdicts
-its own corpus asserts.
-
-No devkit.toml section. `tools/hooks/` is where `install-hooks` puts the corpus
-in every consumer, so it is a fact about the package rather than a per-repo
-choice, and a knob nobody sets is a knob that goes wrong unread.
+No devkit.toml section: `tools/hooks/` is where `install-hooks` writes in every consumer.
 """
 from __future__ import annotations
 
@@ -124,61 +23,28 @@ from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 
 HOOKS_DIR = 'tools/hooks'
 CC_PREFIX = 'cc-'
-# The repair every finding prints. It must be runnable by a CONSUMER, not only
-# here: `install-hooks` ships `tools/setup-hooks.sh` into every tree, and no
-# Makefile target wraps it — this repo had one once, and naming it sent a
-# consumer to `No rule to make target`.
+# A consumer must be able to run the repair; no make target wraps it.
 ARM_COMMAND = 'bash tools/setup-hooks.sh'
 
-# A payload no Claude Code hook can act on. Each one's own header promises the
-# same answer to it: exit 0, and the reason on stderr.
+# Every Claude Code hook promises exit 0 and a reason on stderr for this.
 UNREADABLE_PAYLOAD = 'not json {{{'
 FAIL_OPEN = 0
-# The finding column, wide enough for the longest label.
 LABEL_WIDTH = len('NOT EXECUTABLE')
 
-# The self-test contract, as the shipped hooks spell it: the flag they answer,
-# and the one line that means every case in their corpus came back the way the
-# corpus says it must. The MARKER matters as much as the exit code — a hook fed
-# a flag it does not handle falls through to its ordinary path and can exit 0
-# without replaying anything, which would be a corpus reporting a pass it never
-# ran.
+# The marker matters as much as the exit code: an unhandled flag falls through to exit 0.
 SELF_TEST_FLAG = '--self-test'
 SELF_TEST_OK = 'SELF-TEST OK'
-# A non-comment line naming the flag. Generous on purpose: it only nominates a
-# CANDIDATE, and the run above is what proves one. The comment exclusion is not
-# cosmetic — every hook that ships a corpus documents it in a header block
-# first, and so do several that do not.
+# A non-comment line naming the flag nominates a candidate; the run is the proof.
 SELF_TEST_DECL = re.compile(rf'^(?![ \t]*#).*{re.escape(SELF_TEST_FLAG)}',
                             re.MULTILINE)
 
-# A hook that can say NO. `2` is the refusal both git and Claude Code read, and
-# every shipped guard spells it as a bare `exit 2` statement — the couriers name
-# it only in prose, which is why the line must start with the statement rather
-# than merely contain the digits. Derived, never a roster: a roster silently
-# skips the guard added after it was written, and this count exists precisely to
-# stop a number reading as more coverage than it is (K3).
+# A statement-initial `exit 2`, because the couriers name the digit only in prose.
 BLOCK_EXIT = 2
 BLOCKS_DECL = re.compile(rf'^[ \t]*exit[ \t]+{BLOCK_EXIT}\b', re.MULTILINE)
 
 
 def _entries(directory: Path) -> Walk:
-    """The hook entry points, asked of the DIRECTORY rather than of a list —
-    a roster silently skips the hook added after it was written.
-
-    `Kind.ANY`, deliberately. `Kind.FILE` is a UNIVERSE declaration and a
-    universe reason never renders in `disclosures()`, so a directory or a
-    broken symlink under `tools/hooks/` left the census with no line saying so
-    and the number came out smaller than the directory — a gate PASSing over
-    exactly the drift it was written to catch. Git's hook universe is every
-    entry in the directory; so is this one, and a non-regular entry is a
-    FINDING below rather than a subtraction here.
-
-    Through `core.walk`, so the two shapes the filter removes are DISCLOSED in
-    the count instead of subtracted from it: a directory holding nothing but
-    `_*` libraries must not read as a corpus of that many hooks, and a `.local`
-    that was meant to be a hook must be visible as the thing that was dropped.
-    """
+    """The hook entry points, `Kind.ANY` so a directory or broken symlink is a finding, not a subtraction."""
     return walk.children(directory, Kind.ANY).filter(
         lambda path: not path.name.startswith('_')
         and not path.name.endswith('.local'),
@@ -186,9 +52,7 @@ def _entries(directory: Path) -> Walk:
 
 
 def _not_a_file(path: Path) -> str:
-    """What an entry git cannot exec actually IS. Named, because 'not a regular
-    file' sends nobody anywhere: the two real shapes are a checkout that lost a
-    symlink's target and a directory that took a hook's name."""
+    """What an entry git cannot exec actually is."""
     if path.is_dir():
         return 'is a directory'
     if path.is_symlink():
@@ -224,9 +88,7 @@ def _runs(path: Path, root: Path) -> str:
 
 
 def _source(path: Path) -> str:
-    """The hook's text, or '' when it cannot be read. An unreadable hook is
-    already a finding on another axis (`_runs` starts it), so this never
-    invents a second one — it simply nominates no corpus."""
+    """The hook's text, or '' when unreadable (already a finding from `_runs`)."""
     try:
         return path.read_text(encoding='utf-8', errors='replace')
     except OSError:
@@ -236,10 +98,7 @@ def _source(path: Path) -> str:
 def _self_test(path: Path, root: Path) -> str:
     """'' when the hook's own corpus replayed clean; the finding text when not.
 
-    `input=''` is load-bearing: every `cc-*.sh` reads its payload from stdin, so
-    a candidate that does NOT actually handle the flag would otherwise block
-    forever on a terminal that never sends one, and a gate that hangs is worse
-    than a gate that fails.
+    `input=''` keeps a hook that reads stdin from blocking on a terminal.
     """
     done = subprocess.run(['bash', str(path), SELF_TEST_FLAG], input='',
                           text=True, capture_output=True, cwd=root)
@@ -258,8 +117,6 @@ def _self_test(path: Path, root: Path) -> str:
 def run() -> int:
     root = repo_root()
     hooks = root / HOOKS_DIR
-    # (label, sentence) pairs, so the column is one format string rather than
-    # padding counted by hand into four literals.
     findings: list[tuple[str, str]] = []
 
     configured = _hooks_path(root)
@@ -283,31 +140,21 @@ def run() -> int:
     entries = _entries(hooks)
     census = entries.census(f'hook(s) under {HOOKS_DIR}/')
     if not entries.kept:
-        # Rule 4 — a gate that scanned nothing says so. An empty corpus and a
-        # guarded tree must never print the same word, and the census carries
-        # what the filter removed so "empty" cannot mean "all excluded".
         print(f'[check:hooks] FAIL — {census}, so this reports on nothing; '
               f'`agentic-sdlc install-hooks` ships the corpus')
         return 1
     if shutil.which('bash') is None:
-        # Not a soft skip: the corpus IS bash. A tree with no bash cannot run
-        # a single one of these hooks, which is the finding, not a caveat.
+        # The corpus is bash, so no bash is the finding, not a caveat.
         print(f'[check:hooks] FAIL — bash is not on PATH, so not one of the '
               f'{census} can run')
         return 1
 
     ran = parsed = replayed = 0
-    # K3's two columns: how many hooks can refuse, and how many of THOSE are
-    # covered by a replay. Counted only over hooks that started, like every
-    # other number in the verdict — a dead hook's source is not evidence of
-    # anything it does.
+    # Counted only over hooks that started, like every other number in the verdict.
     blockers = blockers_replayed = 0
     for path in entries:
         rel = path.relative_to(root)
         if not path.is_file():
-            # On disk, tracked, named like a hook, and git cannot start it.
-            # DEAD by another route, and the one route where the entry never
-            # even reaches the exec bit.
             findings.append((
                 'NOT A FILE',
                 f'{rel} {_not_a_file(path)} — git cannot exec it, so whatever '
@@ -322,9 +169,7 @@ def run() -> int:
             continue
         broken = _runs(path, root)
         if broken:
-            # A hook that cannot start cannot replay a corpus either, and one
-            # finding per hook is the honest count — the second would be the
-            # same fact wearing a different label.
+            # One finding per hook: a dead hook cannot replay a corpus either.
             findings.append(('DEAD', f'{rel} {broken}'))
             continue
         if path.name.startswith(CC_PREFIX):
@@ -344,21 +189,14 @@ def run() -> int:
                 findings.append(('SELF-TEST', f'{rel} {failed}'))
 
     if not replayed:
-        # Rule 4, one axis down from the empty-corpus FAIL above: the directory
-        # holds hooks and not one of them replays anything. An uninstalled tree
-        # and a passing one are indistinguishable from here, so this can never
-        # be a quiet green.
+        # An uninstalled corpus and a passing one look identical from here.
         findings.append((
             'NO CORPUS',
             f'not one hook under {HOOKS_DIR}/ declares a {SELF_TEST_FLAG} '
             f'corpus, so nothing was replayed — an uninstalled corpus and a '
             f'passing one print the same word from here'))
 
-    # The blocking split, spelled in WORDS on the two shapes a bare ratio reads
-    # wrong (K3). `0 of 3` is a number an eye slides over; `NONE of the 3 that
-    # can BLOCK` is the sentence an operator has to have read to have read the
-    # line. It rides on both the PASS and the FAIL verdict, because a run with
-    # findings elsewhere is exactly when the coverage question gets skipped.
+    # Spelled in words on the two shapes a bare ratio reads wrong.
     if not blockers:
         covered = f'no hook here can BLOCK at exit {BLOCK_EXIT}'
     elif not blockers_replayed:

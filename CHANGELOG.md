@@ -101,9 +101,10 @@
 
 ### ready is one command, and an empty ready is a warning
 
-- **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has been
-  readied — past its kind's FIRST `todo` state, under whatever words the project declared — and
-  says nothing about what must be true: a story with an empty or absent `## Acceptance criteria`,
+- **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has left
+  `todo` — its status sits in the `in_progress` or `done` category, under whatever words the
+  project declared; the order of words within `todo` changes nothing — and says nothing about
+  what must be true: a story with an empty or absent `## Acceptance criteria`,
   a feature or a milestone with an empty or absent `## Ship criterion`, a feature with no stories,
   a milestone with no `branch:` or with a feature carrying no `phase:`. The three headings are the
   ones `pm new` scaffolds; a section holding only the template's `<!-- … -->` prompt is empty.

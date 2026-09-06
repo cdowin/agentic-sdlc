@@ -3,7 +3,7 @@ id: 0.4.0/the-read-verbs-compose/01-the-name-is-a-column-and-json-is-a-flag
 feature: 0.4.0/the-read-verbs-compose
 milestone: "0.4.0"
 name: pm list emits the name, and the listing verbs speak JSON
-status: building
+status: done
 owner: claude
 depends_on: []
 ---
@@ -33,6 +33,18 @@ name — which is how an agent concluded composition was impossible and proposed
 | 1, 2 | unit | `test_cli_surface.py` already asserts the listing verbs' columns and help | amend |
 | 3 | unit | one case round-tripping `--json` to the same field set the columns carry, both kinds | new — it is the only thing that can diverge unseen |
 | 5 | unit | the flag roster is unchanged | existing, unamended |
+
+## Close
+
+done: 05c8364 — `LIST_COLUMNS` names the columns once; `_emit_rows` zips them onto the same tuples
+for both views, so rows and `--json` cannot diverge. The rule is in CLAUDE.md as rule 11's read
+side.
+finding: **the column broke a consumer, in this repo.** `agent-worktree.sh` read the milestone rows
+with a trailing catch-all variable, so `branch` absorbed the new `name`. Fixed with one variable,
+and the CHANGELOG names the idiom — a trailing column is not free, and that is worth more than the
+column.
+finding: `name` is free text, so a tab in it would forge a column. Substituted with a space in the
+tab-separated form; `--json` keeps the byte.
 
 ## Out of scope
 

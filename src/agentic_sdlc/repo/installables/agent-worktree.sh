@@ -44,10 +44,12 @@ MAIN_ROOT="$(git rev-parse --show-toplevel)"
 WORKTREE_PARENT=".claude/worktrees"   # repo-relative; gitignore it
 BRANCH_PREFIX="feat/"
 SCOPE_MARKER=".agent-scope"           # the marker the installed hooks read
-WARM_DIRS=(".godot" ".import")        # central caches copied to pre-warm a fresh tree
+# Gitignored cache directories copied from the main tree to pre-warm a fresh
+# worktree (a build cache, a dependency dir). Empty = copy nothing.
+WARM_DIRS=()
 # Gitignored per-asset sidecars to mirror into the worktree (e.g. "*.import"
-# for a repo that gitignores Godot's scattered import sidecars — without them
-# the fresh checkout's first boot is cold and resource loads fail). Empty = off.
+# for a repo whose build tool writes one beside each asset and gitignores
+# them — without them a fresh checkout's first build is cold). Empty = off.
 WARM_SIDECAR_GLOB=""
 # Where an agent branches from when no milestone declares an integration
 # branch (see integration_branch below).
@@ -194,7 +196,7 @@ cmd_new() {
 			cp_warm=(cp -al)
 		fi
 		rm -f "${abs_path}/.cp_al_src" "${abs_path}/.cp_al_probe"
-		for d in "${WARM_DIRS[@]}"; do
+		for d in ${WARM_DIRS[@]+"${WARM_DIRS[@]}"}; do
 			if [ -e "${MAIN_ROOT}/${d}" ]; then
 				"${cp_warm[@]}" "${MAIN_ROOT}/${d}" "${abs_path}/${d}"
 				warmed+=("$d")
@@ -235,7 +237,7 @@ cmd_new() {
 	if [ "$no_warm" -eq 1 ]; then
 		echo "  warmed:  (skipped — --no-warm)" >&2
 	else
-		local cache_summary="(none — main tree had no ${WARM_DIRS[*]} to copy)"
+		local cache_summary="(none — nothing in WARM_DIRS to copy)"
 		[ "${#warmed[@]}" -gt 0 ] && cache_summary="${warmed[*]}"
 		if [ -n "$WARM_SIDECAR_GLOB" ]; then
 			cache_summary="${cache_summary}; ${sidecars} ${WARM_SIDECAR_GLOB} sidecars"
@@ -276,9 +278,9 @@ cmd_done() {
 	# ignore exactly the artifacts we planted, and refuse only if genuine
 	# tracked/untracked work remains uncommitted.
 	local planted_dirs planted_roots
-	planted_dirs="$(printf '%s/|' "${WARM_DIRS[@]}")"
+	planted_dirs="$(printf '%s/|' ${WARM_DIRS[@]+"${WARM_DIRS[@]}"})"
 	planted_dirs="${planted_dirs%|}"
-	planted_roots="$(printf '%s|' "${WARM_DIRS[@]}")"
+	planted_roots="$(printf '%s|' ${WARM_DIRS[@]+"${WARM_DIRS[@]}"})"
 	planted_roots="${planted_roots%|}"
 	local dirty
 	dirty="$(git -C "$abs_path" status --porcelain --untracked-files=all 2>/dev/null \

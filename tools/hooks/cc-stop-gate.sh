@@ -22,8 +22,8 @@ set -eu
 # --- project config (yours to edit after install — the file is your repo's) --
 # The static slice of the gate, run first. Must be cheap enough to pay on
 # every agent stop.
-# agentic-sdlc itself: `make check` is the static gate (~2 s) and `make unit`
-# the inner-loop tier (~7 s, no subprocess) — together they are `make precommit`.
+# agentic-sdlc itself: `make check` is the static gate and `make unit` the
+# inner-loop tier — together they are `make precommit`.
 GATE_STATIC=(make check)
 # The unit tier, invoked as: "${GATE_UNIT[@]}" SYS="<derived slices>". An empty
 # SYS means the whole tier — never silently narrower than "all".

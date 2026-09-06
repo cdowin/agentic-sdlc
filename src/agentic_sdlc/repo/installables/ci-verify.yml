@@ -13,13 +13,9 @@
 # project without the target gets a red run step naming it, which is where the
 # assumption belongs. Add the target, or change the `run:` line.
 #
-# YOUR TOOLCHAIN IS YOURS TO ADD, and this file stops guessing at it. Through
-# 0.1.0 it carried four steps that installed a game engine and two linters,
-# each behind a `hashFiles(...)` guard on that engine's project file — one
-# kit's toolchain,
-# hard-coded into the other kit's workflow, with a conditional standing in for
-# the ownership question nobody had asked. Decision D2 of 0.2.0 asked it: an
-# installable belongs to the kit whose ARTIFACT it acts on. `setup-uv` stays
+# YOUR TOOLCHAIN IS YOURS TO ADD, and this file does not guess at it: an
+# installable belongs to the kit whose ARTIFACT it acts on (decision D2 of
+# 0.2.0), and this kit acts on git, markdown and shell. `setup-uv` stays
 # because it is what resolves the pinned devkit package this file installs from
 # and nothing else; a build toolchain your `make milestone` needs is a step you
 # add BELOW, after the write, when this file is yours.

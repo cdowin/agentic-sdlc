@@ -155,10 +155,10 @@ gdk_run_bounded() {
 }
 
 # --- gate output: a summary on the console, the full transcript on disk ------
-# A gate used to STREAM its whole run to the console: `make parse` printed 273
-# lines of which two mattered (the verdict, and any error line); `make
-# warnings` printed 1,581. Every agent pays that on every run, so the default
-# is the summary and the stream goes to a file.
+# A gate that STREAMS its whole run to the console prints hundreds of lines of
+# which two matter (the verdict, and any error line), and every agent pays
+# that on every run — so the default is the summary and the stream goes to a
+# file.
 #
 # The report dir cannot rot the way a per-job one does: the slot is named by
 # GATE, each run clears the slot it is about to write, and there is a handful
@@ -1008,7 +1008,7 @@ exit=0" "$body"
 	#
 	# The two mutation tests that ARE about the bound run the whole corpus, and
 	# so does `--self-test` with nothing set — which is what a consumer runs and
-	# what `make hooks-self-test` replays. The skip is a caller's optimisation,
+	# what `agentic-sdlc check hooks` replays. The skip is a caller's optimisation,
 	# never the default: a corpus that quietly stopped covering its slowest
 	# cases would be exactly the narrowing this library's own census exists to
 	# refuse.

@@ -18,6 +18,18 @@
   run over the transcript that prints how many things the gate walked. It lands on the
   gate's ledger row (`--census`) and `check budget` holds it to `[tests] cases`. Four-argument
   calls are unchanged.
+- **`Makefile.devkit`: `precommit` and `milestone` open a gate slot of their own.** Both were
+  prerequisite-only, so every member filed a cost row and the composition filed none, and
+  `verify --plan` answered `unknown` for the wide rungs on every project following the shipped
+  layout. Each composition now runs `check` and its declared tiers as the goals of one sub-make
+  inside `gdk_gate_capture`, so the ledger gains a `gate` row named `precommit` / `milestone`
+  timing the whole target, beside its members' rows. Nothing new on the console: the members'
+  verdict lines stream through unchanged and the composition's own verdict goes to
+  `.gate-reports/precommit.log` / `.gate-reports/milestone.log` (a new transcript each; a
+  member's stderr now rides the composition's stdout, as any captured gate's does). `make -n
+  precommit` still runs nothing; it prints the composition's one recipe, which names every
+  member in order, rather than each member's recipe. Re-install with `install-gates --force`.
+  Closes `0.2.0/bugs/a-composition-has-no-slot`.
 - **`check doc` and `verify --check` follow the tier seam.** Both readers stopped at
   `include Makefile.devkit` and skipped `-include $(GDK_TIERS_MK)`, so every tier target a
   language kit adds was reported as an unknown make target in every consumer's docs and

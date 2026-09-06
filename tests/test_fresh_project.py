@@ -274,13 +274,21 @@ def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_emp
             'no longer what a fresh project gets')
         committed(root)
         done = make(root, 'precommit', working_tree_devkit())
-        gate_logs = sorted(p.name for p in (root / '.gate-reports').iterdir())
+        gate_logs = sorted(p.name for p in (root / '.gate-reports').iterdir()
+                           if p.suffix == '.log')
+        composition = (root / '.gate-reports' / 'precommit.log').read_text(
+            encoding='utf-8')
     assert done.returncode == 0, done.stdout + done.stderr
     assert '[TIERS] GDK_PRECOMMIT_TIERS is empty' in done.stdout, done.stdout
     assert 'Makefile.tiers is not present' in done.stdout, done.stdout
-    # `check` ALONE, proven by what ran rather than by what was printed: one
-    # gate transcript on disk, and it is check's.
-    assert gate_logs == ['check.log'], gate_logs
+    # `check` ALONE, proven by what ran rather than by what was printed. Two
+    # transcripts on disk: check's, and the composition's OWN — `precommit`
+    # opens a slot of its own name around its members since
+    # 0.2.0/bugs/a-composition-has-no-slot, and that slot is not a gate that
+    # ran but the bracket around the ones that did. Its closing line names
+    # the goals it was handed, and that list is `check`, nothing after it.
+    assert gate_logs == ['check.log', 'precommit.log'], gate_logs
+    assert '[PRECOMMIT] PASS (check) — full log:' in composition, composition
 
 
 # --- the hook census: the gate's count vs the install roster -------------------

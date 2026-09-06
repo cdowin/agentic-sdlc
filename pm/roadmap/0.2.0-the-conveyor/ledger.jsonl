@@ -644,3 +644,17 @@
 {"ts":"2026-09-06T04:00:24Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":199,"rank":5}
 {"ts":"2026-09-06T04:00:24Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8506,"census":706}
 {"ts":"2026-09-06T04:00:25Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":11243}
+{"ts":"2026-09-06T04:02:17Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":24661,"rank":1}
+{"ts":"2026-09-06T04:02:17Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":20326,"rank":2}
+{"ts":"2026-09-06T04:02:17Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_empty","duration_ms":19867,"rank":3}
+{"ts":"2026-09-06T04:02:17Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_check_shell_names_the_UNTRACKED_case_not_the_roots_key","duration_ms":18797,"rank":4}
+{"ts":"2026-09-06T04:02:17Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass","duration_ms":18400,"rank":5}
+{"ts":"2026-09-06T04:02:17Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":101268,"census":1095}
+{"ts":"2026-09-06T04:02:57Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":11024}
+{"ts":"2026-09-06T04:03:24Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":2619,"rank":1}
+{"ts":"2026-09-06T04:03:24Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":1664,"rank":2}
+{"ts":"2026-09-06T04:03:24Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":1351,"rank":3}
+{"ts":"2026-09-06T04:03:24Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":1288,"rank":4}
+{"ts":"2026-09-06T04:03:24Z","kind":"test","tier":"unit","nodeid":"tests/test_grain_shape.py::test_the_slot_names_have_one_source","duration_ms":1042,"rank":5}
+{"ts":"2026-09-06T04:03:25Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":27094,"census":706}
+{"ts":"2026-09-06T04:03:25Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":39149}

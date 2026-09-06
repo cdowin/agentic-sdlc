@@ -102,13 +102,30 @@ A, B, C. When nothing needs him, say "nothing needs you" explicitly.
 
 ## Verification loop
 
-**Run `make precommit` after a change and `make milestone` before a release. Never
-hand-roll an incantation.** `precommit` is the NARROW rung — gates, the hook
-self-tests, and the unit tier: no subprocess, one process, seconds. The
-integration tier (`make integration`) runs at the close through
-`verify --feature`, and `milestone` runs everything on every interpreter. It
-was not always split: `precommit` ran the whole suite after every edit, which is
-the same 170x this package exists to end, in the file that names it. `make help` lists every target. If the check you need is not
+**Never hand-roll an incantation, and never run a rung wider than the thing you
+changed.** The ladder, narrow to wide, with measured costs:
+
+| you changed | run | cost |
+|---|---|---|
+| the PM tree, or a doc | `make gates` | **~2 s** |
+| code, inner loop | `agentic-sdlc verify --story` — the paths decide | seconds |
+| code, before a commit | `make precommit` — gates + hooks + the unit tier | **~10 s** |
+| closing a feature | `agentic-sdlc verify --feature` → `make test`, both tiers | **~36 s** |
+| closing a milestone | `make milestone` — everything, every interpreter | minutes |
+
+**A PM-tree edit is `make gates`, a commit, and done.** `[[verify.narrow]]`
+already routes `pm/roadmap/**` there; writing a story down should cost two
+seconds, not a suite. **A story is build → unit → done, repeated**; the
+integration tier belongs to the feature close and the matrix to the release.
+
+`agentic-sdlc verify --plan` prints all of this with the cost each rung ACTUALLY
+took, read from the ledger. Ask it instead of guessing — that is what it is for,
+and guessing is how a 170x gets run in a loop.
+
+This was not always split: `precommit` ran the whole suite after every edit, and
+`[verify] feature` went on naming `precommit` for an hour after it stopped being
+the wide rung — so a feature closed having run no integration at all. **A ladder
+is only true while every rung names what it still runs.** `make help` lists every target. If the check you need is not
 a target, **add the target**, then run it — apparatus that lives in one agent's context
 is apparatus that gets rebuilt.
 

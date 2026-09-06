@@ -11,6 +11,31 @@ paths:
 
 # Execution loop — claim to close
 
+## Writing the tree down is CHEAP, and it is meant to be
+
+Adding a milestone, a feature, a story or a bug is `pm new`, an edit, `make
+gates`, a commit. **About two seconds of gate.** `[[verify.narrow]]` routes a
+`pm/roadmap/**` edit to `make gates` and nothing else, so planning never pays
+for a test suite — and a planning step that costs a suite is a planning step
+people batch up and stop doing.
+
+Write it down, commit, move on. The tree is a record, not a deliverable.
+
+## And a story is build → unit → done, repeated
+
+The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
+
+    a PM-tree or doc edit   make gates                  ~2 s
+    an edit, inner loop     verify --story              seconds — the paths decide
+    before a commit         make precommit              gates + hooks + unit
+    closing a feature       verify --feature            BOTH tiers, locally
+    closing a milestone     verify --milestone          the matrix, once
+
+`agentic-sdlc verify --plan` prints them with the cost each one actually took,
+read from the ledger. **Ask it rather than guessing** — guessing is how a wide
+gate ends up in an inner loop, which is the measured 170x this package exists
+to end.
+
 `agentic-sdlc pm` writes a `status:` line. `agentic-sdlc check pm` reports a tree
 whose statuses contradict each other. Neither has an opinion about which state may
 follow which — the ORDER below is a shape that works, not something the tool enforces.

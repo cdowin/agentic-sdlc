@@ -134,7 +134,7 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
 FLOW_CHECKS = ('D9', 'D10')
 # The release family: the plan and the tree held to each other. Opt-in, because
 # a tree with no plan yet has nothing for them to grade.
-RELEASE_CHECKS = ('R5',)
+RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
 # generated view going stale is not a defect in the tree.
 VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
@@ -1249,6 +1249,20 @@ def release_is_unverifiable(cfg: PmConfig, version: str) -> bool:
     retire` roll the current release BACKWARD and demand a version regression.
     """
     return len(milestones_of_version(cfg, version)) != 1
+
+
+def last_shipped_index(cfg: PmConfig) -> int:
+    """Position of the last entry in `order` whose milestone is `done`, or -1.
+
+    "Behind us" is a POSITION, which is the whole reason order is declared: no
+    comparator is asked whether 0.90.10 follows 0.90.4.
+    """
+    order = declared_order(cfg)
+    last = -1
+    for i, version in enumerate(order):
+        if release_is_shipped(cfg, version):
+            last = i
+    return last
 
 
 def current_release(cfg: PmConfig) -> str | None:

@@ -152,3 +152,12 @@
 {"ts":"2026-09-06T21:33:25Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code","duration_ms":186,"rank":5}
 {"ts":"2026-09-06T21:33:25Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7194,"census":717}
 {"ts":"2026-09-06T21:33:25Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":9537}
+{"ts":"2026-09-06T21:36:26Z","kind":"status","grain":"0.3.0/the-plan-and-the-tree-agree/01-the-unbound-family","from":"planning","to":"building"}
+{"ts":"2026-09-06T21:37:45Z","kind":"status","grain":"0.3.0/the-plan-and-the-tree-agree","from":"planning","to":"building"}
+{"ts":"2026-09-06T21:37:45Z","kind":"status","grain":"0.3.0/the-order-is-declared-and-appended","from":"planning","to":"building"}
+{"ts":"2026-09-06T21:38:46Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":537,"rank":1}
+{"ts":"2026-09-06T21:38:46Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":434,"rank":2}
+{"ts":"2026-09-06T21:38:46Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":378,"rank":3}
+{"ts":"2026-09-06T21:38:46Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":312,"rank":4}
+{"ts":"2026-09-06T21:38:46Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":293,"rank":5}
+{"ts":"2026-09-06T21:38:46Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8606,"census":724}

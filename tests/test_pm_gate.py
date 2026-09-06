@@ -1711,3 +1711,129 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         # dangling record stays a DRIFT marker (D1 is a finding).
         self.assertIn('<WARN: all stories done, feature still shaped>', out_r)
         self.assertIn('<DRIFT: reviewed:', out_r)
+
+
+class TheUnboundFamily(unittest.TestCase):
+    """R1-R4 and R6 — the plan and the tree held to each other.
+
+    R1 and R6 get two cases each because both are symmetric and only ONE
+    direction of each is the bug that motivated it: an entry nothing claims is
+    the cheap half, and a milestone that finished under someone else's version
+    is the half no rule in the package could previously see.
+    """
+
+    ALL = '[pm]\nchecks = ["R1","R2","R3","R4","R6"]\n'
+
+    @staticmethod
+    def _planned(root: Path, *versions: str) -> None:
+        body = '\n'.join(f'  - "{v}"' for v in versions)
+        (root / 'pm/roadmap/releases.md').write_text(
+            f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+
+    @staticmethod
+    def _claims(root: Path, mid: str, version: str, status: str) -> None:
+        front = {'id': f'"{mid}"', 'name': mid, 'status': status}
+        if version:
+            front['version'] = f'"{version}"'
+        write(root / f'pm/roadmap/{mid}-m/milestone.md', front)
+
+    def test_off_unless_named(self):
+        # Every input the family exists to catch, on the stock roster.
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.0.9', '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'done')   # R4 + R6 + R1 dangling
+            self._claims(root, 'b', '9.9.9', 'done')   # R1 unscheduled + R6
+            self.assertEqual(run_gate(root)[0], 0)
+
+    def test_r1_names_both_directions_and_only_one_of_them_reddens(self):
+        """An entry nothing claims is a WARN — the row survives its milestone on
+        purpose, and a retired milestone is indistinguishable from an unwritten
+        one. A `version:` on no plan is a FAIL: somebody wrote it down."""
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'b', '9.9.9', 'planning')
+            write_config(root, '[pm]\nchecks = ["R1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('UNBOUND', out)
+            self.assertIn('0.2.0', out)      # dangling, warned
+            self.assertIn('9.9.9', out)      # unscheduled, failed
+            self.assertIn('UNSCHEDULED', out)
+            self.assertIn('pm order --append 9.9.9', out)
+
+    def test_r2_counts_the_backlog_and_never_reddens_on_it(self):
+        # A healthy tree has many, and a gate that reddens on planning is a
+        # gate people switch off (milestone risk 1).
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'someday', '', 'planning')
+            self._claims(root, 'later', '', 'planning')
+            write_config(root, '[pm]\nchecks = ["R2"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('BACKLOG', out)
+            # The fixture's own `0.1` milestone declares no version either, and
+            # counting it is right: backlog is every milestone not proposed as
+            # a release, not just the ones this case wrote.
+            self.assertIn('3 milestone(s)', out)
+            self.assertIn('someday', out)
+            self.assertIn('later', out)
+
+    def test_r3_refuses_to_let_a_directory_name_decide_which_release_ships(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0')
+            self._claims(root, 'a', '0.1.0', 'done')
+            self._claims(root, 'b', '0.1.0', 'building')
+            write_config(root, '[pm]\nchecks = ["R3"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('claimed by 2 milestones', out)
+            self.assertIn('directory NAME', out)
+
+    def test_r4_history_is_a_prefix(self):
+        """The invariant that makes "next = the first unshipped entry" correct
+        rather than merely usual, and what lets version_at="start" mean
+        anything."""
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'building')
+            self._claims(root, 'b', '0.2.0', 'done')
+            write_config(root, '[pm]\nchecks = ["R4"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('history is not a prefix', out)
+            self.assertIn('0.2.0 has shipped and sits AFTER 0.1.0', out)
+
+    def test_r6_catches_the_first_milestone_never_closed_in_both_directions(self):
+        """0.3.0/bugs/the-first-milestone-never-closed, as a rule.
+
+        Direction one is the bug: work that went out under someone else's
+        version, whose record never moved. Direction two is its mirror: a
+        milestone that finished having never been scheduled at all.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'planning')   # behind a shipped one
+            self._claims(root, 'b', '0.2.0', 'done')
+            self._claims(root, 'c', '7.7.7', 'done')       # done, on no plan
+            write_config(root, '[pm]\nchecks = ["R6"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn("its work went out under someone else's version", out)
+            self.assertIn('0.1.0 sits at position 1', out)
+            self.assertIn('finished without ever being scheduled', out)
+            self.assertIn('7.7.7', out)
+
+    def test_a_healthy_plan_passes_every_rule_in_the_family(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._planned(root, '0.1.0', '0.2.0')
+            self._claims(root, 'a', '0.1.0', 'done')
+            self._claims(root, 'b', '0.2.0', 'building')
+            self._claims(root, 'someday', '', 'planning')
+            write_config(root, self.ALL)
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('DRIFT', out)
+            self.assertNotIn('unknown rule', out)

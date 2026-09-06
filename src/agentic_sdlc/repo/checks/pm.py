@@ -2,12 +2,17 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6, D9/D10 and R5 are opt-in).
+(default: D1-D6 + V1-V5; V6, D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
   D4  a status the project never declared, for any grain kind
+  R1  an `order` entry no milestone claims (WARN), or a `version:` on no plan (FAIL)
+  R3  two milestones claiming one `version:`
+  R4  history is a prefix — a shipped release sitting after an unshipped one
   R5  the version file equals the CURRENT release in `order` ([pm] version_at)
+  R6  a release behind the last shipped one whose milestone never closed, and a
+      `done` milestone whose version is on no plan
   D9  an `in_progress` milestone declares a `branch:`
   D10 that branch is not the mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
 WARN (a line, never the exit code; both grains and both categories named):
@@ -16,6 +21,7 @@ WARN (a line, never the exit code; both grains and both categories named):
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:` or no `branch:`
+  R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
 
 Archived milestones are out of scope; a zero census FAILS.
 """
@@ -241,14 +247,110 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
 
 
-def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """R5 — the version file equals the CURRENT release's version.
+def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
+                    report, warn) -> None:
+    """R1-R4 and R6 — the plan and the tree held to each other.
 
-    Current is a POSITION in `order`, never a parse, so this rule fits both
-    bump-at-start and bump-at-close ([pm] version_at) and has no opinion about
-    what a version string looks like.
+    **This is THE UNBOUND FAMILY, whose first member is the milestone-to-release
+    edge**, not a set of milestone-specific rules. Every level of the tree has
+    the same pair: a binding that names nothing, and a grain that names no
+    binding. When 0.4.0 makes authoring separate from binding everywhere, a
+    feature with no milestone and a story with no feature join this census as
+    further ROWS rather than as new rules — naming the family now costs a
+    sentence, and naming it later costs a rename in every consumer's output
+    that greps these lines.
     """
-    if 'R5' not in enabled:
+    claims = model.version_claims(cfg)
+    scheduled = set(order)
+
+    if 'R1' in enabled:
+        for version in order:
+            claimants = model.milestones_of_version(cfg, version)
+            if claimants:
+                continue
+            # The concept the tree already has for a ref into a milestone that
+            # is gone: never a failure, because the row survives its milestone
+            # on purpose (ROADMAP.md's only real job, now retired).
+            warn(f'UNBOUND: {version} is in '
+                 f'{cfg.rel(model.releases_file(cfg))} `order` and no milestone '
+                 f'declares version: {version} — DANGLING if it was never '
+                 f'written, UNVERIFIABLE if its milestone was retired (R1)')
+        for version, mid in claims:
+            if version not in scheduled:
+                report(f'UNBOUND: milestone {mid} declares version: {version} '
+                       f'and {cfg.rel(model.releases_file(cfg))} `order` does '
+                       f'not carry it — UNSCHEDULED; `agentic-sdlc pm order '
+                       f'--append {version}` puts it on the plan (R1)')
+
+    if 'R2' in enabled:
+        # Backlog: a named, counted line, never a finding. A healthy tree has
+        # many, and a gate that reddens on planning is a gate people switch off.
+        bound = {mid for _, mid in claims}
+        backlog = [mid for _, mid in model.known_milestones(cfg)
+                   if mid and mid not in bound]
+        if backlog:
+            print(f'  BACKLOG  {len(backlog)} milestone(s) declare no '
+                  f'version: and are not proposed as releases — '
+                  f'{", ".join(sorted(backlog))} (R2)')
+
+    if 'R3' in enabled:
+        seen: dict[str, list[str]] = {}
+        for version, mid in claims:
+            seen.setdefault(version, []).append(mid)
+        for version, mids in seen.items():
+            if len(mids) > 1:
+                report(f'version: {version} is claimed by {len(mids)} '
+                       f'milestones — {", ".join(sorted(mids))}; a version '
+                       f'names one release, and which one ships is otherwise '
+                       f'decided by a directory NAME (R3)')
+
+    if 'R4' in enabled and order:
+        # History is a prefix. This is the invariant that makes "next = the
+        # first unshipped entry" CORRECT rather than merely usual, and it is
+        # what lets version_at = "start" mean anything.
+        first_open = None
+        for version in order:
+            if model.release_is_shipped(cfg, version):
+                if first_open is not None:
+                    report(f'history is not a prefix: {version} has shipped and '
+                           f'sits AFTER {first_open}, which has not — '
+                           f'`agentic-sdlc pm order` re-sequences the plan (R4)')
+            elif first_open is None and not model.release_is_unverifiable(cfg, version):
+                first_open = version
+
+    if 'R6' in enabled:
+        last = model.last_shipped_index(cfg)
+        for i, version in enumerate(order):
+            if i > last or model.release_is_shipped(cfg, version):
+                continue
+            mid = model.milestone_of_version(cfg, version)
+            if mid is None:
+                continue
+            mfile = model.milestone_file(cfg, mid)
+            status = model.field_of(mfile, 'status') if mfile else ''
+            report(f'{version} sits at position {i + 1}, behind the last '
+                   f'shipped release, and its milestone {mid} is {status!r} — '
+                   f'its work went out under someone else\'s version and the '
+                   f'record never moved (R6)')
+        for version, mid in claims:
+            mfile = model.milestone_file(cfg, mid)
+            status = model.field_of(mfile, 'status') if mfile else ''
+            done = model.category_of(cfg, 'milestone', status) == model.DONE_CATEGORY
+            if done and version not in scheduled:
+                report(f'milestone {mid} is {status!r} and its version '
+                       f'{version} is on no plan — a milestone that finished '
+                       f'without ever being scheduled as a release (R6)')
+
+
+def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+    """The release family: the plan (`order`) and the tree held to each other.
+
+    R1-R4 and R6 are the unbound family, in `_unbound_family`. R5, below, is the
+    version file against the CURRENT release — a POSITION in `order`, never a
+    parse, so it fits bump-at-start and bump-at-close both ([pm] version_at) and
+    has no opinion about what a version string looks like.
+    """
+    if not enabled & set(model.RELEASE_CHECKS):
         return
     # A plan that is THERE and unreadable is a finding, not the absence of a
     # plan: saying "declares no `order`" over a BOM-damaged or fence-eaten file
@@ -259,6 +361,9 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
                f'the plan, so {cfg.version_file} was NOT graded (R5)')
         return
     order = model.declared_order(cfg)
+    _unbound_family(cfg, enabled, order, report, warn)
+    if 'R5' not in enabled:
+        return
     if not order:
         # A tree mid-adoption has no plan yet. Reddening it would be milestone
         # risk 1: a rule that fails every fresh consumer gets switched off.

@@ -101,6 +101,16 @@ defect one layer down.
   was picked on. It runs in `make milestone`, never in `check all`, because a per-change gate that
   reddens over last night's timing is one somebody deletes. Every number it prints carries its own
   AGE, because a ceiling graded against last week's row is graded against last week's code.
+- **`check budget` grades only what it measured** (feature review S1–S3). A tier whose newest
+  `gate` row did not end `PASS` is `NOT GRADED` and a finding (exit 1) — a run that stopped is
+  cheaper and smaller than one that finished, so it was the run most likely to read `ok`. The
+  row graded is the newest BY TIMESTAMP, not the last in the file: the ledger is appended by
+  concurrent writers and merged, and on this repo's own ledger the last `unit` line was a run
+  from eight minutes before the newest one; a row whose `ts` will not parse fails the gate by
+  line number rather than being ordered silently. The summary line names the tiers it measured
+  and says which it did not (`PASS — within their time budget: unit; unmeasured: integration`)
+  instead of counting every declared ceiling as within budget. **Output-format change** on the
+  `[check:budget]` summary and FAIL lines.
 - **Hard rule 10**: *prove it the cheapest way that can actually fail.* The counterweight rule 4
   never had — and `test-writer`, `developer`, `reviewer`, `simplifier` and `verification-reviewer`
   now carry it, so a consumer's roster inherits the rule instead of re-learning it at 240 s a run.

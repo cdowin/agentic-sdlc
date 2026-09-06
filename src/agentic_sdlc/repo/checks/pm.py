@@ -418,7 +418,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
              f'no `order` — nothing to grade {cfg.version_file} against; '
              f'`agentic-sdlc pm order --append <version>` writes the plan')
         return
-    current, why = model.graded_release(cfg)
+    accepted, why = model.graded_release_accepts(cfg)
+    current = accepted[0] if accepted else None
     if current is None:
         # The reason is READ, never invented: saying "every entry has shipped"
         # over a tree where none had was a confident wrong answer at exit 0
@@ -431,14 +432,15 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
         report(f'no version found in {cfg.version_file} — R5 cannot verify it '
                f'against the current release {current!r} (R5)')
         return
-    if version == current:
+    if version in accepted:
         return
     mid = model.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'
               if mid is not None
               else 'no milestone claims it — an `order` entry nothing carries')
-    report(f'{cfg.version_file} version {version!r} does not match the current '
-           f'release {current!r} ({claims}), which is the '
+    named = ' or '.join(repr(v) for v in accepted)
+    report(f'{cfg.version_file} version {version!r} does not match '
+           f'{named} ({claims}), which is the '
            f'{"first unshipped" if cfg.version_at == model.VERSION_AT_START else "last shipped"} '
            f'entry in {cfg.rel(model.releases_file(cfg))} under [pm] '
            f'version_at = {cfg.version_at!r} (R5)')

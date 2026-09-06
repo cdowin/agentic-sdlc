@@ -710,3 +710,20 @@
 {"ts":"2026-09-06T23:40:37Z","kind":"status","grain":"0.3.0/documented-behaviour-is-the-behaviour","from":"reviewing","to":"done"}
 {"ts":"2026-09-06T23:41:21Z","kind":"decision","grain":"0.3.0","entry":"D2","title":"0.3.0 is MINOR and BREAKING, and rule 7 has no tier for a retired config VALUE"}
 {"ts":"2026-09-06T23:41:24Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2269}
+{"ts":"2026-09-06T23:41:39Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2329}
+{"ts":"2026-09-06T23:43:01Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":81093}
+{"ts":"2026-09-06T23:43:01Z","kind":"gate","gate":"budget","verdict":"FAIL","duration_ms":96}
+{"ts":"2026-09-06T23:43:01Z","kind":"gate","gate":"milestone","verdict":"FAIL","duration_ms":83908}
+{"ts":"2026-09-06T23:43:47Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":1086,"rank":1}
+{"ts":"2026-09-06T23:43:47Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code","duration_ms":747,"rank":2}
+{"ts":"2026-09-06T23:43:47Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":492,"rank":3}
+{"ts":"2026-09-06T23:43:47Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":406,"rank":4}
+{"ts":"2026-09-06T23:43:47Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":370,"rank":5}
+{"ts":"2026-09-06T23:43:48Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":15129,"census":761}
+{"ts":"2026-09-06T23:45:25Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":8248,"rank":1}
+{"ts":"2026-09-06T23:45:25Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7455,"rank":2}
+{"ts":"2026-09-06T23:45:25Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":6320,"rank":3}
+{"ts":"2026-09-06T23:45:25Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":5483,"rank":4}
+{"ts":"2026-09-06T23:45:25Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[does-not-exist]@the-real-repo","duration_ms":4826,"rank":5}
+{"ts":"2026-09-06T23:45:25Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":37311,"census":1153}
+{"ts":"2026-09-06T23:45:41Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3015}

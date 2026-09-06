@@ -1523,6 +1523,29 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
     return shipped[-1], ''
 
 
+def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
+    """Every value `[pm] version_file` may hold, and why, for [pm] version_at.
+
+    `start` has exactly one answer. **`ship` has two, and that is what
+    bump-at-CLOSE means**: the file carries the last shipped release while the
+    next one is being built, and the release COMMIT moves it — so from the
+    moment that commit is written until the milestone's status flips, the file
+    correctly names a release that has not shipped yet.
+
+    Found by running the belt: `version-sync` wanted 0.3.0 and R5 wanted 0.2.0,
+    at the same instant, on the same tree, and neither was wrong. A rule that
+    makes a project's own documented flow unreachable is the rule that is wrong.
+    A file naming NEITHER still fails, which is what R5 is for.
+    """
+    one, why = graded_release(cfg)
+    if one is None:
+        return [], why
+    if cfg.version_at == VERSION_AT_START:
+        return [one], ''
+    nxt = current_release(cfg)
+    return ([one] if nxt is None or nxt == one else [one, nxt]), ''
+
+
 def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
     """(the milestone directory holding the current release's ledger, or None,
     plus why not).

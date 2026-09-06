@@ -150,67 +150,44 @@ class TheRefusalMatrix(unittest.TestCase):
             self.assertEqual(before, path.read_bytes())
             return str(caught.exception), _written(root)
 
-    def test_not_json_at_all(self):
-        message, _ = self._defect('this is not json')
-        self.assertIn('release.json', message)
-        self.assertIn('not JSON', message)
+    @staticmethod
+    def _file(**over) -> str:
+        body = {'format': st.FORMAT, 'operation': 'release',
+                'version': '0.2.0', 'steps': []}
+        body.update(over)
+        return json.dumps(body)
 
-    def test_truncated_mid_object(self):
-        message, _ = self._defect('{"operation": "release", "steps": [')
-        self.assertIn('not JSON', message)
-
-    def test_json_that_is_a_list(self):
-        message, _ = self._defect('[]')
-        self.assertIn('list', message)
-
-    def test_json_that_is_a_number(self):
-        message, _ = self._defect('3')
-        self.assertIn('int', message)
-
-    def test_json_that_is_a_string(self):
-        message, _ = self._defect('"x"')
-        self.assertIn('str', message)
-
-    def test_another_operations_file(self):
-        body = json.dumps({'format': st.FORMAT, 'operation': 'adopt',
-                           'version': '0.2.0', 'steps': []})
-        message, _ = self._defect(body)
-        self.assertIn('adopt', message)
-        self.assertIn('release', message)
-
-    def test_another_versions_file(self):
-        body = json.dumps({'format': st.FORMAT, 'operation': 'release',
-                           'version': '0.3.0', 'steps': []})
-        message, _ = self._defect(body)
-        self.assertIn('0.3.0', message)
-
-    def test_a_step_not_in_the_configured_list(self):
-        """A renamed step must not resume into a hole."""
-        body = json.dumps({
-            'format': st.FORMAT, 'operation': 'release', 'version': '0.2.0',
-            'steps': [{'step': 'reviw-landed', 'answer': 'true', 'at': 'x'}]})
-        message, _ = self._defect(body)
-        self.assertIn('reviw-landed', message)
-
-    def test_an_unreadable_answer_word(self):
-        body = json.dumps({
-            'format': st.FORMAT, 'operation': 'release', 'version': '0.2.0',
-            'steps': [{'step': 'gate', 'answer': 'probably', 'at': 'x'}]})
-        message, _ = self._defect(body)
-        self.assertIn('probably', message)
-
-    def test_a_step_entry_that_is_not_an_object(self):
-        body = json.dumps({
-            'format': st.FORMAT, 'operation': 'release', 'version': '0.2.0',
-            'steps': ['gate']})
-        message, _ = self._defect(body)
-        self.assertIn('steps', message)
-
-    def test_a_format_from_the_future(self):
-        body = json.dumps({'format': st.FORMAT + 1, 'operation': 'release',
-                           'version': '0.2.0', 'steps': []})
-        message, _ = self._defect(body)
-        self.assertIn(str(st.FORMAT), message)
+    def test_every_unreadable_file_refuses_naming_the_defect(self):
+        """Eleven rows, one case: each was `_defect(body)` plus the words the
+        refusal must carry, and the collected count was the only difference.
+        The step-not-in-the-list row is the one that bites hardest — a
+        renamed step must not resume into a hole."""
+        rows = (
+            ('not JSON at all', 'this is not json', ('release.json', 'not JSON')),
+            ('truncated mid-object', '{"operation": "release", "steps": [',
+             ('not JSON',)),
+            ('a list', '[]', ('list',)),
+            ('a number', '3', ('int',)),
+            ('a string', '"x"', ('str',)),
+            ("another operation's file", self._file(operation='adopt'),
+             ('adopt', 'release')),
+            ("another version's file", self._file(version='0.3.0'), ('0.3.0',)),
+            ('a step not in the configured list',
+             self._file(steps=[{'step': 'reviw-landed', 'answer': 'true', 'at': 'x'}]),
+             ('reviw-landed',)),
+            ('an unreadable answer word',
+             self._file(steps=[{'step': 'gate', 'answer': 'probably', 'at': 'x'}]),
+             ('probably',)),
+            ('a step entry that is not an object', self._file(steps=['gate']),
+             ('steps',)),
+            ('a format from the future', self._file(format=st.FORMAT + 1),
+             (str(st.FORMAT),)),
+        )
+        for label, body, names in rows:
+            with self.subTest(label):
+                message, _ = self._defect(body)
+                for needle in names:
+                    self.assertIn(needle, message)
 
     def test_a_duplicate_entry_is_corrected_and_the_correction_is_printed(self):
         """The one row that is not a refusal: the tree wins, so a duplicate is

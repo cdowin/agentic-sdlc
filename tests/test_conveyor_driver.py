@@ -331,57 +331,46 @@ class TheVersionRefusalMatrix(unittest.TestCase):
         self.assertEqual(0, probe.calls, 'a step ran during a refusal')
         return code, out.getvalue() + err.getvalue(), leftovers, probe
 
-    def _assert_refused(self, argv, *, code=2, contains=()):
-        got, text, leftovers, _ = self._refuse(argv)
-        self.assertEqual(code, got, f'{argv} -> {text}')
-        self.assertEqual([], leftovers, f'{argv} wrote {leftovers}')
-        for needle in contains:
-            self.assertIn(needle, text, f'{argv} -> {text}')
+    # (argv, what the refusal must name). One row per usage-error class; the
+    # grammar's own spellings ride together because every row asserts the
+    # same three things and a row is one `dr.main` call.
+    ROWS = (
+        ([], ['release']),                              # no operation at all
+        (['release'], ['<version>']),                   # no argument at all
+        (['deploy', '0.2.0'], ['deploy']),              # an unknown operation
+        (['release', '../../etc/passwd'], []),          # traversal
+        (['release', '0.2.0/../0.3.0'], []),
+        (['release', '/0.2.0'], []),                    # absolute, home, backslash
+        (['release', '~/0.2.0'], []),
+        (['release', 'C:\\0.2.0'], []),
+        (['release', '0.2.0*'], []),                    # globs
+        (['release', '0.2.[0-9]'], []),
+        (['release', '*'], []),
+        (['release', '0.2.?'], []),
+        (['release', ''], []),                          # empty, whitespace, dots
+        (['release', '   '], []),
+        (['release', '.'], []),
+        (['release', '..'], []),
+        (['release', '\t'], []),
+        (['release', '0.2 .0'], []),
+        (['release', 'file:///0.2.0'], []),             # schemes
+        (['release', 'https://x/0.2.0'], []),
+        (['release', '0' * 4096], ['too long']),        # over length
+        (['release', '0.2.0', '0.3.0'], []),            # two versions
+        (['release', '0.2.0', '--yolo'], ['--yolo']),   # an unknown flag
+        (['release', '0.2.0', '--skip', 'gate'], ['--skip']),  # --skip retired (D8)
+    )
 
-    def test_no_argument_at_all(self):
-        self._assert_refused(['release'], contains=['<version>'])
-
-    def test_no_operation_at_all(self):
-        self._assert_refused([], contains=['release'])
-
-    def test_an_unknown_operation(self):
-        self._assert_refused(['deploy', '0.2.0'], contains=['deploy'])
-
-    def test_traversal(self):
-        self._assert_refused(['release', '../../etc/passwd'])
-        self._assert_refused(['release', '0.2.0/../0.3.0'])
-
-    def test_absolute_home_and_backslash(self):
-        self._assert_refused(['release', '/0.2.0'])
-        self._assert_refused(['release', '~/0.2.0'])
-        self._assert_refused(['release', 'C:\\0.2.0'])
-
-    def test_globs(self):
-        for bad in ('0.2.0*', '0.2.[0-9]', '*', '0.2.?'):
-            self._assert_refused(['release', bad])
-
-    def test_empty_whitespace_and_dot_segments(self):
-        for bad in ('', '   ', '.', '..', '\t', '0.2 .0'):
-            self._assert_refused(['release', bad])
-
-    def test_schemes(self):
-        self._assert_refused(['release', 'file:///0.2.0'])
-        self._assert_refused(['release', 'https://x/0.2.0'])
-
-    def test_over_length(self):
-        self._assert_refused(['release', '0' * 4096],
-                             contains=['too long'])
-
-    def test_two_versions(self):
-        self._assert_refused(['release', '0.2.0', '0.3.0'])
-
-    def test_an_unknown_flag_is_never_silently_ignored(self):
-        self._assert_refused(['release', '0.2.0', '--yolo'],
-                             contains=['--yolo'])
-
-    def test_the_skip_flag_is_unknown_until_its_own_story_lands(self):
-        self._assert_refused(['release', '0.2.0', '--skip', 'gate'],
-                             contains=['--skip'])
+    def test_every_row_is_exit_2_runs_no_step_and_writes_nothing(self):
+        """Twelve cases became one: each was a `dr.main` call asserting the
+        same three things, and the collected count was the only difference."""
+        for argv, contains in self.ROWS:
+            with self.subTest(argv=argv):
+                got, text, leftovers, _ = self._refuse(argv)
+                self.assertEqual(2, got, f'{argv} -> {text}')
+                self.assertEqual([], leftovers, f'{argv} wrote {leftovers}')
+                for needle in contains:
+                    self.assertIn(needle, text, f'{argv} -> {text}')
 
     def test_a_version_naming_no_milestone_directory(self):
         """Exit 1, not 2: the grammar was fine, the tree does not hold it. It

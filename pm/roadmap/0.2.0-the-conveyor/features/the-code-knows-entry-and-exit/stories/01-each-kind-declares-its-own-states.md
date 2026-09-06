@@ -1,5 +1,5 @@
 ---
-id: 0.2.0/the-code-knows-entry-and-exit/01-every-state-has-a-writer
+id: 0.2.0/the-code-knows-entry-and-exit/01-each-kind-declares-its-own-states
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Each kind declares its own states, and there is no transitions table

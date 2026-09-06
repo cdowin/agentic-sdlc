@@ -1,5 +1,5 @@
 ---
-id: 0.2.0/the-code-knows-entry-and-exit/03-claiming-a-child-moves-its-parents
+id: 0.2.0/the-code-knows-entry-and-exit/03-a-parent-behind-its-child-is-a-warning
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: A parent behind its child is a warning, not a finding, and nothing moves it

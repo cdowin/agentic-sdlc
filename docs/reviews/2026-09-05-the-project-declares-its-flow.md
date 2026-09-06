@@ -334,12 +334,12 @@ verdict: HOLD
 | F2 | BLOCKER | landed ada37ae |
 | F3 | BLOCKER | landed ada37ae |
 | F4 | BLOCKER | landed ada37ae |
-| F5 | MAJOR | open: dissolves when phase 7 deletes [pm] <kind>_states |
+| F5 | MAJOR | landed 32b20b1|
 | F6 | MAJOR | rejected: superseded — [pm.transitions.<kind>] is deleted and a leftover table is refused by name (story 01, 1e01518) |
 | F7 | MAJOR | rejected: superseded — nothing writes a transitions table any more; criterion 1's transitions half was retired with the key (story 01, 1e01518) |
-| F8 | MINOR | open |
-| F9 | MINOR | open: owned by phase 7 |
-| F10 | MINOR | open |
-| F11 | MINOR | open |
-| F12 | NIT | open |
+| F8 | MINOR | rejected: the pin-bump line is the consumer's own edit — adopt's pin-bumped check states it and writes nothing (D12) |
+| F9 | MINOR | landed 32b20b1|
+| F10 | MINOR | landed ada37ae |
+| F11 | MINOR | landed 32b20b1 |
+| F12 | NIT | landed b23bf9d |
 ```

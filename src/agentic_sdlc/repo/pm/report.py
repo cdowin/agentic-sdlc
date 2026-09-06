@@ -165,16 +165,12 @@ VERDICT_TITLE = 'verdict'
 SEVERITY_TITLE = 'findings by severity'
 DEFERRED_TITLE = 'deferred to'
 
-# Section 3's. `after_review` counts dispatches after a story's first move into
-# the review state, which is read by NAME from the seed (`model.REVIEWING`) —
-# the one seed-word reader left in this module, declared as such in
-# tests/test_pm_flow.py. The `reopens` column that sat beside it counted
-# `reviewing -> building` the same way and left in 0.2.0: the story seed no
-# longer holds `reviewing`, so the column could only ever print `-`.
+# Section 3's. The per-story table left in 0.2.0 — `reopens` first, then
+# `after_review` — because both counted a seed word (`reviewing`) by name and
+# the story seed no longer holds it, so neither could print anything but `-`.
+# This module reads no seed word now; tests/test_pm_flow.py asserts it.
 STORY_COLUMN = 'story'
-AFTER_REVIEW_COLUMN = 'after_review'
 PASSES_COLUMN = 'passes'
-REOPEN_TITLE = 'story'
 DISTRIBUTION_TITLE = 'verdict distribution'
 
 # Section 4's. `caused_by:` is the bug frontmatter field the review-record
@@ -1313,78 +1309,37 @@ def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 3: rework --------------------------------------------------------
-def _after(row, moment) -> bool:
-    """True when this row's stamp is later than `moment`, and it parses."""
-    ts = ledger.parse_ts(row.data.get('ts'))
-    return ts is not None and ts > moment
-
-
 def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                 rows: list) -> dict:
-    """Section 3 as data: dispatches after review, verdict spread.
+    """Section 3 as data: the verdict spread.
 
-    "After review" counts DISPATCH rows, by D3's snapshot and the same
-    `named_grains` rule section 1 attributes by — so the two sections cannot
-    disagree about which dispatches were a story's. The moment compared against
-    is the story's FIRST row into the review state; a story that never reached
-    it has no such moment, and `-` is the honest column. The review state is
-    the SEED's word, read by name: a project whose story flow holds no
-    `reviewing` — the shipped seed included, since 0.2.0 — gets `-` in every
-    row, never a `0`, because a zero would say "no dispatch after review"
-    about a review this rule cannot see (hard rule 4).
+    Every PASS's verdict, not every record's: a record reviewed twice gave
+    two verdicts, and counting it once would have to pick one of them.
 
-    THE `reopens` COLUMN LEFT (0.2.0). It counted `reviewing -> building` rows
-    by name, with a per-story guard that printed `-` under a renamed or legacy
-    vocabulary; once the story seed stopped holding `reviewing` the column had
-    no tree left to be a number on.
+    THE PER-STORY TABLE LEFT (0.2.0). `reopens` counted `reviewing ->
+    building` rows by name; `after_review` counted dispatches after a story's
+    first move into `reviewing`, by name. Once the story seed stopped holding
+    the word, neither had a tree left to be a number on — every row was `-` —
+    and the engine asks its questions of a category, never a word (D5/D6).
     """
-    grains, owned = walk_grains(src, cfg, mid, mdir)
-    kinds = {g.gid: g.kind for g in grains}
-    status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
-    dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
-    feature_of = {sid: fid for fid, sids in owned.items() for sid in sids}
-    out = []
-    for grain in sorted((g for g in grains if g.kind == KIND_STORY),
-                        key=lambda g: g.gid):
-        mine = [r for r in status if r.data.get('grain') == grain.gid]
-        entered = [r for r in mine if r.data.get('to') == model.REVIEWING]
-        moment = next((ts for ts in
-                       (ledger.parse_ts(r.data.get('ts')) for r in entered)
-                       if ts is not None), None)
-        after = None if moment is None else sum(
-            1 for r in dispatch
-            if grain.gid in named_grains(r.data, kinds, owned)
-            and _after(r, moment))
-        out.append({'grain': grain.gid, 'feature': feature_of.get(grain.gid),
-                    'after_review': after})
-    # Every PASS's verdict, not every record's: a record reviewed twice gave
-    # two verdicts, and counting it once would have to pick one of them.
     spread = _tally(one.verdict
                     for _, _, parsed in parsed_records(src, cfg, mid, mdir)
                     if parsed is not None for one in parsed)
     return {SECTION_REWORK: {
-        'stories': out,
         'verdicts': [{'verdict': name, 'passes': spread[name]}
                      for name in verdict.VERDICTS if name in spread],
-        'totals': {'stories': len(out),
-                   'passes': sum(spread.values())}}}
+        'totals': {'passes': sum(spread.values())}}}
 
 
 def rework_lines(cfg: model.PmConfig, data: dict) -> list[str]:
-    """Section 3 as lines: one row per story, one per verdict that was given."""
+    """Section 3 as lines: one row per verdict that was given."""
     section = data[SECTION_REWORK]
-    stories = [(e['feature'] or DASH, e['grain'],
-                _cell(e['after_review'])) for e in section['stories']]
     spread = [(v['verdict'], str(v['passes'])) for v in section['verdicts']]
     totals = section['totals']
     return _section(
         heading_id(data), REWORK_TITLE,
-        f'{totals["stories"]} story(s), '
         f'{totals["passes"]} pass(es) with a verdict',
-        [(f'{REOPEN_TITLE} ({len(stories)})',
-          (FEATURE_COLUMN, STORY_COLUMN, AFTER_REVIEW_COLUMN),
-          (LEFT, LEFT, RIGHT), stories),
-         (f'{DISTRIBUTION_TITLE} ({len(spread)})',
+        [(f'{DISTRIBUTION_TITLE} ({len(spread)})',
           (VERDICT_COLUMN, PASSES_COLUMN), (LEFT, RIGHT), spread)])
 
 

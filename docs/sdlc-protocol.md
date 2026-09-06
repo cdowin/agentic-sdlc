@@ -46,9 +46,9 @@ and pre-push, with an exit-code contract for exactly that.
 | 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` is empty. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
 | 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the changelog's `## Unreleased` section holds at least one bullet. |
-| 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category, and no open bug names the milestone; each one that is not is NAMED. |
-| 5 | `findings-resolved` | `agentic-sdlc pm ready-for tag <id>` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — every finding in every record the milestone's grains point at has a disposition other than `open`. The records STAY: they are what `reviewed:` points at. |
-| 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version. READ, never bumped: the bump is the release commit, and it is yours. |
+| 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and no open bug names the milestone. |
+| 5 | `findings-resolved` | `agentic-sdlc pm ready-for tag <id>` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — no finding in any record the milestone's grains point at is `open`. |
+| 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version; read, never bumped. |
 | 7 | `gate` | `make milestone` | the configured gate command exits 0. |
 
 **Then, all true:** the milestone's status → the first state of `[pm.states.milestone] done` (`pm vocabulary` prints it), through `pm milestone <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
@@ -69,13 +69,13 @@ and pre-push, with an exit-code contract for exactly that.
 
 | # | check | runs | what must be true |
 |---|---|---|---|
-| 1 | `pin-bumped` | — *(reads the tree)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. A line in a file this package does not own, so it is read and never written. |
-| 2 | `installables-current` | — *(reads the tree)* | every installed file is byte-current with what this version ships, or differs only in its project-config header. Each that differs is named with the `install-* --diff` that shows it; take, hand-apply or keep is your call per file, and this reads the result. |
-| 3 | `config-updated` | — *(reads the tree)* | every devkit.toml section this version still READS accepts what this repo declares. There is no retired-key table: a section this package no longer reads may be another kit's (hard rule 8). |
-| 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards are armed, executable, still start, and still return the verdicts their own corpus asserts. |
-| 5 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`. A tier named with no tier file FAILS here naming the file; an empty tier list passes and SAYS it was empty. |
-| 6 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0. NOT `make check`: that verifies your code against your rules, and a version bump here cannot change its verdict. |
-| 7 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0. A repo with no PM tree is refused, never vacuously fine. |
+| 1 | `pin-bumped` | — *(reads the tree)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. |
+| 2 | `installables-current` | — *(reads the tree)* | every installed file is byte-current with what this version ships, or differs only in its project-config header; each that differs is named with the `install-* --diff` that shows it. |
+| 3 | `config-updated` | — *(reads the tree)* | every devkit.toml section this version reads accepts what this repo declares. |
+| 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards still return the verdicts their own corpus asserts. |
+| 5 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`; an empty tier list passes and says so. |
+| 6 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0 — not `make check`, which verifies your code against your rules. |
+| 7 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0; a repo with no PM tree is refused. |
 
 **Then:** nothing. `adopt` writes nothing; it is checks only, and `--force` is refused.
 
@@ -88,9 +88,9 @@ and pre-push, with an exit-code contract for exactly that.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `story-exists` | — *(reads the tree)* | the story id resolves to exactly one document. |
-| 2 | `narrow-verified` | `agentic-sdlc verify --story` *(shipped)* | the narrow rung exits 0 — `agentic-sdlc verify --story` over the story's own commit range (the base is the earliest hash in its `done:` line). A census of zero is UNVERIFIABLE, never a pass. |
-| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory. It NAMES what is, and it never commits. |
-| 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>` (pm-execution.md step 6). READ, never written: the sentence is the author's. |
+| 2 | `narrow-verified` | `agentic-sdlc verify --story` *(shipped)* | `agentic-sdlc verify --story` exits 0 over the story's own commit range; a census of zero is unverifiable, never a pass. |
+| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits. |
+| 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
 
 **Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
@@ -103,9 +103,9 @@ and pre-push, with an exit-code contract for exactly that.
 
 | # | check | runs | what must be true |
 |---|---|---|---|
-| 1 | `stories-done` | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is in the `done` category (any state of it), and each one that is not is NAMED. |
-| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block PARSES, through the same parser `pm ready-for` reads. Whether the review was any good is NOT checked and must not be. |
-| 3 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open` — the same question `pm ready-for tag` asks one grain up, through the same parser. |
+| 1 | `stories-done` | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is in the `done` category. |
+| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block parses. |
+| 3 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open`. |
 
 **Then, all true:** the feature's status → the first state of `[pm.states.feature] done` (`pm vocabulary` prints it), through `pm feature <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 

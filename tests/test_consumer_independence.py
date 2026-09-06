@@ -172,8 +172,6 @@ ENGINE_TOMBSTONES: dict[str, str] = {}
 #
 # When the migration lands, both halves go. Until then this is the one place in
 # the tree, other than the tombstones, where a repo may be named.
-MIGRATION_DOC = 'HANDOFF.md'
-MIGRATION_DOC_MARKER = 'rule-8: migration document'
 
 # Rule 4: a census that collapses must FAIL, not pass over nothing. The tree is
 # ~330 content files today; the floor is well under that and still far above
@@ -419,7 +417,7 @@ def names_a_consumer(root: Path = REPO_ROOT) -> list[str]:
     hits = []
     for path in scanned_files(root):
         rel = path.relative_to(root).as_posix()
-        if rel in TOMBSTONES or rel == MIGRATION_DOC:
+        if rel in TOMBSTONES:
             continue
         hits.extend(offending_lines(path, CONSUMER_NAMES, root))
     return hits
@@ -437,62 +435,6 @@ def test_no_file_names_a_consuming_project():
         f'dangling explanation:\n' + '\n'.join(hits[:25]))
 
 
-def test_the_migration_doc_still_earns_its_exemption():
-    """Same contract the tombstones carry: an entry that no longer covers
-    anything is an entry waiting to cover something real. It must exist, be
-    readable, still name a repo, and still be a file the gate would otherwise
-    have SCANNED — an exemption shadowed by the LOG or the deny list would be
-    doing nothing while looking like it does."""
-    path = REPO_ROOT / MIGRATION_DOC
-    assert path.is_file(), (
-        f'{MIGRATION_DOC} is exempt and does not exist — the migration landed, '
-        f'so delete MIGRATION_DOC too')
-    hits = offending_lines(path, CONSUMER_NAMES)
-    assert not _unreadable(hits), (
-        f'{MIGRATION_DOC} is exempt and cannot be read:\n'
-        + '\n'.join(_unreadable(hits)))
-    assert hits, (
-        f'{MIGRATION_DOC} no longer names a repo, so its exemption covers '
-        f'nothing and must be deleted')
-    assert path in set(scanned_files()), (
-        f'{MIGRATION_DOC} is not in the SCANNED bucket, so exempting it is a '
-        f'no-op dressed as a decision — {take_census().summary()}')
-
-
-def test_the_migration_doc_declares_its_own_exemption():
-    """Both halves, in one diff. A file cannot be quietly moved under this
-    exemption: it has to say so itself, where the next reader of the document
-    will see it."""
-    text = (REPO_ROOT / MIGRATION_DOC).read_text(encoding='utf-8')
-    assert MIGRATION_DOC_MARKER in text, (
-        f'{MIGRATION_DOC} is exempt and does not say so. Add the '
-        f'{MIGRATION_DOC_MARKER!r} note, or drop the exemption')
-
-
-def test_the_exemption_cannot_reach_anything_that_ships():
-    """The structural argument, checked instead of trusted.
-
-    The exemption is safe because of WHERE it points, so that is the thing to
-    assert: one top-level markdown file. Package source, the installables, the
-    workflows and the hooks are all at depth, so no spelling of this constant
-    can cover a file that ships to a consumer — and a `packages` root read out
-    of pyproject.toml says the same thing a second way.
-    """
-    parts = Path(MIGRATION_DOC).parts
-    assert len(parts) == 1, (
-        f'{MIGRATION_DOC} is not top-level; a nested exemption can sit inside '
-        f'src/, tools/ or .github/, which is the whole thing this rules out')
-    assert MIGRATION_DOC.endswith('.md'), f'{MIGRATION_DOC} is not markdown'
-    for shipped in ('src/', 'tools/', '.github/', 'tests/fixtures/'):
-        assert not MIGRATION_DOC.startswith(shipped), MIGRATION_DOC
-    pyproject = (REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
-    assert 'packages = ["src/agentic_sdlc"]' in pyproject, (
-        'the wheel root moved — re-derive what "does not ship" means before '
-        'trusting this exemption')
-    assert MIGRATION_DOC not in pyproject, (
-        f'{MIGRATION_DOC} is named in pyproject.toml, so it may be packaged')
-
-
 def test_nothing_reaches_for_a_path_outside_this_checkout():
     """The rule's second clause, and the one the deleted smoke gate broke. A
     verdict computed from a directory that may or may not exist on the machine
@@ -501,7 +443,7 @@ def test_nothing_reaches_for_a_path_outside_this_checkout():
     for path in scanned_files():
         rel = path.relative_to(REPO_ROOT).as_posix()
         if rel in TOMBSTONES:
-            continue  # MIGRATION_DOC is NOT skipped here: it buys one clause
+            continue
         hits.extend(offending_lines(path, OUTSIDE_READS))
     assert not hits, (
         'something reads a path outside this checkout (CLAUDE.md hard rule 8). '
@@ -705,83 +647,6 @@ def _plant(root: Path, rel: str) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(f'{PLANT}\n', encoding='utf-8')
     return target
-
-
-def _exempt_doc(root: Path) -> Path:
-    """The migration doc as it really is: the marker AND a banned name."""
-    return _plant(root, MIGRATION_DOC)
-
-
-class TestTheMigrationExemptionOnAScratchTree:
-
-    def test_the_exempt_doc_is_the_only_thing_it_covers(self, tmp_path):
-        """The live case, both halves at once: the doc names a consumer and is
-        not reported, and the tree it sits in is otherwise clean."""
-        _scratch_tree(tmp_path)
-        _exempt_doc(tmp_path)
-        assert _names_found(tmp_path), (
-            'the raw scan no longer sees the planted name — this case would '
-            'pass for the wrong reason')
-        assert names_a_consumer(tmp_path) == []
-
-    @pytest.mark.parametrize('rel', SHIPPING_PATHS)
-    def test_a_leak_in_something_that_ships_is_still_reported(self, tmp_path, rel):
-        """The load-bearing property. The exemption exists so a migration
-        record can name repos; if it ever covered code, an installable, a
-        workflow or a hook, the gate would be off in exactly the places a
-        consumer runs this package's bytes."""
-        _scratch_tree(tmp_path)
-        _exempt_doc(tmp_path)
-        _plant(tmp_path, rel)
-        hits = names_a_consumer(tmp_path)
-        assert any(hit.startswith(f'{rel}:') for hit in hits), (
-            f'a consumer name in {rel} was not reported: {hits}')
-
-    @pytest.mark.parametrize('rel', NEAR_MISSES)
-    def test_a_path_one_step_from_the_exempt_one_is_still_reported(
-            self, tmp_path, rel):
-        """`==` on the relative path, proven rather than read. A prefix match
-        would exempt `HANDOFF.md.bak`; a basename match would exempt a copy in
-        any directory; a glob would exempt both."""
-        _scratch_tree(tmp_path)
-        _exempt_doc(tmp_path)
-        _plant(tmp_path, rel)
-        hits = names_a_consumer(tmp_path)
-        assert any(hit.startswith(f'{rel}:') for hit in hits), (
-            f'{rel} was swept up by the exemption for {MIGRATION_DOC}: {hits}')
-
-    def test_the_exempt_doc_is_still_scanned_for_outside_reads(self, tmp_path):
-        """One clause, not two. The second clause is what the deleted smoke
-        gate broke, and the migration doc buys no cover from it — which is why
-        the real file names the workspace in words instead of as a path."""
-        _scratch_tree(tmp_path)
-        doc = _exempt_doc(tmp_path)
-        assert re.search(OUTSIDE_READS[1], OUTSIDE_PLANT), (
-            'the plant no longer matches the pattern it was built from')
-        doc.write_text(doc.read_text(encoding='utf-8')
-                       + f'reads {OUTSIDE_PLANT}\n', encoding='utf-8')
-        hits = [hit for path in scanned_files(tmp_path)
-                for hit in offending_lines(path, OUTSIDE_READS, tmp_path)]
-        assert any(hit.startswith(f'{MIGRATION_DOC}:') for hit in hits), hits
-
-    def test_the_exemption_is_one_path_not_a_container(self):
-        """A str compared with `==`. If this ever becomes a tuple or a set,
-        `rel == MIGRATION_DOC` silently stops matching anything and the doc
-        reds — but a `in` rewritten alongside it would widen the hole in
-        silence, so the shape is pinned here."""
-        assert isinstance(MIGRATION_DOC, str)
-        for wildcard in ('*', '?', '[', ']', '\\'):
-            assert wildcard not in MIGRATION_DOC, MIGRATION_DOC
-
-    def test_an_unreadable_exempt_doc_is_not_a_free_pass(self, tmp_path):
-        """The decode failure this gate stopped skipping. A file exempted from
-        the name clause is still walked, still classified and still readable —
-        the repo-level guard above asserts the real one decodes, and this is
-        the shape it guards against."""
-        _scratch_tree(tmp_path)
-        (tmp_path / MIGRATION_DOC).write_bytes(PLANT.encode() + b'\n\xff\xfe\n')
-        hits = offending_lines(tmp_path / MIGRATION_DOC, CONSUMER_NAMES, tmp_path)
-        assert _unreadable(hits), hits
 
 
 # --- the other kit's artifacts ------------------------------------------------

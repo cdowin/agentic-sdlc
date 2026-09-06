@@ -41,7 +41,7 @@ SUPPORT = TESTS / 'support'
 # every module on it is one the inner loop runs in milliseconds.
 #
 # **THE SPLIT MOVED, and this is the record of why.** The suite was 32 marked
-# against 14 unmarked and took 240 s. It is now 19 against 26 and the two tiers
+# against 14 unmarked and took 240 s. It is now 18 against 27 and the two tiers
 # are 7 s and 64 s. Nothing was deleted; the pass count went UP, because tests
 # that had been marked integration for a branch they never took came back.
 #
@@ -60,7 +60,7 @@ SUPPORT = TESTS / 'support'
 # derivation cannot know a name is never called. Eight modules carried one
 # after their `git init` went away, and dropping the dead import moved 419
 # tests back to the inner loop.
-MARKED_MODULES = 19
+MARKED_MODULES = 18
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -76,6 +76,7 @@ UNMARKED_MODULES = (
     'test_fuzz_markdown.py',
     'test_gates_extra.py',
     'test_grain_shape.py',
+    'test_install.py',
     'test_install_sdlc.py',
     'test_pm_flow.py',
     'test_pm_gate.py',

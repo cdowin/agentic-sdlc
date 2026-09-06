@@ -3,7 +3,7 @@ id: 0.3.0/the-order-is-declared-and-appended/01-the-list-writer-preserves-every-
 feature: 0.3.0/the-order-is-declared-and-appended
 milestone: "0.3.0"
 name: a list-aware writer appends inserts and removes one entry
-status: building
+status: done
 owner:
 depends_on: []
 ---

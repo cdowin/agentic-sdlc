@@ -3,7 +3,7 @@ id: 0.3.0/a-config-error-is-complete/01-every-defect-is-reported-and-the-flow-fi
 feature: 0.3.0/a-config-error-is-complete
 milestone: "0.3.0"
 name: a config read reports every defect at once with the flow named first
-status: building
+status: done
 owner:
 depends_on: []
 ---

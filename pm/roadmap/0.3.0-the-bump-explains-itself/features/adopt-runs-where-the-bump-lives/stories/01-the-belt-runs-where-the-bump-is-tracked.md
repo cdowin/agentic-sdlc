@@ -3,7 +3,7 @@ id: 0.3.0/adopt-runs-where-the-bump-lives/01-the-belt-runs-where-the-bump-is-tra
 feature: 0.3.0/adopt-runs-where-the-bump-lives
 milestone: "0.3.0"
 name: the belt runs wherever the project tracks the bump
-status: building
+status: done
 owner:
 depends_on: []
 ---

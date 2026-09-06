@@ -3,7 +3,7 @@ id: 0.3.0/the-order-is-declared-and-appended/02-pm-order-and-pm-next
 feature: 0.3.0/the-order-is-declared-and-appended
 milestone: "0.3.0"
 name: pm order appends inserts removes and prints and pm next names the first unshipped
-status: building
+status: done
 owner:
 depends_on: ["0.3.0/the-order-is-declared-and-appended/01-the-list-writer-preserves-every-other-byte"]
 ---

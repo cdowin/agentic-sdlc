@@ -3,7 +3,7 @@ id: 0.3.0/pm-init-teaches-the-conveyor/01-init-reports-a-meaning-and-D7-keeps-sa
 feature: 0.3.0/pm-init-teaches-the-conveyor
 milestone: "0.3.0"
 name: init prints the ladder against the tree and D7 reports a declared unused state
-status: building
+status: done
 owner:
 depends_on: []
 ---

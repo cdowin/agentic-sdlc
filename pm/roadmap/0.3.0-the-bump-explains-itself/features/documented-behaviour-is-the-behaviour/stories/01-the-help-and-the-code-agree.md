@@ -3,7 +3,7 @@ id: 0.3.0/documented-behaviour-is-the-behaviour/01-the-help-and-the-code-agree
 feature: 0.3.0/documented-behaviour-is-the-behaviour
 milestone: "0.3.0"
 name: every documented exit code is the one that runs
-status: building
+status: done
 owner:
 depends_on: []
 ---

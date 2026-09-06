@@ -3,7 +3,7 @@ id: 0.3.0/a-config-error-names-its-namespace/01-the-key-names-the-namespace-it-r
 feature: 0.3.0/a-config-error-names-its-namespace
 milestone: "0.3.0"
 name: the key names the namespace it reads in
-status: building
+status: done
 owner:
 depends_on: []
 ---

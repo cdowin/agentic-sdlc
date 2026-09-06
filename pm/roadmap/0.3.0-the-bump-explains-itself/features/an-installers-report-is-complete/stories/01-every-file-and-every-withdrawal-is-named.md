@@ -3,7 +3,7 @@ id: 0.3.0/an-installers-report-is-complete/01-every-file-and-every-withdrawal-is
 feature: 0.3.0/an-installers-report-is-complete
 milestone: "0.3.0"
 name: every file gets a header and every withdrawal is named
-status: building
+status: done
 owner:
 depends_on: []
 ---

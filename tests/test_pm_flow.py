@@ -454,6 +454,10 @@ DELETED = (
     ('pm.cli', 'PUBLISHED_STEPS_NOTE'),
     ('pm.cli', '_published_steps'),
     ('pm.report', 'REOPENS_COLUMN'),
+    # ...and the `after_review` column beside it, the module's last seed-word
+    # reader: it counted dispatches after the first move INTO `reviewing`
+    ('pm.report', 'AFTER_REVIEW_COLUMN'),
+    ('pm.report', 'REOPEN_TITLE'),
 )
 
 # Retired `[pm]` keys: a second declaration of the words, or an inference.
@@ -477,12 +481,6 @@ SEED_WORD_READERS = {
     # the belts' step words (`CLAIMED` / `REVIEWING` / `DONE`); the R4 site
     # in the same module reads the flow instead
     ('conveyor.steps', None),
-    # `after_review` is "dispatched after the story's first move INTO
-    # `reviewing`", by name, printing `-` for a story that never entered it —
-    # every story under the shipped seed, since 0.2.0 dropped the word from
-    # the story flow. The `reopens` column beside it read the same word and
-    # left (story 01).
-    ('pm.report', 'rework_data'),
     # D7: the dispatch snapshot's frozen keys, deprecated, removal at the next
     # major — phase 8 lands the category keys beside them
     ('pm.cli', '_tree_snapshot'),
@@ -607,4 +605,6 @@ def test_the_seeds_exported_words_have_exactly_the_named_readers():
     assert unexpected == set(), sorted(unexpected)
     # ...and the named exceptions are real, so this list cannot go stale.
     assert ('pm.cli', '_tree_snapshot') in readers
-    assert ('pm.report', 'rework_data') in readers
+    # The ledger report reads no seed word at all: `after_review`, its last
+    # reader, left with the per-story table.
+    assert not {m for m, _ in readers if m == 'pm.report'}

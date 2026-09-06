@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`pm init` reports a MEANING, not a write, and `check pm` gains D7.** `init` printed
+  `appended the flow to devkit.toml` and a project adopted the conveyor as a CONFIG FIX — nobody
+  then asked whether the tree USED the states, and one tree used three of its eight for its whole
+  life with every gate green. D4 asks "is this word declared", never "is this word used". `init`
+  now prints the ladder it wrote AGAINST THE TREE — per kind, how many states are declared, how
+  many the tree uses, and which have never been held — so the sentence *"this project now declares
+  8 milestone states; your tree uses 3"* is on screen at the moment of adoption. **D7** keeps
+  saying it after the install scrolls away, as a WARN with the count, never a finding: a tree
+  mid-adoption legitimately has unused states. D7 is OPT-IN like every other flow-shaped rule —
+  stock-on it would add three lines to every consumer's `check pm`, and those shapes are grepped.
+  A kind with no grains at all is silent rather than reporting every word unused.
+
 - **The gate ledger binds to the CURRENT RELEASE, not to the one in-progress milestone.** A cost
   row is filed against the first unshipped entry in `order` (or the last shipped, under
   `[pm] version_at = "ship"`), which answers with exactly one by construction and reads no status

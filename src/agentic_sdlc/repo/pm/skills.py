@@ -158,6 +158,48 @@ def install_flow(cfg: model.PmConfig) -> str:
             f'{"|".join(model.FLOW_KINDS)}]')
 
 
+def print_ladder(cfg: model.PmConfig) -> None:
+    """What was just declared, AGAINST THE TREE: per kind, the states in use
+    and the states never held.
+
+    The finding this exists for: an adopting agent hit `check pm` exit 2, ran
+    `pm init`, saw `appended the flow to devkit.toml`, watched the gate go green
+    and moved on. The states were adopted as a CONFIG FIX and nobody then asked
+    whether the tree used them — it used three of eight. Reporting a WRITE and
+    reporting a MEANING are different acts, and only the second one teaches the
+    conveyor.
+    """
+    # `install_flow` may have just written the section this counts, so the read
+    # has to be against the file as it is NOW. `model.reload` owns the cache
+    # drop; a raw `load_config` here would be a second door into the config
+    # this package keeps to one.
+    try:
+        fresh = model.reload()
+    except model.ConfigError:
+        return
+    usage = model.state_usage(fresh)
+    if not usage:
+        return
+    print()
+    print('The flow this project now declares, against the tree it has:')
+    print()
+    for kind in model.FLOW_KINDS:
+        counts = usage.get(kind)
+        if not counts:
+            continue
+        in_use = [state for state, n in counts.items() if n]
+        never = [state for state, n in counts.items() if not n]
+        print(f'  {kind:<10} declares {len(counts)}; this tree uses '
+              f'{len(in_use)}' + (f' ({", ".join(in_use)})' if in_use else ''))
+        if never:
+            print(f'  {"":<10} never held: {", ".join(never)}')
+    print()
+    print('  A state you declare and never use is a flow you are not running.')
+    print('  `check pm` D7 keeps saying so after this scrolls away, as a WARN')
+    print('  with the count — never a finding, because a tree mid-adoption')
+    print('  legitimately has unused states.')
+
+
 def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
     """Stand up a PM tree in a repo that has none, flow first, and say what is
     left to do.
@@ -172,6 +214,7 @@ def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
         _ok(f'{cfg.roadmap_dir}/ already exists — leaving it alone')
     _ok(install_merge_attribute(cfg))
     cmd_install_skills(cfg, [])
+    print_ladder(cfg)
 
     # The rest is the consumer's to wire; printing it beats a README they must
     # find.

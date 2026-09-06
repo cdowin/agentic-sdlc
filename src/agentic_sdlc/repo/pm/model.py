@@ -14,7 +14,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
-from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
                                        section_declared, flag, str_tuple,
                                        str_tuple_table, text)
@@ -129,6 +129,13 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
                   'V1', 'V2', 'V3', 'V4', 'V5')
+# D7 (a declared state no grain has ever held) is OPT-IN, like every other
+# flow-shaped rule. It is a WARN and could not redden anyone, but stock-on it
+# adds three lines to every consumer's `check pm` output, and those line shapes
+# are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
+# prints the ladder against the tree unconditionally; D7 is how a project that
+# wants it kept visible afterwards asks for that.
+USAGE_CHECKS = ('D7',)
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -139,7 +146,8 @@ RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # generated view going stale is not a defect in the tree.
 VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
 KNOWN_CHECKS = tuple(dict.fromkeys(
-    DEFAULT_CHECKS + FLOW_CHECKS + RELEASE_CHECKS + VALIDATE_CHECKS))
+    DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
+    + VALIDATE_CHECKS))
 
 # A rule id that WAS shipped and is not any more. Reported by name, never as
 # "unknown": a consumer whose config still lists it is told where the rule
@@ -337,6 +345,20 @@ def load() -> PmConfig:
         version_at=version_at,
         flows=flows,
     )
+
+
+def reload() -> PmConfig:
+    """`load()` against the file as it is NOW, caches dropped.
+
+    For the one caller that WROTE devkit.toml in this process and then has to
+    read it back: `pm init` appends the flow and then reports what it means
+    against the tree. The cache lives in `core.project`, and this module is the
+    one place in `repo/` that may reach it — every other reader goes through the
+    guards in `core/config.py`.
+    """
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    return load()
 
 
 def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
@@ -1468,6 +1490,37 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
                 out.append((bfile, f'bug status {bstat!r} is not in '
                                    f'({" ".join(flow_of(cfg, "bug").order)})'))
     return out, scanned
+
+
+def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
+    """Per kind, how many grains hold each DECLARED state — zero included.
+
+    D4 asks "is this word declared", never "is this word used", so a tree using
+    two of eight states is indistinguishable, to every gate, from one using all
+    eight. That is how a project adopted the conveyor as a CONFIG FIX and never
+    noticed: `building`, `reviewing`, `accepted` and `packaging` appeared zero
+    times across 85 grains, and every gate was green the whole time.
+    """
+    used: dict[str, dict[str, int]] = {
+        kind: {state: 0 for state in flow.order}
+        for kind, flow in cfg.flows.items()
+    }
+
+    def count(kind: str, status: str) -> None:
+        bucket = used.get(kind)
+        # An undeclared word is D4's finding, not this census's business.
+        if bucket is not None and status in bucket:
+            bucket[status] += 1
+
+    for mdir in milestone_dirs(cfg):
+        count('milestone', field_of(mdir / MILESTONE_DOC, 'status'))
+        for bf in bug_files(mdir):
+            count('bug', field_of(bf, 'status'))
+        for ff in feature_files(mdir):
+            count('feature', field_of(ff, 'status'))
+            for sf in story_files(ff):
+                count('story', field_of(sf, 'status'))
+    return used
 
 
 def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:

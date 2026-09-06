@@ -3,7 +3,7 @@ id: 0.3.0/the-ledger-binds-to-the-current-release/01-the-ledger-binds-to-the-rel
 feature: 0.3.0/the-ledger-binds-to-the-current-release
 milestone: "0.3.0"
 name: the ledger is keyed by the current release not by a status flag
-status: building
+status: done
 owner:
 depends_on: []
 ---
@@ -46,5 +46,5 @@ story changes what it is KEYED BY.
 
 ## Close
 
-done: in-place — one resolver replaces four `in_progress_milestones` call sites,
+done: a17b5c0 — one resolver replaces four `in_progress_milestones` call sites,
 and the REFUSED line that printed on every gate run of this session is gone.

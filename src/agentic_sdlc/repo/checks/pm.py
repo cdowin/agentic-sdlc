@@ -2,7 +2,7 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6, D9/D10 and the R family are opt-in).
+(default: D1-D6 + V1-V5; V6, D7, D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -20,6 +20,7 @@ WARN (a line, never the exit code; both grains and both categories named):
   D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
+  D7  a DECLARED state no grain of that kind has ever held, with the count in use
   READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:` or no `branch:`
   R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
 
@@ -86,6 +87,7 @@ def _run() -> int:
     n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
 
     _flow_findings(cfg, enabled, report)
+    _unused_states(cfg, enabled, warn)
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V6: structural + referential integrity ------------------------
@@ -222,6 +224,33 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                  f'itself {mstat!r}; {ADVANCE_IT} (D6)  [{cfg.rel(mfile)}]')
 
     return n_features, n_stories
+
+
+def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """D7 — a state the project DECLARED and no grain has ever held.
+
+    A WARN with the count, never a finding: a tree mid-adoption legitimately has
+    unused states, and a rule that reddens every fresh consumer is undone within
+    a version. What it buys is that the fact stays VISIBLE after the install
+    scrolls away — the tool's most valuable idea, the conveyor, was invisible to
+    the tool.
+    """
+    if 'D7' not in enabled:
+        return
+    for kind in model.FLOW_KINDS:
+        counts = model.state_usage(cfg).get(kind)
+        if not counts:
+            continue
+        unused = [state for state, n in counts.items() if n == 0]
+        if not unused or len(unused) == len(counts):
+            # All of them unused means the tree holds no grain of this kind at
+            # all, which is a different fact and not this rule's to report.
+            continue
+        warn(f'{kind}: {len(counts) - len(unused)} of {len(counts)} declared '
+             f'state(s) are in use; {", ".join(unused)} '
+             f'{"has" if len(unused) == 1 else "have"} never been held by any '
+             f'{kind} in this tree — declared and unused is a flow the project '
+             f'is not running (D7)')
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:

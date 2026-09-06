@@ -1837,3 +1837,56 @@ class TheUnboundFamily(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertNotIn('DRIFT', out)
             self.assertNotIn('unknown rule', out)
+
+
+class D7ADeclaredStateNobodyUses(unittest.TestCase):
+    """D4 asks "is this word declared", never "is this word used".
+
+    The finding: a tree adopted the flow as a CONFIG FIX, watched `check pm` go
+    green, and used three of its eight declared milestone states — for its whole
+    life, invisibly, because nothing anywhere related the declared set to the
+    set in use. A WARN, never a finding: a tree mid-adoption legitimately has
+    unused states, and 0.2.0 moved four rules to warnings for the same reason.
+    """
+
+    def test_it_names_the_unused_states_with_the_count_in_use(self):
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('done',)) as root:
+            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)          # a WARN never decides the code
+            self.assertIn('(D7)', out)
+            self.assertIn('WARN', out)
+            self.assertIn('declared state(s) are in use', out)
+            # The milestone kind declares 8 and this tree holds one word.
+            self.assertIn('1 of 8 declared state(s) are in use', out)
+            self.assertIn('packaging', out)
+
+    def test_a_kind_with_no_grains_at_all_is_silent_rather_than_all_unused(self):
+        # "Every declared state unused" means the tree holds no grain of that
+        # kind — a different fact, and reporting it as flow drift would redden
+        # (well, warn at) every tree that has not filed a bug yet.
+        with tree() as root:
+            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('bug:', out)
+
+    def test_off_unless_named(self):
+        with tree(milestone_status='building') as root:
+            write_config(root, '[pm]\nchecks = ["D1"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(D7)', out)
+
+    def test_an_undeclared_word_in_the_tree_is_D4s_and_not_counted_here(self):
+        # The census counts DECLARED states only; a `wombat` in a file is D4's
+        # finding, and letting it into this census would make the two rules
+        # argue about the same byte.
+        with tree(milestone_status='building') as root:
+            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+                            'status', 'wombat')
+            write_config(root, '[pm]\nchecks = ["D7"]\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('wombat', out)

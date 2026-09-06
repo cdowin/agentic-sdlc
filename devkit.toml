@@ -40,6 +40,17 @@ all = ["doc", "grain-shape", "pm", "shell", "hooks"]
 # nothing left here to carve out. The three `exclude_prefixes` sections that did
 # the carving left with the gates that read them (0.2.0).
 
+[doc]
+# Every human- and agent-facing surface, not only the always-loaded ones: the
+# README, the SDLC, the design docs, the rules, the roster and the skills all
+# make `make <target>` and file-path claims against this tree, and a claim
+# nobody checks is a claim that goes dead. Stock scope is the three always-
+# loaded globs; this repo holds all of its prose to the same gate.
+scope = [
+    "CLAUDE.md", "README.md", "SDLC.md", "docs/*.md",
+    ".claude/rules/*.md", ".claude/agents/*.md", ".claude/skills/*/SKILL.md",
+]
+
 [pm]
 # Everything opt-in except D8. The rules this package ships OFF by default are
 # off because a consumer's legacy tree would go red on upgrade day — this tree

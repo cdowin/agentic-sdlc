@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- **A milestone declares `version:`, and D8 became R5.** The id goes back to being a slug: a
+- **BREAKING — a milestone declares `version:`, and D8 became R5.** A repo with `D8` in
+  `[pm] checks` goes from exit 0 to **exit 2** on `check pm` and `check all`, and `adopt`
+  refuses; `make check` fails until the key is removed. The message names R5 and says where
+  the rule went — it is refused BY NAME rather than silently ungated, which is the point. The id goes back to being a slug: a
   milestone says which version it ships as in one optional frontmatter field, and the engine
   never parses, compares or increments the string — `"1.1.1"` and `"cow"` are equally valid.
   Order comes from `order` in `pm/roadmap/releases.md`, a block-style list read by the same

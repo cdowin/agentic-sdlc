@@ -708,3 +708,5 @@
 {"ts":"2026-09-06T23:40:37Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_check_shell_names_the_UNTRACKED_case_not_the_roots_key","duration_ms":14448,"rank":5}
 {"ts":"2026-09-06T23:40:37Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":72093,"census":1152}
 {"ts":"2026-09-06T23:40:37Z","kind":"status","grain":"0.3.0/documented-behaviour-is-the-behaviour","from":"reviewing","to":"done"}
+{"ts":"2026-09-06T23:41:21Z","kind":"decision","grain":"0.3.0","entry":"D2","title":"0.3.0 is MINOR and BREAKING, and rule 7 has no tier for a retired config VALUE"}
+{"ts":"2026-09-06T23:41:24Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2269}

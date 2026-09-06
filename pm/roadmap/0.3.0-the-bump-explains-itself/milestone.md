@@ -1,7 +1,7 @@
 ---
 id: "0.3.0"
 name: the bump explains itself
-status: building
+status: done
 depends_on: []
 branch: milestone/0.3.0-the-bump-explains-itself
 version: 0.3.0

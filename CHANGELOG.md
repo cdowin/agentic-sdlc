@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.3.0 — 2026-09-06 — the bump explains itself
+
+> **The northstar: the tool teaches the conveyor.** A project that has just adopted the flow should
+> be able to SEE whether it is using it. Every finding below came from two real adoptions of the
+> same devkit split on 2026-09-06 that failed in mirror-image ways: one tree declared the flow and
+> used three of its eight states; the other never declared one and shipped a green `make check` over
+> a PM CLI that was refusing every work-moving verb. **Both passed every gate.**
+
 - **BREAKING — a milestone declares `version:`, and D8 became R5.** A repo with `D8` in
   `[pm] checks` goes from exit 0 to **exit 2** on `check pm` and `check all`, and `adopt`
   refuses; `make check` fails until the key is removed. The message names R5 and says where

@@ -728,3 +728,8 @@
 {"ts":"2026-09-06T23:45:25Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":37311,"census":1153}
 {"ts":"2026-09-06T23:45:41Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3015}
 {"ts":"2026-09-06T23:46:30Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2414}
+{"ts":"2026-09-06T23:46:44Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2203}
+{"ts":"2026-09-06T23:47:38Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":54301}
+{"ts":"2026-09-06T23:47:38Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":87}
+{"ts":"2026-09-06T23:47:38Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":56947}
+{"ts":"2026-09-06T23:47:38Z","kind":"status","grain":"0.3.0","from":"building","to":"done"}

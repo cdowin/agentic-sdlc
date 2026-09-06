@@ -183,6 +183,21 @@ done        = ["closed"]
 # A gate that reads one language's file format is a gate that
 # kit owns, and it configures itself in its own section of this file.
 
+# --- the ladder ---------------------------------------------------------------
+# `agentic-sdlc verify --story | --feature | --milestone` runs the make target
+# named here — three rungs, one shape, and the Makefile stays the authority on
+# what a target RUNS. `close story` runs the story rung; `release`'s `gate`
+# check runs `make milestone`. `verify --check` holds each target to existing
+# in the Makefile; `verify --plan` prints each rung's cost from the ledger.
+# `unit` and `test` are the tier targets your Makefile.tiers defines. An
+# absent `[verify]` is exit 2 on every flag, and the retired `[[verify.narrow]]`
+# table — the story rung when it selected commands by changed path — is
+# refused by name.
+# [verify]
+# story     = "make unit"
+# feature   = "make test"
+# milestone = "make milestone"
+
 # --- more words that mean FINISHED --------------------------------------------
 # `ready-for feature` asks "is every story in the `done` CATEGORY", not "is
 # every story at the word `done`" — so a story you stop working on needs a word

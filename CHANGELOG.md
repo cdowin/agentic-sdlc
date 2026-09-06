@@ -10,6 +10,18 @@
   the story's own edits, and `close story` now passes both from the `done:` line, so a story
   closed after other work has landed is verified against what it changed rather than against
   everything up to HEAD. Without `--to` nothing changes.
+- **The story rung is a make target.** `[verify] story = "make unit"` sits beside `feature`
+  and `milestone` — three lines, one shape — and `verify --story` runs it the way the other
+  two rungs run theirs. Gone: the `[[verify.narrow]]` table (a config still carrying it, or a
+  `[verify] narrow` key, is exit 2 naming the key and the line that replaces it), the `--ref`,
+  `--to`, `--ignore` and `--changed` flags, the path census `--check` and `--plan` printed, and
+  the git read the verb made — `verify` spawns nothing but the target. `verify --check` now
+  holds the declared targets to the Makefile and nothing else; its verdict line reads
+  `[verify:check] PASS — 3 of 3 rung(s) declared, held to N target(s) in <Makefile>`.
+  `close story`'s test check is `story-verified` (was `narrow-verified`; a `[story] steps` or
+  `[story.commands]` entry under the old name is exit 2): it runs the story rung once — no
+  commit range, no `done:`-hash parsing, no "nothing to scan" — and reports its exit. The one
+  line a consumer adds: `story = "make <target>"`; `verify --story` without it is exit 2.
 
 ### A belt is its checks, then one write or a clean error (D12)
 
@@ -32,8 +44,8 @@
   `[adopt] ok — N check(s) true; nothing to write`; then `next: …` lines on success. The
   `ALREADY-TRUE` / `SAID` / `DONE` / `NOT-TRUE` / `CORRECTED` / `REFUSED` lines and the
   scoreboard are gone.
-- **The check lists.** `close story`: `story-exists`, `narrow-verified` (`verify --story` over
-  the story's own commit range), `committed` (nothing outside the roadmap directory
+- **The check lists.** `close story`: `story-exists`, `story-verified` (`verify --story`),
+  `committed` (nothing outside the roadmap directory
   uncommitted), `evidence-written` (a `done:` line). `close feature`: `stories-done`
   (`pm ready-for feature`), `review-recorded` (`reviewed:` points at a record that parses),
   `findings-landed` (none `open`); `feature-verified` (`verify --feature`) stays registered
@@ -56,7 +68,7 @@
   `ci-green`, `prove-artifact` — printed on their `next:` line, `{version}` filled in);
   `[adopt.commands]` / `[story.commands]` / `[feature.commands]` accept a command only for
   a check that runs something (`hooks-self-test`, `runner-targets-resolve`, `checks-pass`,
-  `pm-validates`, `narrow-verified`, `feature-verified`). A command for a check that reads
+  `pm-validates`, `story-verified`, `feature-verified`). A command for a check that reads
   the tree is exit 2: two authorities over one fact. `[release] pin_files` is gone with
   `readme-pins`.
 - **`docs/sdlc-protocol.md` renders from the four check lists, the state each belt writes

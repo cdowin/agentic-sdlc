@@ -77,7 +77,7 @@ tree, in CI and pre-push.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `story-exists` | — *(reads the tree)* | the story id resolves to exactly one document. |
-| 2 | `narrow-verified` | `agentic-sdlc verify --story` *(shipped)* | `agentic-sdlc verify --story` exits 0 over the story's own commit range; a census of zero is unverifiable, never a pass. |
+| 2 | `story-verified` | `agentic-sdlc verify --story` *(shipped)* | `agentic-sdlc verify --story` exits 0 — the make target `[verify] story` names, the way `feature-verified` runs its rung. |
 | 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits. |
 | 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
 

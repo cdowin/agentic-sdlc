@@ -53,16 +53,15 @@ branch: milestone/{VERSION}
 '''
 
 # `[verify]` has to be declared or `verify --story` exits 2 naming the section.
+# The story rung is a make target, so the stub Makefile's `unit` IS the rung.
 CONFIG = '''[verify]
-feature   = "make feature"
+story     = "make unit"
+feature   = "make test"
 milestone = "make milestone"
-
-[[verify.narrow]]
-paths = "src/**"
-run   = "true"
 '''
 
-MAKEFILE = 'feature:\n\t@true\n\nmilestone:\n\t@true\n'
+MAKEFILE = 'unit:\n\t@true\n\ntest:\n\t@true\n\nmilestone:\n\t@true\n'
+RED_MAKEFILE = MAKEFILE.replace('unit:\n\t@true', 'unit:\n\t@exit 1')
 
 VERDICT_BLOCK = '''```
 verdict: SHIP-WITH-FIXES
@@ -95,10 +94,9 @@ def tree(files: dict[str, str] | None = None, *, story: str = 'building',
     """A scratch repo with a milestone, a feature and one story, entered.
 
     `config` is this tree's devkit.toml MINUS the flow declaration, which is
-    APPENDED for you (tests/support/pm.py `with_flow`). Three commits: base,
-    the story's work, then the `done:` line naming that work's hash — so the
-    narrow rung has a real range to scan, which is what a real close looks
-    like.
+    APPENDED for you (tests/support/pm.py `with_flow`). One commit: the story
+    rung reads no range, so the `done:` line's hash only has to be the SHAPE
+    `evidence-written` checks.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
@@ -116,25 +114,10 @@ def tree(files: dict[str, str] | None = None, *, story: str = 'building',
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
-
-        def commit(message: str) -> str:
-            subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
-            subprocess.run(['git', '-c', 'user.email=t@example.invalid',
-                            '-c', 'user.name=t', 'commit', '-qm', message],
-                           cwd=root, check=True)
-            return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root,
-                                  capture_output=True, text=True,
-                                  check=True).stdout.strip()
-
-        commit('base')
-        work = root / 'src/thing.py'
-        work.write_text('x = 1  # the story\n', encoding='utf-8')
-        story_sha = commit('the story\'s work')
-        if evidence is DONE_LINE:
-            (root / SFILE).write_text(
-                story_doc(story, f'done: {story_sha[:10]} — the belt walks\n'),
-                encoding='utf-8')
-            commit('evidence')
+        subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
+        subprocess.run(['git', '-c', 'user.email=t@example.invalid',
+                        '-c', 'user.name=t', 'commit', '-qm', 'base'],
+                       cwd=root, check=True)
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()
@@ -180,7 +163,7 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
     assert driver.VERBS == ('release', 'adopt', 'close')
     assert cli.conveyor_verbs() == driver.VERBS
     assert steps.DEFAULT_STORY_STEPS == (
-        'story-exists', 'narrow-verified', 'committed', 'evidence-written')
+        'story-exists', 'story-verified', 'committed', 'evidence-written')
     assert steps.DEFAULT_FEATURE_STEPS == (
         'stories-done', 'review-recorded', 'findings-landed')
 
@@ -245,6 +228,24 @@ def test_all_true_writes_exactly_the_first_done_state_and_nothing_else(capsys):
     lines = out.strip().split('\n')
     assert f'[story] ok — {STORY_ID} → {want}' in lines, out
     assert any(line.startswith('next: ') for line in lines), out
+    assert '[story] ok: story-verified — `agentic-sdlc verify --story` exited 0' in out
+
+
+def test_close_story_runs_the_story_rung_and_reports_its_exit(capsys):
+    """Bites: a story closing over a red unit tier, or the belt reaching for
+    a commit range or a path census the rung no longer has. `story-verified`
+    is `verify --story` — the make target `[verify] story` names, run the way
+    `feature-verified` runs its own rung — and a `unit` that exits 1 is one
+    `error:` line and nothing written. (The green half is the all-true case
+    above, which asserts the same check's `ok:` line.)"""
+    with tree({'Makefile': RED_MAKEFILE}) as root:
+        before = snapshot(root)
+        code = close('story', STORY_ID)
+        out = capsys.readouterr().out
+        assert code == 1, out
+        assert '[story] error: story-verified: `agentic-sdlc verify --story` exited 1' in out, out
+        assert snapshot(root) == before, 'the belt wrote over a red rung'
+        assert rows(root) == []
 
 
 def test_the_written_state_is_the_configs_word_not_the_literal_done(capsys):

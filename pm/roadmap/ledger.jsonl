@@ -101,3 +101,9 @@
 {"ts":"2026-09-06T22:51:13Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":8674,"rank":5}
 {"ts":"2026-09-06T22:51:13Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":57625,"census":1141}
 {"ts":"2026-09-06T22:51:43Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":4783}
+{"ts":"2026-09-06T22:52:18Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::TheOpenModeIsReadFromTheRightArgument::test_the_open_census_is_not_empty","duration_ms":1225,"rank":1}
+{"ts":"2026-09-06T22:52:18Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::OneApply::test_only_the_apply_module_writes","duration_ms":1162,"rank":2}
+{"ts":"2026-09-06T22:52:18Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":1102,"rank":3}
+{"ts":"2026-09-06T22:52:18Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::OneWalk::test_only_the_walk_module_enumerates","duration_ms":864,"rank":4}
+{"ts":"2026-09-06T22:52:18Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":733,"rank":5}
+{"ts":"2026-09-06T22:52:19Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":20706,"census":756}

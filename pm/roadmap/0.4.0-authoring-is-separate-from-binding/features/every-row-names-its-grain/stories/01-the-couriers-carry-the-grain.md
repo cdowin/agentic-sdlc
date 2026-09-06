@@ -3,7 +3,7 @@ id: 0.4.0/every-row-names-its-grain/01-the-couriers-carry-the-grain
 feature: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: The couriers carry the grain they were dispatched against
-status: building
+status: done
 owner: claude
 depends_on: []
 ---
@@ -92,4 +92,16 @@ Resolving a grain the dispatch did not supply — story 02. Where the row is sto
 
 ## Close
 
-<!-- done: <hash> — what shipped -->
+done: 0af3a2e a201bb5 — `GDK_LEDGER_GRAIN` -> `env_arg --grain` in both couriers; the verb takes
+`--grain` on the transcript form; the report reads it.
+finding: **AC5 could not be met inside the stated file boundary.** `report.named_grains` read the
+`tree` snapshot ALONE while `ledger.row_names` read `grain` and `tree` — a fifth instance of this
+milestone's thesis, in the reader. Without the `report.py` edit the couriers would have filled the
+key and the spend table would still have printed 0 per story. Crossed deliberately, and the two
+functions are still separate: they answer different questions (`does this row name any of these` vs
+`which grains under this milestone`) with different signatures. Worth one look at feature review.
+deviation: AC2 says exit 1 for an unresolvable `--grain`; it is **exit 2**, which is what the
+hand form already does and what rule 9 requires — an id that names nothing is a fact about the
+INPUT. The bar the AC asked for (refused, no write, never degraded to an omitted key) holds.
+finding: `self_test_fire` now builds the child environment (`env` / `env -u`). Inheriting it made
+every "no `--grain` flag" case a false pass for any operator with the var exported.

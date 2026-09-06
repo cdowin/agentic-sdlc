@@ -211,9 +211,16 @@ MAX_RECORD_BYTES = 1 << 20
 
 
 # --- small helpers ------------------------------------------------------------
+_SALIENT = re.compile(r'FAILED|^E {2,}|\bERROR\b|error:|Traceback|  DRIFT |\] FAIL|exited [1-9]')
+
+
 def _clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
-    """One bounded line of somebody else's output."""
-    flat = ' '.join(str(text).split())
+    """One bounded line of somebody else's output — the lines that say what
+    broke first, when there are any, because a transcript clipped at its head
+    shows fifty passing commands and hides the one that failed."""
+    lines = [ln.strip() for ln in str(text).splitlines() if ln.strip()]
+    salient = [ln for ln in lines if _SALIENT.search(ln)]
+    flat = ' '.join(' '.join(salient or lines).split())
     return flat if len(flat) <= limit else flat[:limit] + '…'
 
 

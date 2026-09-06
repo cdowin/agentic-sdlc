@@ -185,11 +185,14 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
                            '--event', 'SubagentStop',
                            '--agent-type', 'developer')
         assert code == 0, out
-        # The tree's ledger: a transcript row names no grain (D3).
-        lines = ledger_lines(root, ROOT_LEDGER_REL)
+        # This tree has exactly ONE story in progress, so D2's fallback
+        # resolves the grain and the row is ATTRIBUTED — which puts it in that
+        # grain's milestone ledger, not the tree's.
+        lines = ledger_lines(root)
         row = only_row(root)
     assert stamped(row) == {
         'kind': 'dispatch',
+        'grain': STORY,
         'session_id': '406aac76-fb60-4d90-9383-5b0af2163067',
         'agent_id': 'a0c097f0217026051',
         'agent_type': 'developer',
@@ -208,7 +211,7 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
     # `ROW_KEYS` order, minus the keys nothing supplied: the durable line's
     # own shape, not just its contents.
     assert list(row) == [
-        'ts', 'kind', 'session_id', 'agent_id', 'agent_type', 'model',
+        'ts', 'kind', 'grain', 'session_id', 'agent_id', 'agent_type', 'model',
         'started_at', 'ended_at', 'duration_s', 'messages', 'tool_calls',
         'tools', 'tool_calls_before_first_write', 'usage', 'tree']
     assert len(lines) == 1
@@ -553,6 +556,88 @@ def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
         assert ledger_lines(root) == [], 'the building milestone took the row'
         rows = ledger_rows(root, SECOND_LEDGER)
         assert [(r['kind'], r['grain']) for r in rows] == [('session', other)]
+
+
+# --- D2's fallback: the orchestrator's path, and the one rule that outranks it -
+# `--grain` given -> use it. Absent and one story live -> use it. Absent and
+# zero or several -> OMIT THE KEY, and name the candidates. Never a guess.
+def transcript(root, *extra):
+    return record(root, '--from-transcript', str(SUBAGENT), '--event', 'Stop',
+                  *extra)
+
+
+def second_story(root, status: str = 'building') -> str:
+    write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s9.md',
+          {'id': '0.1/alpha/s9', 'feature': '0.1/alpha', 'milestone': '"0.1"',
+           'name': 'S9', 'status': status, 'owner': ''})
+    return '0.1/alpha/s9'
+
+
+def test_one_story_in_progress_resolves_and_routes():
+    """The undispatched orchestrator, which is the session type most of a
+    milestone's work happens in: no prompt to read a grain out of, and one
+    obvious answer in the tree."""
+    with tree(story_statuses=('building',)) as root:
+        code, out = transcript(root)
+        assert code == 0, out
+        assert only_row(root)['grain'] == STORY
+        # A resolved grain ROUTES as well as names (D1): one rule, whichever
+        # way the grain arrived.
+        assert list(all_ledger_lines(root)) == [LEDGER_REL], out
+
+
+def test_no_story_in_progress_omits_the_key_entirely():
+    """Asserted on the KEY SET, not with a membership check: a row carrying
+    `grain: ""` or `grain: null` has to fail here. A number not given is a key
+    the row does not carry, never a zero — and `grain` is no different."""
+    with tree(story_statuses=('ready',)) as root:
+        code, out = transcript(root)
+        assert code == 0, out
+        assert 'grain' not in sorted(only_row(root))
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL], out
+
+
+def test_two_stories_in_progress_omit_the_key_and_name_the_candidates():
+    """**The case this story exists for.** Two agents on two stories in one
+    milestone is the workflow this package is built for, and it is exactly
+    when a lookup has more than one answer. A row filed against the wrong
+    story is uncorrectable; a row filed against none is visible in a bucket
+    that already exists.
+
+    The candidates go to stderr, which the couriers pass through verbatim, so
+    D2's "revisit if ambiguity turns out to be common" is countable rather
+    than hopeful."""
+    with tree(story_statuses=('building',)) as root:
+        other = second_story(root)
+        code, out = transcript(root)
+        assert code == 0, out
+        assert 'grain' not in sorted(only_row(root))
+        assert '2 stories are in progress' in out
+        assert STORY in out and other in out
+        assert 'GDK_LEDGER_GRAIN' in out, 'the fix is not named'
+
+
+def test_the_flag_wins_over_the_lookup_and_the_lookup_stays_quiet():
+    """A caller who said what they meant is never overridden — and the lookup
+    must not even RUN, or a dispatch that named its grain still gets a
+    complaint about two live stories it was never torn between."""
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)
+        code, out = transcript(root, '--grain', STORY)
+        assert code == 0, out
+        assert only_row(root)['grain'] == STORY
+        assert 'in progress' not in out, out
+
+
+def test_resolution_never_changes_an_exit_code():
+    """The fail-open promise the couriers depend on lives here now: a row that
+    could not be attributed is a SUCCESSFUL write with a key absent."""
+    with tree(story_statuses=('ready',)) as root:
+        second_story(root, 'ready')
+        assert transcript(root)[0] == 0
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)
+        assert transcript(root)[0] == 0
 
 
 # --- D2: a dispatch that was TOLD its grain files a row that says so ----------

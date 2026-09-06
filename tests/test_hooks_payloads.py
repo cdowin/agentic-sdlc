@@ -612,8 +612,10 @@ def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
 # at the exact JSON Claude Code delivers.
 #
 # The assertion is always the same pair, because it is the whole contract: what
-# landed in the tree's ledger.jsonl — 0.4.0/D3, since a courier's row carries
-# no grain — and that the hook exited 0 either way. A hook that blocks a stop is broken even when it is right, and a hook
+# landed in the ledger and that the hook exited 0 either way. WHICH ledger is
+# the routing rule's (0.4.0/D1): this fixture has one story `building`, so a
+# row resolves its grain and lands in that grain's milestone; a row that
+# resolves none lands in the tree's own `<roadmap>/ledger.jsonl` (D3). A hook that blocks a stop is broken even when it is right, and a hook
 # that invents a row is broken even when it exits 0.
 # =============================================================================
 
@@ -622,7 +624,8 @@ LEDGER_SESSION = 'tools/hooks/cc-ledger-session.sh'
 TRANSCRIPTS = Path(__file__).parent / 'fixtures' / 'transcripts'
 DISPATCH_JSONL = TRANSCRIPTS / 'subagent-dispatch.jsonl'
 SESSION_JSONL = TRANSCRIPTS / 'main-session.jsonl'
-LEDGER_REL = 'pm/roadmap/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+ROOT_LEDGER_REL = 'pm/roadmap/ledger.jsonl'
 
 # The ids the payloads below carry. Spelled once so a test asserting they were
 # COPIED cannot accidentally assert against a value the verb derived.
@@ -731,8 +734,8 @@ def fire_ledger(root: Path, hook: str, event: dict | str,
                           capture_output=True, cwd=root, env=env or CLEAN_ENV)
 
 
-def ledger_rows(root: Path) -> list[dict]:
-    path = root / LEDGER_REL
+def ledger_rows(root: Path, rel: str = LEDGER_REL) -> list[dict]:
+    path = root / rel
     if not path.is_file():
         return []
     return [json.loads(line)
@@ -760,6 +763,34 @@ def test_a_subagent_stop_payload_records_exactly_one_dispatch_row(tmp_path):
     assert row['tools'] == {'Bash': 22, 'Write': 1}, row
     # D3: the tree's live state, verbatim, at the instant of the row.
     assert row['tree']['stories_wip'] == ['0.1/alpha/s0'], row
+    # 0.4.0/D2 end to end, through a REAL hook: one story is in progress, so
+    # the row names it — and naming it is what put the row in that milestone's
+    # ledger rather than the tree's.
+    assert row['grain'] == '0.1/alpha/s0', row
+    assert ledger_rows(root, ROOT_LEDGER_REL) == []
+
+
+def test_the_dispatchers_grain_travels_the_whole_vehicle_and_beats_the_lookup(
+        tmp_path):
+    """0.4.0/every-row-names-its-grain, end to end and through make.
+
+    `GDK_LEDGER_GRAIN` names a story that is NOT the one in progress, so the
+    row can only carry it if the value crossed the courier, `make` and the
+    recipe shell intact AND outranked D2's tree fallback. A grain id holds a
+    `/`, which is the character a vehicle that re-splits or re-quotes loses —
+    the couriers' self-tests assert the argv, and this asserts the row.
+    """
+    root = ledger_repo(tmp_path)
+    other = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s9.md'
+    other.write_text('---\nid: 0.1/alpha/s9\nfeature: 0.1/alpha\n'
+                     'milestone: "0.1"\nname: S9\nstatus: ready\n---\n\nx\n',
+                     encoding='utf-8')
+    done = fire_ledger(root, LEDGER_SUBAGENT, subagent_event(root),
+                       env={**CLEAN_ENV, 'GDK_LEDGER_GRAIN': '0.1/alpha/s9'})
+    assert done.returncode == 0, done.stderr
+    rows = ledger_rows(root)
+    assert len(rows) == 1, (rows, done.stderr)
+    assert rows[0]['grain'] == '0.1/alpha/s9', rows[0]
 
 
 def test_the_subagent_hook_never_reads_the_agents_own_narration(tmp_path):

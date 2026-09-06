@@ -22,6 +22,19 @@
   fix they get for free: `pm retire` used to take a milestone's gate history away with its
   directory, so the next milestone printed `unknown` for its rungs until it had run each one.
 
+- **A row with no `--grain` resolves one from the tree, or carries no `grain` key at all.** The
+  dispatched agent is told its grain; an orchestrator session nobody dispatched has no prompt to
+  read one out of, and that is the session type most of a milestone's work happens in. So: exactly
+  one story in an `in_progress` category is used and **routes the row to that grain's milestone**;
+  zero or several omit the key, and several print both candidate ids on stderr — which the
+  couriers pass through verbatim, so ambiguity is countable rather than assumed rare. `--grain`
+  always wins and the lookup does not even run.
+
+  **An unresolvable grain is an OMITTED KEY, never a zero and never a guess.** A row filed against
+  the wrong story is uncorrectable; a row filed against none is visible in a bucket that already
+  exists and can be fixed later. Resolution never changes an exit code, because the couriers'
+  fail-open promise now depends on it.
+
 - **Every automatic ledger row can name the grain it came from.** The telemetry worked and landed
   **unattributed**: `grain` has been `ROW_KEYS`' third key since the ledger shipped and neither
   courier filled it, so every hook-written row went to `rows naming no grain` and the per-grain

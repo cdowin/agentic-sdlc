@@ -3,8 +3,8 @@ id: 0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted
 feature: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: An unnamed grain resolves from the tree, or is omitted
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["0.4.0/every-row-names-its-grain/01-the-couriers-carry-the-grain"]
 ---
 

@@ -1526,6 +1526,12 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
             # `_ledger_id` is what every other row is stamped with, so two rows
             # naming one grain cannot spell it two ways.
             fields['grain'] = _ledger_id(gpath, grain)
+        else:
+            # A resolved grain ROUTES the row as well as naming it — one rule
+            # (D1), whichever way the grain arrived.
+            gpath = _resolved_grain_file(cfg, _grain_from_tree(fields['tree']))
+            if gpath is not None:
+                fields['grain'] = _ledger_id(gpath, '')
     else:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
         fields.update(_by_hand(gpath, grain, flags))
@@ -1633,6 +1639,61 @@ def _from_transcript(source: str, flags: dict[str, str]) -> dict:
     except ledger.TranscriptError as err:
         raise Usage(f'{err}') from err
     return {k: v for k, v in summary.items() if v is not None}
+
+
+def _resolved_grain_file(cfg: model.PmConfig, gid: str) -> Path | None:
+    """The document for a grain the VERB resolved, or None.
+
+    A refusal here would be a row lost to a lookup nobody asked for, so an id
+    that will not resolve is treated as no resolution at all: the key is
+    omitted and the row lands in `rows naming no grain`, which is a bucket
+    somebody can read. `--grain` is the opposite case and still refuses — a
+    caller who named a grain must be told the name is wrong.
+    """
+    if not gid:
+        return None
+    try:
+        return _grain_file(cfg, gid)
+    except Usage:
+        return None
+
+
+def _grain_from_tree(snap: dict) -> str:
+    """The grain a row with no `--grain` is about, or `''` — D2's fallback.
+
+        exactly one story in progress   use it
+        none                            omit the key
+        several                         omit the key, and NAME the candidates
+
+    This is the orchestrator's path: an agent nobody dispatched has no prompt
+    to read a grain out of, and that is the session type most of a milestone's
+    work happens in.
+
+    **Read off the row's OWN `tree` snapshot**, not from a second walk. The
+    snapshot is the live tree at the instant of the row and it is already
+    computed, so the grain a row names and the tree it recorded cannot
+    disagree — and this milestone is deleting twenty resolvers, so adding one
+    back the same week would need an argument nobody has.
+
+    Several is the workflow this package exists for, not an edge, and it is
+    where a lookup would misfile. **An unresolvable grain is an OMITTED KEY**,
+    never a guess: a row filed against the wrong story is uncorrectable, and
+    one filed against none is visible in a bucket that already exists. The
+    candidates go to stderr — which the couriers pass through verbatim — so
+    "revisit if ambiguity turns out to be common" (D2) is a countable claim
+    rather than a hope.
+    """
+    live = snap.get('stories_in_progress') or []
+    if len(live) == 1:
+        return live[0]
+    if len(live) > 1:
+        print(f'[pm] {len(live)} stories are in progress '
+              f'({" ".join(live)}) — which one this row is about is not '
+              f'something this verb may pick, so the row names none of them '
+              f'and lands in `rows naming no grain`. Pass --grain <id> from '
+              f'the dispatch (GDK_LEDGER_GRAIN) to attribute it',
+              file=sys.stderr)
+    return ''
 
 
 def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:

@@ -92,3 +92,5 @@
 {"ts":"2026-09-06T22:52:19Z","kind":"status","grain":"0.4.0/every-row-names-its-grain/01-the-couriers-carry-the-grain","from":"building","to":"done"}
 {"ts":"2026-09-06T22:53:10Z","kind":"status","grain":"0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted","from":"planning","to":"building"}
 {"ts":"2026-09-06T23:10:36Z","kind":"status","grain":"0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted","from":"building","to":"done"}
+{"ts":"2026-09-06T23:10:43Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row","from":"building","to":"reviewing"}
+{"ts":"2026-09-06T23:11:56Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row","from":"reviewing","to":"done"}

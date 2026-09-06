@@ -236,17 +236,19 @@ and `blocked` → `building` (nothing replaces `blocked`: record what is blockin
 grain itself) — or declare them in a category and keep them. `[pm] story_states` and its three
 siblings, `[pm] also_done` (the `done` category enumerated by hand before the category existed)
 and `[pm] review_slug_fallback` (a review record guessed from a filename) are retired and refused
-by name. **The verbs report what they noticed and refuse nothing on process** — stories not in
-`done`, features not in `done`, named in the output with the word each file holds. `check pm`
-catches an undeclared state from any route, hand-edit included.
+by name. **A write prints what it wrote and nothing else.** `pm` moves and reports; `check` reads
+and echoes: a story at work under a feature still in `todo`, a feature in `todo` over finished
+stories, a milestone in `done` over an unfinished feature — every cross-level disagreement is a
+`  WARN  ` line from `check pm` naming both grains and both categories, never a finding and never
+an exit code, and nothing moves a parent on a child's account. `check pm` catches an undeclared
+state from any route, hand-edit included, and that one IS a finding.
 
 | Command | What it does |
 |---|---|
 | `pm init` · `pm new <milestone\|feature\|story\|bug> …` | Stand up a tree; scaffold a grain — its own frontmatter file and nothing else. **No directory and no shared doc is minted**: git stores no empty directory, and a shared doc appears on first WRITE. `new milestone`/`new feature` are idempotent — re-run to fill gaps. Every failure out is a refusal, never a stack trace |
 | `pm story\|bug\|feature\|milestone <status> <id>` | Set a grain's status to any state in its `[pm.states.<kind>]`; anything else is exit 2 naming the declaration. A bug id is `<milestone>/bugs/<slug>`. Appends one timestamped row to the milestone's `ledger.jsonl` — after the write lands, never before, and even for a no-op flip |
-| `pm feature <in-progress-state> <id>` | Move, and REPORT the stories not in `done` — on every move into `in_progress`, not on one word |
-| `pm feature <done-state> <id> [--review-record <path>]` | Close the feature — any state in the `done` category is the close. **Touches no story file**; the stories not in `done` are named, and the story belt (`agentic-sdlc close story <id>`) closes each by name. A `--review-record` naming no file IS refused, whole — stamping a pointer to nothing is the drift D1 reports |
-| `pm status [<milestone>]` | Tree report, drift-aware, grouped by the optional `phase:` bucket |
+| `pm feature <done-state> <id> [--review-record <path>]` | Close the feature — any state in the `done` category is the close. **Touches no story file** — the story belt (`agentic-sdlc close story <id>`) closes each by name — and names none: the stories left behind are `check pm`'s WARN. A `--review-record` naming no file IS refused, whole — stamping a pointer to nothing is the drift D1 reports |
+| `pm status [<milestone>]` | Tree report grouped by the optional `phase:` bucket, marking a feature `<DRIFT: …>` (a dangling record, the gate's D1) or `<WARN: …>` (behind its own finished stories, the gate's D2) off the same predicates the gate runs |
 | `pm list [--status <s>[,<s>…]] [--category <c>] [--owner <n>] [--milestone <id>]` | One tab-separated `<story-id> <status> <owner> <feature-id>` per story, filtered; `--category` asks the category (`todo`/`in_progress`/`done`), whatever the word. Deliberately **no `pm next`**: a verb that picks THE next thing is the tool having an opinion about your priorities. Rows to stdout, census to stderr |
 | `pm list --kind milestone [--status …] [--category <c>]` | One tab-separated `<id> <status> <category> <branch>` per milestone (`-` for no branch). What a script asks instead of grepping a status word out of `milestone.md` — `tools/dev/agent-worktree.sh` finds the integration branch this way, and answers the same under any vocabulary |
 | `pm validate` | Frontmatter well-formed, ids match paths, parentage consistent, `depends_on`/`consumed_by` resolve, the feature graph acyclic. A ref into a milestone no longer in the tree is UNVERIFIABLE, never failed — git history is the archive |

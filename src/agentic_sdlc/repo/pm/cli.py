@@ -59,17 +59,16 @@ every run; a state the project never declared is refused by name.
   story <status> <story-id>               (any state in [pm.states.story])
   bug <status> <bug-id>                   (any state in [pm.states.bug];
                                            bug-id is <milestone>/bugs/<slug>)
-  feature <status> <feature-id>           (any state in [pm.states.feature];
-                                           a move into in_progress reports the
-                                           stories not in `done`)
+  feature <status> <feature-id>           (any state in [pm.states.feature].
+                                           A write prints what it wrote and
+                                           nothing else; a parent behind its
+                                           children is `check pm`'s WARN)
   feature <done-state> <feature-id> [--review-record <path>]
                                           (a state in the `done` category
                                            closes: stamps `reviewed:` from the
-                                           flag and reports the stories not in
-                                           `done`. No story file is touched —
+                                           flag. No story file is touched —
                                            the story belt closes each by name)
-  milestone <status> <milestone-id>       (any state; a move into `done`
-                                           reports the features not there)
+  milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes the milestone directory and
                                            appends its row to ROADMAP.md;
@@ -366,17 +365,6 @@ def _movable(cfg: model.PmConfig, kind: str, to: str) -> None:
         raise Usage(defect)
 
 
-def _unfinished(cfg: model.PmConfig, kind: str,
-                grains) -> list[str]:
-    """`<name>(<status>)` for every grain NOT in `done` — `holds`' blockers.
-
-    The one shape every advisory in this file prints, so `feature`,
-    `milestone` and `retire` cannot describe "not finished" three ways.
-    """
-    held = model.holds(cfg, kind, grains, model.DONE_CATEGORY)
-    return [f'{name}({status})' for name, status in held.blockers]
-
-
 # --- story --------------------------------------------------------------------
 def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
     if len(args) != 2:
@@ -440,24 +428,15 @@ def _feature_or_usage(cfg: model.PmConfig, fid: str) -> tuple[Path, str]:
     return ff, _was(ff)
 
 
-def _story_states(cfg: model.PmConfig, fid: str) -> list[tuple[str, str]]:
-    ff = model.feature_file(cfg, fid)
-    assert ff is not None
-    return [(s.name, model.field_of(s, 'status')) for s in model.story_files(ff)]
-
-
 def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
-    """Any feature move that is not a close. One write, one advisory.
+    """Any feature move that is not a close. One write, and it says so.
 
-    The advisory — the stories not in `done`, named with the word each file
-    holds — prints on every move INTO `in_progress`. It used to print on
-    `reviewing` alone (B3), which was the engine knowing that one word is the
-    hand-off; under categories "work has started on this feature" is the
-    honest trigger, and `holds(stories, done)` is the one question
-    `pm ready-for feature` asks too, so the two cannot name different sets.
-    Reported, never refused: "a feature cannot be under review while its own
-    work is unfinished" is a claim about how a team works, and which stories
-    are where is a fact for the caller to act on.
+    THE ADVISORY IS GONE (story 03 of the-code-knows-entry-and-exit). This
+    used to name the stories not in `done` on every move into `in_progress`;
+    a write prints what it wrote and nothing else, and a feature behind or
+    ahead of its own stories is `check pm`'s `  WARN  ` line (D5/D2), asked of
+    the tree rather than of the caller. `pm` moves and reports; `check` reads
+    and echoes.
     """
     if len(args) != 1:
         raise Usage(USAGE)
@@ -467,14 +446,9 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
         _ok(f'feature {fid} already {to} (no-op)')
         _stamp_status(cfg, ff, cur, to, fid)
         return 0
-    pending = (_unfinished(cfg, 'story', _story_states(cfg, fid))
-               if model.category_of(cfg, 'feature', to) == model.IN_PROGRESS
-               else [])
     _set_status(cfg, ff, to)
     _ok(f'feature {fid}: {cur} -> {to}')
     _stamp_status(cfg, ff, cur, to, fid)
-    if pending:
-        _ok(f'  {len(pending)} story/ies not finished: {" ".join(pending)}')
     return 0
 
 
@@ -521,20 +495,20 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
 
     `done`, `obe`, or anything the project lists there: the close is the
     category, and what makes it a close rather than a plain move is the record
-    stamp and the report. Touches the feature's own `status:` (plus `reviewed:`
-    from `--review-record`) and nothing else. A story is closed by the story
-    belt, by name — `agentic-sdlc close story <id>` — never by a command aimed
-    at its feature: writing to files the caller did not name is the tool
-    acting on its own initiative.
+    stamp. Touches the feature's own `status:` (plus `reviewed:` from
+    `--review-record`) and nothing else. A story is closed by the story belt,
+    by name — `agentic-sdlc close story <id>` — never by a command aimed at
+    its feature: writing to files the caller did not name is the tool acting
+    on its own initiative.
 
-    The verb REPORTS what it saw — the stories not finished, with the word
-    each holds — and refuses nothing on their account. What the tree is left
-    holding is D5's question, and D5 asks it of the tree rather than of the
+    It no longer names the stories not finished (story 03): a write prints
+    what it wrote. What the tree is left holding is `check pm`'s question —
+    D3/D5 as WARN lines — and it asks it of the tree rather than of the
     caller.
 
     A feature that is ALREADY closed is not a short circuit. The flip is the
-    idempotent part; the record stamp and the report each run on their own
-    terms, so every run answers for the whole tree it was pointed at.
+    idempotent part; the record stamp runs on its own terms, so every run
+    answers for the whole tree it was pointed at.
     """
     pairs, rest = _take_flags(args, ('--review-record',), noun='a path')
     rec = ''
@@ -554,9 +528,6 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
     if not fid:
         raise Usage(USAGE)
     ff, cur = _feature_or_usage(cfg, fid)
-    # What it noticed, said out loud. Never a refusal: the caller asked for a
-    # feature to be closed, and this is a fact about its stories.
-    untouched = _unfinished(cfg, 'story', _story_states(cfg, fid))
 
     if rec:
         # The one thing checked about a record: the path RESOLVES. Whether the
@@ -581,10 +552,6 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
             + (f' (review record: {record})' if record
                else ' (no review record)'))
     _stamp_status(cfg, ff, cur, to, fid)
-    if untouched:
-        _ok(f'  {len(untouched)} story/ies not done and NOT touched: '
-            f'{" ".join(untouched)} (close each through '
-            f'`agentic-sdlc close story <id>`)')
     return 0
 
 
@@ -619,21 +586,11 @@ def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
         _ok(f'milestone {mid} already {to} (no-op)')
         _stamp_status(cfg, mf, cur, to, mid)
         return 0
-    pending: list[str] = []
-    if model.category_of(cfg, 'milestone', to) == model.DONE_CATEGORY:
-        mdir = model.milestone_dir(cfg, mid)
-        assert mdir is not None
-        pending = _unfinished(
-            cfg, 'feature',
-            ((ff.parent.name, model.field_of(ff, 'status'))
-             for ff in model.feature_files(mdir)))
     _set_status(cfg, mf, to)
     _ok(f'milestone {mid}: {cur} -> {to}')
     _stamp_status(cfg, mf, cur, to, mid)
-    # Reported, never refused — and D3 asks the same question of the tree, so
-    # the state this leaves is not unwatched.
-    if pending:
-        _ok(f'  {len(pending)} feature(s) not done: {" ".join(pending)}')
+    # No advisory about the features left behind (story 03): a write prints
+    # what it wrote, and D3 asks that question of the tree as a WARN line.
     return 0
 
 
@@ -871,11 +828,14 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         rows = []
         for ffile in model.feature_files(mdir):
             view = model.read_feature(cfg, ffile)
-            # Drift markers reuse the SAME predicates the gate runs on, so the
-            # report and the gate can never describe drift differently.
-            reason = (model.drift_dangling_record(cfg, view.fid)
-                      or model.drift_stalled(cfg, view))
-            drift = f'  <DRIFT: {reason}>' if reason else ''
+            # The markers reuse the SAME predicates the gate runs on, so the
+            # report and the gate can never describe a tree differently: a
+            # dangling record is the gate's DRIFT, a feature behind its own
+            # finished stories is the gate's WARN (D2).
+            dangling = model.drift_dangling_record(cfg, view.fid)
+            stalled = model.drift_stalled(cfg, view)
+            drift = (f'  <DRIFT: {dangling}>' if dangling
+                     else f'  <WARN: {stalled}>' if stalled else '')
             # Numbered phases first, then the named ones, then unphased — the
             # reading order of the milestone's own board, and `model.phase_key`
             # is the one spelling of it (the execution list sorts by it too).

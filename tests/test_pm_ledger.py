@@ -205,7 +205,6 @@ def test_a_feature_close_writes_the_feature_row_and_no_story_row():
               story_statuses=('reviewing', 'reviewing', 'ready')) as root:
         code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
         assert code == 0, out
-        assert 'NOT touched' in out
         rows = ledger_rows(root)
     assert [(r['grain'], r['from'], r['to']) for r in rows] == [
         ('0.1/alpha', 'reviewing', 'done')]

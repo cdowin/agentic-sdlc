@@ -66,7 +66,7 @@ it becomes true, rather than batching flips at the end.
 3. **Ready for review.** `pm story reviewing <id>`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
    the `done` category is the close — sets the feature's status and **touches nothing
-   else**. It prints the stories not in `done`; each is closed by name through the
+   else**, and prints only what it wrote; a story left behind is `check pm`'s WARN, and each is closed by name through the
    story belt (`agentic-sdlc close story <id>`), never by a command aimed at the
    feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves

@@ -92,68 +92,44 @@ class StatusMoves(unittest.TestCase):
 
     def test_the_END_STATE_is_still_gated(self):
         # Report, do not refuse: a story at work under a feature that says it
-        # has not started is D5's finding whether the CLI or an editor put it
-        # there.
+        # has not started is D5's WARN whether the CLI or an editor put it
+        # there — a line naming both, exit 0 (story 03).
         with tree(feature_status='planning', story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'story', 'done', '0.1/alpha/s0')[0], 0)
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
+            self.assertEqual(code, 0, out)
+            self.assertIn('  WARN  story 0.1/alpha/s0', out)
             self.assertIn('two places in this tree disagree', out)
 
-    def test_feature_reviewing_REPORTS_unfinished_stories_and_still_moves(self):
-        # It used to refuse: "a feature cannot be under review while its own
-        # work is unfinished" is a claim about how a team works. Which stories
-        # are where is a fact, and it belongs in the output, not in a veto.
-        #
-        # B3: the advisory asks `model.holds(stories, done)` — the SAME
-        # question `pm ready-for feature` asks — where it used to ask
-        # `not in (reviewing, 'done')`. A story AT `reviewing` is not finished,
-        # so it is named here too; it used to flip silently and then be named
-        # by `ready-for`, which is one question with two answers. And it
-        # prints on every move INTO `in_progress`, not on the word
-        # `reviewing`: `building` gets the same advisory.
+    def test_a_feature_move_prints_what_it_wrote_and_nothing_else(self):
+        """Amended from the case that asserted the advisory (`not finished:
+        s0.md(...)`) on every move into `in_progress` — it could not fail once
+        the advisory was deleted, so it now proves the deletion: a write
+        prints the one line it wrote (story 03), and the stories left behind
+        are `check pm`'s WARN, asked of the tree."""
         for to in ('reviewing', 'building'):
             with self.subTest(to=to), \
                     tree(feature_status='ready',
-                         story_statuses=('reviewing', 'building')) as root:
+                         story_statuses=('ready', 'building')) as root:
                 code, out = run_cli(root, 'feature', to, '0.1/alpha')
                 self.assertEqual(code, 0, out)
-                self.assertIn('not finished', out)
-                self.assertIn('s1.md(building)', out)
-                self.assertIn('s0.md(reviewing)', out)
+                self.assertEqual(out.strip().splitlines(),
+                                 [f'[pm] feature 0.1/alpha: ready -> {to}'])
                 self.assertEqual(model.field_of(root / FFILE, 'status'), to)
 
-    def test_the_advisory_asks_the_category_so_obe_is_finished(self):
-        # The other half of B3, as a category: `obe` is in the seed's `done`
-        # list, so a dropped story does not keep the advisory talking — and
-        # not because of an `also_done` shim read from a default, which is
-        # what 0.2.0 removed. A project that puts `obe` in `in_progress`
-        # instead gets it named, because the declaration is the whole answer.
-        with tree(story_statuses=('done', 'obe')) as root:
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('not finished', out)
-        parked = {'todo': ('planning', 'ready'),
-                  'in_progress': ('building', 'reviewing', 'obe'),
-                  'done': ('done',)}
-        with tree(story_statuses=('done', 'obe')) as root:
-            write_config(root, declaring(story=parked))
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertIn('not finished', out)
-            self.assertIn('s1.md(obe)', out)
-
-    def test_milestone_done_REPORTS_live_features_and_still_moves(self):
+    def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
+        # The advisory about the features left behind is gone (story 03);
+        # D3 asks that question of the tree it left, as a WARN naming both.
         with tree(feature_status='building') as root:
             code, out = run_cli(root, 'milestone', 'done', '0.1')
             self.assertEqual(code, 0, out)
-            self.assertIn('feature(s) not done', out)
-            self.assertIn('alpha(building)', out)
+            self.assertEqual(out.strip().splitlines(),
+                             ['[pm] milestone 0.1: building -> done'])
             self.assertEqual(model.field_of(root / MFILE, 'status'), 'done')
-            # ...and D3 asks the same question of the tree it left behind.
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn('is done but feature 0.1/alpha', out)
+            self.assertEqual(code, 0, out)
+            self.assertIn("  WARN  milestone 0.1 is 'done' (done) but feature "
+                          "0.1/alpha is 'building' (in_progress)", out)
 
 
 class StatusVerbQuartet(unittest.TestCase):
@@ -267,19 +243,18 @@ class FeatureClose(unittest.TestCase):
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'done')
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted(sdir.iterdir())}, before)
-            self.assertIn('NOT touched', out)
-            self.assertIn('s0.md(reviewing)', out)
-            self.assertIn('s1.md(building)', out)
-            self.assertIn('close story', out)
+            # ...and it does not narrate what it left alone any more (story
+            # 03): the close prints the one write it made.
+            self.assertNotIn('NOT touched', out)
+            self.assertNotIn('s0.md', out)
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')
             self.assertEqual(code, 2, out)
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted(sdir.iterdir())}, before)
 
-    def test_the_second_close_writes_nothing_and_still_reports(self):
-        # Rule 3: the same command twice is a no-op the second time — and the
-        # no-op branch used to swallow the REPORT, so the second run was
-        # quieter than the first about the same tree.
+    def test_the_second_close_writes_nothing_and_says_so(self):
+        # Rule 3: the same command twice is a no-op the second time, and it
+        # says so; the story advisory it used to repeat is gone (story 03).
         with tree(feature_status='reviewing',
                   story_statuses=('reviewing', 'ready')) as root:
             fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
@@ -290,7 +265,7 @@ class FeatureClose(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('already done (no-op)', out)
-            self.assertIn('s1.md(ready)', out)
+            self.assertNotIn('s1.md', out)
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted((fdir / 'stories').iterdir())},
                              settled)
@@ -307,7 +282,6 @@ class FeatureClose(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'obe')
             self.assertIn('reviewed -> docs/reviews/alpha.md', out)
-            self.assertIn('NOT touched', out)
 
     def test_a_record_pointer_naming_no_file_is_refused_and_writes_nothing(self):
         """The half that IS a fact, and the one D1 reports afterwards: a
@@ -1232,7 +1206,6 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'shipped')
             self.assertIn('review record: docs/reviews/alpha.md', out)
-            self.assertIn('NOT touched', out)
 
     def test_review_record_with_an_empty_value_refuses_in_either_spelling(self):
         # Pre-fix: `--review-record=` stored '' and silently skipped the

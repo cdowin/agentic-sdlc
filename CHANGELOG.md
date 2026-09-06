@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### A parent behind its child is a warning, not a finding, and nothing moves it
+
+- **D2, D3, D5 and D6 are `  WARN  ` lines now, never `  DRIFT  `, and never an exit code**
+  (behaviour change, rule 6). A story at work under a feature still in `todo` (D5), a `todo`
+  feature over finished stories (D2), a `todo` milestone over finished features (D6), a `done`
+  milestone over an unfinished feature (D3): each line names both grains and both categories,
+  the verdict line counts them apart (`[check:pm] PASS — …; 3 warning(s)`), and `check pm` exits
+  0 on a tree whose only complaint is one of the four. Chris, 2026-09-05: *"If I do a check on a
+  feature and it shows to-do and a story in progress, that's a warn. Not a fail, no action, just
+  messaging."* D1, D4, D8/D9/D10 and V1–V6 are facts about the input and stay findings. The four
+  still answer to `[pm] checks`. A CI that relied on D2/D3/D5/D6 to redden a tree reads the
+  `warning(s)` count instead.
+- **A status write prints what it wrote and nothing else.** `pm feature <state>` no longer names
+  the stories not in `done` on a move into `in_progress`; `pm feature <done-state>` no longer
+  prints `N story/ies not done and NOT touched`; `pm milestone <done-state>` no longer prints
+  `N feature(s) not done`. Those facts are `check pm`'s WARN lines, asked of the tree.
+- **`pm status` marks `<WARN: …>` for D2** (a feature behind its own finished stories) and keeps
+  `<DRIFT: …>` for D1 (a dangling record) — the board says what the gate says.
+
 ### ready is one command, and an empty ready is a warning
 
 - **`check pm` prints `  WARN  ` lines** (new line shape, rule 6) for a grain that has been

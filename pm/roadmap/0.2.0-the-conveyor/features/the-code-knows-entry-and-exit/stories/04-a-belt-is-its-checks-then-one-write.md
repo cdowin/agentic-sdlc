@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/04-a-belt-is-its-checks-then-one-write
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: A belt is its checks, then one write or a clean error (D12)
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -24,11 +24,14 @@ depends_on: []
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | each belt: one false check → error line, exit 1, file byte-identical | replace tests/test_conveyor_close.py |
-| 2 | unit | all true → exactly one write, the first done state | replace tests/test_conveyor_close.py |
-| 3 | unit | --force writes and the ledger row names the false checks | replace tests/test_conveyor_deviation.py |
-| 4 | unit | release prints the caller list and writes nothing but the status | replace tests/test_conveyor_driver.py |
-| 5 | unit | the rendered protocol carries every check and the after-list | amend tests/test_install_sdlc.py |
+| 1 | integration | each belt: one false check → error line, exit 1, file byte-identical | `test_conveyor_close.py::test_a_false_check_is_named_exit_1_and_nothing_is_written`, `::test_close_feature_names_the_story_not_in_done_and_writes_nothing`; the machine itself at unit tier in `test_conveyor_driver.py::test_every_check_runs_and_prints_one_line_and_a_false_one_stops_the_write` |
+| 2 | integration | all true → exactly one write, the first done state | `test_conveyor_close.py::test_all_true_writes_exactly_the_first_done_state_and_nothing_else`, `::test_the_written_state_is_the_configs_word_not_the_literal_done`, `::test_close_feature_all_true_writes_the_feature_status_once` |
+| 3 | unit | --force writes and the ledger row names the false checks | `test_conveyor_deviation.py::test_force_writes_the_status_and_one_row_naming_the_false_checks` (+ `test_conveyor_driver.py::test_force_writes_over_false_checks_and_hands_them_to_the_recorder`) |
+| 4 | unit | release prints the caller list and writes nothing but the status | `test_conveyor_driver.py::test_release_prints_the_callers_list_and_writes_nothing_but_the_status`; `adopt` writes nothing at all: `test_conveyor_adopt.py::test_the_whole_belt_writes_nothing_and_touches_no_repo_but_this_one` |
+| 5 | unit | the rendered protocol carries every check and the after-list | `test_install_sdlc.py::test_the_rendered_protocol_carries_every_check_the_write_and_the_after_list`, `::test_this_repos_own_protocol_document_is_byte_current_and_describes_d12` |
+
+The conveyor shrank from 4,318 to 2,347 source lines and its tests from 3,739 to 1,508;
+`state.py`, `test_conveyor_state.py` and every `do()` are gone.
 
 ## Out of scope
 

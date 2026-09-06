@@ -68,13 +68,15 @@ be unbound, as a counted line and never a failure. `pm move` is gone. `pm list -
 
 ## Risks
 
-- **This is a tree-format migration for every consumer**, unlike anything in 0.3.0. It needs a
-  migration verb that is idempotent and reversible, and the CHANGELOG has to be honest that a
-  consumer cannot half-adopt it.
+- **This is a tree-format migration for every consumer**, unlike anything in 0.3.0 —
+  `the-migration-is-whole-or-nothing` is the only feature here that touches an existing tree, and
+  it is the riskiest work in the milestone. The CHANGELOG has to be honest that a consumer cannot
+  half-adopt it.
 - **Slug uniqueness lands on existing trees.** NullBound has 254 stories with reused names — its
-  own CLAUDE.md records "S4" meaning three different stories in one session. The migration will
-  surface real collisions, and renaming a grain is a ref-rewriting problem, which is the thing
-  `pm move` gets wrong today. The migration verb must do what `pm move` does not.
+  own CLAUDE.md records "S4" meaning three different stories in one session. The migration reports
+  those collisions and refuses to guess: an auto-picked id is a name nobody chose, in the one field
+  that is stable for life and cited from commit messages. Resolution goes through `pm rename`,
+  which is the same ref-sweep problem stated once — and the thing `pm move` gets wrong today.
 - **Losing `ls`.** A milestone's directory is currently a browsable answer to "what is in this".
   `pm status` answers it, but a human in an editor loses something real, and 254 files in one pool
   is a directory nobody scrolls.

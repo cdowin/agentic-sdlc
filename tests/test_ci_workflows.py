@@ -29,6 +29,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT, run_check  # noqa: E402
+from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -199,7 +200,7 @@ def test_no_workflow_names_a_consumer_project(workflow):
     """The bulk of the drift between the two forks was the project name in the
     title, and it is what made them look like different files."""
     rel, text = workflow
-    for name in ('consumer_a', 'consumer_b', 'consumer_c', 'consumer_d'):
+    for name in consumers.require():
         assert name not in text.lower(), f'{rel} names {name}'
 
 

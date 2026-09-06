@@ -46,6 +46,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support import consumers
 
 pytestmark = pytest.mark.skipif(shutil.which('bash') is None,
                                 reason='needs bash')
@@ -342,9 +343,11 @@ def test_the_gate_library_names_no_engine_and_no_engine_artifact():
 # harness, as a tombstone — never in the package. A project name surviving in
 # an installable is a fork wearing a library's name: the next consumer reads it
 # as configuration it must match, and the fix that reaches one repo stops
-# reaching the other. Word-bounded, so `trailing` is prose and `consumer_b` is not.
+# reaching the other. Word-bounded, so a longer word that merely BEGINS with
+# a configured name stays prose and only the name itself is a finding.
 # The whole-tree form of this claim is tests/test_consumer_independence.py.
-CONSUMER_NAMES = (r'\bconsumer_a\b', r'\bCONSUMER_A\b', r'\btrail\b', r'\bTRAIL\b')
+CONSUMER_NAMES = tuple(rf'\b{n}\b' for n in consumers.consumer_names())
+CONSUMER_NAMES += tuple(p.upper() for p in CONSUMER_NAMES)
 
 
 @pytest.mark.parametrize('script', SCRIPTS, ids=lambda p: p.stem)

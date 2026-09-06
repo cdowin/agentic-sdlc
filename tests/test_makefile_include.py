@@ -39,6 +39,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.repo import install  # noqa: E402
@@ -662,7 +663,7 @@ def test_the_header_documents_the_tier_file_shape():
 # --- the file is generic ------------------------------------------------------
 def test_the_include_names_no_consumer_project():
     text = INCLUDE.read_text(encoding='utf-8').lower()
-    for name in ('consumer_a', 'consumer_b', 'consumer_c'):
+    for name in consumers.require():
         assert name not in text, f'the include names {name}'
 
 

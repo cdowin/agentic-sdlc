@@ -12,3 +12,8 @@ __pycache__/
 
 # Agent worktrees, created by tools/dev/agent-worktree.sh; each is its own checkout.
 .claude/worktrees/
+
+# The consumer deny-list the shipped-file guards sweep for — maintainer
+# configuration, never committed: this tree is public and the names are
+# the maintainer's own repositories. See tests/support/consumers.py.
+.consumer-names

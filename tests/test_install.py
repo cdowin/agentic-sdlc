@@ -32,12 +32,14 @@ import json
 import os
 import sys
 import tempfile
+import re
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -444,9 +446,18 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
     shared scope library ships as no file at all."""
     for rel in HOOKS:
         body = install.body_of(Path(rel).name)
-        for banned in ('consumer_b_', 'CONSUMER_B_', 'consumer_a', 'CONSUMER_A',
-                       '_scope.sh', 'source "'):
+        # The STRUCTURAL bans always run: they are facts about the shape of a
+        # hook, not about who consumes it.
+        for banned in ('_scope.sh', 'source "'):
             assert banned not in body, f'{rel} carries {banned!r}'
+        # The project-name ban runs over whatever names are configured; the
+        # names are maintainer configuration (tests/support/consumers.py).
+        # Word-bounded: a git flag or an English word that merely begins with
+        # a configured name is prose, not a project reference.
+        lowered = body.lower()
+        for name in consumers.consumer_names():
+            hit = re.search(rf'\b{re.escape(name)}\b', lowered)
+            assert hit is None, f'{rel} carries the consumer name {name!r}'
     # A hook that parses the stdin event carries its parser INLINE — a
     # hook that `source`s a library a fresh repo may not have fails OPEN.
     # DERIVED, not listed: it was `HOOKS[:2]`, which meant "the two that

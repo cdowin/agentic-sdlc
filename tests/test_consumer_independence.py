@@ -113,13 +113,20 @@ NOT_CONTENT = {'.git', '.gate-reports', '.pytest_cache', '.ruff_cache', '.venv',
 # each one a repo of its own, scanned by its own run of this suite. Both are
 # gitignored; both are tool output.
 NOT_CONTENT_PREFIXES = ('.venv', '.claude/worktrees')
+# The deny-list this gate SWEEPS FOR (tests/support/consumers.py reads it), so
+# it necessarily spells every name. Gitignored, never committed, and excluded
+# here rather than tombstoned: a tombstone is for a file in the tree, and this
+# one is configuration that only ever exists on a maintainer's disk.
+NOT_CONTENT_FILES = {'.consumer-names'}
 
 
 def is_tool_output(rel: str) -> bool:
     """ONE answer to "is this path tool output", asked by the census and by the
     independent walk that audits it — two spellings drifted the moment a
     second exclusion shape arrived."""
-    return bool(set(Path(rel).parts) & NOT_CONTENT) or rel.startswith(NOT_CONTENT_PREFIXES)
+    return (bool(set(Path(rel).parts) & NOT_CONTENT)
+            or rel.startswith(NOT_CONTENT_PREFIXES)
+            or rel in NOT_CONTENT_FILES)
 
 # The tombstones: files allowed to spell a banned name, because banning it is
 # what they do. Every entry carries its reason — an allowlist without one is
@@ -127,16 +134,13 @@ def is_tool_output(rel: str) -> bool:
 # This file is NOT among them: it spells the names only inside `\b...\b`
 # regexes, which the same regexes do not match, so it needs no exemption and a
 # bare name added here in future is caught like anywhere else.
-TOMBSTONES = {
-    'tests/test_ci_workflows.py': 'guards the workflows against the same names',
-    'tests/test_makefile_include.py': 'guards Makefile.devkit against them',
-    'tests/test_install.py': 'guards every installed hook',
-    # Renamed from tests/test_runners_installable.py in 0.2.0, when
-    # `install-runners` became `install-gates` and the engine runners left: the
-    # module still guards the shipped gate library, so the exemption FOLLOWED
-    # the file rather than lapsing with the old name.
-    'tests/test_gate_library.py': 'guards the shipped gate library against them',
-}
+# Empty since this tree went public, and that is the assertion. The four
+# guards that used to spell the names — the workflows', the include's, the
+# hooks' and the gate library's — now read them from maintainer configuration
+# (tests/support/consumers.py), so none of them names a consumer and none of
+# them needs an exemption. An entry added here has to carry the sentence
+# saying why a file in a PUBLIC tree spells a private repository's name.
+TOMBSTONES: dict[str, str] = {}
 
 # The same discipline, for ENGINE_ARTIFACTS. Empty, and that is the assertion:
 # every engine token left this package in 0.2.0 and nothing under

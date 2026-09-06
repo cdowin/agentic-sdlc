@@ -74,7 +74,7 @@ checks = [
 #
 # NOT IN `[checks] all`, and that is a ruling rather than an oversight.
 # `check all` is the PER-CHANGE gate: it runs in `precommit`, in a pre-push
-# hook, and inside `test_makefile_gates`, which spawns `make gates` against
+# hook, and inside `test_makefile_gates`, which spawns `make check` against
 # this very tree. A budget gate there grades the LAST suite run, so one slow
 # afternoon reddens the next person's edit for a reason they cannot act on —
 # and it made nine tests fail for a timing number that had nothing to do with
@@ -165,14 +165,13 @@ done        = ["closed"]
 # every glob below to matching at least one TRACKED file and every `make`
 # target it names to existing in this Makefile.
 #
-# THE INTERPRETER IS SPELLED OUT, and it has to be. These read
-# `uv run --python 3.11 --with pytest python -m pytest`, which is what the
-# Makefile's own PYTEST expands to — not bare `python3`, which on this machine
-# is Homebrew 3.14 and has no pytest at all. Written the short way first, and
-# `verify --check` passed it: that verb holds a glob to matching a tracked file
-# and a `make` target to existing, and it has no opinion about whether a shell
-# command will work. It was `close story` on a real story that found it, which
-# is the belt below catching what the declaration above it could not.
+# THE COMMANDS GO THROUGH `uv run`, which is what Makefile.tiers' own PYTEST
+# is: this tree installed on itself, with pytest from the `dev` dependency
+# group beside it — never bare `python3`, which has no pytest and is whatever
+# the machine happens to have. `verify --check` holds a glob to matching a
+# tracked file and a `make` target to existing, and has no opinion about
+# whether a shell command will work; it was `close story` on a real story that
+# found a bare spelling.
 # THE FEATURE RUNG IS LOCAL INTEGRATION, and it stopped being that for about an
 # hour on 2026-09-05, which is worth recording rather than quietly fixing.
 #
@@ -185,10 +184,10 @@ done        = ["closed"]
 # Chris's model, and the rungs now match it: "Build, unit, done. Build, unit,
 # done. Stack up to features. Feature review, local integration, done."
 #
-#   a PM-tree or doc edit   make gates      ~2 s    (a [[verify.narrow]] rule)
+#   a PM-tree or doc edit   make check      ~2 s    (a [[verify.narrow]] rule)
 #   an edit, inner loop     verify --story  seconds (the paths decide)
 #   closing a story         close story     seconds
-#   closing a feature       verify --feature ~36 s  <- BOTH tiers, locally
+#   closing a feature       verify --feature ~40 s  <- BOTH tiers, locally
 #   closing a milestone     verify --milestone      the matrix, once
 feature   = "make test"
 milestone = "make milestone"
@@ -200,31 +199,31 @@ milestone = "make milestone"
 # Editing a test module proves itself. The narrowest rung there is.
 [[verify.narrow]]
 paths = "tests/test_<name>.py"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_<name>.py -q"
+run   = "uv run -q python -m pytest tests/test_<name>.py -q"
 
 # conftest DERIVES the `shell` mark, and test_shell_mark.py is the census that
 # holds the derivation to what the modules actually do.
 [[verify.narrow]]
 paths = "tests/conftest.py"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_shell_mark.py -q"
+run   = "uv run -q python -m pytest tests/test_shell_mark.py -q"
 
 # A shared helper or a vendored fixture is reachable from anywhere in the
 # suite, so there is no narrowing to be had and saying so is the honest answer.
 [[verify.narrow]]
 paths = "tests/support/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/ -q"
+run   = "uv run -q python -m pytest tests/ -q"
 
 [[verify.narrow]]
 paths = "tests/fixtures/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/ -q"
+run   = "uv run -q python -m pytest tests/ -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/pm/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_pm_*.py tests/test_verdict.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_pm_*.py tests/test_verdict.py tests/test_boundaries.py -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/verify/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_verify_*.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_verify_*.py tests/test_boundaries.py -q"
 
 # The conveyor. `test_install*.py` is in the slice because `install-sdlc`
 # RENDERS from the step registry — a step added without a doc line is a
@@ -232,69 +231,83 @@ run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_verify_*
 # feature exists to end.
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/conveyor/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_conveyor_*.py tests/test_install_sdlc.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_conveyor_*.py tests/test_install_sdlc.py tests/test_boundaries.py -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/checks/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_check_*.py tests/test_pm_gate.py tests/test_gate_roster.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_check_*.py tests/test_pm_gate.py tests/test_gate_roster.py tests/test_boundaries.py -q"
 
 # The installables are proven by INSTALLING them into a temp repo and running
 # them, which is six modules and no fewer — the corpus is the contract.
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/installables/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_install.py tests/test_fresh_project.py tests/test_ci_workflows.py tests/test_makefile_include.py tests/test_gate_library.py tests/test_hooks_payloads.py -q"
+run   = "uv run -q python -m pytest tests/test_install.py tests/test_fresh_project.py tests/test_ci_workflows.py tests/test_makefile_include.py tests/test_gate_library.py tests/test_hooks_payloads.py -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/repo/<name>.py"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_gates_extra.py tests/test_install.py tests/test_init_verb.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_gates_extra.py tests/test_install.py tests/test_init_verb.py tests/test_boundaries.py -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/core/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_apply.py tests/test_fuzz_markdown.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_apply.py tests/test_fuzz_markdown.py tests/test_boundaries.py -q"
 
 [[verify.narrow]]
 paths = "src/agentic_sdlc/<name>.py"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_cli_surface.py tests/test_gate_roster.py tests/test_boundaries.py -q"
+run   = "uv run -q python -m pytest tests/test_cli_surface.py tests/test_gate_roster.py tests/test_boundaries.py -q"
 
-# `tools/` IS the installer's output here (0.23.0 self-hosting), so the hook
-# corpora are what proves an edit to it — and that is a make target, which is
-# also how this rung gets a measured cost in the ledger.
+# `tools/` IS the installer's output here (0.23.0 self-hosting): `check hooks`
+# replays the corpora the installed hooks ship, and `tools/dev/gdk_gate.sh` is
+# held byte-current with its installable by the installer suite.
+[[verify.narrow]]
+paths = "tools/hooks/**"
+run   = "make check"
+
 [[verify.narrow]]
 paths = "tools/**"
-run   = "make hooks-self-test"
+run   = "uv run -q python -m pytest tests/test_install.py tests/test_gate_library.py -q"
 
+# The Makefile is a consumer's — DEVKIT and the include — and Makefile.tiers is
+# this project's tier file. The include itself is proven on fixtures.
 [[verify.narrow]]
-paths = "Makefile"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_makefile_gates.py tests/test_makefile_include.py -q"
+paths = "Makefile*"
+run   = "uv run -q python -m pytest tests/test_makefile_gates.py tests/test_makefile_include.py tests/test_install.py -q"
 
 # devkit.toml, the PM tree and the root prose are all read by the static gates
-# and by nothing else, so `make gates` is exactly the slice.
+# and by nothing else, so `make check` is exactly the slice.
 [[verify.narrow]]
 paths = "devkit.toml"
-run   = "make gates"
+run   = "make check"
 
 [[verify.narrow]]
 paths = "pm/roadmap/**"
-run   = "make gates"
+run   = "make check"
 
 [[verify.narrow]]
 paths = "<doc>.md"
-run   = "make gates"
+run   = "make check"
 
 # The agent roster and the two skills are INSTALLED files here (CLAUDE.md
 # § Self-hosting), so what proves an edit to one is the installer suite that
 # asserts this repo's copies stay byte-current with the source.
 [[verify.narrow]]
 paths = ".claude/**"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_install.py -q"
+run   = "uv run -q python -m pytest tests/test_install.py -q"
 
 [[verify.narrow]]
 paths = "docs/**"
-run   = "make gates"
+run   = "make check"
 
 [[verify.narrow]]
 paths = ".gitignore"
-run   = "uv run --python 3.11 --with pytest python -m pytest tests/test_init_verb.py -q"
+run   = "uv run -q python -m pytest tests/test_init_verb.py -q"
+
+[[verify.narrow]]
+paths = "pyproject.toml"
+run   = "make unit"
+
+[[verify.narrow]]
+paths = "uv.lock"
+run   = "make unit"
 
 # --- the release conveyor -----------------------------------------------------
 # The step list is the SHIPPED default, so it is not restated here — a list

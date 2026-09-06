@@ -437,20 +437,6 @@ def test_the_blocking_probe_reads_shape_not_prose():
                 f'a hook that can block')
 
 
-def test_this_repos_makefile_names_the_same_corpus_the_gate_derives():
-    """`HOOKS_WITH_CORPUS` is a hand-maintained roster and the gate's set is
-    derived, so the two can disagree — and a roster that silently narrows is
-    exactly the failure D2 predicted when the corpus list shrank. Until the
-    target goes, this is what keeps the second scoreboard honest."""
-    makefile = (REPO_ROOT / 'Makefile').read_text(encoding='utf-8')
-    match = re.search(r'^HOOKS_WITH_CORPUS := (.*)$', makefile, re.M)
-    assert match, 'the Makefile no longer names a corpus list'
-    named = sorted(Path(p).name for p in match.group(1).split())
-    derived = sorted(p.name for p in corpus_hooks(REPO_ROOT))
-    assert named == derived, (
-        f'the Makefile replays {named} and the gate derives {derived}')
-
-
 # --- the wiring: the gate runs here, and the repair it names is the target ----
 def test_this_repo_runs_the_gate_in_its_own_aggregate():
     """A gate registered and never rostered is a gate that runs nowhere. This

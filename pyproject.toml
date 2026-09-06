@@ -26,6 +26,12 @@ Repository = "https://github.com/cdowin/agentic-sdlc"
 [project.scripts]
 agentic-sdlc = "agentic_sdlc.cli:main"
 
+# TEST-time only. Hard rule 1 governs the RUNTIME — the package ships no
+# dependency — and `uv run` installs this tree on itself with these beside it,
+# which is what the Makefile's gates run.
+[dependency-groups]
+dev = ["pytest", "pytest-xdist"]
+
 # A repo with no pytest config is a repo where every agent invents its own
 # incantation. `pytest` from the root now means exactly one thing.
 [tool.pytest.ini_options]

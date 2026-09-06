@@ -535,9 +535,16 @@ def test_the_doc_gate_widened_to_the_include_chain_and_no_further():
     sin, so both directions are asserted in one tree."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
+        # A tier the project's kit hangs off the include's `-include
+        # $(GDK_TIERS_MK)` seam — a variable path, resolved from the
+        # include's own `?=` default rather than skipped. Every `make unit`
+        # in every consumer's CLAUDE.md read as dead until it was.
+        (root / 'Makefile.tiers').write_text(
+            'GDK_PRECOMMIT_TIERS := kit-unit\n.PHONY: kit-unit\n'
+            'kit-unit:\n\t@echo unit\n', encoding='utf-8')
         (root / 'CLAUDE.md').write_text(
-            '# Doc\n\nThe gate is `make check` and `make precommit`.\n',
-            encoding='utf-8')
+            '# Doc\n\nThe gate is `make check`, `make precommit` and '
+            '`make kit-unit`.\n', encoding='utf-8')
         subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
         green = devkit(root, 'check', 'doc')
         (root / 'CLAUDE.md').write_text(

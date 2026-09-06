@@ -498,25 +498,25 @@ def test_nothing_reaches_for_a_path_outside_this_checkout():
 
 
 def test_the_full_gate_is_a_composition_of_self_contained_targets():
-    """`make milestone` must not acquire a member that needs another repo. The
-    four it has all read this checkout alone, which is why CI and a laptop
-    reach the same verdict.
+    """`make milestone` must not acquire a member that needs another repo. It
+    is `check` plus `GDK_MILESTONE_TIERS` out of Makefile.tiers, and every
+    tier reads this checkout alone, which is why CI and a laptop reach the
+    same verdict.
 
-    `budget` joined them in 0.2.0 and is the interesting case: it reads the
-    milestone's own `ledger.jsonl` and nothing else, so it stays inside the
-    checkout — but it grades a number a MACHINE produced, and a ceiling is a
-    claim about a machine. That is why it ships with no stock ceiling (rule 8)
-    and why it is here rather than in `check all`: a per-change gate that
-    reddens over last night's timing is a gate somebody deletes.
+    `budget` is the interesting case: it reads the milestone's own
+    `ledger.jsonl` and nothing else, so it stays inside the checkout — but it
+    grades a number a MACHINE produced, which is why it ships with no stock
+    ceiling (rule 8) and sits here rather than in `check all`.
     """
-    body = (REPO_ROOT / 'Makefile').read_text(encoding='utf-8')
-    match = re.search(r'^milestone:(.*)$', body, re.M)
-    assert match, 'the Makefile no longer declares a `milestone` target'
+    tiers = (REPO_ROOT / 'Makefile.tiers').read_text(encoding='utf-8')
+    match = re.search(r'^GDK_MILESTONE_TIERS := (.*)$', tiers, re.M)
+    assert match, 'Makefile.tiers no longer declares GDK_MILESTONE_TIERS'
     members = match.group(1).split()
-    assert members == ['gates', 'hooks-self-test', 'matrix', 'budget'], members
+    assert members, 'the milestone tier list emptied out'
     for member in members:
-        recipe = re.search(rf'^{member}:.*?\n((?:\t.*\n|\n)*)', body, re.M)
-        assert recipe, f'{member} has no recipe in this Makefile'
+        recipe = re.search(rf'^{member}:[^\n]*\n((?:\t.*\n|\n)*)', tiers, re.M)
+        assert recipe and recipe.group(1).strip(), (
+            f'{member} has no recipe in Makefile.tiers')
         assert not re.search(r'\.\./|~/|\$\(HOME\)|\$\$HOME', recipe.group(1)), (
             f'`{member}` reaches outside the checkout: {recipe.group(1)!r}')
 

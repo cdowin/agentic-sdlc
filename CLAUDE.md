@@ -80,9 +80,10 @@ to solve quietly. Tool modules own their behavior and expose `main(argv)` or `ru
   verb and every gate is proven against those. A check that wants more realistic data
   vendors more data here (rule 8) — it never reaches for a tree outside this checkout,
   which would answer differently on every machine.
-- **Verify against source, never a cached wheel.** `uvx --from <path>` caches by
-  version, so an unchanged version number serves stale code and a fixed bug still
-  reproduces. Use `PYTHONPATH=src python3 -m agentic_sdlc.cli …`.
+- **The CLI from this tree is `uv run -q agentic-sdlc …`** (`make pm ARGS="…"` is the
+  same thing): `uv run` installs the working tree on itself, editable, and re-syncs on
+  every call. Never `uvx --from <path>` — uv caches a built wheel by version, so an
+  unchanged version number serves stale code and a fixed bug still reproduces.
 - **A review is part of a release, not a courtesy.** Every minor bump in this package
   so far has had a pre-release review return NOT RELEASE-SAFE, and each time the
   blocker was a false PASS that would have shipped a permanently-green gate.
@@ -103,77 +104,72 @@ A, B, C. When nothing needs him, say "nothing needs you" explicitly.
 ## Verification loop
 
 **Never hand-roll an incantation, and never run a rung wider than the thing you
-changed.** The ladder, narrow to wide, with measured costs:
+changed.** The ladder, narrow to wide:
 
 | you changed | run | cost |
 |---|---|---|
-| the PM tree, or a doc | `make gates` | **~2 s** |
+| the PM tree, or a doc | `make check` | **~2 s** |
 | code, inner loop | `agentic-sdlc verify --story` — the paths decide | seconds |
-| code, before a commit | `make precommit` — gates + hooks + the unit tier | **~10 s** |
-| closing a feature | `agentic-sdlc verify --feature` → `make test`, both tiers | **~36 s** |
-| closing a milestone | `make milestone` — everything, every interpreter | minutes |
+| code, before a commit | `make precommit` — `check` + the unit tier | **~10 s** |
+| closing a feature | `agentic-sdlc verify --feature` → `make test`, both tiers | **~40 s** |
+| closing a milestone | `make milestone` — `check` + the matrix + the budget | minutes |
 
-**A PM-tree edit is `make gates`, a commit, and done.** `[[verify.narrow]]`
-already routes `pm/roadmap/**` there; writing a story down should cost two
-seconds, not a suite. **A story is build → unit → done, repeated**; the
-integration tier belongs to the feature close and the matrix to the release.
+**A PM-tree edit is `make check`, a commit, and done.** A story is build → unit → done,
+repeated; the integration tier belongs to the feature close and the matrix to the
+release. `agentic-sdlc verify --plan` prints every rung with the cost it ACTUALLY took,
+from the ledger — ask it instead of guessing, because guessing is how a 170x gets run in
+a loop. `make help` lists every target; if the check you need is not a target, add the
+target to `Makefile.tiers`, then run it.
 
-`agentic-sdlc verify --plan` prints all of this with the cost each rung ACTUALLY
-took, read from the ledger. Ask it instead of guessing — that is what it is for,
-and guessing is how a 170x gets run in a loop.
+**This repo's Makefile is a consumer's Makefile.** It sets `DEVKIT` to
+`uv run -q agentic-sdlc` — this working tree, installed on itself — and includes
+`Makefile.devkit`, the same file `install-gates` writes for everybody; `Makefile.tiers`
+adds the Python tiers the way a language kit does. `make precommit` here and in a
+consumer are the same program, and a framework defect reddens this tree first.
 
-This was not always split: `precommit` ran the whole suite after every edit, and
-`[verify] feature` went on naming `precommit` for an hour after it stopped being
-the wide rung — so a feature closed having run no integration at all. **A ladder
-is only true while every rung names what it still runs.** `make help` lists every target. If the check you need is not
-a target, **add the target**, then run it — apparatus that lives in one agent's context
-is apparatus that gets rebuilt.
-
-**`make milestone` runs the matrix, and the matrix proves PYTHON on every interpreter —
-bash once.** `PY_FLOOR` runs the whole suite; the other interpreters in `PY_MATRIX` run
-`-m "not shell"`. A spawn is not something a Python version changes, so replaying it four
-times buys minutes and no information.
-
-**That `shell` mark is the TIER**, and it is what `make unit` / `make integration` select
-on. It was derived for the matrix and had no target for years, so the fast half was
-unreachable from the command line. The suite's wall clock was ~85% subprocess, and that
-number sat in this file as a justification for skipping interpreters rather than as the
-defect it was — which is rule 10, and why rule 10 exists. The `shell` mark is DERIVED
-per module in `tests/conftest.py` from what the source does, never hand-applied (a
-hand-written one is a collection refusal). A `PY_FLOOR` outside `PY_MATRIX` is refused
-by name before the first interpreter starts: a matrix with no full pass would print PASS
-over a suite nothing ran. `make test` is unaffected — it runs everything.
-
-**Every gate prints ONE verdict line naming its full transcript under .gate-reports/;
-`VERBOSE=1` streams the whole thing.** A new target routes through the shipped
-`gdk_gate_capture` / `gdk_gate_verdict` (installables/gdk_gate.sh, sourced from
-source — this package is its own first consumer) like the rest; never ask an agent to
-grep a gate's output for its result. Enforced by `tests/test_makefile_gates.py`.
-
-- Behavior gate: `make gates` — `agentic-sdlc check all` over this repo's own tree,
-  which is a real project with a real PM tree and a real hook corpus. Self-hosting is
-  the behavior proof: every check runs against something committed here.
-- Differential + replay harnesses: `make fuzz`. Seeded, so a divergence reproduces
-  exactly rather than being re-derived; `make test` runs them too.
-- **A write verb under test writes to scratch, never to a fixture in place.** Copy the
-  file (or the tree) to a `tempfile` first; a fixture that a test run mutates is a
-  fixture that grades the next run against the last one's output.
-- A gate-semantics change additionally needs a deliberately-broken probe: introduce the drift class in a scratch copy of a fixture repo and confirm the gate FAILS (rule 4). Prove the **config** path too: a bad value for that gate's section must exit 2, and a zero-file census must FAIL rather than pass.
-- **Never verify through `uvx --from <path>`.** uv caches the built wheel by version, so an unchanged
-  version number serves stale code and a fixed bug still reproduces. Run `PYTHONPATH=src python3 -m
-  agentic_sdlc.cli …`, or `uv cache clean agentic-sdlc` first.
+- **`unit` / `integration` / `test` select on the `shell` mark**, DERIVED per module in
+  `tests/conftest.py` from whether the source spawns; a hand-written one is a collection
+  refusal. `matrix` runs the whole suite on `PY_FLOOR` and `-m "not shell"` on every other
+  interpreter, each in its own `.venv-<version>` — a spawn is not something a Python
+  version changes. A `PY_FLOOR` outside `PY_MATRIX` is refused before anything runs.
+- **Every gate prints ONE verdict line** naming its transcript under `.gate-reports/`;
+  `VERBOSE=1` streams it. A tier target routes through `$(call gdk_gate,…)` like the
+  rest; `tests/test_makefile_gates.py` holds the census.
+- **A gate-semantics change needs a deliberately-broken probe:** introduce the drift
+  class in a scratch copy of a fixture repo and confirm the gate FAILS (rule 4); a bad
+  value for its config section exits 2; a zero-file census FAILS rather than passes.
+- **A write verb under test writes to scratch**, never to a fixture in place.
+- Differential + replay harnesses are `make fuzz`; `make test` runs them too.
 
 ## Self-hosting
 
 This package runs its own tooling on its own tree, and that is a gate, not a demo.
 
-- `pm/roadmap/` is a real PM tree scaffolded by `pm new`, and `devkit.toml` turns on **every** rule this package ships except D8 (which encodes bump-at-START; we bump at close). Both `agentic-sdlc check all` and `agentic-sdlc check pm` must exit 0 here.
-- Work follows the milestone-branch flow — [`SDLC.md`](SDLC.md) §1 — the same as its consumers: `main` is merge-commit-only, at close. D9 + D10 in `[pm] checks` are what hold this tree to it.
-- CI is `.github/workflows/verify.yml`, whose one job runs `make milestone` — the same target the local full gate is. The same target is not the same ANSWER: a gate that reads repo-LOCAL state answers differently in a checkout, and `core.hooksPath` is the measured case (nothing tracked carries it, so `check hooks` was UNARMED on every CI run while every developer's tree was armed). Whatever the gate needs and the checkout lacks is a step ahead of it, guarded on a tracked file that only exists where the tool is wanted — the arming script behind `hashFiles('tools/setup-hooks.sh')` is the shipped example, and a build toolchain a consumer's gate needs is a step the consumer adds after the write. It is INSTALLED by `install-ci`, not hand-written: edit `src/agentic_sdlc/repo/installables/ci-verify.yml` and re-install.
-- The review + build contract under `.claude/agents/verification-*.md` is INSTALLED by `install-agents`, not hand-written — edit the source under `src/agentic_sdlc/repo/installables/` and re-install. A test asserts this repo's copies stay byte-current, and another asserts they pass `check doc` in a fresh consumer, because a contract that reddens the gates it arrives beside gets deleted by the first person who runs them.
-- `install-hooks` IS self-hosted since 0.23.0: `tools/hooks/`, `tools/setup-hooks.sh` and `tools/dev/agent-worktree.sh` are the installer's output, and `.claude/settings.json` carries the entries it prints — the two ledger couriers `"async": true`, feeding `pm/roadmap/<building>/ledger.jsonl` through this Makefile's `pm` target. The `project config` headers are this repo's (static gate `make gates`, the hook self-tests standing in for a unit slice, base `main`); `make hooks-self-test` replays the corpora the installed hooks ship and is in `precommit` — loud on a census of zero, because a corpus list that empties out and passes is the one failure that gate must never have. `bash tools/setup-hooks.sh` arms the git hooks — it writes `core.hooksPath`, which a worktree shares with the main checkout. The installables are still proven by installing them into a temp repo and RUNNING them against real hook payloads.
-- **`CHANGELOG.md` is hand-maintained**, like every other project's. A consumer-visible change goes into its `## Unreleased` section as a bullet as the work lands, and the release skill retitles that section to the tag. Rationale with a rejected alternative is a decision — `pm decide` opens the heading — not a release note.
-- If a rule fails when pointed at this repo, the finding gets fixed. Turning the rule off is only right when the rule encodes a flow this package does not run, and that goes in `decisions.md` with what was rejected.
+- `pm/roadmap/` is a real PM tree scaffolded by `pm new`, and `devkit.toml` turns on
+  **every** rule this package ships except D8 (it encodes bump-at-START; we bump at
+  close). `make check` — `agentic-sdlc check all` — must exit 0 here.
+- Work follows the milestone-branch flow, [`SDLC.md`](SDLC.md) §1, the same as its
+  consumers: `main` is merge-commit-only, at close. D9 + D10 in `[pm] checks` hold this
+  tree to it.
+- **Every installer's output is installed here, byte-current with its source, or
+  legitimately absent.** `Makefile.devkit` + `tools/dev/gdk_gate.sh` (`install-gates`),
+  `.github/workflows/verify.yml` (`install-ci`), `tools/hooks/` + `tools/setup-hooks.sh`
+  (`install-hooks`, with `.claude/settings.json` carrying the entries it prints) and the
+  verification pair under `.claude/agents/` (`install-agents`). Edit the source under
+  `src/agentic_sdlc/repo/installables/` and re-install with `--force`; a copy edited in
+  place is the invisible fork these verbs exist to prevent, and `tests/test_install.py`
+  fails it. The hooks' `project config` headers are this repo's: static gate
+  `make check`, unit slice `make unit`, base `main`. `bash tools/setup-hooks.sh` arms them.
+- CI runs `make milestone` — the same target as the local full gate. The same target is
+  not the same ANSWER unless the checkout carries the same repo-local state, so whatever
+  the gate needs and a fresh checkout lacks is a step ahead of it, guarded on a tracked
+  file: the arming step behind `hashFiles('tools/setup-hooks.sh')` is the shipped example.
+- **`CHANGELOG.md` is hand-maintained.** A consumer-visible change goes into
+  `## Unreleased` as the work lands; the release skill retitles that section to the tag.
+  Rationale with a rejected alternative is a decision — `pm decide` — not a release note.
+- If a rule fails when pointed at this repo, the finding gets fixed. Turning the rule off
+  is only right when it encodes a flow this package does not run, and that goes in
+  `decisions.md` with what was rejected.
 
 ## Releases
 

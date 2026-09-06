@@ -565,6 +565,13 @@ def test_a_missing_devkit_version_is_a_parse_error_naming_the_fix():
     assert done.returncode != 0
     assert 'DEVKIT_VERSION is not set' in done.stderr, done.stderr
     assert 'ABOVE `include Makefile.devkit`' in done.stderr, done.stderr
+    # Unless the project supplies the command itself — then there is nothing
+    # for a pin to resolve. This is how the package that ships the include
+    # consumes it: its own tree, installed on itself.
+    with project(makefile='DEVKIT := echo devkit\ninclude Makefile.devkit\n') as root:
+        done = make(root, '-n', 'pm')
+    assert done.returncode == 0, done.stderr
+    assert 'echo devkit pm' in done.stdout, done.stdout
 
 
 def test_the_pin_is_the_projects_and_reaches_the_cli():

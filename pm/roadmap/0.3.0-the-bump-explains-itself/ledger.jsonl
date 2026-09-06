@@ -464,3 +464,6 @@
 {"ts":"2026-09-06T22:22:05Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7021,"rank":3}
 {"ts":"2026-09-06T22:22:05Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":5568,"rank":4}
 {"ts":"2026-09-06T22:22:05Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":4584,"rank":5}
+{"ts":"2026-09-06T22:23:41Z","kind":"status","grain":"0.3.0/bugs/a-unit-test-can-spawn-the-full-gate","from":"fixed","to":"closed"}
+{"ts":"2026-09-06T22:23:41Z","kind":"status","grain":"0.3.0/bugs/the-first-milestone-never-closed","from":"open","to":"closed"}
+{"ts":"2026-09-06T22:24:04Z","kind":"decision","grain":"0.3.0","entry":"D1","title":"The bare-repo bug ships OPEN, named, with what is known and what to run next"}

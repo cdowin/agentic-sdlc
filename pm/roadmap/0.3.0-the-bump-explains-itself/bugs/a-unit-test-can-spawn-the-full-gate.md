@@ -2,7 +2,7 @@
 id: 0.3.0/bugs/a-unit-test-can-spawn-the-full-gate
 milestone: "0.3.0"
 name: a unit-tier test can spawn the full gate, and nothing says why
-status: fixed
+status: closed
 severity: high
 caught_in: "0.3.0"
 ---

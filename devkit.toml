@@ -78,8 +78,9 @@ checks = [
 # says this package knows nothing about the machines its consumers run on — so
 # a tree that declares nothing gets its costs reported and exit 0.
 #
-# Measured 2026-09-05 on the floor interpreter, after the tier split:
-# unit 7.2 s in one process, integration ~64 s on eight workers, both ~62 s.
+# Measured 2026-09-06 on the floor interpreter, off the verdict lines in
+# .gate-reports/unit.log and test.log: unit 8.2 s in one process, both tiers
+# 100.6 s on eight workers.
 # The ceilings are roughly 2x each, because a shared CI runner is not a laptop
 # and a gate that goes red on a busy afternoon is a gate somebody deletes.
 #
@@ -102,11 +103,12 @@ budget = { unit = 20, integration = 130, test = 150 }
 # AND A CEILING ON SIZE, which the duration cannot see. A tier holds its wall
 # clock while doubling in case count — parallelism and a faster machine both
 # absorb it — and the number that then goes wrong is the reader's, not the
-# gate's. Measured 2026-09-05: 1,123 unit and 730 integration.
+# gate's. Measured 2026-09-06: 706 unit and 389 integration (1,095 in `test`).
 #
-# Set ~10% above today, because the point is to make GROWTH a decision somebody
-# argues rather than one that happens. `0.2.0/the-proof-is-named-in-the-criterion`
-# is the pass that brings both numbers down; until it lands these hold the line.
+# Set ~10% above the counts they were written against (1,123 / 730), because
+# the point is to make GROWTH a decision somebody argues rather than one that
+# happens. Today's counts sit well under them; lowering the ceilings toward
+# today's is a decision to take on purpose, not a drift to correct in passing.
 cases = { unit = 1250, integration = 800 }
 # V6 is named on purpose, and it is the one rule here that is NOT stock. This
 # tree keeps generated execution lists and is small enough for `pm sync` to be

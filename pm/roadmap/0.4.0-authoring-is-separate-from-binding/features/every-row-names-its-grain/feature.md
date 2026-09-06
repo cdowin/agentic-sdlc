@@ -33,29 +33,35 @@ lives; the frontmatter is what it is and what it belongs to* — membership is t
 neither a field nor derived: it is absent. The row knows its session, its agent and its model, and
 not the work.
 
-## Three ways to answer "which grain", and the argument for each
+## How a row learns its grain — decided (D2)
 
-The hook cannot know; it is a courier by design and must stay one. So the answer is the verb's or
-the tree's.
+**The dispatch carries `--grain`; when it does not, the verb resolves the grain from the tree;
+when that is ambiguous, the key is omitted.** In that order, and the third clause outranks the
+other two.
 
-1. **The verb resolves it from the tree.** `pm ledger record` already resolves *which ledger* by
-   asking which milestone is `in_progress`. The same question one level down — which story is
-   `in_progress`, for this `owner`/`agent_type` — is the same shape of query against data that
-   already exists. Cheapest, and it needs nothing new on disk. Fails when two stories are open at
-   once, which is normal with parallel agents, and an ambiguous answer must be an ABSENT key
-   rather than a guess.
-2. **The claim writes a session→grain marker.** `pm story building <id>` learns the session id and
-   records it, so the hook's `--session-id` joins to a grain at report time rather than at write
-   time. Exact, survives concurrency, and costs a new piece of state — which this package is
-   rightly hostile to.
-3. **The dispatch carries it.** The agent is told its grain and passes `--grain`, and the hook
-   reads it from the environment the way it already reads `GDK_LEDGER_*`. Exact and free for
-   subagents, useless for the orchestrator session nobody dispatched.
+**1. The dispatch carries it.** The agent is told what it is working on in the prompt that starts
+it, so the fact already exists at the moment of dispatch and passing it is copying, not deriving.
+The couriers already ferry `GDK_LEDGER_*` values through `make` byte-exact — this is a fourth of
+the same, not a new mechanism. The hook stays a courier and learns nothing.
 
-**A defensible answer is probably 1 for the common case with 3 as the override**, and 2 only if 1
-proves ambiguous in practice. Decide it here, in writing, against the concurrency case: two agents
-on two stories in one milestone is the workflow this package exists for, and an attribution scheme
-that silently mis-files under it is worse than one that honestly omits.
+**2. The verb resolves it from the tree.** For a session nobody dispatched — the orchestrator, in
+which most of this milestone's work happens — there is no prompt to read. `pm ledger record`
+already resolves *which ledger* by querying tree state; this is the same shape of query one level
+down: which story is `in_progress`, for this owner. Free, and needs nothing new on disk.
+
+**3. Ambiguous resolves to an omitted key.** Two agents on two stories in one milestone is the
+workflow this package exists for, and it is exactly when resolution has more than one answer.
+`ledger record`'s standing contract already governs this — *"a number not given is a key the row
+does not carry, never a zero"* — and it applies to `grain:` too.
+
+**A row filed against the wrong story is worse than a row filed against none**, because the first
+is uncorrectable and the second is visible in a bucket that already exists and can be fixed later.
+
+**Rejected: a session→grain marker written by the claim.** It is the only option that is exact for
+an undispatched orchestrator under concurrency, and it still loses — new durable state whose only
+job is relating two things that both already exist, plus a write in the claim path that can fail
+after the status has already moved. Revisit if tree resolution proves ambiguous often enough to
+matter; the ambiguous case is not silent, so it can be counted.
 
 **Whatever wins: an unresolvable grain is an omitted key, never a zero and never a guess.** That
 is `ledger record`'s standing contract — *"a number not given is a key the row does not carry,

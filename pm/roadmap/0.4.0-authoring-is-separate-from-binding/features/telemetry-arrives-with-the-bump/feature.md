@@ -5,16 +5,34 @@ name: Telemetry arrives with the bump, in every consumer
 status: planning
 reviewed:
 phase:
-depends_on: ["0.4.0/recording-is-on-or-the-gate-is-red", "0.4.0/every-row-names-its-grain", "0.4.0/the-surface-says-telemetry"]
+depends_on: ["0.4.0/every-row-names-its-grain", "0.4.0/one-rule-routes-a-row", "0.4.0/recording-is-on-or-the-gate-is-red", "0.4.0/the-surface-says-telemetry"]
 consumed_by: []
 ---
 
 # Telemetry arrives with the bump, in every consumer
 
 **This package is write-once, use-many.** Its consumers — NullBound, godot-devkit, whatever comes
-next — get their SDLC by moving a pin. The other three telemetry features fix this tree. This one
+next — get their SDLC by moving a pin. The other four telemetry features fix this tree. This one
 is the only reason they matter downstream, and without it a consumer bumps to 0.4.0 and records
 nothing, exactly as this tree did.
+
+## The posture: clearly available and warned when absent, never mandatory
+
+Stated first because it decides every design question below.
+
+"Telemetry by default, always on" is the goal, and **the mechanism is not compulsion**. A consumer
+that has not wired the couriers is not broken and must not be treated as broken — it has opted
+out, and this package does not conscript. What it must never be is *silently* opted out, which is
+the state this tree was in for the whole of 0.3.0.
+
+So the bar is: **a consumer can always find out, and is told when the answer is no.** In their
+words —
+
+> no ledger setup for milestone, no telemetry
+
+— which is close to the literal text the probe should print. Loud absence, not a forced install.
+`0.4.0/recording-is-on-or-the-gate-is-red` is this same posture aimed at *this* tree; this feature
+aims it at everyone else's.
 
 ## What a bump delivers today, and what it does not
 

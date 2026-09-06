@@ -61,16 +61,24 @@ believe otherwise.
 
 ## Pre-work — the telemetry, before anything else is built
 
-Four features were added after the milestone opened, and they run FIRST, because everything after
+Five features were added after the milestone opened, and they run FIRST, because everything after
 them should be measured and today nothing is.
 
 The trigger: asked for telemetry on this build, the agent hand-wrote a markdown table while the
 package sat on `pm ledger` — seven row kinds, automatic per-session token and tool-call capture
 off the transcript, and a per-grain spend report. Investigating why turned up that the recording
-had been **off for the whole of 0.3.0 and nobody could tell**.
+had been **off for the whole of 0.3.0 and nobody could tell**, and then that the cause was this
+milestone's own defect wearing a different hat.
 
-    recording-is-on-or-the-gate-is-red   a fail-open courier needs a fail-loud gate; there is none
-    every-row-names-its-grain            hook rows carry no `grain:`, so nothing attributes
+In build order:
+
+    one-rule-routes-a-row                TWO functions answer "which ledger owns this row" and
+                                         disagree; the telemetry half asks the tree's STATUS.
+                                         FIRST, because it is what stops rows being refused
+    every-row-names-its-grain            neither courier passes `--grain`, so every automatic
+                                         row lands unattributed. Independent of the above, not
+                                         downstream of it — either is testable alone
+    recording-is-on-or-the-gate-is-red   a fail-open courier with no fail-loud counterpart
     the-surface-says-telemetry           the word "telemetry" is in no discovery surface at all
     telemetry-arrives-with-the-bump      settings.json is printed, never written — so a consumer
                                          bumps to 0.4.0 and records nothing, as this tree did
@@ -79,16 +87,21 @@ They belong in THIS milestone rather than a later one for two reasons. The first
 migration is the riskiest work here and it should be the best-measured thing this package has ever
 done — so `the-migration-is-whole-or-nothing` depends on them, and the numbers for it will exist.
 
-The second is that they are the same defect. `every-row-names-its-grain` is a binding — a row's
-membership in a grain — that is today neither a field nor derived, but absent; that is the
-northstar with a different noun. And `the-surface-says-telemetry` is the fourth instance of the
-shape `the-read-verbs-compose` already named twice: a capability that shipped, and a surface that
-did not admit to it at the moment of need. Four instances is a class, and this milestone is where
-it gets stated once instead of rediscovered.
+**The second is that two of them ARE this milestone.** `every-row-names-its-grain` is a binding —
+a row's membership in a grain — that is today neither a field nor derived, but absent; the
+northstar with a different noun. And `one-rule-routes-a-row` found `_stamp` and
+`_building_ledger_dir`: two functions answering one question, one of them by asking where the tree
+is standing. That is *the path is the schema*, inside the ledger, and deleting it is the same
+deletion the rest of the milestone performs on the grain tree. Neither is a detour.
 
-**Write-once, use-many.** These fix this tree; only the fourth makes them reach NullBound,
-godot-devkit and whatever bumps next. A telemetry feature that lands here and not downstream has
-solved the wrong half.
+`the-surface-says-telemetry` carries the third thing — the shape `the-read-verbs-compose` already
+named twice, now at four instances, which makes it a class this milestone states once instead of
+rediscovering.
+
+**Write-once, use-many.** The first four fix this tree; only the fifth makes them reach NullBound,
+godot-devkit and whatever bumps next — and its posture is *clearly available and warned when
+absent*, never mandatory. A telemetry feature that lands here and not downstream has solved the
+wrong half.
 
 ## Ship criterion
 

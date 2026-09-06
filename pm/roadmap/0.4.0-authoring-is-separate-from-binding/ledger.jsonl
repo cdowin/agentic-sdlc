@@ -1,3 +1,9 @@
 {"ts":"2026-09-06T21:00:25Z","kind":"status","grain":"0.4.0","from":"planning","to":"building"}
 {"ts":"2026-09-06T21:08:57Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":36130}
 {"ts":"2026-09-06T21:09:25Z","kind":"dispatch","grain":"0.4.0/the-surface-says-telemetry","agent_type":"orchestrator","duration_s":1260,"tool_calls":37,"tree":{"milestones_building":["0.4.0"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["0.4.0"],"features_in_progress":[],"stories_in_progress":[]}}
+{"ts":"2026-09-06T21:23:58Z","kind":"decision","grain":"0.4.0","entry":"D1","title":"A row is routed by its grain, not by which milestone is in progress"}
+{"ts":"2026-09-06T21:23:58Z","kind":"decision","grain":"0.4.0","entry":"D2","title":"A session learns its grain from the dispatch, falling back to the tree"}
+{"ts":"2026-09-06T21:23:58Z","kind":"decision","grain":"0.4.0","entry":"D3","title":"Unattributed rows go to a root ledger, not to whichever milestone was building"}
+{"ts":"2026-09-06T21:27:03Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2195}
+{"ts":"2026-09-06T21:29:53Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2268}
+{"ts":"2026-09-06T21:30:05Z","kind":"dispatch","grain":"0.4.0/one-rule-routes-a-row","agent_type":"orchestrator","duration_s":1500,"tool_calls":24,"tree":{"milestones_building":["0.4.0"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["0.4.0"],"features_in_progress":[],"stories_in_progress":[]}}

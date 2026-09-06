@@ -273,11 +273,16 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        for mid, _branch, mfile in model.in_progress_milestones(cfg):
-            for rank, report in enumerate(slowest, start=1):
-                ledger.append_row(mfile.parent, ledger.test_row(
-                    tier, report.nodeid, int(report.duration * 1000), rank))
-            break
+        # THE TREE's ledger, and this was the third router. A `test` row names
+        # no grain, so 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` — and
+        # until then this asked `in_progress_milestones`, which made three
+        # functions answering "which ledger owns this row" in a milestone whose
+        # thesis is that there should be one. It also meant the suite recorded
+        # nothing whenever no milestone was in progress, silently, which is the
+        # failure the milestone opened on.
+        for rank, report in enumerate(slowest, start=1):
+            ledger.append_row(cfg.roadmap, ledger.test_row(
+                tier, report.nodeid, int(report.duration * 1000), rank))
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could
         # not write its own cost row would be telemetry outranking the thing it

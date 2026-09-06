@@ -612,8 +612,8 @@ def test_setup_hooks_arms_every_cc_hook_by_glob(tmp_path):
 # at the exact JSON Claude Code delivers.
 #
 # The assertion is always the same pair, because it is the whole contract: what
-# landed in the milestone's ledger.jsonl, and that the hook exited 0 either
-# way. A hook that blocks a stop is broken even when it is right, and a hook
+# landed in the tree's ledger.jsonl — 0.4.0/D3, since a courier's row carries
+# no grain — and that the hook exited 0 either way. A hook that blocks a stop is broken even when it is right, and a hook
 # that invents a row is broken even when it exits 0.
 # =============================================================================
 
@@ -622,7 +622,7 @@ LEDGER_SESSION = 'tools/hooks/cc-ledger-session.sh'
 TRANSCRIPTS = Path(__file__).parent / 'fixtures' / 'transcripts'
 DISPATCH_JSONL = TRANSCRIPTS / 'subagent-dispatch.jsonl'
 SESSION_JSONL = TRANSCRIPTS / 'main-session.jsonl'
-LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/ledger.jsonl'
 
 # The ids the payloads below carry. Spelled once so a test asserting they were
 # COPIED cannot accidentally assert against a value the verb derived.

@@ -3,8 +3,8 @@ id: 0.4.0/one-rule-routes-a-row/02-a-grainless-row-lands-at-the-root
 feature: 0.4.0/one-rule-routes-a-row
 milestone: "0.4.0"
 name: A row naming no grain lands in the root ledger
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree"]
 ---
 

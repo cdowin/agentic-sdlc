@@ -384,7 +384,12 @@ def test_pm_init_writes_the_merge_union_line_for_the_configured_roadmap_dir():
         assert code == 0, out
         body = (root / '.gitattributes').read_text(encoding='utf-8')
     assert body.startswith('*.png binary\n'), "the project's own attributes were lost"
-    assert f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union' in body
+    # `**`, not `*`: 0.4.0/D3 put a second ledger at `<roadmap>/` itself
+    # for the rows naming no grain, and `*/` is one directory level too
+    # deep to reach it. Both paths are proven to MATCH — by git, over a
+    # real repo — in test_pm_ledger_report_git.py; this case is about
+    # the configured prefix surviving.
+    assert f'planning/ms/**/{ledger.LEDGER_FILE_NAME} merge=union' in body
 
 
 def test_a_second_init_does_not_duplicate_the_line():

@@ -182,10 +182,12 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        mdir, _why = model.release_ledger_dir(cfg)
-        if mdir is None:
-            return {}, ''
-        path = ledger.ledger_path(mdir)
+        # The TREE's ledger, not a milestone's: a `gate` row names no grain, so
+        # 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` and one file holds every
+        # cost this repo has ever measured. That also survives `pm retire`,
+        # which used to take a milestone's gate history away with its directory
+        # and leave the next milestone printing `unknown` for a week.
+        path = ledger.ledger_path(cfg.roadmap)
         raw = path.read_text(encoding='utf-8')
     except Exception:  # noqa: BLE001 - every failure means the same: unknown
         return {}, ''

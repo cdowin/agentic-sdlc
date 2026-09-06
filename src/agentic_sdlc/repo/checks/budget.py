@@ -1,7 +1,7 @@
 """check budget — a tier that got slower, grew, or shrank is a finding.
 
 Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
-building milestone's ledger; runs nothing. The newest row by timestamp is graded; a
+tree's own ledger (`<roadmap>/ledger.jsonl` — a gate run names no grain); runs nothing. The newest row by timestamp is graded; a
 tier with no row is UNMEASURED, one whose newest run did not end PASS is NOT GRADED,
 and both are findings, never a pass. Ships no ceiling (a number is the project's, not
 this package's), so with nothing declared it reports the measured costs and exits 0.
@@ -65,22 +65,23 @@ def _budgets() -> dict[str, int]:
 
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """Every row of every building milestone's ledger, or the defect that stopped the read."""
+    """Every `gate` and `test` row this tree has, or the defect that stopped the read.
+
+    One file: `<roadmap>/ledger.jsonl`. Both kinds name no grain — a gate run
+    is not work somebody was dispatched to do, and a slow-test row belongs to a
+    tier — so 0.4.0/D3 files both at the root, and that is the SAME resolution
+    the recorder writes through, so the number a human sees and the number this
+    gate grades cannot disagree.
+    """
     cfg = model.load()
-    out: list[tuple[str, ledger.Row]] = []
-    # The SAME resolution the recorder writes through, so the number a human
-    # sees and the number the gate grades cannot disagree.
-    mdir, _why = model.release_ledger_dir(cfg)
-    for mdir in ([mdir] if mdir is not None else []):
-        path = ledger.ledger_path(mdir)
-        if not path.is_file():
-            continue
-        try:
-            rows = ledger.read_rows(path)
-        except ledger.LedgerError as err:
-            return [], f'{cfg.rel(path)} could not be read: {err}'
-        out.extend((cfg.rel(path), row) for row in rows)
-    return out, ''
+    path = ledger.ledger_path(cfg.roadmap)
+    if not path.is_file():
+        return [], ''
+    try:
+        rows = ledger.read_rows(path)
+    except ledger.LedgerError as err:
+        return [], f'{cfg.rel(path)} could not be read: {err}'
+    return [(cfg.rel(path), row) for row in rows], ''
 
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
@@ -218,7 +219,7 @@ def run() -> int:
         if data is None:
             unmeasured.append(tier)
             lines.append(f'  UNMEASURED  {tier} — ceiling {ceiling}s, and no '
-                         f'`gate` row for it in this milestone\'s ledger; run '
+                         f'`gate` row for it in this tree\'s ledger; run '
                          f'`make {tier}`')
             continue
         if data.get('verdict') != GRADED_VERDICT:

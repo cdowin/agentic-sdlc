@@ -85,3 +85,4 @@
 {"ts":"2026-09-06T22:20:07Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row","from":"planning","to":"building"}
 {"ts":"2026-09-06T22:20:08Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree","from":"planning","to":"building"}
 {"ts":"2026-09-06T22:25:14Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree","from":"building","to":"done"}
+{"ts":"2026-09-06T22:26:25Z","kind":"status","grain":"0.4.0/one-rule-routes-a-row/02-a-grainless-row-lands-at-the-root","from":"planning","to":"building"}

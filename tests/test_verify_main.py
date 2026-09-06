@@ -239,7 +239,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
                      'gate': 'milestone', 'verdict': 'SKIP'}))):
             tree = dict(self.TREE)
             if ledger is not None:
-                tree['pm/roadmap/0.1/ledger.jsonl'] = ledger
+                tree['pm/roadmap/ledger.jsonl'] = ledger
             with self.subTest(case=label):
                 with Repo(LADDER + STORY_RULE, tree):
                     _, out = run('--plan')
@@ -253,7 +253,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         # that answered `unknown` unconditionally would pass every other
         # assertion in this class.
         tree = dict(self.TREE)
-        tree['pm/roadmap/0.1/ledger.jsonl'] = self._with_ledger(
+        tree['pm/roadmap/ledger.jsonl'] = self._with_ledger(
             {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'story',
              'verdict': 'PASS', 'duration_ms': 900, 'census': 5},
             {'ts': '2026-09-05T10:01:00Z', 'kind': 'gate', 'gate': 'milestone',

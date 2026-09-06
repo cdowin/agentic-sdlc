@@ -425,6 +425,40 @@ def test_a_delta_needs_both_ends_measured():
 
 # --- nothing to report --------------------------------------------------------
 
+# --- 0.4.0/D3: the report reads BOTH ledgers -----------------------------------
+def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
+    """A milestone's report reads its own ledger AND `<roadmap>/ledger.jsonl`,
+    where every row that names no grain now lives.
+
+    Two claims, and the second is the one that could go wrong silently: the
+    root rows must appear in `rows naming no grain`, and they must not be added
+    to any grain's line. Reading only the milestone's file would empty that
+    bucket for every tree; folding the rows into a grain would bill a story for
+    seconds nobody spent on it.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        before = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        # An empty tree snapshot and no `grain`: nothing to attribute it to,
+        # which is exactly the row D3 gave a home to. A `gate` row beside it,
+        # because that one can never be attributed at all.
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9),
+                   gate_line('2026-09-03T12:01:00Z', 'check'),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    # The block's own title carries the count, so the number is asserted where
+    # a reader reads it. It is `(0)` without this story — every seeded dispatch
+    # row is attributed through its tree snapshot — so the count IS the case.
+    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
+    assert stray and stray[0][0] == '1' and '9' in stray[0], out
+    # And not folded into a grain: the busiest story's row is unchanged from
+    # the same report over a tree with no root ledger.
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == before
+    assert 'check' in section_of(out, 'gate cost'), out
+
+
 def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted():
     """Never a table of zeros — and never silence either: a census that saw
     nothing has to say so, or `no data` is indistinguishable from `not run`."""

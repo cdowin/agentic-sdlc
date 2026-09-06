@@ -350,3 +350,28 @@ def test_a_ledger_line_that_will_not_parse_at_the_rev():
         git(root, 'tag', TAG)
         out = refuses(root, '0.1', '--from', TAG, needle='line 2')
         assert f'{TAG}:{LEDGER_REL}' in out
+
+
+# --- the merge attribute, asked of GIT ----------------------------------------
+def test_the_merge_attribute_reaches_both_ledger_homes():
+    """0.4.0/D3 gave the tree a second ledger at `<roadmap>/ledger.jsonl`, and
+    the shipped pattern was `<roadmap>/*/ledger.jsonl` — ONE DIRECTORY LEVEL
+    too deep to reach it. Every branch appends to that file, so a pattern that
+    misses it conflicts on every parallel branch, quietly, as a merge conflict
+    nobody connects to the change that caused it.
+
+    Asked of `git check-attr` over a real repo rather than of the pattern
+    STRING, because a string assertion passes on a pattern that matches
+    nothing — which is precisely the bug.
+    """
+    with tree() as root:
+        assert run_cli(root, 'init')[0] == 0
+        for rel in ('pm/roadmap/ledger.jsonl',
+                    f'{MILESTONE_DIR}/ledger.jsonl'):
+            said = git(root, 'check-attr', 'merge', '--', rel)
+            assert said.strip() == f'{rel}: merge: union', said
+        # And the negative, so the pattern is not simply `**`: a grain document
+        # beside a ledger is left alone.
+        said = git(root, 'check-attr', 'merge', '--',
+                   f'{MILESTONE_DIR}/milestone.md')
+        assert said.strip().endswith(': unspecified'), said

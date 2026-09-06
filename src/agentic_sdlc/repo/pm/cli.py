@@ -1381,12 +1381,20 @@ def _row_ledger_dir(cfg: model.PmConfig, path: Path | None) -> Path:
     them. `_stamp` had routed by grain since the ledger shipped; the telemetry
     half did not, which is two mechanisms for one fact.
 
-    `path` is None for a row that names no grain. Those are PARKED where they
-    have always landed until `02-a-grainless-row-lands-at-the-root` gives them
-    `<roadmap>/ledger.jsonl`; nothing that used to be written is refused here.
+    `path` is None for a row that names no grain — a `gate` row (a gate run is
+    not work on a grain), a `test` row, a session nobody could attribute, a
+    hand entry with no `--grain`. Those land in the tree's ROOT ledger,
+    `<roadmap>/ledger.jsonl` (D3), so that no telemetry write is ever refused
+    for want of a place to put it. They are the residue, not the destination:
+    `pm ledger report` shows them in the `rows naming no grain` bucket it
+    already prints, and never folds one into a grain's line.
     """
     if path is None:
-        return _gate_ledger_dir(cfg)
+        if not cfg.roadmap.is_dir():
+            raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
+                          f'there is no ledger a row naming no grain belongs '
+                          f'to; no row was written')
+        return cfg.roadmap
     mdir = model.milestone_dir_of(cfg, path)
     if mdir is None:
         raise Refused(f'{cfg.rel(path)} sits under no milestone directory in '
@@ -1544,7 +1552,7 @@ def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
     # Absent, never 0: a `0` census is the zero-file scan rule 4 names.
     census = (_count_flag('--census', flags['--census'])
               if '--census' in flags else None)
-    mdir = _gate_ledger_dir(cfg)
+    mdir = _row_ledger_dir(cfg, None)
     try:
         ledger.append_row(mdir, ledger.gate_row(gate, verdict, duration,
                                                 census))
@@ -1581,21 +1589,6 @@ def _gate_verdict(flags: dict[str, str]) -> str:
                     f'not {raw!r} — the summary line is prose, this column is '
                     f'a vocabulary')
     return raw
-
-
-def _gate_ledger_dir(cfg: model.PmConfig) -> Path:
-    """Where a gate row lands, or a refusal naming which of the two it was.
-    Exit 1, not 2: nothing to record into is a precondition, not a bad
-    argument.
-    """
-    if not cfg.roadmap.is_dir():
-        raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
-                      f'there is no ledger this gate row belongs to; no row '
-                      f'was written')
-    mdir, why = model.release_ledger_dir(cfg)
-    if mdir is None:
-        raise Refused(f'{why}; no row was written')
-    return mdir
 
 
 def _required(flags: dict[str, str], name: str) -> str:
@@ -1777,8 +1770,17 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
                     else _report_default_dir(cfg))
         mid = _ledger_id(mdir / model.MILESTONE_DOC, mdir.name, src)
         path = ledger.ledger_path(mdir)
+        # Two files, one report. The milestone's ledger holds every ATTRIBUTED
+        # row; the tree's root ledger holds the rows that name no grain (D3),
+        # which is where `gate` and `test` rows live by construction. Reading
+        # only the first would empty the `rows naming no grain` bucket and the
+        # gate-cost section for every milestone — the report going quiet about
+        # rows that exist, which is rule 4's first sin.
+        root = ledger.ledger_path(cfg.roadmap)
         try:
             rows = src.ledger_rows(path)
+            if root != path:
+                rows += src.ledger_rows(root)
         except ledger.LedgerError as err:
             raise Usage(f'{err}') from err
         try:
@@ -1795,7 +1797,7 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
     if as_json:
         print(json.dumps(data, ensure_ascii=False))
         return 0
-    if not src.is_file(path):
+    if not src.is_file(path) and not src.is_file(root):
         # No ledger is a fact about section 1 only; sections 2 and 4 read other
         # documents, so the report still prints when those hold something.
         print(f'{report.HEADING_PREFIX} {report.heading_id(data)} — '

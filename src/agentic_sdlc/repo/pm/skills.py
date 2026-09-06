@@ -41,16 +41,29 @@ GITATTRIBUTES_HEADER = ('# agentic-sdlc: the pm ledger is append-only, so two '
                         'branches\' rows are a union, never a conflict')
 
 
+# `**` and not `*`, and this is the whole of the reason: gitignore-style
+# `a/**/b` matches `a/b` as well as `a/x/b`, and 0.4.0 put a ledger at
+# `<roadmap>/ledger.jsonl` — the rows naming no grain (D3) — which is ONE
+# DIRECTORY LEVEL SHORT of `<roadmap>/*/`. Every branch appends to that
+# file, so a pattern that misses it conflicts on every parallel branch,
+# quietly, as a merge conflict nobody attributes to the change that caused
+# it. One pattern rather than two, because two would be two places to keep
+# the name in.
+GLOB = '**'
+
+
 def attribute_pattern(cfg: model.PmConfig) -> str:
     """The path glob the merge attribute applies to, from the configured `[pm]
     roadmap_dir` — a literal would go inert for a moved tree.
     """
-    return f'{cfg.roadmap_dir}/*/{ledger.LEDGER_FILE_NAME}'
+    return f'{cfg.roadmap_dir}/{GLOB}/{ledger.LEDGER_FILE_NAME}'
 
 
 def attribute_line(roadmap_dir: str) -> str:
-    """`pm/roadmap/*/ledger.jsonl merge=union`, spelled in one place."""
-    return f'{roadmap_dir}/*/{ledger.LEDGER_FILE_NAME} {MERGE_UNION}'
+    """`pm/roadmap/**/ledger.jsonl merge=union`, spelled in one place —
+    matching BOTH homes: one ledger per milestone, and the tree's own for
+    the rows that name no grain."""
+    return f'{roadmap_dir}/{GLOB}/{ledger.LEDGER_FILE_NAME} {MERGE_UNION}'
 
 
 def _declares(text: str, pattern: str, line: str) -> str:

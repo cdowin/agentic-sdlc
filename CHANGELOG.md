@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **A row naming no grain lands in the tree's own ledger, `<roadmap>/ledger.jsonl`.** A `gate`
+  row (a gate run is not work on a grain), a `test` row, a session nobody could attribute, a hand
+  entry with no `--grain`: all of them had to be routed by asking the tree something, and every
+  such rule had a refusal path — which is a telemetry write being dropped. **They are the residue,
+  not the destination**: `pm ledger report` reads a milestone's ledger AND this one, shows these in
+  the `rows naming no grain` bucket it already printed, and never folds one into a grain's line.
+  After this there is no place a row can be refused for want of somewhere to put it, except a tree
+  with no `pm/roadmap` at all.
+
+  **`.gitattributes` moves from `<roadmap>/*/ledger.jsonl` to `<roadmap>/**/ledger.jsonl`** —
+  gitignore-style `a/**/b` matches `a/b` too, so one pattern covers both homes. Without it the
+  file every branch appends to would conflict on every branch, as a merge conflict nobody connects
+  to this change. `pm init` appends the new line on the next run; **a consumer whose
+  `.gitattributes` still carries the `*/` pattern should delete it** — the last match wins, so it
+  is inert rather than wrong, but it reads as a second rule.
+
+  `check budget` and `verify --plan` follow the rows and read the same one file. That is also a
+  fix they get for free: `pm retire` used to take a milestone's gate history away with its
+  directory, so the next milestone printed `unknown` for its rungs until it had run each one.
+
 - **A ledger row is filed against the milestone that owns its GRAIN, at any status.** The
   telemetry writes went through a lookup that asked which milestone was `in_progress` and refused
   when none was and when several were — so **a tree recorded nothing at all while it was still

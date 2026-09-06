@@ -173,7 +173,24 @@ done        = ["closed"]
 # and a `make` target to existing, and it has no opinion about whether a shell
 # command will work. It was `close story` on a real story that found it, which
 # is the belt below catching what the declaration above it could not.
-feature   = "make precommit"
+# THE FEATURE RUNG IS LOCAL INTEGRATION, and it stopped being that for about an
+# hour on 2026-09-05, which is worth recording rather than quietly fixing.
+#
+# It read `make precommit`, and `precommit` was the whole suite — so the rung
+# was honest. Then `precommit` became the NARROW rung (gates + hooks + unit,
+# 10 s) and this line did not move, so a feature closed having run no
+# integration test at all. A ladder is only true while every rung names what it
+# still runs.
+#
+# Chris's model, and the rungs now match it: "Build, unit, done. Build, unit,
+# done. Stack up to features. Feature review, local integration, done."
+#
+#   a PM-tree or doc edit   make gates      ~2 s    (a [[verify.narrow]] rule)
+#   an edit, inner loop     verify --story  seconds (the paths decide)
+#   closing a story         close story     seconds
+#   closing a feature       verify --feature ~36 s  <- BOTH tiers, locally
+#   closing a milestone     verify --milestone      the matrix, once
+feature   = "make test"
 milestone = "make milestone"
 
 # ORDER IS THE RUN ORDER, and the first matching rule wins per path — so the

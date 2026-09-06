@@ -2,7 +2,7 @@
 id: 0.2.0/the-release-is-a-conveyor
 milestone: "0.2.0"
 name: The release protocol is a resumable step machine, not prose to follow correctly
-status: building
+status: done
 reviewed: docs/reviews/2026-09-05-the-release-is-a-conveyor.md
 risk: high
 size: l

@@ -2,7 +2,7 @@
 id: 0.2.0/the-suite-is-cheap-or-it-declares-itself
 milestone: "0.2.0"
 name: A test proves it the cheapest way that can fail, and the budget is a gate
-status: building
+status: done
 reviewed: docs/reviews/2026-09-05-the-suite-is-cheap-or-it-declares-itself.md
 phase: 6
 depends_on: []

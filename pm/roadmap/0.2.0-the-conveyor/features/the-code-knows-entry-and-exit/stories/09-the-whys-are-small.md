@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/09-the-whys-are-small
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every why is one sentence, every record fits on a screen, and the caps hold it there
-status: building
+status: done
 owner:
 depends_on: []
 ---

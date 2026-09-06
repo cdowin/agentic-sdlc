@@ -329,10 +329,10 @@ Reviewer's token cost: ~165k.
 ```text
 verdict: HOLD
 | id | severity | disposition |
-| S1 | CRITICAL | open |
-| S2 | CRITICAL | open |
-| S3 | MAJOR | open |
-| S4 | MAJOR | open |
+| S1 | CRITICAL | landed 892112d |
+| S2 | CRITICAL | landed 892112d |
+| S3 | MAJOR | landed 892112d |
+| S4 | MAJOR | landed 93b616f |
 | S5 | MINOR | open: the ceiling holds at rest and is exceeded at load 72 |
 | S6 | MINOR | open: latent, zero spawns in today's unit tier |
 | S7 | MINOR | open |

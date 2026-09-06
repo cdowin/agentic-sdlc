@@ -60,9 +60,14 @@ TS = '2026-09-03T10:00:00Z'
 GATE = ('--gate', 'check', '--verdict', 'PASS', '--duration-ms', '12')
 
 # The tree `support.pm.tree()` builds: one milestone `building`, one feature
-# `building`, and whatever story statuses the case asked for.
+# `building`, and whatever story statuses the case asked for. Two key
+# families (decision D7): the frozen five, DEPRECATED and matched by the
+# seed's words, and the three category keys the report attributes by.
 STOCK_TREE = {'milestones_building': ['0.1'], 'features_building': ['0.1/alpha'],
-              'features_review': [], 'stories_wip': [], 'stories_review': []}
+              'features_review': [], 'stories_wip': [], 'stories_review': [],
+              'milestones_in_progress': ['0.1'],
+              'features_in_progress': ['0.1/alpha'],
+              'stories_in_progress': []}
 
 
 def fresh(**over) -> dict:
@@ -149,7 +154,7 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
         'tool_calls_before_first_write': 20,
         'usage': {'input': 72, 'output': 5829, 'cache_creation': 165473,
                   'cache_read': 1820260},
-        'tree': fresh(stories_wip=[STORY]),
+        'tree': fresh(stories_wip=[STORY], stories_in_progress=[STORY]),
     }
     # `ROW_KEYS` order, minus the keys nothing supplied: the durable line's
     # own shape, not just its contents.
@@ -274,8 +279,12 @@ def test_a_transcript_stamp_is_normalised_to_full_utc_seconds(raw, expected):
 def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
     """Every bucket present, populated ones verbatim and empty ones EMPTY
     rather than absent — the report attributes a dispatch by reading these, so
-    a missing bucket is a dispatch silently attributed to nothing."""
-    with tree(story_statuses=('building', 'done')) as root:
+    a missing bucket is a dispatch silently attributed to nothing.
+
+    Both key families on one row (decision D7): the category keys hold every
+    grain in `in_progress` — `accepted` included, a word no frozen key can
+    spell — and the frozen keys hold exactly what they always held."""
+    with tree(story_statuses=('building', 'done', 'accepted')) as root:
         beta = root / 'pm/roadmap/0.1-demo/features/beta'
         write(beta / 'feature.md',
               {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
@@ -292,6 +301,32 @@ def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
         'features_review': ['0.1/beta'],
         'stories_wip': [STORY],
         'stories_review': ['0.1/beta/b0'],
+        'milestones_in_progress': ['0.1'],
+        'features_in_progress': ['0.1/alpha', '0.1/beta'],
+        'stories_in_progress': [STORY, '0.1/alpha/s2', '0.1/beta/b0'],
+    }
+
+
+def test_a_renamed_vocabulary_fills_the_category_keys_and_empties_the_frozen():
+    """The row shape's honest statement under a renamed vocabulary: the frozen
+    keys can spell none of the words, so they are empty — never absent — and
+    the category keys carry the tree. An old reader sees an idle tree; the
+    report reads the category keys and sees the work."""
+    from support.pm import declaring, write_config
+    renamed = {'todo': ('queued',), 'in_progress': ('doing',),
+               'done': ('shipped',)}
+    with tree(milestone_status='doing', feature_status='doing',
+              story_statuses=('doing', 'queued')) as root:
+        write_config(root, declaring(milestone=renamed, feature=renamed,
+                                     story=renamed))
+        assert record(root, '--grain', STORY)[0] == 0
+        snap = only_row(root)['tree']
+    assert snap == {
+        'milestones_building': [], 'features_building': [],
+        'features_review': [], 'stories_wip': [], 'stories_review': [],
+        'milestones_in_progress': ['0.1'],
+        'features_in_progress': ['0.1/alpha'],
+        'stories_in_progress': [STORY],
     }
 
 
@@ -308,10 +343,11 @@ def test_the_archived_tree_is_not_the_live_tree():
         assert record(root, '--from-transcript', str(SUBAGENT),
                       '--event', 'SubagentStop')[0] == 0
         snap = only_row(root)['tree']
-    # Every bucket present and the three empty ones EMPTY, not absent.
+    # Every bucket present and the four empty ones EMPTY, not absent.
     assert snap == fresh()
     assert [k for k, v in snap.items() if v == []] == [
-        'features_review', 'stories_wip', 'stories_review']
+        'features_review', 'stories_wip', 'stories_review',
+        'stories_in_progress']
 
 
 # --- the hand and gate forms: exactly what they were given, and nothing else ---
@@ -325,7 +361,8 @@ def test_the_archived_tree_is_not_the_live_tree():
      {'kind': 'dispatch', 'grain': STORY, 'agent_type': 'reviewer',
       'duration_s': 812, 'tool_calls': 37,
       'usage': {'input': 1200, 'output': 38000},
-      'tree': STOCK_TREE | {'stories_wip': [STORY]}}),
+      'tree': STOCK_TREE | {'stories_wip': [STORY],
+                            'stories_in_progress': [STORY]}}),
     # Nothing given: every number is a key the row does not carry.
     (dict(), ('--grain', STORY),
      {'kind': 'dispatch', 'grain': STORY, 'tree': STOCK_TREE}),

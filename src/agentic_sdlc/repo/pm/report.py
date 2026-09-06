@@ -102,14 +102,32 @@ KIND_BUG = ledger.GRAIN_BUG
 KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
 
 # D3's snapshot buckets, by the kind of grain whose ids they hold. A dispatch
-# row names a story by having it `wip` or at `review` when the hook fired, and
-# a feature by being `building`/`review` — or, below, by owning one of the
-# named stories. Nothing else on the row is attribution: `milestones_building`
-# is on every row and would attribute every dispatch to every grain.
-DISPATCH_BUCKETS = (
+# row names a story by having it in `in_progress` when the hook fired, and a
+# feature the same way — or, below, by owning one of the named stories.
+# Nothing else on the row is attribution: `milestones_in_progress` is on every
+# row and would attribute every dispatch to every grain.
+CATEGORY_BUCKETS = (
+    (KIND_STORY, ('stories_in_progress',)),
+    (KIND_FEATURE, ('features_in_progress',)),
+)
+# THE OLD SHAPE, read as-is (decision D7). Rows written before the category
+# keys carry only these, matched by the SEED's words when they were written:
+# `wip`/`review` for a story, `building`/`review` for a feature. Deprecated on
+# the writer's side; the reader keeps them because rows are never rewritten.
+# An old-shape row is read through THESE and never through the current
+# declaration — a row written when `building` meant something is not
+# re-interpretable through a table written later; that is inventing history.
+LEGACY_BUCKETS = (
     (KIND_STORY, ('stories_wip', 'stories_review')),
     (KIND_FEATURE, ('features_building', 'features_review')),
 )
+LEGACY_KEYS = frozenset(key for _, keys in LEGACY_BUCKETS for key in keys)
+CATEGORY_KEYS = frozenset(key for _, keys in CATEGORY_BUCKETS for key in keys)
+# What a spend table says about rows the OLD shape could not have spelled.
+LEGACY_NOTE = ('predate category keys and name no grain — unreadable under '
+               'a renamed vocabulary, and not counted as empty')
+UNPLACED_NOTE = ('spent time in a state this declaration does not name — '
+                 'seconds in no category column, not zero')
 
 # Our column label ← the row's `usage` key. The ORDER is `ledger.USAGE_FIELDS`,
 # so a field added there appears here rather than being silently dropped; only
@@ -804,12 +822,19 @@ def named_grains(row: dict, kinds: dict[str, str],
     dispatch's tokens across two stories would be a weight, and D5 says the
     report does not weight; the per-grain columns therefore sum to MORE than
     the totals line, which counts every row exactly once.
+
+    A row carrying the CATEGORY keys is read through them; a row carrying
+    only the frozen keys is an OLD-SHAPE row and is read through those, as
+    they were written. `is_legacy` says which a row is, so the report can
+    disclose the boundary rather than count an old row it cannot read as a
+    row that named nothing.
     """
     tree = row.get('tree')
     if not isinstance(tree, dict):
         return set()
     named: set[str] = set()
-    for kind, buckets in DISPATCH_BUCKETS:
+    buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
+    for kind, buckets in buckets_by_kind:
         for bucket in buckets:
             ids = tree.get(bucket)
             for gid in ids if isinstance(ids, list) else ():
@@ -821,33 +846,58 @@ def named_grains(row: dict, kinds: dict[str, str],
     return named
 
 
+def is_legacy(row: dict) -> bool:
+    """Was this dispatch row written before the snapshot carried categories?
+
+    A row with a `tree` and none of the category keys. A row with no `tree`
+    at all is not legacy — it is a row that never snapshotted (a hand entry)
+    and has always named nothing.
+    """
+    tree = row.get('tree')
+    return isinstance(tree, dict) and not (CATEGORY_KEYS & set(tree))
+
+
 # --- the clock ----------------------------------------------------------------
 def state_columns(cfg: model.PmConfig, kind: str) -> tuple[str, ...]:
-    """Every state of the kind's vocabulary except the terminal one, in order.
+    """The dwell columns: one per CATEGORY — `todo`, `in_progress`, `done`.
 
-    EVERY one, not the ones before it in the tuple: a vocabulary is a closed
-    SET with no transition graph, so its ORDER is a reading order and never a
-    claim about which states a grain passes through. Stock, for a story and a
-    feature alike: `planning ready building reviewing accepted packaging`;
-    `open fixed` for a bug. Which state a grain is stuck in is the question
-    this section exists to answer (Chris, 2026-09-03: *"figure out which ones
-    are taking the most time"*), so the columns are the whole vocabulary in
-    its reading order and not a prefix of it — a column set cut at the
-    terminal state's INDEX would drop every state that happens to sit after it.
+    Three columns whatever the vocabulary: a twelve-state project gets three,
+    not twelve, and a project that renames every word gets the same three.
+    Which category a grain is stuck in is the question this section exists
+    to answer (Chris, 2026-09-03: *"figure out which ones are taking the most
+    time"*); which WORD within `in_progress` it sat at is `pm ledger show`.
 
-    The finished states have no column: they are where the grain ENDED, so
-    the seconds after one are a running clock rather than a duration, and
-    `total_s` beside these columns is the span that ends there.
-    `ledger.ends_grain` is the one home for which states those are — the
-    kind's `done` category — so the columns and the total cannot come to
-    different answers.
+    `done` has a column because a grain can leave it — reopened — and the
+    stint it spent finished before that is a duration. The seconds after its
+    LAST row are never counted (a running clock has no end), so a grain that
+    finished once and stayed finished prints `-` there, and `total_s` beside
+    these columns is the span that ends at that last row.
 
-    A grain that RE-ENTERED a state — reopened, unblocked and blocked again —
-    sums both stints into the one column. That is addition over the rows the
-    ledger already holds, and the stints themselves are `pm ledger show`.
+    A grain that RE-ENTERED a category — reopened, unblocked and blocked again
+    — sums both stints into the one column. That is addition over the rows
+    the ledger already holds. A stint in a word the CURRENT declaration does
+    not name — a row written under a vocabulary since renamed — lands in no
+    column and is disclosed under the table (`unplaced_s` in `--json`).
     """
-    return tuple(state for state in model.flow_of(cfg, kind).order
-                 if not ledger.ends_grain(cfg, kind, state))
+    return model.CATEGORIES
+
+
+def category_seconds(cfg: model.PmConfig, kind: str,
+                     seconds: dict[str, int]) -> tuple[dict[str, int], int]:
+    """(seconds per category, seconds in words the declaration does not name).
+
+    Read through the CURRENT declaration — the only one there is — and the
+    remainder said out loud rather than folded into a column by guess.
+    """
+    placed: dict[str, int] = {}
+    unplaced = 0
+    for word, spent in seconds.items():
+        category = model.category_of(cfg, kind, word)
+        if category is None:
+            unplaced += spent
+            continue
+        placed[category] = placed.get(category, 0) + spent
+    return placed, unplaced
 
 
 def in_time_order(rows: list) -> list:
@@ -908,13 +958,24 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     per_grain = {g.gid: _blank() for g in grains}
     per_type: dict[str, dict[str | None, dict]] = {g.gid: {} for g in grains}
     unattributed, totals = _blank(), _blank()
+    # THE BOUNDARY, counted (decision D7): rows written before the snapshot
+    # carried categories, and how many of those named nothing. An old-shape
+    # row that names nothing is EITHER a dispatch over an idle tree OR a
+    # dispatch over a tree whose words that shape could not spell, and the
+    # rows cannot tell the two apart — so the report says so, rather than
+    # counting the second as the first.
+    legacy_rows = 0
+    legacy_unattributed = 0
     for row in dispatch:
         # Every row lands in the totals exactly once, whether or not it names
         # a grain — so the summary line is a statement about the FILE.
         _add(totals, row.data)
+        legacy = is_legacy(row.data)
+        legacy_rows += legacy
         named = named_grains(row.data, kinds, owned)
         if not named:
             _add(unattributed, row.data)
+            legacy_unattributed += legacy
             continue
         agent = row.data.get('agent_type')
         agent = agent if isinstance(agent, str) and agent else None
@@ -926,7 +987,8 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                                                g.gid)):
         names = {grain.gid}
         my_status = [r for r in status if r.data.get('grain') in names]
-        seconds = state_seconds(my_status)
+        placed, unplaced = category_seconds(
+            cfg, grain.kind, state_seconds(my_status))
         out.append({
             'grain': grain.gid, 'kind': grain.kind,
             'size': grain.size or None,
@@ -935,12 +997,15 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                             for agent, spend in sorted(
                                 per_type[grain.gid].items(),
                                 key=lambda kv: (kv[0] is None, kv[0] or ''))],
-            'states': {state: seconds.get(state)
-                       for state in state_columns(cfg, grain.kind)},
+            'states': {category: placed.get(category)
+                       for category in state_columns(cfg, grain.kind)},
+            'unplaced_s': unplaced or None,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
     return {'section': SECTION_SPEND, 'grains': out,
             'unattributed': unattributed,
+            'legacy': {'rows': legacy_rows,
+                       'unattributed': legacy_unattributed},
             'totals': {'dispatch_rows': len(dispatch),
                        'status_rows': len(status), 'grains': len(grains),
                        **{k: v for k, v in totals.items()
@@ -1024,11 +1089,21 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
                         *_spend_cells(split), *('',) * (len(states) + 1)))
         out.append('')
         out.extend(_table(f'{kind} ({len(entries)})', headers, aligns, rows))
+        # Disclosed under the table it is missing from, naming the grains: a
+        # `-` in a category column is "no stint measured", and a stint in a
+        # word nobody declares any more must not read as that.
+        unplaced = [(e['grain'], e['unplaced_s']) for e in entries
+                    if e.get('unplaced_s')]
+        for gid, spent in unplaced:
+            out.append(f'   {gid} {UNPLACED_NOTE}: {spent} s')
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',
                       SPEND_COLUMNS, (RIGHT,) * len(SPEND_COLUMNS),
                       [_spend_cells(stray)] if stray['dispatches'] else []))
+    legacy = data.get('legacy') or {}
+    if legacy.get('unattributed'):
+        out.append(f'   {legacy["unattributed"]} of these {LEGACY_NOTE}')
     out.append('')
     out.append(f'{HEADING_PREFIX} {data["milestone"]} — '
                f'{_cell(totals["usage"]["output"])} out / '

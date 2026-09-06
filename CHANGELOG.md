@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### The review findings land: `pm init` writes the flow it is named for
+
+- **`pm init` appends `[pm.states.<kind>]` to a `devkit.toml` it did not write** — after the
+  project's own bytes, in the file's own line endings (a CRLF config gets a CRLF block), idempotent
+  (a tree that already declares its flow is not touched), and creating the file holding the flow
+  alone when there is none. `agentic-sdlc init` takes the same path for a pre-existing config it
+  leaves alone otherwise. F2/F3 of `docs/reviews/2026-09-05-the-project-declares-its-flow.md`:
+  the refusal for a flowless tree named this command, and the command left the file untouched.
+
 ### An open bug against the milestone is named, and two of the three open bugs are fixed
 
 - **`pm ready-for milestone <id>` names every bug whose `fix_milestone:` is `<id>` and whose
@@ -306,33 +315,36 @@ and no state literal survives outside the seed `pm init` writes.
 ### The project declares its flow
 
 **New config, and it is the one section that ships LIVE rather than commented.** `[pm.states.<kind>]`
-maps every state this project uses into one of three categories — `todo`, `in_progress`, `done` —
-and `[pm.transitions.<kind>]` maps a conveyor step to the exact state it writes. `init` writes both;
-the runtime reads them every run and **does not fall back**. Hard rule 5 now says why: a GATE ships
+maps every state this project uses into one of three categories — `todo`, `in_progress`, `done`.
+`init` writes it, and `pm init` APPENDS it to a devkit.toml it did not write — every other byte
+preserved, the file's own line endings kept, idempotent; the runtime reads it every run and **does
+not fall back**. (An earlier draft of this note said `init` wrote a `[pm.transitions.<kind>]` table
+too; nothing ever wrote one, and the key is refused by name now — see *Each kind declares its own
+states*.) Hard rule 5 now says why: a GATE ships
 stock defaults and a repo with no `devkit.toml` runs every gate byte-identically to one declaring
 them; a WORKFLOW does not, because a default nobody can see is the engine's opinion wearing the
 project's clothes.
 
-- **This release adds the section and changes no question the engine asks.** Every predicate still
-  asks by name. Only the workflow verbs refuse a tree that has not declared a flow — `check doc`,
-  `check shell` and `check repo-hygiene` are untouched — and the refusal names
-  `agentic-sdlc pm init` rather than pasting the table for you to copy wrong.
+- **Every question the engine asks is asked of the declaration** (`model.holds`, `model.category_of`,
+  `model.move_defect` — the routing landed in `32b20b1`), and the workflow verbs and `check pm`
+  refuse a tree that has not declared a flow — `check doc`, `check shell` and `check repo-hygiene`
+  are untouched — with a refusal that names `agentic-sdlc pm init` rather than pasting the table for
+  you to copy wrong. (The earlier draft said "changes no question" and "only the workflow verbs
+  refuse" of a build in which nothing yet asked; F1/F4 of the flow's review.)
 - **The engine gets two verbs**, which the design has specified since it was written and nothing had
   built: `move(grain, to_state)` asks whether the target is a state this project declared, and
   `holds(grains, category)` answers whether they are all there **and names who is not**. A status the
   project never declared blocks rather than passes.
-- **A state mapped to no category or to two, a transition to a state nobody declared, a category
-  outside the closed set, or a partial declaration is exit 2** naming the key. Refusing a malformed
-  declaration is the engine READING, which is the one thing it is always allowed to do.
+- **A state mapped to no category or to two, a category outside the closed set, or a partial
+  declaration is exit 2** naming the key. Refusing a malformed declaration is the engine READING,
+  which is the one thing it is always allowed to do.
 - **The seed carries `obe` in `done`.** It is the one place the seed is not literally the old
   `LIFECYCLE`, and it is deliberate: without it a freshly-initialised tree has no word for abandoned
   work, and `[pm] also_done`'s live defect — a story at `obe` holding its feature open forever —
   comes straight back for every new consumer. A tree that never types `obe` is unaffected.
-- **`pm vocabulary` is the pin-bump verb and it stopped saying there are no transitions to print.**
-  It now prints the categories, your declared flow, and the conveyor step names a transitions table
-  may key on — read from the registry, because that key set is the ENGINE's: a project selects from
-  a published vocabulary and cannot invent a step, which is the same shape `[<operation>] steps`
-  already works in. `--json` is additive; every existing key keeps its meaning.
+- **`pm vocabulary` is the pin-bump verb.** It prints the categories and your declared flow — each
+  kind's states with the category each sits in — beside the rule ids. `--json` is additive over the
+  0.1.x payload; every existing key keeps its meaning.
 
 ### The story belt verifies the story rather than the moment
 

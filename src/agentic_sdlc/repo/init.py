@@ -297,10 +297,14 @@ def _stand_up_pm_tree(cfg) -> int:
 
     One of those four is already done here — devkit.toml is written above with
     its `[pm]` block — so printing it would send an operator to wire what init
-    just wired. The tree and the guidance install are the same two functions
-    `pm init` calls.
+    just wired. The flow, the tree and the guidance install are the same three
+    functions `pm init` calls. THE FLOW IS THE APPEND CASE: a project-owned
+    devkit.toml that predates this toolkit is left alone by `_write_seed` and
+    then has the one section the runtime will not fall back on APPENDED,
+    every other byte preserved (F2 of the flow's review).
     """
     from agentic_sdlc.repo.pm import skills
+    _say(skills.install_flow(cfg))
     for made in skills.stand_up_tree(cfg):
         _say(f'created {made}')
     return skills.cmd_install_skills(cfg, [])

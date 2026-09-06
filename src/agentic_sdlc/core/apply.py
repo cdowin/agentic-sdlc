@@ -1,31 +1,8 @@
-"""apply.py — the ONE place this package mutates a filesystem.
+"""The one place this package mutates a filesystem.
 
-The same review that found six silent censuses found six half-writes: three
-scaffolder refusal paths that raised with an earlier rename already on disk (and
-already in the git INDEX, via `git mv --force`), a symlinked slot written
-THROUGH to a file outside the grain it was asked to fill, `install-agents`
-half-installing twice, and `pm collapse` deleting uncommitted prose. Every one
-of them printed "nothing was written" while something had been.
-
-The shape is that a writer DECIDES AS IT GOES. `target.write_text(...)` inside a
-loop is a decision and an action in one expression, so the loop's third
-iteration discovers a problem the first two have already made irreversible.
-
-This module separates the two, and gives the separation a type. A `Plan` is an
-EXPLICIT list of `Step`s — each naming its act and its destination, nothing
-derived at apply time. `Plan.decide()` inspects the whole plan against the
-filesystem and returns every `Blocked` step with a reason from a CLOSED enum.
-`Plan.apply()` runs decide first, refuses whole when anything is blocked, and
-otherwise executes — and if the filesystem changes under it anyway, the
-`Applied` it returns names EXACTLY which steps landed. There is no way to get a
-partial result that does not say so.
-
-`tests/test_boundaries.py` asserts that `write_text`, write-mode `open`,
-`rename`, `unlink`, `rmtree`, `mkdir` and the `os.`/`shutil.` mutators appear
-NOWHERE ELSE in `src/`. A new verb cannot write directly. The builder methods
-here are spelled `make_dir` / `move` rather than `mkdir` / `rename` for that
-test's sake: an AST cannot tell `plan.mkdir()` from `Path.mkdir()`, and it must
-not have to.
+A `Plan` is an explicit list of `Step`s; `decide()` names every `Blocked` step before
+anything runs, and `apply()` refuses whole or reports exactly which steps landed.
+`tests/test_boundaries.py` forbids the raw mutators elsewhere in `src/`.
 """
 from __future__ import annotations
 
@@ -37,7 +14,7 @@ from pathlib import Path
 
 
 class Act(Enum):
-    """What one step DOES. Closed: a plan holds nothing else."""
+    """What one step does. Closed: a plan holds nothing else."""
 
     MKDIR = 'create directory'
     OVERWRITE = 'overwrite'
@@ -47,12 +24,7 @@ class Act(Enum):
 
 
 class Obstruction(Enum):
-    """Why a step cannot run. CLOSED — the whole vocabulary of a refusal.
-
-    Every one of these is answerable by LOOKING, before anything is written.
-    What is left over (a disk that fills, a mode changed under the plan) is
-    reported by `Applied`, which names what landed.
-    """
+    """Why a step cannot run; every one is answerable by looking before a write."""
 
     EXISTS = 'already exists'
     IS_A_DIRECTORY = 'is a directory'
@@ -66,17 +38,8 @@ class Obstruction(Enum):
 
 
 class Symlink(Enum):
-    """What a step does when its destination is a SYMLINK. Declared by the
-    caller, never inferred, because the two callers in this package genuinely
-    differ and the difference is a decision rather than a detail.
-
-    REFUSE is the scaffolder's: a symlinked slot is a slot whose bytes live
-    somewhere else, and following it lets a verb asked to fill ONE grain rewrite
-    a file outside it. FOLLOW is `install-agents`/`install-skills`': their
-    destinations are ordinary repo files, and a project that symlinks
-    `.claude/agents/` somewhere deliberate is exercising a choice this tool has
-    no business overriding.
-    """
+    """What a step does at a symlinked destination: REFUSE (a scaffolder must not
+    write outside its grain) or FOLLOW (an installer respects a deliberate link)."""
 
     REFUSE = 'refuse'
     FOLLOW = 'follow'
@@ -84,25 +47,10 @@ class Symlink(Enum):
 
 @dataclass(frozen=True)
 class Step:
-    """One intended operation, fully named.
+    """One intended operation, fully named at plan time.
 
-    `dest` is where it lands; `body` is what CREATE/OVERWRITE write; `src` is
-    what RENAME moves. Nothing here is computed at apply time — that is the
-    whole point of the type. A caller that would decide the destination inside
-    the apply loop puts the decision in the plan instead.
-
-    `newline` is the write policy, and it is explicit because the two spellings
-    are not interchangeable: `''` writes the bytes given (what every grain
-    document needs, so a CRLF template stays CRLF), `None` is `write_text`'s
-    universal translation.
-
-    `executable` is the write's MODE, and it is part of the step for the same
-    reason the body is: a file whose content is right and whose mode is wrong
-    is not written. It exists because `install-runners` shipped a `scenario.sh`
-    at 0644 that `integration.sh` exec'd directly — exit 126 on every scenario,
-    with `Permission denied` matching no summary pattern, so the failure block
-    printed the scenario name and nothing under it. A caller cannot repair that
-    afterwards: this module owns every mutation, chmod included.
+    `newline=''` writes the bytes given so a CRLF template stays CRLF; `None` translates.
+    `executable` is part of the step because a file with the wrong mode is not written.
     """
 
     act: Act
@@ -132,14 +80,8 @@ class Blocked:
 
 @dataclass(frozen=True)
 class Applied:
-    """What a run of `Plan.apply` actually did.
-
-    `landed` is the steps that completed, in order. `blocked` is non-empty when
-    the plan was refused BEFORE anything ran, in which case `landed` is empty
-    and means it. `error` is set when a step failed mid-apply — the case no
-    listing could have predicted — and `landed` then says precisely how far it
-    got.
-    """
+    """What `Plan.apply` did: `blocked` means nothing ran; `failed` names the step
+    that broke mid-apply, and `landed` then says how far it got."""
 
     landed: tuple[Step, ...] = ()
     blocked: tuple[Blocked, ...] = ()
@@ -165,11 +107,7 @@ class Plan:
                              label=label, symlink=symlink,
                              executable=executable))
 
-    # Named `make_dir` / `move`, not `mkdir` / `rename`, and deliberately: an
-    # AST cannot tell `plan.mkdir(...)` from `Path.mkdir(...)`, and the boundary
-    # test that keeps every other module out of the filesystem must not have to.
-    # A distinct vocabulary for INTENT also reads correctly — a plan step is
-    # something to be done, not something done.
+    # Named `make_dir`/`move` because the boundary test cannot tell `plan.mkdir()` from `Path.mkdir()`.
     def make_dir(self, dest: Path, *, label: str = '') -> 'Plan':
         return self.add(Step(Act.MKDIR, dest, label=label))
 
@@ -184,16 +122,7 @@ class Plan:
 
     # --- phase one ------------------------------------------------------------
     def decide(self) -> list[Blocked]:
-        """Every step that cannot run, with the reason it cannot.
-
-        Inspects the WHOLE plan before reporting, so a caller sees all of it
-        rather than the first thing to go wrong — a refusal a human fixes twice
-        is a refusal that has narrowed to one instance.
-
-        The plan is read against the filesystem AS IT IS, plus the plan's own
-        MKDIR steps: a two-step "make the directory, then fill it" plan is not
-        refused for a parent the plan itself creates.
-        """
+        """Every step that cannot run, read against the filesystem plus the plan's own MKDIRs."""
         out: list[Blocked] = []
         planned_dirs = {s.dest for s in self.steps if s.act is Act.MKDIR}
         for step in self.steps:
@@ -206,10 +135,6 @@ class Plan:
         if step.act in (Act.OVERWRITE, Act.MKDIR, Act.RENAME):
             out.extend(self._parent_obstructions(step, dest, planned_dirs))
         if step.act is Act.OVERWRITE:
-            # A SYMLINK is refused rather than followed unless the caller says
-            # otherwise: writing through one lets a verb asked to fill one place
-            # rewrite a file somewhere else, which is exactly how the scaffolder
-            # wrote outside the grain it was given.
             if step.symlink is Symlink.REFUSE and dest.is_symlink():
                 out.append(Blocked(step, dest, Obstruction.IS_A_SYMLINK))
             elif dest.exists() and not dest.is_file():
@@ -228,9 +153,7 @@ class Plan:
             elif src != dest and dest.exists() and not _case_respelling(src, dest):
                 out.append(Blocked(step, dest, Obstruction.EXISTS))
             elif src is not None and not os.access(src.parent, os.W_OK):
-                # A rename writes the DIRECTORY, not the file, and the two
-                # permissions are independent: a 0555 directory holding a 0644
-                # file passes every per-file check and then fails in `rename`.
+                # A rename writes the directory, not the file.
                 out.append(Blocked(step, src.parent, Obstruction.PARENT_NOT_WRITABLE))
         elif step.act is Act.DELETE_TREE:
             if dest.exists() and not dest.is_dir():
@@ -239,20 +162,15 @@ class Plan:
             if dest.exists() and not dest.is_file():
                 out.append(Blocked(step, dest, Obstruction.NOT_A_REGULAR_FILE))
             elif dest.is_file() and not os.access(dest.parent, os.W_OK):
-                # An unlink writes the DIRECTORY, like a rename does.
+                # An unlink writes the directory, like a rename does.
                 out.append(Blocked(step, dest.parent,
                                    Obstruction.PARENT_NOT_WRITABLE))
         return out
 
     def _parent_obstructions(self, step: Step, dest: Path,
                              planned_dirs: set[Path]) -> list[Blocked]:
-        """Whether the destination's directory can be CREATED.
-
-        Walks up to the first ancestor that exists, because `mkdir(parents=True)`
-        does: a missing `a/b/c/` is fine if `a/` is a writable directory, and is
-        not if `a` is a file. Checking only `dest.parent` would wave through
-        every nested destination and then traceback inside the write.
-        """
+        """Whether the destination's directory can be created; walks up to the first
+        existing ancestor, as `mkdir(parents=True)` does."""
         parent = dest.parent
         if parent in planned_dirs or parent == dest:
             return []
@@ -266,14 +184,8 @@ class Plan:
 
     # --- phase two ------------------------------------------------------------
     def apply(self, *, decide: bool = True) -> Applied:
-        """Run the plan. Refuses whole when `decide` finds anything.
-
-        `decide=False` is for the caller that has already decided in its own
-        vocabulary — the scaffolder's refusals name slots and templates, not
-        paths, and re-deciding here would either duplicate that or contradict
-        it. It does NOT skip the reporting: whatever happens, `Applied` names
-        what landed.
-        """
+        """Run the plan, refusing whole when `decide` finds anything; `decide=False` is
+        for a caller that already refused in its own vocabulary, and still reports."""
         if decide:
             blocked = self.decide()
             if blocked:
@@ -290,12 +202,8 @@ class Plan:
 
 
 def _case_respelling(src: Path, dest: Path) -> bool:
-    """True when `dest` is the SAME file as `src` under a case-variant name —
-    a rename-in-place on a case-insensitive filesystem, where `dest.exists()`
-    is true because it IS the source. That is the one collision that is not
-    one. Both halves matter: name-only waved through overwriting a DIFFERENT
-    file that happened to match `src.name.upper()`, and the old
-    lower()/upper() spelling falsely blocked any mixed-case rename."""
+    """True when `dest` is the same file as `src` under a case-variant name, which is
+    the one `dest.exists()` collision that is not one."""
     if src.name.lower() != dest.name.lower():
         return False
     try:
@@ -305,11 +213,7 @@ def _case_respelling(src: Path, dest: Path) -> bool:
 
 
 def _make_executable(dest: Path) -> None:
-    """`chmod +x`, spelled exactly: the execute bit joins every class that can
-    already READ the file. Not a flat 0o755 — that would WIDEN a deliberately
-    0600 destination from "the owner may run this" into "everyone may read it",
-    which is a permission decision no writer here was asked to make.
-    """
+    """`chmod +x`: the execute bit joins every class that can already read, never a flat 0o755."""
     mode = os.stat(dest).st_mode
     os.chmod(dest, mode | ((mode & 0o444) >> 2))
 
@@ -328,26 +232,17 @@ def _run(step: Step) -> None:
         assert step.src is not None
         step.src.rename(step.dest)
     elif step.act is Act.DELETE_TREE:
-        # A tree that is already gone is the desired end state (idempotent);
-        # anything else that stops the delete must surface as `Applied.failed`
-        # — `ignore_errors=True` here was the one step in this module that
-        # reported `landed` over a delete that did not happen.
+        # Already gone is the idempotent end state; any other failure surfaces as `failed`.
         if step.dest.exists() or step.dest.is_symlink():
             shutil.rmtree(step.dest)
     elif step.act is Act.DELETE_FILE:
-        # Already-gone is the desired end state (idempotent), same as
-        # DELETE_TREE; a directory here raises and surfaces as `failed`.
         step.dest.unlink(missing_ok=True)
 
 
 # --- the one-step conveniences ------------------------------------------------
-# A single write is still a plan; these exist so a caller with exactly one step
-# does not have to say so twice. They go through `Plan` — there is no shortcut
-# past the type, because the shortcut is what the primitive exists to remove.
 
 def write(path: Path, text: str, *, newline: str | None = '') -> Applied:
-    """Write one file, creating its directory. Raw newlines by default, so a
-    template's own line endings survive the round trip."""
+    """Write one file, creating its directory; raw newlines by default."""
     return Plan().overwrite(path, text, newline=newline).apply(decide=False)
 
 
@@ -365,9 +260,6 @@ def remove_file(path: Path) -> Applied:
 
 
 def raise_on_error(applied: Applied) -> None:
-    """Re-raise a mid-apply failure as the `OSError` the caller's own handler
-    expects. For the callers whose refusal wording predates this module: they
-    catch `OSError` and say something domain-specific about it, and taking that
-    away would change a message a consumer's hook prints."""
+    """Re-raise a mid-apply failure as the `OSError` older callers' handlers expect."""
     if applied.failed is not None:
         raise OSError(applied.error)

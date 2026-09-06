@@ -1,41 +1,8 @@
-"""walk.py — the ONE place this package enumerates a filesystem.
+"""The one place this package enumerates a filesystem.
 
-A day of review found the same defect in six places: something left a census in
-silence. The fence masked a decision log; `check doc` masked
-a file's tail; D14 never descended into `bugs/<subdir>/`; damaged frontmatter
-dropped a grain; the dotted-name filter dropped another. Every fix was an
-INSTANCE — a filter taught to report itself — so the next feature reintroduced
-the shape somewhere new. Fixing grain detection literally created a new
-narrowing, because the fix added a `.` filter and nothing made it disclose.
-
-The shape is not "somebody forgot". The shape is that a `glob`/`rglob`/
-`iterdir`/`os.walk` returns ONE list, so a filter applied to it produces one
-list too, and the entries it removed have nowhere to go. This module returns
-BOTH halves. `Walk.kept` is what survived; `Walk.skipped` is every entry that
-did not, each carrying a reason drawn from `SkipReason` — a CLOSED enum. A
-filter that cannot name its reason from the fixed set cannot be written:
-`Walk.filter` takes a `SkipReason` and refuses anything else.
-
-Two kinds of reason, and the difference is deterministic rather than judged:
-
-  * A UNIVERSE reason (`census` is None) says the entry was never a candidate —
-    a directory when files were asked for, a `.txt` when `.md` was asked for.
-    Those are declared by the ENUMERATOR's arguments, up front, once.
-  * A NARROWING reason (`census` is a template) says the entry WAS a candidate
-    and a filter removed it. Every narrowing renders into the census, always.
-
-`Walk.filter` accepts narrowing reasons only, so a hand-rolled narrowing cannot
-be silent by construction; universe reasons are reachable only by declaring
-them as an enumerator argument.
-
-The count and its disclosures are the SAME STRING. `Walk` has no length —
-`len(walk)` raises, pointing at `census()` — and `tests/test_boundaries.py`
-forbids `len(x.kept)` outside this file, so a renderer cannot obtain a number
-without carrying what the number left out.
-
-`tests/test_boundaries.py` also asserts that `glob`, `rglob`, `iterdir` and
-`os.walk` appear NOWHERE ELSE in `src/`. A new gate that enumerates directly
-breaks the build.
+A `Walk` returns both halves of an enumeration: `kept`, and `skipped` with a reason from
+the closed `SkipReason` enum, so a narrowing cannot be silent. `census()` is the only way
+to a count. `tests/test_boundaries.py` forbids `glob`/`rglob`/`iterdir`/`os.walk` elsewhere.
 """
 from __future__ import annotations
 
@@ -47,13 +14,8 @@ from typing import Callable, Iterator
 
 
 class SkipReason(Enum):
-    """Every reason an entry may leave a walk. CLOSED — adding a reason is an
-    edit HERE, reviewed here, and the census learns to render it here.
-
-    The value is the census template, or None for a universe reason. Declaration
-    order is render order, so the disclosure string is stable across runs and
-    across platforms: two censuses of the same tree are byte-identical.
-    """
+    """Every reason an entry may leave a walk; the value is the census template, or None
+    for a universe reason (never a candidate). Declaration order is render order."""
 
     # --- universe: never a candidate ------------------------------------------
     NOT_A_FILE = None
@@ -61,37 +23,13 @@ class SkipReason(Enum):
     SUFFIX_MISMATCH = None
 
     # --- narrowing: was a candidate, a filter removed it ----------------------
-    # The two the PM census has always disclosed, in the order it disclosed
-    # them. Their wording is the wording that shipped; this is where it lives.
     NO_FRONTMATTER = '{n} note(s) skipped (no frontmatter — not a grain)'
     DOTTED_NAME = '{n} hidden (dot-prefixed — skipped, as D13 skips them)'
     NO_GRAIN_FILE = '{n} dir(s) with no grain file'
     EXCLUDED_PATH = '{n} path(s) excluded from scope'
-    # `rglob` does NOT descend a symlinked directory, so everything under one
-    # reached neither `kept` NOR `skipped` — invisible to every rule at once,
-    # and invisible to the census that exists to say when a walk looked less
-    # far. That is this module's own cardinal sin, in this module. Found
-    # 2026-09-05 by a release reviewer: a symlinked milestone directory holding
-    # two over-cap grains produced a clean PASS while `check pm`, which walks
-    # differently, saw the milestone and failed.
-    #
-    # NOT DESCENDED, and that is the ruling rather than a limitation: a symlink
-    # can point outside the checkout, and following one would make a gate read
-    # a tree hard rule 8 says it must not. So the link is DISCLOSED — the
-    # census names it, an operator sees a directory the walk declined, and
-    # nobody gets a smaller number with nothing said.
+    # Not descended, because a symlink may point outside the checkout (hard rule 8).
     SYMLINKED_DIR = '{n} symlinked dir(s) NOT descended (a symlink may leave the checkout)'
-    # THE THIRD MECHANISM OF THE SAME DEFECT, and the one that needed a
-    # reviewer to find. `rglob` swallows a per-directory OSError: a subtree
-    # this process cannot read yields NOTHING and raises NOTHING, so it
-    # reached neither `kept` nor `skipped` and `unexamined()` answered 0 —
-    # which is the number the zero-census guard trusts.
-    #
-    # Measured 2026-09-05 by the feature review: `pm/roadmap/0.1.0/stories/`
-    # at mode 000 holding a 901-line over-cap story produced
-    # `[check:grain-shape] PASS — 0 PM document(s)`, exit 0. Symlink,
-    # discarded census, unreadable directory — three ways to lose a subtree
-    # and say nothing, closed one at a time over one day.
+    # `rglob` swallows the OSError, so an unreadable subtree would otherwise vanish.
     UNREADABLE_DIR = '{n} dir(s) NOT READABLE by this process and so not descended'
 
     @property
@@ -104,25 +42,13 @@ class SkipReason(Enum):
 
     @property
     def is_unexamined(self) -> bool:
-        """Was this entry LOOKED AT, or merely not reached?
-
-        The distinction a zero census turns on, and the two answers are not
-        the same kind of fact. `NO_FRONTMATTER` means the file was opened and
-        is not a grain — a classification, and a correct one. `SYMLINKED_DIR`
-        and `EXCLUDED_PATH` mean nobody went in: the first because a link may
-        leave the checkout, the second because config said not to.
-
-        So a walk that kept NOTHING and examined everything it found has
-        genuinely found nothing — a fresh `pm init` is exactly that. A walk
-        that kept nothing and left something UNEXAMINED cannot tell an empty
-        tree from a scope that lost one, and rule 4 says that must be loud.
-        """
+        """Was this entry not looked inside at all; a zero census with one of these is loud."""
         return self in (SkipReason.EXCLUDED_PATH, SkipReason.SYMLINKED_DIR,
                         SkipReason.UNREADABLE_DIR)
 
 
 class Kind(Enum):
-    """What an enumerator is asked FOR. The universe declaration."""
+    """What an enumerator is asked for: the universe declaration."""
 
     FILE = 'file'
     DIR = 'dir'
@@ -137,11 +63,7 @@ class Skip:
 
 @dataclass(frozen=True)
 class Walk:
-    """Both halves of one enumeration.
-
-    Deliberately has no length. A census that wants a number calls `census()`,
-    which renders the number and its narrowings together.
-    """
+    """Both halves of one enumeration; has no length, so a count carries its narrowings."""
 
     kept: tuple[Path, ...]
     skipped: tuple[Skip, ...] = ()
@@ -156,13 +78,7 @@ class Walk:
         return iter(self.kept)
 
     def filter(self, keep: Callable[[Path], bool], reason: SkipReason) -> 'Walk':
-        """A narrower walk, with everything it removed recorded under `reason`.
-
-        Refuses a universe reason: "this was never a candidate" is a statement
-        the ENUMERATOR makes from its arguments, not something a downstream
-        predicate may claim after the fact. Without that refusal, `filter` is a
-        hole through which any narrowing can call itself a universe and vanish.
-        """
+        """A narrower walk with the removals recorded under `reason`; refuses a universe reason."""
         if not reason.is_narrowing:
             raise ValueError(
                 f'{reason.name} is a universe reason — it may only be produced '
@@ -175,9 +91,7 @@ class Walk:
         return Walk(tuple(kept), tuple(skipped))
 
     def partition(self, keep: Callable[[Path], bool], reason: SkipReason) -> tuple['Walk', tuple[Path, ...]]:
-        """`(the narrower walk, the paths it removed)` — for the caller that
-        needs to REPORT the removed entries as findings rather than only count
-        them. The removals stay in `skipped` either way."""
+        """`(the narrower walk, the paths it removed)`, for a caller reporting the removals."""
         removed = tuple(p for p in self.kept if not keep(p))
         return self.filter(keep, reason), removed
 
@@ -189,8 +103,7 @@ class Walk:
         return sum(1 for skip in self.skipped if skip.reason.is_unexamined)
 
     def counts(self) -> dict[SkipReason, int]:
-        """How many entries each narrowing reason removed. Universe reasons are
-        absent: they answer "what was this walk OF", not "what did it drop"."""
+        """How many entries each narrowing reason removed; universe reasons are absent."""
         out: dict[SkipReason, int] = {}
         for skip in self.skipped:
             if skip.reason.is_narrowing:
@@ -198,35 +111,24 @@ class Walk:
         return out
 
     def disclosures(self) -> str:
-        """`', 2 note(s) skipped (…)'` for every narrowing that removed
-        something, in `SkipReason` declaration order. Empty when the walk
-        narrowed nothing: a walk that skipped nothing has nothing to disclose."""
+        """`', 2 note(s) skipped (…)'` per narrowing that removed something, else ''."""
         counts = self.counts()
         return ''.join(f', {reason.census.format(n=counts[reason])}'
                        for reason in SkipReason if reason in counts)
 
     def census(self, label: str) -> str:
-        """`'3 bug(s), 1 note(s) skipped (…)'` — THE counting API.
-
-        One string, produced once, holding the number and everything the number
-        left out. There is no way to ask this object for the first without the
-        second, which is the whole point of the type.
-        """
+        """`'3 bug(s), 1 note(s) skipped (…)'`: the count and its disclosures, one string."""
         return f'{len(self.kept)} {label}{self.disclosures()}'
 
 
 # --- the enumerators ----------------------------------------------------------
-# Every `glob`, `rglob`, `iterdir` and `os.walk` in this package is below this
-# line. `tests/test_boundaries.py` asserts it, naming file:line when it is not.
 
 def _classify(paths: list[Path], kind: Kind) -> Walk:
     """Split a raw listing against the universe `kind` declares."""
     if kind is Kind.ANY:
         return Walk(tuple(paths))
     want_dir = kind is Kind.DIR
-    # `is_dir()` / `is_file()`, never `not is_dir()`: a BROKEN SYMLINK is
-    # neither, and the negation would hand it to a reader that then fails to
-    # open it. Asked for one kind, an entry that is not that kind is skipped.
+    # `is_dir()`/`is_file()`, never a negation: a broken symlink is neither.
     reason = SkipReason.NOT_A_DIRECTORY if want_dir else SkipReason.NOT_A_FILE
     kept: list[Path] = []
     skipped: list[Skip] = []
@@ -239,16 +141,8 @@ def _classify(paths: list[Path], kind: Kind) -> Walk:
 
 
 def entries(path: Path) -> dict[str, str]:
-    """{exact name: 'file'|'dir'} for one directory — EXACT names, always.
-
-    Never `Path.is_file()` for an existence question: macOS resolves
-    `decisions.md` to an existing `DECISIONS.md` and Linux does not, so the same
-    tree would be clean on one platform and drifting on the other. A listing
-    compares the bytes git stores.
-
-    Not a `Walk`: nothing is filtered, so there is nothing to disclose. This is
-    the raw listing the case-sensitivity rules read.
-    """
+    """{exact name: 'file'|'dir'} for one directory; a listing, because macOS
+    resolves `decisions.md` to an existing `DECISIONS.md` and Linux does not."""
     try:
         return {p.name: ('dir' if p.is_dir() else 'file') for p in path.iterdir()}
     except OSError:
@@ -256,9 +150,7 @@ def entries(path: Path) -> dict[str, str]:
 
 
 def children(path: Path, kind: Kind = Kind.ANY) -> Walk:
-    """One directory's immediate entries, sorted. A missing directory is an
-    empty walk, never a crash — the callers all treat "no such tree" as "no
-    such entries"."""
+    """One directory's immediate entries, sorted; a missing directory is an empty walk."""
     try:
         raw = sorted(path.iterdir())
     except OSError:
@@ -267,11 +159,7 @@ def children(path: Path, kind: Kind = Kind.ANY) -> Walk:
 
 
 def matching(path: Path, pattern: str, kind: Kind = Kind.ANY) -> Walk:
-    """One directory's entries matching a glob PATTERN, sorted.
-
-    The pattern is the caller's literal; ids reaching here as patterns is a
-    separate defect the id validators own (`model.id_is_literal`).
-    """
+    """One directory's entries matching a glob pattern, sorted."""
     try:
         raw = sorted(path.glob(pattern))
     except OSError:
@@ -281,28 +169,13 @@ def matching(path: Path, pattern: str, kind: Kind = Kind.ANY) -> Walk:
 
 def descendants(path: Path, kind: Kind = Kind.ANY, suffix: str | None = None,
                 pattern: str = '*') -> Walk:
-    """Everything under a tree, recursively, sorted.
-
-    `suffix` is compared case-INSENSITIVELY and is a UNIVERSE declaration, not a
-    filter: `glob('*.md')` saw neither `<slot>/<topic>/<doc>.md` nor `<DOC>.MD`,
-    and both were invisible to every rule at once while the census printed the
-    smaller number without saying it had looked less far.
-    """
+    """Everything under a tree, recursively, sorted; `suffix` is case-insensitive."""
     try:
         raw = sorted(path.rglob(pattern))
     except OSError:
         return Walk(())
-    # Every symlinked DIRECTORY at or under `path`, whether or not `pattern`
-    # would have matched its name — `rglob('*.md')` never yields the link, so
-    # asking `raw` would disclose nothing on exactly the walks that lose the
-    # most. Asked with its own glob, and a failure to read is not fatal: a
-    # census that cannot enumerate links is still better than one that pretends
-    # there are none.
-    #
-    # An UNREADABLE directory is caught the same way and for the same reason:
-    # `rglob` skips it in silence, and the entry itself is still yielded by its
-    # readable parent — so the one place both are visible is a separate pass
-    # over the entries rather than over the result.
+    # A separate pass over every directory: `rglob(pattern)` yields neither a
+    # symlinked nor an unreadable directory, so `raw` cannot disclose them.
     links: list[Skip] = []
     try:
         for entry in sorted(path.rglob('*')):
@@ -328,21 +201,8 @@ def descendants(path: Path, kind: Kind = Kind.ANY, suffix: str | None = None,
 
 
 def named(root: Path, name: str, prune: tuple[str, ...] = ()) -> tuple[list[Path], list[Path]]:
-    """`(files named exactly `name`, files whose LOWERCASED name matches)`.
-
-    EXACT names, from a directory listing — never `rglob(name)`. A pattern whose
-    final segment holds no wildcard resolves through `Path.exists()`, so on
-    macOS `rglob('decisions.md')` answers an on-disk `DECISIONS.md` with the
-    path `x/decisions.md`: a path that does not exist, and a NON-EMPTY list,
-    which is what silences a scanned-nothing guard while every other log goes
-    unopened.
-
-    The case variants come back SEPARATELY to be reported: never folded in (the
-    two platforms would emit opposite findings about the same file) and never
-    dropped (a log the rule cannot see is a log the rule has not checked).
-
-    `prune` names directories the walk does not descend into.
-    """
+    """`(files named exactly `name`, files whose lowercased name matches)`, from a
+    listing rather than `rglob(name)`, which resolves case-insensitively on macOS."""
     exact: list[Path] = []
     variants: list[Path] = []
     low = name.lower()

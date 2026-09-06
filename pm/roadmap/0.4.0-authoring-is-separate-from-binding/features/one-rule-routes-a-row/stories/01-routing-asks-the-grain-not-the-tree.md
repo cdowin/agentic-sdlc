@@ -80,6 +80,17 @@ parsing while this edits its routing. Those two are SERIAL: this one lands first
 6. Nothing that used to be written is now refused. Run the full `tests/test_pm_ledger*` set and
    say so in the close.
 
+## How this is proven
+
+| criterion | tier | the case that proves it | existing? |
+|---|---|---|---|
+| 1 | unit | `test_boundaries.py::OneRuleRoutesALedgerRow` — a name scan over `_sources()`, with the census floor | new; it sits beside the other name gates in that module |
+| 2 | unit | `test_pm_ledger_record.py::…a_grain_in_a_planning_milestone_records` | new — exit 1 with no write before this |
+| 3 | unit | `…two_milestones_in_progress_file_against_the_one_that_owns_the_grain` | new — the refusal it replaces |
+| 4 | unit | `…the_milestone_that_is_building_does_not_collect_another_ones_rows`, over `two_milestones()` where grain-owner and in-progress milestone DIFFER | amends the old "lands in the building milestone" claim; a same-milestone fixture would pass for the old reason |
+| 5 | unit | `RECORD_REFUSALS`' `no grain resolves` row, through `refuses()` | existing |
+| 6 | integration | `make test` green, and `test_pm_ledger_report.py::…a_bare_report_asks_the_plan_and_never_a_status` asserts the two old refusal sentences are ABSENT | amend |
+
 ## Out of scope
 
 The root ledger and `merge=union` — story 02. Anything the couriers pass — the other feature.

@@ -172,6 +172,26 @@ def ledger_path(milestone_dir: Path) -> Path:
     return milestone_dir / LEDGER_FILE_NAME
 
 
+def grainless_dir(roadmap_dir: Path) -> Path:
+    """The DIRECTORY whose ledger holds every row that names no grain
+    (0.4.0/D3) — the roadmap root, so the file sits beside the milestones
+    rather than inside one.
+
+    It returns its argument, and that is the point: *which* directory is the
+    grainless home is a decision, and it was being restated at five call sites
+    in a milestone whose thesis is one name per fact. `ledger_path` is the join
+    it reuses; this is the rule. `append_row` takes a directory, so writers
+    call this and readers call `grainless_path`.
+    """
+    return roadmap_dir
+
+
+def grainless_path(roadmap_dir: Path) -> Path:
+    """The grainless ledger itself — `grainless_dir` joined by `ledger_path`.
+    What `check budget`, `verify --plan` and `pm ledger report|show` read."""
+    return ledger_path(grainless_dir(roadmap_dir))
+
+
 def append_row(milestone_dir: Path, row: dict) -> None:
     """Append one row to `<milestone_dir>/ledger.jsonl`, creating the file
     (never the directory) if absent. `open('a')` rather than a `core.apply`

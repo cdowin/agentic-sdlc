@@ -5,7 +5,8 @@
 files, in the same places, over and over. It echoes state back; it does not *do* anything.
 
 - **`pm` writes one status.** `agentic-sdlc pm story building <id>` rewrites one `status:` line,
-  preserves every other byte, and appends one timestamped row to the milestone's ledger.
+  preserves every other byte, and appends one timestamped row to the ledger of the milestone that
+  owns the GRAIN — never to whichever milestone happens to be in progress.
 - **`check` reads the same files and echoes findings and warnings.** `check pm` names every
   status that contradicts another; `check doc` names every dead claim in the docs. A finding is a
   line and the exit code is the verdict.
@@ -92,9 +93,9 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | Verb | Reads / writes |
 |---|---|
 | `pm <kind> <status> <id>` | Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — and one ledger row. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
-| `pm new`, `pm init`, `pm move`, `pm retire`, `pm set` | The other writes: scaffold a grain, stand up a tree, re-parent a story, retire a milestone into `ROADMAP.md`, set one frontmatter field |
+| `pm new`, `pm init`, `pm move`, `pm retire`, `pm set` | The other writes: scaffold a grain, stand up a tree, re-parent a story, retire a milestone (the version stays on the plan), set one frontmatter field |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker |
-| `pm ledger record\|show\|report` | The ledger: one JSONL row per status flip, decision and dispatch; `report` adds them up per grain and never exits non-zero on a number |
+| `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — `gate` and `test` rows, and a session nobody could attribute. `show` and `report` both read both |
 | `pm decide <id> <title…>` | Appends one dated heading to that grain's `decisions.md` |
 | `pm order [--append\|--insert\|--remove <v>]` | The release plan — `order` in `pm/roadmap/releases.md`. Bare, it prints each entry with the milestone claiming it and whether it shipped. Order is a DECISION, not a sort: nothing parses or compares a version string. It does not interrogate the tree — a duplicate, an empty string and an insert before an absent entry are all it refuses |
 | `pm next` | The first entry in `order` that has not shipped, and the milestone that claims it |

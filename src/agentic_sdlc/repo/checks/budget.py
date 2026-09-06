@@ -74,7 +74,7 @@ def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
     gate grades cannot disagree.
     """
     cfg = model.load()
-    path = ledger.ledger_path(cfg.roadmap)
+    path = ledger.grainless_path(cfg.roadmap)
     if not path.is_file():
         return [], ''
     try:
@@ -254,7 +254,7 @@ def run() -> int:
                             and not isinstance(count, int)):
             uncounted.append(tier)
             lines.append(f'  UNCOUNTED   {tier} — {limit}, and '
-                         + ('no `gate` row for it in this milestone\'s ledger'
+                         + ('no `gate` row for it in this tree\'s ledger'
                             if data is None else
                             'its newest `gate` row carries no census'))
             continue

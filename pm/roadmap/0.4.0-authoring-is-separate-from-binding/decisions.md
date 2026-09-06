@@ -265,3 +265,29 @@ question it answers stays answerable: a gate row carries `ts`, and `ledger repor
 without a second mechanism. It loses because a gate run is not work on a grain — `_record_gate`
 already refuses `--grain` with *"a gate run is not a dispatch, and one row has one subject"* —
 and inventing a binding so the routing rule has something to read is the tail wagging the dog.
+
+**AMENDED after review — there was a THIRD reader, and "neither reader loses anything" was
+wrong.** The paragraph above enumerates `verify --plan` and `check budget`, checks that both take
+the NEWEST row per gate, and concludes nothing is lost. `pm ledger report`'s `gate cost` section
+is the third, and it takes first-versus-last rather than newest: pooling the rows made `runs`,
+`first_ms` and `delta_ms` lifetime-of-TREE numbers printed under a MILESTONE heading, so two
+milestones' reports print identical gate rows. The escape hatch this decision offered —
+`report <mid> --from <tag>` — does not restore the scoping either, because at any rev the root
+ledger already holds every earlier milestone's gate rows.
+
+**The section now states its own scope on its heading line**, and `pm ledger show` reads both
+ledgers, which it did not (a row naming no grain can still NAME a grain through its `tree`
+snapshot, so `report` was billing a story for time `show` said did not exist).
+
+**Rejected: windowing the root rows by the milestone's timestamps.** It is the fix that keeps the
+old numbers, and it loses on this package's own rule: a milestone declares no time range, so the
+window would be inferred from its status rows — a number nobody stated, quoted as though somebody
+had. Naming what the numbers are about is the cheapest honest fix (rule 11), and per-release gate
+cost stays answerable from each row's `ts`.
+
+**The generalisable part is the miss, not the fix.** This decision enumerated the readers of a
+thing it was moving and got the count wrong, exactly as `one-rule-routes-a-row`'s feature file
+enumerated the WRITERS and got that wrong (it said two; there were four). **A decision that moves
+where data lives should say how the reader list was obtained** — here, `grep -rn` for the row kind
+across `src/` and `tests/` — so the next reader of the decision can tell whether it was a search
+or a memory.

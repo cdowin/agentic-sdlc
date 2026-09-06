@@ -559,8 +559,6 @@ def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
 
 
 # --- D2's fallback: the orchestrator's path, and the one rule that outranks it -
-# `--grain` given -> use it. Absent and one story live -> use it. Absent and
-# zero or several -> OMIT THE KEY, and name the candidates. Never a guess.
 def transcript(root, *extra):
     return record(root, '--from-transcript', str(SUBAGENT), '--event', 'Stop',
                   *extra)
@@ -573,6 +571,28 @@ def second_story(root, status: str = 'building') -> str:
     return '0.1/alpha/s9'
 
 
+def test_show_reads_the_trees_ledger_too_so_it_cannot_disagree_with_report():
+    """Review M1. `ledger show` read the milestone's ledger alone while
+    `ledger report` read both, so one root row could be BILLED to a story by
+    one verb and invisible to the other.
+
+    The row here names no grain and still NAMES this story, through its `tree`
+    snapshot — which is what `row_names` reads and what the report attributes
+    by. Two read verbs over one row must not answer differently.
+    """
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)  # two live: resolution omits the key
+        assert transcript(root)[0] == 0
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL]
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+        assert code == 0, out
+        assert 'no rows' not in out, out
+        assert 'session' in out, out
+
+
+
+# `--grain` given -> use it. Absent and one story live -> use it. Absent and
+# zero or several -> OMIT THE KEY, and name the candidates. Never a guess.
 def test_one_story_in_progress_resolves_and_routes():
     """The undispatched orchestrator, which is the session type most of a
     milestone's work happens in: no prompt to read a grain out of, and one

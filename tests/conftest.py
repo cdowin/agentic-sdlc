@@ -281,7 +281,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         # nothing whenever no milestone was in progress, silently, which is the
         # failure the milestone opened on.
         for rank, report in enumerate(slowest, start=1):
-            ledger.append_row(cfg.roadmap, ledger.test_row(
+            ledger.append_row(ledger.grainless_dir(cfg.roadmap), ledger.test_row(
                 tier, report.nodeid, int(report.duration * 1000), rank))
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could

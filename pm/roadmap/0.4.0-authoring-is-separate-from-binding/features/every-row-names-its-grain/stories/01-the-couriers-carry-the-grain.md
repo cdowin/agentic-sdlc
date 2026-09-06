@@ -85,6 +85,17 @@ SERIAL: that story lands first.
 6. Fail-open is unchanged: a hook whose grain lookup fails still exits 0 and still files its row
    without the key. **Nothing in this story may make a courier able to block a stop.**
 
+## How this is proven
+
+| criterion | tier | the case that proves it | existing? |
+|---|---|---|---|
+| 1 | unit | `test_pm_ledger_record.py::…a_transcript_row_carries_the_grain_it_was_given` — value, `ROW_KEYS` position, and the transcript's own numbers untouched | new |
+| 2 | unit | `RECORD_REFUSALS` gains the unresolvable id ON THE TRANSCRIPT FORM; the `are exclusive` row leaves | amend |
+| 3 | shell | each courier's own `--self-test`: the grain travels, and an unset one passes NO flag. Both proven able to fail — delete the `env_arg` call, and pass the flag unconditionally | amend the corpus, which is what these files are |
+| 4 | shell | the same self-tests, whose `dash` + `LC_ALL=C` case already runs; the id used holds a `/` | existing case, new value |
+| 5 | unit | `test_pm_ledger_report_sections.py::…a_row_that_names_its_grain_is_on_that_grains_line`, over an EMPTY snapshot so `grain:` is the only attributor | new |
+| 6 | integration | `test_hooks_payloads.py` — the whole fail-open matrix unchanged and green, plus `…the_dispatchers_grain_travels_the_whole_vehicle_and_beats_the_lookup` | existing, unamended; that IS the claim |
+
 ## Out of scope
 
 Resolving a grain the dispatch did not supply — story 02. Where the row is stored —

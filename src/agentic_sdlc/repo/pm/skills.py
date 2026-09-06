@@ -83,8 +83,9 @@ def _declares(text: str, pattern: str, line: str) -> str:
 
 
 def install_merge_attribute(cfg: model.PmConfig) -> str:
-    """Make `<roadmap>/*/ledger.jsonl merge=union` true; returns what
-    happened. Appends, like the `.gitignore` write, because the file
+    """Make `<roadmap>/**/ledger.jsonl merge=union` true; returns what
+    happened. `**` reaches BOTH homes — one ledger per milestone, and the
+    tree's own for rows naming no grain (0.4.0/D3). Appends, like the `.gitignore` write, because the file
     already holds project opinions; idempotent.
     """
     target = cfg.root / GITATTRIBUTES

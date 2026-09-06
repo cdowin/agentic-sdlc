@@ -22,6 +22,23 @@
   fix they get for free: `pm retire` used to take a milestone's gate history away with its
   directory, so the next milestone printed `unknown` for its rungs until it had run each one.
 
+  **On the first run after the bump both will say they have no numbers** — every historical `gate`
+  row is in a milestone ledger and neither reads those any more. `verify --plan` prints `unknown`
+  and `check budget` reports UNMEASURED for each tier until you have run it once. Both degrade
+  loudly and neither invents a cost, which is the intended behaviour; run `make <tier>` once and
+  the numbers come back. Old rows are not migrated: they are history, and moving them would be
+  rewriting an append-only log.
+
+  **`pm ledger report`'s `gate cost` section is now about the TREE, not the milestone in its
+  heading**, and says so on the line. Every gate row lands in one file, so two milestones' reports
+  print identical gate rows and `runs`/`delta_ms` are lifetime-of-tree numbers. Windowing them by
+  a milestone's timestamps was the alternative and it loses: a milestone declares no time range,
+  so the window would be inferred and then quoted as though somebody had stated it.
+
+  **`pm ledger show` reads both ledgers**, because a row naming no grain can still name a grain
+  through its `tree` snapshot — so `show` and `report` had begun to disagree about the same row,
+  with `report` billing a story for time `show` said did not exist.
+
 - **A row with no `--grain` resolves one from the tree, or carries no `grain` key at all.** The
   dispatched agent is told its grain; an orchestrator session nobody dispatched has no prompt to
   read one out of, and that is the session type most of a milestone's work happens in. So: exactly

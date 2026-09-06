@@ -139,6 +139,16 @@ and it will lie.
 - `pm vocabulary [--json]` — the closed CATEGORY set, each kind's states with
   the category each sits in, and the rule ids `[pm] checks` may name — nothing
   else about flow. Read it after a devkit pin bump.
+- `pm ledger show <grain-id>` — that grain's TELEMETRY, oldest first: every
+  status flip, decision and dispatch, with the seconds between them. What a
+  story COST, rather than where it is.
+- `pm ledger report [<milestone-id>]` — the same rows added up per grain:
+  dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
+  each category. This is the answer to *how long did this take*, *what did it
+  spend* and *what did the gates cost* — do not hand-write a table of them.
+  A row is filed against the milestone that owns its grain, at any status; a
+  row naming none lands in `<roadmap>/ledger.jsonl` and is reported in the
+  `rows naming no grain` bucket.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

@@ -187,7 +187,7 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
         # cost this repo has ever measured. That also survives `pm retire`,
         # which used to take a milestone's gate history away with its directory
         # and leave the next milestone printing `unknown` for a week.
-        path = ledger.ledger_path(cfg.roadmap)
+        path = ledger.grainless_path(cfg.roadmap)
         raw = path.read_text(encoding='utf-8')
     except Exception:  # noqa: BLE001 - every failure means the same: unknown
         return {}, ''

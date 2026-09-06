@@ -75,6 +75,17 @@ whole point of them being couriers. `report.py`, `ledger.py`, `skills.py`.
    with a key absent, not a failure — the fail-open promise the couriers depend on lives here now.
 6. `tests/test_fuzz_inputs.py` still passes unchanged.
 
+## How this is proven
+
+| criterion | tier | the case that proves it | existing? |
+|---|---|---|---|
+| 1 | unit | `test_pm_ledger_record.py::…one_story_in_progress_resolves_and_routes` | new |
+| 2 | unit | `…no_story_in_progress_omits_the_key_entirely` — asserted on `sorted(row)`, so `grain: ""` fails | new |
+| 3 | unit | `…two_stories_in_progress_omit_the_key_and_name_the_candidates` — both ids on stderr, and the fix named | new; the case this story exists for |
+| 4 | unit | `…the_flag_wins_over_the_lookup_and_the_lookup_stays_quiet` — asserts the complaint is ABSENT, so the lookup did not run | new |
+| 5 | unit | `…resolution_never_changes_an_exit_code`, both ambiguity shapes | new |
+| 6 | integration | `make fuzz` unchanged | existing, unamended |
+
 ## Out of scope
 
 A session→grain marker written at claim time — **rejected in D2** with its reasoning; do not

@@ -267,6 +267,49 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
                          'on three interpreters in silence. Teach the derivation, '
                          'or spawn through `subprocess`.')
 
+    # The exemption above is the one hole this gate has, so its SCOPE is
+    # asserted rather than described. Both claims in
+    # `_without_the_declared_evasion`'s docstring get a hostile case (SDLC § 5:
+    # every "only" and "still" gets input generated against it) — an exemption
+    # nobody probed is an exemption that quietly widens.
+    EVASION_SOURCE = '''\
+import subprocess
+
+
+class TheUnitTierCannotSpawn:
+    def test_a(self):
+        sp.check_output(['x'])
+
+
+class Elsewhere:
+    def test_b(self):
+        sp.check_output(['y'])
+'''
+
+    def _offenders(self, source: str) -> list[str]:
+        tree = _without_the_declared_evasion(ast.parse(source))
+        return [node.func.attr for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in UNREAD_SPAWN_CALLS]
+
+    def test_the_exemption_covers_that_class_and_nothing_beside_it(self):
+        # One spelling inside the exempt class, an identical one outside it.
+        # Exactly one survives, or the exemption is a file-wide amnesty.
+        self.assertEqual(self._offenders(self.EVASION_SOURCE), ['check_output'])
+
+    def test_renaming_the_class_revokes_the_exemption(self):
+        renamed = self.EVASION_SOURCE.replace(EVASION_IS_THE_POINT, 'Renamed')
+        self.assertEqual(self._offenders(renamed),
+                         ['check_output', 'check_output'],
+                         'the exemption outlived the class it was granted for')
+
+    def test_the_exempt_class_is_still_in_the_suite(self):
+        # An exemption for a class nobody has any more is a hole with no edges:
+        # it would silently start covering a future class of that name.
+        source = (TESTS / 'test_boundaries.py').read_text(encoding='utf-8')
+        self.assertIn(f'class {EVASION_IS_THE_POINT}', source)
+
 
 class ScratchSuite:
     """A throwaway suite under a copy of the real conftest."""

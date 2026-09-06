@@ -84,6 +84,17 @@ new resolver.
 6. `retire` still removes a milestone's ledger with its directory, and leaves the root ledger
    alone. The `check pm` D6 rule is unchanged by this story and a case should say so.
 
+## How this is proven
+
+| criterion | tier | the case that proves it | existing? |
+|---|---|---|---|
+| 1 | unit | `test_pm_ledger_record.py::…a_row_naming_no_grain_lands_in_the_trees_own_ledger` — the file does not exist before the call | new |
+| 2 | unit | `…a_gate_row_asks_the_tree_nothing_and_lands_at_the_root`, three tree shapes | inverts 0.3.0's release-routing pair |
+| 3 | integration | `test_pm_ledger_report_git.py::…the_merge_attribute_reaches_both_ledger_homes` — `git check-attr` over a real repo, both paths plus three negatives and the depth | new; a string assertion passes on a pattern matching nothing, which was the bug |
+| 4 | unit | `test_pm_ledger_report_sections.py::…the_trees_own_rows_are_counted_and_never_folded_into_a_grain`, and `…a_stated_grain_outranks_the_snapshot_and_bills_nobody_else` | new |
+| 5 | unit | `test_pm_ledger_report.py::…a_bare_report_asks_the_plan…` and `…two_milestones_in_progress_is_answered_from_the_plan` | amend |
+| 6 | unit | `…retire_takes_the_milestones_ledger_and_leaves_the_trees` | new |
+
 ## Out of scope
 
 Any change to what a row CONTAINS. Attribution — the other feature. Making the root ledger the
@@ -99,5 +110,16 @@ AC5 answered: `ledger report` with no id reports the CURRENT RELEASE's milestone
 no row is placed by it, and the rows themselves never consult it.
 finding: 0.3.0's `release_ledger_dir` routed the gate row. D7 records the reconciliation — it
 stops routing writes and keeps only the report's subject.
+review M1: `pm ledger show` read only the milestone's ledger, so it and `ledger report`
+disagreed about a root row that names a grain through its `tree` snapshot — `report` billed the
+story, `show` said `no rows`. Both files now, sorted by `ts`, since two files are one timeline.
+review M2: the `gate cost` section was tree-wide under a milestone heading. It says so on its
+heading line now; D7 is amended with the reader it missed and the rejected windowing.
+review W2: the grainless address was spelled five times. `ledger.grainless_dir`/`grainless_path`
+name it once; the writers take the dir because `append_row` does.
+review S2: the Proof budget said `cases: 5-6`; this feature landed ~12 new functions across two
+stories and deleted three (the exclusivity refusal, the two release-routing cases). Over budget,
+and three of the twelve are the review's — M1, M2 and the exemption scope. Named rather than
+excused.
 finding: a FOURTH writer, `tests/conftest.py:278`, filed slow-test rows through
 `in_progress_milestones`. Three routers, not two; all four now read the row.

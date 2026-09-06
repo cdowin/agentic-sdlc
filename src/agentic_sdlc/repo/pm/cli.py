@@ -140,11 +140,15 @@ every run; a state the project never declared is refused by name.
                                            records and two in flight are not a
                                            refusal. --grain says what the work
                                            was ON — the couriers pass it from
-                                           GDK_LEDGER_GRAIN; an id that resolves
-                                           to nothing is refused rather than
-                                           dropped, and no --grain at all is an
-                                           absent key that lands in `rows naming
-                                           no grain`)
+                                           GDK_LEDGER_GRAIN; with none, exactly
+                                           one story in progress resolves it and
+                                           zero or several OMIT the key. An id
+                                           that resolves to nothing is refused
+                                           rather than dropped. A row naming no
+                                           grain lands in the tree's own
+                                           <roadmap>/ledger.jsonl, with every
+                                           gate and test row, and is reported in
+                                           `rows naming no grain`)
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N]
                 [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
@@ -163,7 +167,10 @@ every run; a state the project never declared is refused by name.
                                            duration)
   ledger show <grain-id> [--json]         (that grain's rows oldest first, with
                                            the seconds since the previous status
-                                           row; --json prints the raw lines)
+                                           row; --json prints the raw lines.
+                                           Reads the grain's milestone ledger
+                                           AND the tree's, so it and `ledger
+                                           report` cannot disagree about a row)
   ledger report [<milestone-id>] [--json] [--from <rev>]
                                           (spend per grain from that milestone's
                                            rows: dispatches, tokens, tool calls,
@@ -1387,20 +1394,25 @@ def _row_ledger_dir(cfg: model.PmConfig, path: Path | None) -> Path:
     them. `_stamp` had routed by grain since the ledger shipped; the telemetry
     half did not, which is two mechanisms for one fact.
 
-    `path` is None for a row that names no grain — a `gate` row (a gate run is
-    not work on a grain), a `test` row, a session nobody could attribute, a
-    hand entry with no `--grain`. Those land in the tree's ROOT ledger,
-    `<roadmap>/ledger.jsonl` (D3), so that no telemetry write is ever refused
-    for want of a place to put it. They are the residue, not the destination:
-    `pm ledger report` shows them in the `rows naming no grain` bucket it
-    already prints, and never folds one into a grain's line.
+    `path` is the row's grain document, or None when the row names none: a
+    `gate` row (a gate run is not work on a grain), or a session whose grain
+    neither the dispatch nor the tree could supply. **Not** a hand entry
+    without `--grain` — that form is refused before it reaches here, and a
+    docstring listing an unreachable case is the gate lying about its own
+    reach. Those rows land in `ledger.grainless_dir` (D3), so no telemetry
+    write is ever refused for want of a place to put it.
+
+    The caller resolves the grain and passes the PATH rather than the row,
+    because resolution is also what the row's `grain` key is stamped from —
+    one resolution, so the id a reader sees and the ledger it sits in cannot
+    disagree. Taking the row here would resolve it a second time.
     """
     if path is None:
         if not cfg.roadmap.is_dir():
             raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                           f'there is no ledger a row naming no grain belongs '
                           f'to; no row was written')
-        return cfg.roadmap
+        return ledger.grainless_dir(cfg.roadmap)
     mdir = model.milestone_dir_of(cfg, path)
     if mdir is None:
         raise Refused(f'{cfg.rel(path)} sits under no milestone directory in '
@@ -1745,11 +1757,26 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
     # Both spellings: the id the caller typed and the id the file claims, which
     # is what `_stamp` wrote.
     names = {gid, _ledger_id(path, gid)}
+    # BOTH ledgers, the same pair `ledger report` reads. The milestone's holds
+    # every attributed row; the tree's holds the rows that named no grain
+    # (D3) — and one of those can still NAME this grain through its `tree`
+    # snapshot, which `row_names` reads. Reading only the first made `show` and
+    # `report` disagree about the same row: `report` billed the story for it
+    # and `show` printed `no rows`. D3's argument against per-feature ledgers
+    # rests on this verb answering.
+    files = [ledger.ledger_path(mdir)]
+    grainless = ledger.grainless_path(cfg.roadmap)
+    if grainless not in files:
+        files.append(grainless)
     try:
-        rows = [r for r in ledger.read_rows(ledger.ledger_path(mdir))
+        rows = [r for f in files for r in ledger.read_rows(f)
                 if ledger.row_names(r.data, names)]
     except ledger.LedgerError as err:
         raise Usage(f'{err}') from err
+    # Two files, one timeline: `show` subtracts consecutive status stamps, so
+    # rows read in file order would produce negative gaps the moment a
+    # grainless row falls between two of them.
+    rows.sort(key=lambda r: str(r.data.get('ts') or ''))
     if not rows:
         print(f'[pm] no rows for {gid}',
               file=sys.stderr if as_json else sys.stdout)
@@ -1853,7 +1880,7 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         # only the first would empty the `rows naming no grain` bucket and the
         # gate-cost section for every milestone — the report going quiet about
         # rows that exist, which is rule 4's first sin.
-        root = ledger.ledger_path(cfg.roadmap)
+        root = ledger.grainless_path(cfg.roadmap)
         try:
             rows = src.ledger_rows(path)
             if root != path:

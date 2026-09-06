@@ -669,7 +669,8 @@ def test_the_seeded_gate_rows_print_this_exact_table():
     a gate that costs nothing, and the measurement that started this feature
     found the gate suspected by NAME costing 0.2 s."""
     assert section_of(gates_report(*THREE_PARSE_ONE_LINT), GATES) == """\
-[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), 1 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 1 delta(s) marked \
 * for a census that moved or is absent, 0 row(s) this section could not use
 
 -- gate (2)
@@ -717,7 +718,8 @@ def test_every_unusable_gate_row_is_named_with_why_and_the_good_row_survives():
     """Hard rule 4's read side: a row this section cannot use is NAMED, never
     dropped into silence and never coerced to a zero."""
     assert section_of(gates_report(*BROKEN_GATE_ROWS), GATES) == """\
-[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), 0 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
 * for a census that moved or is absent, 4 row(s) this section could not use
 
 -- gate (1)
@@ -732,6 +734,30 @@ unit      duration_ms is negative        2026-09-03T10:03:00Z
 -         no gate name                   2026-09-03T10:04:00Z"""
 
 
+def test_the_gate_section_says_it_is_the_trees_and_two_milestones_agree():
+    """Review M2. `gate` rows name no grain, so 0.4.0/D3 files every one at the
+    tree's root and every milestone's report reads the same set — which makes
+    `runs` and `delta_ms` lifetime-of-TREE numbers under a MILESTONE heading.
+
+    Two claims, and the second is the one that would have been a silent lie:
+    the section states its own scope, and two different milestones' reports
+    print the identical gate line. Windowing by the milestone's timestamps was
+    the alternative and it loses — a milestone declares no time range, so the
+    window would be inferred and then quoted as if somebody had stated it.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        write(root / 'pm/roadmap/0.2-next/milestone.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
+        put_ledger(root,
+                   gate_line('2026-01-01T00:00:00Z', 'unit'),
+                   gate_line('2026-07-01T00:00:00Z', 'unit'),
+                   rel='pm/roadmap/ledger.jsonl')
+        one = section_of(report(root, '0.1')[1], GATES)
+        two = section_of(report(root, '0.2')[1], GATES)
+    assert 'across the whole tree, not this milestone' in one, one
+    assert one.replace('0.1', 'X') == two.replace('0.2', 'X'), (one, two)
+
+
 def test_a_ledger_with_no_gate_row_still_prints_the_section():
     """A missing section is indistinguishable from an empty one, and only one
     of those is true."""
@@ -739,7 +765,8 @@ def test_a_ledger_with_no_gate_row_still_prints_the_section():
         status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
         dispatch_line('2026-09-03T10:05:00Z', agent_type='developer'))
     assert section_of(out, GATES) == """\
-[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), 0 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
 * for a census that moved or is absent, 0 row(s) this section could not use
 no data"""
 

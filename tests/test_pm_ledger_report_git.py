@@ -370,8 +370,18 @@ def test_the_merge_attribute_reaches_both_ledger_homes():
                     f'{MILESTONE_DIR}/ledger.jsonl'):
             said = git(root, 'check-attr', 'merge', '--', rel)
             assert said.strip() == f'{rel}: merge: union', said
-        # And the negative, so the pattern is not simply `**`: a grain document
-        # beside a ledger is left alone.
-        said = git(root, 'check-attr', 'merge', '--',
-                   f'{MILESTONE_DIR}/milestone.md')
-        assert said.strip().endswith(': unspecified'), said
+        # The negatives, so the pattern is not simply `**`: a grain document
+        # beside a ledger is left alone, and a ledger OUTSIDE the roadmap dir
+        # is not claimed by a pattern anchored to it.
+        for rel in (f'{MILESTONE_DIR}/milestone.md', 'pm/ledger.jsonl',
+                    'ledger.jsonl'):
+            said = git(root, 'check-attr', 'merge', '--', rel)
+            assert said.strip().endswith(': unspecified'), said
+        # And the depth the glob DOES reach, asserted rather than assumed:
+        # `**` matches any number of directories, so a nested ledger would be
+        # covered too. Harmless — D3 rejects nested ledgers — and it is here so
+        # that narrowing the pattern later fails HERE rather than in somebody's
+        # merge.
+        deep = f'{MILESTONE_DIR}/features/f/stories/ledger.jsonl'
+        said = git(root, 'check-attr', 'merge', '--', deep)
+        assert said.strip() == f'{deep}: merge: union', said

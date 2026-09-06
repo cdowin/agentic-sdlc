@@ -1288,6 +1288,24 @@ def overhead_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 6: gate cost -----------------------------------------------------
+# **THE ONE SECTION THAT IS NOT ABOUT THE MILESTONE IN THE HEADING**, and it
+# says so on the line rather than leaving a reader to assume otherwise.
+#
+# A `gate` row names no grain by design — a gate run is not work somebody was
+# dispatched to do — so 0.4.0/D3 files every one of them in the tree's own
+# ledger, and every milestone's report reads the same set. `runs`, `first_ms`
+# and `delta_ms` are therefore lifetime-of-TREE numbers: two milestones'
+# reports print identical gate rows, correctly.
+#
+# The alternative was windowing the rows by the milestone's timestamps, and it
+# loses on this package's own rule: a milestone has no declared time range, so
+# the window would be inferred from status rows — a number nobody stated,
+# quoted as if it had been. Naming what the numbers are about is the cheapest
+# honest fix (rule 11), and per-release gate cost stays answerable from `ts`.
+GATES_SCOPE_NOTE = ('across the whole tree, not this milestone: a gate row '
+                    'names no grain, so every one lands in the tree\'s ledger')
+
+
 def _gate_unusable(row: dict) -> str | None:
     """Why this `kind: gate` row cannot be counted, or None — named beside the
     row rather than dropped, so the table cannot look clean over discarded
@@ -1375,6 +1393,7 @@ def gates_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     return _section(
         heading_id(data), GATES_TITLE,
         f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
+        f'{GATES_SCOPE_NOTE}; '
         f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for a '
         f'census that moved or is absent, '
         f'{totals["unusable"]} row(s) this section could not use',

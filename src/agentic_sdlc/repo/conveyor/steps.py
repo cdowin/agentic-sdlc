@@ -48,7 +48,7 @@ DEFAULT_ADOPT_STEPS = (
 # The belt that runs dozens of times a day.
 DEFAULT_STORY_STEPS = (
     'story-exists',
-    'narrow-verified',
+    'story-verified',
     'committed',
     'evidence-written',
 )
@@ -73,7 +73,7 @@ DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 # tree-reading check would be two authorities over one fact.
 COMMANDABLE = frozenset((
     'gate', 'hooks-self-test', 'runner-targets-resolve', 'checks-pass',
-    'pm-validates', 'narrow-verified', 'feature-verified'))
+    'pm-validates', 'story-verified', 'feature-verified'))
 
 # Caller commands printed on the after-list; a `[release.commands]` entry for
 # one is accepted and shown there.
@@ -745,7 +745,7 @@ def _config_readers() -> tuple[tuple[str, str, object], ...]:
         ('grain_shape', '[grain_shape] caps', _read_grain_shape),
         ('repo_hygiene', '[repo_hygiene] mainline / protected',
          _read_repo_hygiene),
-        ('verify', '[verify] rungs / narrow rules', _read_verify),
+        ('verify', '[verify] rungs', _read_verify),
     )
 
 
@@ -919,94 +919,14 @@ def check_story_exists(ctx: Context) -> Answer:
     return Answer.yes(cfg.rel(path))
 
 
-def check_narrow_verified(ctx: Context) -> Answer:
-    """`agentic-sdlc verify --story` over the story's own commit range,
-    ignoring the roadmap directory; an empty selection is UNVERIFIABLE
-    (rule 4)."""
-    command = _configured(ctx, 'narrow-verified')
+def check_story_verified(ctx: Context) -> Answer:
+    """`agentic-sdlc verify --story`, the story rung — the same call
+    `feature-verified` makes one rung up; no range, no path census."""
+    command = _configured(ctx, 'story-verified')
     if command:
-        return run_command(ctx, 'narrow-verified', command)
-    ignore = _belt_written_paths(ctx)
-    base, head = _story_range(ctx)
-    empty, why = _narrow_selects_nothing(ctx, ignore, base, head)
-    if empty:
-        return Answer.unverifiable(why)
-    argv = ['verify', '--story']
-    if base:
-        argv += ['--ref', base]
-    if head:
-        argv += ['--to', head]
-    for path in ignore:
-        argv += ['--ignore', path]
-    return _own_verdict(ctx, *argv,
-                        found='the narrow rung [verify] names')
-
-
-def _story_range(ctx: Context) -> tuple[str, str]:
-    """(`<earliest done: hash>^`, `<latest hash>`), each '' when none — the
-    story's own range, so a late close verifies the same edits."""
-    try:
-        path = _grain_file(ctx)
-    except model.AmbiguousStory:
-        return '', ''
-    if path is None:
-        return '', ''
-    try:
-        text = _read(path)
-    except (OSError, UnicodeDecodeError):
-        return '', ''
-    hashes: list[str] = []
-    for raw in text.split('\n'):
-        match = EVIDENCE_LINE.match(raw)
-        if match is None:
-            continue
-        for token in EVIDENCE_LANDED.findall(match.group('body')):
-            if token.lower() != IN_PLACE.lower():
-                hashes.append(token)
-    resolved = []
-    for candidate in hashes:
-        code, out = _git(ctx, 'rev-parse', '--verify', f'{candidate}^{{commit}}')
-        if code == 0 and out:
-            resolved.append(out.split('\n')[0].strip())
-    if not resolved:
-        return '', ''
-    code, out = _git(ctx, 'rev-parse', '--verify', f'{resolved[0]}^')
-    base = out.split('\n')[0].strip() if code == 0 and out else ''
-    return base, resolved[-1]
-
-
-def _belt_written_paths(ctx: Context) -> tuple[str, ...]:
-    """The PM tree — the one directory `committed` also excludes."""
-    cfg = _pm_cfg(ctx)
-    return (cfg.roadmap_dir,)
-
-
-def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
-                            base: str = '', head: str = '') -> tuple[bool, str]:
-    """(is the narrow selection empty, the sentence saying why), asked of
-    `verify`'s own library."""
-    from agentic_sdlc.repo.verify import main as verify_main
-    from agentic_sdlc.repo.verify import rules as verify_rules
-
-    try:
-        ruleset = verify_rules.read(config_section('verify'))
-        selection = verify_main.plan_for(ruleset, ctx.root, base or None,
-                                         ignore=list(ignore), to=head or None)
-    except Exception as err:  # noqa: BLE001 — an answer, not a swallow
-        # It could not decide; `_own_verdict` answers with the verb's code.
-        return False, f'{type(err).__name__}: {err}'
-    if selection.matched or selection.missed:
-        return False, ''
-    excluded = ', '.join(ignore) or "the PM tree"
-    against = base or 'HEAD'
-    tail = ('' if base else
-            " — and this story's `done:` line names no commit to range from, "
-            'so there was nothing to point it at')
-    return True, (
-        f'`agentic-sdlc verify --story` has NOTHING to scan: no path changed '
-        f'against {against} outside {excluded}, so the narrow rung would exit '
-        f'0 over a census of zero{tail}. Rule 4 — a census of zero is '
-        f'reported, loudly, rather than passed over.')
+        return run_command(ctx, 'story-verified', command)
+    return _own_verdict(ctx, 'verify', '--story',
+                        found='the story rung [verify] names')
 
 
 def check_committed(ctx: Context) -> Answer:
@@ -1077,13 +997,13 @@ def check_stories_done(ctx: Context) -> Answer:
 
 
 def check_feature_verified(ctx: Context) -> Answer:
-    """`agentic-sdlc verify --feature`, the range rung; not in the shipped
+    """`agentic-sdlc verify --feature`, the feature rung; not in the shipped
     list."""
     command = _configured(ctx, 'feature-verified')
     if command:
         return run_command(ctx, 'feature-verified', command)
     return _own_verdict(ctx, 'verify', '--feature',
-                        found='the range rung [verify] names')
+                        found='the feature rung [verify] names')
 
 
 def _record_of(ctx: Context) -> tuple[Path | None, str]:
@@ -1185,7 +1105,7 @@ ADOPT_STEPS: dict[str, Check] = _registry(
 
 STORY_STEPS: dict[str, Check] = _registry(
     Check('story-exists', check_story_exists),
-    Check('narrow-verified', check_narrow_verified),
+    Check('story-verified', check_story_verified),
     Check('committed', check_committed),
     Check('evidence-written', check_evidence_written),
 )
@@ -1251,9 +1171,9 @@ STEP_DOC: dict[str, str] = {
         '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
-    'narrow-verified':
-        '`agentic-sdlc verify --story` exits 0 over the story\'s own commit '
-        'range; a census of zero is unverifiable, never a pass.',
+    'story-verified':
+        '`agentic-sdlc verify --story` exits 0 — the make target '
+        '`[verify] story` names, the way `feature-verified` runs its rung.',
     'committed':
         'nothing is uncommitted outside the roadmap directory; it names what '
         'is and never commits.',
@@ -1280,7 +1200,7 @@ SHIPPED_ACTION: dict[str, str] = {
     'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
     'checks-pass': 'agentic-sdlc check all',
     'pm-validates': 'agentic-sdlc pm validate',
-    'narrow-verified': 'agentic-sdlc verify --story',
+    'story-verified': 'agentic-sdlc verify --story',
     'feature-verified': 'agentic-sdlc verify --feature',
     'stories-done': 'agentic-sdlc pm ready-for feature <id>',
     'features-done': 'agentic-sdlc pm ready-for milestone <id>',

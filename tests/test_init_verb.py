@@ -196,7 +196,8 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
 # EQUALITY rather than as a floor, which is the direction that got stronger: a
 # section ADDED to the template without a line here now fails too, where the
 # old `in` loop would have let one arrive unmentioned.
-CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'repo_hygiene', 'pm')
+CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'repo_hygiene', 'pm',
+                   'verify')
 
 
 def test_the_config_template_carries_every_section_the_gates_read():

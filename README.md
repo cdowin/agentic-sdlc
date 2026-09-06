@@ -50,7 +50,7 @@ Nothing runs a rung wider than the thing you changed.
 | You are | Run |
 |---|---|
 | editing the PM tree or a doc | `make check` |
-| editing code, inner loop | `agentic-sdlc verify --story` — the changed paths decide |
+| editing code, inner loop | `agentic-sdlc verify --story` — the make target `[verify] story` names, e.g. `make unit` |
 | about to commit | `make precommit` — `check` + your `GDK_PRECOMMIT_TIERS` |
 | closing a story | `agentic-sdlc close story <id>` |
 | closing a feature | `agentic-sdlc close feature <id>` — its check runs what `[verify] feature` names |
@@ -76,7 +76,7 @@ A belt's output is one line per check, then one line saying what happened:
 
 ```
 [story] ok: story-exists — pm/roadmap/0.1-first-light/features/the-thing/stories/works.md
-[story] ok: narrow-verified — `agentic-sdlc verify --story` exited 0
+[story] ok: story-verified — `agentic-sdlc verify --story` exited 0 — the story rung [verify] names
 [story] error: committed: 2 uncommitted path(s): src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
 [story] error — 2 check(s) false; nothing written
@@ -99,7 +99,7 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md` and `.claude/skills/pm-operations/SKILL.md` |
 | `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`). `check <gate> --help` is that gate's contract |
 | `gates-extra` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
-| `verify --story \| --feature \| --milestone \| --plan \| --check` | The three rungs. `--story` runs the `[[verify.narrow]]` rules the changed paths match; the other two run the make target `[verify]` names; `--plan` prints all three with measured costs and runs nothing; `--check` validates `[verify]` against the tree |
+| `verify --story \| --feature \| --milestone \| --plan \| --check` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `close story <id>`, `close feature <id>` | The inner belts: checks, then the grain's status set to the first state of its kind's `done` list, or nothing |
 | `release <version>` | The outer belt: tree clean, on the milestone branch, changelog non-empty, features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Retitle, push, PR, merge and tag are printed as `next:` — never performed |
 | `adopt <version>` | Checks only, nothing written: pin bumped, installables current, config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green |
@@ -181,12 +181,9 @@ budget = { unit = 20, integration = 130 }     # `check budget`: seconds per tier
 cases  = { unit = 1250, integration = 800 }   # and a size ceiling per tier
 
 [verify]
-feature   = "make test"                       # the make TARGET each rung runs
+story     = "make unit"                       # the make TARGET each rung runs
+feature   = "make test"
 milestone = "make milestone"
-
-[[verify.narrow]]                             # the story rung: first matching rule per path
-paths = "src/<name>.py"
-run   = "pytest tests/test_<name>.py -q"
 
 [release]                                     # also [adopt], [story], [feature]:
 steps = ["tree-clean", "gate"]                #   the check list, when not the shipped default

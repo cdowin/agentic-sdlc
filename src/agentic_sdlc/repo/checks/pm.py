@@ -39,7 +39,22 @@ def run() -> int:
     except model.ConfigError as err:
         # Exit 2 for the whole walk: the flow is read lazily, so a tree that
         # declared none is refused at the first category question.
-        print(f'[check:pm] ERROR — {err}', file=sys.stderr)
+        #
+        # EVERY defect, not the first, and the FLOW first among them. A real
+        # adoption is wrong in more than one way at once, and reporting them
+        # one per run makes the consumer pay a round trip to learn the next —
+        # the tree that motivated this had a retired key and no flow, and was
+        # told about the retired key, which is the cosmetic one.
+        try:
+            defects = model.all_config_defects()
+        except Exception:  # noqa: BLE001 - the collector must never mask the error
+            defects = []
+        for msg in defects or [str(err)]:
+            print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
+        if len(defects) > 1:
+            print(f'[check:pm] {len(defects)} config defect(s) — all of them '
+                  f'are above, and the first one listed is the one that stops '
+                  f'the most', file=sys.stderr)
         return 2
 
 
@@ -48,7 +63,10 @@ def _run() -> int:
     # Validated here, not in `model.load()`, so a stale rule id cannot take `pm status` down.
     stale = model.config_complaints(cfg)
     if stale:
-        for msg in stale:
+        # The flow can be declared and the roster still stale; report the whole
+        # set either way, in the same order.
+        flow = model.missing_flow_defect()
+        for msg in ([flow] if flow else []) + stale:
             print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
         return 2
     findings: list[str] = []

@@ -57,10 +57,38 @@ def all_roster() -> tuple[str, ...]:
     roster = str_tuple(config_section('checks'), 'checks', 'all', default)
     unknown = [c for c in roster if c not in KNOWN_GATES]
     if unknown:
+        # A roster error must not HIDE the config errors of the gates that were
+        # named correctly. The adoption that motivated this hit exactly one
+        # message — about gate NAMES — routed the whole bump at the roster, and
+        # never learned that its PM tree declared no flow at all. A green
+        # aggregate over a dead conveyor is the failure this milestone names.
         raise ConfigError(
             f'[checks] all names unknown gate(s) {", ".join(unknown)} — '
-            f'known gates are {" ".join(KNOWN_GATES)}')
+            f'known gates are {" ".join(KNOWN_GATES)}'
+            + _also_wrong(roster))
     return tuple(dict.fromkeys(roster))
+
+
+def _also_wrong(roster: tuple[str, ...]) -> str:
+    """What the correctly-named gates would have said about their own config.
+
+    Best effort by construction: this runs while the roster is already known to
+    be broken, so a reader that itself explodes is skipped rather than replacing
+    the message the caller came for.
+    """
+    said: list[str] = []
+    if 'pm' in roster:
+        try:
+            from agentic_sdlc.repo.pm import model
+            said.extend(model.all_config_defects())
+        except Exception:  # noqa: BLE001 - never mask the roster error
+            pass
+    if not said:
+        return ''
+    lines = ''.join(f'\n  ALSO: {m}' for m in said)
+    return (f'\n\nThe gates you DID name correctly have their own config to '
+            f'report, and fixing the roster alone would not have shown you '
+            f'{"this" if len(said) == 1 else "these"}:{lines}')
 
 
 def install_commands() -> tuple[str, ...]:

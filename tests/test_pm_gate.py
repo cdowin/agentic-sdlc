@@ -1890,3 +1890,88 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('wombat', out)
+
+
+class AConfigErrorIsComplete(unittest.TestCase):
+    """A `devkit.toml` read reports EVERY defect, and the flow first.
+
+    Measured on a real adoption: that tree had a retired `[pm] review_slug_fallback`
+    AND no `[pm.states.*]` at all. It was told about the retired key — the
+    cosmetic one — and had to fix it and re-run to learn that the flow was
+    missing, which is what stops every work-moving verb in the package. Every
+    config refusal in this suite was covered SINGLY; nothing asserted what a
+    consumer is told when the tree is wrong in more than one way, which is the
+    normal state of a real adoption.
+    """
+
+    @staticmethod
+    def _bare_tree(config: str):
+        import tempfile as _tf
+        ctx = _tf.TemporaryDirectory()
+        root = Path(ctx.name) / 'repo'
+        (root / 'pm' / 'roadmap').mkdir(parents=True)
+        (root / '.git').mkdir()
+        (root / 'devkit.toml').write_text(config, encoding='utf-8')
+        return ctx, root
+
+    def test_two_defects_are_both_reported_and_the_flow_comes_first(self):
+        ctx, root = self._bare_tree('[pm]\nreview_slug_fallback = true\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+            self.assertIn('declares no flow', out)
+            self.assertIn('review_slug_fallback', out)
+            # The ORDER is the feature: the flow stops every verb, the retired
+            # key is cosmetic, and the tree that motivated this was told the
+            # cosmetic one.
+            self.assertLess(out.index('declares no flow'),
+                            out.index('review_slug_fallback'), out)
+        finally:
+            ctx.cleanup()
+
+    def test_it_is_exit_2_once_not_once_per_defect(self):
+        ctx, root = self._bare_tree(
+            '[pm]\nreview_slug_fallback = true\nalso_done = ["x"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                code, out = gate_both_streams(root)
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 2, out)
+        finally:
+            ctx.cleanup()
+
+    def test_a_roster_error_carries_what_the_named_gates_would_have_said(self):
+        """The adoption split its roster, watched `make check` go green, and
+        reported the bump complete over a PM CLI refusing every verb. The one
+        message it saw was about GATE NAMES."""
+        from agentic_sdlc import cli as top
+        from agentic_sdlc.core.config import ConfigError
+        from agentic_sdlc.core.project import load_config, repo_root
+        ctx, root = self._bare_tree(
+            '[checks]\nall = ["doc", "pm", "uid", "tres"]\n')
+        try:
+            previous = os.getcwd()
+            os.chdir(root)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+            try:
+                with self.assertRaises(ConfigError) as caught:
+                    top.all_roster()
+            finally:
+                os.chdir(previous)
+                repo_root.cache_clear()
+                load_config.cache_clear()
+            said = str(caught.exception)
+            self.assertIn('unknown gate(s) uid, tres', said)
+            self.assertIn('ALSO', said)
+            self.assertIn('declares no flow', said)
+        finally:
+            ctx.cleanup()

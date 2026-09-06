@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **A `devkit.toml` read reports EVERY defect, and the flow first.** The messages were already
+  good and arrived one at a time in an order nothing ranked: a tree with a retired `[pm]` key AND
+  no `[pm.states.*]` was told about the retired key — the cosmetic one — and had to fix it and
+  re-run to learn that the flow was missing, which stops every work-moving verb in the package.
+  `check pm` now prints one line per defect at a single exit 2, flow first. **And a `[checks] all`
+  roster error no longer HIDES them**: an unknown gate name is reported together with what the
+  correctly-named gates would have said about their own config, because routing a whole adoption at
+  the roster is how a green `make check` ended up over a PM CLI that was refusing every verb.
+
 - **`[adopt] ours`** — the installed files a project has taken over. `installables-current` grades
   the REST and names what was claimed on every run, pass or fail. The installables INVITE local
   edits (each ships a `Project config` section, "yours to edit after install"), so a project owning

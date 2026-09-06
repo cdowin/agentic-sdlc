@@ -581,6 +581,68 @@ RETIRED_SECTIONS = {
 }
 
 
+def missing_flow_defect(sect: dict | None = None) -> str:
+    """The one defect that stops every work-moving verb, or ''.
+
+    Read straight off `[pm.states.*]` rather than off a loaded config, because
+    a config that failed to load for some OTHER reason must still be able to
+    report this one — that ordering is the whole feature.
+    """
+    section = config_section('pm') if sect is None else sect
+    states = section.get('states')
+    declared = [k for k in FLOW_KINDS
+                if isinstance(states, dict) and k in states]
+    if len(declared) == len(FLOW_KINDS):
+        return ''
+    absent = [k for k in FLOW_KINDS if k not in declared]
+    return (f'this tree declares no flow: '
+            f'{", ".join(f"[pm.states.{k}]" for k in absent)} '
+            f'{"is" if len(absent) == 1 else "are"} not in devkit.toml, and '
+            f'there is no default — the states are how THIS project works, so '
+            f'the engine reads them and never assumes them (CLAUDE.md hard '
+            f'rule 5). Run `agentic-sdlc pm init` to write them; it appends to '
+            f'a devkit.toml it did not create and rewrites nothing.')
+
+
+def all_config_defects(sect: dict | None = None) -> list[str]:
+    """EVERY defect in `[pm]`, flow first — not the first one encountered.
+
+    A real adoption is wrong in more than one way at once, and reporting one
+    defect per run makes the consumer pay a round trip to learn the next. The
+    ORDER is the point: a retired key is cosmetic and a missing flow stops
+    every work-moving verb in the package, and the tree that motivated this was
+    told about the retired key.
+    """
+    section = config_section('pm') if sect is None else sect
+    out: list[str] = []
+
+    flow = missing_flow_defect(section)
+    if flow:
+        out.append(flow)
+
+    for key in VOCABULARY_KEYS:
+        if key in section:
+            out.append(f'[pm] {key} was retired and is refused — '
+                       f'{RETIRED_KEYS[key]}. Remove the key.')
+
+    # Everything `load()` refuses, collected rather than raised at the first.
+    try:
+        load()
+    except ConfigError as err:
+        said = str(err)
+        if said not in out and not any(said in seen for seen in out):
+            out.append(said)
+    else:
+        # `load()` succeeded, so the stale-rule and retired-key sweep is the
+        # only reader left with anything to say.
+        try:
+            out.extend(m for m in config_complaints(load(), section)
+                       if m not in out)
+        except ConfigError:
+            pass
+    return out
+
+
 def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     """Everything `[pm]` names that this package does not ship — a stale rule
     id or a retired key — empty when clean. Raised by the gates, not by

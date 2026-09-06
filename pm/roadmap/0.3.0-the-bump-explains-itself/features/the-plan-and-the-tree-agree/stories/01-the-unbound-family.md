@@ -3,7 +3,7 @@ id: 0.3.0/the-plan-and-the-tree-agree/01-the-unbound-family
 feature: 0.3.0/the-plan-and-the-tree-agree
 milestone: "0.3.0"
 name: R1 pairs the plan and the tree and R2 counts the backlog
-status: building
+status: done
 owner:
 depends_on: []
 ---
@@ -41,5 +41,5 @@ Feature-to-milestone and story-to-feature rows. 0.4.0 adds them to this census.
 
 ## Close
 
-done: in-place — R1 symmetric with only the authored half reddening, R2 as a
+done: fd1ea13 — R1 symmetric with only the authored half reddening, R2 as a
 counted line. The family is named now so 0.4.0 adds rows, not rules.

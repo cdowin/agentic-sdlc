@@ -163,3 +163,51 @@ class ThePlanIsRead(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('has shipped', out)
             self.assertIsNone(model.current_release(cfg_for(root)))
+
+
+class TheRoadmapVerbReplacesTheFile(unittest.TestCase):
+    """`pm roadmap` — the plan, derived. It is what `ROADMAP.md` was pretending
+    to be: a live index of milestones, which a hand-maintained table cannot stay.
+    """
+
+    def test_it_prints_every_scheduled_release_then_the_backlog(self):
+        with tree() as root:
+            for version in ('0.1.0', '0.2.0'):
+                run_cli(root, 'order', '--append', version)
+            claims(root, 'a', '0.1.0', 'done')
+            claims(root, 'b', '0.2.0', 'building')
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('2 scheduled release(s)', out)
+            self.assertIn('0.1.0\ta\tshipped', out)
+            self.assertIn('0.2.0\tb\tbuilding', out)
+            # The fixture's own milestone declares no version — backlog.
+            self.assertIn('backlog', out)
+            self.assertIn('0.1', out)
+
+    def test_it_writes_nothing(self):
+        with tree() as root:
+            run_cli(root, 'order', '--append', '0.1.0')
+            before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            self.assertEqual(run_cli(root, 'roadmap')[0], 0)
+            after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            self.assertEqual(before, after)
+
+    def test_a_version_two_milestones_claim_is_named_rather_than_picked(self):
+        with tree() as root:
+            run_cli(root, 'order', '--append', '0.1.0')
+            claims(root, 'a', '0.1.0', 'done')
+            claims(root, 'b', '0.1.0', 'building')
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('CLAIMED TWICE', out)
+
+    def test_an_unreadable_plan_is_refused_rather_than_printed_as_empty(self):
+        # The same rule-4 shape R5 was fixed for: never report "no plan" over a
+        # plan that is there and broken.
+        with tree() as root:
+            (root / 'pm/roadmap/releases.md').write_text(
+                '---\norder: 0.1.0\n---\n', encoding='utf-8')
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 1, out)
+            self.assertIn('scalar', out)

@@ -177,6 +177,9 @@ VERSION_AT_CHOICES = (VERSION_AT_START, VERSION_AT_SHIP)
 
 MILESTONE_DOC = 'milestone.md'
 FEATURE_DOC = 'feature.md'
+# Retired in 0.3.0: `pm roadmap` derives the live index and `releases.md`
+# `order` carries what outlives a retired milestone. The NAME stays so a tree
+# that still has the file is recognised rather than walked as a grain.
 ROADMAP_DOC = 'ROADMAP.md'
 # The slot directories, spelled once: a grain's kind is read from which slot
 # its document sits in.

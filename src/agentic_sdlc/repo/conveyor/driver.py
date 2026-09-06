@@ -54,6 +54,11 @@ QUOTE_LIMIT = 40
 FORCED = 'forced'
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
+# What a checks-only belt says about the record, before its first check: it
+# writes nothing (D12), so the milestone directory is where a row WOULD land
+# and never a condition for running.
+NOTHING_RECORDED = 'nothing recorded, because this belt writes nothing'
+ANYWHERE = 'the bump may be tracked as a feature, as a story, or nowhere'
 
 
 class Truth(Enum):
@@ -448,6 +453,20 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
     return record
 
 
+def _no_ledger(nowhere: str) -> Recorder:
+    """The recorder for a run with NO milestone directory: it records nothing
+    and says why, so a forced write can never print as though a row landed.
+
+    Only a checks-only belt gets here — a belt that writes is still refused
+    without the directory — but `run` may not assume that, and a silent
+    recorder is rule 4's second sin in miniature.
+    """
+    def record(false: Sequence[tuple[str, str]]) -> str:
+        return f'{nowhere} to hold a ledger row'
+
+    return record
+
+
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
@@ -578,17 +597,29 @@ def main(argv: Sequence[str], *, root: Path | None = None,
 
     mid = subject.split('/')[0]
     mdir = model.milestone_dir(cfg, mid)
-    if mdir is None:
-        # No milestone directory means no ledger and no grain to check.
-        print(f'agentic-sdlc: {spoken} {subject}: no milestone directory '
-              f'{cfg.rel(cfg.roadmap)}/{mid}-* — refused, and nothing was '
-              f'written', file=sys.stderr)
+    nowhere = f'no milestone directory {cfg.rel(cfg.roadmap)}/{mid}-*'
+    if mdir is None and kind:
+        # A belt that WRITES needs the grain's directory: the status it sets
+        # lives there, and so does the ledger row a forced write leaves.
+        print(f'agentic-sdlc: {spoken} {subject}: {nowhere} — refused, and '
+              f'nothing was written', file=sys.stderr)
         return 1
+    if not kind:
+        # Checks only (D12): the milestone directory is the LEDGER's home and
+        # nothing else, so its absence is not an entry condition. WHERE the
+        # project tracks the bump — a milestone, a feature, a story, nowhere
+        # at all — is the project's business, the same way `[pm.states.*]` is.
+        # Every check runs either way, and the run says which it found.
+        print(f'[{operation}] {NOTHING_RECORDED} — '
+              + (f'a row would land in {cfg.rel(ledger.ledger_path(mdir))}'
+                 if mdir is not None
+                 else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
     result = run(known, names, ctx, force=force, state=state,
                  write=write if write is not None else _writer(cfg, kind),
-                 record=_recorder(mdir, operation, subject))
+                 record=(_recorder(mdir, operation, subject)
+                         if mdir is not None else _no_ledger(nowhere)))
     for line in result.lines:
         print(line)
     if result.refused:

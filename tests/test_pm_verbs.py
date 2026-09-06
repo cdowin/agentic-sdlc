@@ -1331,70 +1331,52 @@ class BugStatus(unittest.TestCase):
 
 
 class Retire(unittest.TestCase):
-    """`pm retire <milestone-id>` — the prune flow `pm init` seeds a table
-    for, made whole: one write that removes the milestone directory and
-    appends its row.
+    """`pm retire <milestone-id>` — one write that removes the directory.
 
-    Refuses on exactly two impossibilities (an unresolvable id, no
-    ROADMAP.md); everything else it notices about the tree — a milestone
-    not `done`, a feature or bug still open — is reported below the line
-    that says what moved, never a precondition.
+    **`ROADMAP.md` retired in 0.3.0** and this verb no longer appends to it. It
+    was two things wearing one name: a hand-maintained index of milestones still
+    in the tree — the second scoreboard the tool forbids one grain down — and the
+    only surviving record of what this verb deleted. `pm roadmap` derives the
+    first; `order` plus R1's UNVERIFIABLE carries the second, with nobody
+    maintaining it.
+
+    Refuses on exactly one impossibility (an unresolvable id); everything else it
+    notices about the tree — a milestone not `done`, a feature or bug still open
+    — is reported below the line that says what moved, never a precondition.
     """
 
-    @staticmethod
-    def _seed_roadmap(root: Path) -> Path:
-        index = root / 'pm/roadmap/ROADMAP.md'
-        index.write_text(skills.ROADMAP_SEED, encoding='utf-8')
-        return index
-
     def test_every_refusal_leaves_the_tree_standing(self):
-        """The two usage impossibilities, and the one obstruction the plan
-        must DECIDE before either byte moves.
-
-        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): with
-        only the two usage cases here, dropping `plan.decide()` from
-        `cmd_retire` reddened nothing — no case put an obstruction in the
-        plan's way. The order is delete-then-append, so without the decision
-        a read-only ROADMAP.md let the directory go and the row fail: a
-        milestone gone with no row to say where. The third block is that
-        obstruction, and it is the case that proves whole-or-nothing.
-        """
         with tree() as root:
-            self._seed_roadmap(root)
             code, out = run_cli(root, 'retire', '9.9')
             self.assertEqual(code, 2, out)
             self.assertIn('is not a milestone', out)
             self.assertIn('0.1', out)
             self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
-        with tree(milestone_status='done', feature_status='done',
-                  story_statuses=('done',)) as root:
-            # tree() never seeds ROADMAP.md — this IS the missing-index case.
-            code, out = run_cli(root, 'retire', '0.1')
-            self.assertEqual(code, 1, out)
-            self.assertIn('ROADMAP.md', out)
-            self.assertIn('does not exist', out)
-            self.assertIn('pm/roadmap', out)
-            self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
         if hasattr(os, 'geteuid') and os.geteuid() == 0:
             return  # permission bits are not an obstruction as root
+        # The obstruction. With ROADMAP.md gone the plan is ONE step, so the
+        # half-landed state the old delete-then-append could reach — a milestone
+        # removed with no row to say where — is now unreachable by construction
+        # rather than by `plan.decide()` catching it. What still has to hold is
+        # that a refused retire leaves the directory whole.
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            index = self._seed_roadmap(root)
-            before = index.read_bytes()
-            index.chmod(0o444)
+            mdir = root / 'pm/roadmap/0.1-demo'
+            before = sorted(p.relative_to(root) for p in mdir.rglob('*'))
+            (root / 'pm/roadmap').chmod(0o555)
             try:
                 code, out = run_cli(root, 'retire', '0.1')
             finally:
-                index.chmod(0o644)
+                (root / 'pm/roadmap').chmod(0o755)
             self.assertEqual(code, 1, out)
             self.assertIn('nothing was retired', out)
-            self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
-            self.assertEqual(index.read_bytes(), before)
+            self.assertTrue(mdir.is_dir())
+            self.assertEqual(sorted(p.relative_to(root) for p in mdir.rglob('*')),
+                             before)
 
     def test_a_non_done_milestone_is_reported_not_refused(self):
         with tree(milestone_status='building',
                   feature_status='building') as root:
-            index = self._seed_roadmap(root)
             BugStatus._bug(root, 'seed-is-zero', 'open')
             code, out = run_cli(root, 'retire', '0.1', 'pulled')
             self.assertEqual(code, 0, out)
@@ -1402,43 +1384,50 @@ class Retire(unittest.TestCase):
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
             self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
-            # ...and the row says the word it was retired in.
-            self.assertIn('| building — pulled |', index.read_text())
 
-    def test_retire_of_an_obe_milestone_writes_a_row_that_says_so(self):
-        """0.2.0/bugs/a-collapsed-milestone-has-no-verb: `retire` only knew
-        one ending, and a collapsed milestone got a row under "What shipped"
-        that said it shipped. Any `done`-category state retires without a
-        "not done" notice, and the row's last cell opens with the state the
-        file held — `obe` here — so the index never calls abandoned work
-        delivered. No existing case could fail for this: every retire case
-        used `done` and read the summary cell for its own words only."""
-        with tree(milestone_status='obe', feature_status='obe',
-                  story_statuses=('obe',)) as root:
-            index = self._seed_roadmap(root)
-            code, out = run_cli(root, 'retire', '0.1', 'collapsed into 0.2')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('not done', out)
-            self.assertNotIn('noticed', out)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
-            rows = [ln for ln in index.read_text().splitlines()
-                    if ln.startswith('| 0.1 |')]
-            self.assertEqual(len(rows), 1, index.read_text())
-            self.assertTrue(rows[0].endswith('| obe — collapsed into 0.2 |'),
-                            rows[0])
-        # ...and `done` says `done`, with an empty summary printing the word
-        # alone rather than a dangling dash.
+    def test_the_plan_is_what_outlives_the_directory(self):
+        """0.3.0: the row survives its milestone through `order`, not a file.
+
+        A retired milestone whose version is on the plan leaves a row R1 reports
+        as UNVERIFIABLE. One that was never scheduled leaves nothing, and the
+        verb SAYS so rather than letting the record vanish quietly.
+        """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            index = self._seed_roadmap(root)
+            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+                            'version', '"0.1.0"')
+            run_cli(root, 'order', '--append', '0.1.0')
+            code, out = run_cli(root, 'retire', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('releases.md', out)
+            self.assertIn('UNVERIFIABLE', out)
+            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            # The plan kept the version; the record is gone.
+            self.assertEqual(
+                model.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
+                ['0.1.0'])
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            code, out = run_cli(root, 'retire', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('on no plan', out)
+            self.assertIn('pm order --append', out)
+
+    def test_retire_writes_no_roadmap_file_and_needs_none(self):
+        """The whole point of the retirement: a tree with no ROADMAP.md retires
+        fine, and one that has the old file is not written to."""
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            stale = root / 'pm/roadmap/ROADMAP.md'
+            stale.write_text('| id | name | date | ended |\n', encoding='utf-8')
+            before = stale.read_bytes()
             self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
-            self.assertIn('| done |', index.read_text())
+            self.assertEqual(stale.read_bytes(), before)
+            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
 
     def test_dry_run_writes_nothing_byte_for_byte(self):
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            index = self._seed_roadmap(root)
-            before_index = index.read_bytes()
             mdir = root / 'pm/roadmap/0.1-demo'
             before_files = sorted(
                 (p.relative_to(root), p.read_bytes())
@@ -1446,53 +1435,27 @@ class Retire(unittest.TestCase):
             code, out = run_cli(root, 'retire', '0.1', '--dry-run')
             self.assertEqual(code, 0, out)
             self.assertIn('[dry-run]', out)
-            self.assertEqual(index.read_bytes(), before_index)
             self.assertTrue(mdir.is_dir())
             after_files = sorted(
                 (p.relative_to(root), p.read_bytes())
                 for p in mdir.rglob('*') if p.is_file())
             self.assertEqual(before_files, after_files)
 
-    def test_retire_appends_exactly_one_row_and_removes_exactly_the_dir(self):
-        """The index after is the index before plus ONE row, byte for byte.
-
-        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): with
-        this test counting `| 0.1 |` rows, a `retire` that REPLACED the
-        seeded table with its one row still passed (one row found), and so
-        did one that rewrote the index's CRLF endings to LF. Both are the
-        write-side sin — a ROADMAP.md that looks appended-to and is not — so
-        the seed is written with CRLF and the assertion is equality on the
-        whole file. The `| 0.2 |` row being absent is the census: the other
-        milestone's directory stands and no row was minted for it.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / 'repo'
-            write(root / 'pm/roadmap/0.1-demo/milestone.md',
-                  {'id': '"0.1"', 'name': 'Demo', 'status': 'done',
-                   'actual_date': '2026-01-02'})
-            write(root / 'pm/roadmap/0.2-later/milestone.md',
-                  {'id': '"0.2"', 'name': 'Later', 'status': 'building'})
-            write_config(root)
-            (root / '.git').mkdir(exist_ok=True)
-            previous = Path.cwd()
-            os.chdir(root)
-            try:
-                index = self._seed_roadmap(root)
-                before = skills.ROADMAP_SEED.replace('\n', '\r\n')
-                index.write_bytes(before.encode())
-                code, out = run_cli(root, 'retire', '0.1', 'shipped',
-                                    'X', 'and', 'Y')
-                self.assertEqual(code, 0, out)
-                after = index.read_bytes().decode()
-                self.assertTrue(after.startswith(before), after)
-                row = after[len(before):]
-                self.assertRegex(row, r'^\| 0\.1 \|[^\r\n]*\r\n$')
-                self.assertIn('2026-01-02', row)
-                self.assertIn('| done — shipped X and Y |', row)
-                self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
-                self.assertTrue((root / 'pm/roadmap/0.2-later').is_dir())
-            finally:
-                os.chdir(previous)
+    def test_retire_removes_exactly_the_dir_and_nothing_beside_it(self):
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            write(root / 'pm/roadmap/0.2-two/milestone.md',
+                  {'id': '"0.2"', 'name': 'Two', 'status': 'planning'})
+            sibling = sorted(
+                (p.relative_to(root), p.read_bytes())
+                for p in (root / 'pm/roadmap/0.2-two').rglob('*') if p.is_file())
+            self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
+            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            self.assertEqual(
+                sorted((p.relative_to(root), p.read_bytes())
+                       for p in (root / 'pm/roadmap/0.2-two').rglob('*')
+                       if p.is_file()),
+                sibling)
 
 
 class Move(unittest.TestCase):

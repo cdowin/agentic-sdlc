@@ -21,7 +21,7 @@ Static gates (exit 1 on findings; `check <gate> --help` is that gate's contract)
 
 Belts (checks, then one status write or a clean error; `--force` writes anyway on the record):
     agentic-sdlc release <version>
-    agentic-sdlc adopt <version>
+    agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
 
     agentic-sdlc version            # also -V / --version

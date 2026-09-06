@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **`pm/roadmap/ROADMAP.md` is RETIRED, and `pm roadmap` replaces it.** The file was two things
+  wearing one name: a hand-maintained index of milestones still in the tree — the second scoreboard
+  this package forbids one grain down — and the only surviving record of milestones `pm retire`
+  deleted. `pm roadmap` derives the first from the tree (every scheduled release with its milestone
+  and state, then the backlog) and writes nothing. The second needs no file: `order` in
+  `releases.md` keeps the version and R1 reports it UNVERIFIABLE once the directory is gone, so the
+  row survives its milestone with nobody maintaining it. **`pm init` no longer seeds the file and
+  `pm retire` no longer appends to it** — `retire` now says what outlives the directory, and tells
+  you to schedule the version first if nothing would. An existing `ROADMAP.md` is left alone: this
+  release does not delete a consumer's file, it stops writing to it.
+- **The release rules R1-R4 and R6** hold the plan and the tree to each other, all opt-in via
+  `[pm] checks`. R1 is the UNBOUND family's first member — an `order` entry no milestone claims
+  (a WARN: a dangling entry and a retired milestone's surviving row are indistinguishable) and a
+  `version:` on no plan (a finding). R2 counts the backlog and never reddens on planning. R3 stops
+  two milestones claiming one version, so which release ships is never decided by a directory name.
+  R4 is history-is-a-prefix. R6 catches a release behind the last shipped one whose milestone never
+  closed, and a `done` milestone whose version is on no plan.
+- **`pm order`, `pm next` and `pm roadmap`** — the plan is `order` in `pm/roadmap/releases.md`,
+  block-style frontmatter edited by `pm order --append|--insert|--remove`. `release` with no
+  argument takes the current version from it, and refuses one that is out of order naming both.
+- **`core.apply` refuses a tree delete whose parent is not writable.** It unlinks from its parent
+  exactly as a file delete does and was not checked for it, so the walk could empty a directory and
+  then fail to remove it — leaving a gutted grain, the half-applied state that module exists to
+  make unreachable.
+
 - **`[gates] extra` refuses a gate name and says which key runs it.** The key takes make targets
   and the adjacent `[checks] all` takes gate names; neither error said so, so `extra = ["budget"]`
   reached GNU make as `No rule to make target 'budget'` — three layers below the config that caused

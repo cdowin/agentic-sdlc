@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,32 +32,69 @@ from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
+from agentic_sdlc.repo.pm import ledger  # noqa: E402
 
 VERSION = '9.9.9'
-MILESTONE = f'''---
-id: "{VERSION}"
+# The milestone this project is actually building when the pin bump is folded
+# into it as a feature; it is NOT named for the version being adopted.
+OPEN_VERSION = '0.1.0'
+# Where the scratch project records the bump: a milestone of its own, or a
+# feature under `OPEN_VERSION` and no `9.9.9-*` directory anywhere.
+AS_MILESTONE, AS_FEATURE = 'milestone', 'feature'
+
+
+def milestone_doc(mid: str) -> str:
+    return f"""---
+id: "{mid}"
 name: A scratch milestone
 status: building
-branch: milestone/{VERSION}
+branch: milestone/{mid}
 ---
 
 # A scratch milestone
-'''
+"""
+
+
+BUMP_FEATURE = f"""---
+id: {OPEN_VERSION}/adopt-the-devkit-pin
+milestone: "{OPEN_VERSION}"
+name: adopt the v{VERSION} pin
+status: building
+---
+
+# adopt the v{VERSION} pin
+
+A day of work inside a milestone that is a month of game.
+"""
 PIN = f'DEVKIT_VERSION := v{__version__}\n'
 
 
 @contextlib.contextmanager
 def tree(files: dict[str, str] | None = None, config: str = '',
-         sibling: bool = False):
-    """A scratch consumer with a milestone directory, entered. `sibling`
-    plants a DECOY repo beside it (rule 8: `adopt` reads no second repo).
-    `config` is the devkit.toml MINUS the flow declaration, which
-    `with_flow` appends."""
+         sibling: bool = False, tracks: str = AS_MILESTONE):
+    """A scratch consumer, entered. `sibling` plants a DECOY repo beside it
+    (rule 8: `adopt` reads no second repo). `config` is the devkit.toml MINUS
+    the flow declaration, which `with_flow` appends.
+
+    `tracks` is WHERE the project records the bump. `AS_MILESTONE` is a
+    `9.9.9-*` directory named for the version being adopted. `AS_FEATURE` is
+    the consumer shape that made this belt unreachable: an OPEN milestone of
+    the project's own, the bump folded into it as a feature, and no directory
+    named for the version anywhere in the tree.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
-        (root / f'pm/roadmap/{VERSION}-scratch').mkdir(parents=True)
-        (root / f'pm/roadmap/{VERSION}-scratch/milestone.md').write_text(
-            MILESTONE, encoding='utf-8')
+        roadmap = root / 'pm/roadmap'
+        if tracks == AS_MILESTONE:
+            (roadmap / f'{VERSION}-scratch').mkdir(parents=True)
+            (roadmap / f'{VERSION}-scratch/milestone.md').write_text(
+                milestone_doc(VERSION), encoding='utf-8')
+        else:
+            fdir = roadmap / f'{OPEN_VERSION}-open/features/adopt-the-devkit-pin'
+            fdir.mkdir(parents=True)
+            (roadmap / f'{OPEN_VERSION}-open/milestone.md').write_text(
+                milestone_doc(OPEN_VERSION), encoding='utf-8')
+            (fdir / 'feature.md').write_text(BUMP_FEATURE, encoding='utf-8')
         (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
         for rel, body in (files or {}).items():
             target = root / rel
@@ -101,6 +139,19 @@ def adopt(*argv: str) -> tuple[int, str]:
     return code, buf.getvalue()
 
 
+# `[adopt] ok: <name> — …`, `[adopt] error: <name>: …`, `[adopt]
+# unverifiable: <name>: …` — the three line shapes `driver.run` prints.
+CHECK_LINE = re.compile(r'^\[adopt\] (?:ok|error|unverifiable): ([a-z][a-z0-9-]*)',
+                        re.MULTILINE)
+
+
+def asked(out: str) -> list[str]:
+    """Every check the run reported on, in the order it reported them. Read
+    off the belt's OWN lines, so "it ran" is what the belt said, not what the
+    test hoped."""
+    return CHECK_LINE.findall(out)
+
+
 def snapshot(root: Path) -> dict[str, bytes]:
     return {str(p.relative_to(root)): p.read_bytes()
             for p in sorted(root.rglob('*'))
@@ -125,6 +176,81 @@ def test_the_adopt_registry_is_exactly_the_shipped_seven():
     assert driver.WRITES['adopt'] == ''
     for name in steps.DEFAULT_ADOPT_STEPS:
         assert name in steps.STEP_DOC, f'{name} ships no sentence'
+
+
+# --- where the bump lives -----------------------------------------------------
+def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
+    """Bites: the ENTRY condition, which made the belt unreachable rather than
+    advisory. A consumer folding toolkit work into an open milestone as a
+    feature has no `9.9.9-*` directory and will not grow one — a pin bump is a
+    day of work and a milestone there is a month of game. At HEAD this printed
+    `no milestone directory pm/roadmap/9.9.9-* — refused, and nothing was
+    written` and exited 1 with ZERO checks asked; the adopting agent then did
+    all seven by hand, in an order it invented, and missed one."""
+    with tree({'Makefile': PIN + 'include Makefile.devkit\n'},
+              tracks=AS_FEATURE) as root:
+        before = snapshot(root)
+        code, out = adopt()
+        assert not list(root.glob(f'pm/roadmap/{VERSION}-*')), (
+            'the fixture grew a milestone named for the version')
+        assert code != 2, out
+        assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
+        assert 'refused' not in out, out
+        # It says THAT it recorded: nowhere, because it writes nothing.
+        assert driver.NOTHING_RECORDED in out, out
+        assert driver.ANYWHERE in out, out
+        assert f'pm/roadmap/{VERSION}-*' in out, out
+        assert snapshot(root) == before, 'adopt wrote into the tree'
+
+
+def test_adopt_names_the_ledger_when_the_bump_is_tracked_as_a_milestone():
+    """The other half of the same sentence: with a directory named for the
+    version, the run says WHERE a row would land — and still that none did,
+    because `adopt` writes nothing (D12)."""
+    with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
+        code, out = adopt()
+        assert code != 2, out
+        assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
+        assert driver.NOTHING_RECORDED in out, out
+        assert f'{VERSION}-scratch/{ledger.LEDGER_FILE_NAME}' in out, out
+        assert not (root / f'pm/roadmap/{VERSION}-scratch'
+                    / ledger.LEDGER_FILE_NAME).exists(), (
+            'a belt that writes nothing minted a ledger')
+
+
+def test_a_belt_that_writes_still_needs_the_milestone_directory():
+    """Bites: relaxing the entry condition for ALL FOUR belts instead of the
+    one that writes nothing. `close feature` sets a status that lives in the
+    milestone directory, and a forced one records there too; without the
+    directory there is nowhere to write and nowhere to record, so it is
+    refused before the first check — which is also why no check spawns here."""
+    with tree(tracks=AS_FEATURE) as root:
+        before = snapshot(root)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = driver.main(['close', 'feature', f'{VERSION}/nope'])
+        out = buf.getvalue()
+        assert code == 1, out
+        assert 'no milestone directory' in out and 'refused' in out, out
+        assert 'nothing was written' in out, out
+        assert asked(out) == [], out
+        assert snapshot(root) == before
+
+
+def test_the_help_line_says_adopt_takes_a_pin_not_a_grain():
+    """Bites: the second, cheaper miss. Beside `release <version>` and `close
+    story|feature <id>` — all grain operations — a bare `adopt <version>`
+    reads as one, and the adopting agent read past it twice. The meaning has
+    to be ON the line, not only in `[adopt] pin_file`."""
+    from agentic_sdlc import cli
+
+    lines = [ln for ln in cli.__doc__.split('\n') if 'adopt <version>' in ln]
+    assert len(lines) == 1, cli.__doc__
+    line = lines[0]
+    assert 'pin' in line.lower(), line
+    assert 'grain' in line.lower(), line
+    assert line.split('#')[-1].strip(), (
+        'the line carries no description at all')
 
 
 # --- the subtraction ----------------------------------------------------------

@@ -3,7 +3,7 @@ id: 0.3.0/the-plan-and-the-tree-agree/02-history-is-a-prefix
 feature: 0.3.0/the-plan-and-the-tree-agree
 milestone: "0.3.0"
 name: R3 R4 and R6 hold the plan to the tree
-status: building
+status: done
 owner:
 depends_on: ["0.3.0/the-plan-and-the-tree-agree/01-the-unbound-family"]
 ---
@@ -44,5 +44,5 @@ R5, which is `a-milestone-declares-its-version`.
 
 ## Close
 
-done: in-place — R3/R4/R6 land, and both fired on this tree's own 0.1.0 before
+done: fd1ea13 — R3/R4/R6 land, and both fired on this tree's own 0.1.0 before
 the record was closed. The bug is fixed by the rule that found it.

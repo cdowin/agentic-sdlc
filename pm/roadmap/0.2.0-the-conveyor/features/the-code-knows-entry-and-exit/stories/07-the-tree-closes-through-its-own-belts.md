@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/07-the-tree-closes-through-its-own-belts
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every story, feature and the milestone close through the belts they built
-status: building
+status: done
 owner:
 depends_on: []
 ---

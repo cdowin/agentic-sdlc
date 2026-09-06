@@ -201,9 +201,10 @@ def run() -> int:
     # measured nothing at all, which is the sin the rule names. A tier that has
     # not run yet is a fact; a gate with NOTHING to read is a gate that cannot
     # answer, and it says so.
-    if not rows:
+    if not gates:
         print(f'[check:{NAME}] FAIL — [tests] budget declares '
-              f'{len(set(ceilings) | set(floors))} ceiling(s)/floor(s) and the '
+              f'{len(set(ceilings) | set(floors) | set(budgets))} '
+              f'ceiling(s)/floor(s)/budget(s) and the '
               f'current release\'s ledger holds no `gate` row at all, so '
               f'nothing was graded. A verdict over an empty census is the one '
               f'this package refuses to print (CLAUDE.md rule 4). Run a gated '

@@ -32,9 +32,10 @@
   you to schedule the version first if nothing would. An existing `ROADMAP.md` is left alone: this
   release does not delete a consumer's file, it stops writing to it.
 - **The gate ledger binds to the CURRENT RELEASE, not to the one in-progress milestone.** A cost
-  row is filed against the first unshipped entry in `order` (or the last shipped, under
-  `[pm] version_at = "ship"`), which answers with exactly one by construction and reads no status
-  field to do it. `no milestone in pm/roadmap is in progress, so there is no ledger this gate row
+  row is filed against the first unshipped entry in `order` — the release being WORKED ON — which
+  answers with exactly one by construction. It does NOT read `[pm] version_at`: that key says which
+  entry the version FILE is graded against, and conflating the two filed cost rows into an already
+  shipped milestone's closed ledger. `no milestone in pm/roadmap is in progress, so there is no ledger this gate row
   belongs to` stops being a refusal: gate cost is a fact about a RUN, and the run happened whether
   or not somebody had flipped a status. A tree planning two milestones with neither flipped used to
   drop every cost row silently. `check budget` and `verify --plan` read through the same resolver,

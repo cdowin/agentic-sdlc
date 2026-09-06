@@ -191,7 +191,7 @@ def test_findings_resolved_and_features_done_ask_pm_ready_for():
     `ready-for tag` says so by name; with no feature at all `ready-for
     milestone` reports the empty census rather than passing."""
     record = ('```\nverdict: SHIP-WITH-FIXES\n'
-              '| id | severity | disposition |\n| W1 | WARNING | open |\n```\n')
+              '| id | severity | disposition |\n| W1 | MAJOR | open |\n```\n')
     feature = (f'---\nid: {VERSION}/alpha\nmilestone: "{VERSION}"\n'
                f'name: Alpha\nstatus: done\nreviewed: docs/reviews/alpha.md\n'
                f'phase: 1\n---\n\n# Alpha\n')

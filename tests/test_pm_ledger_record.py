@@ -446,12 +446,15 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 # milestone is in progress" stopped being a reason to refuse a cost row — gate
 # cost is a fact about a RUN, and the run happened whether or not anybody had
 # flipped a status. The one honest reason left is that the tree has no plan.
+# 0.3.0, review X1: having nowhere to file a gate row is a TRUE and
+# unremarkable fact — a fresh adoption has no plan and no milestone in progress
+# — and reporting it as a REFUSAL made every gate of every run print `the
+# recorder exited 1`, which reads as a broken install. It is INFORMATION now:
+# one line, exit 0, and still no row, which is the half that must not change.
 @pytest.mark.parametrize('kwargs,remove_pm,second_milestone,code,needle', [
-    (dict(), True, False, 1, 'no PM tree'),
-    (dict(milestone_status='planning'), False, False, 1, 'declares no `order`'),
-    # Two in progress used to be exit 2 "which one owns this" — under a plan it
-    # is not a question at all, and with no plan it is the same one reason.
-    (dict(), False, True, 1, 'declares no `order`'),
+    (dict(), True, False, 0, 'no PM tree'),
+    (dict(milestone_status='planning'), False, False, 0, 'declares no `order`'),
+    (dict(), False, True, 0, 'declares no `order`'),
 ])
 def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
         kwargs, remove_pm, second_milestone, code, needle):

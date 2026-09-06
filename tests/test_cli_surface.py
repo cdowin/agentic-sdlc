@@ -136,14 +136,21 @@ CONTRACT_CODES = frozenset({0, 1, 2})
 
 # The sentence a surface states its exit codes in — `Exit codes: …` or `Exit: …`
 # — to the end of its paragraph. Both spellings are in the shipped corpus.
+# Case-INSENSITIVE, and both spellings this package actually uses. `pm --help`
+# writes `EXIT CODE:` and the reader could not see it, so eleven surfaces that
+# DO state a contract were counted as stating none (review X3) — a census that
+# reported 5 of 21 and looked like a fact about the help rather than about the
+# regex reading it.
 _EXIT_CONTRACT = re.compile(
-    r'(?m)^[ \t]*Exit(?: codes)?:(?P<body>.*(?:\n(?![ \t]*\n).*)*)')
+    r'(?mi)^[ \t]*Exit(?:\s+codes?)?:(?P<body>.*(?:\n(?![ \t]*\n).*)*)')
 
 # A code in CLAIM POSITION: opening the contract, or introduced by a clause
 # separator. `verify`'s "A target's own exit 2 is reported as 1" is prose
 # INSIDE a clause and opens none, which is why a digit has to be introduced
 # rather than merely present.
-_CODE_MARK = re.compile(r'(?:\A|[;|·,]\s*)(?P<code>\d+)(?=[\s=])')
+# A PERIOD ends a clause too, and a contract written `0 pass. 1 findings.`
+# hid every code after the first from the rule-6 guard (review X6).
+_CODE_MARK = re.compile(r'(?:\A|[;|·,.]\s*)(?P<code>\d+)(?=[\s=])')
 
 
 def exit_contract(text: str) -> str:

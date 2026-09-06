@@ -1176,14 +1176,29 @@ def check_findings_landed(ctx: Context) -> Answer:
     passes, why = _passes(ctx, path)
     if why:
         return Answer.unverifiable(why)
-    opened = [f.id for p in passes for f in p.findings
-              if f.disposition_kind == verdict.OPEN]
+    opened = [f for p in passes for f in p.findings
+               if f.disposition_kind == verdict.OPEN]
+    blocking = [f.id for f in opened
+                if f.severity in verdict.BLOCKING_SEVERITIES]
+    minor = [f.id for f in opened
+             if f.severity not in verdict.BLOCKING_SEVERITIES]
     total = sum(len(p.findings) for p in passes)
-    if opened:
-        return Answer.no(f'{len(opened)} finding(s) open in {cfg.rel(path)}: '
-                         f'{_clip(", ".join(opened))} — land each, or defer '
-                         f'it in writing')
-    return Answer.yes(f'{cfg.rel(path)}: {total} finding(s), none open')
+    # SEVERITY gates the hold. An open NIT used to block a close exactly as
+    # hard as a shipping bug, so a review that did its job — writing down the
+    # cheap observations too — cost more to clear than it was worth, and the
+    # next reviewer learns to stop writing them.
+    if blocking:
+        return Answer.no(
+            f'{len(blocking)} blocking finding(s) open in {cfg.rel(path)}: '
+            f'{_clip(", ".join(blocking))} — land each, or defer it in writing'
+            + (f' ({len(minor)} non-blocking also open, which do not hold this '
+               f'close)' if minor else ''))
+    said = f'{cfg.rel(path)}: {total} finding(s), none blocking'
+    if minor:
+        # Reported on every run: not blocking is not the same as not there.
+        said += (f'; {len(minor)} open below MAJOR carried forward: '
+                 + _clip(', '.join(minor)))
+    return Answer.yes(said)
 
 
 # --- the registries -----------------------------------------------------------

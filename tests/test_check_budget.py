@@ -297,6 +297,19 @@ def test_a_declared_budget_with_no_gate_row_at_all_is_the_zero_census(tmp_path):
         assert 'rule 4' in out
 
 
+def test_a_row_that_is_not_a_gate_row_does_not_leave_the_zero_census(tmp_path):
+    """Review X2: the guard asked `if not rows` — ANY kind — while its own FAIL
+    line says "no `gate` row at all". One `status` row from an ordinary `pm`
+    write returned the gate to exit 0 having graded nothing, which is the census
+    sin the guard was added to close, reintroduced by the guard itself."""
+    from agentic_sdlc.repo.pm import ledger
+    with tree(tmp_path, [ledger.status_row('0.1/a/s', 'ready', 'done')],
+              config=BUDGET):
+        code, out = check()
+        assert code == 1, out
+        assert 'no `gate` row at all' in out
+
+
 def test_one_gate_row_is_enough_to_leave_the_zero_census(tmp_path):
     """The boundary: the census is about whether anything was READ, not about
     whether every declared tier ran."""

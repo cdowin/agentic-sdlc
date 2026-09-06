@@ -1504,7 +1504,17 @@ def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
     # Absent, never 0: a `0` census is the zero-file scan rule 4 names.
     census = (_count_flag('--census', flags['--census'])
               if '--census' in flags else None)
-    mdir = _gate_ledger_dir(cfg)
+    # A tree with nowhere to file a gate row is a TRUE and unremarkable fact —
+    # a fresh adoption has no plan and no milestone in progress yet — and
+    # reporting it as a REFUSAL made every gate of every run print
+    # `the recorder exited 1`, which reads as a broken install (review X1).
+    # Information, not a failure: one line on stderr, exit 0, no row.
+    mdir, why = model.release_ledger_dir(cfg)
+    if not cfg.roadmap.is_dir():
+        mdir, why = None, (f'there is no PM tree at {cfg.rel(cfg.roadmap)}')
+    if mdir is None:
+        print(f'[pm] no gate row filed — {why}', file=sys.stderr)
+        return 0
     try:
         ledger.append_row(mdir, ledger.gate_row(gate, verdict, duration,
                                                 census))

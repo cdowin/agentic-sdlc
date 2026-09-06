@@ -250,7 +250,12 @@ class DriftGate(unittest.TestCase):
         def warned(out: str) -> int:
             return int(re.search(r'; (\d+) warning\(s\)', out).group(1))
 
-        with tree(feature_status='planning', story_statuses=('done',)) as root:
+        # U1 is stock-ON and warns on any fixture tree holding one state per
+        # kind, so this case pins the roster to the rules it is actually about.
+        # Counting a constant would make the delta this asserts meaningless.
+        with tree(feature_status='planning', story_statuses=('done',),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
@@ -311,7 +316,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                                      ('planning', empty, False)):
             with self.subTest(status=status, filled=body is filled), \
                     tree(feature_status='building',
-                         story_statuses=('ready',)) as root:
+                         story_statuses=('ready',),
+                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
                 self._settle(root)
                 self._story(root, status, body)
                 code, out = run_gate(root)
@@ -324,7 +331,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # phase on each feature. A grain with NO such heading at all says so
         # in different words from an empty one.
         with tree(milestone_status='building', feature_status='building',
-                  story_statuses=()) as root:
+                  story_statuses=(),
+                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                         '"V1","V2","V3","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             for needle in ("milestone 0.1 is 'building' with no branch:",

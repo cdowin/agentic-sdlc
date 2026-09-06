@@ -127,7 +127,7 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # D9/D10 encode branch-per-milestone and are OFF by default; a trunk-shipping
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
-DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
+DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
                   'V1', 'V2', 'V3', 'V4', 'V5')
 # The USAGE family: what the tree DOES with the vocabulary it declared, as
 # opposed to whether a word is declared at all (D4). U1 is its first member and
@@ -135,13 +135,14 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
 # reusing a retired id would silently enable a different rule for any consumer
 # whose config still names it, which is worse than the exit 2 they get today.
 #
-# U1 (a declared state no grain has ever held) is OPT-IN, like every other
-# flow-shaped rule. It is a WARN and could not redden anyone, but stock-on it
-# adds three lines to every consumer's `check pm` output, and those line shapes
-# are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
-# prints the ladder against the tree unconditionally; U1 is how a project that
-# wants it kept visible afterwards asks for that.
-USAGE_CHECKS = ('U1',)
+# U1 is STOCK-ON, and that was reversed on the milestone review's M2. It was
+# opt-in for one release-day: it adds warning lines to every consumer's
+# `check pm`, and those shapes are grepped (rule 6). But the milestone's
+# northstar is that a project can SEE whether it is using the flow it declared,
+# and an opt-in rule nobody enables answers that question with silence — which
+# is the exact failure the milestone was filed to end. A WARN cannot redden
+# anyone; the output change is the point, not a side effect.
+USAGE_CHECKS = ('U1',)   # named for the family; already in DEFAULT_CHECKS
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -1531,8 +1532,10 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
     `in_progress`" refused on none and on several, and this tree spent a week
     planning two milestones with every cost row silently dropped.
 
-    `order` plus `version_at` answer with exactly one BY CONSTRUCTION — a
-    position in a list is one place — and read no status field to do it.
+    `order` answers with exactly one BY CONSTRUCTION — a position in a list is
+    one place. It does NOT read `[pm] version_at`: that key says which entry
+    the version FILE is graded against, which is a different question, and
+    conflating the two filed cost rows into a shipped milestone's ledger.
 
     The in-progress fallback is deliberate and is recorded as a decision: a
     consumer bumping the pin has a building milestone and no plan yet, and

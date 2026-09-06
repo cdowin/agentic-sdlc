@@ -1,19 +1,9 @@
-"""skills.py — the devkit-writes-its-own-files family of pm verbs.
+"""skills.py — the pm verbs that install devkit-owned files into the consumer.
 
-`cmd_init`, `cmd_install_skills` and `cmd_templates` install devkit-owned
-files INTO the consumer — `repo/install.py`'s concern, not status-verb
-concern — so they live beside each other here and `cli.py` only routes.
-
-The decide/apply/report skeleton deliberately stays a sibling COPY of
-`install.main`'s rather than a shared driver: the two genuinely diverge on
-ownership (install-skills clobbers its own generated file — the
-GUIDANCE_HEADER check — without `--force`; install.main does not), on the
-refusal channel (Refused vs stderr+exit) and on report wording, and a driver
-parameterized over all three reads worse than the two copies. What IS shared
-is everything that must never diverge: the three refusal helpers
-(`install.collision_refusal`, `install.destination_defect`,
-`install.read_destination`) and the diff printer, single-homed in
-`repo/install.py`.
+`cmd_init`, `cmd_install_skills` and `cmd_templates` are
+`repo/install.py`'s concern rather than status verbs, so they live here and
+`cli.py` routes. The refusal helpers and the diff printer are single-homed
+in `repo/install.py`.
 """
 from __future__ import annotations
 
@@ -38,13 +28,9 @@ the tree.
 
 
 def stand_up_tree(cfg: model.PmConfig) -> list[str]:
-    """Create the roadmap dir + its index if absent; return what was created.
-
-    The tree half of `pm init`, split from the guidance half because `init`
-    (the whole-project verb) needs exactly this and NOT the four next-steps
-    below it — two of those four tell an operator to wire what `init` already
-    wired, and guidance that is wrong where it is printed is worse than none.
-    The verb keeps the reporting; this owns the write.
+    """Create the roadmap dir and its index if absent; return what was
+    created. The tree half of `pm init`, kept apart from the guidance half
+    because `init` needs only this.
     """
     plan = apply.Plan()
     index = cfg.roadmap / model.ROADMAP_DOC
@@ -64,12 +50,8 @@ GITATTRIBUTES_HEADER = ('# agentic-sdlc: the pm ledger is append-only, so two '
 
 
 def attribute_pattern(cfg: model.PmConfig) -> str:
-    """The path glob the merge attribute applies to, from the CONFIGURED tree.
-
-    `[pm] roadmap_dir` is a config key, so a literal `pm/roadmap/...` here
-    would be right for the stock layout and silently inert for every project
-    that moved its tree — an attribute that matches nothing looks exactly like
-    one that works, right up to the first merge.
+    """The path glob the merge attribute applies to, from the configured `[pm]
+    roadmap_dir` — a literal would go inert for a moved tree.
     """
     return f'{cfg.roadmap_dir}/*/{ledger.LEDGER_FILE_NAME}'
 
@@ -80,13 +62,9 @@ def attribute_line(roadmap_dir: str) -> str:
 
 
 def _declares(text: str, pattern: str, line: str) -> str:
-    """'exact' | 'other' | '' — what this `.gitattributes` already says.
-
-    'other' is the case worth naming rather than folding into 'absent': a file
-    that declares the SAME pattern with different attributes is a project
-    opinion, and appending ours below it (git's last match wins per attribute)
-    is the non-destructive act — but silently is how a project loses track of
-    which of two lines is in force.
+    """'exact' | 'other' | '' — what this `.gitattributes` already says about
+    the pattern; 'other' is a project opinion to append below, not to fold
+    into absent.
     """
     for raw in text.splitlines():
         stripped = raw.strip()
@@ -100,17 +78,9 @@ def _declares(text: str, pattern: str, line: str) -> str:
 
 
 def install_merge_attribute(cfg: model.PmConfig) -> str:
-    """Make `<roadmap>/*/ledger.jsonl merge=union` true. Returns what happened.
-
-    APPENDS, exactly like `init`'s `.gitignore` write and for the same reason:
-    `.gitattributes` is a file a project already has opinions in, so refusing
-    on a collision would refuse on every repo that has one and overwriting
-    would delete those opinions. Idempotent — the line is added once, and a
-    file already carrying it is not touched at all.
-
-    Without it, two milestone branches appending rows to one ledger meet as a
-    conflict in a file that has no conflicting content: every row on both sides
-    is true, and a hand-resolved JSONL is how rows get dropped.
+    """Make `<roadmap>/*/ledger.jsonl merge=union` true; returns what
+    happened. Appends, like the `.gitignore` write, because the file
+    already holds project opinions; idempotent.
     """
     target = cfg.root / GITATTRIBUTES
     line = attribute_line(cfg.roadmap_dir)
@@ -148,8 +118,7 @@ def install_merge_attribute(cfg: model.PmConfig) -> str:
 
 
 CONFIG_FILE = 'devkit.toml'
-# Above the appended block, so a reader of the file knows which verb put it
-# there and that it is theirs to edit.
+# Above the appended block, so a reader knows which verb put it there.
 FLOW_HEADER = ('# --- the flow — appended by `agentic-sdlc pm init` ----------'
                '------------------\n'
                '# Every state this project uses, each in exactly one of '
@@ -160,20 +129,10 @@ FLOW_HEADER = ('# --- the flow — appended by `agentic-sdlc pm init` ----------
 
 
 def install_flow(cfg: model.PmConfig) -> str:
-    """Make `[pm.states.<kind>]` true in devkit.toml. Returns what happened.
-
-    THE APPEND PATH the flow's review found missing (F2/F3 of
-    docs/reviews/2026-09-05-the-project-declares-its-flow.md): `flow_of`'s
-    refusal names this verb as the one that writes the section, and until
-    now it did not. APPENDS, exactly like `.gitignore` and `.gitattributes`
-    above and for the same reason — devkit.toml is a file a project already
-    has opinions in, so refusing on a collision would refuse every repo that
-    has one and overwriting would delete those opinions. Every other byte is
-    preserved, the file's own line endings included: a CRLF config gets a
-    CRLF block. Idempotent — a tree that already declares its flow is not
-    touched at all (`cfg.flows` is the reader's answer, so a partial or
-    malformed declaration was already refused at load and never reaches
-    here). A missing devkit.toml is created holding the flow alone.
+    """Make `[pm.states.<kind>]` true in devkit.toml; returns what happened.
+    Appends, preserving every other byte and the file's line endings;
+    idempotent, and a missing devkit.toml is created holding the flow
+    alone.
     """
     target = cfg.root / CONFIG_FILE
     if cfg.flows:
@@ -208,10 +167,8 @@ def install_flow(cfg: model.PmConfig) -> str:
 
 
 def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
-    """Stand up a PM tree in a repo that has none, and say what is left to do.
-
-    The FLOW FIRST: it is the one thing every other pm verb refuses without,
-    and the refusal names this command as the one that writes it.
+    """Stand up a PM tree in a repo that has none, flow first, and say what is
+    left to do.
     """
     if args:
         raise Usage(USAGE)
@@ -224,8 +181,8 @@ def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
     _ok(install_merge_attribute(cfg))
     cmd_install_skills(cfg, [])
 
-    # Everything below is the consumer's to wire; printing it beats a README
-    # they have to go find, and it is short enough to paste.
+    # The rest is the consumer's to wire; printing it beats a README they must
+    # find.
     print()
     print('Next, in your own repo:')
     print()
@@ -254,16 +211,8 @@ def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
-    """Write the execution-loop guidance into the consuming repo.
-
-    Installed as a RULE, not a skill file, deliberately: `.claude/rules/*.md`
-    with a `paths:` header auto-load for any agent touching the matched files,
-    while a skill has to be invoked. The execution loop has to reach every
-    agent that edits the PM tree without being asked for.
-
-    Only the loop the CLI itself enforces ships here. Branching, versioning,
-    release ceremony, dispatch, review rosters — the project's own SDLC — stay
-    in the project's own rules, because they differ per repo and always will.
+    """Write the execution-loop guidance into the consuming repo as an
+    auto-loading rule; only what the CLI itself enforces ships here.
     """
     force = False
     diff = False
@@ -278,22 +227,16 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
     from importlib import resources
     from agentic_sdlc import __version__
 
-    # (source markdown, destination). Two delivery modes on purpose:
-    #   rule  — auto-loads for any agent touching the tree; the per-edit loop
-    #           has to arrive unasked or it does not arrive at all.
-    #   skill — invoked deliberately; the operations manual is what you reach
-    #           for when planning or restructuring, not on every edit.
+    # (source markdown, destination): the rule auto-loads on any tree edit; the
+    # skill is invoked deliberately.
     plan = [
         ('pm-execution.md', cfg.root / '.claude' / 'rules' / 'pm-execution.md'),
         ('pm-operations.md',
          cfg.root / '.claude' / 'skills' / 'pm-operations' / 'SKILL.md'),
     ]
-    # Decided for BOTH entries before either is written. A refusal raised
-    # mid-loop installs the first file, refuses the second, and still says
-    # nothing was written — `nothing was written` has to be a claim about the
-    # whole command, the same rule `pm init` follows for renames.
-    # --diff reads and prints, off the SAME helper the install-* verbs use: a
-    # second unified-diff printer would be a second answer to one question.
+    # Decided for both entries before either is written, so "nothing was
+    # written" is true of the whole command; --diff prints off the same helper
+    # the install-* verbs use.
     if diff:
         for name, target in plan:
             body = (resources.files('agentic_sdlc.repo.pm.guidance')
@@ -309,10 +252,8 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
         body = (resources.files('agentic_sdlc.repo.pm.guidance')
                 .joinpath(name).read_text(encoding='utf-8'))
         body = body.replace('{version}', f'v{__version__}')
-        # The same pre-decided discipline as the other two install verbs, from
-        # the same helpers: a destination that is a directory, unwritable, or
-        # undecodable is a refusal naming the path, never a traceback with one
-        # file already on disk behind it.
+        # A directory, unwritable or undecodable destination is a refusal
+        # naming the path, never a traceback with one file already on disk.
         defect = install.destination_defect(target)
         if defect:
             defects.append(f'{cfg.rel(target)} {defect}')
@@ -325,9 +266,7 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
             if existing == body:
                 actions.append(('current', target, body))
                 continue
-            # A file we did not generate — or one somebody edited — is theirs,
-            # not ours. Clobbering it silently is how a project loses a local
-            # decision it made on purpose.
+            # A file we did not generate, or one somebody edited, is theirs.
             if (existing is None
                     or GUIDANCE_HEADER not in existing) and not force:
                 collisions.append(cfg.rel(target))
@@ -342,9 +281,7 @@ def cmd_install_skills(cfg: model.PmConfig, args: list[str]) -> int:
                       + '\nNothing was written. Fix the path(s) and re-run — '
                         'the command is idempotent.')
 
-    # ONE plan: the destinations were decided above, and `core.apply` reports
-    # exactly which of them landed. A loop that decided as it wrote is what
-    # made this verb's twin half-install twice before it was one plan.
+    # One plan: destinations decided above, `core.apply` reports which landed.
     writes = apply.Plan()
     for kind, target, body in actions:
         if kind != 'current':

@@ -2,8 +2,8 @@
 id: 0.3.0/the-ledger-binds-to-the-current-release
 milestone: "0.3.0"
 name: The ledger belongs to the current release, not to the one in-progress milestone
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-the-ledger-binds-to-the-current-release.md
 phase:
 depends_on: ["0.3.0/the-order-is-declared-and-appended"]
 consumed_by: []

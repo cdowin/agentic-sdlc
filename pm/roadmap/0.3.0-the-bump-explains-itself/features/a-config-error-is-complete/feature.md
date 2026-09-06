@@ -2,8 +2,8 @@
 id: 0.3.0/a-config-error-is-complete
 milestone: "0.3.0"
 name: A config error reports every defect, and the flow first
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-a-config-error-is-complete.md
 phase:
 depends_on: []
 consumed_by: []

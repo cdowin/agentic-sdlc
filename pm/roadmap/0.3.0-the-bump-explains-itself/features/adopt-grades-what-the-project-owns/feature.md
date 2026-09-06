@@ -2,8 +2,8 @@
 id: 0.3.0/adopt-grades-what-the-project-owns
 milestone: "0.3.0"
 name: adopt grades the files the project did not claim
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-adopt-grades-what-the-project-owns.md
 phase:
 depends_on: []
 consumed_by: []

@@ -2,8 +2,8 @@
 id: 0.3.0/the-order-is-declared-and-appended
 milestone: "0.3.0"
 name: The order is declared, appended by a verb, and read by the belt
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/0.3.0-the-order-is-declared-and-appended.md
 phase:
 depends_on: ["0.3.0/a-milestone-declares-its-version"]
 consumed_by: []

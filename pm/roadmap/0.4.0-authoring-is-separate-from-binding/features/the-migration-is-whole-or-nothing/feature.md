@@ -5,7 +5,7 @@ name: The tree migrates once, whole, and every rename sweeps its refs
 status: planning
 reviewed:
 phase:
-depends_on: ["0.4.0/identity-lives-in-frontmatter", "0.4.0/the-pools-are-the-tables", "0.4.0/binding-is-a-field", "0.4.0/the-order-is-one-mechanism"]
+depends_on: ["0.4.0/identity-lives-in-frontmatter", "0.4.0/the-pools-are-the-tables", "0.4.0/binding-is-a-field", "0.4.0/the-order-is-one-mechanism", "0.4.0/recording-is-on-or-the-gate-is-red", "0.4.0/every-row-names-its-grain", "0.4.0/telemetry-arrives-with-the-bump"]
 consumed_by: []
 ---
 

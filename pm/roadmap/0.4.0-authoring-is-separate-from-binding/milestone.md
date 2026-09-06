@@ -1,7 +1,7 @@
 ---
 id: "0.4.0"
 name: authoring is separate from binding
-status: planning
+status: building
 depends_on: ["0.3.0"]
 branch: milestone/0.4.0-authoring-is-separate-from-binding
 ---
@@ -58,6 +58,37 @@ because position stops being parentage, the second because it was `add` against 
 different name. Belts sit on top unchanged — their checks, then one write. And the read verbs emit every field somebody
 would filter on, because the shell is the filter and a withheld column is what makes a consumer
 believe otherwise.
+
+## Pre-work — the telemetry, before anything else is built
+
+Four features were added after the milestone opened, and they run FIRST, because everything after
+them should be measured and today nothing is.
+
+The trigger: asked for telemetry on this build, the agent hand-wrote a markdown table while the
+package sat on `pm ledger` — seven row kinds, automatic per-session token and tool-call capture
+off the transcript, and a per-grain spend report. Investigating why turned up that the recording
+had been **off for the whole of 0.3.0 and nobody could tell**.
+
+    recording-is-on-or-the-gate-is-red   a fail-open courier needs a fail-loud gate; there is none
+    every-row-names-its-grain            hook rows carry no `grain:`, so nothing attributes
+    the-surface-says-telemetry           the word "telemetry" is in no discovery surface at all
+    telemetry-arrives-with-the-bump      settings.json is printed, never written — so a consumer
+                                         bumps to 0.4.0 and records nothing, as this tree did
+
+They belong in THIS milestone rather than a later one for two reasons. The first is ordinary: the
+migration is the riskiest work here and it should be the best-measured thing this package has ever
+done — so `the-migration-is-whole-or-nothing` depends on them, and the numbers for it will exist.
+
+The second is that they are the same defect. `every-row-names-its-grain` is a binding — a row's
+membership in a grain — that is today neither a field nor derived, but absent; that is the
+northstar with a different noun. And `the-surface-says-telemetry` is the fourth instance of the
+shape `the-read-verbs-compose` already named twice: a capability that shipped, and a surface that
+did not admit to it at the moment of need. Four instances is a class, and this milestone is where
+it gets stated once instead of rediscovered.
+
+**Write-once, use-many.** These fix this tree; only the fourth makes them reach NullBound,
+godot-devkit and whatever bumps next. A telemetry feature that lands here and not downstream has
+solved the wrong half.
 
 ## Ship criterion
 

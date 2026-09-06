@@ -2,9 +2,9 @@
 id: 0.2.0/bugs/the-gate-census-column-is-always-absent
 milestone: "0.2.0"
 name:
-status: fixed
+status: closed
 caught_in: "0.2.0"
-fix_milestone: "0.3.0"
+fix_milestone: 0.2.0
 caused_by: 0.2.0/every-gate-reports-its-cost
 ---
 

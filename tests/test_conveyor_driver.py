@@ -90,7 +90,7 @@ def test_every_check_runs_and_prints_one_line_and_a_false_one_stops_the_write():
         '[release] error: b: b fails',
         '[release] unverifiable: c: c unknown',
         '[release] ok: d — d holds',
-        '[release] error — 2 check(s) false; nothing written',
+        '[release] error — 2 check(s) false; no status written',
     ]
 
 
@@ -174,7 +174,7 @@ def test_a_ConfigError_at_a_check_is_exit_2_and_nothing_after_it_runs_or_writes(
     assert result.refused.startswith("check 'b': [release.version_files]")
     assert asked == [] and writer.calls == []
     assert result.lines[0] == '[release] ok: a — a holds'
-    assert result.lines[-1].endswith('nothing written')
+    assert result.lines[-1].endswith('no status written')
 
 
 def test_an_empty_list_or_an_unknown_name_is_exit_2_not_ok():

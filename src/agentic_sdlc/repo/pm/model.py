@@ -59,7 +59,7 @@ class Flow:
 # reader assumes. It is the only place in this package a state word is spelled;
 # each kind seeds only the states its belt writes, plus `obe` in `done`
 # wherever work can be abandoned. `LIFECYCLE`, `BUILDING` and `REVIEWING`
-# survive for `conveyor/steps.py`.
+# survive for the frozen dispatch-snapshot keys in `pm/cli.py` (D7).
 LIFECYCLE = ('planning', 'ready', 'building', 'reviewing', 'accepted',
              'packaging', 'done')
 BUILDING = LIFECYCLE[2]

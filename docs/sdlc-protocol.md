@@ -40,7 +40,7 @@ tree, in CI and pre-push.
 | 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version; read, never bumped. |
 | 7 | `gate` | `make milestone` | the configured gate command exits 0. |
 
-**Then, all true:** the milestone's status → the first state of `[pm.states.milestone] done` (`pm vocabulary` prints it), through `pm milestone <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
+**Then, all true:** the milestone's status → the first state of `[pm.states.milestone] done` (`pm vocabulary` prints it), through `pm milestone <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, no status written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
 **Yours, after the write** (printed as `next:` lines):
 
@@ -81,7 +81,7 @@ tree, in CI and pre-push.
 | 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits. |
 | 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
 
-**Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
+**Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, no status written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
 **Yours, after the write** (printed as `next:` lines):
 
@@ -93,10 +93,11 @@ tree, in CI and pre-push.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `stories-done` | `agentic-sdlc pm ready-for feature <id>` *(shipped)* | `pm ready-for feature <id>` exits 0 — every story under this feature is in the `done` category. |
-| 2 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block parses. |
-| 3 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open`. |
+| 2 | `feature-verified` | `agentic-sdlc verify --feature` *(shipped)* | `agentic-sdlc verify --feature` exits 0; not in the shipped list, add it to `[feature] steps`. |
+| 3 | `review-recorded` | — *(reads the tree)* | the feature's `reviewed:` record exists, is repo-relative, and its verdict block parses. |
+| 4 | `findings-landed` | — *(reads the tree)* | no finding in that record sits at `disposition: open`. |
 
-**Then, all true:** the feature's status → the first state of `[pm.states.feature] done` (`pm vocabulary` prints it), through `pm feature <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, nothing written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
+**Then, all true:** the feature's status → the first state of `[pm.states.feature] done` (`pm vocabulary` prints it), through `pm feature <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, no status written. `--force` writes anyway and the ledger's `deviation` row names the false checks.
 
 **Yours, after the write** (printed as `next:` lines):
 

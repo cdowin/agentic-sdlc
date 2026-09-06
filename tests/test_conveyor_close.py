@@ -165,7 +165,7 @@ def test_the_driver_runs_four_operations_and_the_cli_routes_three_verbs():
     assert steps.DEFAULT_STORY_STEPS == (
         'story-exists', 'story-verified', 'committed', 'evidence-written')
     assert steps.DEFAULT_FEATURE_STEPS == (
-        'stories-done', 'review-recorded', 'findings-landed')
+        'stories-done', 'feature-verified', 'review-recorded', 'findings-landed')
 
 
 # --- criterion 1: one false check → error line, exit 1, byte-identical --------
@@ -183,8 +183,8 @@ def test_a_false_check_is_named_exit_1_and_nothing_is_written(capsys):
     lines = out.strip().split('\n')
     assert '[story] error: evidence-written:' in out, out
     assert lines[-1].startswith('[story] error — '), lines[-1]
-    assert 'nothing written' in lines[-1]
-    assert 'next:' not in out, 'the after-list printed with nothing written'
+    assert 'no status written' in lines[-1]
+    assert 'next:' not in out, 'the after-list printed with no status written'
     # ONE line per check, every check asked, even after the first false one.
     for name in steps.DEFAULT_STORY_STEPS:
         assert sum(1 for line in lines
@@ -236,7 +236,7 @@ def test_close_story_runs_the_story_rung_and_reports_its_exit(capsys):
     a commit range or a path census the rung no longer has. `story-verified`
     is `verify --story` — the make target `[verify] story` names, run the way
     `feature-verified` runs its own rung — and a `unit` that exits 1 is one
-    `error:` line and nothing written. (The green half is the all-true case
+    `error:` line and no status written. (The green half is the all-true case
     above, which asserts the same check's `ok:` line.)"""
     with tree({'Makefile': RED_MAKEFILE}) as root:
         before = snapshot(root)

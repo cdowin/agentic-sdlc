@@ -5,7 +5,7 @@
 one line — `ok: <check> — <detail>`, `error: <check>: <what is false>` or
 `unverifiable: <check>: <why>` (counts as false) — then: all true → the
 grain's status is set to the first state of `[pm.states.<kind>] done`, exit 0;
-any false → nothing written, exit 1; `--force` → the write anyway and a
+any false → no status written, exit 1; `--force` → the write anyway and a
 ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2
 is a declaration this machine could not read (D11). What the caller does next
 is printed as `next:` lines; nothing else is written, moved, pushed or tagged.
@@ -204,7 +204,7 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         except ConfigError as err:
             # D11: the reader failed at this check; nothing after it runs.
             refused = f'check {name!r}: {err}'
-            lines.append(f'[{op}] error — {refused}; nothing written')
+            lines.append(f'[{op}] error — {refused}; no status written')
             return Result(tuple(lines), tuple(n for n, _ in false), '', 2,
                           refused)
         if answer.is_true:
@@ -222,8 +222,8 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         false.append((name, reason))
     names_false = tuple(n for n, _ in false)
     if false and not force:
-        lines.append(f'[{op}] error — {len(false)} check(s) false; nothing '
-                     f'written')
+        lines.append(f'[{op}] error — {len(false)} check(s) false; '
+                     f'no status written')
         return Result(tuple(lines), names_false, '', 1)
     if not state:
         # adopt: checks only. `--force` was refused before this point.
@@ -236,7 +236,7 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
     if said:
         lines.append(f'[{op}] write: {said}')
     if not landed:
-        lines.append(f'[{op}] error — the write was refused; nothing written')
+        lines.append(f'[{op}] error — the write was refused; no status written')
         return Result(tuple(lines), names_false, '', 1)
     if false:
         lines.append(f'[{op}] forced — {ctx.version} → {state} over '
@@ -268,7 +268,7 @@ One line per check — `ok: <check> — <detail>`, `error: <check>: <what is
 false>`, or `unverifiable: <check>: <why>` (counts as false) — then one of:
 
     [{state}] ok — <grain> → <state>
-    [{state}] error — N check(s) false; nothing written
+    [{state}] error — N check(s) false; no status written
     [{state}] forced — <grain> → <state> over N false check(s)
 
 and, after a write, `next:` lines saying what is yours to do. Nothing else
@@ -293,7 +293,7 @@ to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
            named, by `pm ready-for feature`); `reviewed:` points at a record
            that parses; no finding in it is `open`.
 
-Any check false → `error:` lines, exit 1, nothing written. `--force` writes
+Any check false → `error:` lines, exit 1, no status written. `--force` writes
 anyway and the ledger row names the false checks. `agentic-sdlc {CLOSE_VERB}
 story --help` prints the full line shapes. The belt above these two is
 `agentic-sdlc release <version>`.\

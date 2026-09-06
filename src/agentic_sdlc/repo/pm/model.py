@@ -14,7 +14,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
-from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
                                        section_declared, flag, str_tuple,
                                        str_tuple_table, text)
@@ -124,16 +124,40 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
     return ''
 
 
-# D8/D9/D10 encode branch-per-milestone / bump-at-start and are OFF by default;
-# a trunk-shipping project is not drifting. D10 is stricter than D9.
+# D9/D10 encode branch-per-milestone and are OFF by default; a trunk-shipping
+# project is not drifting. D10 is stricter than D9. R5 is off for the same
+# reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
                   'V1', 'V2', 'V3', 'V4', 'V5')
-FLOW_CHECKS = ('D8', 'D9', 'D10')
+# D7 (a declared state no grain has ever held) is OPT-IN, like every other
+# flow-shaped rule. It is a WARN and could not redden anyone, but stock-on it
+# adds three lines to every consumer's `check pm` output, and those line shapes
+# are grepped (rule 6). The place a project MEETS this fact is `pm init`, which
+# prints the ladder against the tree unconditionally; D7 is how a project that
+# wants it kept visible afterwards asks for that.
+USAGE_CHECKS = ('D7',)
+# D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
+# version and RETIRED into R5, which grades against a position in `order`.
+FLOW_CHECKS = ('D9', 'D10')
+# The release family: the plan and the tree held to each other. Opt-in, because
+# a tree with no plan yet has nothing for them to grade.
+RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
 # generated view going stale is not a defect in the tree.
 VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
 KNOWN_CHECKS = tuple(dict.fromkeys(
-    DEFAULT_CHECKS + FLOW_CHECKS + VALIDATE_CHECKS))
+    DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
+    + VALIDATE_CHECKS))
+
+# A rule id that WAS shipped and is not any more. Reported by name, never as
+# "unknown": a consumer whose config still lists it is told where the rule
+# went, rather than being silently ungated by a typo-shaped message.
+RETIRED_CHECKS = {
+    'D8': 'became R5 — the version file is graded against the CURRENT entry in '
+          'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
+          'against the id of whichever milestone happens to be in progress. '
+          'D8 welded the version to the id; `version:` separates them',
+}
 
 ARCHIVE_DIR_NAME = 'zz_archive'
 
@@ -146,8 +170,24 @@ REVIEW_FILE_NAME = 'review.md'
 HANDOFF_FILE_NAME = 'handoff.md'
 # The id<->path convention is this module's, so the names are spelled here
 # once.
+# The plan: `order` is a declared sequence of versions, not a sort. It lives in
+# the roadmap dir beside the milestones it sequences, and it is grain-shaped so
+# the byte-preserving frontmatter writer can edit it (0.3.0).
+RELEASES_DOC = 'releases.md'
+ORDER_KEY = 'order'
+
+# R5: which entry in `order` the version file must match. `start` is
+# bump-at-START (the first entry not yet shipped) and the seed default;
+# `ship` is bump-at-CLOSE (the last entry that has).
+VERSION_AT_START = 'start'
+VERSION_AT_SHIP = 'ship'
+VERSION_AT_CHOICES = (VERSION_AT_START, VERSION_AT_SHIP)
+
 MILESTONE_DOC = 'milestone.md'
 FEATURE_DOC = 'feature.md'
+# Retired in 0.3.0: `pm roadmap` derives the live index and `releases.md`
+# `order` carries what outlives a retired milestone. The NAME stays so a tree
+# that still has the file is recognised rather than walked as a grain.
 ROADMAP_DOC = 'ROADMAP.md'
 # The slot directories, spelled once: a grain's kind is read from which slot
 # its document sits in.
@@ -219,11 +259,14 @@ class PmConfig:
     story_states: tuple[str, ...] = ()
     bug_states: tuple[str, ...] = ()
     checks: tuple[str, ...] = DEFAULT_CHECKS
-    # D8 only: where the shipped version lives, and the line that carries it.
-    # Both halves are configurable.
+    # R5 and `version-sync`: where the shipped version lives, and the line
+    # that carries it. Both halves are configurable.
     template_dir: str = ''
     version_file: str = 'pyproject.toml'
     version_pattern: str = r'^version = "(.*)"$'
+    # R5 only: which milestone in the declared `order` the version file is
+    # graded against. Never a parse — a position in a list.
+    version_at: str = VERSION_AT_START
     # What the project declared, per kind; empty is the absence itself, which
     # `flow_of` turns into a refusal naming the fix (hard rule 5: a workflow
     # ships no default).
@@ -283,6 +326,16 @@ def load() -> PmConfig:
             'the markdown (a template can change a grain\'s whole shape, not '
             'just its frontmatter defaults)')
 
+    # A position, not a parse. An unknown value is exit 2 rather than a
+    # silent fallback to `start`, which would grade against the wrong entry.
+    version_at = text(sect, 'pm', 'version_at', VERSION_AT_START)
+    if version_at not in VERSION_AT_CHOICES:
+        raise ConfigError(
+            f'[pm] version_at must be one of '
+            f'{" ".join(VERSION_AT_CHOICES)}, got {version_at!r} — '
+            f'{VERSION_AT_START!r} is the first entry in `order` that has not '
+            f'shipped (bump at start), {VERSION_AT_SHIP!r} the last that has')
+
     flows = _load_flows(sect)
 
     return PmConfig(
@@ -301,8 +354,23 @@ def load() -> PmConfig:
         template_dir=relpath(sect, 'pm', 'template_dir', ''),
         version_file=text(sect, 'pm', 'version_file', 'pyproject.toml'),
         version_pattern=version_pattern,
+        version_at=version_at,
         flows=flows,
     )
+
+
+def reload() -> PmConfig:
+    """`load()` against the file as it is NOW, caches dropped.
+
+    For the one caller that WROTE devkit.toml in this process and then has to
+    read it back: `pm init` appends the flow and then reports what it means
+    against the tree. The cache lives in `core.project`, and this module is the
+    one place in `repo/` that may reach it — every other reader goes through the
+    guards in `core/config.py`.
+    """
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    return load()
 
 
 def _order_of(flows: dict[str, Flow], kind: str) -> tuple[str, ...]:
@@ -525,13 +593,80 @@ RETIRED_SECTIONS = {
 }
 
 
+def missing_flow_defect(sect: dict | None = None) -> str:
+    """The one defect that stops every work-moving verb, or ''.
+
+    Read straight off `[pm.states.*]` rather than off a loaded config, because
+    a config that failed to load for some OTHER reason must still be able to
+    report this one — that ordering is the whole feature.
+    """
+    section = config_section('pm') if sect is None else sect
+    states = section.get('states')
+    declared = [k for k in FLOW_KINDS
+                if isinstance(states, dict) and k in states]
+    if len(declared) == len(FLOW_KINDS):
+        return ''
+    absent = [k for k in FLOW_KINDS if k not in declared]
+    return (f'this tree declares no flow: '
+            f'{", ".join(f"[pm.states.{k}]" for k in absent)} '
+            f'{"is" if len(absent) == 1 else "are"} not in devkit.toml, and '
+            f'there is no default — the states are how THIS project works, so '
+            f'the engine reads them and never assumes them (CLAUDE.md hard '
+            f'rule 5). Run `agentic-sdlc pm init` to write them; it appends to '
+            f'a devkit.toml it did not create and rewrites nothing.')
+
+
+def all_config_defects(sect: dict | None = None) -> list[str]:
+    """EVERY defect in `[pm]`, flow first — not the first one encountered.
+
+    A real adoption is wrong in more than one way at once, and reporting one
+    defect per run makes the consumer pay a round trip to learn the next. The
+    ORDER is the point: a retired key is cosmetic and a missing flow stops
+    every work-moving verb in the package, and the tree that motivated this was
+    told about the retired key.
+    """
+    section = config_section('pm') if sect is None else sect
+    out: list[str] = []
+
+    flow = missing_flow_defect(section)
+    if flow:
+        out.append(flow)
+
+    for key in VOCABULARY_KEYS:
+        if key in section:
+            out.append(f'[pm] {key} was retired and is refused — '
+                       f'{RETIRED_KEYS[key]}. Remove the key.')
+
+    # Everything `load()` refuses, collected rather than raised at the first.
+    try:
+        load()
+    except ConfigError as err:
+        said = str(err)
+        if said not in out and not any(said in seen for seen in out):
+            out.append(said)
+    else:
+        # `load()` succeeded, so the stale-rule and retired-key sweep is the
+        # only reader left with anything to say.
+        try:
+            out.extend(m for m in config_complaints(load(), section)
+                       if m not in out)
+        except ConfigError:
+            pass
+    return out
+
+
 def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     """Everything `[pm]` names that this package does not ship — a stale rule
     id or a retired key — empty when clean. Raised by the gates, not by
     `load()`, so a pin bump cannot take `pm status` down.
     """
     out: list[str] = []
-    unknown = [c for c in cfg.checks if c not in KNOWN_CHECKS]
+    for check in cfg.checks:
+        if check in RETIRED_CHECKS:
+            out.append(f'[pm] checks names {check}, which was retired — '
+                       f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+    unknown = [c for c in cfg.checks
+               if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
     if unknown:
         out.append(f'[pm] checks names unknown rule(s) {", ".join(unknown)} — '
                    f'known rules are {" ".join(KNOWN_CHECKS)}')
@@ -615,6 +750,47 @@ def unquote(value: str) -> str:
     return value
 
 
+# A block-style list is the only non-scalar frontmatter this package reads:
+# `order` is edited constantly and reordering is the main edit, so one entry per
+# line keeps a diff showing what MOVED, where an inline `[a, b, c]` rewrites the
+# whole line.
+_LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
+
+
+def list_field_of(path: Path, key: str) -> list[str]:
+    """Block-style list under `key` in the leading frontmatter, or [].
+
+    `key:` must carry nothing but a comment on its own line; a scalar on it is
+    a different shape and reads as no list at all, never as a one-element one.
+    """
+    try:
+        lines = _split(read_raw(path))
+    except (OSError, UnicodeDecodeError):
+        return []
+    bounds = _fence_bounds(lines)
+    if bounds is None:
+        return []
+    open_i, close_i = bounds
+    for i in range(open_i + 1, close_i):
+        if not lines[i].startswith(f'{key}:'):
+            continue
+        rest = lines[i][len(key) + 1:].strip()
+        if rest and not rest.startswith('#'):
+            return []
+        out: list[str] = []
+        for line in lines[i + 1:close_i]:
+            if not line.strip():
+                # Spacing a long plan is the obvious thing a human does to it;
+                # truncating there would drop every entry below the gap.
+                continue
+            m = _LIST_ITEM.match(line)
+            if m is None:
+                break
+            out.append(unquote(m.group('value')))
+        return out
+    return []
+
+
 def set_field(path: Path, key: str, value: str) -> bool:
     """Set-or-insert one frontmatter scalar, preserving every other byte;
     False without writing when there is no frontmatter block or the write
@@ -647,6 +823,77 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
             close_i += 1
     try:
         write_raw(path, '\n'.join(lines))
+    except OSError:
+        return False
+    return True
+
+
+def set_list_field(path: Path, key: str, values: list[str]) -> bool:
+    """Rewrite the block list under `key`, preserving every other byte.
+
+    The list-aware sibling to `set_field`. `order` is edited constantly — every
+    ship, insertion and re-sequence — so this is the writer that has to be
+    byte-honest: a diff that shows what MOVED is the whole reason the plan is a
+    grain and not TOML.
+
+    The file's own conventions are kept rather than normalised: the indent and
+    the quote character come from the first item already there, so a hand-edited
+    plan is not reformatted underneath its author. An empty `values` leaves the
+    key with no items, which is a plan that declares nothing — never the key's
+    deletion, because a caller that wanted the key gone would say so.
+    """
+    try:
+        text = read_raw(path)
+    except (OSError, UnicodeDecodeError):
+        return False
+    lines = _split(text)
+    bounds = _fence_bounds(lines)
+    if bounds is None:
+        return False
+    open_i, close_i = bounds
+
+    key_i = None
+    for i in range(open_i + 1, close_i):
+        if lines[i].startswith(f'{key}:'):
+            rest = lines[i][len(key) + 1:].strip()
+            if rest and not rest.startswith('#'):
+                # A scalar sits there. Rewriting it as a block would be this
+                # writer deciding the file meant something else.
+                return False
+            key_i = i
+            break
+
+    indent, quote, eol = '  ', '"', ''
+    if key_i is None:
+        # A plan that has no `order` yet: mint the key at the end of the block.
+        eol = _eol(lines[close_i])
+        key_i = close_i
+        head = [f'{key}:{eol}']
+        tail_from = close_i
+    else:
+        eol = _eol(lines[key_i])
+        end_i = key_i
+        for j in range(key_i + 1, close_i):
+            m = _LIST_ITEM.match(lines[j])
+            if m is None:
+                break
+            if end_i == key_i:
+                # Copy the file's own shape off its first item.
+                raw = lines[j]
+                indent = raw[:len(raw) - len(raw.lstrip(' \t'))]
+                value = m.group('value')
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                    quote = value[0]
+                else:
+                    quote = ''
+            end_i = j
+        head = [lines[key_i]]
+        tail_from = end_i + 1
+
+    items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
+    rewritten = lines[:key_i] + head + items + lines[tail_from:]
+    try:
+        write_raw(path, '\n'.join(rewritten))
     except OSError:
         return False
     return True
@@ -952,7 +1199,7 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     return None
 
 
-# --- flow helpers (D8/D9/D10, and the ledger's home) --------------------------
+# --- flow helpers (D9/D10, and the ledger's home) -----------------------------
 def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     """(id, branch, milestone.md) for every active milestone in `in_progress`.
     There is no "the building milestone" (D5): readers report over every
@@ -993,6 +1240,198 @@ def shipped_version(cfg: PmConfig) -> str | None:
     except (OSError, UnicodeDecodeError):
         return None
     return None
+
+
+# --- the plan: a declared order of versions, and the grain that claims each ---
+# Nothing here parses, compares or increments a version string. "Did it
+# increase" is a POSITION in `order`; `"1.1.1"` and `"cow"` are equally valid.
+def releases_file(cfg: PmConfig) -> Path:
+    """`pm/roadmap/releases.md` — the plan. Absent until `pm order` writes it."""
+    return cfg.roadmap / RELEASES_DOC
+
+
+def plan_defect(cfg: PmConfig) -> str | None:
+    """Why `releases.md` cannot be read as a plan, or None.
+
+    An ABSENT plan is not a defect — a tree mid-adoption has none. A plan that
+    is THERE and unreadable is: reporting "declares no `order`" over a
+    BOM-damaged, fence-eaten, misspelled or undecodable file is rule 4's first
+    cardinal sin, a gate passing over what it did not measure.
+    """
+    path = releases_file(cfg)
+    if not path.is_file():
+        return None
+    try:
+        text = read_raw(path)
+    except (OSError, UnicodeDecodeError) as err:
+        return f'could not be read as UTF-8 text ({err.__class__.__name__})'
+    lines = _split(text)
+    if _fence_bounds(lines) is None:
+        opens = bool(lines) and _FENCE.match(lines[0]) is not None
+        return ('has an opening `---` with no closing one'
+                if opens else
+                'has no frontmatter block — the plan is a grain, and `order` '
+                'lives in its frontmatter')
+    open_i, close_i = _fence_bounds(lines)
+    for i in range(open_i + 1, close_i):
+        if not lines[i].startswith(f'{ORDER_KEY}:'):
+            continue
+        rest = lines[i][len(ORDER_KEY) + 1:].strip()
+        if rest and not rest.startswith('#'):
+            return (f'`{ORDER_KEY}:` carries a scalar ({rest!r}) rather than a '
+                    f'block list — one `- "<version>"` per line')
+        return None
+    return (f'declares no `{ORDER_KEY}:` key — the file is there, so this is a '
+            f'plan that lost its list rather than a tree that has none')
+
+
+def declared_order(cfg: PmConfig) -> list[str]:
+    """The declared sequence of versions, or [] when the tree has no plan."""
+    return list_field_of(releases_file(cfg), ORDER_KEY)
+
+
+def milestone_version(cfg: PmConfig, mid: str) -> str:
+    """The version a milestone declares it ships as, or '' — it is optional,
+    and a milestone without one is BACKLOG, never a finding (R2).
+    """
+    mfile = milestone_file(cfg, mid)
+    return field_of(mfile, 'version') if mfile is not None else ''
+
+
+def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
+    """(version, milestone id) for every milestone that declares one, in tree
+    order. A list rather than a dict: R3 asks whether two milestones claim the
+    same version, and a dict would have eaten the duplicate.
+    """
+    out = []
+    for mdir, mid in known_milestones(cfg):
+        version = field_of(mdir / MILESTONE_DOC, 'version')
+        if version:
+            out.append((version, mid))
+    return out
+
+
+def milestones_of_version(cfg: PmConfig, version: str) -> list[str]:
+    """Every milestone claiming `version`, in tree order.
+
+    A list, because two milestones claiming one version is a real tree defect
+    (R3) and answering with the first would make the verdict depend on a
+    directory NAME.
+    """
+    return [mid for claimed, mid in version_claims(cfg) if claimed == version]
+
+
+def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
+    """The one milestone claiming `version`, or None when none or several do."""
+    claimants = milestones_of_version(cfg, version)
+    return claimants[0] if len(claimants) == 1 else None
+
+
+def release_is_shipped(cfg: PmConfig, version: str) -> bool:
+    """Has the one milestone claiming `version` finished?"""
+    mid = milestone_of_version(cfg, version)
+    if mid is None:
+        return False
+    mfile = milestone_file(cfg, mid)
+    if mfile is None:
+        return False
+    return category_of(cfg, 'milestone', field_of(mfile, 'status')) == DONE_CATEGORY
+
+
+def release_is_unverifiable(cfg: PmConfig, version: str) -> bool:
+    """Can this entry's state not be established from the tree?
+
+    Two shapes, and neither may be read as "not shipped": a milestone that was
+    RETIRED (its record deleted, though the work shipped) and one that has not
+    been written yet look identical from here, and so does a version two
+    milestones both claim. Calling any of them unshipped is what made `pm
+    retire` roll the current release BACKWARD and demand a version regression.
+    """
+    return len(milestones_of_version(cfg, version)) != 1
+
+
+def last_shipped_index(cfg: PmConfig) -> int:
+    """Position of the last entry in `order` whose milestone is `done`, or -1.
+
+    "Behind us" is a POSITION, which is the whole reason order is declared: no
+    comparator is asked whether 0.90.10 follows 0.90.4.
+    """
+    order = declared_order(cfg)
+    last = -1
+    for i, version in enumerate(order):
+        if release_is_shipped(cfg, version):
+            last = i
+    return last
+
+
+def current_release(cfg: PmConfig) -> str | None:
+    """The version this tree is at, by POSITION in `order` — the first entry
+    not yet shipped under `version_at = "start"`, the last that has under
+    `"ship"`. None when the tree declares no order, or when the position it
+    names does not exist (everything shipped / nothing has).
+
+    Unlike "the one milestone in progress" this cannot be SEVERAL — a position
+    in a list is one place. It can be None, and it does read `status`, one call
+    away in `release_is_shipped`; what it never does is read a version string
+    as a structure.
+    """
+    order = declared_order(cfg)
+    if not order:
+        return None
+    if cfg.version_at == VERSION_AT_START:
+        for version in order:
+            if release_is_shipped(cfg, version):
+                continue
+            if release_is_unverifiable(cfg, version):
+                # Cannot be established, so it is not answered: a retired
+                # milestone's entry is history, and guessing it is the future
+                # grades the tree against a version regression.
+                continue
+            return version
+        return None
+    shipped = [v for v in order if release_is_shipped(cfg, v)]
+    return shipped[-1] if shipped else None
+
+
+def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
+    """(the milestone directory holding the current release's ledger, or None,
+    plus why not).
+
+    **Gate cost is a fact about a RUN**, and the run happened whether or not
+    anybody had flipped a status. Binding the ledger to "the one milestone in
+    `in_progress`" refused on none and on several, and this tree spent a week
+    planning two milestones with every cost row silently dropped.
+
+    `order` plus `version_at` answer with exactly one BY CONSTRUCTION — a
+    position in a list is one place — and read no status field to do it.
+
+    The in-progress fallback is deliberate and is recorded as a decision: a
+    consumer bumping the pin has a building milestone and no plan yet, and
+    refusing every cost row on the bump would be a breaking change wearing a
+    minor version. A tree with neither is refused naming `pm order`, which is
+    then the one honest reason left.
+    """
+    version = current_release(cfg)
+    if version is not None:
+        mid = milestone_of_version(cfg, version)
+        mdir = milestone_dir(cfg, mid) if mid else None
+        if mdir is not None:
+            return mdir, ''
+        return None, (f'the current release {version} is claimed by no '
+                      f'milestone directory in {cfg.roadmap_dir} — '
+                      f'`agentic-sdlc pm roadmap` shows the plan against the '
+                      f'tree')
+    live = in_progress_milestones(cfg)
+    if len(live) == 1:
+        return live[0][2].parent, ''
+    if not declared_order(cfg):
+        return None, (f'{cfg.rel(releases_file(cfg))} declares no `order`, so '
+                      f'there is no current release to file against — '
+                      f'`agentic-sdlc pm order --append <version>` writes the '
+                      f'plan')
+    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped '
+                  f'(or none has, under [pm] version_at = {cfg.version_at!r}), '
+                  f'so there is no current release to file against')
 
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
@@ -1125,6 +1564,37 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
                 out.append((bfile, f'bug status {bstat!r} is not in '
                                    f'({" ".join(flow_of(cfg, "bug").order)})'))
     return out, scanned
+
+
+def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
+    """Per kind, how many grains hold each DECLARED state — zero included.
+
+    D4 asks "is this word declared", never "is this word used", so a tree using
+    two of eight states is indistinguishable, to every gate, from one using all
+    eight. That is how a project adopted the conveyor as a CONFIG FIX and never
+    noticed: `building`, `reviewing`, `accepted` and `packaging` appeared zero
+    times across 85 grains, and every gate was green the whole time.
+    """
+    used: dict[str, dict[str, int]] = {
+        kind: {state: 0 for state in flow.order}
+        for kind, flow in cfg.flows.items()
+    }
+
+    def count(kind: str, status: str) -> None:
+        bucket = used.get(kind)
+        # An undeclared word is D4's finding, not this census's business.
+        if bucket is not None and status in bucket:
+            bucket[status] += 1
+
+    for mdir in milestone_dirs(cfg):
+        count('milestone', field_of(mdir / MILESTONE_DOC, 'status'))
+        for bf in bug_files(mdir):
+            count('bug', field_of(bf, 'status'))
+        for ff in feature_files(mdir):
+            count('feature', field_of(ff, 'status'))
+            for sf in story_files(ff):
+                count('story', field_of(sf, 'status'))
+    return used
 
 
 def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:

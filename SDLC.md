@@ -57,7 +57,11 @@ Exit `0` ready · `1` not, naming every blocker · `2` usage or config. Honesty 
 - never touch `pm/roadmap/`; never edit shared docs — README / CHANGELOG wording is returned as
   **PROPOSED** text;
 - ship, with every fix, a test that **failed at HEAD**;
-- run **scoped** verification only, never the full gate.
+- run **scoped** verification only, never the full gate — and *scoped* means a
+  TIER TARGET, never a bare `pytest <file>`: selecting a module by path collects
+  every tier in it, including the cases that spawn real processes, which is how
+  one builder's "quick check" saturates the machine every other builder shares.
+  A builder that believes it needs a wide gate reports and stops.
 
 **The orchestrator:**
 
@@ -90,6 +94,11 @@ Every roster agent carries `model:` and `effort:`; **effort tracks judgment unde
 ## 4. Token economy
 
 - **Builders run scoped test slices only;** one full-gate run per landing point, the orchestrator's.
+  This is ENFORCED, not asked: outside the spawning tier a subprocess fails the
+  test that made it, by nodeid (`tests/conftest.py`). The static mark reads a
+  module's source and cannot see a spawn reached four frames down — which is how
+  the full matrix gate once ran inside `make unit`, taking it from 7 s to 153 s
+  with nothing saying why.
 - **Reports are evidence + deltas** plus what was NOT verified; gate output only when it FAILED.
 - **Reports are capped** at roughly a screenful of findings; artifacts ride in files.
 - **Every report ends with its token cost**, so an over-budget dispatch is visible in time.

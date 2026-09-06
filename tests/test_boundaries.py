@@ -773,3 +773,141 @@ def test_no_module_reads_its_config_at_import_time():
         'config read at import — the value is bound to whichever repo imported '
         'the module FIRST, and a malformed section in any later one stops '
         'raising:\n  ' + '\n  '.join(offenders))
+
+
+class NoCodePathParsesAVersion(unittest.TestCase):
+    """0.3.0: order is a DECLARED list, so the engine never reads a version
+    string as a structure.
+
+    The claim `a-milestone-declares-its-version` makes to consumers is that
+    `"1.1.1"` and `"cow"` are equally valid — scheme-agnosticism as a
+    consequence of ordering by position rather than as a promise. A comparator
+    creeping back in would break every tree whose versions are not semver
+    (`0.90.3.2` is the real one that motivated this), and it would do it
+    silently, by sorting wrong rather than by raising.
+
+    This is a source-shaped gate because the behaviour it protects is an
+    ABSENCE, and an absence has no call site to assert against.
+    """
+
+    # Everything that turns a version string into something ordered or numeric.
+    _PARSERS = (
+        'packaging', 'pkg_resources', 'distutils', 'LooseVersion',
+        'StrictVersion', 'parse_version', 'version_tuple', 'VERSION_RE',
+    )
+
+    def test_no_module_imports_a_version_comparator(self):
+        offenders = []
+        for rel, path in _sources():
+            tree = _tree(path)
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or '']
+                for name in names:
+                    root = name.split('.')[0]
+                    if root in self._PARSERS:
+                        offenders.append(f'{rel}: imports {name}')
+        self.assertEqual(
+            [], offenders,
+            'a version comparator was imported — order is a POSITION in '
+            '`order`, and a comparator cannot sort `0.90.3.2` anyway')
+
+    def test_the_release_helpers_never_split_a_version_into_components(self):
+        """The modules that HANDLE versions do not take one apart.
+
+        Scoped to the release surface rather than to all of `src`: `.split('.')`
+        is how every module reads a dotted grain id, and a repo-wide ban would
+        be a gate nobody could keep green. The census floor below is what keeps
+        the narrowing honest.
+        """
+        surface = {
+            'repo/pm/model.py': ('releases_file', 'declared_order',
+                                 'milestone_version', 'version_claims',
+                                 'milestone_of_version', 'release_is_shipped',
+                                 'release_is_unverifiable', 'current_release',
+                                 # Review F4: the two likeliest regrowth sites.
+                                 # Both READ a version out of a file, which is
+                                 # one step from taking one apart.
+                                 'shipped_version'),
+            'repo/checks/pm.py': ('_release_findings',),
+            'repo/conveyor/steps.py': ('check_version_sync', '_version_in'),
+        }
+        by_rel = {rel: path for rel, path in _sources()}
+        offenders, scanned = [], 0
+        for rel, wanted in surface.items():
+            self.assertIn(rel, by_rel, f'{rel} moved — this gate now scans nothing')
+            found = {n.name: n for n in ast.walk(_tree(by_rel[rel]))
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            for name in wanted:
+                self.assertIn(name, found,
+                              f'{rel}:{name} is gone — rename it here too, or '
+                              f'this gate silently stops checking it')
+                scanned += 1
+                for node in ast.walk(found[name]):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    # Splitting a version on its SEPARATOR is the shape a
+                    # comparator grows back as. Splitting a file on newlines is
+                    # how you read one, so the argument is what decides —
+                    # otherwise the gate could not cover `shipped_version`,
+                    # which is exactly where a parser would reappear.
+                    if (isinstance(node.func, ast.Attribute)
+                            and node.func.attr == 'split'
+                            and any(isinstance(a, ast.Constant)
+                                    and a.value in ('.', '-', '+')
+                                    for a in node.args)):
+                        offenders.append(
+                            f'{rel}:{name} splits on a version separator')
+                    if (isinstance(node.func, ast.Name)
+                            and node.func.id in ('int', 'float', 'sorted',
+                                                 'max', 'min')):
+                        offenders.append(
+                            f'{rel}:{name} calls {node.func.id}()')
+        # Rule 4: a gate scanning nothing FAILS rather than passing quietly.
+        self.assertGreaterEqual(scanned, 11,
+                                'the release surface collapsed — this gate is '
+                                'asserting emptiness over almost nothing')
+        self.assertEqual([], offenders,
+                         'a release helper took a version apart — "did it '
+                         'increase" is a position in `order`, never a parse')
+
+
+class TheUnitTierCannotSpawn(unittest.TestCase):
+    """The runtime half of the `shell` mark (0.3.0/bugs/a-unit-test-can-spawn-the-full-gate).
+
+    `module_spawns` reads a module's SOURCE, so it cannot see a spawn reached
+    indirectly — a unit test calling a library function that, frames down, runs
+    a real belt whose `gate` check is `make milestone`. That is how the full
+    matrix gate ended up running inside `make unit`, taking it from 7 s to
+    153 s with nothing saying why.
+
+    The module is deliberately NOT importable-as-spawning: naming `subprocess`
+    here would make `module_spawns` mark this whole file `shell`, the guard
+    would be off, and the case would prove nothing. So the module is reached
+    through `importlib` by a name the AST derivation cannot fold — the one
+    place in this suite where evading that derivation is the point.
+    """
+
+    def _subprocess(self):
+        import importlib
+        return importlib.import_module('sub' + 'process')
+
+    def test_a_spawn_outside_the_shell_tier_fails_immediately_by_nodeid(self):
+        sp = self._subprocess()
+        with self.assertRaises(AssertionError) as caught:
+            sp.run(['true'], capture_output=True)
+        said = str(caught.exception)
+        self.assertIn('tried to spawn a process', said)
+        self.assertIn('test_a_spawn_outside_the_shell_tier_fails', said)
+        self.assertIn('module_spawns', said)
+
+    def test_the_refusal_names_the_command_so_the_reach_is_findable(self):
+        # The indirect case is the one that bites, and there the author has no
+        # idea WHAT spawned — the command is the thread to pull.
+        sp = self._subprocess()
+        with self.assertRaises(AssertionError) as caught:
+            sp.check_output(['make', 'milestone'])
+        self.assertIn("['make', 'milestone']", str(caught.exception))

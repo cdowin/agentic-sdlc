@@ -2,7 +2,7 @@
 id: 0.3.0/a-config-error-is-complete
 milestone: "0.3.0"
 name: A config error reports every defect, and the flow first
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

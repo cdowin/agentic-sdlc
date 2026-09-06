@@ -2,6 +2,96 @@
 
 ## Unreleased
 
+- **A `devkit.toml` read reports EVERY defect, and the flow first.** The messages were already
+  good and arrived one at a time in an order nothing ranked: a tree with a retired `[pm]` key AND
+  no `[pm.states.*]` was told about the retired key — the cosmetic one — and had to fix it and
+  re-run to learn that the flow was missing, which stops every work-moving verb in the package.
+  `check pm` now prints one line per defect at a single exit 2, flow first. **And a `[checks] all`
+  roster error no longer HIDES them**: an unknown gate name is reported together with what the
+  correctly-named gates would have said about their own config, because routing a whole adoption at
+  the roster is how a green `make check` ended up over a PM CLI that was refusing every verb.
+
+- **`[adopt] ours`** — the installed files a project has taken over. `installables-current` grades
+  the REST and names what was claimed on every run, pass or fail. The installables INVITE local
+  edits (each ships a `Project config` section, "yours to edit after install"), so a project owning
+  eleven of them sat at 6/7 forever, which is the same as no belt. Claiming is visible in the belt's
+  own output every run, so the list is a statement rather than a hiding place. An unclaimed drifted
+  file is still false with its `install-* --diff`; a claim naming a file this version does not
+  install is REPORTED, not refused, because install plans change between versions; a malformed list
+  is exit 2 through the same path grammar every other path key uses.
+- **`adopt <version>` no longer requires a milestone directory named for the version.** A project
+  that folds the pin bump into an open milestone as a feature — a day of work inside a month of
+  game — could not run the belt at all: it refused with `no milestone directory pm/roadmap/<v>-*`
+  before the first check, so the belt for that exact job was unreachable and all seven checks got
+  done by hand in an invented order. `adopt` writes nothing (D12), so that directory is only where
+  a ledger row WOULD land; the run now says which it found and asks all seven checks either way.
+  `release` and `close story|feature`, which write a status, still refuse without it. The `adopt`
+  line in `--help` now says it adopts a devkit PIN, so it reads differently from `release <version>`
+  beside it.
+
+- **`pm init` reports a MEANING, not a write, and `check pm` gains D7.** `init` printed
+  `appended the flow to devkit.toml` and a project adopted the conveyor as a CONFIG FIX — nobody
+  then asked whether the tree USED the states, and one tree used three of its eight for its whole
+  life with every gate green. D4 asks "is this word declared", never "is this word used". `init`
+  now prints the ladder it wrote AGAINST THE TREE — per kind, how many states are declared, how
+  many the tree uses, and which have never been held — so the sentence *"this project now declares
+  8 milestone states; your tree uses 3"* is on screen at the moment of adoption. **D7** keeps
+  saying it after the install scrolls away, as a WARN with the count, never a finding: a tree
+  mid-adoption legitimately has unused states. D7 is OPT-IN like every other flow-shaped rule —
+  stock-on it would add three lines to every consumer's `check pm`, and those shapes are grepped.
+  A kind with no grains at all is silent rather than reporting every word unused.
+
+- **The gate ledger binds to the CURRENT RELEASE, not to the one in-progress milestone.** A cost
+  row is filed against the first unshipped entry in `order` (or the last shipped, under
+  `[pm] version_at = "ship"`), which answers with exactly one by construction and reads no status
+  field to do it. `no milestone in pm/roadmap is in progress, so there is no ledger this gate row
+  belongs to` stops being a refusal: gate cost is a fact about a RUN, and the run happened whether
+  or not somebody had flipped a status. A tree planning two milestones with neither flipped used to
+  drop every cost row silently. `check budget` and `verify --plan` read through the same resolver,
+  so the number a human sees and the number the gate grades cannot disagree. A tree that can answer
+  from neither the plan nor a single in-progress milestone still refuses, naming `pm order`.
+
+- **`pm/roadmap/ROADMAP.md` is RETIRED, and `pm roadmap` replaces it.** The file was two things
+  wearing one name: a hand-maintained index of milestones still in the tree — the second scoreboard
+  this package forbids one grain down — and the only surviving record of milestones `pm retire`
+  deleted. `pm roadmap` derives the first from the tree (every scheduled release with its milestone
+  and state, then the backlog) and writes nothing. The second needs no file: `order` in
+  `releases.md` keeps the version and R1 reports it UNVERIFIABLE once the directory is gone, so the
+  row survives its milestone with nobody maintaining it. **`pm init` no longer seeds the file and
+  `pm retire` no longer appends to it** — `retire` now says what outlives the directory, and tells
+  you to schedule the version first if nothing would. An existing `ROADMAP.md` is left alone: this
+  release does not delete a consumer's file, it stops writing to it.
+- **The release rules R1-R4 and R6** hold the plan and the tree to each other, all opt-in via
+  `[pm] checks`. R1 is the UNBOUND family's first member — an `order` entry no milestone claims
+  (a WARN: a dangling entry and a retired milestone's surviving row are indistinguishable) and a
+  `version:` on no plan (a finding). R2 counts the backlog and never reddens on planning. R3 stops
+  two milestones claiming one version, so which release ships is never decided by a directory name.
+  R4 is history-is-a-prefix. R6 catches a release behind the last shipped one whose milestone never
+  closed, and a `done` milestone whose version is on no plan.
+- **`pm order`, `pm next` and `pm roadmap`** — the plan is `order` in `pm/roadmap/releases.md`,
+  block-style frontmatter edited by `pm order --append|--insert|--remove`. `release` with no
+  argument takes the current version from it, and refuses one that is out of order naming both.
+- **`core.apply` refuses a tree delete whose parent is not writable.** It unlinks from its parent
+  exactly as a file delete does and was not checked for it, so the walk could empty a directory and
+  then fail to remove it — leaving a gutted grain, the half-applied state that module exists to
+  make unreachable.
+
+- **`[gates] extra` refuses a gate name and says which key runs it.** The key takes make targets
+  and the adjacent `[checks] all` takes gate names; neither error said so, so `extra = ["budget"]`
+  reached GNU make as `No rule to make target 'budget'` — three layers below the config that caused
+  it. It is now exit 2 at the config read, naming the entry, the namespace and `make check`. A
+  target that merely CONTAINS a gate name (`budget-check`) is unaffected.
+
+- **A milestone declares `version:`, and D8 became R5.** The id goes back to being a slug: a
+  milestone says which version it ships as in one optional frontmatter field, and the engine
+  never parses, compares or increments the string — `"1.1.1"` and `"cow"` are equally valid.
+  Order comes from `order` in `pm/roadmap/releases.md`, a block-style list read by the same
+  reader as every grain, so "did the version increase" is a POSITION rather than a comparator.
+  **`[pm] checks` naming `D8` is now exit 2 naming R5**, never a silent ungating: R5 grades the
+  version file against the CURRENT entry in `order`, selected by the new `[pm] version_at`
+  (`"start"`, the default and bump-at-start, or `"ship"`, bump-at-close). D8's hotfix special
+  case is gone with it — a hotfix is an entry in the plan like anything else.
+
 ## v0.2.0 — 2026-09-06
 
 - **`check grain-shape` stock caps tightened** — story 60, feature 80, bug 50, milestone 120,

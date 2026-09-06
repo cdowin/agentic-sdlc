@@ -182,10 +182,10 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        live = model.in_progress_milestones(cfg)
-        if len(live) != 1:
+        mdir, _why = model.release_ledger_dir(cfg)
+        if mdir is None:
             return {}, ''
-        path = ledger.ledger_path(live[0][2].parent)
+        path = ledger.ledger_path(mdir)
         raw = path.read_text(encoding='utf-8')
     except Exception:  # noqa: BLE001 - every failure means the same: unknown
         return {}, ''

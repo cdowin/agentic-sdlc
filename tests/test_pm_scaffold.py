@@ -643,7 +643,7 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # A retired id must not linger in KNOWN_CHECKS: a name that parses but
         # runs nothing is a gate a consumer believes is on — and naming one in
         # `[pm] checks` is a config error, not a quiet no-op.
-        for retired in ('D7', 'D13', 'D14'):
+        for retired in ('D13', 'D14'):
             self.assertNotIn(retired, model.KNOWN_CHECKS)
         with tree(story_statuses=('ready',)) as root:
             (root / 'devkit.toml').write_text(

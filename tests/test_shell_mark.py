@@ -84,6 +84,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_record.py',
     'test_pm_ledger_report.py',
     'test_pm_ledger_report_sections.py',
+    'test_pm_order.py',
     'test_pm_ready_for.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
@@ -123,6 +124,11 @@ UNREAD_SPAWN_CALLS = frozenset({
     'check_output', 'check_call', 'getoutput', 'getstatusoutput',
 })
 
+# The single class the scan above steps over, and the reason is in
+# `_without_the_declared_evasion`. Spelled as a name so the exemption dies with
+# a rename rather than outliving what it was granted for.
+EVASION_IS_THE_POINT = 'TheUnitTierCannotSpawn'
+
 # A scratch suite covering the derivation's four answers, built under a copy of
 # the real conftest. `quiet` is the sharp one: it comes out of a module that
 # imports `subprocess`, and importing it is not a spawn.
@@ -154,6 +160,25 @@ SCRATCH_INI = '[pytest]\nmarkers =\n    shell: derived by conftest.py\n'
 
 def _modules() -> list[Path]:
     return sorted(TESTS.glob('test_*.py'))
+
+
+def _without_the_declared_evasion(tree: ast.Module) -> ast.Module:
+    """The one class in this suite whose whole job is to evade the derivation.
+
+    `TheUnitTierCannotSpawn` (0.3.0, tests/test_boundaries.py) proves the
+    conftest guard REFUSES a spawn — and it can only prove that from a module
+    the derivation leaves unmarked, so it reaches `subprocess` through a name
+    the AST cannot fold and its own docstring says so. The calls it makes are
+    refused before a process starts: spawn spellings that never spawn.
+
+    Exempted by CLASS, not by module or by line: a second unread spelling
+    anywhere else in the same file is still a finding, and a rename of the
+    class puts its body back under the scan.
+    """
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == EVASION_IS_THE_POINT:
+            node.body = []
+    return tree
 
 
 def _census() -> tuple[list[str], list[str]]:
@@ -221,7 +246,8 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
         unmarked = [p for p in _modules() if not conftest.module_spawns(p)]
         offenders = []
         for path in unmarked + sorted(SUPPORT.glob('*.py')):
-            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+            for node in ast.walk(_without_the_declared_evasion(tree)):
                 if not isinstance(node, ast.Call):
                     continue
                 function = node.func

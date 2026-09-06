@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import functools
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -178,6 +179,59 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if module_spawns(item.path):
             item.add_marker(MARK)
+
+
+# --- the derivation is STATIC, so a runtime guard stands behind it -----------
+# `module_spawns` reads a module's SOURCE. It cannot see a spawn reached
+# INDIRECTLY — a unit test calling a library function that, four frames down,
+# runs the real belt whose `gate` check is `make milestone`. That happened
+# (0.3.0/bugs/a-unit-test-can-spawn-the-full-gate): `release ''` stopped being
+# refused, resolved a version from the plan instead, and the refusal-matrix
+# case started running the FULL MATRIX GATE inside the unit tier. `make unit`
+# went from 7 s to 153 s, and nothing said why — it just got slow.
+#
+# That is the 170x this package exists to end, reached from inside its own
+# suite. The static mark cannot catch it and no amount of prose in a brief did.
+# So the tier's definition is ENFORCED rather than merely derived: outside the
+# `shell` tier, a spawn fails the test that made it, immediately, by nodeid.
+#
+# `subprocess.Popen` is the one chokepoint — `run`, `call`, `check_output` and
+# `check_call` all construct one — and `SPAWN_MODULE` above is what the
+# derivation already looks for, so the guard and the mark police one mechanism.
+def _spawn_refusal(item) -> str:
+    return (f'{item.nodeid} is in the `not {MARK}` tier and tried to spawn a '
+            f'process.\n'
+            f'Either it reaches a spawn INDIRECTLY — which is the defect: a '
+            f'unit test must not run a gate, a make target or a belt with its '
+            f'real registry — or the module genuinely shells out, in which '
+            f'case make the reach VISIBLE to tests/conftest.py `module_spawns` '
+            f'(import `{SPAWN_MODULE}` at module level, or go through a '
+            f'tests/support helper that does) so the mark is derived and the '
+            f'case runs in the right tier.\n'
+            f'Never hand-apply the mark; it is refused by name.')
+
+
+@pytest.fixture(autouse=True)
+def _no_spawn_outside_the_shell_tier(request, monkeypatch):
+    """Outside the `shell` tier, a spawn is an immediate, named failure.
+
+    Rule 4's shape: the alternative is a suite that silently gets 20x slower
+    and a reader who has to think to run `--durations` to find out why.
+    """
+    if request.node.get_closest_marker(MARK):
+        return
+    real = subprocess.Popen
+    item = request.node
+
+    def refused(*args, **kwargs):
+        raise AssertionError(_spawn_refusal(item)
+                             + f'\n  the call: {args[0] if args else kwargs.get("args")!r}')
+
+    monkeypatch.setattr(subprocess, 'Popen', refused)
+    # A helper holding its own reference is still the same object; this is the
+    # class every caller constructs, so rebinding the module attribute is what
+    # every `subprocess.run(...)` in the tree goes through.
+    assert real is not refused
 
 
 # --- the suite records what its own tail cost ---------------------------------

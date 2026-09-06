@@ -40,12 +40,11 @@ every run; a state the project never declared is refused by name.
   milestone <status> <milestone-id>       (any state in [pm.states.milestone])
   retire <milestone-id> [<summary...>] [--dry-run]
                                           (removes the milestone directory and
-                                           appends its row to ROADMAP.md;
+                                           the version stays on the plan;
                                            reports an undone status or live
                                            children rather than refusing on
                                            their account — refuses only when
-                                           the id or ROADMAP.md itself is
-                                           missing)
+                                           the id is missing)
   move <story-id> <feature-id>            (re-parents a story: renames its
                                            file under the target feature and
                                            rewrites id/feature/milestone —
@@ -82,6 +81,32 @@ every run; a state the project never declared is refused by name.
                                            category, and the rule ids. A tree
                                            declaring no flow is REPORTED, with
                                            the seed `init` would write)
+  order [--append <v> | --insert <v> --before <v> | --remove <v>]
+                                          (the release plan — `order` in
+                                           pm/roadmap/releases.md. Bare, it
+                                           prints the plan. Authoring and
+                                           SCHEDULING are separate acts: a
+                                           milestone declares `version:` without
+                                           joining the plan, and this verb puts
+                                           it on one. It does NOT interrogate
+                                           the tree — a version is a fact about
+                                           the INPUT, valid whether or not a
+                                           milestone claims it yet; the R rules
+                                           in `check pm` report the
+                                           contradiction. Refuses only a
+                                           duplicate, an empty string and an
+                                           insert before an entry that is not
+                                           there)
+  next                                    (the first entry in `order` that has
+                                           not shipped, with the milestone that
+                                           claims it. Writes nothing)
+  roadmap                                 (the whole plan: every scheduled
+                                           release with its milestone and state,
+                                           then the backlog. What `pm status`
+                                           does for one milestone, for the
+                                           sequence — and what replaced the
+                                           hand-maintained ROADMAP.md. Writes
+                                           nothing)
   validate                                (structural + referential integrity)
   install-skills [--force] [--diff]       (write the shared rule + operations skill)
   init                                    (scaffold a fresh tree + install guidance)
@@ -486,12 +511,18 @@ def _known_milestone_ids(cfg: model.PmConfig) -> list[str]:
 
 
 def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
-    """Retire a finished milestone: remove its directory, append its ROADMAP
-    row. The row's last cell opens with the word the milestone held, so an
-    `obe` milestone is not recorded as shipped. Refuses only on an
-    unresolvable id or a missing ROADMAP.md; an unfinished milestone is
-    reported, not refused. `--dry-run` decides everything and writes
-    nothing.
+    """Retire a finished milestone: remove its directory.
+
+    **`ROADMAP.md` retired in 0.3.0 and this verb no longer appends to it.** It
+    was two things wearing one name — a hand-maintained index of milestones
+    still in the tree, which is the second scoreboard the tool forbids one grain
+    down, and the only surviving record of milestones this verb deleted.
+    `pm roadmap` derives the first. The second needs no file: `order` keeps the
+    version, and R1 reports it UNVERIFIABLE once the directory is gone, so the
+    row survives its milestone without anyone maintaining it.
+
+    Refuses only on an unresolvable id; an unfinished milestone is reported, not
+    refused. `--dry-run` decides everything and writes nothing.
     """
     dry_run = False
     mid = ''
@@ -510,12 +541,6 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         known = _known_milestone_ids(cfg)
         raise Usage(f'{mid!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(known) if known else "none scaffolded"})')
-    index = cfg.roadmap / model.ROADMAP_DOC
-    if not index.is_file():
-        raise Refused(f'{cfg.rel(index)} does not exist — looked in '
-                      f'{cfg.rel(cfg.roadmap)} (run `pm init` first; it seeds '
-                      f'the table this command appends to)')
-
     mfile = mdir / model.MILESTONE_DOC
     notices: list[str] = []
     if not mfile.is_file():
@@ -549,28 +574,29 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         notices.append(f'{len(open_bugs)} bug(s) still open: '
                        f'{" ".join(open_bugs)}')
 
-    date = (model.field_of(mfile, 'actual_date') if mfile.is_file() else '') \
-        or datetime.now(timezone.utc).date().isoformat()
     summary = ' '.join(summary_words)
     ended = f'{status or "(no status)"}' + (f' — {summary}' if summary else '')
-    row = f'| {canonical_id} | {name} | {date} | {ended} |'
-
-    existing = model.read_raw(index)
-    eol = '\r\n' if '\r\n' in existing else '\n'
-    padded = existing if not existing or existing.endswith(('\n', '\r')) \
-        else existing + eol
-    new_index_text = padded + row + eol
+    version = model.unquote(model.field_of(mfile, 'version')) \
+        if mfile.is_file() else ''
+    # What outlives the directory. `order` keeps the version and R1 reports it
+    # UNVERIFIABLE from here, so the row survives its milestone with nobody
+    # maintaining it — which is the half of ROADMAP.md that was real.
+    kept = (f'{cfg.rel(model.releases_file(cfg))} `order` keeps {version}, and '
+            f'R1 reports it UNVERIFIABLE from here'
+            if version and version in model.declared_order(cfg)
+            else f'{canonical_id} ({ended}) is on no plan, so nothing outlives '
+                 f'this directory — `agentic-sdlc pm order --append <version>` '
+                 f'before retiring keeps a row')
 
     if dry_run:
         _ok(f'[dry-run] would remove {cfg.rel(mdir)}')
-        _ok(f'[dry-run] would append to {cfg.rel(index)}: {row}')
+        _ok(f'[dry-run] {kept}')
         for n in notices:
             _ok(f'  noticed: {n}')
         return 0
 
     plan = apply.Plan()
     plan.delete_tree(mdir, label=cfg.rel(mdir))
-    plan.overwrite(index, new_index_text, newline='', label=cfg.rel(index))
     blocked = plan.decide()
     if blocked:
         raise Refused('; '.join(b.describe() for b in blocked)
@@ -582,8 +608,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
             + ('nothing was written' if not applied.landed else
                'ALREADY LANDED: ' + ', '.join(s.label for s in applied.landed))
             + '. Fix the obstruction and re-run.')
-    _ok(f'milestone {mid}: retired — {cfg.rel(mdir)} removed, '
-        f'{cfg.rel(index)} carries the row')
+    _ok(f'milestone {mid}: retired — {cfg.rel(mdir)} removed; {kept}')
     for n in notices:
         _ok(f'  noticed: {n}')
     return 0
@@ -1555,14 +1580,10 @@ def _gate_ledger_dir(cfg: model.PmConfig) -> Path:
         raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                       f'there is no ledger this gate row belongs to; no row '
                       f'was written')
-    live = model.in_progress_milestones(cfg)
-    if not live:
-        raise Refused(f'no milestone in {cfg.rel(cfg.roadmap)} is in '
-                      f'progress, so there is no ledger this gate row '
-                      f'belongs to; no row was written')
-    if len(live) > 1:
-        _building_ledger_dir(cfg, 'this gate row')
-    return live[0][2].parent
+    mdir, why = model.release_ledger_dir(cfg)
+    if mdir is None:
+        raise Refused(f'{why}; no row was written')
+    return mdir
 
 
 def _required(flags: dict[str, str], name: str) -> str:
@@ -1818,6 +1839,210 @@ def _report_milestone_dir(cfg: model.PmConfig, mid: str) -> Path:
 
 
 # --- dispatch -----------------------------------------------------------------
+_PLAN_SCAFFOLD = """---
+order:
+---
+
+# The release plan
+
+The order releases ship in. It is a DECISION, not a sort: versions are strings
+this package never parses, and `agentic-sdlc pm order` is what edits this list.
+
+A milestone joins the plan by declaring `version:` and being appended here; the
+two are separate acts, so a draft milestone is not accidentally on the roadmap.
+"""
+
+
+def _plan_path(cfg: model.PmConfig) -> Path:
+    return model.releases_file(cfg)
+
+
+def _version_arg(value: str) -> str:
+    """A version is a fact about the INPUT: non-empty, and a literal.
+
+    Reuses `model.segment_is_literal` (SDLC.md §5 — the matrix belongs to the
+    grammar) rather than spelling a second refusal list here: the same grammar
+    guards every id segment this package joins onto a path or prints.
+    """
+    if not value or not value.strip():
+        raise Usage('a version may not be empty')
+    if not model.segment_is_literal(value):
+        raise Usage(f'{value!r} is not a literal version — no glob character, '
+                    f'no path separator, and neither `.` nor `..`')
+    return value
+
+
+def _write_plan(cfg: model.PmConfig, entries: list[str]) -> None:
+    path = _plan_path(cfg)
+    if not path.is_file():
+        # Through `core.apply`, like every other mutation: a writer that
+        # decides as it goes lands half a plan when a later step refuses.
+        apply.raise_on_error(apply.make_dir(path.parent))
+        model.write_raw(path, _PLAN_SCAFFOLD)
+    if not model.set_list_field(path, model.ORDER_KEY, entries):
+        raise Refused(f'{cfg.rel(path)} could not be rewritten — it has no '
+                      f'frontmatter block, or `{model.ORDER_KEY}:` carries a '
+                      f'scalar rather than a list; nothing was written')
+
+
+def _print_plan(cfg: model.PmConfig) -> None:
+    entries = model.declared_order(cfg)
+    path = _plan_path(cfg)
+    if not entries:
+        print(f'[pm] {cfg.rel(path)} declares no order — '
+              f'`agentic-sdlc pm order --append <version>` starts the plan')
+        return
+    print(f'[pm] {len(entries)} release(s) in {cfg.rel(path)}')
+    for version in entries:
+        mid = model.milestone_of_version(cfg, version)
+        shipped = 'shipped' if model.release_is_shipped(cfg, version) else '-'
+        print(f'{version}\t{mid or "(unclaimed)"}\t{shipped}')
+
+
+def cmd_order(cfg: model.PmConfig, args: list[str]) -> int:
+    """Read or edit the release plan. One entry per invocation: the list is a
+    decision, and a bulk rewrite is an editor's job, not a verb's.
+    """
+    flags = {'--append': None, '--insert': None, '--remove': None,
+             '--before': None}
+    i = 0
+    while i < len(args):
+        flag = args[i]
+        if flag not in flags:
+            raise Usage(f'unknown flag {flag!r}')
+        if i + 1 >= len(args):
+            raise Usage(f'{flag} takes a version')
+        if flags[flag] is not None:
+            raise Usage(f'{flag} given twice')
+        flags[flag] = _version_arg(args[i + 1])
+        i += 2
+
+    named = [f for f in ('--append', '--insert', '--remove') if flags[f]]
+    if len(named) > 1:
+        raise Usage(f'{" and ".join(named)} are three different edits — one '
+                    f'per invocation')
+    if not named:
+        if flags['--before']:
+            raise Usage('--before belongs to --insert')
+        _print_plan(cfg)
+        return 0
+
+    entries = model.declared_order(cfg)
+    path = _plan_path(cfg)
+
+    if flags['--append']:
+        version = flags['--append']
+        if flags['--before']:
+            raise Usage('--before belongs to --insert, not --append')
+        if version in entries:
+            # Idempotent, and it SAYS so: re-running a plan edit is normal.
+            print(f'[pm] {version} is already in {cfg.rel(path)} at position '
+                  f'{entries.index(version) + 1} — nothing was written')
+            return 0
+        _write_plan(cfg, entries + [version])
+        print(f'[pm] appended {version} to {cfg.rel(path)} '
+              f'(position {len(entries) + 1})')
+        return 0
+
+    if flags['--insert']:
+        version = flags['--insert']
+        before = flags['--before']
+        if not before:
+            raise Usage('--insert needs --before <version> — where in the plan '
+                        'is the decision, and this verb never guesses it')
+        if version in entries:
+            print(f'[pm] {version} is already in {cfg.rel(path)} at position '
+                  f'{entries.index(version) + 1} — nothing was written')
+            return 0
+        if before not in entries:
+            raise Refused(f'--before {before!r} is not in {cfg.rel(path)} — '
+                          f'nothing was written')
+        at = entries.index(before)
+        _write_plan(cfg, entries[:at] + [version] + entries[at:])
+        print(f'[pm] inserted {version} before {before} in {cfg.rel(path)} '
+              f'(position {at + 1})')
+        return 0
+
+    version = flags['--remove']
+    if flags['--before']:
+        raise Usage('--before belongs to --insert, not --remove')
+    if version not in entries:
+        print(f'[pm] {version} is not in {cfg.rel(path)} — nothing was written')
+        return 0
+    _write_plan(cfg, [v for v in entries if v != version])
+    print(f'[pm] removed {version} from {cfg.rel(path)}')
+    return 0
+
+
+def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
+    """The plan: every scheduled release, then the backlog. Writes nothing.
+
+    What `pm status` does for one milestone, for the SEQUENCE — and the verb
+    that replaced `ROADMAP.md`, which was a hand-maintained second scoreboard
+    of exactly this.
+    """
+    if args:
+        raise Usage(f'roadmap takes no arguments, got {" ".join(args)}')
+    entries = model.declared_order(cfg)
+    path = model.releases_file(cfg)
+    defect = model.plan_defect(cfg)
+    if defect is not None:
+        raise Refused(f'{cfg.rel(path)} {defect}')
+    if not entries:
+        print(f'[pm] {cfg.rel(path)} declares no order — '
+              f'`agentic-sdlc pm order --append <version>` starts the plan')
+    else:
+        print(f'[pm] {len(entries)} scheduled release(s) in {cfg.rel(path)}')
+        for version in entries:
+            claimants = model.milestones_of_version(cfg, version)
+            if len(claimants) == 1:
+                mid = claimants[0]
+                mfile = model.milestone_file(cfg, mid)
+                status = model.field_of(mfile, 'status') if mfile else ''
+                state = ('shipped' if model.release_is_shipped(cfg, version)
+                         else status or '-')
+            elif claimants:
+                mid, state = ' '.join(claimants), 'CLAIMED TWICE'
+            else:
+                mid, state = '(unclaimed)', 'unverifiable'
+            print(f'{version}\t{mid}\t{state}')
+    bound = {mid for _, mid in model.version_claims(cfg)}
+    backlog = sorted(mid for _, mid in model.known_milestones(cfg)
+                     if mid and mid not in bound)
+    if backlog:
+        print(f'[pm] {len(backlog)} in backlog (no version: — not proposed '
+              f'as a release)')
+        for mid in backlog:
+            mfile = model.milestone_file(cfg, mid)
+            print(f'-\t{mid}\t{model.field_of(mfile, "status") if mfile else ""}')
+    return 0
+
+
+def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
+    """The first entry in `order` that has not shipped, and who claims it."""
+    if args:
+        raise Usage(f'next takes no arguments, got {" ".join(args)}')
+    entries = model.declared_order(cfg)
+    if not entries:
+        print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
+              f'`agentic-sdlc pm order --append <version>` starts the plan')
+        return 0
+    for version in entries:
+        if model.release_is_shipped(cfg, version):
+            continue
+        mid = model.milestone_of_version(cfg, version)
+        if mid is None:
+            print(f'{version}\t(unclaimed)\t'
+                  f'no milestone declares version: {version}')
+            return 0
+        mfile = model.milestone_file(cfg, mid)
+        status = model.field_of(mfile, 'status') if mfile else ''
+        print(f'{version}\t{mid}\t{status}')
+        return 0
+    print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ('-h', '--help', 'help'):
         print(USAGE)
@@ -1840,7 +2065,8 @@ def main(argv: list[str]) -> int:
         'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
         'templates': skills.cmd_templates, 'sync': cmd_sync,
         'vocabulary': cmd_vocabulary, 'decide': cmd_decide,
-        'ledger': cmd_ledger,
+        'ledger': cmd_ledger, 'order': cmd_order, 'next': cmd_next,
+        'roadmap': cmd_roadmap,
     }
     fn = table.get(cmd)
     if fn is None:

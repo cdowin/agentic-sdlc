@@ -33,8 +33,6 @@ from support.pm import (LEDGER_REL, bug, commit, dispatch_line, git,
                         write)
 from support.pm import git_tree as tree
 
-from agentic_sdlc.repo.pm import skills
-
 STORY, QUIET, FEATURE, BUG = ('0.1/alpha/s0', '0.1/alpha/s1', '0.1/alpha',
                               '0.1/bugs/crash')
 MILESTONE_DIR = 'pm/roadmap/0.1-demo'
@@ -104,12 +102,6 @@ def seeded(root) -> None:
     )
 
 
-def roadmap(root) -> None:
-    """The index `pm retire` appends its prune row to."""
-    (root / 'pm/roadmap/ROADMAP.md').write_text(skills.ROADMAP_SEED,
-                                                encoding='utf-8')
-
-
 def stripped(out: str, rev: str = TAG) -> str:
     """The report with the one thing that is MEANT to differ taken back out.
 
@@ -141,7 +133,6 @@ def test_the_report_at_the_tag_is_the_report_before_the_retire():
     whole story exists for."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        roadmap(root)
         live = capture(root, '0.1')
         live_json = capture(root, '0.1', '--json')
         commit(root, 'the milestone, still in the tree')
@@ -279,7 +270,6 @@ def test_the_verb_writes_nothing_and_checks_nothing_out():
     of whoever asked a question about history."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        roadmap(root)
         commit(root, 'seed')
         git(root, 'tag', TAG)
         before = git(root, 'rev-parse', 'HEAD')

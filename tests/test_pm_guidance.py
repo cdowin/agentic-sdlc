@@ -224,12 +224,15 @@ class Guidance(unittest.TestCase):
                     (root / 'devkit.toml').read_text(encoding='utf-8'), config)
             finally:
                 os.chdir(previous)
-            self.assertTrue((root / 'pm/roadmap/ROADMAP.md').is_file())
+            # 0.3.0: no ROADMAP.md. `init` stands up the DIRECTORY; the live
+            # index is derived by `pm roadmap` and what outlives a retired
+            # milestone is `order` in releases.md.
+            self.assertTrue((root / 'pm/roadmap').is_dir())
+            self.assertFalse((root / 'pm/roadmap/ROADMAP.md').exists())
             self.assertTrue((root / '.claude/rules/pm-execution.md').is_file())
 
     def test_init_is_non_destructive_on_an_existing_tree(self):
-        # It fills gaps (a missing ROADMAP.md) but must never disturb grains
-        # that are already there.
+        # It fills gaps but must never disturb grains that are already there.
         with tree(story_statuses=('ready',)) as root:
             ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
             before = ff.read_bytes()

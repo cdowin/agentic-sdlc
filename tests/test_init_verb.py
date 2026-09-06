@@ -70,7 +70,6 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 # what stops the number moving again without a line moving here.
 WRITES = (
     'devkit.toml',
-    'pm/roadmap/ROADMAP.md',
     '.claude/rules/pm-execution.md',
     '.claude/skills/pm-operations/SKILL.md',
     # A skill rather than a rule: nothing path-triggers on "write me a
@@ -176,10 +175,11 @@ def test_the_roster_above_is_what_the_verbs_actually_carry():
     from_tables = {rel for entries in install.PLANS.values()
                    for _, rel in entries}
     from_tables |= {rel for _, rel in init.SEEDS}
-    # No `install.PLANS` entry: the PM tree and .gitignore are init's own
-    # writes, and the guidance files come from `skills.py`'s own plan. Named
-    # here for exactly that reason.
-    owned = {'pm/roadmap/ROADMAP.md', '.gitignore',
+    # No `install.PLANS` entry: .gitignore is init's own write and the guidance
+    # files come from `skills.py`'s own plan. Named here for exactly that
+    # reason. 0.3.0: ROADMAP.md left this list with the file; `init` still
+    # stands up `pm/roadmap/` itself, a DIRECTORY, which writes no file here.
+    owned = {'.gitignore',
              '.claude/rules/pm-execution.md',
              '.claude/skills/pm-operations/SKILL.md',
              '.claude/skills/handoff/SKILL.md'}

@@ -158,6 +158,14 @@ class Plan:
         elif step.act is Act.DELETE_TREE:
             if dest.exists() and not dest.is_dir():
                 out.append(Blocked(step, dest, Obstruction.NOT_A_DIRECTORY))
+            elif dest.is_dir() and not os.access(dest.parent, os.W_OK):
+                # Removing a tree UNLINKS IT FROM ITS PARENT, exactly as a file
+                # delete does — so it takes the same check. Without it the walk
+                # deletes everything INSIDE and then cannot remove the directory
+                # itself, leaving a gutted grain: the half-applied state this
+                # module exists to make unreachable.
+                out.append(Blocked(step, dest.parent,
+                                   Obstruction.PARENT_NOT_WRITABLE))
         elif step.act is Act.DELETE_FILE:
             if dest.exists() and not dest.is_file():
                 out.append(Blocked(step, dest, Obstruction.NOT_A_REGULAR_FILE))

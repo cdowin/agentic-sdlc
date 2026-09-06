@@ -2,7 +2,7 @@
 id: 0.3.0/adopt-grades-what-the-project-owns
 milestone: "0.3.0"
 name: adopt grades the files the project did not claim
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

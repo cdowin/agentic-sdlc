@@ -54,6 +54,11 @@ QUOTE_LIMIT = 40
 FORCED = 'forced'
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
+# What a checks-only belt says about the record, before its first check: it
+# writes nothing (D12), so the milestone directory is where a row WOULD land
+# and never a condition for running.
+NOTHING_RECORDED = 'nothing recorded, because this belt writes nothing'
+ANYWHERE = 'the bump may be tracked as a feature, as a story, or nowhere'
 
 
 class Truth(Enum):
@@ -448,6 +453,20 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
     return record
 
 
+def _no_ledger(nowhere: str) -> Recorder:
+    """The recorder for a run with NO milestone directory: it records nothing
+    and says why, so a forced write can never print as though a row landed.
+
+    Only a checks-only belt gets here — a belt that writes is still refused
+    without the directory — but `run` may not assume that, and a silent
+    recorder is rule 4's second sin in miniature.
+    """
+    def record(false: Sequence[tuple[str, str]]) -> str:
+        return f'{nowhere} to hold a ledger row'
+
+    return record
+
+
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
@@ -510,17 +529,23 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     segments, noun, shape = SUBJECT[operation]
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
-    if not positional:
+    if not positional and operation != 'release':
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
                        f'`agentic-sdlc {spoken} '
                        f'{"0.2.0" if segments == 1 else shape}`')
     if len(positional) > 1:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
-    subject = positional[0]
-    defect = subject_defect(operation, subject)
-    if defect:
-        return _refuse(f'{spoken}: {defect}')
+    # `release` alone resolves its subject from the plan, below, once the
+    # config is loaded; every other operation is named on the command line.
+    subject = positional[0] if positional else ''
+    # A value that WAS given is graded, empty or not. Reading `release ''` as
+    # "no argument" would resolve it from the plan and run the belt over a
+    # version nobody named — the refusal matrix exists to stop exactly that.
+    if positional:
+        defect = subject_defect(operation, subject)
+        if defect:
+            return _refuse(f'{spoken}: {defect}')
     kind = WRITES[operation]
     if force and not kind:
         return _refuse(f'{spoken} writes nothing, so there is nothing to '
@@ -540,19 +565,61 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     defect = plan_defect(known, names)
     if defect:
         return _refuse(f'{spoken}: {defect}')
+
+    if operation == 'release':
+        # The plan already knows which version is current, so the human does
+        # not retype it — and shipping OUT of order is what a belt should stop.
+        current = model.current_release(cfg)
+        if not subject:
+            if current is None:
+                return _refuse(
+                    f'{spoken} needs a version, and the plan cannot supply one: '
+                    f'{cfg.rel(model.releases_file(cfg))} declares no `order` '
+                    f'(or every entry in it has shipped). Name the version, or '
+                    f'run `agentic-sdlc pm order --append <version>`')
+            subject = current
+            defect = subject_defect(operation, subject)
+            if defect:
+                return _refuse(
+                    f'{spoken}: the plan names {subject!r} as the current '
+                    f'release, and {defect}')
+            print(f'[{operation}] the plan names {subject} as the current '
+                  f'release — '
+                  f'{cfg.rel(model.releases_file(cfg))}, [pm] version_at = '
+                  f'{cfg.version_at!r}')
+        elif current is not None and subject != current:
+            return _refuse(
+                f'{spoken} {subject}: the current release is {current!r} — '
+                f'shipping out of the order declared in '
+                f'{cfg.rel(model.releases_file(cfg))} is refused, and nothing '
+                f'was written. Re-sequence the plan with `agentic-sdlc pm '
+                f'order` if {subject} really goes first')
+
     mid = subject.split('/')[0]
     mdir = model.milestone_dir(cfg, mid)
-    if mdir is None:
-        # No milestone directory means no ledger and no grain to check.
-        print(f'agentic-sdlc: {spoken} {subject}: no milestone directory '
-              f'{cfg.rel(cfg.roadmap)}/{mid}-* — refused, and nothing was '
-              f'written', file=sys.stderr)
+    nowhere = f'no milestone directory {cfg.rel(cfg.roadmap)}/{mid}-*'
+    if mdir is None and kind:
+        # A belt that WRITES needs the grain's directory: the status it sets
+        # lives there, and so does the ledger row a forced write leaves.
+        print(f'agentic-sdlc: {spoken} {subject}: {nowhere} — refused, and '
+              f'nothing was written', file=sys.stderr)
         return 1
+    if not kind:
+        # Checks only (D12): the milestone directory is the LEDGER's home and
+        # nothing else, so its absence is not an entry condition. WHERE the
+        # project tracks the bump — a milestone, a feature, a story, nowhere
+        # at all — is the project's business, the same way `[pm.states.*]` is.
+        # Every check runs either way, and the run says which it found.
+        print(f'[{operation}] {NOTHING_RECORDED} — '
+              + (f'a row would land in {cfg.rel(ledger.ledger_path(mdir))}'
+                 if mdir is not None
+                 else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
     result = run(known, names, ctx, force=force, state=state,
                  write=write if write is not None else _writer(cfg, kind),
-                 record=_recorder(mdir, operation, subject))
+                 record=(_recorder(mdir, operation, subject)
+                         if mdir is not None else _no_ledger(nowhere)))
     for line in result.lines:
         print(line)
     if result.refused:

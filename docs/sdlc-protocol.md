@@ -59,7 +59,7 @@ tree, in CI and pre-push.
 | # | check | runs | what must be true |
 |---|---|---|---|
 | 1 | `pin-bumped` | — *(reads the tree)* | the `DEVKIT_VERSION` line in this repo's own makefile names the version of the package that is running. |
-| 2 | `installables-current` | — *(reads the tree)* | every installed file is byte-current with what this version ships, or differs only in its project-config header; each that differs is named with the `install-* --diff` that shows it. |
+| 2 | `installables-current` | — *(reads the tree)* | every installed file the project has not claimed in `[<op>] ours` is byte-current with what this version ships, or differs only in its project-config header; each that differs is named with the `install-* --diff` that shows it, and what was claimed is counted and named beside it, on every run. |
 | 3 | `config-updated` | — *(reads the tree)* | every devkit.toml section this version reads accepts what this repo declares. |
 | 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards still return the verdicts their own corpus asserts. |
 | 5 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`; an empty tier list passes and says so. |

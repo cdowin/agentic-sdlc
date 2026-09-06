@@ -3,7 +3,7 @@ id: 0.2.0/the-inner-levels-are-belts-too/03-the-belt-above-refuses-to-start
 feature: 0.2.0/the-inner-levels-are-belts-too
 milestone: "0.2.0"
 name: Each belt names what the belt below it left open, and finishes
-status: planning
+status: done
 owner:
 depends_on: []
 ---

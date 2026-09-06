@@ -3,7 +3,7 @@ id: 0.2.0/the-inner-levels-are-belts-too/02-closing-a-feature-is-a-belt
 feature: 0.2.0/the-inner-levels-are-belts-too
 milestone: "0.2.0"
 name: A feature closes only when its stories are done and its findings are landed
-status: planning
+status: done
 owner:
 depends_on: []
 ---

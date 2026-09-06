@@ -10,12 +10,5 @@ __pycache__/
 # Per-worktree scope marker tools/dev/agent-worktree.sh plants for the hooks to read.
 .agent-scope
 
-# Conveyor run state: where a `release`/`adopt` run got to. Working state, not a
-# record — the record is the ledger row, which is tracked. Ignored because
-# `tree-clean` is itself a step, so a TRACKED position file would be dirtied by
-# the very run that checks the tree is clean. Losing it costs nothing: every
-# check() is a question about the tree, so the next run re-derives the position.
-.agentic-sdlc/
-
 # Agent worktrees, created by tools/dev/agent-worktree.sh; each is its own checkout.
 .claude/worktrees/

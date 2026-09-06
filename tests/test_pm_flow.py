@@ -561,23 +561,18 @@ def test_no_state_literal_survives_outside_the_seed():
     assert survivors == [], '\n'.join(survivors)
 
 
-def test_the_r4_site_reads_the_flow_and_spells_no_word():
-    """`conveyor/steps.py` keeps the belts' step words for `[pm.transitions]`
-    to take; the one census row in it is `_status_at_or_past`, and that
-    function reads `model.flow_of` and holds no literal or tuple index of a
-    word the engine spelled."""
-    path = SRC / 'conveyor' / 'steps.py'
-    tree = ast.parse(path.read_text('utf-8'))
-    func = next(n for n in tree.body
-                if isinstance(n, ast.FunctionDef)
-                and n.name == '_status_at_or_past')
-    literals = [v for _, v in _string_constants(func) if v in SEED_WORDS]
-    assert literals == []
-    reads = {f'{n.value.id}.{n.attr}' for n in ast.walk(func)
-             if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)}
-    assert 'model.flow_of' in reads
-    assert not reads & {'model.LIFECYCLE', 'model.BUILDING', 'model.REVIEWING',
-                        'cfg.milestone_states'}
+def test_the_belts_spell_no_state_word():
+    """R4 was `_status_at_or_past` in `conveyor/steps.py`, a tuple index of a
+    word the engine spelled; D12 deleted every automatic step and the site
+    with it. What remains to hold is the whole package: a belt writes the
+    first `done` state its kind's config lists, so no module under
+    `conveyor/` may carry a seed word as a string constant."""
+    hits = []
+    for path in sorted((SRC / 'conveyor').glob('*.py')):
+        tree = ast.parse(path.read_text('utf-8'))
+        hits += [f'{path.name}:{v!r}' for _, v in _string_constants(tree)
+                 if v in SEED_WORDS]
+    assert hits == [], hits
 
 
 def test_the_seeds_exported_words_have_exactly_the_named_readers():

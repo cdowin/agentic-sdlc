@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/09-the-whys-are-small
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every why is one sentence, every record fits on a screen, and the caps hold it there
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -42,3 +42,7 @@ feature 118 (max 202), milestone 202, decisions 478, review records median 282 (
 ## Out of scope
 
 Deleting a why. A short why is the bar; a missing one is a finding.
+
+## Close
+
+done: 20e256d 4b55d50 e215cec 325a354 ad091f0 — src prose 0.80 → under a third of code, shell 42% → 18%, stock caps story 60 / feature 80 / bug 50 / milestone 120 / review 120, templates and the reviewer contract a screen; records already written keep their length by ruling

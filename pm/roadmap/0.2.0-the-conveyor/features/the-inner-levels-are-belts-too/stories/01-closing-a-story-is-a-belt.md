@@ -3,7 +3,7 @@ id: 0.2.0/the-inner-levels-are-belts-too/01-closing-a-story-is-a-belt
 feature: 0.2.0/the-inner-levels-are-belts-too
 milestone: "0.2.0"
 name: A story closes through a step list that reports and finishes
-status: planning
+status: done
 owner:
 depends_on: []
 ---

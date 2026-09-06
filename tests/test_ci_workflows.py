@@ -251,7 +251,7 @@ def _milestone(root: Path, mid: str, status: str, quote: str = '"',
         encoding='utf-8')
 
 
-@pytest.mark.parametrize('main, pr, done, building, ok, why', [
+COMPARE_ROWS = [
     ('0.90.3',   '0.90.3.1',   (),          ('0.90.3.2',), True,  'hotfix 1 on main'),
     ('0.90.3.1', '0.90.3.2',   ('0.90.3.2',), (),          True,  'done milestone 0.90.3.2'),
     ('0.16',     '0.16.1',     ('0.16.1',),  (),           True,  'done milestone 0.16.1'),
@@ -267,26 +267,34 @@ def _milestone(root: Path, mid: str, status: str, quote: str = '"',
     # BUILDING milestone whose id is main + one integer read as a hotfix.
     ('0.90.3',   '0.90.3.2',   (),          ('0.90.3.2',), False, "whose status is 'building', not done"),
     ('0.90.3',   '0.90.3.01',  ('0.90.2',),  (),           False, 'neither the id of a done milestone'),
-])
+]
+
+
 def test_the_compare_step_admits_a_done_milestone_or_a_hotfix_and_nothing_else(
-        tmp_path, main, pr, done, building, ok, why):
+        tmp_path):
     """PR #56 on the consumer that motivated this: the 0.90.2 release reached
     main wearing 0.90.3 — the NEXT milestone's bump-at-start had landed before
     the close merged — and the three-field gate waved it through. Row 5 is
-    that PR, and it is refused."""
+    that PR, and it is refused. Every row is one bash run over its own
+    scratch roadmap; a row that answers wrongly names itself."""
     import subprocess
-    for mid in done:
-        _milestone(tmp_path, mid, 'done')
-    for mid in building:
-        _milestone(tmp_path, mid, 'building')
-    (tmp_path / 'pm/roadmap').mkdir(parents=True, exist_ok=True)
     script = tmp_path / 'compare.sh'
     script.write_text(_compare_step_script(), encoding='utf-8')
-    proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
-                          text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
-                                          'MAIN': main, 'PM_ROADMAP': 'pm/roadmap'})
-    assert (proc.returncode == 0) is ok, proc.stdout + proc.stderr
-    assert why in proc.stdout + proc.stderr, proc.stdout + proc.stderr
+    wrong = []
+    for n, (main, pr, done, building, ok, why) in enumerate(COMPARE_ROWS):
+        root = tmp_path / f'row{n}'
+        for mid in done:
+            _milestone(root, mid, 'done')
+        for mid in building:
+            _milestone(root, mid, 'building')
+        (root / 'pm/roadmap').mkdir(parents=True, exist_ok=True)
+        proc = subprocess.run(['bash', str(script)], cwd=root, capture_output=True,
+                              text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
+                                              'MAIN': main, 'PM_ROADMAP': 'pm/roadmap'})
+        text = proc.stdout + proc.stderr
+        if (proc.returncode == 0) is not ok or why not in text:
+            wrong.append(f'main={main} pr={pr}: exit {proc.returncode}, {text!r}')
+    assert not wrong, '\n'.join(wrong)
 
 
 def test_the_compare_step_reads_only_the_frontmatter_and_either_quote_style(tmp_path):
@@ -307,21 +315,20 @@ def test_the_compare_step_reads_only_the_frontmatter_and_either_quote_style(tmp_
     assert admitted.returncode == 0 and 'done milestone 0.98' in admitted.stdout, admitted.stdout
 
 
-@pytest.mark.parametrize('roadmap, why', [
-    ('nope', 'is not a directory'),
-    ('pm/roadmap', 'scanned nothing'),
-])
-def test_the_compare_step_refuses_when_it_scanned_no_milestone(tmp_path, roadmap, why):
+def test_the_compare_step_refuses_when_it_scanned_no_milestone(tmp_path):
     """Rule 4: a hotfix-shaped PR over an absent or empty roadmap is not OK —
     the building-milestone refusal only exists if the tree was read."""
     import subprocess
     (tmp_path / 'pm/roadmap').mkdir(parents=True)
     script = tmp_path / 'compare.sh'
     script.write_text(_compare_step_script(), encoding='utf-8')
-    proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
-                          text=True, env={'PATH': '/usr/bin:/bin', 'PR': '0.8.1',
-                                          'MAIN': '0.8', 'PM_ROADMAP': roadmap})
-    assert proc.returncode == 1 and why in proc.stdout, proc.stdout + proc.stderr
+    for roadmap, why in (('nope', 'is not a directory'),
+                         ('pm/roadmap', 'scanned nothing')):
+        proc = subprocess.run(['bash', str(script)], cwd=tmp_path, capture_output=True,
+                              text=True, env={'PATH': '/usr/bin:/bin', 'PR': '0.8.1',
+                                              'MAIN': '0.8', 'PM_ROADMAP': roadmap})
+        assert proc.returncode == 1 and why in proc.stdout, (
+            roadmap, proc.stdout + proc.stderr)
 
 
 def test_the_compare_step_ignores_an_unclosed_fence_and_strips_trailing_space(tmp_path):

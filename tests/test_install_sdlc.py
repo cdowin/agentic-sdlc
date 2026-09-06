@@ -24,8 +24,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
@@ -146,24 +144,25 @@ def test_the_renderer_holds_no_per_step_text_of_its_own():
         assert f"'{name}'" not in body and f'"{name}"' not in body, name
 
 
-@pytest.mark.parametrize('operation', driver.OPERATIONS)
-def test_every_operation_renders_its_whole_list_beside_the_others(operation):
+def test_every_operation_renders_its_whole_list_beside_the_others():
     """`the-inner-levels-are-belts-too` ship criterion 5, which subsumes
     `adopt-is-a-conveyor`'s criterion 4: ALL FOUR lists in one document, from
     the same source, so the generated protocol is the whole SDLC and not just
     its outer half. The renderer is `sdlc_doc.py`'s; what is asserted here is
-    that every step of every list arrives with its kind."""
+    that every step of every list arrives with its kind. One render, every
+    operation — it is one document."""
     with repo() as root:
         run()
         text = (root / DEST).read_text(encoding='utf-8')
-        assert heading_of(operation) in text, text[:400]
-        body = section(text, operation)
-        assert 'not configured' not in body, body[:400]
-        for name, step in steps.REGISTRIES[operation].items():
-            row = next(line for line in body.split('\n')
-                       if line.startswith('| ') and f'| `{name}` |' in line)
-            assert step.kind.name in row, row
-        assert listed(body) == list(steps.DEFAULT_STEPS[operation])
+        for operation in driver.OPERATIONS:
+            assert heading_of(operation) in text, (operation, text[:400])
+            body = section(text, operation)
+            assert 'not configured' not in body, (operation, body[:400])
+            for name, step in steps.REGISTRIES[operation].items():
+                row = next(line for line in body.split('\n')
+                           if line.startswith('| ') and f'| `{name}` |' in line)
+                assert step.kind.name in row, row
+            assert listed(body) == list(steps.DEFAULT_STEPS[operation]), operation
 
 
 def test_a_configured_command_is_shown_and_an_unconfigured_one_is_not():
@@ -243,15 +242,17 @@ def test_the_shrunk_release_skill_points_at_the_document_and_lists_no_steps():
     assert set(named) <= set(steps.NO_DEFAULT_COMMAND), named
 
 
-@pytest.mark.parametrize('flag', ['--diff', '--force'])
-def test_the_standard_flags_answer_for_the_new_verb(flag):
+def test_the_standard_flags_answer_for_the_new_verb():
+    """`--diff` reads and leaves the file; `--force` then replaces it — one
+    tree, in that order, because the second flag's precondition is the
+    first flag's postcondition."""
     with repo() as root:
         (root / 'docs').mkdir()
         (root / DEST).write_text('mine\n', encoding='utf-8')
-        code, out = run(flag)
+        code, out = run('--diff')
         assert code == 0, out
-        if flag == '--diff':
-            assert (root / DEST).read_text(encoding='utf-8') == 'mine\n'
-            assert f'--- a/{DEST}' in out
-        else:
-            assert (root / DEST).read_text(encoding='utf-8') != 'mine\n'
+        assert (root / DEST).read_text(encoding='utf-8') == 'mine\n'
+        assert f'--- a/{DEST}' in out
+        code, out = run('--force')
+        assert code == 0, out
+        assert (root / DEST).read_text(encoding='utf-8') != 'mine\n'

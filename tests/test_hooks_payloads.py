@@ -71,35 +71,36 @@ def fire(root: Path, hook: str, command: str) -> int:
 
 
 # --- cc-commit-pathspec: --pathspec-from-file IS a pathspec -------------------
-@pytest.mark.parametrize('command', [
+ALLOWED = (
     # pre-fix: all four false-BLOCKED (exit 2)
     'git commit --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=list.txt -m "msg"',
     'git commit -m "fix: x" --pathspec-from-file list.txt',
     'git commit --pathspec-from-file=- -m "msg"',
-])
-def test_pathspec_from_file_names_paths_and_is_allowed(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+    # the exemptions that predate the fix
     'git commit -m "fix: x" -- a.py',      # explicit `--` pathspec
     'git commit -m "fix: x" a.py',         # bare path argument
     'git commit --amend',                  # exempt: another rule's territory
     'git commit --dry-run',                # exempt: writes nothing
     'git status',                          # not a commit at all
-])
-def test_pathspec_existing_exemptions_survive_the_fix(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 0
-
-
-@pytest.mark.parametrize('command', [
+)
+BLOCKED = (
     'git commit -m "fix: x"',
     'git commit -am "sweep"',
     'git commit --all -m "sweep"',
-])
-def test_pathspec_a_pathless_commit_still_blocks(hooks_repo, command):
-    assert fire(hooks_repo, PATHSPEC, command) == 2
+)
+
+
+def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
+        hooks_repo):
+    """Twelve rows, one case, both directions: a hook that blocks everything
+    and a hook that is disarmed are equally broken, and only the pair tells
+    them apart. A row that answers wrongly names itself."""
+    wrong = ([f'BLOCKED: {c}' for c in ALLOWED
+              if fire(hooks_repo, PATHSPEC, c) != 0]
+             + [f'allowed: {c}' for c in BLOCKED
+                if fire(hooks_repo, PATHSPEC, c) != 2])
+    assert not wrong, wrong
 
 
 # =============================================================================

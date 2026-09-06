@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.0 — 2026-09-06
+
 - **`check grain-shape` stock caps tightened** — story 60, feature 80, bug 50, milestone 120,
   decisions 300 (were 200 / 200 / 150 / 200 / 500), plus a new `review` kind capped at 120 over
   every markdown file under `[pm] review_dir`. A consumer whose records are over these goes red

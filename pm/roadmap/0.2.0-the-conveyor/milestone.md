@@ -1,7 +1,7 @@
 ---
 id: "0.2.0"
 name: the conveyor
-status: building
+status: done
 depends_on: []
 branch: milestone/0.2.0-the-conveyor
 reviewed: docs/reviews/2026-09-05-0.2.0-release-review.md

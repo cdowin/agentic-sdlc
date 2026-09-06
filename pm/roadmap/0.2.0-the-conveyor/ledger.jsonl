@@ -1101,3 +1101,8 @@
 {"ts":"2026-09-06T05:38:05Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":4155,"rank":5}
 {"ts":"2026-09-06T05:38:05Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":29152,"census":1035}
 {"ts":"2026-09-06T05:38:05Z","kind":"status","grain":"0.2.0/the-code-knows-entry-and-exit","from":"building","to":"done"}
+{"ts":"2026-09-06T05:38:24Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":1848}
+{"ts":"2026-09-06T05:39:08Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":44409}
+{"ts":"2026-09-06T05:39:08Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":76}
+{"ts":"2026-09-06T05:39:08Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":46650}
+{"ts":"2026-09-06T05:39:08Z","kind":"status","grain":"0.2.0","from":"building","to":"done"}

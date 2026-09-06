@@ -37,10 +37,10 @@ so there is no `project_root_dir` key and asking for one is exit 2 with that rea
 ## Two things fall out, and both need a decision rather than a discovery
 
 **The `NN-` ordinal prefix retires.** `[pm] story_ordinal_prefix` sequences stories *within a
-feature*; in a flat pool `01-` appears a hundred times and orders nothing. Build order moves to the
-feature's own execution list, which is where a feature already declares the sequence of its
-stories — one home instead of two, and the same shape as `order` one level up. The key is retired
-by name.
+feature*; in a flat pool `01-` appears a hundred times and orders nothing. Sequence moves to the
+parent's `order` — see `the-order-is-one-mechanism`, which makes that the same list at every
+level. The key is retired by name, and so is the `<!-- pm:execution -->` block it shared the job
+with.
 
 **`ledger.jsonl` needs an address.** It is milestone-scoped machine state, not a grain, and it
 currently lives in the milestone's directory. `pm/roadmap/ledgers/<milestone>.jsonl` — a table of

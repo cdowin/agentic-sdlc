@@ -38,9 +38,17 @@ authoritative bindings and are OPTIONAL, so a grain written and not yet bound is
 and reported as a census line rather than an error. Planning gets cheap in exactly the way
 `pm-execution.md` already argues it should be.
 
+Sequence generalises with it. 0.3.0 built `order` for one edge; **membership is the child's field
+and sequence is the parent's list** at every level, which retires two ad-hoc answers the tool
+already ships — the `pm:execution` block with the V6 rule policing it (the same defect as V2 and
+the path), and `story_ordinal_prefix`. What a container may hold stops being written per level and
+becomes `[pm.contains]`, which is the config stating the model.
+
 What is left is four kinds of verb and nothing else: **write** (`pm new`), **bind** (`pm set`,
-`pm order`), **read** (`pm list|status|roadmap|next|ready-for`), **check** (`check pm`). Belts sit
-on top unchanged — their checks, then one write.
+`pm <kind> add`), **read** (`pm list|status|roadmap|next|ready-for`), **check** (`check pm`). Belts
+sit on top unchanged — their checks, then one write. And the read verbs emit every field somebody
+would filter on, because the shell is the filter and a withheld column is what makes a consumer
+believe otherwise.
 
 ## Ship criterion
 

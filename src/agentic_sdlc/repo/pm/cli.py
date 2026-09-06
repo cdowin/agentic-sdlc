@@ -2232,6 +2232,11 @@ def main(argv: list[str]) -> int:
     except Refused as err:
         print(f'[pm] REFUSED — {err}', file=sys.stderr)
         return 1
-    except (Usage, model.AmbiguousStory) as err:
+    except (Usage, model.AmbiguousStory, model.ConfigError) as err:
+        # `ConfigError` here is the declaration's LAZY half: `load()` above
+        # parses `[pm.states.*]`, and a tree that declares none is refused
+        # only when a verb first asks `flow_of` — mid-walk, after dispatch.
+        # One line, exit 2, the same as `check pm` on the same tree (D11,
+        # rule 6); a traceback at exit 1 reads to a consumer as FINDINGS.
         print(f'[pm] ERROR — {err}', file=sys.stderr)
         return 2

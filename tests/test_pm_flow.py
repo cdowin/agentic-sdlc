@@ -39,6 +39,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
+from support.pm import run_cli, tree as grain_tree  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
@@ -173,6 +174,18 @@ def test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name():
     assert 'agentic-sdlc pm init' in message
     assert '[pm.states.milestone]' not in message, (
         'the refusal pasted the seed instead of naming the verb that writes it')
+    # The same refusal through the CLI — the path every consumer takes on the
+    # day it bumps its pin, before `pm init`. `load()` parses fine (nothing to
+    # parse), so `flow_of` raises MID-WALK, after dispatch: that was a Python
+    # traceback at exit 1 from every reading verb, while `check pm` on the
+    # identical tree exited 2 on one line. Exit 2 is the contract (rule 6).
+    with grain_tree() as root:
+        (root / 'devkit.toml').write_text('[pm]\n', encoding='utf-8')
+        code, out = run_cli(root, 'status')
+    assert code == 2, out
+    assert 'Traceback' not in out, out
+    assert '[pm] ERROR — ' in out and '[pm.states.' in out, out
+    assert 'agentic-sdlc pm init' in out, out
 
 
 # --- the three opinions, each refused at exit 2 -------------------------------

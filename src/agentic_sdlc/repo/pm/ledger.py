@@ -190,7 +190,7 @@ KIND_DEVIATION = 'deviation'
 # because rows carrying it are already in every consumer's ledger and a reader
 # that stopped understanding them would be rewriting history (D7's reasoning,
 # one file over).
-OUTCOMES = ('not-true', 'unverifiable', 'skipped')
+OUTCOMES = ('not-true', 'unverifiable', 'skipped', 'forced')
 
 # A durable log is not a paste buffer. The cap is on the REASON because it is
 # the only free-text field, and a row is one line.

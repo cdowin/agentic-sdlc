@@ -79,7 +79,7 @@ def feature_doc(status: str = 'planning', reviewed: str = '') -> str:
             f'phase: 1\n---\n\n# Alpha\n')
 
 
-def story_doc(status: str = 'reviewing', evidence: str = '') -> str:
+def story_doc(status: str = 'building', evidence: str = '') -> str:
     return (f'---\nid: {FEATURE_ID}/s1\nfeature: {FEATURE_ID}\n'
             f'milestone: "{VERSION}"\nname: One\nstatus: {status}\n---\n\n'
             f'# One\n\n{evidence}')
@@ -89,7 +89,7 @@ DONE_LINE = 'done: 3a42f19ad0 — the belt walks\n'
 
 
 @contextlib.contextmanager
-def tree(files: dict[str, str] | None = None, *, story: str = 'reviewing',
+def tree(files: dict[str, str] | None = None, *, story: str = 'building',
          evidence: str = DONE_LINE, feature: str = 'planning',
          reviewed: str = '', config: str = CONFIG):
     """A scratch repo with a milestone, a feature and one story, entered.
@@ -237,7 +237,7 @@ def test_all_true_writes_exactly_the_first_done_state_and_nothing_else(capsys):
         assert changed == {SFILE, LEDGER}, changed
         assert status_of(root, SFILE) == want
         assert after[SFILE].replace(f'status: {want}\n'.encode(),
-                                    b'status: reviewing\n') == before[SFILE], (
+                                    b'status: building\n') == before[SFILE], (
             'the belt rewrote something other than the status line')
         written = rows(root)
         assert [r['kind'] for r in written] == [ledger.KIND_STATUS], written
@@ -274,7 +274,7 @@ def test_close_feature_names_the_story_not_in_done_and_writes_nothing(capsys):
     parking finished stories at `reviewing` and closing the feature over
     them. The blocker is NAMED (by `pm ready-for feature`, never
     re-implemented) and the feature file is byte-identical."""
-    with tree(story='reviewing', feature='building', reviewed=RECORD,
+    with tree(story='building', feature='building', reviewed=RECORD,
               files={RECORD: VERDICT_BLOCK}) as root:
         before = (root / FFILE).read_bytes()
         code = close('feature', FEATURE_ID)

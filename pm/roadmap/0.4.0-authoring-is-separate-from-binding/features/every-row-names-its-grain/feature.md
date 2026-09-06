@@ -2,7 +2,7 @@
 id: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: Every automatic row names the grain it came from
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

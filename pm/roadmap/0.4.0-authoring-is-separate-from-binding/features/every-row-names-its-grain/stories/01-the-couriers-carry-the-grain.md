@@ -3,8 +3,8 @@ id: 0.4.0/every-row-names-its-grain/01-the-couriers-carry-the-grain
 feature: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: The couriers carry the grain they were dispatched against
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

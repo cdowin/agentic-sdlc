@@ -13,6 +13,13 @@ set -eu
 # It must be .PHONY (a PM tree IS a `pm/` directory) and must pass its
 # environment through (every payload value travels as `GDK_LEDGER_*`).
 MAKE_PM=(make -s pm)
+# GDK_LEDGER_GRAIN — the grain this session or dispatch is working on, exported
+# by whoever started it. NOT a payload field: no hook event carries a grain, and
+# the fact already exists at the moment of dispatch, so passing it is copying a
+# known value rather than deriving one (D2). Unset is normal — the verb then
+# resolves it from the tree, or omits the key. Never set it to a guess: a row
+# filed against the wrong grain is uncorrectable, and one filed against none is
+# visible in a bucket that already exists.
 # -----------------------------------------------------------------------------
 
 # The event is a CONSTANT, not `hook_event_name` off the payload: a mis-wired
@@ -76,10 +83,20 @@ sys.stdout.write(json.dumps(event))
 ' "$@"
 }
 
-# fire <payload> — both streams, then `exit=<n>`.
+# fire <payload> [<grain>] — both streams, then `exit=<n>`.
+#
+# The child's environment is BUILT rather than inherited, because the grain is
+# the one input that arrives that way (no hook event carries one). `env -u` and
+# not "leave it alone": an operator with GDK_LEDGER_GRAIN exported would
+# otherwise turn every case that asserts NO `--grain` flag into a false pass,
+# which is the one thing a self-test may never do.
 self_test_fire() {
 	local rc=0 out
-	out="$(printf '%s' "$1" | bash "$0" 2>&1)" || rc=$?
+	if [ -n "${2:-}" ]; then
+		out="$(printf '%s' "$1" | env "GDK_LEDGER_GRAIN=$2" bash "$0" 2>&1)" || rc=$?
+	else
+		out="$(printf '%s' "$1" | env -u GDK_LEDGER_GRAIN bash "$0" 2>&1)" || rc=$?
+	fi
 	printf '%s\nexit=%s\n' "$out" "$rc"
 }
 
@@ -146,6 +163,23 @@ self_test() {
 				rc=1 ;;
 		esac
 		self_test_says 'a payload with no ids still records' "$argv" 'exit=0' || rc=1
+		# The grain is the same discipline, one source further out: it comes
+		# from the ENVIRONMENT rather than the payload, because no hook event
+		# carries a grain. The argv above was fired with GDK_LEDGER_GRAIN
+		# unset, so it is the negative.
+		case "$argv" in
+			*'ARG[--grain]'*)
+				printf '  MISS — an unset grain was passed as a flag\n    got: %s\n' \
+					"${argv//$'\n'/ | }" >&2
+				rc=1 ;;
+		esac
+		# And the positive. Every real grain id holds a `/`, so this is also the
+		# value most likely to be lost by a vehicle that re-splits or re-quotes.
+		argv="$(self_test_fire "$(self_test_payload "$EVENT" "$repo" 'sess-1' "$tilde")" \
+			'0.1/alpha/s0')"
+		for want in 'ARG[--grain]' 'ARG[0.1/alpha/s0]' 'exit=0'; do
+			self_test_says 'the grain travels' "$argv" "$want" || rc=1
+		done
 
 		# A non-bash vehicle under LC_ALL=C: a bash-quoted value would be a lost row
 		# with nothing red anywhere.
@@ -239,6 +273,13 @@ fi
 ARGS='ledger record'
 env_arg --from-transcript GDK_LEDGER_TRANSCRIPT "$TRANSCRIPT"
 ARGS="$ARGS --event $EVENT"
+# The grain, when the dispatch carried one. Through `env_arg` like every other
+# value: a grain id holds `/`, and the vehicle's shell may be dash under
+# LC_ALL=C. Absent is an OMITTED FLAG — never `--grain ""`, which the verb would
+# have to refuse, turning "nobody said" into a lost row.
+if [ -n "${GDK_LEDGER_GRAIN:-}" ]; then
+	env_arg --grain GDK_LEDGER_GRAIN "$GDK_LEDGER_GRAIN"
+fi
 if [ -n "$SESSION_ID" ]; then
 	env_arg --session-id GDK_LEDGER_SESSION_ID "$SESSION_ID"
 fi

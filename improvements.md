@@ -291,6 +291,41 @@ from a thing I have to remember into a thing the guard enforces.
    that repo, the session is rooted in the wrong one" — turns a per-write refusal into the
    diagnosis.
 
+### F10 — a merge is where the third copy of a fact turns up
+
+`0.4.0/one-rule-routes-a-row` was written against two routing functions and named both. Merging
+0.3.0 in first — before building, rather than at close — turned up a **third**, and then a
+**fourth**:
+
+    _stamp                    routes by the grain's file     (correct, since the ledger shipped)
+    _building_ledger_dir      the one `in_progress` milestone (the feature's target)
+    model.release_ledger_dir  the current release, from `order` (0.3.0, THREE DAYS OLD)
+    tests/conftest.py:278     `in_progress_milestones`, inline (nobody had ever listed it)
+
+The third is the interesting one. 0.3.0 fixed the same bug this feature fixes — telemetry refused
+because no milestone was `in_progress` — and fixed it *better than the thing it replaced* and
+*differently from how 0.4.0 was going to*. Two milestones, planned a week apart, both correct in
+isolation, arriving at two mechanisms for one fact. **That is the milestone's own thesis happening
+between milestones rather than inside one.**
+
+**What made it visible was merging early.** Had 0.4.0 merged 0.3.0 at CLOSE, the conflict would
+have been a `git` conflict in one function, resolved by whoever was holding the merge, at the
+moment they were least able to re-open a decision — and the likely resolution is "keep both, they
+are for different row kinds", which is the defect surviving as a compromise.
+
+**Fix.** Not a tool change. A rule for the SDLC's dispatch loop: **when two milestones are in
+flight, the later one merges the earlier one as soon as the earlier one has landed anything it
+touches — not at close.** The merge is not integration overhead; it is the only pass that can see
+across two plans, and it is cheapest when the second milestone still has room to change its mind.
+Here it cost one decision (D7) and two conflict hunks.
+
+**And the fourth was found by grep, not by the merge**, which is the other half of the lesson: the
+feature file listed the routers it knew about, and the number was wrong. A feature that says *"two
+functions answer this"* should be read as *"at least two"*, and the close should say what the
+final count was. It was four.
+
+---
+
 ---
 
 ## Open, to decide after the merge

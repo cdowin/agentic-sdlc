@@ -34,13 +34,9 @@ The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
 
 `make check`, `precommit` and `milestone` are the compositions `install-gates`
 ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What
-each rung COSTS is your tree's business — ask `verify --plan`, which reads it
-from your ledger rather than quoting a number from somebody else's repo.
-
-`agentic-sdlc verify --plan` prints them with the cost each one actually took,
-read from the ledger. **Ask it rather than guessing** — guessing is how a wide
-gate ends up in an inner loop, which is the measured 170x this package exists
-to end.
+each rung COSTS is your tree's business — `agentic-sdlc verify --plan` prints
+each one with the cost it last took, read from your ledger. **Ask it rather
+than guessing**; guessing is how a wide gate ends up in an inner loop.
 
 **A belt is its checks, then one write or a clean error** (D12). `close story`,
 `close feature`, `release` and `adopt` each run their check list, print one line

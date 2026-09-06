@@ -19,17 +19,9 @@ consumed_by: []
 
 ## Proof budget
 
-<!-- ROUGHLY HOW MANY TEST CASES THIS FEATURE SHOULD COST, written BEFORE it is
-     built and compared after. Not a quota — a number somebody has to disagree
-     with out loud rather than drift past in silence.
-
-     Say which tier they land in, and name any EXISTING module they belong in.
-     A feature that needs a new test module is making a claim about a new
-     surface; a feature that adds forty cases to a module that already has a
-     hundred is usually proving the same rule at a second altitude.
-
-     The question this section exists to force: what does the suite already
-     check, and why is that not enough? -->
+<!-- Roughly how many test cases this feature should cost, written before it is
+     built and compared after. Name the tier and the existing module they land
+     in; say what the suite already checks and why that is not enough. -->
 
   cases:
   tier:

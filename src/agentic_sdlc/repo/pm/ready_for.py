@@ -1,126 +1,15 @@
-"""ready_for.py — the three belt-entry conditions, each answering with an exit code.
+"""ready_for.py — the three belt-entry conditions, each answering with an exit
+code.
 
-A belt refuses to start until the belt below it is finished. All three
-conditions were already computable — `pm status` knows the story states,
-`check pm` D1 already asserts a `reviewed:` pointer resolves, and
-`verdict.parse` already returns dispositions. **Nothing here re-implements any
-of that.** What was missing is a verb that answers with an EXIT CODE, so a step
-machine can gate on it and an operator cannot mis-read it (D3's ladder: these
-are the gates BETWEEN rungs, not rungs themselves).
+    ready-for feature   <feature-id>    every story in `done`?
+    ready-for milestone <milestone-id>  every feature in `done` with a
+                                        non-empty record, and no open bug?
+    ready-for tag       <milestone-id>  every finding not `open`?
 
-    ready-for feature   <feature-id>    is every story `done`?
-    ready-for milestone <milestone-id>  is every feature `done`, each with a
-                                        non-empty review record?
-    ready-for tag       <milestone-id>  is every finding at a disposition other
-                                        than `open`?
-
-Exit 0 ready · 1 not ready · 2 usage or config. Nothing is written, ever: all
-three are read verbs over a tree, and `pm vocabulary` is unchanged because
-these introduce no state.
-
-**Exit 1 NAMES the blockers. It never counts them.** `3 stories not at
-reviewing` sends someone to `pm status` to re-derive what the machine already
-had in hand; `0.1/alpha/s1 is building` is actionable. The count survives only
-as the trailing census line, the same shape `check pm` prints under its
-`  DRIFT  ` findings — and the named lines are capped at MAX_NAMED with the
-remainder DISCLOSED, never silently shortened.
-
-The blockers are labelled `  BLOCKED  ` rather than `  DRIFT  `: a story at
-`building` is a perfectly consistent tree, and calling it drift would say
-something false about it in the one word a consumer's gate regex greps for.
-
-## The two vacuity rulings, deliberately opposite, stated together
-
-A reader who finds one of these and not the other will assume the other is a
-bug, so both live here:
-
-- **A feature with NO stories is READY** — an empty set is vacuously satisfied,
-  and refusing it would make the verb unusable on doc-only features. The output
-  says `vacuously ready` in those words, because "it passed and I do not know
-  why" is the shape of a false PASS.
-- **A milestone with ZERO features is NOT ready**, and so is one whose features
-  point at zero review records. Far more likely a mis-typed id than a real
-  state, so it is loud.
-
-`stories/` is walked by `model.slot_walk`, which keeps only documents that OPEN
-frontmatter — so a `stories/` directory holding nothing but a README yields
-zero stories and IS vacuously ready. That is not a hidden narrowing: the census
-line carries the walk's own disclosures, so "0 story/ies" never reads as a fact
-about the directory when it is a fact about the filter.
-
-## What blocks, and what is the belt below's question
-
-`ready-for feature` blocks on any story not at `done`.
-
-**It asked for `reviewing` until 2026-09-05, and that was wrong.** The belt
-design said "every story at `reviewing`", so this verb did too, and a whole
-milestone's stories were parked there — finished work, committed and green,
-described by a status that says it is waiting for something. Chris, on being
-shown a tree in exactly that state:
-
-> *"We wanna capture work. We want things to be DONE. So we wanna rip through
-> stories really fast. Get a story into done. Its unit tests are done. It's
-> good. … And then when all the stories are done, the feature flips to
-> reviewing, and then the review happens."*
-
-`reviewing` at STORY grain is a hand-off waystation — the builder saying "look
-at this" — and a hand-off is not a terminus. `done` is. Asking for `done` here
-is also the STRICTER question, which is the tell that it was the right one:
-a story at `reviewing` is genuinely unfinished, and a belt that admitted it
-would start the feature's review over work still in motion.
-
-A tree that closes stories through `pm feature done --cascade` — the flow where
-the ORCHESTRATOR flips them, which `pm-execution.md` still permits — gets each
-still-`reviewing` story named here. That is the verb telling it the cascade has
-not run yet, which is a fact worth seeing rather than one to absorb.
-
-`ready-for milestone` reads `features/` AND every bug in the tree whose
-`fix_milestone:` names this milestone (story 05 of
-the-code-knows-entry-and-exit). **An open bug against the milestone blocks
-it, by name**: each one not in the `done` category is a BLOCKED line carrying
-the word its file holds, so the reason is in the output rather than absorbed.
-A bug filed under this milestone but promised to another is not asked and is
-counted — the census says how many bugs were read and how many name this
-milestone, because "no bug blocks" and "no bug was looked at" must not print
-the same sentence.
-
-`ready-for tag` reads the features' `reviewed:` pointers PLUS any record the
-milestone document itself points at — NOT a sweep of `[pm] review_dir`, which
-would read records belonging to other milestones. A feature with a BLANK
-pointer is not a blocker for `tag`: whether the review happened is
-`ready-for milestone`'s question, one rung down, and answering it twice in two
-places is how the two answers drift apart. A pointer that is PRESENT and
-unusable is a blocker in both.
-
-## UNVERIFIABLE is never a pass
-
-`verdict.parse` raises `NoVerdict` for a record with no verdict block and
-`MalformedVerdict` for a broken one. **Both are blockers here**, reported as
-`UNVERIFIABLE` with the record path and the parser's own message — inherited,
-not softened. A record whose verdict block does not parse is the single easiest
-way to get a false green out of this verb, and a false PASS here is exactly the
-failure that let 0.24.0 run its gate before its review. A record that parses to
-ZERO findings is a pass for that record and is printed anyway, because a record
-the verb never opened must not look identical to a clean one.
-
-Every verdict block in a record is read (`parse` returns a list, one per pass):
-a clean first block does not excuse a malformed or open-carrying second one.
-A block that is a header row with no rows under it is zero findings and a pass
-— exactly what `parse` returns for it, unreinterpreted. A separator row under
-the header is `MalformedVerdict` and therefore UNVERIFIABLE, also `parse`'s
-own ruling.
-
-## The pointer is a payload, and it is refused like one
-
-`_record` is the ONE resolver both `milestone` and `tag` read a `reviewed:`
-pointer through, so the two cannot come to different answers about the same
-value. It refuses — as a BLOCKER, naming the feature, never as a crash and
-never by reaching for the file — anything absolute, home-relative, schemed,
-glob-shaped, backslash-separated, dot-segmented, over-long, or symlinked; and
-it bounds the read, so a 10 MB record is reported rather than consumed. This is
-stricter than `model.record_resolves`, which D1 reads and which accepts an
-absolute pointer: hard rule 8 says nothing here reads a path outside this
-checkout, and a gate answering about `/etc/passwd` would.
+Exit 0 ready · 1 not ready, naming each blocker · 2 usage or config.
+Nothing is written. A feature with no stories is vacuously ready; a
+milestone with no features, or no records, is not. UNVERIFIABLE is never a
+pass.
 """
 from __future__ import annotations
 
@@ -135,20 +24,15 @@ from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _grain_kind, _ok
 FEATURE, MILESTONE, TAG = 'feature', 'milestone', 'tag'
 KINDS = (FEATURE, MILESTONE, TAG)
 
-# THE QUESTION IS A CATEGORY. "Finished" is `[pm.states.<kind>] done`, asked
-# through `model.holds` — the one predicate `check pm` D2 also asks, so the
-# two cannot disagree about whether an `obe` story holds its feature open
-# (they did, once: P9's two call sites). There is no word here to go stale.
+# The question is a category, asked through `model.holds` so this and `check
+# pm` D2 cannot disagree.
 DONE = model.DONE_CATEGORY
 
-# How many blockers are NAMED before the rest are disclosed as a remainder. A
-# cap is needed (200 blocking stories is a scroll, not a report) and a silent
-# one would be the tally this verb exists to refuse, so the truncation says so.
+# Named blockers are capped; the remainder is disclosed, never silently
+# dropped.
 MAX_NAMED = 50
 
-# A `reviewed:` pointer is a repo-relative path to one prose file. Both bounds
-# are refusals, not truncations: an over-long pointer and an over-large record
-# are each reported rather than followed.
+# Both bounds are refusals, not truncations.
 MAX_POINTER_LEN = 512
 MAX_RECORD_BYTES = 1 << 20
 
@@ -162,10 +46,8 @@ UNVERIFIABLE = 'UNVERIFIABLE'
 
 # --- reporting ----------------------------------------------------------------
 def _answer(subject: str, blockers: list[str], census: str) -> int:
-    """Print the verdict for one question and return its exit code.
-
-    The one place the 0/1 contract is spelled, so the three predicates cannot
-    disagree about which is which.
+    """Print the verdict for one question and return its exit code — the one
+    place the 0/1 contract is spelled.
     """
     if not blockers:
         _ok(f'{READY} — {subject}: {census}')
@@ -183,17 +65,8 @@ def _answer(subject: str, blockers: list[str], census: str) -> int:
 # --- grain resolution ---------------------------------------------------------
 def _grain(cfg: model.PmConfig, kind: str, gid: str, doc: str, noun: str,
            asks: str) -> Path:
-    """The grain file `gid` names, or exit 2 — and it must be the RIGHT kind.
-
-    `_grain_file` is the resolver every other verb here uses, so traversal,
-    globs, absolute paths, backslashes, dot and empty segments, over-long ids
-    and control characters refuse identically; a second grammar would be a
-    second answer. What this adds is the kind check, because a story id handed
-    to `ready-for feature` resolves to a real file and would get the wrong
-    question answered about it — the quietest way this verb could lie.
-
-    Neither half reads a grain's CONTENT: resolution stats, and the kind is
-    decided by the id's shape and the file's slot name.
+    """The grain file `gid` names, of the right kind, or exit 2; a story id
+    handed to `ready-for feature` would get the wrong question answered.
     """
     path = _grain_file(cfg, gid)
     if path.name != doc:
@@ -219,11 +92,8 @@ class Record:
 
 
 def _pointer_defect(pointer: str) -> str | None:
-    """Why this `reviewed:` value may not be followed, by SHAPE alone.
-
-    Every branch decides before anything is opened, so a traversal, a scheme or
-    a glob is refused without a stat — hard rule 8 is a claim about what this
-    package reads, and a claim tested by trying is not the claim.
+    """Why this `reviewed:` value may not be followed, decided by shape before
+    anything is opened (hard rule 8).
     """
     if not pointer or pointer == 'null':
         return 'reviewed: is blank — no review record is named'
@@ -252,14 +122,8 @@ def _pointer_defect(pointer: str) -> str | None:
 
 def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | None]:
     """(record, defect) for one `reviewed:` pointer — exactly one is not None.
-
-    The single resolver behind both `ready-for milestone` and `ready-for tag`
-    (criterion 6 of story 03): two copies would be two rulings about the same
-    bytes. A defect is a BLOCKER string, never an exception — an unreadable
-    pointer is a fact about the tree, and this verb reports facts.
-
-    An EMPTY record is a defect. `check pm` D1 asks only whether the pointer
-    resolves, which a zero-byte file satisfies while proving nothing.
+    The single resolver behind `milestone` and `tag`; an empty record is a
+    defect.
     """
     defect = _pointer_defect(pointer)
     if defect is not None:
@@ -296,21 +160,9 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
 
 # --- story -> feature ---------------------------------------------------------
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
-    """Is every story under this feature in the `done` CATEGORY?
-
-    Not at a word. Not `reviewing` — see the module docstring for the day that
-    changed and why the stricter question was the right one — and not `done`
-    either: a story at `obe` is finished and is never going to be `done`, and
-    under a bare-word predicate it held its feature open forever. Which words
-    are finished is the project's `[pm.states.story] done` list.
-
-    Exit 1 names each story that is not, with the status word the file
-    ACTUALLY holds — including one the project never declared (the D4 drift
-    `check pm` reports), which `holds` counts as a blocker rather than a pass.
-    This verb reports what the file says and never repairs it.
-
-    A feature with NO stories is READY; see the module docstring for why both
-    vacuity rulings are stated together.
+    """Is every story under this feature in the `done` category? Exit 1 names
+    each that is not, with the word the file holds; no stories is vacuously
+    ready.
     """
     ffile = _grain(cfg, FEATURE, fid, model.FEATURE_DOC, FEATURE,
                    "about a feature's stories")
@@ -333,22 +185,16 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
 
 # --- feature -> milestone -----------------------------------------------------
 def _features(cfg: model.PmConfig, mdir: Path) -> list[tuple[str, Path]]:
-    """(id, path) per feature under this milestone, in reading order.
-
-    `model.feature_files` walks `features/` and nothing else, which is why
-    `bugs/` cannot enter either predicate — a file under `bugs/` shaped exactly
-    like a feature is still not one.
+    """(id, path) per feature under this milestone, in reading order; `bugs/`
+    cannot enter.
     """
     return [(model.unquote(model.field_of(ff, 'id')) or cfg.rel(ff), ff)
             for ff in model.feature_files(mdir)]
 
 
 def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
-    """((id, status) for every bug whose `fix_milestone:` is `mid`), scanned.
-
-    The whole ACTIVE tree, not this milestone's `bugs/` alone: a bug is filed
-    where it was CAUGHT and promised to the milestone that will fix it, and
-    those are different directories more often than not.
+    """((id, status) for every bug whose `fix_milestone:` is `mid`), scanned
+    across the whole active tree — a bug is filed where it was caught.
     """
     against = []
     scanned = 0
@@ -364,14 +210,9 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
 
 
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
-    """Every feature in `done` with a resolving, NON-EMPTY record — and no
-    bug promised to this milestone still outside `done`.
-
-    Exit 1 names each blocker and which condition it failed. A milestone with
-    ZERO features exits 1 — the opposite of the empty-story ruling one rung
-    down, and deliberately so (module docstring). A bug blocks by NAME, with
-    the word its file holds, so a milestone held by one is explainable from
-    this output; a bug promised to another milestone is counted, not asked.
+    """Every feature in `done` with a resolving, non-empty record, and no bug
+    promised to this milestone outside `done`. Zero features exits 1,
+    deliberately opposite to the empty-story ruling.
     """
     mfile = _grain(cfg, MILESTONE, mid, model.MILESTONE_DOC, MILESTONE,
                    "about a milestone's features")
@@ -379,15 +220,13 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     subject = f'{MILESTONE} {mid}'
     if not features:
         return _answer(subject,
-                       # Worded to share NO phrase with the feature belt's
-                       # empty-set wording: the two rulings are opposite, and a
-                       # grep of a transcript must not be able to confuse them.
+                       # Worded to share no phrase with the feature belt's
+                       # empty-set line; the two rulings are opposite.
                        [f'{mid} has no features — an empty feature set does '
                         f'not satisfy this belt; a mis-typed id looks exactly '
                         f'like this'],
                        '0 feature(s)')
-    # Asked of the FEATURE flow. The 0.2.0 verb asked `feature done` against
-    # `story_states`, which agreed only while both lists were the stock one.
+    # Asked of the feature flow, not the story flow.
     held = model.holds(
         cfg, 'feature',
         ((fid, model.field_of(ffile, 'status') or '(no status:)')
@@ -417,13 +256,9 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
 # --- milestone -> tag ---------------------------------------------------------
 def _pointers(cfg: model.PmConfig, mid: str,
               mfile: Path) -> list[tuple[str, str]]:
-    """(owner, pointer) for every record this milestone points at.
-
-    The features' `reviewed:` pointers plus the milestone document's own, so a
-    milestone-level cross-cutting review — the pass that files the findings
-    this verb reads — is not invisible to the verb that gates on it. A
-    `[pm] review_dir` sweep would also read other milestones' records, which is
-    why it is not the source.
+    """(owner, pointer) for every record this milestone points at: the
+    features' plus the milestone document's own, never a `review_dir`
+    sweep.
     """
     owned = [(fid, model.unquote(model.field_of(ffile, 'reviewed')))
              for fid, ffile in _features(cfg, mfile.parent)]
@@ -432,15 +267,8 @@ def _pointers(cfg: model.PmConfig, mid: str,
 
 
 def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
-    """Is every finding in every record this milestone points at NOT `open`?
-
-    Exit 1 names the finding ids and the record each came from. This is the
-    question 0.24.0's release did not ask: it ran `make milestone` before the
-    reviewer, twice, over six findings sitting at `disposition: open`.
-
-    A record that cannot be parsed is UNVERIFIABLE and blocks; a record that
-    parses clean is printed with its finding count. A milestone pointing at NO
-    records blocks. See the module docstring for all three rulings.
+    """Is every finding in every record this milestone points at not `open`?
+    An unparseable record is UNVERIFIABLE and blocks; no records blocks.
     """
     mfile = _grain(cfg, TAG, mid, model.MILESTONE_DOC, MILESTONE,
                    "about a milestone's review records")
@@ -448,8 +276,8 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     records: dict[Path, Record] = {}
     for owner, pointer in _pointers(cfg, mid, mfile):
         if not pointer or pointer == 'null':
-            # One rung down's question: whether the review HAPPENED is
-            # `ready-for milestone`. Answering it here too is a second answer.
+            # Whether the review happened is `ready-for milestone`'s question,
+            # one rung down.
             continue
         record, defect = _record(cfg, pointer)
         if defect is not None:
@@ -463,8 +291,7 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
         try:
             passes = verdict.parse(record.text)
         except (verdict.NoVerdict, verdict.MalformedVerdict) as err:
-            # The parser's own message, flattened to one line: it names the
-            # line number and the offending text, and a blocker is one line.
+            # The parser's own message, flattened to one line.
             blockers.append(f'{UNVERIFIABLE} {rel}: '
                             f'{" ".join(str(err).split())}')
             continue
@@ -475,9 +302,8 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
         if opened:
             blockers.append(f'{", ".join(opened)} open in {rel}')
         else:
-            # Printed on the PASSING path too: a record contributing nothing
-            # must be visibly counted, or a record the verb never opened looks
-            # identical to a clean one.
+            # Printed on the passing path too, so an unopened record cannot
+            # look like a clean one.
             print(f'{RECORD}{rel} — {mine} finding(s), none open')
     if not records:
         blockers.append(
@@ -496,11 +322,8 @@ PREDICATES = {FEATURE: ready_for_feature, MILESTONE: ready_for_milestone,
 
 
 def cmd_ready_for(cfg: model.PmConfig, args: list[str]) -> int:
-    """`pm ready-for <kind> <id>` — one kind, one id, no flags, no defaults.
-
-    Every refusal here is exit 2 and writes nothing: a typo is a usage error,
-    never a finding, and 1 has to keep meaning "the belt below is not
-    finished" or a step machine cannot tell the two apart.
+    """`pm ready-for <kind> <id>` — one kind, one id, no flags. Every refusal
+    is exit 2, so 1 keeps meaning "the belt below is not finished".
     """
     if not args:
         raise Usage(f'ready-for needs a kind — one of {", ".join(KINDS)}')

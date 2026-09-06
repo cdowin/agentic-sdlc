@@ -679,6 +679,10 @@ def list_field_of(path: Path, key: str) -> list[str]:
             return []
         out: list[str] = []
         for line in lines[i + 1:close_i]:
+            if not line.strip():
+                # Spacing a long plan is the obvious thing a human does to it;
+                # truncating there would drop every entry below the gap.
+                continue
             m = _LIST_ITEM.match(line)
             if m is None:
                 break
@@ -1146,6 +1150,41 @@ def releases_file(cfg: PmConfig) -> Path:
     return cfg.roadmap / RELEASES_DOC
 
 
+def plan_defect(cfg: PmConfig) -> str | None:
+    """Why `releases.md` cannot be read as a plan, or None.
+
+    An ABSENT plan is not a defect — a tree mid-adoption has none. A plan that
+    is THERE and unreadable is: reporting "declares no `order`" over a
+    BOM-damaged, fence-eaten, misspelled or undecodable file is rule 4's first
+    cardinal sin, a gate passing over what it did not measure.
+    """
+    path = releases_file(cfg)
+    if not path.is_file():
+        return None
+    try:
+        text = read_raw(path)
+    except (OSError, UnicodeDecodeError) as err:
+        return f'could not be read as UTF-8 text ({err.__class__.__name__})'
+    lines = _split(text)
+    if _fence_bounds(lines) is None:
+        opens = bool(lines) and _FENCE.match(lines[0]) is not None
+        return ('has an opening `---` with no closing one'
+                if opens else
+                'has no frontmatter block — the plan is a grain, and `order` '
+                'lives in its frontmatter')
+    open_i, close_i = _fence_bounds(lines)
+    for i in range(open_i + 1, close_i):
+        if not lines[i].startswith(f'{ORDER_KEY}:'):
+            continue
+        rest = lines[i][len(ORDER_KEY) + 1:].strip()
+        if rest and not rest.startswith('#'):
+            return (f'`{ORDER_KEY}:` carries a scalar ({rest!r}) rather than a '
+                    f'block list — one `- "<version>"` per line')
+        return None
+    return (f'declares no `{ORDER_KEY}:` key — the file is there, so this is a '
+            f'plan that lost its list rather than a tree that has none')
+
+
 def declared_order(cfg: PmConfig) -> list[str]:
     """The declared sequence of versions, or [] when the tree has no plan."""
     return list_field_of(releases_file(cfg), ORDER_KEY)
@@ -1172,20 +1211,24 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     return out
 
 
-def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
-    """The first milestone claiming `version`, or None — an entry nothing
-    claims is DANGLING (R1) and, once its directory is retired, UNVERIFIABLE.
+def milestones_of_version(cfg: PmConfig, version: str) -> list[str]:
+    """Every milestone claiming `version`, in tree order.
+
+    A list, because two milestones claiming one version is a real tree defect
+    (R3) and answering with the first would make the verdict depend on a
+    directory NAME.
     """
-    for claimed, mid in version_claims(cfg):
-        if claimed == version:
-            return mid
-    return None
+    return [mid for claimed, mid in version_claims(cfg) if claimed == version]
+
+
+def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
+    """The one milestone claiming `version`, or None when none or several do."""
+    claimants = milestones_of_version(cfg, version)
+    return claimants[0] if len(claimants) == 1 else None
 
 
 def release_is_shipped(cfg: PmConfig, version: str) -> bool:
-    """Has the milestone claiming `version` finished? An entry no milestone
-    claims has not shipped: it cannot be behind us if nothing carries it.
-    """
+    """Has the one milestone claiming `version` finished?"""
     mid = milestone_of_version(cfg, version)
     if mid is None:
         return False
@@ -1195,22 +1238,42 @@ def release_is_shipped(cfg: PmConfig, version: str) -> bool:
     return category_of(cfg, 'milestone', field_of(mfile, 'status')) == DONE_CATEGORY
 
 
+def release_is_unverifiable(cfg: PmConfig, version: str) -> bool:
+    """Can this entry's state not be established from the tree?
+
+    Two shapes, and neither may be read as "not shipped": a milestone that was
+    RETIRED (its record deleted, though the work shipped) and one that has not
+    been written yet look identical from here, and so does a version two
+    milestones both claim. Calling any of them unshipped is what made `pm
+    retire` roll the current release BACKWARD and demand a version regression.
+    """
+    return len(milestones_of_version(cfg, version)) != 1
+
+
 def current_release(cfg: PmConfig) -> str | None:
     """The version this tree is at, by POSITION in `order` — the first entry
     not yet shipped under `version_at = "start"`, the last that has under
     `"ship"`. None when the tree declares no order, or when the position it
     names does not exist (everything shipped / nothing has).
 
-    By construction this is never zero-or-several the way "the one milestone in
-    progress" was: it does not read a status field at all.
+    Unlike "the one milestone in progress" this cannot be SEVERAL — a position
+    in a list is one place. It can be None, and it does read `status`, one call
+    away in `release_is_shipped`; what it never does is read a version string
+    as a structure.
     """
     order = declared_order(cfg)
     if not order:
         return None
     if cfg.version_at == VERSION_AT_START:
         for version in order:
-            if not release_is_shipped(cfg, version):
-                return version
+            if release_is_shipped(cfg, version):
+                continue
+            if release_is_unverifiable(cfg, version):
+                # Cannot be established, so it is not answered: a retired
+                # milestone's entry is history, and guessing it is the future
+                # grades the tree against a version regression.
+                continue
+            return version
         return None
     shipped = [v for v in order if release_is_shipped(cfg, v)]
     return shipped[-1] if shipped else None

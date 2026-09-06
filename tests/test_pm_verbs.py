@@ -1634,14 +1634,52 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             write_config(root, '[pm]\nversion_at = "ship"\n')
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
 
-    def test_an_entry_no_milestone_claims_has_not_shipped(self):
-        # R1 reports it DANGLING; the resolver must not step over it, or the
-        # tree would be graded against a version further down the plan.
+    def test_an_entry_no_milestone_claims_is_unverifiable_not_unshipped(self):
+        """Review F1: a RETIRED milestone and an unwritten one look identical
+        from here, so neither may be read as "not shipped".
+
+        Reading them as unshipped is what made `pm retire` roll the current
+        release BACKWARD, so R5 demanded a version regression — two shipped
+        verbs contradicting each other.
+        """
         with tree() as root:
             self._plan(root, '0.1.0', '0.2.0')
             self._milestone(root, 'a', '0.1.0', 'done')
-            self.assertIsNone(model.milestone_of_version(cfg_for(root), '0.2.0'))
+            cfg = cfg_for(root)
+            self.assertTrue(model.release_is_unverifiable(cfg, '0.2.0'))
+            self.assertIsNone(model.milestone_of_version(cfg, '0.2.0'))
+            # Skipped, not answered: nothing after 0.1.0 can be established.
+            self.assertIsNone(model.current_release(loaded(root)))
+
+    def test_retiring_a_shipped_milestone_never_moves_the_release_backward(self):
+        # Review F1, measured end to end: the plan keeps the entry, the record
+        # is gone, and the current release must not become the retired one.
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0')
+            self._milestone(root, 'a', '0.1.0', 'done')
+            self._milestone(root, 'b', '0.2.0', 'building')
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            import shutil
+            shutil.rmtree(root / 'pm' / 'roadmap' / 'a-m')
+            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+
+    def test_two_milestones_claiming_one_version_never_decide_by_directory_name(self):
+        """Review F2: the same facts gave opposite verdicts depending on which
+        directory sorted first. R3 reports the duplicate; the resolver refuses
+        to guess which claimant is authoritative."""
+        with tree() as root:
+            self._plan(root, '0.1.0', '0.2.0')
+            self._milestone(root, 'a', '0.1.0', 'done')
+            self._milestone(root, 'b', '0.1.0', 'building')
+            cfg = cfg_for(root)
+            self.assertEqual(sorted(model.milestones_of_version(cfg, '0.1.0')),
+                             ['a', 'b'])
+            self.assertTrue(model.release_is_unverifiable(cfg, '0.1.0'))
+            self.assertFalse(model.release_is_shipped(cfg, '0.1.0'))
+            # Flipping which one is `done` must not change the answer.
+            self._milestone(root, 'a', '0.1.0', 'building')
+            self._milestone(root, 'b', '0.1.0', 'done')
+            self.assertTrue(model.release_is_unverifiable(cfg_for(root), '0.1.0'))
 
     def test_version_at_refuses_a_value_it_does_not_know(self):
         with tree() as root:

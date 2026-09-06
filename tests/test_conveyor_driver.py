@@ -331,6 +331,10 @@ def test_release_with_no_argument_takes_the_current_version_from_the_plan():
     with _tree(FLOW_TOML) as root:
         _plan(root, '0.9.0', '1.0.0')
         _claim(root, '0.9.0', '0.9.0', 'done')
+        # The fixture's own milestone must CLAIM 1.0.0: an entry nothing claims
+        # is unverifiable, and the resolver refuses to guess (review F1).
+        model.set_field(root / 'pm/roadmap/1.0.0-one/milestone.md',
+                        'version', '"1.0.0"')
         code, out = _release(['release'], root)
         assert code == 0, out
         assert '1.0.0' in out
@@ -342,6 +346,8 @@ def test_a_version_that_is_not_current_is_refused_naming_both():
     with _tree(FLOW_TOML) as root:
         _plan(root, '0.9.0', '1.0.0')
         _claim(root, '0.9.0', '0.9.0', 'building')
+        model.set_field(root / 'pm/roadmap/1.0.0-one/milestone.md',
+                        'version', '"1.0.0"')
         code, out = _release(['release', '1.0.0'], root)
         assert code == 2, out
         assert "'0.9.0'" in out          # what the plan says is current

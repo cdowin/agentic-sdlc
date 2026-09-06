@@ -284,3 +284,17 @@
 {"ts":"2026-09-06T02:24:07Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2675}
 {"ts":"2026-09-06T02:30:27Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2363}
 {"ts":"2026-09-06T02:30:55Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2377}
+{"ts":"2026-09-06T02:37:18Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9401,"rank":1}
+{"ts":"2026-09-06T02:37:18Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":8264,"rank":2}
+{"ts":"2026-09-06T02:37:18Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":8240,"rank":3}
+{"ts":"2026-09-06T02:37:18Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":6482,"rank":4}
+{"ts":"2026-09-06T02:37:18Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":6339,"rank":5}
+{"ts":"2026-09-06T02:37:18Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":47876,"census":1216}
+{"ts":"2026-09-06T02:37:34Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2470}
+{"ts":"2026-09-06T02:37:44Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":546,"rank":1}
+{"ts":"2026-09-06T02:37:44Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":493,"rank":2}
+{"ts":"2026-09-06T02:37:44Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":413,"rank":3}
+{"ts":"2026-09-06T02:37:44Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":360,"rank":4}
+{"ts":"2026-09-06T02:37:44Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":339,"rank":5}
+{"ts":"2026-09-06T02:37:44Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9845,"census":725}
+{"ts":"2026-09-06T02:40:50Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2129}

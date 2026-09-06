@@ -18,9 +18,10 @@ configured, what transitions can look like."* And: *"Open up a milestone, stamp 
 to done."* 0.2.0 is the whole MVP — no 0.3.0, no deferrals, no open bugs.
 
 The ladder the same shape at every level: **plan → ready → build → test → review → done.** Each
-stamp is a belt step; each step has a check behind it; the state a step writes is the project's
-word for it, read from `[pm.transitions.<kind>]`, and the engine knows only which of the three
-categories it sits in.
+stamp is ONE command (`pm <kind> <state> <id>`, or the belt step that runs it); the state a step
+writes is the project's word for it, read from `[pm.transitions.<kind>]`; the engine knows only
+which of the three categories it sits in. **Nothing fancy and automatic:** no move cascades, and a
+tree whose levels disagree gets a warning line, not a failure and not an action.
 
 Measured on 2026-09-05, before this feature: `ready` is a word with no verb and no check at all
 three levels; one seven-word list is pasted onto three grains while the belts write a third of
@@ -35,11 +36,12 @@ a milestone can ship over open bugs; and the review records for two built featur
 2. No state word survives in `conveyor/steps.py`, `conveyor/driver.py`, `pm/cli.py`,
    `pm/ready_for.py`, `pm/ledger.py` or `checks/pm.py` outside the config reader — phase 7's
    census test extended to the belts.
-3. `agentic-sdlc plan story|feature|milestone <id>` exists, walks, reports, and finishes (D8).
-   On the file `pm new` writes every step is not true and NAMED; on a filled grain it stamps the
-   declared ready state. `install-sdlc` renders it beside the other four lists.
-4. `close story`'s claim moves a parent in `todo` to the state the transitions table names for
-   it, and D5 reports nothing on a tree driven only by belts.
+3. `ready` is stamped by `pm <kind> ready <id>` and nothing else; `check pm` WARNS, exit code
+   unchanged, when a grain at or past `ready` has an empty criteria section, a feature has no
+   stories, or a milestone has an unphased feature or no `branch:`.
+4. Every cross-level disagreement (D2, D3, D5, D6) is a `  WARN  ` line that names both grains,
+   counted in the summary, never a finding and never an exit code; no verb moves a parent on a
+   child's account, and `close story`'s claim touches the story alone.
 5. `pm ready-for milestone` names every open bug whose `fix_milestone` is the milestone.
 6. The three bugs open against 0.2.0 are `closed`, and no bug carries another milestone.
 7. Every record under `docs/reviews/` naming 0.2.0 has no finding at `open`, and the ruling on a

@@ -2,30 +2,26 @@
 id: 0.2.0/the-code-knows-entry-and-exit/02-ready-is-a-stamp-with-a-check
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
-name: ready is stamped by a plan belt with a check behind it, at every level
+name: ready is one command, and an empty ready is a warning
 status: planning
 owner:
 depends_on: []
 ---
 
-# ready is stamped by a plan belt with a check behind it, at every level
+# ready is one command, and an empty ready is a warning
 
 ## Acceptance criteria
 
-- `agentic-sdlc plan story <id>` walks: `scaffolded` → `criteria-written` (a non-empty `## Acceptance criteria`) → `proof-named` (a filled row in `## How this is proven`) → `story-ready`.
-- `plan feature <id>`: `scaffolded` → `criterion-written` → `stories-decomposed` (at least one story) → `feature-ready`.
-- `plan milestone <id>`: `scaffolded` → `criterion-written` → `features-phased` (every feature carries `phase:`) → `branch-stamped` → `milestone-ready`.
-- Every step reports and the walk finishes (D8); the `*-ready` step writes the state `[pm.transitions.<kind>]` names.
-- `install-sdlc` renders the three lists; `pm vocabulary` publishes the step names.
+- **Chris, 2026-09-05:** *"Nothing fancy and automatic. If I want a feature to go in progress, I move it. One CLI command."* The stamp for `ready` is the command that already exists — `pm story|feature|milestone ready <id>` — and nothing else writes it.
+- What `ready` MEANS is a warning, not a gate: `check pm` prints `  WARN  ` naming a story at or past `ready` whose `## Acceptance criteria` is empty, a feature at or past `ready` with no stories or an empty `## Ship criterion`, a milestone at or past `ready` with a feature carrying no `phase:` or with no `branch:`. Exit code unaffected.
+- The three sections it reads are the ones `pm new` scaffolds; nothing new is parsed.
 
 ## How this is proven
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | a fresh scaffold: every step not true, each named | amend tests/test_conveyor_close.py |
-| 2 | unit | a filled grain stamps the declared ready state | amend tests/test_conveyor_close.py |
-| 3 | unit | rendered protocol carries the lists | amend tests/test_install_sdlc.py |
+| 1 | unit | each WARN fires on the scaffold and is silent on a filled grain; exit 0 either way | amend tests/test_pm_gate.py |
 
 ## Out of scope
 
-Judging whether the criteria are any good — that is the reviewer's, never a step's (rule 9).
+A `plan` belt, a readiness verb, anything that stamps `ready` for you. One command, by hand.

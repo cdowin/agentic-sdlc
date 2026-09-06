@@ -407,7 +407,7 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     _movable(cfg, 'bug', to)
     if f'/{model.BUGS_DIR}/' not in bid:
         raise Usage(f'no bug resolves from id {bid!r} '
-                    f'(expected <milestone>/bugs/<slug>)')
+                    f'(expected <milestone>/{model.BUGS_DIR}/<slug>)')
     bf = _grain_file(cfg, bid)
     cur = _was(bf)
     if cur == to:
@@ -600,7 +600,15 @@ def _known_milestone_ids(cfg: model.PmConfig) -> list[str]:
 
 
 def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
-    """Retire a shipped milestone: remove its directory, record its row.
+    """Retire a finished milestone: remove its directory, record its row.
+
+    ANY state in the `done` category — `done`, `obe`, whatever the project
+    lists there — and the row SAYS WHICH: its last cell opens with the word
+    the milestone.md held, so a collapsed or abandoned milestone (`obe`) is
+    not recorded as shipped by a table whose heading says "What shipped"
+    (0.2.0/bugs/a-collapsed-milestone-has-no-verb). A milestone retired while
+    NOT finished is still reported rather than refused, and its row says that
+    word too.
 
     `pm init` seeds ROADMAP.md's table (`skills.ROADMAP_SEED`) and nothing
     used to fill it — a retirement was a hand-rolled `git rm -r` plus a
@@ -684,7 +692,8 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     date = (model.field_of(mfile, 'actual_date') if mfile.is_file() else '') \
         or datetime.now(timezone.utc).date().isoformat()
     summary = ' '.join(summary_words)
-    row = f'| {canonical_id} | {name} | {date} | {summary} |'
+    ended = f'{status or "(no status)"}' + (f' — {summary}' if summary else '')
+    row = f'| {canonical_id} | {name} | {date} | {ended} |'
 
     existing = model.read_raw(index)
     eol = '\r\n' if '\r\n' in existing else '\n'
@@ -769,7 +778,7 @@ def cmd_move(cfg: model.PmConfig, args: list[str]) -> int:
         _ok(f'story {sid} already under feature {canonical_fid} (no-op)')
         return 0
 
-    dest = target_ff.parent / 'stories' / sf.name
+    dest = target_ff.parent / model.STORIES_DIR / sf.name
     # `stories/` is minted on first write, never scaffolded (`pm new` mints
     # no empty directory) — so the target feature's OWN first story lands
     # here with no `stories/` to rename into yet. `Plan.move` renames; it
@@ -993,8 +1002,8 @@ def _list_milestones(cfg: model.PmConfig, statuses: set[str],
 
 def _grain_file(cfg: model.PmConfig, gid: str) -> Path:
     """Resolve any grain id — milestone, feature, story or bug — to its file."""
-    if '/bugs/' in gid:
-        mid, _, rest = gid.partition('/bugs/')
+    if f'/{model.BUGS_DIR}/' in gid:
+        mid, _, rest = gid.partition(f'/{model.BUGS_DIR}/')
         # The resolution twin of _check_slug's creation guard. bugs/ is
         # walked recursively, so nested slugs are legal — but a `..` (or an
         # empty) segment would resolve OUTSIDE bugs/ and hand the status
@@ -1005,7 +1014,7 @@ def _grain_file(cfg: model.PmConfig, gid: str) -> Path:
             raise Usage(f'no bug resolves from id {gid!r} '
                         f'(a bug slug holds no dot or empty segments)')
         mdir = model.milestone_dir(cfg, mid)
-        bf = (mdir / 'bugs' / f'{rest}.md') if mdir else None
+        bf = (mdir / model.BUGS_DIR / f'{rest}.md') if mdir else None
         if bf and bf.is_file():
             return bf
         raise Usage(f'no bug resolves from id {gid!r}')
@@ -1369,7 +1378,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
             raise Refused(f'story slug {slug!r} is an ordering prefix and '
                           f'nothing else — the number sequences the build, the '
                           f'slug after it is the id')
-        sf = fdir / 'stories' / f'{slug}.md'
+        sf = fdir / model.STORIES_DIR / f'{slug}.md'
         if _exists(sf):
             raise Refused(f'story {fid}/{slug!r} already exists')
         sid = f'{fid}/{sid_slug}'
@@ -1396,14 +1405,15 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         mdir = model.milestone_dir(cfg, mid)
         if mdir is None:
             raise Usage(f'no milestone resolves from {mid!r}')
-        bf = mdir / 'bugs' / f'{slug}.md'
+        bf = mdir / model.BUGS_DIR / f'{slug}.md'
+        bid = f'{mid}/{model.BUGS_DIR}/{slug}'
         if _exists(bf):
-            raise Refused(f'bug {mid}/bugs/{slug!r} already exists')
+            raise Refused(f'bug {bid!r} already exists')
         # Bugs anchor to where they were CAUGHT, not where they get fixed —
         # the file path preserves the catch history.
         body = templates.render(
             templates.load(cfg, 'bug'),
-            {'id': f'{mid}/bugs/{slug}', 'milestone': mid, 'slug': slug})
+            {'id': bid, 'milestone': mid, 'slug': slug})
         _mint(cfg, bf, body)
         _ok(f'created {cfg.rel(bf)}')
         if cause:
@@ -1417,9 +1427,9 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
                 raise Refused(
                     f'{cfg.rel(bf)} was created, but {CAUSED_BY}: could not be '
                     f'written into it (the bug template has no frontmatter '
-                    f'block) — set it with `pm set {mid}/bugs/{slug} '
+                    f'block) — set it with `pm set {bid} '
                     f'{CAUSED_BY} {cause}`')
-            _ok(f'{mid}/bugs/{slug}: {CAUSED_BY} {cause!r}')
+            _ok(f'{bid}: {CAUSED_BY} {cause!r}')
         return 0
     raise Usage(USAGE)
 
@@ -1439,7 +1449,7 @@ def _decision_log(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
     depth = gid.count('/')
     gdir = (model.milestone_dir(cfg, gid) if depth == 0 else
             model.feature_dir(cfg, gid) if depth == 1 else None)
-    if depth > 1 or '/bugs/' in gid:
+    if depth > 1 or f'/{model.BUGS_DIR}/' in gid:
         raise Refused(f'{gid!r} is a story or a bug — those have no decision '
                       f'log; name the feature or milestone that owns the choice')
     if gdir is None:

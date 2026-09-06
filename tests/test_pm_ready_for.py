@@ -266,12 +266,34 @@ class MilestoneBelt(unittest.TestCase):
             self.assertEqual(code, 1, out)
             self.assertIn('0.1/alpha is wombat', out)
 
-    def test_bugs_do_not_block_a_milestone(self):
+    def test_an_open_bug_against_the_milestone_blocks_and_is_named(self):
+        """Amended from `test_bugs_do_not_block_a_milestone`, which asserted
+        the ruling story 05 reversed. An open bug whose `fix_milestone:` is
+        this milestone is a BLOCKED line by name; a closed one is not; a bug
+        promised to ANOTHER milestone is ignored and COUNTED, so the census
+        line cannot read "no bug blocks" over a bug nobody asked about."""
         with tree(feature_status='done') as root:
-            bug(root, 'crash', status='open')
+            bug(root, 'crash', status='open', fix_milestone='0.1')
+            bug(root, 'fixed-later', status='fixed', fix_milestone='"0.1"')
+            bug(root, 'shut', status='closed', fix_milestone='0.1')
+            bug(root, 'theirs', status='open', fix_milestone='0.2')
+            bug(root, 'unpromised', status='open')
+            code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
+            self.assertEqual(code, 1, out)
+            self.assertEqual(named(out), [
+                '0.1/bugs/crash is open — a bug whose fix_milestone is 0.1',
+                '0.1/bugs/fixed-later is fixed — a bug whose fix_milestone '
+                'is 0.1'])
+            self.assertIn('3 bug(s) naming fix_milestone 0.1 of 5 read', out)
+            self.assertNotIn('theirs', out)
+            self.assertNotIn('unpromised', out)
+            # Close the two and the milestone is ready, the census intact.
+            run_cli(root, 'bug', 'closed', '0.1/bugs/crash')
+            run_cli(root, 'bug', 'closed', '0.1/bugs/fixed-later')
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
             self.assertEqual(code, 0, out)
-            self.assertNotIn('crash', out)
+            self.assertIn('1 feature(s), 3 bug(s) naming fix_milestone 0.1 '
+                          'of 5 read, all done with a record', out)
 
     def test_a_file_under_bugs_shaped_exactly_like_a_feature_is_still_not_one(self):
         with tree(feature_status='done') as root:

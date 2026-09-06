@@ -74,10 +74,15 @@ the ORCHESTRATOR flips them, which `pm-execution.md` still permits — gets each
 still-`reviewing` story named here. That is the verb telling it the cascade has
 not run yet, which is a fact worth seeing rather than one to absorb.
 
-`ready-for milestone` reads `features/` only. **Bugs do not block a
-milestone**: an open bug that silently blocked a milestone whose features were
-all closed would leave nobody able to find out why from the output. If bugs
-should block, that is a ruling to make, not a defect to fix here.
+`ready-for milestone` reads `features/` AND every bug in the tree whose
+`fix_milestone:` names this milestone (story 05 of
+the-code-knows-entry-and-exit). **An open bug against the milestone blocks
+it, by name**: each one not in the `done` category is a BLOCKED line carrying
+the word its file holds, so the reason is in the output rather than absorbed.
+A bug filed under this milestone but promised to another is not asked and is
+counted — the census says how many bugs were read and how many name this
+milestone, because "no bug blocks" and "no bug was looked at" must not print
+the same sentence.
 
 `ready-for tag` reads the features' `reviewed:` pointers PLUS any record the
 milestone document itself points at — NOT a sweep of `[pm] review_dir`, which
@@ -338,15 +343,35 @@ def _features(cfg: model.PmConfig, mdir: Path) -> list[tuple[str, Path]]:
             for ff in model.feature_files(mdir)]
 
 
+def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
+    """((id, status) for every bug whose `fix_milestone:` is `mid`), scanned.
+
+    The whole ACTIVE tree, not this milestone's `bugs/` alone: a bug is filed
+    where it was CAUGHT and promised to the milestone that will fix it, and
+    those are different directories more often than not.
+    """
+    against = []
+    scanned = 0
+    for mdir in model.milestone_dirs(cfg):
+        for bfile in model.bug_files(mdir):
+            scanned += 1
+            if model.unquote(model.field_of(bfile, 'fix_milestone')) != mid:
+                continue
+            bid = model.unquote(model.field_of(bfile, 'id')) or cfg.rel(bfile)
+            against.append((bid, model.field_of(bfile, 'status')
+                            or '(no status:)'))
+    return against, scanned
+
+
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
-    """Is every feature in `done`, each with a resolving, NON-EMPTY review record?
+    """Every feature in `done` with a resolving, NON-EMPTY record — and no
+    bug promised to this milestone still outside `done`.
 
-    Exit 1 names each blocker and which of the two conditions it failed. A
-    milestone with ZERO features exits 1 — the opposite of the empty-story
-    ruling one rung down, and deliberately so (module docstring).
-
-    Bugs do not participate. An open bug that blocked a milestone whose
-    features were all closed would be unexplainable from this output.
+    Exit 1 names each blocker and which condition it failed. A milestone with
+    ZERO features exits 1 — the opposite of the empty-story ruling one rung
+    down, and deliberately so (module docstring). A bug blocks by NAME, with
+    the word its file holds, so a milestone held by one is explainable from
+    this output; a bug promised to another milestone is counted, not asked.
     """
     mfile = _grain(cfg, MILESTONE, mid, model.MILESTONE_DOC, MILESTONE,
                    "about a milestone's features")
@@ -377,9 +402,15 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
         _, defect = _record(cfg, model.unquote(model.field_of(ffile, 'reviewed')))
         if defect is not None:
             blockers.append(f'{fid} is {DONE}, {defect}')
-    census = f'{len(features)} feature(s)'
+    bugs, scanned = _bugs_against(cfg, mid)
+    open_bugs = model.holds(cfg, 'bug', bugs, DONE).blockers
+    for bid, status in open_bugs:
+        blockers.append(f'{bid} is {status} — a bug whose fix_milestone is '
+                        f'{mid}')
+    census = (f'{len(features)} feature(s), {len(bugs)} bug(s) naming '
+              f'fix_milestone {mid} of {scanned} read')
     if not blockers:
-        census += f', all {DONE} with a record'
+        census += f', all {DONE}' + (' with a record' if features else '')
     return _answer(subject, blockers, census)
 
 

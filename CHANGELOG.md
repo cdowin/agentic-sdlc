@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### An open bug against the milestone is named, and two of the three open bugs are fixed
+
+- **`pm ready-for milestone <id>` names every bug whose `fix_milestone:` is `<id>` and whose
+  status is not in the `done` category** — one `  BLOCKED  <bug-id> is <status> — a bug whose
+  fix_milestone is <id>` line each, exit 1 (behaviour change: bugs used to be ignored). The whole
+  active tree is read, because a bug is filed where it was caught and promised to the milestone
+  that fixes it; a bug promised to another milestone is counted, not asked, and the census line
+  says both numbers: `N feature(s), M bug(s) naming fix_milestone <id> of K read`.
+- **`pm retire` retires a milestone in any `done`-category state — `obe` included — and the
+  ROADMAP.md row says which**: the last cell opens with the state the file held (`done — shipped
+  X`, `obe — collapsed into 0.3`, and `building — pulled` for a milestone retired unfinished),
+  so the "What shipped" column never calls abandoned work delivered. Closes
+  `0.2.0/bugs/a-collapsed-milestone-has-no-verb`. (Row-shape change, rule 6.)
+- **The grain-slot names `stories` and `bugs` have one spelling**, `model.STORIES_DIR` /
+  `model.BUGS_DIR`; `report.py`'s own three literals and `cli.py`'s six are gone, and a census
+  test walks the pm tracker and the gates for a survivor. Closes
+  `0.2.0/bugs/the-slot-names-are-spelled-in-six-places`.
+
 ### A parent behind its child is a warning, not a finding, and nothing moves it
 
 - **D2, D3, D5 and D6 are `  WARN  ` lines now, never `  DRIFT  `, and never an exit code**

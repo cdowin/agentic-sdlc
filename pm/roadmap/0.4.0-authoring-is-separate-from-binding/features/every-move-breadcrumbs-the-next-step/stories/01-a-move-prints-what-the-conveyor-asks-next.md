@@ -3,7 +3,7 @@ id: 0.4.0/every-move-breadcrumbs-the-next-step/01-a-move-prints-what-the-conveyo
 feature: 0.4.0/every-move-breadcrumbs-the-next-step
 milestone: "0.4.0"
 name: A move prints what the conveyor asks next
-status: building
+status: done
 owner: claude
 depends_on: []
 ---

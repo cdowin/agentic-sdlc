@@ -3,7 +3,7 @@ id: 0.4.0/every-grain-is-on-a-stopwatch/01-an-open-grain-says-how-long-it-has-be
 feature: 0.4.0/every-grain-is-on-a-stopwatch
 milestone: "0.4.0"
 name: An open grain says how long it has been open
-status: building
+status: done
 owner: claude
 depends_on: []
 ---

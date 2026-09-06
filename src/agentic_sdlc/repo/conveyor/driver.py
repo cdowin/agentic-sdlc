@@ -284,6 +284,11 @@ class Result:
     not_true: tuple[str, ...]
     unverifiable: tuple[str, ...]
     exit_code: int
+    # D11: the one sentence a `ConfigError` met DURING the walk left behind.
+    # Empty on every walk that read its declaration whole. When it is set the
+    # exit code is 2, `lines` holds every step asked before the reader failed,
+    # and `main` prints those and then this — one line, never a traceback.
+    refused: str = ''
 
     @property
     def stopped(self) -> str | None:
@@ -316,7 +321,12 @@ def ask(step: Step, ctx: Context) -> Answer:
 
     `ConfigError` is RE-RAISED and that is the D8 line: a malformed
     declaration is the reader failing, not a check reporting, and it belongs
-    to exit 2 before the walk rather than to a row on the scoreboard.
+    to exit 2 rather than to a row on the scoreboard. `validate_config` reads
+    every key it knows about before step 1; a key only one step reads
+    (`[release.version_files]`, at step 6) is met AT that step, and `walk`
+    catches it there — the transcript so far, one `REFUSED` line naming the
+    step, exit 2 (D11). What it is never allowed to become is a traceback at
+    exit 1, which is what re-raising through `main` made it.
     """
     try:
         return step.check(ctx)
@@ -455,7 +465,30 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
     for index, name in enumerate(names, start=1):
         step = registry[name]
         remembered = run.answer_for(name)
-        answer = ask(step, ctx)
+        try:
+            answer = ask(step, ctx)
+            if not answer.is_true and step.do is not None:
+                # The return value is ADVISORY TEXT and nothing else. It is
+                # printed attributed to the step ("SAID"), never as a verdict,
+                # and the answer comes from `verify`, not from here.
+                said = perform(step, ctx)
+                performed: tuple[str, Answer] | None = (
+                    said, verify(step, ctx))
+            else:
+                performed = None
+        except ConfigError as err:
+            # D11. THE OTHER EXIT 2, and it is still not a step's answer: a
+            # step's reader met a declaration it could not read, at the step
+            # that reads that key. Nothing after it walks — a walk over a
+            # declaration it cannot read is D8's "before the walk" moment
+            # arriving late — but everything before it is kept: the lines
+            # already on the transcript are printed, the run state is saved,
+            # and the row an earlier not-true step wrote stays, because it
+            # was a fact about the tree and the tree did not change.
+            refused = f'step {index}/{total} {name!r} ({step.kind.name}): {err}'
+            lines.append(f'[{ctx.operation}] REFUSED — {refused}')
+            return Result(tuple(lines), tuple(done), tuple(not_true),
+                          tuple(unverifiable), 2, refused)
         if remembered == run_state.TRUE and not answer.is_true:
             # The tree wins. Always. The file is a cache, and a cache that
             # outranked the thing it caches would be the lie this feature ends.
@@ -467,14 +500,10 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
             lines.append(_line(ctx, step, 'ALREADY-TRUE', answer.detail))
             done.append(name)
             continue
-        if step.do is not None:
-            # The return value is ADVISORY TEXT and nothing else. It is printed
-            # attributed to the step ("SAID"), never as a verdict, and the
-            # answer below comes from `verify`, not from here.
-            said = perform(step, ctx)
+        if performed is not None:
+            said, answer = performed
             if said:
                 lines.append(_line(ctx, step, 'SAID', said))
-            answer = verify(step, ctx)
         run.record(name, answer.truth.value, answer.detail)
         if answer.is_true:
             lines.append(_line(ctx, step, 'DONE', answer.detail))
@@ -492,21 +521,29 @@ def walk(registry: Mapping[str, Step], names: Sequence[str], ctx: Context,
         # ask is asserting an answer.
         outcome = ('unverifiable' if answer.truth is Truth.UNVERIFIABLE
                    else 'not-true')
+        # N2: a step that is not true and said nothing about why has a
+        # DEFECT, and the defect is what gets reported — on the line and in
+        # the row — rather than laundered into a reason it did not give or
+        # dropped from the ledger in silence. The row minter refuses an
+        # empty reason; this sentence is not empty, and it is true.
+        reason = answer.detail or (
+            f'the step answered {outcome.upper()} and gave no reason — a '
+            f'defect in the step, not a fact about the tree')
         if answer.truth is Truth.UNVERIFIABLE:
-            lines.append(_line(ctx, step, 'UNVERIFIABLE', answer.detail))
+            lines.append(_line(ctx, step, 'UNVERIFIABLE', reason))
             unverifiable.append(name)
         else:
-            lines.append(_line(ctx, step, 'NOT-TRUE', answer.detail))
+            lines.append(_line(ctx, step, 'NOT-TRUE', reason))
             not_true.append(name)
         # The durable row. The run cache is gitignored and disposable; THIS is
         # the half nobody can reconstruct from the tree afterwards, which is
         # the whole argument the `deviation` row was minted under.
-        if record is not None and answer.detail:
-            record(name, outcome, answer.detail)
+        if record is not None:
+            record(name, outcome, reason)
         lines.append(
             f'[{ctx.operation}] step {index}/{total} {name!r} '
             f'({step.kind.name}) is not true; what would make it true: '
-            f'{answer.detail}')
+            f'{reason}')
     # THE SCOREBOARD, and criterion 2 says it has to be good: a 21-step run
     # now prints 21 lines where it used to print five, so this line is what a
     # caller reads. A warning nobody reads is worse than a refusal (risk 1),
@@ -909,6 +946,10 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         run_state.save(cfg.root, run)
     except run_state.StateDefect as err:
         return _refuse(str(err))
+    if result.refused:
+        # D11: one line on stderr, the transcript already on stdout, exit 2.
+        # Never a traceback, never exit 1 — a consumer's CI reads 1 as drift.
+        return _refuse(f'{spoken}: {result.refused}')
     return result.exit_code
 
 
@@ -993,9 +1034,36 @@ def print_status(cfg, mdir: Path, operation: str, version: str,
         print(f'[{operation}] the run cache holds no position — nothing has '
               f'been walked, or the file was deleted (which costs nothing)')
         return 0
+    # N3. The row is written ONCE per step — the machine's FIRST account, and
+    # a durable one — while the cache is rewritten on every walk. So the two
+    # can disagree: the tree moved, the step is true now, the row still says
+    # what it said. Neither is wrong; what was wrong was printing them
+    # adjacent with nothing saying so. This names the pair and says which is
+    # which — it decides nothing, because the tree is the authority and the
+    # next walk asks it.
+    recorded = {str(row.data.get('step')): row for row in rows}
     for name in names:
         got = run.records.get(name)
-        if got is not None:
-            print(f'[{operation}:{name}] cached {got.answer.upper()} '
-                  f'({got.at}) — a cache, never the authority')
+        if got is None:
+            continue
+        print(f'[{operation}:{name}] cached {got.answer.upper()} '
+              f'({got.at}) — a cache, never the authority')
+        row = recorded.get(name)
+        if row is None:
+            continue
+        # The row speaks the ledger's outcome words, the cache the run
+        # state's answer words; `not-true` is the row's name for FALSE.
+        outcome = {'not-true': run_state.FALSE}.get(
+            str(row.data.get('outcome', '')), str(row.data.get('outcome', '')))
+        moved = got.answer != outcome
+        drifted = (not moved and got.reason
+                   and got.reason != row.data.get('reason', ''))
+        if moved or drifted:
+            what = ('the tree moved' if moved
+                    else 'the reason changed')
+            print(f'[{operation}:{name}] the ledger row '
+                  f'({row.data.get("ts", "")}) and the run cache ({got.at}) '
+                  f'disagree — {what}; the row is the first account and is '
+                  f'never rewritten, the cache is the latest and is never the '
+                  f'authority, and the next walk asks the tree')
     return 0

@@ -237,11 +237,58 @@ def test_an_unconfigured_judgement_is_unverifiable_and_not_a_pass():
             assert name in answer.detail, answer.detail
 
 
-def test_a_configured_command_that_fails_is_not_done_and_names_the_code():
+def test_a_configured_command_fills_version_and_a_failing_one_names_the_code():
+    """M4 (`docs/reviews/2026-09-05-the-belt-reports-and-finishes.md`): this
+    repo's own `prove-artifact` carried `@v{version}` and the conveyor
+    substituted nothing, so the step was not true forever — and only D8
+    letting the walk reach step 21 made it say so. Proven by what RAN, not by
+    the transcript: `test` compares the substituted text with the walk's
+    subject and exits 0 only on a match. The shell's own braces pass through
+    untouched, and the failing half is the case that was here before, kept so
+    the exit code is still named."""
+    filled = ('[release.commands]\n'
+              'ci-green = "test {version} = 9.9.9 && echo v{version}"\n')
+    with tree(config=filled) as root:
+        answer = steps.RELEASE_STEPS['ci-green'].check(ctx(root))
+        assert answer.is_true, answer.detail
+        assert '{version}' not in answer.detail, answer.detail
+        assert 'v9.9.9' in answer.detail, answer.detail
+    theirs = ('[release.commands]\n'
+              "ci-green = \"echo ${HOME} {} | awk '{print $1}' >/dev/null\"\n")
+    with tree(config=theirs) as root:
+        answer = steps.RELEASE_STEPS['ci-green'].check(ctx(root))
+        assert answer.is_true, answer.detail
+        assert "{print $1}" in answer.detail and '${HOME}' in answer.detail
     with tree(config='[release.commands]\nci-green = "exit 3"\n') as root:
         answer = steps.RELEASE_STEPS['ci-green'].check(ctx(root))
         assert answer.truth is driver.Truth.FALSE
         assert 'exited 3' in answer.detail, answer.detail
+
+
+def test_a_callee_that_exits_2_is_UNVERIFIABLE_and_never_a_finding(monkeypatch):
+    """Q1 → D11. A GATE that subprocesses this same CLI used to fold the
+    callee's exit 2 into NOT-TRUE, and the belt then performed its next step
+    over a verdict that does not exist: the story flipped `done` with its
+    narrow check never run. Exit 2 is the CALLEE's reader failing — the
+    question was never asked — and that is UNVERIFIABLE, kept apart from a
+    plain no; the walk still finishes (D8), because this reader read its own
+    declaration fine.
+
+    No existing case asks `_own_verdict` about exit 2 at all: the close-tier
+    cases spawn a real `verify` and can only make it exit 0 or 1, and the
+    adopt cases record argv. This is a function call with the spawn replaced
+    — the cheapest tier that can fail (rule 10).
+    """
+    monkeypatch.setattr(
+        steps, '_own_cli',
+        lambda c, *argv: (2, '[verify] feature must be a string, got 42',
+                          argv))
+    context = driver.Context(root=Path('.'), operation='story', version='x')
+    answer = steps._own_verdict(context, 'verify', '--story', 'x')
+    assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+    assert not answer.is_true
+    assert 'nothing was decided' in answer.detail, answer.detail
+    assert 'got 42' in answer.detail, answer.detail
 
 
 def test_a_commands_output_is_bounded_into_the_line():
@@ -446,6 +493,38 @@ def test_a_performed_findings_resolved_leaves_check_pm_green():
         assert code == 0, buffer.getvalue()
 
 
+def test_the_belt_and_the_gate_disagree_and_that_is_correct():
+    """Criterion 4 of `the-belt-reports-and-finishes`, named in the record,
+    measured on a scratch tree, and never committed (M3). The case above
+    proves the AGREEING direction only — a satisfied step leaves `check pm`
+    green — and nothing in the suite asserted the other one: `features-done`
+    is not true (a feature still building), the belt performs
+    `milestone-done` anyway (D8), the milestone file says `done`, and
+    `check pm` — the thing that FAILS a contradictory tree — reports it by
+    name. Belt and gate disagree, and that is the design: `pm` moves and
+    reports, `check` gates (rule 9), and the engine never decides whether a
+    not-true step should have stopped the operator."""
+    from agentic_sdlc.repo.checks import pm as check_pm
+
+    files = {f'pm/roadmap/{VERSION}-scratch/features/f1/feature.md':
+                 f'---\nid: {VERSION}/f1\nmilestone: "{VERSION}"\nname: F\n'
+                 f'status: building\n---\n\n# F\n',
+             f'pm/roadmap/{VERSION}-scratch/milestone.md':
+                 MILESTONE.replace('status: building', 'status: packaging')}
+    with tree(files) as root:
+        result = walk(root, ('features-done', 'milestone-done'))
+        assert result.not_true == ('features-done',), result.lines
+        assert result.done == ('milestone-done',), result.lines
+        stamped = (root / f'pm/roadmap/{VERSION}-scratch/milestone.md'
+                   ).read_text(encoding='utf-8')
+        assert 'status: done' in stamped, stamped
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = check_pm.run()
+        assert code == 1, buffer.getvalue()
+        assert 'f1' in buffer.getvalue(), buffer.getvalue()
+
+
 def test_findings_resolved_does_not_ask_the_operator_to_delete_the_record():
     """The `do()` used to say "create → resolve → delete". The record is the
     durable evidence that the review happened and is what `reviewed:` points
@@ -633,6 +712,7 @@ def test_no_devkit_toml_and_the_stock_list_declared_are_the_same_bytes():
     ('[release.commands]\nci-green = []\n', 'one command string'),
     ('[release.commands]\nci-green = ""\n', 'is empty'),
     ('[release.commands]\nci-green = "   "\n', 'is empty'),
+    ('[release.commands]\nci-green = "echo {verison}"\n', 'placeholder'),
     ('[release.commands]\n"version-sync" = "x"\n', 'AUTOMATIC'),
     ('[release]\nsteps = ["gate"]\n\n[release.commands]\nci-green = "x"\n',
      'never runs'),

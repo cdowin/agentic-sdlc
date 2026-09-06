@@ -28,6 +28,24 @@ branch: milestone/0.3.0-the-bump-explains-itself
 > One tree declared the flow and did not use it. The other used a flow it never declared. **Both
 > passed every gate**, which is the milestone in one sentence.
 
+## Two halves
+
+**The bump reports itself** (seven features) — everything above, from the two adoptions.
+
+**The release becomes a thing the tree holds** (five). The adoptions exposed a hole underneath
+them: this package has a `release` BELT, a `[pm] version_file` and D8 saying the project version
+equals an in-progress milestone's id — three facts about versions, and nothing that IS one. So a
+version cannot be planned, ordered or pointed at, and `0.3.0/bugs/the-first-milestone-never-closed`
+is what that costs: 0.1.0's work shipped inside `v0.2.0` and its milestone has said `planning`
+ever since, because every rule asks a question INSIDE the tree and nothing relates a milestone to
+a release.
+
+A release becomes a grain with a state and a goal; `releases.toml` declares the order and nothing
+else; any grain names the release it ships in, and absence means unscheduled. The tool stops
+parsing version strings entirely — order comes from the list, so "did it increase" is a position
+and not a compare, which is both scheme-agnostic and immune to `0.90.10` sorting before `0.90.4`.
+D8 becomes R5 against the release, so a milestone id goes back to being a name.
+
 The consumer-visible theme is **a bump that reports itself completely**. An installer that says
 which files it touched AND which targets it removed; a config error that names the namespace it
 read the key in; an `adopt` that can be satisfied by a project which deliberately owns some of

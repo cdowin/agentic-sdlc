@@ -10,9 +10,10 @@
 paths select, deduplicated, in declaration order; a path matching no rule is
 named and the `milestone` rung runs instead. `--feature` and `--milestone` run
 the make target `[verify]` names. `--plan` prints each rung's measured cost
-from the ledger's `gate` rows, or the word `unknown` — never a guess. `--ignore`
-drops a path the caller wrote during this run; `--to` closes the range at a
-commit. A `[verify]` section that is absent is exit 2 for every flag.
+from the ledger's `gate` rows, or the word `unknown` — never a guess.
+`--ignore` drops a path the caller wrote during this run; `--to` closes the
+range at a commit. A `[verify]` section that is absent is exit 2 for every
+flag.
 
 Exit: 0 pass | 1 a command failed or `--check` found drift | 2 usage, config,
 or git. A command's own exit 2 is reported as 1, with its code beside it.
@@ -519,7 +520,8 @@ def _plan(ruleset: RuleSet, root: Path, ref: str | None) -> int:
 
 def _print_story_rung(selection: select.Selection,
                       costs: dict[str, Cost]) -> int | None:
-    """The story rung's commands; their total ms, or None when any is unknown."""
+    """The story rung's commands; their total ms, or None when any is
+    unknown."""
     if selection.missed:
         print(f'  {STORY:<10} (falls back: {len(selection.missed)} changed '
               f'path(s) match no rule)   [{RUNG_BLURB[STORY]}]')

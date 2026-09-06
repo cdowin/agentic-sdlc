@@ -102,7 +102,7 @@ def read(section: dict) -> RuleSet:
     every problem found and the index of each."""
     if not isinstance(section, dict):
         raise ConfigError(f'[{SECTION}] must be a table, got {section!r}')
-    # Structural damage first: there is nothing to enumerate until the shape holds.
+    # Structural damage first: nothing to enumerate until the shape holds.
     entries = table_array(section, SECTION, NARROW)
 
     problems: list[str] = []

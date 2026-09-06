@@ -32,7 +32,8 @@ COVER_FORBIDDEN = frozenset(';|&$`()<>#\\~:\'" ')
 
 @dataclass(frozen=True)
 class Declaration:
-    """One declaring file: what it covers, and `rule.run` with `<stem>` bound."""
+    """One declaring file: what it covers, and `rule.run` with `<stem>`
+    bound."""
 
     path: str
     stem: str

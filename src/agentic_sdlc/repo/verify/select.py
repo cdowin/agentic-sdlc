@@ -30,7 +30,8 @@ ReverseResolver = Callable[[Rule, str], 'str | None']
 
 
 class SelectionError(Exception):
-    """No plan could be produced from this input — exit 2 at the verb, never 1."""
+    """No plan could be produced from this input — exit 2 at the verb,
+    never 1."""
 
 
 @dataclass(frozen=True)

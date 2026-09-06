@@ -51,15 +51,29 @@ every run; a state the project never declared is refused by name.
                                            whole, or not at all)
   status [<milestone>]
   list [--status <s>[,<s>…]] [--owner <name>] [--milestone <id>]
-       [--category todo|in_progress|done]
-                                          (one tab-separated line per story:
-                                           id, status, owner, feature)
-  list --kind milestone [--status <s>[,<s>…]] [--category <c>]
+       [--category todo|in_progress|done] [--json]
+                                          (one tab-separated line per story,
+                                           columns IN ORDER:
+                                             id  status  owner  feature  name
+                                           `-` for an empty cell, so a shell
+                                           `read` gets a fixed count. --json
+                                           emits the same fields keyed by those
+                                           names and nothing else)
+  list --kind milestone [--status <s>[,<s>…]] [--category <c>] [--json]
                                           (one tab-separated line per
-                                           milestone: id, status, category,
-                                           branch — `-` for none. What a script
-                                           asks instead of grepping a status
-                                           word out of milestone.md)
+                                           milestone, columns IN ORDER:
+                                             id  status  category  branch  name
+                                           What a script asks instead of
+                                           grepping a status word out of
+                                           milestone.md)
+
+  READ VERBS EMIT LINES; COMPOSITION IS THE SHELL'S JOB. If you want a filter
+  this package does not have, pipe it — the columns above are named so a
+  pipeline is writable without reading source. **If you cannot pipe it, the
+  missing thing is a COLUMN, not a verb**: `pm list | grep` failed once for
+  want of the `name` field and the conclusion drawn was that the tool could not
+  search. The filter flags that predate this rule stay; it governs the next
+  one.
   ready-for feature|milestone|tag <id>    (the belt-entry condition below that
                                            rung, as an EXIT CODE: 0 ready,
                                            1 not ready — naming every blocker,
@@ -764,6 +778,8 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
     ranking. Rows go to stdout and the census to stderr, so matching
     nothing and scanning nothing stay distinguishable.
     """
+    as_json = JSON_FLAG in args
+    args = [a for a in args if a != JSON_FLAG]
     pairs, rest = _take_flags(args, ('--status', '--owner', '--milestone',
                                      '--kind', '--category'))
     if rest:
@@ -797,7 +813,7 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
         if owner or milestone:
             raise Usage('--owner and --milestone filter stories; '
                         '--kind milestone takes --status and --category')
-        return _list_milestones(cfg, statuses, category)
+        return _list_milestones(cfg, statuses, category, as_json)
 
     # Enumerated once, to refuse a typo'd `--milestone` as well as to filter.
     known = model.known_milestones(cfg)
@@ -808,8 +824,8 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
                        f'— {cfg.roadmap_dir} holds no milestone at all, so this '
                        f'is a scope problem, not a typo'))
 
-    shown = 0
     scanned = 0
+    rows = []
     for mdir, mid in known:
         if milestone and milestone != mid:
             continue
@@ -826,30 +842,68 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
                     continue
                 if owner and who != owner:
                     continue
-                shown += 1
-                print(f'{model.unquote(model.field_of(sfile, "id"))}\t{status}'
-                      f'\t{who or "-"}\t{view.fid}')
-    print(f'[pm] {shown} of {scanned} story/ies', file=sys.stderr)
+                rows.append((model.unquote(model.field_of(sfile, 'id')),
+                             status, who or DASH, view.fid,
+                             model.unquote(model.field_of(sfile, 'name'))
+                             or DASH))
+    _emit_rows('story', rows, as_json)
+    print(f'[pm] {len(rows)} of {scanned} story/ies', file=sys.stderr)
     return 0
+
+
+# One cell with nothing in it, so a shell `read` gets a fixed column count and
+# an empty field is never mistaken for a short row.
+DASH = '-'
+
+
+def _emit_rows(kind: str, rows: list[tuple[str, ...]], as_json: bool) -> None:
+    """The listing verbs' one output path: tab-separated cells, or `--json`
+    over the SAME tuples through `LIST_COLUMNS`.
+
+    One function because the failure that matters is the two diverging — a
+    JSON payload carrying a field the columns do not, or vice versa, is the
+    thing a consumer discovers at the worst moment. Here they cannot: the rows
+    are built once and the keys are zipped onto them.
+    """
+    columns = LIST_COLUMNS[kind]
+    if as_json:
+        print(json.dumps([dict(zip(columns, row)) for row in rows],
+                         ensure_ascii=False))
+        return
+    for row in rows:
+        # A tab inside a cell would forge a column, and `name` is free text a
+        # human typed. The JSON payload above keeps the byte; this one cannot,
+        # and a forged column is worse than a substituted space because it
+        # silently shifts every field after it.
+        print('\t'.join(cell.replace('\t', ' ') for cell in row))
 
 
 # `milestone` is here so a script can ask the CLI instead of grepping a status
 # word.
 LIST_KINDS = ('story', 'milestone')
 
+# The columns each `--kind` emits, IN ORDER, spelled once. Three things read
+# this — the rows, `--json`'s keys and the `--help` line — and a column list
+# that lived in three places is exactly the drift `--json` exists to make
+# impossible to hide.
+LIST_COLUMNS = {
+    'story': ('id', 'status', 'owner', 'feature', 'name'),
+    'milestone': ('id', 'status', 'category', 'branch', 'name'),
+}
+
 
 def _list_milestones(cfg: model.PmConfig, statuses: set[str],
-                     category: str) -> int:
-    """One tab-separated `<id> <status> <category> <branch>` per milestone,
-    `-` for an absent branch or undeclared category, so a shell `read` gets
-    a fixed column count.
+                     category: str, as_json: bool = False) -> int:
+    """One tab-separated `<id> <status> <category> <branch> <name>` per
+    milestone, `-` for an absent one, so a shell `read` gets a fixed column
+    count. `LIST_COLUMNS['milestone']` is the order.
     """
     known = model.known_milestones(cfg)
     if not known:
         raise Usage(f'{cfg.roadmap_dir} holds no milestone at all — nothing to '
                     f'list, so this is a scope problem (wrong [pm] '
                     f'roadmap_dir, or an empty tree?), not an empty set')
-    shown = 0
+    rows = []
     for mdir, mid in known:
         mfile = mdir / model.MILESTONE_DOC
         status = model.field_of(mfile, 'status')
@@ -858,11 +912,11 @@ def _list_milestones(cfg: model.PmConfig, statuses: set[str],
             continue
         if category and cat != category:
             continue
-        shown += 1
-        branch = model.unquote(model.field_of(mfile, 'branch'))
-        print(f'{mid or mdir.name}\t{status or "-"}\t{cat or "-"}'
-              f'\t{branch or "-"}')
-    print(f'[pm] {shown} of {len(known)} milestone(s)', file=sys.stderr)
+        rows.append((mid or mdir.name, status or DASH, cat or DASH,
+                     model.unquote(model.field_of(mfile, 'branch')) or DASH,
+                     model.unquote(model.field_of(mfile, 'name')) or DASH))
+    _emit_rows('milestone', rows, as_json)
+    print(f'[pm] {len(rows)} of {len(known)} milestone(s)', file=sys.stderr)
     return 0
 
 

@@ -61,6 +61,16 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
     word, a column, a warning, a caller — never a new capability. Tree absences join `check pm`'s
     WARN family; `verify --plan` printing `unknown` rather than a guess is the same rule.
 
+    **Read verbs emit LINES; composition is the shell's job.** The rule's read side, and the
+    reason it has one: a read verb that omits a field people filter on does not just inconvenience
+    them, **it teaches them the tool cannot do it**. `pm list` withheld the name, so
+    `pm list | grep` returned nothing and the answer proposed was a new `--grep` flag. So: every
+    read verb names its columns in order in `--help`, and if you cannot pipe something the missing
+    thing is a **column**, never a verb. Existing filter flags stay — removing them breaks
+    consumers for a purity nobody asked for — and the rule governs the next one. **A capability
+    nobody can find is a capability you do not have**; when a request is met by hand-rolling
+    something this package already does, the defect is the surface, not the requester.
+
 ## Where things live
 
 `ls src/agentic_sdlc` is the inventory; this is the rule:

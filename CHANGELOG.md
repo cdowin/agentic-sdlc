@@ -39,6 +39,23 @@
   through its `tree` snapshot — so `show` and `report` had begun to disagree about the same row,
   with `report` billing a story for time `show` said did not exist.
 
+- **`pm list` emits the NAME, and both listing forms take `--json`.** OUTPUT-SHAPE CHANGE, and
+  it is a fifth column at the END of each row: `id status owner feature name` for stories,
+  `id status category branch name` for milestones. **A consumer whose parser ends in a catch-all
+  will silently absorb it** — `IFS=$'\t' read -r a b c branch` makes `branch` hold
+  `branch<TAB>name`, because the last variable of a `read` takes every remaining field. This
+  package's own `agent-worktree.sh` broke exactly that way and is fixed with one extra variable;
+  check yours. `--help` now names each form's columns IN ORDER so a pipeline is writable without
+  reading source, and a tab inside a `name` is replaced by a space in the tab-separated form so it
+  cannot forge a column (`--json` keeps the byte).
+
+  The reason it is a column and not a flag: `pm list | grep "<a name>"` returned nothing, and the
+  conclusion drawn was that the tool could not search — so a `--grep` flag was proposed for a
+  capability the shell already had. **A read verb that omits a field people filter on teaches them
+  the tool cannot do it.** The rule is now in this package's `CLAUDE.md`: read verbs emit lines,
+  composition is the shell's job, and if you cannot pipe it the missing thing is a COLUMN, never a
+  verb. No filter flag is added by this change and the existing ones all stay.
+
 - **A row with no `--grain` resolves one from the tree, or carries no `grain` key at all.** The
   dispatched agent is told its grain; an orchestrator session nobody dispatched has no prompt to
   read one out of, and that is the session type most of a milestone's work happens in. So: exactly

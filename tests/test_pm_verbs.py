@@ -16,6 +16,7 @@ docstring claim is not asserted at all.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import tempfile
 import unittest
@@ -403,12 +404,64 @@ class ListFindsTheNail(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual([r[2] for r in self._rows(out)], ['ada'])
 
+    def test_a_tab_inside_a_name_cannot_forge_a_column(self):
+        """`name` is free text a human typed, and a tab in it would shift every
+        field after it — a forged column is worse than a substituted space,
+        because the consumer reads a wrong value rather than a short row. The
+        `--json` payload keeps the byte; only the tab-separated form
+        substitutes."""
+        with tree() as root:
+            model.set_field(root / MFILE, 'name', 'Two\tParts')
+            code, plain = run_cli(root, 'list', '--kind', 'milestone')
+            self.assertEqual(code, 0, plain)
+            self.assertEqual(len(self._rows(plain)[0]), 5)
+            self.assertEqual(self._rows(plain)[0][4], 'Two Parts')
+            code, as_json = run_cli(root, 'list', '--kind', 'milestone',
+                                    '--json')
+            self.assertEqual(json.loads(as_json.strip().split('\n')[0])[0]
+                             ['name'], 'Two\tParts')
+
+    def test_json_carries_exactly_the_fields_the_columns_carry(self):
+        """The one thing that could diverge unseen. Columns and `--json` are
+        two views of one tuple, and a payload that grew a field the columns
+        lack — or lost one they have — is discovered by a consumer at the
+        worst possible moment.
+
+        Asserted as a ROUND TRIP against the tab-separated rows, both kinds,
+        so it fails whichever side moves. `LIST_COLUMNS` is read rather than
+        restated: a roster copied into a test goes stale exactly the way the
+        thing it guards does.
+        """
+        from agentic_sdlc.repo.pm.cli import LIST_COLUMNS
+        with tree(milestone_status='building') as root:
+            model.set_field(root / MFILE, 'branch', 'milestone/0.1')
+            for kind in ('story', 'milestone'):
+                argv = ('list', '--kind', kind)
+                code, plain = run_cli(root, *argv)
+                self.assertEqual(code, 0, plain)
+                code, as_json = run_cli(root, *argv, '--json')
+                self.assertEqual(code, 0, as_json)
+                payload = json.loads(as_json.strip().split('\n')[0])
+                columns = LIST_COLUMNS[kind]
+                self.assertEqual([list(row) for row in payload],
+                                 [list(columns) for _ in payload],
+                                 f'{kind}: --json keys are not the columns')
+                self.assertTrue(payload, f'{kind}: nothing listed, so the '
+                                         f'round trip proved nothing')
+                self.assertEqual([[row[c] for c in columns] for row in payload],
+                                 self._rows(plain),
+                                 f'{kind}: --json values are not the row cells')
+
     def test_kind_milestone_lists_every_milestone_with_its_category_and_branch(self):
         """`--kind milestone` is what a SCRIPT asks instead of grepping
         `status: building` out of milestone.md — the worktree tool did exactly
-        that and stopped matching the day a project renamed the word. Four
-        columns always, `-` for an absent branch, so a shell `read` never
-        misaligns; `--category` filters on the category, whatever the word."""
+        that and stopped matching the day a project renamed the word. FIVE
+        columns always, `-` for an absent one, so a shell `read` never
+        misaligns; `--category` filters on the category, whatever the word.
+
+        The `name` column joined in 0.4.0/the-read-verbs-compose: a read verb
+        that omits the field people filter on teaches them the tool cannot
+        filter, and `pm list | grep '<some name>'` returned nothing."""
         with tree(milestone_status='building') as root:
             mfile = root / MFILE
             model.set_field(mfile, 'branch', 'milestone/0.1')
@@ -417,8 +470,8 @@ class ListFindsTheNail(unittest.TestCase):
             code, out = run_cli(root, 'list', '--kind', 'milestone')
             self.assertEqual(code, 0, out)
             self.assertEqual(self._rows(out), [
-                ['0.1', 'building', 'in_progress', 'milestone/0.1'],
-                ['0.2', 'planning', 'todo', '-']])
+                ['0.1', 'building', 'in_progress', 'milestone/0.1', 'Demo'],
+                ['0.2', 'planning', 'todo', '-', 'Later']])
             self.assertIn('2 of 2 milestone(s)', out)
             code, out = run_cli(root, 'list', '--kind', 'milestone',
                                 '--category', 'in_progress')

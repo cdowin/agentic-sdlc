@@ -3,8 +3,8 @@ id: 0.4.0/the-read-verbs-compose/01-the-name-is-a-column-and-json-is-a-flag
 feature: 0.4.0/the-read-verbs-compose
 milestone: "0.4.0"
 name: pm list emits the name, and the listing verbs speak JSON
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

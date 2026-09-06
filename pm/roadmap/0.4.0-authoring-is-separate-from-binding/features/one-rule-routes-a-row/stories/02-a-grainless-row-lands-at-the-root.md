@@ -82,7 +82,7 @@ new resolver.
    different verb from one that defaults to the live milestone — do not let the difference be
    accidental.
 6. `retire` still removes a milestone's ledger with its directory, and leaves the root ledger
-   alone. D6 is unchanged by this story and a case should say so.
+   alone. The `check pm` D6 rule is unchanged by this story and a case should say so.
 
 ## Out of scope
 

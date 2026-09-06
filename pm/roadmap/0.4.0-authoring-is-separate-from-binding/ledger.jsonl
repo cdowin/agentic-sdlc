@@ -7,3 +7,13 @@
 {"ts":"2026-09-06T21:27:03Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2195}
 {"ts":"2026-09-06T21:29:53Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2268}
 {"ts":"2026-09-06T21:30:05Z","kind":"dispatch","grain":"0.4.0/one-rule-routes-a-row","agent_type":"orchestrator","duration_s":1500,"tool_calls":24,"tree":{"milestones_building":["0.4.0"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["0.4.0"],"features_in_progress":[],"stories_in_progress":[]}}
+{"ts":"2026-09-06T21:31:05Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2247}
+{"ts":"2026-09-06T21:32:40Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":2091}
+{"ts":"2026-09-06T21:33:06Z","kind":"decision","grain":"0.4.0","entry":"D4","title":"The design decisions that predate this log, carried forward"}
+{"ts":"2026-09-06T21:34:09Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":2264}
+{"ts":"2026-09-06T21:34:53Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":2287}
+{"ts":"2026-09-06T21:36:20Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2366}
+{"ts":"2026-09-06T21:36:40Z","kind":"decision","grain":"0.4.0","entry":"D6","title":"A handoff is a breadcrumb map, and the size cap is the gate that says so"}
+{"ts":"2026-09-06T21:41:06Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2356}
+{"ts":"2026-09-06T21:41:30Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2242}
+{"ts":"2026-09-06T21:41:34Z","kind":"dispatch","grain":"0.4.0/a-document-points-at-what-it-cannot-hold","agent_type":"orchestrator","duration_s":1400,"tool_calls":22,"tree":{"milestones_building":["0.4.0"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["0.4.0"],"features_in_progress":[],"stories_in_progress":[]}}

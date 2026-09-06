@@ -70,7 +70,8 @@ lands. `pm ledger report` already prints a `rows naming no grain` bucket; this g
 bucket a home instead of scattering its contents into whichever milestone happened to be
 `in_progress` at the time.
 
-**D6 survives intact.** The ledger is still per-milestone for every attributed row, `retire`
+**The `check pm` D6 RULE survives intact** (not decision D6 below — the ids are two
+namespaces). The ledger is still per-milestone for every attributed row, `retire`
 still removes it with the directory, git is still the archive. Only unattributed rows outlive a
 milestone, which is correct: they were never about it.
 
@@ -86,3 +87,129 @@ per-feature file adds a "which file" question without adding information, multip
 answers with a query. This is the third instance in one session of the shape
 `the-read-verbs-compose` names: **when the view is missing, the fix is a column or a query,
 never a new place to put bytes.**
+
+## D4 — 2026-09-06 — The design decisions that predate this log, carried forward
+
+**These were settled in the 0.4.0 design conversation, before this file existed.** The date is
+when they were written down, not when they were decided. Recorded here because they were living
+only in a handoff message, which is not durable — and because a handoff should point at this log
+rather than restate it.
+
+**Kind-prefixed slugs (`ft-`, `st-`), never a counter.** A counter needs an allocator and a git
+repo has none. Scan-and-take-max+1 gives two agents on two branches the same number, invisibly,
+until merge; a counter file makes every branch that creates a grain conflict on one line. Both
+fail hardest in the workflow this package is built for. **Uniqueness is a gate finding, not a
+runtime lock.**
+
+**`add` AND `set` both stay.** Not two spellings of one thing: `set` writes one field, `add` does
+strictly more — bind AND sequence, one intent. `add` must remain exactly `set` plus a list insert.
+*The day it grows behaviour neither primitive has, it is a second mechanism* — catch that in
+review.
+
+**`pm add <parent-id> <child-id>` — neither argument names a kind.** Ids carry their kind as a
+prefix, so both are derivable and `[pm.contains]` validates the pair. `pm move` and `pm order`
+both retire into it: the first because position stops being parentage, the second because it was
+`add` against the root wearing a different name.
+
+**`order` lists child IDs at every level.** The same list everywhere, so renaming a version never
+touches the plan.
+
+**Block-style `order:`, not inline.** Reordering is the main edit and a block diff shows what
+moved. This is the one genuinely new primitive — a list-aware sibling to `set_field`.
+
+**No YAML, and no JSONL for grains.** No YAML in the stdlib (hard rule 1), and a YAML round-trip
+is load-then-dump, which strips the comments where the arguments live. JSONL stays the ledger's.
+
+**The migration never auto-resolves a slug collision.** An auto-picked id is a name nobody chose,
+in the one field that is stable for life and cited from commit messages. Report and refuse;
+resolution goes through `pm rename`.
+
+## D5 — 2026-09-06 — Telemetry is clearly available and warned when absent, never mandatory
+
+Decided with Chris while filing the telemetry pre-work, and it governs both
+`recording-is-on-or-the-gate-is-red` (this tree) and `telemetry-arrives-with-the-bump` (every
+consumer).
+
+A tree or a consumer that has not wired the couriers **is not broken** — it opted out, and this
+package does not conscript. What it must never be is *silently* opted out, which is the state this
+tree was in for the whole of 0.3.0: hooks installed and firing, every call refused, the refusal
+printed to a stderr nobody reads, zero rows, zero complaints.
+
+So both surfaces WARN and neither refuses. In Chris's words, near enough to the literal probe text:
+
+> no ledger setup for milestone, no telemetry
+
+**Rejected: making the wiring a hard requirement of adoption** — writing `.claude/settings.json`
+on a consumer's behalf, or failing `adopt` when the hooks are absent. `install.py` already states
+the reasoning for not writing that file (*"hand-maintained and there is no merge"*) and that
+reasoning stands. Loud absence, not a forced install.
+
+## D6 — 2026-09-06 — A handoff is a breadcrumb map, and the size cap is the gate that says so
+
+**The observation.** The 0.4.0 handoff was written at 194 lines and restated the tree: the feature
+list (`pm status`), the dependency graph (`grep depends_on`), the rung costs (`ledger report`), the
+prior decisions (which were nowhere else, and are now D4), and summaries of commits whose messages
+already carried the argument.
+
+`[grain_shape]` rejected it at a 120-line cap. **Twice.** Both times the response was to shave
+prose, which is treating a gate as an obstacle. Chris named the actual defect: *lean on git and the
+tree, point agents at where to look rather than telling them; leave breadcrumbs everywhere as truth
+rather than re-writing things over and over.*
+
+Rewritten as a pointer document it came to **93 lines and lost nothing that was not derivable**.
+
+**The rule.**
+
+> **A document carries only what nothing else holds. Everything derivable is a command it names.**
+> If the document and the tree disagree, the tree is right — it is maintained by gates; the
+> document is maintained by whoever remembered.
+
+What survived the rewrite is exactly the non-derivable residue, and it is a short list: the
+absolute worktree path (in no file, only in `git worktree list`); environment hazards (another
+agent in the main tree, `core.bare`, the write-confinement block); the reading ORDER, which is a
+pointer and not a copy; and facts nobody had written down anywhere — that 0.3.0 records nothing,
+that `check` runs ~36s cold against a 2.2s median.
+
+**The cap was right, and that is the generalisable part.** `pm-execution.md` already says *"never
+write what is already derivable"*, but only about tallies in feature and milestone files. The
+`[grain_shape]` caps turn out to enforce the same rule everywhere, by proxy: **a document that
+keeps hitting its cap is usually restating something, and the cap is the cheapest detector of it we
+have.** Treat a repeated cap failure as a finding about the document, not a number to raise.
+
+**Rejected: raising the `handoff` cap to 200.** It is not in this tree's `[grain_shape] caps`
+override, so 120 is stock, and this tree's stated direction (0.2.0's story 09) is back *toward*
+stock, not away.
+
+**Rejected: a `pm handoff` verb that assembles the derivable parts.** Tempting — it would emit
+status, graph, spend and log in one call. It loses to this package's own rule
+(`the-read-verbs-compose`): read verbs emit lines and composition is the shell's job. **The handoff
+naming the pipeline IS the composition**, and it costs nothing to maintain. A verb here would be
+the fifth instance of the class in `/improvements.md` — reaching for a new capability when the
+existing ones already compose.
+
+**A handoff skill IS being built** — Chris's call, after the argument below was put and answered.
+The objection was that a skill is a fourth name for what three constructs already carry. What
+overrides it: **none of those three fire at the moment someone types "write me a handoff".** A
+template guides only once you open it, a header only once the file exists, a cap only after you
+have written too much. A skill description is the one surface that matches on the words a person
+actually says. So it is built as a **router** — run `pm new milestone <id>`, the template is the
+answer, here is what counts as derivable — and a skill that restates the template instead of
+pointing at it has reproduced the very bug it exists to prevent. Review rejects it on that ground.
+
+The argument, kept because it decides the skill's SHAPE. `src/agentic_sdlc/repo/pm/templates/handoff.md` is a handoff template with the right
+three-section shape and *"Not a status dump"* written into it;
+`model.SLOT_HEADER['handoff.md']` is **"Cold-start only. Never restate what `pm status`
+computes."**, described in source as *"the one channel that reaches a dispatched subagent"*; and
+`[grain_shape]`'s cap caught the violation twice. **All three were bypassed by creating the file
+with `Write` instead of `pm new`**, which is idempotent and fills empty slots. A skill would be the
+fourth name for a fact three constructs already carry — in the milestone about deleting second
+names.
+
+**What is missing is enforcement, not guidance**, and that is
+`0.4.0/a-document-points-at-what-it-cannot-hold`: a `check pm` rule that a shared doc opening
+without its `SLOT_HEADER` is a finding. The comparison already exists in
+`templates/__init__.py:79-83` and runs only on `pm new`; this points it at files on disk.
+
+**The standing lesson: if you need a shared doc, scaffold it — don't author it.** This was the
+fifth instance in one session of a capability that shipped and was not found at the moment of need,
+and the first where the guidance was in the file's own first line.

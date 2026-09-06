@@ -34,30 +34,35 @@ The same shape, one layer up. Not a missing column — **a missing word.**
 
 ## What it produced
 
-Four features, filed into 0.4.0 as pre-work and built before anything else, because everything
+Six features, filed into 0.4.0 as pre-work and built before anything else, because everything
 after them should be measured:
 
 | feature | the defect |
 |---|---|
-| `recording-is-on-or-the-gate-is-red` | a fail-open courier with no fail-loud counterpart |
+| `one-rule-routes-a-row` | TWO functions answer "which ledger owns this row" and disagree |
 | `every-row-names-its-grain` | hook rows carry no `grain:`, so nothing attributes to a story |
+| `recording-is-on-or-the-gate-is-red` | a fail-open courier with no fail-loud counterpart |
 | `the-surface-says-telemetry` | the word is in no discovery surface in the package |
 | `telemetry-arrives-with-the-bump` | settings.json is printed, never written — consumers get nothing |
+| `a-document-points-at-what-it-cannot-hold` | a shipped template nothing points you at |
 
-`the-migration-is-whole-or-nothing` now depends on the first three, so the riskiest work in the
+`the-migration-is-whole-or-nothing` depends on the telemetry three, so the riskiest work in the
 milestone is also the best-measured.
 
 **And a class was named.** `the-read-verbs-compose` had already found two instances of one shape —
 a hand-rolled adoption checklist because `adopt` was never found, an invented search verb because
-`pm list` withheld a field. This session added a third (the ledger) and, while investigating it, a
-fourth (`adopt` does not call the `--self-test` every courier ships). Four is not a coincidence:
+`pm list` withheld a field. This session added a third (the ledger), a fourth while investigating
+it (`adopt` never calls the `--self-test` every courier ships), and a fifth that is the sharpest
+of all — a shipped `handoff.md` template, opening with the exact instruction being violated, that
+nothing on the reading path points at (F9). Five is not a coincidence:
 
 > **A capability nobody can find is a capability you do not have.** When a request is met by
 > hand-rolling something the package already does, the defect is the surface, not the requester.
 > The fix is a word, a column or a line in the file that already loads — never a new verb.
 
 That now has a home in `the-surface-says-telemetry`'s ship criterion, to be stated once in
-CLAUDE.md rather than rediscovered a fifth time.
+CLAUDE.md rather than rediscovered a sixth time. **The corollary F9 adds: if a shared doc is
+absent, scaffold it — don't author it.**
 
 ---
 
@@ -189,6 +194,40 @@ count of the same bytes, which points at prompt caching — so these measure *bi
 not context occupancy. Two different things, and the ledger's `cache_read` / `cache_create`
 columns are the ones that can actually tell them apart. Another argument for using the sink that
 already exists over a table I keep by hand.
+
+### F9 — `pm new <kind>` is also `pm repair <kind>`, and its name only describes the first use
+
+**The sharpest miss of the session.** Asked for a handoff, I wrote 194 lines from scratch. The
+package already ships `src/agentic_sdlc/repo/pm/templates/handoff.md` — the right three-section
+shape, opening with *"Cold-start only. Never restate what `pm status` computes."*, a line the
+source calls *"the one channel that reaches a dispatched subagent"*.
+
+**I had read every piece of the guidance and it did not fire:**
+
+1. `HANDOFF_FILE_NAME`, `MILESTONE_OPTIONAL_SLOTS`, `SLOT_TEMPLATE`, `SLOT_HEADER` — the word
+   "slot" in four constant names, read in my first survey of `model.py`.
+2. `pm --help`, read while scaffolding features: *"a shared doc appears on first WRITE. **Idempotent
+   — re-run to fill**"*.
+3. `ls` showing no `handoff.md`.
+
+From (3) I concluded "I author it". **I never asked how the file normally comes into existence.**
+
+Two causes, and the second is the reusable one:
+
+- **An absent file reads as an empty canvas, not an unfilled slot.** Nothing on the reading path
+  says otherwise: `MILESTONE_OPTIONAL_SLOTS` is imported by exactly one module — the *writer*. No
+  gate and no read verb knows `handoff.md` is a slot. `pm status 0.4.0` lists thirteen features and
+  never mentions that a `building` milestone has no handoff.
+- **The verb's name argues against its second job.** `pm new milestone` reads as *create a
+  milestone*; 0.4.0 already existed, so it looked inapplicable. Its refill behaviour is real,
+  idempotent, and disclosed in a parenthetical on a verb called `new`.
+
+**Fix:** `0.4.0/a-document-points-at-what-it-cannot-hold`, four layers — the absence becomes a
+`check pm` WARN, the header becomes enforced, the template carries the orient pipeline instead of
+only forbidding a status dump, and a `handoff` skill routes to all three. Not a rename: layer 1
+removes the need to know the verb.
+
+**The standing lesson: if you need a shared doc, scaffold it — don't author it.**
 
 ### F8 — being rooted in the wrong repo does not cost a prefix, it disables the guarded write path
 

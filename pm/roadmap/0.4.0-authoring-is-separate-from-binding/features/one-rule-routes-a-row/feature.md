@@ -59,7 +59,7 @@ D1 in this milestone's `decisions.md` carries the argument and the rejected alte
 `rows naming no grain` bucket — this gives that bucket a home rather than scattering its contents
 into whichever milestone was building.
 
-**D6 survives.** Attributed rows still live with their milestone, `retire` still removes them with
+**The `check pm` D6 rule survives.** Attributed rows still live with their milestone, `retire` still removes them with
 the directory, git is still the archive. Only unattributed rows outlive a milestone, which is
 correct — they were never about it.
 
@@ -96,6 +96,6 @@ How a row acquires its grain — `0.4.0/every-row-names-its-grain`. That feature
 this one, not upstream of it: `ledger record --grain` already exists as the hand-entry form and
 status rows already carry grains, so grain-first routing is testable the day it lands. Build this
 one first anyway — it is what stops rows being refused. The gate that notices nothing is recording
-— `0.4.0/recording-is-on-or-the-gate-is-red`. D6's per-milestone
+— `0.4.0/recording-is-on-or-the-gate-is-red`. The `check pm` D6 rule's per-milestone
 model is NOT under review here: this feature keeps it and changes only how the milestone is
 chosen.

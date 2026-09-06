@@ -147,10 +147,75 @@ def install_merge_attribute(cfg: model.PmConfig) -> str:
     return f'{said} {GITATTRIBUTES}: {line}{note}'
 
 
+CONFIG_FILE = 'devkit.toml'
+# Above the appended block, so a reader of the file knows which verb put it
+# there and that it is theirs to edit.
+FLOW_HEADER = ('# --- the flow — appended by `agentic-sdlc pm init` ----------'
+               '------------------\n'
+               '# Every state this project uses, each in exactly one of '
+               'todo / in_progress /\n'
+               '# done. Yours: `pm vocabulary` echoes it, every run reads it, '
+               'and there is no\n'
+               '# default behind it (CLAUDE.md hard rule 5).\n')
+
+
+def install_flow(cfg: model.PmConfig) -> str:
+    """Make `[pm.states.<kind>]` true in devkit.toml. Returns what happened.
+
+    THE APPEND PATH the flow's review found missing (F2/F3 of
+    docs/reviews/2026-09-05-the-project-declares-its-flow.md): `flow_of`'s
+    refusal names this verb as the one that writes the section, and until
+    now it did not. APPENDS, exactly like `.gitignore` and `.gitattributes`
+    above and for the same reason — devkit.toml is a file a project already
+    has opinions in, so refusing on a collision would refuse every repo that
+    has one and overwriting would delete those opinions. Every other byte is
+    preserved, the file's own line endings included: a CRLF config gets a
+    CRLF block. Idempotent — a tree that already declares its flow is not
+    touched at all (`cfg.flows` is the reader's answer, so a partial or
+    malformed declaration was already refused at load and never reaches
+    here). A missing devkit.toml is created holding the flow alone.
+    """
+    target = cfg.root / CONFIG_FILE
+    if cfg.flows:
+        return f'{CONFIG_FILE} already declares [pm.states.*] — left alone'
+    defect = install.destination_defect(target)
+    if defect:
+        raise Refused(f'{CONFIG_FILE} {defect} — the flow was not written; '
+                      f'run `agentic-sdlc pm vocabulary` for the section and '
+                      f'add it yourself once the path is writable')
+    existing = ''
+    if target.is_file():
+        try:
+            existing = model.read_raw(target)
+        except (OSError, UnicodeDecodeError) as err:
+            raise Refused(f'{CONFIG_FILE} could not be read ({err}) — the '
+                          f'flow was not written') from err
+    eol = '\r\n' if '\r\n' in existing else '\n'
+    block = (FLOW_HEADER + model.render_seed()).replace('\n', eol)
+    if existing:
+        head = '' if existing.endswith(('\n', '\r')) else eol
+        body = existing + head + eol + block
+    else:
+        body = block
+    result = apply.Plan().overwrite(target, body, newline='',
+                                    label=CONFIG_FILE).apply(decide=False)
+    if result.failed is not None:
+        raise Refused(f'{CONFIG_FILE} could not be written ({result.error}) '
+                      f'— the flow was not written')
+    said = 'appended the flow to' if existing else 'wrote the flow into'
+    return (f'{said} {CONFIG_FILE}: [pm.states.'
+            f'{"|".join(model.FLOW_KINDS)}]')
+
+
 def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
-    """Stand up a PM tree in a repo that has none, and say what is left to do."""
+    """Stand up a PM tree in a repo that has none, and say what is left to do.
+
+    The FLOW FIRST: it is the one thing every other pm verb refuses without,
+    and the refusal names this command as the one that writes it.
+    """
     if args:
         raise Usage(USAGE)
+    _ok(install_flow(cfg))
     made = stand_up_tree(cfg)
     for m in made:
         _ok(f'created {m}')

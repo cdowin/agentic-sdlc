@@ -450,3 +450,11 @@
 {"ts":"2026-09-06T03:33:26Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":192,"rank":4}
 {"ts":"2026-09-06T03:33:26Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":178,"rank":5}
 {"ts":"2026-09-06T03:33:26Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7398,"census":732}
+{"ts":"2026-09-06T03:37:05Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2177}
+{"ts":"2026-09-06T03:37:07Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2035}
+{"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":501,"rank":1}
+{"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":399,"rank":2}
+{"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":339,"rank":3}
+{"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":192,"rank":4}
+{"ts":"2026-09-06T03:37:14Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":175,"rank":5}
+{"ts":"2026-09-06T03:37:14Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6980,"census":732}

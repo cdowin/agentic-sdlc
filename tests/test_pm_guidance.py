@@ -14,7 +14,7 @@ from pathlib import Path
 
 from support.pm import run_cli, tree, write
 
-from agentic_sdlc.repo.pm import cli, skills
+from agentic_sdlc.repo.pm import cli, model, skills
 
 class Guidance(unittest.TestCase):
     """`pm install-skills` / `pm init` — the shared doctrine, and only that."""
@@ -159,13 +159,16 @@ class Guidance(unittest.TestCase):
             self.assertEqual(run_cli(root, 'install-skills')[0], 0)
 
     def test_init_stands_up_a_usable_tree_from_nothing(self):
-        # THE ONE FIXTURE HERE THAT STAYS FLOW-LESS ON PURPOSE, and it is the
-        # test that will catch the gap phase 7 has to close. `flow_of`'s
+        # THE ONE FIXTURE HERE THAT STARTS FLOW-LESS ON PURPOSE. `flow_of`'s
         # refusal names `agentic-sdlc pm init` as the command that writes
-        # `[pm.states.*]` (model.py:718), and `skills.cmd_init` does not write
-        # it yet. FROM NOTHING is the claim: a bare repo, `init`, then the two
-        # `new` calls init's own next-steps print. Handing this tree a
-        # devkit.toml would make it pass by removing the thing it measures.
+        # `[pm.states.*]`, and since story 06 of the-code-knows-entry-and-exit
+        # it does (F3 of the flow's review: the refusal named a command that
+        # left the file untouched). FROM NOTHING is the claim: a bare repo
+        # with no devkit.toml at all, `init`, then the `new` calls init's own
+        # next-steps print, then a verb that ASKS the flow — `pm milestone
+        # ready`, which `_movable` routes through `flow_of` — so this cannot
+        # pass on a verb that never asked. Handing this tree a devkit.toml
+        # would make it pass by removing the thing it measures.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             root.mkdir()
@@ -173,13 +176,25 @@ class Guidance(unittest.TestCase):
             previous = Path.cwd()
             os.chdir(root)
             try:
-                self.assertEqual(run_cli(root, 'init')[0], 0)
+                code, out = run_cli(root, 'init')
+                self.assertEqual(code, 0, out)
+                self.assertIn('wrote the flow into devkit.toml', out)
+                config = (root / 'devkit.toml').read_text(encoding='utf-8')
+                self.assertTrue(config.endswith(model.render_seed()), config)
                 # The flow init tells the user to run must actually work.
                 self.assertEqual(
                     run_cli(root, 'new', 'milestone', '0.1', 'First')[0], 0)
                 self.assertEqual(
                     run_cli(root, 'new', 'feature', '0.1', 'gw', 'GW')[0], 0)
                 self.assertEqual(run_cli(root, 'validate')[0], 0)
+                code, out = run_cli(root, 'milestone', 'ready', '0.1')
+                self.assertEqual(code, 0, out)
+                # Idempotent: a second init leaves the declaration alone.
+                code, out = run_cli(root, 'init')
+                self.assertEqual(code, 0, out)
+                self.assertIn('already declares [pm.states.*]', out)
+                self.assertEqual(
+                    (root / 'devkit.toml').read_text(encoding='utf-8'), config)
             finally:
                 os.chdir(previous)
             self.assertTrue((root / 'pm/roadmap/ROADMAP.md').is_file())

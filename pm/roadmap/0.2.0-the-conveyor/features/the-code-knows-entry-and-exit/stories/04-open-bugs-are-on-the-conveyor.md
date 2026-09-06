@@ -2,27 +2,34 @@
 id: 0.2.0/the-code-knows-entry-and-exit/04-open-bugs-are-on-the-conveyor
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
-name: An open bug against the milestone is named before the milestone can be ready
+name: A belt is its checks, then one write or a clean error (D12)
 status: planning
 owner:
 depends_on: []
 ---
 
-# An open bug against the milestone is named before the milestone can be ready
+# A belt is its checks, then one write or a clean error (D12)
 
 ## Acceptance criteria
 
-- `pm ready-for milestone <id>` names every bug whose `fix_milestone` is `<id>` and whose category is not `done`, as a BLOCKED line, and exits 1.
-- `release`'s `features-done` step therefore reports them, and the deviation row names them.
-- The bug flow is declared in `[pm.states.bug]` like every kind; `pm bug <state>` is the stamp.
+- `close story <id>`: checks — the story exists; `verify --story` over its commit range is green; nothing outside the roadmap directory is uncommitted; the story carries a `done:` line. Write: status → the first `done` state.
+- `close feature <id>`: checks — every story is in the `done` category (each one that is not is named); `reviewed:` points at a record that parses; no finding in it is `open`. Write: status → first `done` state.
+- `release <version>`: checks — tree clean; HEAD is the milestone's `branch:`; `## Unreleased` non-empty; every feature in `done`; every review finding dispositioned; no open bug names the milestone; every version site names `<version>`; `make milestone` green. Write: milestone status → first `done` state. Then PRINT the caller's list: retitle the changelog, push, open the PR, tag, prove the artifact.
+- `adopt`: checks only; it writes nothing.
+- Every check runs and prints; any false → `error: <check>: <what is false>` per check, exit 1, no write. `--force` writes and the ledger row lists the false checks. `--skip` stays gone.
+- The driver and steps shrink to that: no `do()` on any step but the one write; the run-state file under `.agentic-sdlc/` goes, because every run re-reads the tree.
+- `docs/sdlc-protocol.md` renders from the four check lists and the after-belt instructions.
 
 ## How this is proven
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | an open bug blocks; a closed one does not | amend tests/test_pm_ready_for.py |
-| 2 | unit | a bug against another milestone is ignored and counted | amend tests/test_pm_ready_for.py |
+| 1 | unit | each belt: one false check → error line, exit 1, file byte-identical | replace tests/test_conveyor_close.py |
+| 2 | unit | all true → exactly one write, the first done state | replace tests/test_conveyor_close.py |
+| 3 | unit | --force writes and the ledger row names the false checks | replace tests/test_conveyor_deviation.py |
+| 4 | unit | release prints the caller list and writes nothing but the status | replace tests/test_conveyor_driver.py |
+| 5 | unit | the rendered protocol carries every check and the after-list | amend tests/test_install_sdlc.py |
 
 ## Out of scope
 
-A bug belt. Three states, stamped by hand, is the whole flow.
+Any automatic step. Any belt writing a file it was not asked about.

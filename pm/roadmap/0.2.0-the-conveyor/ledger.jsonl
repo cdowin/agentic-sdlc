@@ -783,3 +783,11 @@
 {"ts":"2026-09-06T04:47:45Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":299,"rank":5}
 {"ts":"2026-09-06T04:47:45Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9931,"census":703}
 {"ts":"2026-09-06T04:47:45Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":12376}
+{"ts":"2026-09-06T04:47:58Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2332}
+{"ts":"2026-09-06T04:48:06Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":514,"rank":1}
+{"ts":"2026-09-06T04:48:06Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":476,"rank":2}
+{"ts":"2026-09-06T04:48:06Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":388,"rank":3}
+{"ts":"2026-09-06T04:48:06Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":289,"rank":4}
+{"ts":"2026-09-06T04:48:06Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":285,"rank":5}
+{"ts":"2026-09-06T04:48:06Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8295,"census":705}
+{"ts":"2026-09-06T04:48:06Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":10902}

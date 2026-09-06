@@ -316,23 +316,23 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
              'dispatches': 2, 'usage': full, 'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
              'states': {'todo': None, 'in_progress': 720, 'done': None},
-             'unplaced_s': None,
+             'unplaced_s': None, 'frozen_only': None,
              'total_s': 720},
             {'grain': QUIET, 'kind': 'story', 'size': 'm',
              'dispatches': 0, 'usage': blank_usage(), 'tool_calls': None,
              'duration_s': None, 'agent_types': [],
-             'states': EMPTY_STATES, 'unplaced_s': None,
+             'states': EMPTY_STATES, 'unplaced_s': None, 'frozen_only': None,
              'total_s': None},
             {'grain': FEATURE, 'kind': 'feature', 'size': None,
              'dispatches': 2, 'usage': full, 'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
-             'states': EMPTY_STATES, 'unplaced_s': None,
+             'states': EMPTY_STATES, 'unplaced_s': None, 'frozen_only': None,
              'total_s': None},
             {'grain': BUG, 'kind': 'bug', 'size': None, 'dispatches': 0,
              'usage': blank_usage(), 'tool_calls': None,
              'duration_s': None, 'agent_types': [],
              'states': {'todo': None, 'in_progress': 30, 'done': None},
-             'unplaced_s': None, 'total_s': 30},
+             'unplaced_s': None, 'frozen_only': None, 'total_s': 30},
         ],
         'unattributed': {'dispatches': 1,
                          'usage': dict(blank_usage(), input=5),
@@ -450,10 +450,10 @@ def test_an_old_shape_ledger_is_read_where_it_can_be_and_disclosed_where_not():
     vendored ledger written under the OLD key shape (decision D7).
 
     An old row that names a grain through the frozen keys is attributed as it
-    always was. An old row that names nothing is EITHER a dispatch over an
-    idle tree OR one over a tree whose words the old shape could not spell,
-    and the rows cannot tell which — so the report says how many such rows
-    there are, in the table and in `--json`, and never counts them as empty.
+    always was. An old row that names nothing HERE is a dispatch over an idle
+    tree, over another milestone's work, or over a tree whose words the old
+    shape could not spell — so the report says how many such rows there are,
+    in the table and in `--json`, and never counts them as empty.
     A stint in a word the declaration does not name lands in no category
     column and is disclosed by grain.
 
@@ -476,9 +476,9 @@ def test_an_old_shape_ledger_is_read_where_it_can_be_and_disclosed_where_not():
     assert data['legacy'] == {'rows': 3, 'unattributed': 2}
     assert data['unattributed']['dispatches'] == 2
     assert '-- rows naming no grain (2)' in out
-    assert ('   2 of these predate category keys and name no grain — '
-            'unreadable under a renamed vocabulary, and not counted as empty'
-            in out)
+    assert ('   2 of these predate category keys and name no grain of this '
+            "milestone — an idle tree, another milestone's work, or words "
+            'that shape could not spell; not counted as empty' in out)
     # The stint at `review` — a word the seed does not declare — is in no
     # column, and it is said so rather than summed into `in_progress`.
     assert story['states'] == {'todo': None, 'in_progress': 600, 'done': None}
@@ -491,11 +491,45 @@ def test_an_old_shape_ledger_is_read_where_it_can_be_and_disclosed_where_not():
 def test_a_current_shape_ledger_discloses_no_boundary():
     """The disclosure line is for the boundary and nothing else: a ledger
     whose every dispatch row carries the category keys prints no such line,
-    and `legacy` reports zero rows — a number, never an absent key."""
+    and `legacy` reports zero rows — a number, never an absent key.
+
+    And the one thing a current-shape row CAN drop is disclosed the same way.
+    A new row carries both key families; under the stock seed a story at
+    `reviewing` — a word its kind no longer declares — is in `stories_review`
+    and not in `stories_in_progress`, and the report reads the category key.
+    The number is right (nothing was in progress under this declaration) and
+    the silence was not: before this case the story printed `dispatches 0`
+    and nothing said a row had named it. Built on `support.pm.tree` directly
+    because this module's `tree` declares `reviewing` for stories, and the
+    two families only disagree when the declaration cannot place the word.
+    """
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
         code, out = report(root, '0.1')
         data = json.loads(report(root, '0.1', '--json')[1])
     assert code == 0, out
     assert 'predate category keys' not in out
+    assert 'deprecated key' not in out
+    assert data['legacy'] == {'rows': 0, 'unattributed': 0}
+    assert all(e['frozen_only'] is None for e in data['grains'])
+    with _seed_tree(story_statuses=('reviewing',)) as root:
+        put_ledger(root, dispatch_line(
+            '2026-09-03T10:05:00Z', usage={'output': 700}, tool_calls=3,
+            tree=snapshot(stories_review=[STORY], stories_in_progress=[],
+                          features_in_progress=[FEATURE])))
+        code, out = report(root, '0.1')
+        data = json.loads(report(root, '0.1', '--json')[1])
+    assert code == 0, out
+    story = next(e for e in data['grains'] if e['grain'] == STORY)
+    # Not attributed — the category key is the declaration's answer — and
+    # not silent: the drop is a number beside the column it is missing from.
+    assert story['dispatches'] == 0
+    assert story['frozen_only'] == 1
+    assert (f'   {STORY} named only through a deprecated key — at a word this '
+            'declaration does not place in in_progress, so counted in no '
+            'column above: 1 dispatch row(s)' in out)
+    # The feature named itself through its own category key, so nothing was
+    # dropped there; and this is not the old-shape boundary.
+    feature = next(e for e in data['grains'] if e['grain'] == FEATURE)
+    assert feature['dispatches'] == 1 and feature['frozen_only'] is None
     assert data['legacy'] == {'rows': 0, 'unattributed': 0}

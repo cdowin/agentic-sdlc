@@ -355,9 +355,9 @@ Reviewer's token cost: ~210k.
 ```text
 verdict: SHIP-WITH-FIXES
 | id | severity | disposition |
-| L1 | MAJOR | open: needs a disclosure line, not a number — see the shape-of-a-fix note |
-| L2 | MINOR | open |
-| L3 | NIT | open |
-| L4 | NIT | open |
-| L5 | QUESTION | open: the milestone's pattern, not this feature's choice |
+| L1 | MAJOR | landed 9bb7f6a |
+| L2 | MINOR | landed 9bb7f6a |
+| L3 | NIT | landed 9bb7f6a |
+| L4 | NIT | landed 9bb7f6a |
+| L5 | QUESTION | rejected: the feature record's criteria are its proof table; the orchestrator answers it |
 ```

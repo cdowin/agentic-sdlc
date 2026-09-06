@@ -1,70 +1,11 @@
 """steps.py — the four check lists, as registries the driver runs.
 
-`driver.py` is the machine; this is what it asks. Four lists — `release`,
-`adopt`, and the two INNER belts `story` and `feature` (SDLC.md §0) — each a
-sequence of CHECKS. A check is a question about the tree with a one-line
-answer, and nothing here performs anything: D12 (`decisions.md`) — *"the
-actions ARE the checks"* — took every `do()` out of this file. What a caller
-must still do after a belt is words, in `AFTER` below, printed on success and
-rendered into `docs/sdlc-protocol.md`.
-
-## No check re-implements a predicate that has a verb
-
-`features-done`, `findings-resolved` and `stories-done` go through
-`pm ready-for milestone|tag|feature`. `narrow-verified` and `feature-verified`
-go through `verify --story|--feature`. None of them parses a verdict block,
-reads frontmatter with a regex, or names a test command of its own. Two readers
-of "is every finding dispositioned" are two answers, and the second one is the
-permissive one on the day they disagree.
-
-**The one place this module reads a review record itself is the feature
-belt**, through `pm/verdict.py` — the SAME parser `ready_for` reads. There is
-no `pm ready-for` at feature grain, so `review-recorded` and `findings-landed`
-ask `verdict.parse` directly and INHERIT its rulings whole: a record whose
-block does not parse is UNVERIFIABLE (never true), and a finding at
-`disposition: open` is false.
-
-## Config (rule 5 — a repo with no `devkit.toml` behaves identically)
-
-    [release]
-    steps       = [...]                    # default: DEFAULT_RELEASE_STEPS
-    changelog   = "CHANGELOG.md"
-    command_timeout = 1800                 # seconds, per configured command
-
-    [release.commands]
-    gate      = "make milestone"           # the ONE shipped default command
-                                           # {version} is the belt's subject
-
-    [release.version_files]
-    "pyproject.toml"           = '^version = "(.*)"$'
-    "src/pkg/__init__.py"      = "^__version__ = '(.*)'$"
-
-    [adopt]
-    steps          = [...]                 # default: DEFAULT_ADOPT_STEPS
-    pin_file       = "Makefile"            # where DEVKIT_VERSION lives
-    runner_targets = ["check", "precommit", "milestone"]
-
-    [story]                                # default: DEFAULT_STORY_STEPS
-    [feature]                              # default: DEFAULT_FEATURE_STEPS
-    steps = [...]
-
-A `[<operation>.commands]` entry is accepted only for a check in `COMMANDABLE`
-— the ones that run something by default. A command for `tree-clean` would be
-two authorities over one fact. Every refusal here exits 2 through
-`ConfigError`: a typo is a config mistake, not a finding.
-
-## `adopt` — the subtraction, which is the whole second list
-
-A pin bump is verified as a PIN BUMP. `checks-pass` runs **this package's**
-`check all` and never the consumer's `make check`: a consumer's `make check`
-also runs its own gates, which verify the CONSUMER'S code against the
-CONSUMER'S rules — and a version bump in this package cannot change their
-verdict. `tests/test_conveyor_adopt.py::test_checks_pass_never_runs_make`
-names it with a command recorder AND a sentinel file. Hard rule 8 is the live
-hazard: `adopt` runs IN a consumer, on the consumer's own tree, and every check
-below is a question about the LOCAL tree — `pin-bumped` compares the
-consumer's own `DEVKIT_VERSION` line to the version of the package that is
-RUNNING, needing no network and no second checkout.
+A check is a question about the tree with a one-line answer; nothing here
+performs anything (D12), and no check re-implements a predicate that has a
+verb — `pm ready-for` and `verify` are called, never copied. Config lives in
+`[<op>] steps`, `[<op>.commands]`, `[<op>] command_timeout`, `[release]
+changelog` / `version_files`, `[adopt] pin_file` / `runner_targets` (README);
+a repo with no `devkit.toml` runs the shipped defaults byte-identically.
 """
 from __future__ import annotations
 
@@ -92,10 +33,8 @@ DEFAULT_RELEASE_STEPS = (
     'gate',
 )
 
-# Seven checks. `hooks-self-test` and `runner-targets-resolve` are here because
-# a human list keeps forgetting them and both have bitten this package: a guard
-# that fails OPEN is not there, and an `-include` of a missing tier file is
-# SILENT.
+# `hooks-self-test` and `runner-targets-resolve` are here because both have
+# bitten: a guard that fails open, and a silent `-include` of a missing file.
 DEFAULT_ADOPT_STEPS = (
     'pin-bumped',
     'installables-current',
@@ -106,8 +45,7 @@ DEFAULT_ADOPT_STEPS = (
     'pm-validates',
 )
 
-# The belt that runs dozens of times a day. Three of its four checks read a
-# file or a porcelain listing; the fourth shells out once to the narrow rung.
+# The belt that runs dozens of times a day.
 DEFAULT_STORY_STEPS = (
     'story-exists',
     'narrow-verified',
@@ -128,30 +66,22 @@ DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
     'feature': DEFAULT_FEATURE_STEPS,
 }
 
-# The ONE command this package ships a default for. `make milestone` is the
-# target `install-gates` writes and `install-ci` runs, so a stock consumer's
-# gate is answerable the day it installs.
+# The one shipped default: the target `install-gates` writes.
 DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 
-# The checks that RUN something by default, and so may be given a command of
-# the project's own. Everything else reads the tree, and a command for one of
-# those would be two authorities over one fact.
+# The checks that run something and so may take a command; a command for a
+# tree-reading check would be two authorities over one fact.
 COMMANDABLE = frozenset((
     'gate', 'hooks-self-test', 'runner-targets-resolve', 'checks-pass',
     'pm-validates', 'narrow-verified', 'feature-verified'))
 
-# The commands a CALLER runs after the release belt — they were judgement
-# steps until D12 and are `next:` lines now. A `[release.commands]` entry for
-# one is still accepted: it is printed on the after-list (and rendered into
-# the protocol document) so the caller has the command in front of them.
+# Caller commands printed on the after-list; a `[release.commands]` entry for
+# one is accepted and shown there.
 AFTER_COMMANDS: dict[str, str] = {'pr-open': 'pr_open', 'ci-green': 'ci_green',
                                   'prove-artifact': 'prove'}
 
-# What a configured command may ask this machine to fill in. `{version}` is
-# the belt's SUBJECT — the release or pin version, the grain id on a close
-# belt. A brace pair is a placeholder only when it is exactly `{identifier}`
-# and not preceded by `$`: `${HOME}`, `{}` and `awk '{print $1}'` pass through
-# byte for byte. An identifier this table does not know is refused at exit 2.
+# `{version}` is the belt's subject; `${HOME}`, `{}` and `{print $1}` pass
+# through untouched, and an unknown identifier is exit 2.
 PLACEHOLDERS: tuple[str, ...] = ('version',)
 _PLACEHOLDER = re.compile(r'(?<!\$)\{([A-Za-z_][A-Za-z0-9_]*)\}')
 
@@ -170,43 +100,36 @@ def substitute(command: str, ctx: Context) -> str:
         lambda m: values.get(m.group(1), m.group(0)), command)
 
 
-# A check name is a path-free, markdown-free token: the renderer puts it in a
-# table cell and the driver puts it in a line shape consumers grep.
+# A check name lands in a table cell and in a line shape consumers grep.
 STEP_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
 STEP_NAME_MAX = 40
 
-# How much of a command's output reaches a line. A gate that writes 100 MB to
-# stdout must produce a bounded line, not a transcript.
+# A gate writing 100 MB to stdout must still produce a bounded line.
 OUTPUT_LIMIT = 400
 DEFAULT_COMMAND_TIMEOUT = 1800
 
 # --- what the adopt checks look at, all of it inside the checkout --------------
 DEFAULT_PIN_FILE = 'Makefile'
 DEFAULT_RUNNER_TARGETS = ('check', 'precommit', 'milestone')
-# `install-gates` writes this; `adopt` READS it and installs nothing.
+# Written by `install-gates`; `adopt` only reads it.
 FRAMEWORK_MAKEFILE = 'Makefile.devkit'
 # Where `install-hooks` puts the corpus in every consumer.
 HOOKS_DIR = 'tools/hooks'
-# `DEVKIT_VERSION := v1.2.3`, `=`, `?=` and `+=` included — it is somebody
-# else's makefile and this only ever READS the line.
+# `:=`, `=`, `?=` and `+=` — somebody else's makefile, only ever read.
 PIN_LINE = re.compile(r'^\s*DEVKIT_VERSION\s*[:?+]?=\s*(\S+)')
 
 # --- what the close checks look at --------------------------------------------
-# `done: <hash(es)> — <what shipped>` — pm-execution.md step 6, at the grain
-# that closed. Case-insensitive and whitespace-tolerant: the shape being
-# checked is "the author left evidence", not "the author typed it exactly".
+# `done: <hash(es)> — <what shipped>` (pm-execution.md step 6), tolerant of
+# case and whitespace because the shape checked is "evidence was left".
 EVIDENCE_LINE = re.compile(r'^\s*done\s*:\s*(?P<body>\S.*)$', re.IGNORECASE)
-# What "shipped" looks like: a commit hash, or the literal `in-place`. BOTH
-# forms are `pm/verdict.py`'s, inherited rather than re-decided.
+# A commit hash or the literal `in-place`, both `pm/verdict.py`'s forms.
 HASH_MIN, HASH_MAX = verdict.HASH_MIN_LEN, verdict.HASH_MAX_LEN
 IN_PLACE = verdict.IN_PLACE
 EVIDENCE_LANDED = re.compile(
     rf'\b(?:[0-9a-fA-F]{{{HASH_MIN},{HASH_MAX}}}|{IN_PLACE})\b', re.IGNORECASE)
-# The budget the rule states — QUOTED in the refusal, never enforced here
-# (`check grain-shape` owns caps).
+# Quoted in the refusal; `check grain-shape` enforces caps.
 EVIDENCE_BUDGET = 5
-# A review record is read whole to be parsed, so the read is bounded — the
-# same bound `ready-for` puts on the same files.
+# The same read bound `ready-for` puts on a review record.
 MAX_RECORD_BYTES = 1 << 20
 
 
@@ -215,9 +138,8 @@ _SALIENT = re.compile(r'FAILED|^E {2,}|\bERROR\b|error:|Traceback|  DRIFT |\] FA
 
 
 def _clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
-    """One bounded line of somebody else's output — the lines that say what
-    broke first, when there are any, because a transcript clipped at its head
-    shows fifty passing commands and hides the one that failed."""
+    """One bounded line of somebody else's output, preferring the lines that
+    say what broke."""
     lines = [ln.strip() for ln in str(text).splitlines() if ln.strip()]
     salient = [ln for ln in lines if _SALIENT.search(ln)]
     flat = ' '.join(' '.join(salient or lines).split())
@@ -235,13 +157,8 @@ def _pm_cfg(ctx: Context) -> 'model.PmConfig':
 
 
 def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
-    """`git` in the checkout. A missing git is an exit code, never a crash.
-
-    `strip=False` for any porcelain format whose COLUMNS carry meaning:
-    `git status --porcelain` writes `XY<space>PATH`, and X is a space for a
-    worktree-only change — a blanket `.strip()` ate one character off the
-    FIRST line and reported `SDLC.md` as `DLC.md`.
-    """
+    """`git` in the checkout; a missing git is an exit code. `strip=False`
+    keeps porcelain columns whose leading space carries meaning."""
     try:
         done = subprocess.run(('git',) + args, cwd=str(ctx.root),
                               capture_output=True, text=True, timeout=120)
@@ -276,15 +193,9 @@ def _make(ctx: Context, *args: str) -> tuple[int, str]:
 
 
 def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
-    """This package's OWN verb, as a subprocess, in the checkout.
-
-    A subprocess and not an import: nothing under `repo/` may import
-    `agentic_sdlc.cli` (`tests/test_boundaries.py`), and a copy of
-    `check all`'s roster here would be a second answer to which gates run.
-    `PYTHONPATH` names the package that is RUNNING, so the answer comes from
-    this build rather than from whatever else is installed on the box. It
-    returns the argv it ran, so a test can assert WHAT was run.
-    """
+    """This package's own verb as a subprocess (`repo/` may not import
+    `cli`), with `PYTHONPATH` naming the running package; returns the argv
+    it ran so a test can assert what was run."""
     import agentic_sdlc
 
     parent = str(Path(agentic_sdlc.__file__).resolve().parent.parent)
@@ -305,15 +216,8 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
 
 
 def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
-    """One of this package's own gates, answered as a check.
-
-    Exit 2 is NOT exit 1, and D11 says which column it lands in: the callee's
-    reader failed, so the question was never asked — UNVERIFIABLE, never a
-    plain no, and never true. Only THIS callee gets the ruling: it is the one
-    that speaks hard rule 6, while a configured `[<operation>.commands]`
-    string is any shell at all and `make` exits 2 for a failed recipe — so
-    `run_command` reads exit codes as 0-is-true and nothing else.
-    """
+    """One of this package's own gates as a check: exit 2 is UNVERIFIABLE
+    (D11) — only for this callee, since a configured command is any shell."""
     code, said, _ = _own_cli(ctx, *argv)
     spoken = f'`agentic-sdlc {" ".join(argv)}`'
     if code == 0:
@@ -327,9 +231,8 @@ def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
 
 
 def _pm_run(ctx: Context, *argv: str) -> tuple[int, str]:
-    """One `pm` verb, in process, with its exit code. `pm` is `repo/`, so it is
-    imported rather than spawned — a spawn would pay an interpreter for a
-    question already in memory."""
+    """One `pm` verb in process with its exit code — `pm` is `repo/`, so it
+    is imported rather than spawned."""
     import contextlib
     import io
 
@@ -360,13 +263,9 @@ def name_defect(value: object, where: str) -> str:
 
 
 def steps_for(operation: str, registry: dict | None = None) -> tuple[str, ...]:
-    """The ordered check list for `operation`, from `[<operation>] steps`.
-
-    A repo with NO `devkit.toml` and a repo declaring exactly the stock list
-    produce the same tuple, byte for byte (rule 5). Duplicates COLLAPSE in
-    declaration order and the collapse is REPORTED: a list a project wrote and
-    a list this ran that differ without a word is a quiet narrowing.
-    """
+    """The ordered check list from `[<operation>] steps`, the stock default
+    when absent (rule 5); duplicates collapse in declaration order and the
+    collapse is reported."""
     sect = _section(operation)
     known = registry_for(operation) if registry is None else registry
     raw = sect.get('steps')
@@ -406,14 +305,8 @@ def steps_for(operation: str, registry: dict | None = None) -> tuple[str, ...]:
 
 def commands_for(operation: str, names: tuple[str, ...] | None = None,
                  registry: dict | None = None) -> dict[str, str]:
-    """`[<operation>.commands]`, merged over the shipped defaults.
-
-    A command string is REFUSED OR RUN WHOLE — never sanitised into safety.
-    What is refused is the shape that cannot be what it claims: a non-string,
-    an empty string, an unfillable placeholder, a key naming a check that is
-    not in the list, and a key naming a check that reads the tree rather than
-    running anything.
-    """
+    """`[<operation>.commands]` merged over the shipped defaults; a command
+    is refused or run whole, never sanitised."""
     known = registry_for(operation) if registry is None else registry
     listed = steps_for(operation, known) if names is None else names
     sect = _section(operation)
@@ -473,8 +366,8 @@ def commands_for(operation: str, names: tuple[str, ...] | None = None,
 
 def validate_config(operation: str, names: tuple[str, ...],
                     registry: dict) -> None:
-    """Read EVERY `[<operation>]` key this module will need, and refuse now —
-    before the first check, so a typo is exit 2 with nothing run."""
+    """Read every `[<operation>]` key this module will need, so a typo is
+    exit 2 before the first check runs."""
     commands_for(operation, names, registry)
     _timeout(operation)
     if 'changelog-unreleased-nonempty' in names:
@@ -528,11 +421,8 @@ def _runner_targets_of(operation: str) -> tuple[str, ...]:
 
 
 def _version_files(ctx: Context) -> dict[str, str]:
-    """path -> a regex with ONE group holding the version.
-
-    The default is `[pm] version_file` / `version_pattern` — the pair D8 and
-    the semver gate already read. One fact, one home.
-    """
+    """path -> a regex with one group holding the version; the default is
+    `[pm] version_file` / `version_pattern`."""
     cfg = _pm_cfg(ctx)
     raw = _section(ctx.operation).get('version_files')
     if raw is None:
@@ -564,11 +454,8 @@ def _version_files(ctx: Context) -> dict[str, str]:
 
 # --- running a project's command ----------------------------------------------
 def run_command(ctx: Context, step: str, command: str) -> Answer:
-    """Run `command` in the checkout; exit 0 is TRUE and nothing else is.
-
-    A non-zero exit, a timeout and an unspawnable command are three different
-    sentences and none of them is a pass. Output is BOUNDED into the detail.
-    """
+    """Run `command` in the checkout; exit 0 is true and nothing else is, with
+    the output bounded into the detail."""
     try:
         done = subprocess.run(command, cwd=str(ctx.root), shell=True,
                               capture_output=True, text=True,
@@ -587,16 +474,13 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
                      + (f' — {tail}' if tail else ''))
 
 
-# One run's answer to `[<operation>.commands]`, keyed by the checkout, the
-# operation, and the BYTES of the devkit.toml it was derived from. The key
-# makes the memo a DERIVATION and not a memory: any of the three changing
-# re-derives it, so a test that rewrites devkit.toml under one root is never
-# graded against the last case's answer.
+# Keyed by root, operation and the config bytes, so a rewritten devkit.toml
+# re-derives rather than remembers.
 _COMMANDS_MEMO: dict[tuple[str, str, bytes | None], dict[str, str]] = {}
 
 
 def _configured(ctx: Context, step: str) -> str:
-    """`[<operation>.commands] <step>`, or '' — asked ONCE per run."""
+    """`[<operation>.commands] <step>`, or '' — asked once per run."""
     from agentic_sdlc.core.project import CONFIG_NAME, repo_root
 
     path = repo_root() / CONFIG_NAME
@@ -613,11 +497,8 @@ def _configured(ctx: Context, step: str) -> str:
 
 # --- the pm predicates this module CALLS --------------------------------------
 def ready_for(ctx: Context, target: str) -> Answer:
-    """`pm ready-for <target> <grain>`, reported — never re-implemented.
-
-    Called through `pm.cli.main`, which is the published contract (0 ready,
-    1 not ready naming the blockers, 2 usage).
-    """
+    """`pm ready-for <target> <grain>` through `pm.cli.main` (0 ready, 1 not
+    ready naming the blockers, 2 usage), never re-implemented."""
     code, said = _pm_run(ctx, 'ready-for', target, ctx.version)
     if code == 0:
         return Answer.yes(said or f'`pm ready-for {target}` exited 0')
@@ -630,13 +511,8 @@ def ready_for(ctx: Context, target: str) -> Answer:
 
 # --- the release checks -------------------------------------------------------
 def _belt_written(ctx: Context) -> str:
-    """The one TRACKED path a gate run dirties by itself, or ''.
-
-    R6: the installed `gdk_gate.sh` files a `gate` cost row per gate into the
-    TRACKED `<milestone>/ledger.jsonl`, so the `gate` check of the previous
-    run leaves that file modified. The census is unchanged (nothing is
-    excluded); only the sentence knows whose path it is.
-    """
+    """The one tracked path a gate run dirties by itself, or '': `gdk_gate.sh`
+    files gate cost rows into the milestone ledger."""
     from agentic_sdlc.repo.pm import ledger
 
     cfg = _pm_cfg(ctx)
@@ -679,11 +555,8 @@ def check_on_milestone_branch(ctx: Context) -> Answer:
 
 
 def _unreleased_span(text: str) -> tuple[int, int, list[str]] | str:
-    """(start, end, body-lines) of the ONE `## Unreleased` section, or why not.
-
-    Two headings is a refusal, not a choice of the first: the file would carry
-    two stories about the same release.
-    """
+    """(start, end, body-lines) of the one `## Unreleased` section, or why
+    not; two headings is a refusal."""
     lines = text.split('\n')
     at = [i for i, line in enumerate(lines)
           if line.strip().lower().startswith('## unreleased')]
@@ -734,8 +607,8 @@ def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:
 
 
 def check_version_sync(ctx: Context) -> Answer:
-    """Every configured version site names the release. READ, never bumped:
-    the bump is the release commit, and it is the caller's (D12)."""
+    """Every configured version site names the release; read, never bumped
+    (D12)."""
     files = _version_files(ctx)
     found: list[str] = []
     wrong: list[str] = []
@@ -759,9 +632,8 @@ def check_features_done(ctx: Context) -> Answer:
 
 
 def check_findings_resolved(ctx: Context) -> Answer:
-    """Every finding in every record this milestone POINTS AT is dispositioned
-    — `pm ready-for tag`'s question, asked of the verb. The RECORD stays: it
-    is what `reviewed:` points at, and deleting it leaves `check pm` D1 red."""
+    """`pm ready-for tag`'s question, asked of the verb; the record stays
+    because `reviewed:` points at it."""
     return ready_for(ctx, 'tag')
 
 
@@ -806,13 +678,8 @@ def check_pin_bumped(ctx: Context) -> Answer:
 
 
 def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
-    """(verb, path, verdict) for every file the `install-*` verbs write.
-
-    Asked of `install.PLANS` rather than of a list here: a second inventory
-    of the installables would be a second answer to what this version ships.
-    A file the consumer never installed is `not-installed` and is NOT drift —
-    `adopt` reads and names, it does not install.
-    """
+    """(verb, path, verdict) for every file the `install-*` verbs write, from
+    `install.PLANS`; `not-installed` is not drift."""
     from agentic_sdlc.repo import install
 
     out: list[tuple[str, str, str]] = []
@@ -833,8 +700,7 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
             elif text == body:
                 out.append((verb, rel, 'current'))
             elif install.header_only_difference(text, body):
-                # The operator's own project-config header, and the rest of
-                # the file byte-current. A difference, and not one to act on.
+                # The operator's own project-config header; not drift.
                 out.append((verb, rel, 'header-only'))
             else:
                 out.append((verb, rel, 'differs'))
@@ -842,11 +708,8 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
 
 
 def check_installables_current(ctx: Context) -> Answer:
-    """Every installed file is byte-current with what this version ships (or
-    differs only in its project-config header). Each that is not is NAMED
-    with the verb that shows the diff. `--force` on that verb is whole-set,
-    so take / hand-apply / keep is the consumer's call, made per file, outside
-    this belt — this reads the result."""
+    """Every installed file is byte-current or header-only different; each
+    that is not is named with the verb that shows the diff."""
     drift = _installable_drift(ctx)
     stale = [(verb, rel, verdict) for verb, rel, verdict in drift
              if verdict not in ('current', 'header-only', 'not-installed')]
@@ -862,15 +725,9 @@ def check_installables_current(ctx: Context) -> Answer:
 
 
 def _config_readers() -> tuple[tuple[str, str, object], ...]:
-    """The `devkit.toml` sections THIS version still reads: the section name
-    the census reports it under, the label a refusal is spoken under, and the
-    reader that refuses a value this version cannot use.
-
-    ONE LIST. The census is DERIVED from this tuple, so the number in the line
-    is the number that was asked. There is deliberately no table of RETIRED
-    keys: a section this package no longer reads may be another kit's, and
-    telling those apart would mean knowing the consumer (hard rule 8).
-    """
+    """The `devkit.toml` sections this version reads: census name, refusal
+    label, reader. No retired-key table — a section this package no longer
+    reads may be another kit's (rule 8)."""
     from agentic_sdlc.repo import gates_extra
 
     return (
@@ -899,14 +756,9 @@ def _read_operation(operation: str) -> None:
 
 
 def gate_universe() -> frozenset[str]:
-    """Every gate name `check all` can dispatch, DERIVED from what ships.
-
-    `cli.all_roster()` is the authority and `repo/` may never import
-    `agentic_sdlc.cli`, so the universe is derived from below by the one
-    mapping `cli._check_module` applies (`x-y` -> `checks/x_y.py`); a
-    `_`-prefixed module is a shared helper. `tests/test_gate_roster.py`
-    asserts the two sets are equal, so this cannot become the permissive one.
-    """
+    """Every gate name `check all` can dispatch, derived from `checks/` by
+    `cli._check_module`'s mapping; `tests/test_gate_roster.py` holds the two
+    equal."""
     from agentic_sdlc.repo import checks as checks_pkg
 
     found = walk.matching(Path(checks_pkg.__file__).resolve().parent, '*.py',
@@ -916,8 +768,7 @@ def gate_universe() -> frozenset[str]:
 
 
 def _read_checks() -> None:
-    """`[checks] all` — the roster `check all` runs here, refused as it
-    refuses: the SHAPE through `str_tuple`, an unknown name by name."""
+    """`[checks] all`, refused as `check all` refuses it."""
     from agentic_sdlc.core.config import str_tuple
 
     roster = str_tuple(config_section('checks'), 'checks', 'all', ())
@@ -944,8 +795,8 @@ def _read_repo_hygiene() -> None:
 
 
 def _read_verify() -> None:
-    """`[verify]`, through `verify/rules.py`. An ABSENT section is not refused
-    here: this asks whether what the repo DECLARED still parses."""
+    """`[verify]` through `verify/rules.py`; an absent section is not
+    refused."""
     from agentic_sdlc.core.config import section_declared
     from agentic_sdlc.repo.verify import rules
 
@@ -964,7 +815,7 @@ def check_config_updated(ctx: Context) -> Answer:
         try:
             reader()
         except ConfigError as err:
-            # EVERY reader is asked, and every refusal is reported.
+            # Every reader is asked, every refusal reported.
             refused.append(f'{label}: {_clip(str(err), 160)}')
     if refused:
         return Answer.no(
@@ -978,8 +829,7 @@ def check_config_updated(ctx: Context) -> Answer:
 
 
 def check_hooks_self_test(ctx: Context) -> Answer:
-    """The installed guards still return the verdicts their own corpus
-    asserts. `check hooks` owns the replay; this asks it."""
+    """`check hooks` owns the replay; this asks it."""
     command = _configured(ctx, 'hooks-self-test')
     if command:
         return run_command(ctx, 'hooks-self-test', command)
@@ -993,10 +843,8 @@ def check_hooks_self_test(ctx: Context) -> Answer:
 
 
 def check_runner_targets_resolve(ctx: Context) -> Answer:
-    """Every composed gate target resolves in THIS repo's make. A tier NAMED
-    with no tier file is a parse-time `$(error)`; an EMPTY tier list prints
-    its `[TIERS] … is empty` line and resolves — `-include`'s silence is never
-    read as a pass."""
+    """Every composed gate target resolves under `make -n`; an empty tier
+    list passes and says so."""
     command = _configured(ctx, 'runner-targets-resolve')
     if command:
         return run_command(ctx, 'runner-targets-resolve', command)
@@ -1053,10 +901,8 @@ def check_pm_validates(ctx: Context) -> Answer:
 
 
 # --- the story checks ---------------------------------------------------------
-# Every question below is asked of the grain named on the command line —
 # `ctx.version` is a story or feature id here, resolved by the tracker's own
-# resolvers so this file and `pm story done` can never disagree about which
-# file they mean.
+# resolvers so this file and `pm story done` cannot disagree.
 def _grain_file(ctx: Context) -> Path | None:
     return grain_path(_pm_cfg(ctx), ctx.operation, ctx.version)
 
@@ -1074,20 +920,9 @@ def check_story_exists(ctx: Context) -> Answer:
 
 
 def check_narrow_verified(ctx: Context) -> Answer:
-    """`agentic-sdlc verify --story` — the narrow rung, whatever it is HERE.
-
-    The command is never named here: `[[verify.narrow]]` is the project's own
-    answer to what proves an edit. Two rulings carried from the belt review:
-
-    * **A census of zero is not a pass** (I1). On a committed tree the verb
-      says "no changed paths" and exits 0; taken as proof, a story closed with
-      its narrow check never run. So the rung is pointed at the STORY's own
-      range — the base comes from the author's `done:` line, the same regex
-      `evidence-written` reads — and an empty selection is UNVERIFIABLE.
-    * **The roadmap directory is ignored** (I3): the operator's own
-      `pm story building` is a changed path that matches no narrow rule and
-      would send a story close to the milestone rung.
-    """
+    """`agentic-sdlc verify --story` over the story's own commit range,
+    ignoring the roadmap directory; an empty selection is UNVERIFIABLE
+    (rule 4)."""
     command = _configured(ctx, 'narrow-verified')
     if command:
         return run_command(ctx, 'narrow-verified', command)
@@ -1108,15 +943,8 @@ def check_narrow_verified(ctx: Context) -> Answer:
 
 
 def _story_range(ctx: Context) -> tuple[str, str]:
-    """(`<earliest hash in the story's `done:` line>^`, `<latest hash>`), each
-    '' when none.
-
-    The story's OWN range: a close that runs right after the commit and one
-    that runs after a hundred other commits verify the same edits. `in-place`
-    yields no base, correctly: uncommitted work is still in the diff. A hash
-    git cannot resolve yields nothing either — `evidence-written` is the check
-    with an opinion about the line.
-    """
+    """(`<earliest done: hash>^`, `<latest hash>`), each '' when none — the
+    story's own range, so a late close verifies the same edits."""
     try:
         path = _grain_file(ctx)
     except model.AmbiguousStory:
@@ -1148,16 +976,15 @@ def _story_range(ctx: Context) -> tuple[str, str]:
 
 
 def _belt_written_paths(ctx: Context) -> tuple[str, ...]:
-    """The PM tree — the one directory `committed` also excludes, so the two
-    exclusions cannot disagree."""
+    """The PM tree — the one directory `committed` also excludes."""
     cfg = _pm_cfg(ctx)
     return (cfg.roadmap_dir,)
 
 
 def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
                             base: str = '', head: str = '') -> tuple[bool, str]:
-    """(is the narrow selection empty, the sentence saying why) — asked of
-    `verify`'s own library rather than by parsing the verb's prose."""
+    """(is the narrow selection empty, the sentence saying why), asked of
+    `verify`'s own library."""
     from agentic_sdlc.repo.verify import main as verify_main
     from agentic_sdlc.repo.verify import rules as verify_rules
 
@@ -1166,8 +993,7 @@ def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
         selection = verify_main.plan_for(ruleset, ctx.root, base or None,
                                          ignore=list(ignore), to=head or None)
     except Exception as err:  # noqa: BLE001 — an answer, not a swallow
-        # It could not decide; `_own_verdict` answers with the verb's own
-        # exit code instead.
+        # It could not decide; `_own_verdict` answers with the verb's code.
         return False, f'{type(err).__name__}: {err}'
     if selection.matched or selection.missed:
         return False, ''
@@ -1184,9 +1010,8 @@ def _narrow_selects_nothing(ctx: Context, ignore: tuple[str, ...],
 
 
 def check_committed(ctx: Context) -> Answer:
-    """No uncommitted work OUTSIDE the roadmap directory. It does not commit
-    (no verb in this package does), and it NAMES what is outstanding rather
-    than guessing which paths are this story's."""
+    """No uncommitted work outside the roadmap directory; names what is
+    outstanding and never commits."""
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
         return Answer.unverifiable(f'git status failed: {_clip(out)}')
@@ -1204,9 +1029,8 @@ def check_committed(ctx: Context) -> Answer:
 
 
 def check_evidence_written(ctx: Context) -> Answer:
-    """The story file carries the `done:` line pm-execution.md step 6 asks
-    for. READ, never written: the sentence is the author's, and a generated
-    one would be a second scoreboard saying what the commit already says."""
+    """The story file carries a `done:` line (pm-execution.md step 6); read,
+    never written, because the sentence is the author's."""
     cfg = _pm_cfg(ctx)
     try:
         path = _grain_file(ctx)
@@ -1248,15 +1072,13 @@ def check_evidence_written(ctx: Context) -> Answer:
 
 # --- the feature checks -------------------------------------------------------
 def check_stories_done(ctx: Context) -> Answer:
-    """`pm ready-for feature <fid>` — never re-implemented. It accepts a story
-    in ANY state of the `done` category and names each one that is not."""
+    """`pm ready-for feature <fid>`, never re-implemented."""
     return ready_for(ctx, 'feature')
 
 
 def check_feature_verified(ctx: Context) -> Answer:
-    """`agentic-sdlc verify --feature` — the range rung. Not in the shipped
-    list (the story's check list does not name it); a project that wants it
-    adds it to `[feature] steps`."""
+    """`agentic-sdlc verify --feature`, the range rung; not in the shipped
+    list."""
     command = _configured(ctx, 'feature-verified')
     if command:
         return run_command(ctx, 'feature-verified', command)
@@ -1265,12 +1087,8 @@ def check_feature_verified(ctx: Context) -> Answer:
 
 
 def _record_of(ctx: Context) -> tuple[Path | None, str]:
-    """(the feature's review record, '' or why there is none).
-
-    `model.review_record_for` is the resolver `pm feature done` uses, so the
-    pointer this reads and the pointer that verb stamps are one fact. An
-    ABSOLUTE pointer is refused rather than followed (hard rule 8).
-    """
+    """(the feature's review record, '' or why there is none), through
+    `model.review_record_for`; an absolute pointer is refused (rule 8)."""
     cfg = _pm_cfg(ctx)
     pointer = model.review_record_for(cfg, ctx.version)
     if not pointer:
@@ -1291,8 +1109,8 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
 
 
 def _passes(ctx: Context, path: Path) -> tuple[list, str]:
-    """(the record's verdict blocks, '' or why they could not be read) —
-    `verdict.parse`'s rulings, inherited whole."""
+    """(the record's verdict blocks, '' or why they could not be read), with
+    `verdict.parse`'s rulings inherited whole."""
     cfg = _pm_cfg(ctx)
     try:
         text = _read(path)
@@ -1305,8 +1123,8 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str]:
 
 
 def check_review_recorded(ctx: Context) -> Answer:
-    """A review record EXISTS and its verdict block PARSES. Nothing more:
-    whether the review was any good is not encodable."""
+    """A review record exists and its verdict block parses; whether the
+    review was any good is not encodable."""
     path, defect = _record_of(ctx)
     if path is None:
         return Answer.no(defect)
@@ -1321,8 +1139,8 @@ def check_review_recorded(ctx: Context) -> Answer:
 
 
 def check_findings_landed(ctx: Context) -> Answer:
-    """No finding in the record sits at `disposition: open` — `verdict.OPEN`
-    and `verdict.parse`, the same reader `ready-for tag` uses one grain up."""
+    """No finding in the record sits at `disposition: open`, through the same
+    reader `ready-for tag` uses one grain up."""
     path, defect = _record_of(ctx)
     if path is None:
         return Answer.no(defect)
@@ -1386,15 +1204,13 @@ REGISTRIES: dict[str, dict[str, Check]] = {'release': RELEASE_STEPS,
 
 
 def registry_for(operation: str) -> dict[str, Check]:
-    """The checks this package SHIPS for `operation`, by name. The registries
-    are SEPARATE: `[adopt] steps = ["gate"]` is exit 2, not a release check
-    borrowed into an adoption."""
+    """The checks shipped for `operation`, by name; the registries are
+    separate, so `[adopt] steps = ["gate"]` is exit 2."""
     return dict(REGISTRIES.get(operation, {}))
 
 
-# What must be true, in a sentence, for the GENERATED document. It lives beside
-# the check rather than in the renderer, so there is exactly one place a
-# check's meaning is written and it is the file that also runs it.
+# One sentence per check for the rendered document, beside the check that
+# runs it.
 STEP_DOC: dict[str, str] = {
     'tree-clean': '`git status --porcelain` is empty.',
     'on-milestone-branch':
@@ -1403,77 +1219,62 @@ STEP_DOC: dict[str, str] = {
         'the changelog\'s `## Unreleased` section holds at least one bullet.',
     'features-done':
         '`pm ready-for milestone <milestone>` exits 0 — every feature is in '
-        'the `done` category, and no open bug names the milestone; each one '
-        'that is not is NAMED.',
+        'the `done` category and no open bug names the milestone.',
     'findings-resolved':
-        '`pm ready-for tag <milestone>` exits 0 — every finding in every '
-        'record the milestone\'s grains point at has a disposition other than '
-        '`open`. The records STAY: they are what `reviewed:` points at.',
+        '`pm ready-for tag <milestone>` exits 0 — no finding in any record '
+        'the milestone\'s grains point at is `open`.',
     'version-sync':
-        'every configured version site names the release version. READ, '
-        'never bumped: the bump is the release commit, and it is yours.',
+        'every configured version site names the release version; read, '
+        'never bumped.',
     'gate': 'the configured gate command exits 0.',
     # --- adopt ---
     'pin-bumped':
         'the `DEVKIT_VERSION` line in this repo\'s own makefile names the '
-        'version of the package that is running. A line in a file this '
-        'package does not own, so it is read and never written.',
+        'version of the package that is running.',
     'installables-current':
         'every installed file is byte-current with what this version ships, '
-        'or differs only in its project-config header. Each that differs is '
-        'named with the `install-* --diff` that shows it; take, hand-apply or '
-        'keep is your call per file, and this reads the result.',
+        'or differs only in its project-config header; each that differs is '
+        'named with the `install-* --diff` that shows it.',
     'config-updated':
-        'every devkit.toml section this version still READS accepts what this '
-        'repo declares. There is no retired-key table: a section this package '
-        'no longer reads may be another kit\'s (hard rule 8).',
+        'every devkit.toml section this version reads accepts what this repo '
+        'declares.',
     'hooks-self-test':
-        '`check hooks` exits 0 — the installed guards are armed, executable, '
-        'still start, and still return the verdicts their own corpus asserts.',
+        '`check hooks` exits 0 — the installed guards still return the '
+        'verdicts their own corpus asserts.',
     'runner-targets-resolve':
-        'the composed gate targets resolve under `make -n`. A tier named with '
-        'no tier file FAILS here naming the file; an empty tier list passes '
-        'and SAYS it was empty.',
+        'the composed gate targets resolve under `make -n`; an empty tier '
+        'list passes and says so.',
     'checks-pass':
-        'this package\'s `agentic-sdlc check all` exits 0. NOT `make check`: '
-        'that verifies your code against your rules, and a version bump here '
-        'cannot change its verdict.',
+        'this package\'s `agentic-sdlc check all` exits 0 — not '
+        '`make check`, which verifies your code against your rules.',
     'pm-validates':
-        '`pm validate` exits 0. A repo with no PM tree is refused, never '
-        'vacuously fine.',
+        '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
     'narrow-verified':
-        'the narrow rung exits 0 — `agentic-sdlc verify --story` over the '
-        'story\'s own commit range (the base is the earliest hash in its '
-        '`done:` line). A census of zero is UNVERIFIABLE, never a pass.',
+        '`agentic-sdlc verify --story` exits 0 over the story\'s own commit '
+        'range; a census of zero is unverifiable, never a pass.',
     'committed':
-        'nothing is uncommitted outside the roadmap directory. It NAMES what '
-        'is, and it never commits.',
+        'nothing is uncommitted outside the roadmap directory; it names what '
+        'is and never commits.',
     'evidence-written':
-        'the story file carries `done: <hash(es)> — <what shipped>` '
-        '(pm-execution.md step 6). READ, never written: the sentence is the '
-        'author\'s.',
+        'the story file carries `done: <hash(es)> — <what shipped>`; read, '
+        'never written.',
     # --- feature ---
     'stories-done':
         '`pm ready-for feature <id>` exits 0 — every story under this feature '
-        'is in the `done` category (any state of it), and each one that is '
-        'not is NAMED.',
+        'is in the `done` category.',
     'review-recorded':
         'the feature\'s `reviewed:` record exists, is repo-relative, and its '
-        'verdict block PARSES, through the same parser `pm ready-for` reads. '
-        'Whether the review was any good is NOT checked and must not be.',
+        'verdict block parses.',
     'findings-landed':
-        'no finding in that record sits at `disposition: open` — the same '
-        'question `pm ready-for tag` asks one grain up, through the same '
-        'parser.',
+        'no finding in that record sits at `disposition: open`.',
     'feature-verified':
-        'the range rung exits 0 — `agentic-sdlc verify --feature`. Not in the '
-        'shipped list; add it to `[feature] steps` to run it here.',
+        '`agentic-sdlc verify --feature` exits 0; not in the shipped list, '
+        'add it to `[feature] steps`.',
 }
 
-# What a check RUNS when the project configures no command for it. Only the
-# checks that run something are here; the rest read the tree.
+# What a check runs when the project configures no command for it.
 SHIPPED_ACTION: dict[str, str] = {
     'hooks-self-test': 'agentic-sdlc check hooks',
     'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
@@ -1486,11 +1287,8 @@ SHIPPED_ACTION: dict[str, str] = {
     'findings-resolved': 'agentic-sdlc pm ready-for tag <id>',
 }
 
-# THE AFTER-LIST: what the caller does once a belt has written, as words.
-# Every line here used to be a `do()` that performed it (D12 deleted those),
-# or a thing the belt never could do. Printed on success and rendered into the
-# protocol document. `{version}`, `{branch}` and `{mainline}` are filled by
-# the driver from the tree.
+# What the caller does after a write, printed on success and rendered into the
+# document; `{version}`, `{branch}` and `{mainline}` are filled by the driver.
 AFTER: dict[str, tuple[str, ...]] = {
     'story': (
         'commit the roadmap directory — the status line and the ledger row '
@@ -1529,9 +1327,8 @@ AFTER: dict[str, tuple[str, ...]] = {
 
 def after_lines(operation: str, commands: dict[str, str], *, version: str,
                 branch: str, mainline: str) -> list[str]:
-    """`AFTER[operation]` with the tree's words and the configured after-belt
-    commands filled in — one function, used by the driver's `next:` lines and
-    by the rendered document, so the two cannot say different things."""
+    """`AFTER[operation]` with the tree's words filled in — one function for
+    the driver's `next:` lines and the rendered document."""
     words = {'version': version, 'branch': branch, 'mainline': mainline}
     for key, slot in AFTER_COMMANDS.items():
         command = commands.get(key, '')
@@ -1544,8 +1341,7 @@ def after_lines(operation: str, commands: dict[str, str], *, version: str,
             words[slot] = ''
     return [line.format(**words) for line in AFTER.get(operation, ())]
 
-# What is guidance rather than a check — real protocol with no checkable
-# postcondition, rendered into the document beside the lists.
+# Real protocol with no checkable postcondition, rendered beside the lists.
 GUIDANCE: tuple[tuple[str, str], ...] = (
     ('Pick the bump yourself',
      'Patch, minor or major is a semver judgement about the interface, and no '

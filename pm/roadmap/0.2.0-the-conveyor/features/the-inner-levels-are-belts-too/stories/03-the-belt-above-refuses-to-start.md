@@ -2,24 +2,23 @@
 id: 0.2.0/the-inner-levels-are-belts-too/03-the-belt-above-refuses-to-start
 feature: 0.2.0/the-inner-levels-are-belts-too
 milestone: "0.2.0"
-name: Each belt refuses to start until the belt below it has finished
+name: Each belt names what the belt below it left open, and finishes
 status: planning
 owner:
 depends_on: []
 ---
 
-# Each belt refuses to start until the belt below it has finished
+# Each belt names what the belt below it left open, and finishes
 
 <!-- What is observable when this ships. A story is an observation, not a task. -->
 
 ## Acceptance criteria
 
-<!-- Filed 2026-09-05 against I4. Sourced from the title, from feature.md's "the belts wire to
-     each other through the verbs that already exist" and its ship criteria 5-6, and from the
-     Close evidence below.
-     THE TITLE IS THE PART THE RE-SCOPE CHANGED. feature.md's banner rules the halt out: a belt
-     no longer refuses to start, it names what the belt below left open and finishes. The ORDER
-     is still the whole deliverable — what changed is who acts on it. -->
+<!-- Filed 2026-09-05 against I4. Sourced from feature.md's "the belts wire to each other
+     through the verbs that already exist", its ship criteria 5-6, and the Close evidence below.
+     The title was rewritten under D8 from "refuses to start": the ORDER is still the whole
+     deliverable, and what changed is who acts on it. The id keeps the old slug because the
+     ledger and the review record name it. -->
 
 1. Each belt asks the belt below it through the verb that already answers: `close feature`'s
    `stories-done` IS `pm ready-for feature`, `release`'s `features-done` IS
@@ -41,8 +40,12 @@ depends_on: []
 
 ## Out of scope
 
-<!-- Left empty deliberately — see story 01. -->
-
+- Refusing to start. A belt over unfinished work below it reports and finishes (D8); the halt
+  this story was first written to build is the thing D8 deleted.
+- Running the belts over 0.2.0's own 28 stories and 9 features: review finding I2, closed by
+  the orchestrator's close pass in the main tree, not by this story's code.
+- Renaming this story's id: `03-the-belt-above-refuses-to-start` stays, because the ledger and
+  the review record name it.
 
 ## Close
 

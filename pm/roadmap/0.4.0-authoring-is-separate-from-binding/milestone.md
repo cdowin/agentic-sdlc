@@ -101,8 +101,26 @@ is standing. That is *the path is the schema*, inside the ledger, and deleting i
 deletion the rest of the milestone performs on the grain tree. Neither is a detour.
 
 `the-surface-says-telemetry` carries the third thing — the shape `the-read-verbs-compose` already
-named twice, now at four instances, which makes it a class this milestone states once instead of
+named twice, now at five instances, which makes it a class this milestone states once instead of
 rediscovering.
+
+## And the thing all of it turned out to be — hard rule 11
+
+Written into CLAUDE.md partway through this milestone, after the sixth feature rediscovered it:
+
+> **Absence is a finding, and a capability advertises itself where you stand.** The operator is
+> usually an LLM with no memory of last week, and its failure mode is not getting things wrong —
+> it is not knowing they exist.
+
+**Six of this milestone's features already were that rule**, each in its own words: *"its ABSENCE
+is visible"*, *"a tree that is not recording SAYS SO"*, *"at the MOMENT OF NEED"*, *"REPORTS both
+ways it can be unbound"*, *"emits EVERY FIELD you would filter on"*, *"NAMES the grain it came
+from"*. Nobody had named the standard, so each argued it from scratch.
+
+`the-tree-names-what-it-lacks` is the sweep for what rule 11 reaches and nothing covers — an
+unchecked `owner:` (which silently breaks `every-row-names-its-grain`'s fallback), an unverified
+Proof budget, and a roster gate that has never run. It exists to be the LAST place this argument
+is had from first principles.
 
 **Write-once, use-many.** The first four fix this tree; only the fifth makes them reach NullBound,
 godot-devkit and whatever bumps next — and its posture is *clearly available and warned when

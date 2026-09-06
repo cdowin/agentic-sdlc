@@ -1,4 +1,4 @@
-Cold-start only. Never restate what `pm status` computes.
+Cold-start only. Everything derivable is a command — never restate `pm status`, `git log` or `pm ledger report`.
 
 # 0.4.0 authoring is separate from binding — handoff
 
@@ -13,7 +13,7 @@ Cold-start only. Never restate what `pm status` computes.
 ## 2. Where to pick up
 
 **`one-rule-routes-a-row/01-routing-asks-the-grain-not-the-tree`.** Written, and it is what stops
-telemetry rows being refused. The five telemetry features run before everything else;
+telemetry rows being refused. The telemetry features run before everything else;
 `milestone.md` § Pre-work argues why.
 
 Orient first:
@@ -58,9 +58,18 @@ First draft: 194 lines restating `pm status`, the dep graph, the rung costs and 
 gate as an obstacle. What was actually true: **the package already ships this template**
 (`src/agentic_sdlc/repo/pm/templates/handoff.md`), its first line already says *"Never restate what
 `pm status` computes"*, and `SLOT_HEADER` calls that line *"the one channel that reaches a
-dispatched subagent"*. All of it was bypassed by creating the file with `Write` instead of
-`pm new milestone 0.4.0`, which is idempotent and fills empty slots. **If you need a shared doc,
-scaffold it — don't author it.**
+dispatched subagent"*.
+
+And the diagnosis that looked obvious was wrong: `pm new milestone` would not have produced it
+either. `scaffold()` renders a template only for `file_slots` — a milestone's is `milestone.md`
+alone — while OPTIONAL slots get an existing file's header repaired and are never created.
+`decisions.md` had a minting verb; `handoff.md` had none. **The template shipped, `SLOT_TEMPLATE`
+registered it, `[grain_shape]` capped it, and no code path could produce it.** A stranded
+capability: grep finds it, reading finds it, only running the code proves it dead.
+
+Fixed in `a-document-points-at-what-it-cannot-hold` — `pm new handoff <id>` is the caller it never
+had, and `check pm` now warns when an `in_progress` milestone has none. **If you need a shared doc,
+scaffold it — don't author it**, and if there is no verb that scaffolds it, that is the finding.
 
 **`make check` runs ~36s cold in this worktree against a 2.2s median.** `verify --plan` shows
 medians; it cannot know your cache is cold. Budget the max column, not the median.

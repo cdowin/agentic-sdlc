@@ -66,3 +66,17 @@
 {"ts":"2026-09-06T21:56:52Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":156,"rank":5}
 {"ts":"2026-09-06T21:56:53Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7420,"census":655}
 {"ts":"2026-09-06T21:56:53Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":9928}
+{"ts":"2026-09-06T21:57:15Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2273}
+{"ts":"2026-09-06T21:59:21Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2314}
+{"ts":"2026-09-06T22:00:34Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2203}
+{"ts":"2026-09-06T22:00:50Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2291}
+{"ts":"2026-09-06T22:01:10Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2264}
+{"ts":"2026-09-06T22:01:24Z","kind":"dispatch","grain":"0.4.0/the-tree-names-what-it-lacks","agent_type":"orchestrator","duration_s":900,"tool_calls":14,"tree":{"milestones_building":["0.4.0"],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["0.4.0"],"features_in_progress":[],"stories_in_progress":[]}}
+{"ts":"2026-09-06T22:01:27Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2281}
+{"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":566,"rank":1}
+{"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":447,"rank":2}
+{"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":297,"rank":3}
+{"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":293,"rank":4}
+{"ts":"2026-09-06T22:01:35Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoImportIsDead::test_every_import_is_read","duration_ms":178,"rank":5}
+{"ts":"2026-09-06T22:01:35Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8011,"census":655}
+{"ts":"2026-09-06T22:01:35Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":10543}

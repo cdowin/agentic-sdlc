@@ -60,9 +60,25 @@ nothing on the reading path points at (F9). Five is not a coincidence:
 > hand-rolling something the package already does, the defect is the surface, not the requester.
 > The fix is a word, a column or a line in the file that already loads — never a new verb.
 
-That now has a home in `the-surface-says-telemetry`'s ship criterion, to be stated once in
-CLAUDE.md rather than rediscovered a sixth time. **The corollary F9 adds: if a shared doc is
-absent, scaffold it — don't author it.**
+**And then it became hard rule 11**, which is the real outcome of this session:
+
+> **Absence is a finding, and a capability advertises itself where you stand.** The operator here
+> is usually an LLM with no memory of last week, and its failure mode is not getting things wrong
+> — it is not knowing they exist. Rule 4 forbids the tool LYING; rule 11 forbids it staying quiet.
+
+**Six of 0.4.0's fourteen features already WERE that rule** — *"its ABSENCE is visible"*, *"a tree
+that is not recording SAYS SO"*, *"at the MOMENT OF NEED"*, *"REPORTS both ways it can be
+unbound"*, *"emits EVERY FIELD you would filter on"*, *"NAMES the grain it came from"*. Each had
+argued it from scratch because the standard had no name. That is the same defect one level up: the
+principle existed six times over and nowhere you could point at.
+
+`the-tree-names-what-it-lacks` is the sweep for what rule 11 reaches and nothing owns — including
+one live bug: **`owner:` is never checked, and `every-row-names-its-grain`'s fallback narrows by
+it**, so tree resolution silently degrades to "ambiguous, omit the key" exactly when it was meant
+to work.
+
+**The corollary F9 adds: if a shared doc is absent, scaffold it — don't author it. And if no verb
+scaffolds it, that is the finding.**
 
 ---
 

@@ -49,6 +49,17 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
     process. **Prove it once**: before a new case, name the one that already covers this or can
     be amended to; a new case is warranted only when neither exists. A tier that got slower is a
     finding.
+11. **Absence is a finding, and a capability advertises itself where you stand.** The operator
+    here is usually an LLM with no memory of last week, and its failure mode is not getting things
+    wrong — it is **not knowing they exist**. So: something the tree needs and does not have gets a
+    NAMED line, never silence (a milestone past `todo` with no handoff; a grain with no binding; a
+    courier wired to write and writing nothing). And a capability this package HAS is named in the
+    surface someone is standing in when they need it — a column on the read verb, a word in
+    `--help`, a line in the rule that auto-loads, a description on the skill. Rule 4 forbids the
+    tool LYING; this one forbids it staying quiet. **The test: could someone hand-roll a thing this
+    package already does, and would anything have stopped them?** Fix at the cheapest layer — a
+    word, a column, a warning, a caller — never a new capability. Tree absences join `check pm`'s
+    WARN family; `verify --plan` printing `unknown` rather than a guess is the same rule.
 
 ## Where things live
 

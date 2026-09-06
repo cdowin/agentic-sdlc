@@ -45,7 +45,7 @@ and everything for a release; the milestone carries `branch:`; the belt already 
 **The milestone IS the release**, and what it lacks is one field and one list.
 
 `version:` separates the number from the id, so `0.90.4.1` — a version contorted to express where
-work sits — becomes a slug plus a field. `releases.toml` declares `order`, because order is a
+work sits — becomes a slug plus a field. `releases.md` declares `order`, because order is a
 decision and sorting versions would need a comparator that cannot sort `0.90.3.2` and would
 re-couple the two facts anyway. Authoring and scheduling become separate acts: a milestone
 declares a version, `pm order --append` puts it on the plan, and the pair of lint rules catches an

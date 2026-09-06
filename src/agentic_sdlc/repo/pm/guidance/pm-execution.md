@@ -14,10 +14,10 @@ paths:
 ## Writing the tree down is CHEAP, and it is meant to be
 
 Adding a milestone, a feature, a story or a bug is `pm new`, an edit, `make
-gates`, a commit. **About two seconds of gate.** `[[verify.narrow]]` routes a
-`pm/roadmap/**` edit to `make gates` and nothing else, so planning never pays
-for a test suite — and a planning step that costs a suite is a planning step
-people batch up and stop doing.
+check`, a commit. **A couple of seconds of gate.** Point a `[[verify.narrow]]`
+rule at `pm/roadmap/**` and `verify --story` runs that and nothing else, so
+planning never pays for a test suite — and a planning step that costs a suite
+is a planning step people batch up and stop doing.
 
 Write it down, commit, move on. The tree is a record, not a deliverable.
 
@@ -25,11 +25,16 @@ Write it down, commit, move on. The tree is a record, not a deliverable.
 
 The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
 
-    a PM-tree or doc edit   make gates                  ~2 s
-    an edit, inner loop     verify --story              seconds — the paths decide
-    before a commit         make precommit              gates + hooks + unit
-    closing a feature       verify --feature            BOTH tiers, locally
-    closing a milestone     verify --milestone          the matrix, once
+    a PM-tree or doc edit   make check                  the static gates alone
+    an edit, inner loop     verify --story              the paths decide
+    before a commit         make precommit              check + your narrow tier
+    closing a feature       verify --feature            what [verify] feature names
+    closing a milestone     verify --milestone          everything, once
+
+`make check`, `precommit` and `milestone` are the compositions `install-gates`
+ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What
+each rung COSTS is your tree's business — ask `verify --plan`, which reads it
+from your ledger rather than quoting a number from somebody else's repo.
 
 `agentic-sdlc verify --plan` prints them with the cost each one actually took,
 read from the ledger. **Ask it rather than guessing** — guessing is how a wide

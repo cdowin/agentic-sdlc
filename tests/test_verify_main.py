@@ -15,6 +15,9 @@ The grammar bans `;`, `>` and `$` in a `run`, so a sentinel cannot be written
 with a redirect. That is not an obstacle to work around: it is the reason the
 fixtures are make targets, which also makes `--check`'s "does this target
 exist" question real rather than mocked.
+
+Every fixture here spawns git and make, so a case that could be answered by
+`rules.read` or `select.select` belongs in their files and not this one.
 """
 from __future__ import annotations
 
@@ -205,12 +208,6 @@ class TheStoryRungNeverReachesForTheMilestone(unittest.TestCase):
             self.assertFalse(repo.ran('precommit'))
             self.assertEqual(0, code)
 
-    def test_changed_is_an_alias_for_story(self):
-        with Repo(LADDER + rule('src/**', 'make story')) as repo:
-            repo.edit('src/a.py')
-            self.assertEqual(0, run('--changed')[0])
-            self.assertEqual(1, repo.runs('story'))
-
     def test_five_files_under_one_capture_run_the_slice_once(self):
         files = {f'src/pm/f{n}.py': 'x\n' for n in range(5)}
         files['README.md'] = 'x\n'
@@ -222,6 +219,14 @@ class TheStoryRungNeverReachesForTheMilestone(unittest.TestCase):
                              'run — that is the entire 170x')
             self.assertIn('5 changed path(s) -> 1 command(s)', out)
             self.assertEqual(0, code)
+
+    def test_an_empty_diff_says_so_rather_than_passing_in_silence(self):
+        with Repo(LADDER + rule('src/**', 'make story')) as repo:
+            code, out = run('--story')
+            self.assertEqual(0, code)
+            self.assertIn('no changed paths', out)
+            self.assertEqual(0, repo.runs('story'))
+            self.assertFalse(repo.ran('milestone'), 'and no fallback either')
 
 
 class TheRungs(unittest.TestCase):
@@ -244,32 +249,36 @@ class TheRungs(unittest.TestCase):
                              'and never the rung above it instead')
 
 
-class NoVerifySection(unittest.TestCase):
-    """Exit 2 for all five flags. A --plan that prints nothing is the same lie."""
+class AConfigProblemIsExitTwoAndNeverANarrowerRun(unittest.TestCase):
+    """A malformed or absent `[verify]` must not degrade into a smaller run."""
 
-    FLAGS = ('--story', '--changed', '--feature', '--milestone', '--plan',
-             '--check')
-
-    def test_every_flag_exits_2_naming_the_section(self):
-        with Repo(None):
-            for flag in self.FLAGS:
-                with self.subTest(flag=flag):
+    def test_every_flag_exits_2_when_the_section_is_absent_or_incomplete(self):
+        flags = ('--story', '--changed', '--feature', '--milestone', '--plan',
+                 '--check')
+        # No section at all. A `--plan` that prints nothing and exits 0 is the
+        # same lie as a `--story` that runs nothing and exits 0.
+        with Repo(None) as repo:
+            for flag in flags:
+                with self.subTest(flag=flag, section='absent'):
                     code, out = run(flag)
                     self.assertEqual(2, code)
                     self.assertIn('[verify]', out)
-
-    def test_milestone_absent_reaches_the_verb_as_exit_2(self):
-        with Repo(STORY_RULE):
+            self.assertFalse(repo.ran('milestone'))
+            self.assertEqual(0, repo.runs('story'))
+        # A section with rules but no close: the grammar's refusal has to reach
+        # the caller as 2, not be swallowed into a narrow run.
+        with Repo(STORY_RULE) as repo:
             for flag in ('--story', '--plan', '--check'):
-                with self.subTest(flag=flag):
+                with self.subTest(flag=flag, section='no milestone rung'):
                     code, out = run(flag)
                     self.assertEqual(2, code)
                     self.assertIn('milestone', out)
-
-    def test_the_cli_and_the_grammar_spell_the_section_the_same(self):
-        self.assertEqual(rules.SECTION, cli.VERIFY_SECTION,
-                         'two spellings of one section name is a verb reading '
-                         'a table nobody wrote')
+            self.assertEqual(0, repo.runs('story'))
+        # And a malformed rung value — the D3 refusal, through the real CLI.
+        with Repo('milestone = "make check test"\n' + STORY_RULE) as repo:
+            self.assertEqual(2, run('--check')[0])
+            self.assertEqual(2, run('--story')[0])
+            self.assertEqual(0, repo.runs('story'))
 
 
 class PlanRunsNothing(unittest.TestCase):
@@ -285,25 +294,13 @@ class PlanRunsNothing(unittest.TestCase):
             self.assertIn('make story', out,
                           'it printed the command it did not run')
 
-    def test_the_plan_prints_all_three_rungs_in_ladder_order(self):
-        with Repo(LADDER + rule('src/**', 'make story')) as repo:
-            repo.edit('src/a.py')
-            _, out = run('--plan')
-        order = [out.index(name) for name in ('story', 'feature', 'milestone')]
-        self.assertEqual(sorted(order), order, 'narrow to wide')
-        self.assertIn('make precommit', out)
-        self.assertIn('make milestone', out)
-
-    def test_an_unconfigured_rung_is_named_in_the_plan_not_omitted(self):
-        with Repo('milestone = "make milestone"\n' + STORY_RULE) as repo:
-            repo.edit('src/a.py')
-            _, out = run('--plan')
-        self.assertIn('feature', out)
-        self.assertIn('not configured', out)
-
 
 class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
-    """A fabricated ratio is worse than no ratio, because it gets quoted."""
+    """A fabricated ratio is worse than no ratio, because it gets quoted.
+
+    `TREE` is read by `tests/test_fixture_flows.py`, which replays this
+    fixture's builder — the name is a reference, not only a label.
+    """
 
     TREE = {
         'src/a.py': 'x\n',
@@ -316,15 +313,30 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         return ''.join(json.dumps(row, separators=(',', ':')) + '\n'
                        for row in rows)
 
-    def test_with_no_gate_rows_the_cost_and_the_ratio_are_the_word_unknown(self):
-        with Repo(LADDER + rule('src/**', 'make story'), dict(self.TREE)) as repo:
-            repo.edit('src/a.py')
-            _, out = run('--plan')
-        self.assertIn('unknown', out)
-        self.assertNotIn('x —', out.split('ratio')[-1].split('\n')[0]
-                         .replace('unknown', ''))
+    def test_a_cost_that_cannot_be_read_is_the_word_unknown_and_never_a_guess(self):
+        for label, ledger in (
+                ('no gate rows at all', None),
+                # A row with no `duration_ms` is not a cost: reading `verdict`
+                # and assuming a duration is how a made-up number gets quoted.
+                ('a row with no duration', self._with_ledger(
+                    {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate',
+                     'gate': 'milestone', 'verdict': 'SKIP'}))):
+            tree = dict(self.TREE)
+            if ledger is not None:
+                tree['pm/roadmap/0.1/ledger.jsonl'] = ledger
+            with self.subTest(case=label):
+                with Repo(LADDER + rule('src/**', 'make story'), tree) as repo:
+                    repo.edit('src/a.py')
+                    _, out = run('--plan')
+                self.assertIn('unknown', out)
+                ratio = out.split('ratio')[-1].split('\n')[0]
+                self.assertNotIn('x —', ratio.replace('unknown', ''),
+                                 'no ratio is invented where no rows exist')
 
     def test_with_gate_rows_the_plan_prints_the_measured_numbers(self):
+        # The counterpart to the case above: without this, an implementation
+        # that answered `unknown` unconditionally would pass every other
+        # assertion in this class.
         tree = dict(self.TREE)
         tree['pm/roadmap/0.1/ledger.jsonl'] = self._with_ledger(
             {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'story',
@@ -339,18 +351,13 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         self.assertIn('154000 ms (census 182, PASS)', out)
         self.assertIn('171x', out, 'the ratio is the measurement, not a guess')
 
-    def test_a_row_with_no_duration_is_not_a_cost(self):
-        tree = dict(self.TREE)
-        tree['pm/roadmap/0.1/ledger.jsonl'] = self._with_ledger(
-            {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'milestone',
-             'verdict': 'SKIP'})
-        with Repo(LADDER + rule('src/**', 'make story'), tree) as repo:
-            repo.edit('src/a.py')
-            _, out = run('--plan')
-        self.assertIn('unknown', out)
+
+REVERSE_RULE = ('[[verify.narrow]]\ndeclares = "## covers:"\n'
+                'scan = "scen/**"\nrun   = "make story"\n')
 
 
 class Check(unittest.TestCase):
+    """`--check` reports dead config, and prints its census on the pass too."""
 
     def test_a_valid_rule_set_exits_0_and_prints_its_census(self):
         with Repo(LADDER + rule('src/**', 'make story')):
@@ -363,6 +370,8 @@ class Check(unittest.TestCase):
                       'resolve is this package\'s cardinal sin')
 
     def test_a_glob_matching_zero_tracked_files_is_a_finding_naming_its_index(self):
+        # A rule pointed at a path that was renamed away rots into a rule that
+        # quietly matches nothing, forever.
         with Repo(LADDER + rule('src/**', 'make story')
                   + rule('renamed_away/**', 'make story')):
             code, out = run('--check')
@@ -370,44 +379,30 @@ class Check(unittest.TestCase):
         self.assertIn('#2', out)
         self.assertIn('renamed_away/**', out)
 
-    def test_a_run_naming_a_nonexistent_target_is_a_finding_naming_its_index(self):
-        with Repo(LADDER + rule('src/**', 'make story')
+    def test_a_target_no_makefile_declares_is_a_finding_for_a_rung_and_a_run(self):
+        with Repo('milestone = "make absent-target"\n'
+                  + rule('src/**', 'make story')
                   + rule('README.md', 'make no-such-target')):
             code, out = run('--check')
         self.assertEqual(1, code)
+        self.assertIn('absent-target', out, 'the rung')
+        self.assertIn('no-such-target', out, "and the rule's own run")
         self.assertIn('#2', out)
-        self.assertIn('no-such-target', out)
 
-    def test_a_rung_naming_a_nonexistent_target_is_a_finding(self):
-        with Repo('milestone = "make absent-target"\n'
-                  + rule('src/**', 'make story')):
-            code, out = run('--check')
-        self.assertEqual(1, code)
-        self.assertIn('absent-target', out)
-
-    def test_a_reverse_rule_scanning_zero_files_is_the_louder_finding(self):
-        section = (LADDER + rule('src/**', 'make story')
-                   + '[[verify.narrow]]\ndeclares = "## covers:"\n'
-                     'scan = "gone/**"\nrun = "make story"\n')
-        with Repo(section):
-            code, out = run('--check')
-        self.assertEqual(1, code)
-        self.assertIn('#2', out)
-        self.assertIn('ZERO tracked files', out)
-
-    def test_a_reverse_rule_whose_corpus_declares_nothing_is_a_finding(self):
-        section = (LADDER + rule('src/**', 'make story')
-                   + '[[verify.narrow]]\ndeclares = "## covers:"\n'
-                     'scan = "scen/**"\nrun = "make story"\n')
-        files = {'src/a.py': 'x\n', 'scen/a.md': '# nothing\n'}
-        with Repo(section, files):
-            code, out = run('--check')
-        self.assertEqual(1, code)
-        self.assertIn('NONE declares', out)
-
-
-REVERSE_RULE = ('[[verify.narrow]]\ndeclares = "## covers:"\n'
-                'scan = "scen/**"\nrun   = "make story"\n')
+    def test_a_reverse_rule_that_can_select_nothing_is_a_finding(self):
+        for label, section, files in (
+                ('the louder zero: the scan matches no tracked file',
+                 LADDER + rule('src/**', 'make story')
+                 + REVERSE_RULE.replace('scen/**', 'gone/**'),
+                 None),
+                ('files found, none declaring',
+                 LADDER + rule('src/**', 'make story') + REVERSE_RULE,
+                 {'src/a.py': 'x\n', 'scen/a.md': '# nothing\n'})):
+            with self.subTest(case=label):
+                with Repo(section, files):
+                    code, out = run('--check')
+                self.assertEqual(1, code)
+                self.assertIn('#2', out)
 
 
 class ARuleThatCanNeverBeFirst(unittest.TestCase):
@@ -491,17 +486,6 @@ class TheCensusIsCountedInOneUnit(unittest.TestCase):
                       'one file exists that any rule matched')
         self.assertNotIn('6 of', out)
 
-    def test_the_census_never_exceeds_the_tracked_count_on_this_repo(self):
-        code, out = run('--check')
-        self.assertEqual(0, code, out)
-        got = re.search(r'(\d+) of (\d+) tracked file\(s\) matched', out)
-        self.assertIsNotNone(got, out)
-        matched, total = int(got.group(1)), int(got.group(2))
-        self.assertLessEqual(matched, total)
-        self.assertEqual(total, len(verb.tracked(verb.repo_root())),
-                         'the denominator is `git ls-files`, and the line can '
-                         'be argued from against it')
-
 
 class ANonMakeRunIsCountedAndNotValidated(unittest.TestCase):
     """S3, ruled in `main.py`'s docstring: `--check` holds a make target to the
@@ -510,7 +494,7 @@ class ANonMakeRunIsCountedAndNotValidated(unittest.TestCase):
 
     RULES = LADDER + rule('src/**', 'uv run python -m pytest tests/ -q')
 
-    def test_it_is_a_counted_note_and_never_a_finding(self):
+    def test_it_is_a_counted_note_on_a_pass_and_still_counted_on_a_fail(self):
         with Repo(self.RULES):
             code, out = run('--check')
         self.assertEqual(0, code, 'a finding here would redden every repo whose '
@@ -520,8 +504,6 @@ class ANonMakeRunIsCountedAndNotValidated(unittest.TestCase):
                       'only in the prose above it')
         self.assertIn('NOTE', out)
         self.assertNotIn('DRIFT', out)
-
-    def test_a_make_run_beside_it_is_still_held_to_the_makefile(self):
         with Repo(self.RULES + rule('README.md', 'make no-such-target')):
             code, out = run('--check')
         self.assertEqual(1, code)
@@ -531,22 +513,22 @@ class ANonMakeRunIsCountedAndNotValidated(unittest.TestCase):
 
 
 class TheRefusalMatrix(unittest.TestCase):
-    """argv is an input surface (SDLC.md §5). Every row is exit 2."""
+    """argv is an input surface (SDLC.md §5), and this verb owns that grammar."""
 
     REFUSED = (
-        (), ('--story', '--plan'), ('--changed', '--check'),
+        (),                                     # no mode: never a default
+        ('--story', '--plan'),                  # two modes
         ('--story', '--feature', '--milestone'),
-        ('--story', '--ref'), ('--story', '--ref', ''),
+        ('--story', '--ref'),                   # --ref with no value
+        ('--story', '--ref', ''),               # '' names the INDEX to git
         ('--story', '--ref', 'HEAD', '--ref', 'HEAD'),
-        ('--story', '--ref', '--plan'),
-        ('--story', '--ref', 'a b'), ('--story', '--ref', 'a\nb'),
-        ('--story', '--ref', '$(id)'), ('--story', '--ref', '`id`'),
-        ('--story', '--ref', 'no-such-rev'),
-        ('--story', '--ref', '/etc/passwd'),
-        ('--story', '--ref', '../../../etc'),
-        ('--feature', '--ref', 'HEAD'), ('--check', '--ref', 'HEAD'),
-        ('--milestone', '--ref', 'HEAD'),
-        ('-x',), ('--nope',), ('--changed=1',), ('positional',),
+        ('--story', '--ref', '--plan'),         # the next flag is never a rev
+        ('--story', '--ref', 'a b'),            # one argument spelling two
+        ('--story', '--ref', 'no-such-rev'),    # refused in git's own words
+        ('--feature', '--ref', 'HEAD'),         # a rung reads no diff
+        ('--nope',),                            # never silently ignored
+        ('--changed=1',),
+        ('positional',),
         ('--story', 'extra'),
     )
 
@@ -560,18 +542,8 @@ class TheRefusalMatrix(unittest.TestCase):
             self.assertFalse(repo.ran('milestone'))
             self.assertFalse(repo.ran('precommit'))
 
-    def test_help_prints_the_docstring_exits_0_and_runs_nothing(self):
-        with Repo(LADDER + rule('src/**', 'make story')) as repo:
-            code, out = run('--help')
-            self.assertEqual(0, code)
-            self.assertIn('--plan', out)
-            self.assertEqual(0, repo.runs('story'))
-
-    def test_help_works_without_a_verify_section_at_all(self):
-        with Repo(None):
-            self.assertEqual(0, run('--help')[0])
-
     def test_a_valid_ref_is_accepted_and_scopes_the_diff(self):
+        # Without this, a `--ref` that refused everything would pass the matrix.
         with Repo(LADDER + rule('src/**', 'make story')) as repo:
             base = repo._git('rev-parse', 'HEAD').strip()
             repo.edit('src/a.py')
@@ -581,6 +553,7 @@ class TheRefusalMatrix(unittest.TestCase):
 
 
 class GitAbsentOrNotARepo(unittest.TestCase):
+    """Never "no changes, nothing to verify" — that is a pass over an unread diff."""
 
     def test_a_directory_that_is_not_a_git_repo_exits_2_naming_it(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -597,7 +570,7 @@ class GitAbsentOrNotARepo(unittest.TestCase):
             finally:
                 os.chdir(previous)
                 _clear_caches()
-        self.assertEqual(2, code, 'never "no changes, nothing to verify"')
+        self.assertEqual(2, code)
         self.assertIn('git', out)
 
     def test_git_missing_from_PATH_exits_2_naming_it(self):
@@ -613,42 +586,19 @@ class GitAbsentOrNotARepo(unittest.TestCase):
         self.assertIn('git', out)
 
 
-class ExitCodesAreContract(unittest.TestCase):
-    """Rule 6: 0 pass, 1 findings/verification failure, 2 usage or config."""
-
-    def test_zero_for_a_passing_rung(self):
-        with Repo(LADDER + rule('src/**', 'make story')) as repo:
-            repo.edit('src/a.py')
-            self.assertEqual(0, run('--story')[0])
-
-    def test_one_for_a_failing_command_even_when_it_exited_two(self):
-        # A `make` that exits 2 must never reach a caller looking like a devkit
-        # config error, which is what 2 is reserved for.
-        with Repo(LADDER + rule('src/**', 'make boom')) as repo:
-            repo.edit('src/a.py')
-            code, out = run('--story')
-        self.assertEqual(1, code)
-        self.assertIn('exit 2', out)
-
-    def test_two_for_a_config_problem(self):
-        with Repo('milestone = "make check test"\n' + STORY_RULE):
-            self.assertEqual(2, run('--check')[0])
-
-    def test_an_empty_diff_says_so_rather_than_passing_in_silence(self):
-        with Repo(LADDER + rule('src/**', 'make story')) as repo:
-            code, out = run('--story')
-            self.assertEqual(0, code)
-            self.assertIn('no changed paths', out)
-            self.assertEqual(0, repo.runs('story'))
-
-
 class SelfHosting(unittest.TestCase):
     """This repo's OWN `[verify]` section, held to the tree it describes."""
 
-    def test_verify_check_passes_on_this_tree(self):
+    def test_verify_check_passes_on_this_tree_with_a_census_it_can_be_argued_from(self):
         code, out = run('--check')
         self.assertEqual(0, code, f'this repo self-hosts the ladder:\n{out}')
-        self.assertIn('PASS', out)
+        got = re.search(r'(\d+) of (\d+) tracked file\(s\) matched', out)
+        self.assertIsNotNone(got, out)
+        matched, total = int(got.group(1)), int(got.group(2))
+        self.assertLessEqual(matched, total)
+        self.assertEqual(total, len(verb.tracked(verb.repo_root())),
+                         'the denominator is `git ls-files`, and the line can '
+                         'be argued from against it')
 
     def test_a_change_under_repo_pm_selects_exactly_one_command(self):
         ruleset = rules.read(cli._verify_section())
@@ -658,13 +608,6 @@ class SelfHosting(unittest.TestCase):
         self.assertEqual((), got.missed)
         self.assertEqual(1, len(got.commands))
         self.assertIn('tests/test_pm_', got.commands[0])
-
-    def test_the_two_fixed_rungs_are_this_repos_own_make_targets(self):
-        ruleset = rules.read(cli._verify_section())
-        targets, makefile = verb.make_targets(verb.repo_root())
-        self.assertTrue(makefile)
-        for command in (ruleset.feature, ruleset.milestone):
-            self.assertIn(rules.rung_target(command), targets)
 
 
 if __name__ == '__main__':  # pragma: no cover

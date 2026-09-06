@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/01-each-kind-declares-its-own-states
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Each kind declares its own states, and there is no transitions table
-status: building
+status: done
 owner:
 depends_on: []
 ---

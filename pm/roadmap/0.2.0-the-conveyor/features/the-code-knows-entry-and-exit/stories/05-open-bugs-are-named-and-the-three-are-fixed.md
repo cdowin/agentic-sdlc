@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/05-open-bugs-are-named-and-the-three-are
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: An open bug against the milestone is named, and the three open bugs are fixed
-status: building
+status: done
 owner:
 depends_on: []
 ---

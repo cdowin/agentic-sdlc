@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/06-the-review-findings-land
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: Every finding in the 0.2.0 review records lands
-status: building
+status: done
 owner:
 depends_on: []
 ---

@@ -146,6 +146,15 @@ and it will lie.
 - `pm ledger show <grain-id>` — that grain's TELEMETRY, oldest first: every
   status flip, decision and dispatch, with the seconds between them. What a
   story COST, rather than where it is.
+- **`GDK_LEDGER_GRAIN`** — export it, and the session's or dispatch's rows land
+  on that grain's line instead of in `rows naming no grain`. The couriers read
+  it from their own environment and pass it as `--grain`; **nothing exports it
+  for you**, and it is the one `GDK_LEDGER_*` value the hook cannot get from
+  the payload, because no hook event carries a grain. Whoever starts a session
+  or dispatches an agent knows what it is working on, so passing it is copying
+  a fact rather than deriving one. Unset is normal: the verb then uses the one
+  story in progress, and omits the key when there is none or several — never a
+  guess.
 - `pm ledger report [<milestone-id>]` — the same rows added up per grain:
   dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
   each category. This is the answer to *how long did this take*, *what did it

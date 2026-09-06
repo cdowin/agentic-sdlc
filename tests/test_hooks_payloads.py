@@ -118,7 +118,14 @@ MARKER = '.agent-scope'
 
 # The corpus reads DEVKIT_AGENT_SCOPE; a test machine that happens to export
 # it would flip every trunk/agent distinction below.
-CLEAN_ENV = {k: v for k, v in os.environ.items() if k != 'DEVKIT_AGENT_SCOPE'}
+# `GDK_LEDGER_GRAIN` beside `DEVKIT_AGENT_SCOPE`, and for the same reason one
+# layer up: an operator with it exported turns every case here that asserts a
+# row's grain — or its absence — into a claim about their shell rather than
+# about the courier. Proven: with it set, the stock dispatch case FAILS. The
+# couriers' own `--self-test` builds its child environment for exactly this;
+# this is the twin that runs in CI and in `make precommit`.
+CLEAN_ENV = {k: v for k, v in os.environ.items()
+             if k not in ('DEVKIT_AGENT_SCOPE', 'GDK_LEDGER_GRAIN')}
 
 
 def corpus_repo(parent: Path, name: str = 'repo') -> Path:

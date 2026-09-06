@@ -101,10 +101,27 @@ refuses a row, while `--grain` still does.
 finding: 4f4e3cd's M1 belongs here as much as to the other feature — a row this story leaves
 unattributed can still NAME a grain through its snapshot, which is why `ledger show` had to learn
 about the tree's ledger.
-open, for the milestone review: `report.named_grains` still attributes an UNATTRIBUTED row through
-its snapshot, so a row this story deliberately left ambiguous is billed to BOTH live stories. That
-contradicts this feature's ship criterion ("stays in that bucket") and it also contradicts 0.2.0's
-D5 ("a row naming several grains is added to each whole"), which is a recorded decision — so it is
-raised rather than changed. The reading that reconciles them: the per-grain table is *spend while
-this grain was live*, not *spend on this grain*. If that is the intent it should be said on the
-table; if it is not, the fix is one clause in `named_grains` and a decision.
+review M2: the open finding above was CONFIRMED, in scope, and is now fixed — a snapshot places a
+row only when it names one candidate at its finest kind (D8). **And the reason I gave for raising
+rather than fixing it was void**: I cited "0.2.0's D5" for *"a row naming several grains is added
+to each whole"*. 0.2.0's D5 is about D8/D9/D10 reporting over every `in_progress` milestone. The
+no-weighting phrase lives in `report.py`'s docstring and nowhere else; no decisions log in the tree
+records it, and 0.1.0's was retired with its milestone. **A dangling citation reads as settled and
+stops an argument that was never had** — it cost this finding a review cycle. The bare `(D5)` is
+gone from all three sites in `report.py`, replaced by the rule itself.
+review M1: `_resolved_grain_file` caught `Usage`, and `model.story_file` raises `AmbiguousStory`, a
+plain `Exception` — so a tree with two files claiming one id turned this story's convenience into
+exit 2 with NO ROW WRITTEN, which is AC5 inverted. Caught now, and the proving case gained its
+third shape: one live candidate that will not resolve.
+review M3: a STATED grain this milestone cannot place fell through to the snapshot, so a row naming
+a story since renamed away was billed to whichever other story was live, with nothing disclosing
+it. It now names nothing here and is counted on its own `stated_elsewhere` line — the opposite of
+"named no grain", and the ordinary case since every report reads the tree's shared ledger.
+review W4: a single candidate that would not resolve was the silent third case. It speaks now, the
+way the ambiguous branch already did.
+review S1/S2: `stories_in_progress` is `ledger.STORIES_IN_PROGRESS`, named once for its three
+readers; the docstring says stories-only and why a live FEATURE is not promoted.
+review S3: the Proof budget said `cases: 4-5` and ten functions landed across the two stories, plus
+two amended self-test corpora and four more from this review. Over, and named rather than excused —
+the previous feature reconciled its overrun and this one did not, which is the habit slipping one
+feature later.

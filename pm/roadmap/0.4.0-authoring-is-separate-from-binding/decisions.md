@@ -291,3 +291,50 @@ enumerated the WRITERS and got that wrong (it said two; there were four). **A de
 where data lives should say how the reader list was obtained** — here, `grep -rn` for the row kind
 across `src/` and `tests/` — so the next reader of the decision can tell whether it was a search
 or a memory.
+
+## D8 — 2026-09-06 — A snapshot places a row only when it is unambiguous, and a stated grain never falls through
+
+**Raised by the `every-row-names-its-grain` review as M2 and M3**, and the second half of D2 read
+from the other end. `pm ledger record` omits the `grain` key when the tree has more than one live
+story, on the argument that *a row filed against the wrong story is uncorrectable*. The READER then
+attributed that same row through its `tree` snapshot — to both stories and to their feature — so the
+decision was un-done on the way out, and `pm ledger report` printed `rows naming no grain (0)` over
+the one case the feature exists to handle.
+
+**The rule, at the reader:**
+
+    a row that STATES a grain      is attributed by it and by NOTHING ELSE, even
+                                   when this milestone cannot place it
+    a row that states none         is placed by its snapshot ONLY when the
+                                   snapshot names one candidate at its finest kind
+    anything else                  is counted, not placed
+
+Ambiguity is judged at the finest kind the snapshot names, because a feature named alongside its
+own story is a roll-up rather than a second candidate.
+
+**A stated grain this milestone does not hold gets its OWN counted line**, `stated_elsewhere`,
+rather than joining `rows naming no grain`. The two are opposites — one row named its grain
+precisely and one named none — and since D3 every milestone's report reads the tree's shared
+ledger, so rows from other milestones are the ordinary case rather than an error.
+
+**Rejected: keeping the fall-through and saying so on the table.** The reading it would need is
+*spend WHILE this grain was live* rather than *spend ON this grain*, and that is a defensible table
+— but it is not the one the columns claim, it is not what anybody asked the report for, and it
+makes a dispatch's cost a function of what else happened to be open. If that table is ever wanted
+it is a second view, not this one wearing a note.
+
+**Rejected: attributing an ambiguous snapshot to the FEATURE that owns the candidates.** Tempting,
+and it is a real answer when both stories share a parent. It loses because it is a guess wearing a
+coarser grain — the same move `_grain_from_tree` refuses one level down — and because it silently
+answers a different question than the one the row was asked.
+
+**And the citation that sent this the wrong way is retired.** `report.py` carried *"a row naming
+several grains is added to each whole (no weighting, D5)"*, and the close of
+`every-row-names-its-grain/02` cited it as a recorded decision — a reason to RAISE the finding
+rather than fix it. **There is no such decision.** 0.2.0's D5 says D8/D9/D10 report over every
+`in_progress` milestone; the no-weighting rule appears in that docstring and nowhere else, and
+0.1.0's decisions log was retired with its milestone. The no-weighting half is true and survives
+here as *"added to each whole"* for a snapshot that IS unambiguous; the bare `(D5)` is gone.
+**A dangling citation reads as settled and stops an argument that was never had** — that is the
+generalisable part, and `report.py` cites a bare `(D5)` for two other claims that want the same
+audit.

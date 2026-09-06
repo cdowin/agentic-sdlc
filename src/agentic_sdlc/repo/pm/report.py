@@ -1,7 +1,11 @@
 """report.py — `pm ledger report`: the milestone's raw rows, added up.
 
 The ledger never judges; this is the caller judgement is left to. It may
-sum, count, subtract and group, never weight, price or label (D5). Absent
+**sum, count, subtract and group, never weight, price or label** — no `size:`
+as a divisor, no dollar figure, no score. Stated here rather than cited: the
+`(D5)` this used to carry named no decision in the tree (0.2.0's D5 is about
+D8/D9/D10 reporting over every in_progress milestone) and a dangling id reads
+as settled while stopping an argument that was never had. Absent
 is `-`, not zero; the tree is walked, so every grain gets a row; nothing is
 dropped. It fails only on a document that will not parse, never on a
 number.
@@ -51,7 +55,8 @@ COLUMN_GAP = '  '
 BLOCK_PREFIX = '--'
 SUB_ROW_INDENT = '  '
 
-# Frontmatter key printed as a column and used for nothing else (D5).
+# Frontmatter key printed as a column and used for nothing else — never a
+# divisor: dividing spend by `size` would be this module pricing work.
 SIZE_FIELD = 'size'
 
 # Grain kinds, in the order their tables print.
@@ -64,7 +69,7 @@ KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
 # `milestones_in_progress` is on every row and would attribute every dispatch
 # to every grain.
 CATEGORY_BUCKETS = (
-    (KIND_STORY, ('stories_in_progress',)),
+    (KIND_STORY, (ledger.STORIES_IN_PROGRESS,)),
     (KIND_FEATURE, ('features_in_progress',)),
 )
 # The old shape, read as-is (D7): rows written before the category keys carry
@@ -105,6 +110,13 @@ GRAIN_COLUMN = 'grain'
 SIZE_COLUMN = 'size'
 TOTAL_COLUMN = 'total_s'
 NO_GRAIN_TITLE = 'rows naming no grain'
+# Said beside that bucket and counted apart from it: a row that named its grain
+# precisely and named one this milestone does not hold is the OPPOSITE of a row
+# that named none, and the ordinary cause is the tree's own ledger, which every
+# milestone's report reads.
+ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
+                  'milestone\'s work, read out of the tree\'s shared ledger; '
+                  'not unattributed')
 
 # Section 2's columns; `verdict.DISPOSITION_KINDS` supplies the disposition
 # columns, so a new kind appears rather than counting into nothing.
@@ -630,7 +642,7 @@ def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
     """The grains under this milestone that one dispatch row names.
 
-    Two ways, and the FIRST outranks the second because it is a statement
+    Two ways, and the FIRST outranks the second because it is a STATEMENT
     rather than an inference:
 
       `grain`  what the dispatch was told it was working on (0.4.0/D2). The
@@ -641,22 +653,59 @@ def named_grains(row: dict, kinds: dict[str, str],
                live at the instant of the row, and the only thing that existed
                before 0.4.0.
 
-    They agree in the ordinary case and the snapshot is kept for the rows
-    already written, which are never rewritten. **A row that names its grain is
-    attributed by it and by nothing else** — the snapshot would otherwise add
-    every OTHER story that happened to be live, and a dispatch billed for work
-    it did not do is the read-side of rule 4.
+    **A row that states a grain is attributed by it and by nothing else, even
+    when this milestone cannot place it.** Falling through to the snapshot was
+    a real defect: a row stating a story that has since been renamed away got
+    billed to whichever OTHER story happened to be live, and `frozen_only`
+    disclosed nothing, so it was the read-side of rule 4 under a docstring
+    promising the opposite. `stated_elsewhere` counts those instead.
 
-    A row naming several grains through the snapshot is added to each whole (no
-    weighting, D5). Category keys when present; frozen keys only for an
-    old-shape row.
+    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8). Two
+    stories live at one instant is the workflow this package exists for, and
+    `pm ledger record` already omits the `grain` key rather than pick one — so
+    a reader that then billed BOTH from the same snapshot un-did the decision
+    on the way out, and printed `rows naming no grain (0)` over the one case
+    the feature exists to handle. Ambiguity is judged at the finest kind the
+    snapshot names, because a feature named alongside its own story is a
+    roll-up, not a second candidate.
+
+    Category keys when present; frozen keys only for an old-shape row.
     """
     stated = row.get('grain')
-    if isinstance(stated, str) and stated in kinds:
+    if isinstance(stated, str) and stated:
         return {stated} | {fid for fid, stories in owned.items()
-                           if stated in stories}
+                           if stated in stories} if stated in kinds else set()
     buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
-    return _named_through(row, buckets_by_kind, kinds, owned)
+    named = _named_through(row, buckets_by_kind, kinds, owned)
+    return set() if _snapshot_is_ambiguous(named, kinds) else named
+
+
+def _snapshot_is_ambiguous(named: set[str], kinds: dict[str, str]) -> bool:
+    """Does this snapshot name more than one candidate at its finest kind?
+
+    Stories first: a snapshot naming two of them named no one thing, whatever
+    else is in it. With no story, features are the finest kind it named, and
+    two of those are the same question one level up. A single story plus the
+    feature that owns it is ONE candidate — the feature is a roll-up, and
+    `_named_through` added it.
+    """
+    stories = {gid for gid in named if kinds.get(gid) == KIND_STORY}
+    if stories:
+        return len(stories) > 1
+    return len({gid for gid in named if kinds.get(gid) == KIND_FEATURE}) > 1
+
+
+def stated_elsewhere(row: dict, kinds: dict[str, str]) -> bool:
+    """Does this row STATE a grain this milestone does not hold?
+
+    Its own line in the spend section, because the alternative is pooling it
+    with `rows naming no grain` — and a row that named its grain precisely is
+    the opposite of one that named none. The ordinary cause is the tree's own
+    ledger, which every milestone's report reads and which holds rows from all
+    of them.
+    """
+    stated = row.get('grain')
+    return isinstance(stated, str) and bool(stated) and stated not in kinds
 
 
 def frozen_only_grains(row: dict, kinds: dict[str, str],
@@ -773,6 +822,7 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     # The drop, counted per grain: rows that named it only through a frozen
     # key.
     frozen_only = {g.gid: 0 for g in grains}
+    elsewhere = 0
     for row in dispatch:
         # Every row lands in the totals exactly once, so the summary line is a
         # statement about the file.
@@ -781,6 +831,13 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         legacy_rows += legacy
         for gid in frozen_only_grains(row.data, kinds, owned):
             frozen_only[gid] += 1
+        if stated_elsewhere(row.data, kinds):
+            # Counted apart from `unattributed`: this row named its grain
+            # precisely, and this milestone is simply not the one that holds
+            # it. Pooling the two would make a report over the tree's shared
+            # ledger look like a tree full of unattributed work.
+            elsewhere += 1
+            continue
         named = named_grains(row.data, kinds, owned)
         if not named:
             _add(unattributed, row.data)
@@ -814,6 +871,7 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         })
     return {'section': SECTION_SPEND, 'grains': out,
             'unattributed': unattributed,
+            'stated_elsewhere': elsewhere,
             'legacy': {'rows': legacy_rows,
                        'unattributed': legacy_unattributed},
             'totals': {'dispatch_rows': len(dispatch),
@@ -911,6 +969,8 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     legacy = data.get('legacy') or {}
     if legacy.get('unattributed'):
         out.append(f'   {legacy["unattributed"]} of these {LEGACY_NOTE}')
+    if data.get('stated_elsewhere'):
+        out.append(f'   {data["stated_elsewhere"]} further row(s) {ELSEWHERE_NOTE}')
     out.append('')
     out.append(f'{HEADING_PREFIX} {data["milestone"]} — '
                f'{_cell(totals["usage"]["output"])} out / '
@@ -1006,7 +1066,8 @@ def yield_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     """Section 2 as data: counting over the block's closed sets per record.
     The disposition is read as its kind, never as the shape of its value;
     `open` is its own column. Spend is not joined in — picking
-    "reviewer-shaped" agent types would be a label (D5).
+    "reviewer-shaped" agent types would be this module LABELLING, which is the
+    one thing a report over a ledger that never judges may not do.
     """
     records = []
     for fid, rel, parsed in parsed_records(src, cfg, mid, mdir):

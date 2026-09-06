@@ -651,13 +651,39 @@ def test_the_flag_wins_over_the_lookup_and_the_lookup_stays_quiet():
 
 def test_resolution_never_changes_an_exit_code():
     """The fail-open promise the couriers depend on lives here now: a row that
-    could not be attributed is a SUCCESSFUL write with a key absent."""
+    could not be attributed is a SUCCESSFUL write with a key absent.
+
+    THREE shapes, and the third is the one that shipped broken: zero live,
+    several live, and **one live candidate that will not resolve**.
+    `_resolved_grain_file` caught `Usage` and `model.story_file` raises
+    `AmbiguousStory`, a plain `Exception` — so a tree with two files claiming
+    one id turned a lookup NOBODY ASKED FOR into exit 2 with no row written
+    anywhere. The convenience destroyed the row it was meant to label.
+    """
     with tree(story_statuses=('ready',)) as root:
         second_story(root, 'ready')
         assert transcript(root)[0] == 0
     with tree(story_statuses=('building',)) as root:
         second_story(root)
         assert transcript(root)[0] == 0
+    # Two files, ONE id, and only one of them live — so the lookup has exactly
+    # one candidate and that candidate will not resolve. The resolver's own
+    # refusal, reached from a path the caller never asked to travel.
+    with tree(story_statuses=('ready',),
+              config=LEGACY_FLOW + '[pm]\nstory_ordinal_prefix = true\n') as root:
+        for stem, status in (('01-twin', 'building'), ('02-twin', 'ready')):
+            write(root / f'pm/roadmap/0.1-demo/features/alpha/stories/{stem}.md',
+                  {'id': '0.1/alpha/twin', 'feature': '0.1/alpha',
+                   'milestone': '"0.1"', 'name': 'Twin', 'status': status,
+                   'owner': ''})
+        code, out = transcript(root)
+        assert code == 0, out
+        assert 'grain' not in sorted(only_row(root))
+        # W4: and it SAYS SO. The ambiguous branch already spoke; a single
+        # candidate that would not resolve was the silent third case, and the
+        # courier's operator is standing in the stderr the hooks pass through.
+        assert 'could not resolve' in out, out
+        assert 'check pm' in out, out
 
 
 # --- D2: a dispatch that was TOLD its grain files a row that says so ----------

@@ -114,5 +114,21 @@ functions are still separate: they answer different questions (`does this row na
 deviation: AC2 says exit 1 for an unresolvable `--grain`; it is **exit 2**, which is what the
 hand form already does and what rule 9 requires — an id that names nothing is a fact about the
 INPUT. The bar the AC asked for (refused, no write, never degraded to an omitted key) holds.
-finding: `self_test_fire` now builds the child environment (`env` / `env -u`). Inheriting it made
-every "no `--grain` flag" case a false pass for any operator with the var exported.
+finding: `self_test_fire` now builds the child environment (`env` / `env -u`). **Corrected at
+review (W2): inheriting it made those cases a spurious FAIL, not a false pass.** The negative
+asserts `--grain` is ABSENT from the argv, so a leaked variable turns the case RED — demonstrated.
+The change is right and load-bearing; the reason first recorded here graded a noisy failure as rule
+4's cardinal sin, and that is the one word this repo cannot spend loosely.
+review W1: the same hazard was unfixed in the pytest twin — `test_hooks_payloads.CLEAN_ENV` passed
+the operator's environment through, so the stock dispatch case failed for anyone with the variable
+exported. It now strips it beside `DEVKIT_AGENT_SCOPE`.
+review W3: AC4's `dash` + `LC_ALL=C` case did not carry a grain at all, so the value this story
+ADDED was proven only under bash. It carries one now — and the comment says it is a REACHABILITY
+proof rather than a quoting one, because the id grammar forbids the spaces that case exists to
+catch.
+review M4: **nothing in this package exported `GDK_LEDGER_GRAIN`**, which is rule 11's literal case
+— a courier wired to write a value with no producer and no surface naming one. `pm-execution.md`
+and `install-hooks`' next step now say who exports it and when. UNVERIFIED, and stated as such:
+whether a `SubagentStop` hook's environment can carry a PER-DISPATCH value under Claude Code, or
+only one per session. If it is the latter, D2's primary clause wants re-deciding rather than
+documenting.

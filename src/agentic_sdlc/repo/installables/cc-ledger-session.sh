@@ -188,10 +188,20 @@ self_test() {
 			printf 'SHELL := %s\npm:\n\t@printf "ARG[%%s]\\n" $(ARGS)\n' \
 				"$(command -v dash)" >"$repo/Makefile"
 			awkward="$tmp/café dir/t.jsonl"
+			# The grain travels HERE too. A REACHABILITY proof, not a
+			# quoting one, and the difference is worth stating: the id
+			# grammar forbids spaces, so the grain cannot exercise the
+			# word-splitting this case's PATH assertion exists to catch.
+			# What it does prove is that the value arrives intact under
+			# the honest vehicle — dash, LC_ALL=C — rather than only
+			# under the bash the other cases run.
 			argv="$(LC_ALL=C self_test_fire "$(self_test_payload \
-				"$EVENT" "$repo" 'sess-1' "$awkward")")"
-			self_test_says 'a non-bash vehicle, a path bash would escape' \
-				"$argv" "ARG[$awkward]" || rc=1
+				"$EVENT" "$repo" 'sess-1' "$awkward")" '0.1/alpha/s0')"
+			for want in "ARG[$awkward]" 'ARG[--grain]' \
+					'ARG[0.1/alpha/s0]'; do
+				self_test_says 'a non-bash vehicle, a path bash would escape' \
+					"$argv" "$want" || rc=1
+			done
 		else
 			echo "  SKIP — dash is not on PATH; the non-bash vehicle case did not run" >&2
 		fi

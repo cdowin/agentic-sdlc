@@ -1496,7 +1496,7 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
     }
     live: dict[str, list[str]] = {
         'milestones_in_progress': [], 'features_in_progress': [],
-        'stories_in_progress': [],
+        ledger.STORIES_IN_PROGRESS: [],
     }
 
     def add(snap: dict, bucket: str, path: Path) -> None:
@@ -1525,7 +1525,7 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
             for sfile in model.story_files(ffile):
                 sstat = model.field_of(sfile, 'status')
                 if in_progress('story', sstat):
-                    add(live, 'stories_in_progress', sfile)
+                    add(live, ledger.STORIES_IN_PROGRESS, sfile)
                 if sstat == model.BUILDING:
                     add(frozen, 'stories_wip', sfile)
                 elif sstat == model.REVIEWING:
@@ -1727,7 +1727,20 @@ def _resolved_grain_file(cfg: model.PmConfig, gid: str) -> Path | None:
         return None
     try:
         return _grain_file(cfg, gid)
-    except Usage:
+    except (Usage, model.AmbiguousStory) as err:
+        # BOTH, and the second is why this is not `except Usage`.
+        # `model.story_file` raises `AmbiguousStory`, a plain `Exception`, when
+        # two files claim one id — so a tree with a duplicated id turned a
+        # lookup nobody asked for into exit 2 with NO ROW WRITTEN ANYWHERE,
+        # which is the fail-open promise the couriers depend on, broken by the
+        # convenience that was meant to help.
+        #
+        # And it SAYS SO (W4): the ambiguous branch already speaks, and a
+        # single candidate that will not resolve was the silent third case.
+        print(f'[pm] the tree named a grain this verb could not resolve '
+              f'({err}) — the row is filed without one and lands in `rows '
+              f'naming no grain`; `agentic-sdlc check pm` reports the tree '
+              f'defect', file=sys.stderr)
         return None
 
 
@@ -1748,6 +1761,12 @@ def _grain_from_tree(snap: dict) -> str:
     disagree — and this milestone is deleting twenty resolvers, so adding one
     back the same week would need an argument nobody has.
 
+    **Stories only, deliberately.** A milestone with one live FEATURE and no
+    live story has exactly one answer one level up and still gets an omitted
+    key: a feature is a container, and billing a container for a session is
+    the same guess at a coarser grain. Story 02's precedence table says
+    stories, and widening it is a decision, not an improvement.
+
     Several is the workflow this package exists for, not an edge, and it is
     where a lookup would misfile. **An unresolvable grain is an OMITTED KEY**,
     never a guess: a row filed against the wrong story is uncorrectable, and
@@ -1756,7 +1775,7 @@ def _grain_from_tree(snap: dict) -> str:
     "revisit if ambiguity turns out to be common" (D2) is a countable claim
     rather than a hope.
     """
-    live = snap.get('stories_in_progress') or []
+    live = snap.get(ledger.STORIES_IN_PROGRESS) or []
     if len(live) == 1:
         return live[0]
     if len(live) > 1:

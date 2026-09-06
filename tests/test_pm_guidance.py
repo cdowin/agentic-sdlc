@@ -113,6 +113,24 @@ class Guidance(unittest.TestCase):
                 self.assertIn(said, honest.lower() if said == 'telemetry'
                               else honest, honest)
 
+    def test_the_rule_names_who_exports_the_grain(self):
+        """Rule 11's literal case, caught in review: the couriers read
+        `GDK_LEDGER_GRAIN` and NOTHING in this package sets it — not the
+        printed settings block, not a hook, not a skill, not the README. It is
+        the only `GDK_LEDGER_*` the courier cannot take off the payload, and an
+        orchestrator dispatching a subagent had nowhere to learn it exists.
+
+        The fix is a word where somebody is standing, not a capability: the
+        rule that auto-loads on every tree edit, and `install-hooks`' own next
+        step.
+        """
+        with tree() as root:
+            self.assertEqual(run_cli(root, 'install-skills')[0], 0)
+            rule = (root / '.claude/rules/pm-execution.md').read_text(
+                encoding='utf-8')
+            self.assertIn('GDK_LEDGER_GRAIN', rule)
+            self.assertIn('nothing exports it', rule.lower())
+
     def test_install_is_idempotent(self):
         with tree() as root:
             run_cli(root, 'install-skills')

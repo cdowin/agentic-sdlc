@@ -1316,3 +1316,21 @@ class TestTheNameBothCommandsBlockIsOneWording:
         for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
                      'pm-operator.md'):
             assert self.OPEN not in install.body_of(name), name
+
+
+def test_install_hooks_says_the_settings_are_not_yet_in_force_and_who_sets_the_grain():
+    """0.4.0. Two rule-11 holes in one paragraph, both found in review.
+
+    The block is PRINTED and never written (`.claude/settings.json` is the
+    consumer's and has no merge), and a printed block reads as informational —
+    which is how step 1 gets skipped and a consumer runs for a milestone with
+    the couriers on disk and nothing firing them. And `GDK_LEDGER_GRAIN` is the
+    one `GDK_LEDGER_*` a courier cannot take off the payload: nothing in this
+    package exports it, so the paragraph has to say who does.
+    """
+    from agentic_sdlc.repo import install
+    said = install._NEXT_STEP['install-hooks']
+    assert 'NOT YET IN FORCE' in said
+    assert 'adopt' in said and 'D11' in said
+    assert 'GDK_LEDGER_GRAIN' in said
+    assert 'Nothing exports it for you' in said

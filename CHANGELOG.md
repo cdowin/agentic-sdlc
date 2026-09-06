@@ -91,6 +91,28 @@
   composition is the shell's job, and if you cannot pipe it the missing thing is a COLUMN, never a
   verb. No filter flag is added by this change and the existing ones all stay.
 
+- **The report stops un-doing the recorder's refusal.** `pm ledger record` omits a row's `grain`
+  key when two stories are live, because a row filed against the wrong story is uncorrectable —
+  and `pm ledger report` then attributed that same row through its `tree` snapshot, to BOTH
+  stories and to their feature. So the bucket the whole thing exists for printed
+  `rows naming no grain (0)` in the one case it was built to handle. Now: **a snapshot places a row
+  only when it names one candidate at its finest kind**, judged over stories first (a feature named
+  alongside its own story is a roll-up, not a second candidate).
+
+  **And a row that STATES a grain is attributed by it and by nothing else, even when this milestone
+  cannot place it** — the fall-through billed a row naming a since-renamed story to whichever other
+  story happened to be live, and disclosed nothing. Those get their own counted line,
+  `stated_elsewhere` (a new `--json` key), rather than joining `rows naming no grain`: the two are
+  opposites, and every milestone's report reads the tree's shared ledger, so rows from elsewhere
+  are the ordinary case.
+
+  **`GDK_LEDGER_GRAIN` has a documented producer, which it did not.** Nothing in this package
+  exported it — not the printed settings block, not a hook, not a rule, not the README — so a
+  courier read a variable no surface told anyone to set. `pm-execution.md` and `install-hooks`'
+  next step now say who exports it and when. **Unverified, and said out loud:** whether a
+  `SubagentStop` hook's environment can carry a per-dispatch value under Claude Code, or only one
+  per session.
+
 - **A row with no `--grain` resolves one from the tree, or carries no `grain` key at all.** The
   dispatched agent is told its grain; an orchestrator session nobody dispatched has no prompt to
   read one out of, and that is the session type most of a milestone's work happens in. So: exactly

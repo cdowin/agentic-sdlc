@@ -471,6 +471,74 @@ def test_a_stated_grain_outranks_the_snapshot_and_bills_nobody_else():
     assert 'dispatch row(s)' in out
 
 
+# --- 0.4.0/D8: the reader does not un-do the writer's refusal ------------------
+def test_an_ambiguous_snapshot_places_nothing_and_stays_in_the_bucket():
+    """M2. `pm ledger record` omits the `grain` key when two stories are live,
+    because a row filed against the wrong one is uncorrectable. The reader was
+    then attributing that same row through its snapshot — to BOTH stories and
+    to their feature — so the decision was un-done on the way out and the
+    bucket the feature exists to fill printed `(0)`.
+
+    The snapshot here names two live stories and no grain, which is exactly
+    what the courier writes in the case this milestone was built for.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was_s0 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S0, A_S1])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
+    assert stray and '9' in stray[0], out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was_s0, out
+
+
+def test_one_story_and_its_feature_is_ONE_candidate_not_two():
+    """The rule's edge, and getting it wrong would empty the whole table: a
+    snapshot naming a story AND the feature that owns it names one thing, and
+    the feature is a roll-up `_named_through` added. Ambiguity is judged at
+    the finest kind the snapshot names."""
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S1],
+                                               features_building=[ALPHA])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert '-- rows naming no grain (0)' in out, out
+
+
+def test_a_stated_grain_this_milestone_cannot_place_never_falls_through():
+    """M3. `stated in kinds` fell THROUGH to the snapshot, so a row naming a
+    story that had since been renamed away was billed to whichever other story
+    happened to be live — and `frozen_only` disclosed nothing, under a
+    docstring promising a stated grain is attributed by it and nothing else.
+
+    It gets its own counted line rather than joining `rows naming no grain`:
+    the two are opposites, and since D3 every milestone's report reads the
+    tree's shared ledger, so another milestone's rows are the ordinary case.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was_s1 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S1)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain='9.9/gone/s0',
+                                 tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S1])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S1) == was_s1, out
+    assert '-- rows naming no grain (0)' in out, out
+    assert 'does not hold' in out, out
+
+
 # --- 0.4.0/D3: the report reads BOTH ledgers -----------------------------------
 def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
     """A milestone's report reads its own ledger AND `<roadmap>/ledger.jsonl`,

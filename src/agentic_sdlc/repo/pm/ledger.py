@@ -20,6 +20,12 @@ LEDGER_FILE_NAME = 'ledger.jsonl'
 
 # The row kinds minted here; `dispatch`/`session` rows come from `pm ledger
 # record`.
+# The snapshot bucket a row's live stories sit in. Named here because THREE
+# modules reach for it — `cli._tree_snapshot` writes it, `cli._grain_from_tree`
+# resolves off it, `report.CATEGORY_BUCKETS` attributes by it — and a bare
+# string in three places is the defect 0.4.0 exists to delete.
+STORIES_IN_PROGRESS = 'stories_in_progress'
+
 KIND_STATUS = 'status'
 KIND_DECISION = 'decision'
 KIND_GATE = 'gate'

@@ -126,7 +126,12 @@ SPEND_TITLE = 'spend per grain'
 # Section 1's keys in `--json`, and the one key each later section adds.
 # `legacy` landed with the category keys (decision D7): how many dispatch rows
 # predate them, and how many of those named nothing.
-SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed', 'legacy',
+SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed',
+              # 0.4.0/D8: a row STATING a grain this milestone does not
+              # hold, counted apart from the ones naming none — the
+              # tree's shared ledger is read by every milestone's
+              # report, so this is the ordinary case, not an error.
+              'stated_elsewhere', 'legacy',
               'totals')
 SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead', 'gates')
 
@@ -338,6 +343,7 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
                          'usage': dict(blank_usage(), input=5),
                          'tool_calls': 2, 'duration_s': None},
         'legacy': {'rows': 0, 'unattributed': 0},
+        'stated_elsewhere': 0,
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
                    'usage': dict(full, input=1205), 'tool_calls': 39,
                    'duration_s': 812},

@@ -2,12 +2,12 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + V1-V5; V6 and D8-D10 are opt-in).
+(default: D1-D6 + V1-V5; V6, D9/D10 and R5 are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
   D4  a status the project never declared, for any grain kind
-  D8  the shipped version equals an `in_progress` milestone's id (or is a hotfix `<done id>.N`)
+  R5  the version file equals the CURRENT release in `order` ([pm] version_at)
   D9  an `in_progress` milestone declares a `branch:`
   D10 that branch is not the mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
 WARN (a line, never the exit code; both grains and both categories named):
@@ -20,8 +20,6 @@ WARN (a line, never the exit code; both grains and both categories named):
 Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
-
-import re
 
 import sys
 
@@ -82,6 +80,7 @@ def _run() -> int:
     n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
 
     _flow_findings(cfg, enabled, report)
+    _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V6: structural + referential integrity ------------------------
     v_on = enabled & set(model.VALIDATE_CHECKS)
@@ -219,41 +218,11 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
     return n_features, n_stories
 
 
-_HOTFIX_N = re.compile(r'[1-9][0-9]*')
-
-
-def _is_hotfix_of_released(cfg: model.PmConfig, version: str) -> bool:
-    """`<id>.N` for a `done` milestone still in the tree: a hotfix cut from the mainline."""
-    for mdir, mid in model.known_milestones(cfg):
-        if not mid or not version.startswith(mid + '.'):
-            continue
-        status = model.field_of(mdir / model.MILESTONE_DOC, 'status')
-        if model.category_of(cfg, 'milestone', status) != model.DONE_CATEGORY:
-            continue
-        if _HOTFIX_N.fullmatch(version[len(mid) + 1:]):
-            return True
-    return False
-
-
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
     """D8/D9/D10 over every `in_progress` milestone; two in progress is two answers."""
     live = (model.in_progress_milestones(cfg)
             if enabled & set(model.FLOW_CHECKS) else [])
 
-    if 'D8' in enabled and live:
-        version = model.shipped_version(cfg)
-        ids = [mid for mid, _, _ in live]
-        if version is None:
-            report(f'no version found in {cfg.version_file} — D8 cannot verify '
-                   f'the in-progress milestone(s) {", ".join(ids)}')
-        else:
-            for mid in ids:
-                if version != mid and not _is_hotfix_of_released(cfg, version):
-                    report(f'{cfg.version_file} version {version!r} does not '
-                           f'match the in-progress milestone {mid!r} — bump at '
-                           f'milestone START, and the id IS the version; a '
-                           f'hotfix is a done milestone id in this tree plus '
-                           f'one positive integer (D8)')
 
     mainline = model.mainline_branch() if 'D10' in enabled and live else ''
 
@@ -270,6 +239,49 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                 report(f'in-progress milestone {mid} declares branch: {branch!r}, '
                        f'the mainline itself — work must live off '
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
+
+
+def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+    """R5 — the version file equals the CURRENT release's version.
+
+    Current is a POSITION in `order`, never a parse, so this rule fits both
+    bump-at-start and bump-at-close ([pm] version_at) and has no opinion about
+    what a version string looks like.
+    """
+    if 'R5' not in enabled:
+        return
+    order = model.declared_order(cfg)
+    if not order:
+        # A tree mid-adoption has no plan yet. Reddening it would be milestone
+        # risk 1: a rule that fails every fresh consumer gets switched off.
+        warn(f'R5 is enabled and {cfg.rel(model.releases_file(cfg))} declares '
+             f'no `order` — nothing to grade {cfg.version_file} against; '
+             f'`agentic-sdlc pm order --append <version>` writes the plan')
+        return
+    current = model.current_release(cfg)
+    if current is None:
+        at = cfg.version_at
+        why = ('every entry in `order` has shipped'
+               if at == model.VERSION_AT_START else 'no entry in `order` has shipped yet')
+        warn(f'R5 has no current release: {why} under [pm] version_at = '
+             f'{at!r} — nothing to grade {cfg.version_file} against')
+        return
+    version = model.shipped_version(cfg)
+    if version is None:
+        report(f'no version found in {cfg.version_file} — R5 cannot verify it '
+               f'against the current release {current!r} (R5)')
+        return
+    if version == current:
+        return
+    mid = model.milestone_of_version(cfg, current)
+    claims = (f'the milestone {mid!r} claims it'
+              if mid is not None
+              else 'no milestone claims it — an `order` entry nothing carries')
+    report(f'{cfg.version_file} version {version!r} does not match the current '
+           f'release {current!r} ({claims}), which is the '
+           f'{"first unshipped" if cfg.version_at == model.VERSION_AT_START else "last shipped"} '
+           f'entry in {cfg.rel(model.releases_file(cfg))} under [pm] '
+           f'version_at = {cfg.version_at!r} (R5)')
 
 
 def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],

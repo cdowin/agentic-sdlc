@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A milestone declares `version:`, and D8 became R5.** The id goes back to being a slug: a
+  milestone says which version it ships as in one optional frontmatter field, and the engine
+  never parses, compares or increments the string — `"1.1.1"` and `"cow"` are equally valid.
+  Order comes from `order` in `pm/roadmap/releases.md`, a block-style list read by the same
+  reader as every grain, so "did the version increase" is a POSITION rather than a comparator.
+  **`[pm] checks` naming `D8` is now exit 2 naming R5**, never a silent ungating: R5 grades the
+  version file against the CURRENT entry in `order`, selected by the new `[pm] version_at`
+  (`"start"`, the default and bump-at-start, or `"ship"`, bump-at-close). D8's hotfix special
+  case is gone with it — a hotfix is an entry in the plan like anything else.
+
 ## v0.2.0 — 2026-09-06
 
 - **`check grain-shape` stock caps tightened** — story 60, feature 80, bug 50, milestone 120,

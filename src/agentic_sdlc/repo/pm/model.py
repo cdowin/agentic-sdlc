@@ -128,12 +128,27 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # a trunk-shipping project is not drifting. D10 is stricter than D9.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
                   'V1', 'V2', 'V3', 'V4', 'V5')
-FLOW_CHECKS = ('D8', 'D9', 'D10')
+# D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
+# version and RETIRED into R5, which grades against a position in `order`.
+FLOW_CHECKS = ('D9', 'D10')
+# The release family: the plan and the tree held to each other. Opt-in, because
+# a tree with no plan yet has nothing for them to grade.
+RELEASE_CHECKS = ('R5',)
 # V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
 # generated view going stale is not a defect in the tree.
 VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
 KNOWN_CHECKS = tuple(dict.fromkeys(
-    DEFAULT_CHECKS + FLOW_CHECKS + VALIDATE_CHECKS))
+    DEFAULT_CHECKS + FLOW_CHECKS + RELEASE_CHECKS + VALIDATE_CHECKS))
+
+# A rule id that WAS shipped and is not any more. Reported by name, never as
+# "unknown": a consumer whose config still lists it is told where the rule
+# went, rather than being silently ungated by a typo-shaped message.
+RETIRED_CHECKS = {
+    'D8': 'became R5 — the version file is graded against the CURRENT entry in '
+          'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
+          'against the id of whichever milestone happens to be in progress. '
+          'D8 welded the version to the id; `version:` separates them',
+}
 
 ARCHIVE_DIR_NAME = 'zz_archive'
 
@@ -546,7 +561,12 @@ def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     `load()`, so a pin bump cannot take `pm status` down.
     """
     out: list[str] = []
-    unknown = [c for c in cfg.checks if c not in KNOWN_CHECKS]
+    for check in cfg.checks:
+        if check in RETIRED_CHECKS:
+            out.append(f'[pm] checks names {check}, which was retired — '
+                       f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+    unknown = [c for c in cfg.checks
+               if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
     if unknown:
         out.append(f'[pm] checks names unknown rule(s) {", ".join(unknown)} — '
                    f'known rules are {" ".join(KNOWN_CHECKS)}')

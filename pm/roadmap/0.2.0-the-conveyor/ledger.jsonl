@@ -326,3 +326,16 @@
 {"ts":"2026-09-06T02:40:46Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":5741,"rank":5}
 {"ts":"2026-09-06T02:40:47Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":47014,"census":1412}
 {"ts":"2026-09-06T02:41:15Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2433}
+{"ts":"2026-09-06T02:42:41Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2078}
+{"ts":"2026-09-06T02:42:49Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":643,"rank":1}
+{"ts":"2026-09-06T02:42:49Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":517,"rank":2}
+{"ts":"2026-09-06T02:42:49Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":382,"rank":3}
+{"ts":"2026-09-06T02:42:49Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":310,"rank":4}
+{"ts":"2026-09-06T02:42:49Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":303,"rank":5}
+{"ts":"2026-09-06T02:42:49Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8509,"census":725}
+{"ts":"2026-09-06T02:47:45Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9044,"rank":1}
+{"ts":"2026-09-06T02:47:45Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":8014,"rank":2}
+{"ts":"2026-09-06T02:47:45Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":7588,"rank":3}
+{"ts":"2026-09-06T02:47:45Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":7246,"rank":4}
+{"ts":"2026-09-06T02:47:45Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":6523,"rank":5}
+{"ts":"2026-09-06T02:47:45Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":49724,"census":1220}

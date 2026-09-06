@@ -163,6 +163,45 @@ def test_every_graded_row_carries_its_AGE(tmp_path):
     assert 'measured' in out and 'ago' in out, out
 
 
+# --- the census, both directions ---------------------------------------------
+CASES = ('[tests]\nbudget = { unit = 10 }\n'
+         'cases = { unit = 1250 }\nfloor = { unit = 1000 }\n')
+
+
+def test_a_census_under_its_floor_FAILS_and_every_count_carries_its_delta(
+        tmp_path):
+    """No case in this module ever wrote a `census` on a row, so neither
+    direction of the case count was proven — and the ceiling only looked up:
+    a tier that had shrunk 35% under its declared baseline read `ok`. A
+    census that shrinks cannot trip a ceiling, and deleting a test because it
+    is slow is the sin this gate exists to prevent. The floor is a finding
+    the same way the ceiling is; the delta against the run before is printed
+    either way, so a drop is visible with no second number to maintain."""
+    rows = [gate_row('unit', 1_000, '2026-09-05T10:00:00Z', census=1123),
+            gate_row('unit', 1_000, '2026-09-05T12:00:00Z', census=734)]
+    with tree(tmp_path / 'floor', rows, CASES):
+        code, out = check()
+    assert code == 1, out
+    assert 'UNDER FLOOR unit — 734 case(s) against a 1000 floor (-266)' in out
+    assert '389 fewer than the run before (1123)' in out, out
+    assert 'unit (cases)' in out.splitlines()[-1], out
+    # The same two rows, over a ceiling instead: growth reads the same way.
+    rows[-1]['census'] = 1300
+    with tree(tmp_path / 'ceiling', rows, CASES):
+        code, out = check()
+    assert code == 1, out
+    assert 'OVER COUNT  unit — 1300 case(s) against a 1250 ceiling (+50)' in out
+    assert '177 more than the run before (1123)' in out, out
+    # Inside the band, the delta still rides on the `ok` line.
+    rows[-1]['census'] = 1100
+    with tree(tmp_path / 'band', rows, CASES):
+        code, out = check()
+    assert code == 0, out
+    assert 'ok          unit — 1100 of 1250 case(s), floor 1000, ' \
+           '23 fewer than the run before (1123)' in out, out
+    assert 'within their case limits: unit' in out.splitlines()[-1], out
+
+
 # --- rule 5: a gate ships stock defaults, and a ceiling cannot be one ---------
 def test_no_ceiling_of_either_kind_REPORTS_and_passes(tmp_path):
     """"Twenty seconds" is a claim about a machine, and rule 8 says this
@@ -194,6 +233,9 @@ def test_an_empty_tree_says_nothing_yet_rather_than_zero(tmp_path):
     ('[tests]\nbudget = "fast"\n', 'must be a table'),
     ('[tests]\nbudget = { unit = "ten" }\n', 'unit'),
     ('[tests]\ncases = { unit = 0 }\n', 'proves nothing'),
+    ('[tests]\nfloor = { unit = 0 }\n', 'holds nothing'),
+    ('[tests]\ncases = { unit = 100 }\nfloor = { unit = 101 }\n',
+     'no census can satisfy both'),
 ])
 def test_a_malformed_ceiling_is_a_config_error(tmp_path, bad, needle):
     with tree(tmp_path, [], bad):

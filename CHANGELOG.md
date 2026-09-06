@@ -111,6 +111,14 @@ defect one layer down.
   and says which it did not (`PASS — within their time budget: unit; unmeasured: integration`)
   instead of counting every declared ceiling as within budget. **Output-format change** on the
   `[check:budget]` summary and FAIL lines.
+- **New config key `[tests] floor = { unit = 1000 }`** — the case-count ceiling pointed the
+  other way (feature review S4). `cases` only looked up, so a tier that had shrunk 35% under
+  its declared baseline read `ok`; a census under its floor is `UNDER FLOOR` and a finding, the
+  same shape as `OVER COUNT`. A floor above its tier's `cases` ceiling is a config error. With
+  or without a floor, every counted tier's line now carries its census DELTA against the run
+  before it (`734 of 1250 case(s), 389 fewer than the run before (1123)`), so a drop is visible
+  with no second number to maintain. No stock value, for the reason `cases` has none. This
+  repo's own `devkit.toml` does not yet declare a floor.
 - **Hard rule 10**: *prove it the cheapest way that can actually fail.* The counterweight rule 4
   never had — and `test-writer`, `developer`, `reviewer`, `simplifier` and `verification-reviewer`
   now carry it, so a consumer's roster inherits the rule instead of re-learning it at 240 s a run.

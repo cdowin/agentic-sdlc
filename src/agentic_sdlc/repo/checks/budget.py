@@ -66,10 +66,16 @@ theirs.
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier
     cases  = { unit = 1250, integration = 800 } # case-count ceiling, per tier
+    floor  = { unit = 1000, integration = 600 } # case-count floor, per tier
 
 `budget` holds a tier's wall clock. `cases` holds its SIZE — a tier can hold
 its wall clock while doubling in case count, because parallelism and a faster
-machine both absorb it.
+machine both absorb it. `floor` is the same ceiling pointed the other way: a
+census that shrinks cannot trip a ceiling, and deleting a test because it is
+slow is the write-side sin this gate exists to prevent. A floor above its
+tier's ceiling is refused, since no census could satisfy both. Whether or not
+a floor is declared, every counted tier reports its census DELTA against the
+run before it, so a drop is visible without anyone maintaining a second number.
 
 The numbers come from the `gate` rows `make unit` / `make integration` /
 `make test` already file in the building milestone's `ledger.jsonl` — this gate
@@ -77,7 +83,7 @@ runs nothing and measures nothing itself. A tier with no ceiling of any kind is
 REPORTED and never failed.
 
 Exit codes: 0 nothing over its ceiling and every declared tier's newest run
-ended PASS, 1 a tier is over or not graded, 2 usage or config.
+ended PASS, 1 a tier is over, under its floor, or not graded, 2 usage or config.
 """
 from __future__ import annotations
 
@@ -123,6 +129,28 @@ def _census_ceilings() -> dict[str, int]:
     """
     return _positive_table(
         'cases', 'a tier allowed zero cases is a tier that proves nothing.')
+
+
+def _census_floors(ceilings: dict[str, int]) -> dict[str, int]:
+    """`[tests] floor`, in whole test cases per tier, or {}.
+
+    THE CEILING'S OTHER SIDE. A ceiling only looks up, so a census that has
+    fallen 35% reads `ok` — and the case that shrink cannot be told from is
+    the one this gate is for: *"deleting an integration test because it is
+    slow is the sin this feature is supposed to prevent."* A floor makes a
+    drop past it a finding, the same way growth past the ceiling is.
+
+    A floor above its tier's ceiling is a config error rather than a tier
+    that can never pass: two numbers that no census satisfies are not a band.
+    """
+    floors = _positive_table(
+        'floor', 'a floor of zero or less holds nothing.')
+    for tier, floor in floors.items():
+        if tier in ceilings and floor > ceilings[tier]:
+            raise ConfigError(
+                f'[tests] floor.{tier} is {floor}, above cases.{tier} '
+                f'({ceilings[tier]}) — no census can satisfy both.')
+    return floors
 
 
 def _budgets() -> dict[str, int]:
@@ -237,12 +265,35 @@ def _slowest(rows: list[tuple[str, ledger.Row]]
     return out, ''
 
 
+def _delta(newest: dict, ordered: list[dict]) -> str:
+    """', N fewer than the run before (M)' — or '' when there is no run before.
+
+    THE DROP MADE VISIBLE WITHOUT A SECOND NUMBER. A floor catches a shrink
+    past a line somebody maintains; this catches the shrink between two rows
+    that are already there, so a census that fell by 389 says so on the `ok`
+    line whether or not anybody declared a floor.
+    """
+    census = newest.get('census')
+    for data in reversed(ordered):
+        if data is newest or data.get('verdict') != GRADED_VERDICT:
+            continue
+        before = data.get('census')
+        if isinstance(before, int) and isinstance(census, int):
+            if census == before:
+                return ''
+            word = 'fewer' if census < before else 'more'
+            return f', {abs(census - before)} {word} than the run before ({before})'
+        return ''
+    return ''
+
+
 def run() -> int:
     # No argv: `cli._run_check_inner` serves `--help` from this module's
     # docstring and refuses an unknown flag before dispatch, so every gate here
     # takes nothing. The docstring is what `check budget --help` prints.
     budgets = _budgets()
     ceilings = _census_ceilings()
+    floors = _census_floors(ceilings)
     rows, defect = _rows()
     gates, defect = _by_name(rows, ledger.KIND_GATE, 'gate') \
         if not defect else ({}, defect)
@@ -251,7 +302,7 @@ def run() -> int:
         return 1
     newest = {name: ordered[-1] for name, ordered in gates.items()}
 
-    if not budgets and not ceilings:
+    if not budgets and not ceilings and not floors:
         # Rule 5, and rule 4's census in the same line: no ceiling is declared,
         # so nothing can fail — but what WAS measured is printed, because a
         # gate that passes in silence has told a reader nothing about the tree.
@@ -276,7 +327,7 @@ def run() -> int:
     if defect:
         print(f'[check:{NAME}] FAIL — {defect}')
         return 1
-    counted_tiers = sorted(ceilings)
+    counted_tiers = sorted(set(ceilings) | set(floors))
     over: list[str] = []
     ungraded: list[str] = []
     unmeasured: list[str] = []
@@ -336,8 +387,9 @@ def run() -> int:
                 f'  ok          {tier} — {seconds:.1f}s of {ceiling}s{when}')
 
     for tier in counted_tiers:
-        ceiling = ceilings[tier]
-        limit = f'ceiling {ceiling} case(s)'
+        ceiling, floor = ceilings.get(tier), floors.get(tier)
+        limit = (f'ceiling {ceiling} case(s)' if ceiling is not None
+                 else f'floor {floor} case(s)')
         data = newest.get(tier)
         count = data.get('census') if data is not None else None
         if data is None or (data.get('verdict') == GRADED_VERDICT
@@ -350,14 +402,25 @@ def run() -> int:
             continue
         if data.get('verdict') != GRADED_VERDICT:
             continue
-        if count > ceiling:
+        delta = _delta(data, gates[tier])
+        if ceiling is not None and count > ceiling:
             over.append(f'{tier} (cases)')
             lines.append(f'  OVER COUNT  {tier} — {count} case(s) against a '
-                         f'{ceiling} ceiling ({count - ceiling:+d}). A tier '
-                         f'can hold its wall clock while doubling in size.')
+                         f'{ceiling} ceiling ({count - ceiling:+d}){delta}. A '
+                         f'tier can hold its wall clock while doubling in size.')
+        elif floor is not None and count < floor:
+            over.append(f'{tier} (cases)')
+            lines.append(f'  UNDER FLOOR {tier} — {count} case(s) against a '
+                         f'{floor} floor ({count - floor:+d}){delta}. A test '
+                         f'deleted because it was slow is the sin this gate '
+                         f'exists to prevent.')
         else:
             ok_count.append(tier)
-            lines.append(f'  ok          {tier} — {count} of {ceiling} case(s)')
+            band = (f'{count} of {ceiling} case(s)' if ceiling is not None
+                    else f'{count} case(s)')
+            if floor is not None:
+                band += f', floor {floor}'
+            lines.append(f'  ok          {tier} — {band}{delta}')
 
     for line in lines:
         print(line)

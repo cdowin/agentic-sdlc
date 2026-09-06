@@ -119,7 +119,7 @@ def test_every_graded_row_carries_its_AGE(tmp_path):
 
 
 # --- rule 5: a gate ships stock defaults, and a ceiling cannot be one ---------
-def test_no_budget_declared_REPORTS_and_passes(tmp_path):
+def test_no_ceiling_of_either_kind_REPORTS_and_passes(tmp_path):
     """"Twenty seconds" is a claim about a machine, and rule 8 says this
     package knows nothing about its consumers'. A stock ceiling would redden
     every tree whose runner is slower than the laptop it was picked on."""

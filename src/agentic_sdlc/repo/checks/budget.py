@@ -69,6 +69,59 @@ NAME = 'budget'
 
 
 
+def _census_ceilings() -> dict[str, int]:
+    """`[tests] cases`, in whole test cases per tier, or {}.
+
+    THE SECOND CEILING, and it measures the thing a duration cannot. A tier can
+    hold its wall clock while doubling in size — parallelism and faster
+    machines both hide growth — and the number that then goes wrong is not the
+    gate's, it is the reader's: 1,478 test functions over 7,241 statements of
+    source, one per 4.9, arrived at without any single addition being
+    unreasonable.
+
+    Rule 4's census, pointed at the suite's own size. Same posture as the
+    duration ceiling: no stock value, because how many cases a project needs is
+    the project's business, and a shipped number would be this package having
+    an opinion about somebody else's tree (rule 8).
+    """
+    section = config_section('tests')
+    raw = number_table(section, 'tests', 'cases', {})
+    for tier, ceiling in raw.items():
+        if ceiling <= 0:
+            raise ConfigError(
+                f'[tests] cases.{tier} is {ceiling} — a tier allowed zero '
+                f'cases is a tier that proves nothing. Remove the entry to '
+                f'stop counting it.')
+    return raw
+
+
+def _counts() -> dict[str, int]:
+    """{tier: cases in its last run} from the newest `gate` row's census.
+
+    The count rides on the row the tier already files: `gdk_gate_log`'s
+    `--census` is the corpus a gate walked, and for a test tier the corpus IS
+    the case count. Nothing new is measured to answer this.
+    """
+    cfg = model.load()
+    out: dict[str, int] = {}
+    for _mid, _branch, mfile in model.building_milestones(cfg):
+        path = ledger.ledger_path(mfile.parent)
+        if not path.is_file():
+            continue
+        try:
+            rows = ledger.read_rows(path)
+        except ledger.LedgerError:
+            return {}
+        for row in rows:
+            data = row.data
+            if data.get('kind') != ledger.KIND_GATE:
+                continue
+            name, census = data.get('gate'), data.get('census')
+            if isinstance(name, str) and isinstance(census, int):
+                out[name] = census
+    return out
+
+
 def _budgets() -> dict[str, int]:
     """`[tests] budget`, in whole seconds, or {}.
 
@@ -181,12 +234,13 @@ def run() -> int:
     # takes nothing. `USAGE` above is the config contract in prose; the
     # docstring is what `check budget --help` prints.
     budgets = _budgets()
+    ceilings = _census_ceilings()
     costs, defect = _last_costs()
     if defect:
         print(f'[check:{NAME}] FAIL — {defect}')
         return 1
 
-    if not budgets:
+    if not budgets and not ceilings:
         # Rule 5, and rule 4's census in the same line: no ceiling is declared,
         # so nothing can fail — but what WAS measured is printed, because a
         # gate that passes in silence has told a reader nothing about the tree.
@@ -198,6 +252,7 @@ def run() -> int:
         return 0
 
     slowest = _slowest()
+    counts = _counts()
     over: list[str] = []
     lines: list[str] = []
     for tier in sorted(budgets):
@@ -221,6 +276,20 @@ def run() -> int:
         else:
             lines.append(
                 f'  ok          {tier} — {seconds:.1f}s of {ceiling}s{when}')
+    for tier in sorted(ceilings):
+        ceiling = ceilings[tier]
+        if tier not in counts:
+            lines.append(f'  UNCOUNTED   {tier} — ceiling {ceiling} case(s), '
+                         f'and its last `gate` row carries no census')
+            continue
+        count = counts[tier]
+        if count > ceiling:
+            over.append(f'{tier} (cases)')
+            lines.append(f'  OVER COUNT  {tier} — {count} case(s) against a '
+                         f'{ceiling} ceiling ({count - ceiling:+d}). A tier can '
+                         f'hold its wall clock while doubling in size.')
+        else:
+            lines.append(f'  ok          {tier} — {count} of {ceiling} case(s)')
     for line in lines:
         print(line)
     for tier in sorted(budgets):
@@ -234,5 +303,6 @@ def run() -> int:
               f'degrades a human\'s patience instead of a boolean, so nothing '
               f'else in this gate set will ever notice.')
         return 1
-    print(f'[check:{NAME}] PASS — {len(budgets)} tier(s) within budget')
+    print(f'[check:{NAME}] PASS — {len(budgets)} tier(s) within their '
+          f'time budget, {len(ceilings)} within their case ceiling')
     return 0

@@ -81,6 +81,11 @@ GATE_FAIL_LINES := 20
 # Each target's one-line summary, read back out of its own transcript. The
 # leading `[tag]` a tool prints is stripped: the verdict line supplies the tag.
 SUM_PYTEST := grep -aoE '[0-9]+ (passed|failed)[^|]*' "$$log" | tail -1
+# HOW MANY CASES RAN, for the `gate` row's census. Read off the same summary
+# line the verdict is, so the number in the row and the number a human sees
+# cannot disagree. A run with failures is already a FAIL, so `passed` alone is
+# the count of what actually ran to completion.
+CENSUS_PYTEST := grep -aoE '[0-9]+ passed' "$$log" | tail -1 | grep -oE '[0-9]+'
 # `[a-z-]`, not `[a-z]`: a HYPHENATED gate name is a real gate name — `check
 # grain-shape` (0.2.0) and `check repo-hygiene` both have one — and the old
 # class matched neither, so the verdict counted 4 of 5 PASS lines and reported
@@ -94,12 +99,21 @@ SUM_HOOKS  := printf '%s hook(s) SELF-TEST OK' "$$(grep -ac 'SELF-TEST OK' "$$lo
 # Run a command through the shipped capture helper: quiet by default, the full
 # transcript on disk, one verdict line naming it, and the command's own exit
 # code preserved (the helper reads PIPESTATUS, so `$$?` would be the cap's).
+# `$(5)`, when a target passes one, is the CENSUS: a command that prints how
+# many things this run walked. `gdk_gate_verdict` files it on the `gate` row,
+# and `check budget` compares it to `[tests] cases`.
+#
+# It closes L3 of the 0.2.0 release review — "nothing sets GDK_GATE_CENSUS" —
+# and it exists because a duration cannot see the growth that matters: a tier
+# holds its wall clock while doubling in size, because parallelism and a faster
+# machine both absorb it, and the number that then goes wrong is the reader's.
 define gate
 @set -o pipefail; . $(GATE_LIB); \
 log="$$(gdk_gate_log $(1))"; \
 gdk_gate_capture "$$log" -- $(4); \
 status="$$GDK_GATE_EXIT"; \
 summary="$$($(3))"; \
+$(if $(5),GDK_GATE_CENSUS="$$($(5))"; export GDK_GATE_CENSUS;) \
 if [ "$$status" -ne 0 ]; then \
 	grep -aE '$(GATE_FAIL_RE)' "$$log" | head -$(GATE_FAIL_LINES) \
 		|| tail -$(GATE_FAIL_LINES) "$$log"; \
@@ -152,15 +166,15 @@ pm:
 # was unreachable from the command line and `precommit` ran everything.
 unit: export GDK_TEST_TIER = unit
 unit:
-	$(call gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) -m "not shell")
+	$(call gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) -m "not shell",$(CENSUS_PYTEST))
 
 integration: export GDK_TEST_TIER = integration
 integration:
-	$(call gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N) -m shell)
+	$(call gate,integration,INTEGRATION,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N) -m shell,$(CENSUS_PYTEST))
 
 test: export GDK_TEST_TIER = test
 test:
-	$(call gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N))
+	$(call gate,test,TEST,$(SUM_PYTEST),$(PYTEST) $(PYTEST_Q) $(PYTEST_N),$(CENSUS_PYTEST))
 
 # The seeded harnesses on their own, for when one of them is what you changed.
 # `make test` runs them too — they are tests, not a side quest, and a fuzz that

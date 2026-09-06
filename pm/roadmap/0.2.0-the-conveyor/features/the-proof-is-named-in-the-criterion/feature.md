@@ -60,12 +60,38 @@ harder.
 
 ## The ruling this feature proposes
 
-> **A criterion names the one case that proves it. The suite IS that set, and a test beyond it
-> justifies itself in review.**
+**Chris, 2026-09-05, and this is the selection criterion the whole feature turns on:**
 
-That caps the count at DESIGN time rather than policing it afterwards. 31 stories × ~6 criteria is
-~190 cases, against 1,478 functions today. The gap is what a builder added because nobody had said
-how much was enough.
+> *"We only test to be useful, not to say we have tests. Tests should only gate something that
+> BITES, something that eats up real time. … I actually don't care about 100% test coverage. I
+> care about test coverage that bites. It should target modules that are core and called
+> frequently, ones that are load bearing. I value rapid iteration and learning over precise
+> perfect engineering."*
+
+> **A test earns its place by gating something that BITES. A criterion names the one case that
+> proves it, and a case beyond that set justifies itself in review.**
+
+Two halves, and the first is the one that decides what goes:
+
+**Does it bite?** The operational question is *if this test were deleted and the thing it guards
+broke, what would that cost?* Three answers mean delete: *"the next run catches it anyway"*,
+*"nothing downstream depends on it"*, *"it would be obvious immediately."*
+
+| bites | does not bite |
+|---|---|
+| rule 4's two cardinal sins — a gate printing PASS over what it did not measure, a write that looks legitimate and is not | a docstring claim, asserted |
+| a **load-bearing** module: `core/walk.py`, `core/config.py`, `core/apply.py`, `repo/pm/model.py`, `conveyor/driver.py` — called by everything | prose, naming, and file-layout assertions |
+| anything on the path a consumer runs **dozens of times a day**: `close story`, `check all`, the hooks | a grammar's twelfth spelling, where eleven already passed |
+| a defect that would ship SILENTLY and be found weeks later | a rule already proven one altitude down |
+| **anything that has ever gone red for a real defect** — the evidence is `git log -S` on the assertion, or a finding id in its docstring | coverage added to reach a number |
+
+**And the count is capped at DESIGN time.** 31 stories × ~6 criteria is ~190 cases against 1,478
+functions. The gap is what got added because nobody had said how much was enough — not because
+anyone was careless.
+
+**What this explicitly gives up**, because it should be said rather than discovered: coverage of
+paths that are cheap to break and cheap to notice. That is the trade — iteration and learning over
+perfect engineering — and it is only safe because the things that bite are gated hard.
 
 ## Phase A — collapse, and it is mechanical (SAFE)
 
@@ -86,12 +112,15 @@ Per module, one question: **which of these assert the same thing?** Chris has au
 aggression; criterion 4 below is what keeps aggression from becoming damage.
 
 - target: **~1,853 collected cases → 400-600**
-- the shape to look for: a rule proven at three altitudes (unit, through the CLI, through the
-  gate) where one altitude would fail if any did; a refusal matrix enumerating twelve spellings of
-  one grammar; a census asserted in four tests that read the same census.
+- **the question, per module, in order:** does this module BITE — is it load-bearing, called
+  often, or a place a defect ships silently? If not, its tests are the first to go wholesale
+  rather than case by case. If so, which of its cases would actually catch a real defect?
+- the shape to look for: a rule proven at three altitudes where one would fail if any did; a
+  refusal matrix enumerating twelve spellings of one grammar; a census asserted in four tests that
+  read the same census; anything asserting a docstring rather than a behaviour.
 - **the shape to KEEP:** every case that has ever gone red for a real defect. `git log -S` on the
   assertion is the evidence, and a test with a finding id in its docstring is a test that caught
-  something.
+  something. Those are proven to bite; nothing else in the suite is.
 - risk: **high, and it is the write-side cardinal sin if done carelessly.** A deleted assertion is
   a gate that stops noticing.
 
@@ -115,7 +144,9 @@ Phase A and B are one-time. This is what stops it recurring:
 1. The unit tier is **under 5 s** and the integration tier **under 30 s** — the two numbers
    criterion 3 of the previous feature did not reach.
 2. Collected cases are **under 700**, and the ratio of test statements to source statements is
-   **under 1.2** (from 1.80).
+   **under 1.2** (from 1.80). **The number is a direction, not the goal** — the goal is that what
+   remains gates something that bites, and a module that genuinely needs eighty cases keeps
+   eighty.
 3. **No assertion is deleted without a reason recorded.** Every removal names either the case that
    subsumes it or the reason it proved nothing, in the commit. A diff that only shrinks a number
    is not reviewable.

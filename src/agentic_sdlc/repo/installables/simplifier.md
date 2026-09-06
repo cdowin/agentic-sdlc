@@ -177,3 +177,45 @@ This is not a style preference. A package once measured 240 s of suite and 150 s
 of CPU inside it, arrived at one honest fixture at a time, with every gate green
 the whole way down and no rule naming the drift.
 <!-- END cheapest-proof-review -->
+
+## A new test has to say why the old ones were not enough
+<!-- BEGIN new-test-justification -->
+
+Ask it of every test the change adds, because nothing upstream will:
+
+- **which existing test covers this, and why can it not be amended?** A new
+  case is warranted only when neither answer exists. If the report does not say,
+  that is the finding — not a nit.
+- **is this the same rule at a second altitude?** A thing proven at the
+  function, then through the CLI, then through the gate is one rule and three
+  costs. Ask which one would fail if the rule broke; if the answer is "all
+  three", two of them are ballast.
+- **is it a `parametrize` row wearing a function?** Twelve near-identical
+  single-assert functions over one setup are twelve fixture entries, and the
+  suite pays for the setup, not the assertion.
+- **does the story's `## How this is proven` table match what landed?** A
+  criterion is meant to name the case that proves it. Cases with no criterion
+  are the growth nobody decided on.
+
+A suite is a gate, and a gate whose cost doubles has drifted even when green.
+One package measured 1,478 test functions against 7,241 statements of source —
+one per 4.9 — with every review it ever had coming back clean, because no
+reviewer had been asked this.
+### And it has to BITE
+
+A test earns its place by gating something that would cost real time if it
+broke. **We test to be useful, not to say we have tests**, and 100% coverage is
+not the goal — coverage that bites is.
+
+Worth gating: a load-bearing module everything calls; a path run dozens of
+times a day; a defect that would ship SILENTLY and surface weeks later; and
+either of the two cardinal sins — a gate printing PASS over what it did not
+measure, a write that looks legitimate and is not.
+
+Not worth gating: a docstring claim; a grammar's twelfth spelling where eleven
+already pass; a rule already proven one altitude down; anything whose breakage
+the next run would catch anyway.
+
+The question, for any case: **if this were deleted and the thing it guards
+broke, what would that cost?** *"The next run catches it"* is a delete.
+<!-- END new-test-justification -->

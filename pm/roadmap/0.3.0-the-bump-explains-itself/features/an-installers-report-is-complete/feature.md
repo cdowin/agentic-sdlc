@@ -2,7 +2,7 @@
 id: 0.3.0/an-installers-report-is-complete
 milestone: "0.3.0"
 name: An installer reports every file it touched and every target it removed
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

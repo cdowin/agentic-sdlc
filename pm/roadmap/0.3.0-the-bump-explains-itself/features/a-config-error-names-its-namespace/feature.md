@@ -2,7 +2,7 @@
 id: 0.3.0/a-config-error-names-its-namespace
 milestone: "0.3.0"
 name: A config error names the namespace the key was read in
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

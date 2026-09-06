@@ -2,7 +2,7 @@
 id: 0.3.0/adopt-runs-where-the-bump-lives
 milestone: "0.3.0"
 name: adopt runs on a tree that tracks the bump as a feature
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

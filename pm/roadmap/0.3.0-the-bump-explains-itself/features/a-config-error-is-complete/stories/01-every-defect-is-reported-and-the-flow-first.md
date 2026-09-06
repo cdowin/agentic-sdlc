@@ -43,6 +43,6 @@ this is about how many a consumer gets, and in what order.
 
 ## Close
 
-done: in-place — `all_config_defects` collects rather than raises at the first,
+done: 40fa9c2 — `all_config_defects` collects rather than raises at the first,
 flow first, and a roster error now carries what fixing the roster alone would
 never have shown you.

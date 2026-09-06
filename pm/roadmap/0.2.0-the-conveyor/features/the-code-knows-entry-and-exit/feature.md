@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: The code knows entry and exit; the config knows every state between
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-06-the-code-knows-entry-and-exit.md
 phase: 9
 depends_on: ["0.2.0/every-question-is-asked-of-a-category", "0.2.0/the-ledger-rows-carry-categories", "0.2.0/the-inner-levels-are-belts-too", "0.2.0/the-belt-reports-and-finishes", "0.2.0/the-project-declares-its-flow"]
 consumed_by: []

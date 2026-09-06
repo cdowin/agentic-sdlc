@@ -87,6 +87,21 @@ Nothing sorts, compares or parses a version string.
     this file is edited constantly. The belt's checks and refusal shape are covered, so the
     no-argument path extends those rather than arriving.
 
+## What 0.4.0 does to this, so nobody over-invests
+
+`0.4.0/the-order-is-one-mechanism` generalises `order` to every container, and two things here are
+transitional by design:
+
+- **`pm order --append` retires into `pm add <parent-id> <child-id>`** — it is that verb against
+  the root, and once every level has an order it should not have its own spelling. Build it as the
+  thin thing it is.
+- **The list holds VERSIONS here and child IDS there.** In this milestone a milestone's id IS its
+  version, so the two are the same string; `a-milestone-declares-its-version` separates them and
+  the order follows the id. Nothing to migrate — the strings do not change, only what they mean.
+
+**The list-aware frontmatter writer is NOT transitional.** It is the one new primitive, every level
+uses it, and it is the piece worth building carefully.
+
 ## Out of scope
 
 The rules that hold the plan and the tree to each other — a dangling entry, an unscheduled

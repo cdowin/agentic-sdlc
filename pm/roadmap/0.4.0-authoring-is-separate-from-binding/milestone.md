@@ -44,9 +44,18 @@ already ships — the `pm:execution` block with the V6 rule policing it (the sam
 the path), and `story_ordinal_prefix`. What a container may hold stops being written per level and
 becomes `[pm.contains]`, which is the config stating the model.
 
-What is left is four kinds of verb and nothing else: **write** (`pm new`), **bind** (`pm set`,
-`pm <kind> add`), **read** (`pm list|status|roadmap|next|ready-for`), **check** (`check pm`). Belts
-sit on top unchanged — their checks, then one write. And the read verbs emit every field somebody
+What is left is four kinds of verb and nothing else:
+
+    write   pm new <kind> <slug>                     the parent argument is gone at every level
+    bind    pm set <id> <rel> <target>               one field, the primitive
+            pm add|remove <parent-id> <child-id>     bind AND sequence, one intent
+    read    pm list | status | roadmap | next | ready-for
+    check   check pm
+
+Neither `add` nor `set` names a KIND: an id carries its own as a prefix, so both are derivable and
+`[pm.contains]` validates the pair. `pm move` and `pm order` both retire into `pm add` — the first
+because position stops being parentage, the second because it was `add` against the root wearing a
+different name. Belts sit on top unchanged — their checks, then one write. And the read verbs emit every field somebody
 would filter on, because the shell is the filter and a withheld column is what makes a consumer
 believe otherwise.
 

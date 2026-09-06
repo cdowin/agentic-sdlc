@@ -16,3 +16,6 @@ __pycache__/
 # the very run that checks the tree is clean. Losing it costs nothing: every
 # check() is a question about the tree, so the next run re-derives the position.
 .agentic-sdlc/
+
+# Agent worktrees, created by tools/dev/agent-worktree.sh; each is its own checkout.
+.claude/worktrees/

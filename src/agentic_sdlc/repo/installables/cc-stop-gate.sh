@@ -49,6 +49,14 @@ is_agent_context() {
 }
 
 INPUT="$(cat)"
+# A payload this hook cannot read is a payload it cannot act on: exit 0 with
+# the reason, BEFORE the agent-context test — a stop gate that ran the whole
+# gate over garbage would wedge every agent stop, and `check hooks` replays
+# exactly this case against every installed hook and expects it to fail OPEN.
+case "${INPUT#"${INPUT%%[![:space:]]*}"}" in
+	'{'*) ;;
+	*) echo "cc-stop-gate: payload is not JSON; allowing the stop" >&2; exit 0 ;;
+esac
 
 # grep extractors are adequate here: the fields this hook reads are a path and
 # a boolean, which never carry an escaped quote. A hook reading a COMMAND must

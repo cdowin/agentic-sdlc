@@ -263,6 +263,8 @@ line that breaks the moment a project renames a word.
 
 ## 5. What this costs, and why it is not 0.2.0
 
+*History: 0.3.0 was collapsed into 0.2.0 on 2026-09-05 and everything below shipped there. `also_done` (§ below) and `feature done --cascade` (§6) are retired and refused by name; `--skip` (§7) left with D12. Kept as the record of what was rejected.*
+
 Thirty-two call sites, `pm vocabulary`'s output shape, the ledger's dwell columns and their golden
 tables, `check pm`'s D2/D5 predicates, the conveyor's `stories-done`, and a `devkit.toml` schema
 change with a compatibility shim for the flat `story_states` tuple. **That is a milestone.**

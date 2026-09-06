@@ -212,3 +212,5 @@
 {"ts":"2026-09-06T01:55:26Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":46239,"census":1407}
 {"ts":"2026-09-06T01:55:41Z","kind":"status","grain":"0.2.0/bugs/the-repo-forks-the-framework-it-ships","from":"open","to":"fixed"}
 {"ts":"2026-09-06T01:55:43Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2206}
+{"ts":"2026-09-06T02:01:37Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2358}
+{"ts":"2026-09-06T02:01:53Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2138}

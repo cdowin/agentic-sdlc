@@ -1,18 +1,7 @@
-"""check repo-hygiene — close-time git-state guard.
+"""check repo-hygiene — close-time git-state guard; runs a network `git fetch --prune`.
 
-A milestone/release does not close clean if the repo carries leftover git
-state — WIP stashes, dangling worktrees, dead (merged-but-undeleted)
-branches, or an unclean tree. That cruft is invisible to content/test gates
-yet accumulates until someone hand-sweeps it; this makes the swept-clean
-end-state a failing gate.
-
-CLOSE-TIME ONLY — it runs a network `git fetch --prune` for the remote-branch
-check, so wire it into your close gate, not your per-change gate.
-
-CHECK 1 (HARD): working tree clean.       CHECK 2 (HARD): no stashes.
-CHECK 3 (HARD): no dangling worktrees.    CHECK 4 (HARD): no merged-but-
-undeleted branches (local + remote), protected lines + archive/* exempt.
-REPORT  (WARN): unmerged branches needing a human keep/delete call.
+HARD: working tree clean; no stashes; no dangling worktrees; no merged-but-undeleted
+branches (local + remote, protected and archive/* exempt). WARN: unmerged branches.
 
 devkit.toml: [repo_hygiene] mainline = "origin/main"
              protected = "^(main|staging|archive/.*)$"
@@ -28,21 +17,7 @@ from agentic_sdlc.core.config import config_section, pattern, text
 
 
 def read_config() -> tuple[str, 're.Pattern[str]']:
-    """`[repo_hygiene]`'s two keys, read and refused without touching the tree.
-
-    PURE, and that is the whole reason it exists as a function. These two keys
-    used to be read inline at the top of `run()`, which then fetches from the
-    remote and walks the tree — so `adopt`'s `config-updated`, whose entire job
-    is asking whether every section this version still READS parses under this
-    version, had nowhere to call and spelled the two keys a second time
-    (A1, and `steps._read_repo_hygiene`'s own docstring named it as the one
-    second list in the package). One reader, called from both, and the second
-    list is gone rather than pinned by a test.
-
-    A malformed value raises `ConfigError` here, before `run()` prints its
-    first line — which is also the honest order: a config error is exit 2 and
-    it should not arrive after a gate has already announced itself.
-    """
+    """`[repo_hygiene]`'s two keys, refused before `run()` prints; `adopt` reads them here too."""
     cfg = config_section('repo_hygiene')
     return (
         text(cfg, 'repo_hygiene', 'mainline', 'origin/main'),
@@ -77,8 +52,7 @@ def run() -> int:
         hard += 1
 
     print('[check:repo-hygiene] CHECK 3 — no dangling worktrees')
-    # `git worktree prune -n -v` reports on STDERR (a silent false-PASS trap);
-    # the porcelain listing marks prunable entries on stdout — parse that.
+    # `git worktree prune -n -v` reports on stderr; the porcelain listing is on stdout.
     dangling = []
     current = ''
     for ln in git_lines('worktree', 'list', '--porcelain'):
@@ -101,8 +75,7 @@ def run() -> int:
         return names
 
     print(f'[check:repo-hygiene] CHECK 4 — no merged-but-undeleted branches (merged into {mainline})')
-    # An unresolvable mainline would make every `--merged` query return [],
-    # silently disabling this check — that's a config error, not a clean tree.
+    # An unresolvable mainline makes every `--merged` query return [], which is exit 2, not clean.
     if not git_lines('rev-parse', '--verify', '--quiet', f'{mainline}^{{commit}}'):
         print(f"  ERROR  mainline '{mainline}' does not resolve — CHECK 4 cannot run", file=sys.stderr)
         print(f"[check:repo-hygiene] CONFIG ERROR — fix [repo_hygiene] mainline in devkit.toml")

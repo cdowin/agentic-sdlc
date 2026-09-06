@@ -1,89 +1,18 @@
-"""budget.py — a tier that got slower is a finding, not a mood.
+"""check budget — a tier that got slower, grew, or shrank is a finding.
 
-**Why this gate exists, in one measurement.** This package spent a milestone
-building a conveyor to end a 170x — a wide gate run in an inner loop — and its
-own suite was the same defect one layer down: 1842 tests, 240 s of wall clock,
-150 s of CPU inside it, and `make precommit` running every one of them after
-every edit. The number had been MEASURED and written into CLAUDE.md
-(*"~85% of this suite's wall clock is subprocess"*), and it was used to justify
-skipping interpreters rather than to fix the spawns. Nobody was wrong; nothing
-watched.
-
-So this is rule 4 pointed at cost. A gate that misses real drift and prints
-PASS is the read-side cardinal sin, and a test tier that doubles in wall clock
-while every gate stays green is exactly that drift — it just degrades a human's
-patience instead of a boolean, so it never trips anything.
-
-## What it reads, and why it does not run anything
-
-The ledger. Every `make` gate in this package's target set routes through
-`gdk_gate_capture` / `gdk_gate_verdict`, which file a `gate` row carrying the
-target's name, its verdict and its `duration_ms`. That is the measurement this
-gate reports on — so it costs milliseconds, runs no suite, and cannot itself
-become the thing it is warning about. A budget gate that ran the suite to time
-the suite would be a fine joke and a bad gate.
-
-It follows that this gate is **honest about not knowing**, three ways:
-
-- A tier with no row in the ledger has not been run since the ledger was last
-  rotated, and that is reported as `UNMEASURED` — never as zero, never as a
-  pass. Hard rule 4's zero census, applied to a column of numbers instead of a
-  column of files.
-- A tier whose newest row did not end `PASS` is reported as `NOT GRADED`, and
-  that IS a finding. A run that stopped is cheaper and smaller than a run that
-  finished, so a failed run is the one most likely to sit comfortably under
-  both ceilings — the gate would be at its most confident exactly where its
-  input is least trustworthy. Its duration and census are the cost of a run
-  that stopped, not measurements of the tier.
-- The row it grades is the NEWEST BY TIMESTAMP, not the last in the file. The
-  ledger is append-only from concurrent writers and is a committed file that
-  gets merged, so file order is not age; a gate that graded the last line
-  would report a number an arbitrary number of runs behind, chosen by file
-  layout, with a confident `measured 10m ago` computed from the wrong row. A
-  row whose `ts` will not parse is reported as a defect rather than ordered
-  silently.
-
-And the summary line names only what was measured. `PASS — 3 tier(s) within
-their time budget` over one measured tier and two unmeasured ones is the line
-a CI tail keeps, and it would be false.
-
-## Why it ships OFF a ceiling
-
-Hard rule 5: a GATE ships stock defaults, and a repo with no `devkit.toml` runs
-every gate byte-identically to one declaring them. A stock ceiling cannot exist
-here — "ten seconds" is a claim about a machine, and this package knows nothing
-about its consumers (rule 8). A shipped number would redden every tree whose CI
-runner is slower than the laptop it was picked on, which is milestone risk 2:
-*a gate landing in the default roster reds every consumer at once.*
-
-So with no `[tests]` ceiling declared it REPORTS the measured costs and exits 0.
-It becomes a gate the moment a project names its own ceilings, which is the
-`[gates] extra` posture one layer in: the mechanism is ours, the number is
-theirs.
-
-## Config
+Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
+building milestone's ledger; runs nothing. The newest row by timestamp is graded; a
+tier with no row is UNMEASURED, one whose newest run did not end PASS is NOT GRADED,
+and both are findings, never a pass. Ships no ceiling (a number is the project's, not
+this package's), so with nothing declared it reports the measured costs and exits 0.
 
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier
     cases  = { unit = 1250, integration = 800 } # case-count ceiling, per tier
     floor  = { unit = 1000, integration = 600 } # case-count floor, per tier
 
-`budget` holds a tier's wall clock. `cases` holds its SIZE — a tier can hold
-its wall clock while doubling in case count, because parallelism and a faster
-machine both absorb it. `floor` is the same ceiling pointed the other way: a
-census that shrinks cannot trip a ceiling, and deleting a test because it is
-slow is the write-side sin this gate exists to prevent. A floor above its
-tier's ceiling is refused, since no census could satisfy both. Whether or not
-a floor is declared, every counted tier reports its census DELTA against the
-run before it, so a drop is visible without anyone maintaining a second number.
-
-The numbers come from the `gate` rows `make unit` / `make integration` /
-`make test` already file in the building milestone's `ledger.jsonl` — this gate
-runs nothing and measures nothing itself. A tier with no ceiling of any kind is
-REPORTED and never failed.
-
-Exit codes: 0 nothing over its ceiling and every declared tier's newest run
-ended PASS, 1 a tier is over, under its floor, or not graded, 2 usage or config.
+Exit codes: 0 nothing over and every declared tier graded, 1 a tier is over, under
+its floor, or not graded, 2 usage or config.
 """
 from __future__ import annotations
 
@@ -95,9 +24,7 @@ from agentic_sdlc.repo.pm import ledger, model
 
 NAME = 'budget'
 
-# The verdict a row must carry to be a measurement of its tier. `HANG`, `SKIP`
-# and `FAIL` are all runs that did not finish the work the tier exists to do,
-# and `ledger.GATE_VERDICTS` says why the vocabulary is closed.
+# Only a finished run measures its tier; `ledger.GATE_VERDICTS` closes the vocabulary.
 GRADED_VERDICT = 'PASS'
 
 
@@ -113,36 +40,13 @@ def _positive_table(key: str, why: str) -> dict[str, int]:
 
 
 def _census_ceilings() -> dict[str, int]:
-    """`[tests] cases`, in whole test cases per tier, or {}.
-
-    THE SECOND CEILING, and it measures the thing a duration cannot. A tier can
-    hold its wall clock while doubling in size — parallelism and faster
-    machines both hide growth — and the number that then goes wrong is not the
-    gate's, it is the reader's: 1,478 test functions over 7,241 statements of
-    source, one per 4.9, arrived at without any single addition being
-    unreasonable.
-
-    Rule 4's census, pointed at the suite's own size. Same posture as the
-    duration ceiling: no stock value, because how many cases a project needs is
-    the project's business, and a shipped number would be this package having
-    an opinion about somebody else's tree (rule 8).
-    """
+    """`[tests] cases`, per tier, or {}; a tier can hold its wall clock while doubling in size."""
     return _positive_table(
         'cases', 'a tier allowed zero cases is a tier that proves nothing.')
 
 
 def _census_floors(ceilings: dict[str, int]) -> dict[str, int]:
-    """`[tests] floor`, in whole test cases per tier, or {}.
-
-    THE CEILING'S OTHER SIDE. A ceiling only looks up, so a census that has
-    fallen 35% reads `ok` — and the case that shrink cannot be told from is
-    the one this gate is for: *"deleting an integration test because it is
-    slow is the sin this feature is supposed to prevent."* A floor makes a
-    drop past it a finding, the same way growth past the ceiling is.
-
-    A floor above its tier's ceiling is a config error rather than a tier
-    that can never pass: two numbers that no census satisfies are not a band.
-    """
+    """`[tests] floor`, per tier, or {}; a floor above its ceiling is refused."""
     floors = _positive_table(
         'floor', 'a floor of zero or less holds nothing.')
     for tier, floor in floors.items():
@@ -154,26 +58,14 @@ def _census_floors(ceilings: dict[str, int]) -> dict[str, int]:
 
 
 def _budgets() -> dict[str, int]:
-    """`[tests] budget`, in whole seconds, or {}.
-
-    Seconds rather than the row's own milliseconds, because a human types a
-    ceiling and nobody types 15000. The comparison converts once, here, so the
-    unit a project writes and the unit the ledger holds meet in one place.
-    """
+    """`[tests] budget`, in whole seconds (nobody types 15000), or {}."""
     return _positive_table(
         'budget', 'a ceiling of zero or less is not a budget, it is a tier '
         'that may never run.')
 
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """Every row of every building milestone's ledger, or the defect that stopped
-    the read — one walk, so the three readers below cannot disagree.
-
-    `building_milestones` yields (id, branch, milestone.md) — the DIRECTORY is
-    the file's parent, and the ledger sits beside it. Asked of the model rather
-    than joined by hand: `ledger_path` is the one place that name is built, and
-    a second spelling here would be a second answer to where a ledger lives.
-    """
+    """Every row of every building milestone's ledger, or the defect that stopped the read."""
     cfg = model.load()
     out: list[tuple[str, ledger.Row]] = []
     for _mid, _branch, mfile in model.in_progress_milestones(cfg):
@@ -190,18 +82,9 @@ def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
              key: str) -> tuple[dict[str, list[dict]], str]:
-    """{name: rows of `kind` carrying it under `key`}, OLDEST FIRST BY TIMESTAMP.
+    """{name: rows of `kind` carrying it under `key`}, oldest first by timestamp.
 
-    File order is not age. The ledger is append-only from concurrent writers
-    and is a committed file that gets merged, so the last line for a tier can
-    be a run from eight minutes before the newest one — and the age this gate
-    prints is computed from the row it picks, so a gate that graded the last
-    line would certify the stale number instead of catching it. The sort is
-    stable, so rows with one timestamp keep their file order.
-
-    A row of this kind whose `ts` will not parse is a DEFECT, returned rather
-    than ordered silently: a row this gate cannot place in time is a row it
-    cannot call newest or oldest, and guessing is the read-side sin.
+    File order is not age (concurrent appends, merged files); an unparseable `ts` is a defect.
     """
     found: dict[str, list[tuple[datetime, dict]]] = {}
     for where, row in rows:
@@ -222,15 +105,7 @@ def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
 
 
 def _age(stamp: object) -> str:
-    """How long ago that row was filed, in words, or '' when it cannot say.
-
-    **The staleness is the honest half of this gate.** It grades a MEASUREMENT
-    rather than taking one, so a tier's number is only as current as the last
-    time somebody ran that tier — and a ceiling reported against a row from
-    last week is a ceiling reported against last week's code. Saying the age
-    out loud is what stops "ok, 7.2s of 20s" reading as a fact about the tree
-    in front of you.
-    """
+    """How long ago that row was filed, in words, or '' when it cannot say."""
     when = ledger.parse_ts(stamp)
     if when is None:
         return ''
@@ -245,12 +120,7 @@ def _age(stamp: object) -> str:
 
 def _slowest(rows: list[tuple[str, ledger.Row]]
              ) -> tuple[dict[str, tuple[str, int]], str]:
-    """{tier: (nodeid, duration_ms)} — the rank-1 `test` row of the newest run.
-
-    The `gate` row says a tier got slower; this says WHICH CASE, which is the
-    half you can act on. `tests/conftest.py` files the slowest few of every
-    gated run, and rank 1 is the one worth printing beside a ceiling.
-    """
+    """{tier: (nodeid, duration_ms)}: the rank-1 `test` row of the newest run."""
     tests, defect = _by_name(rows, ledger.KIND_TEST, 'tier')
     if defect:
         return {}, defect
@@ -266,13 +136,7 @@ def _slowest(rows: list[tuple[str, ledger.Row]]
 
 
 def _delta(newest: dict, ordered: list[dict]) -> str:
-    """', N fewer than the run before (M)' — or '' when there is no run before.
-
-    THE DROP MADE VISIBLE WITHOUT A SECOND NUMBER. A floor catches a shrink
-    past a line somebody maintains; this catches the shrink between two rows
-    that are already there, so a census that fell by 389 says so on the `ok`
-    line whether or not anybody declared a floor.
-    """
+    """', N fewer than the run before (M)', or '' when there is no graded run before."""
     census = newest.get('census')
     for data in reversed(ordered):
         if data is newest or data.get('verdict') != GRADED_VERDICT:
@@ -288,9 +152,6 @@ def _delta(newest: dict, ordered: list[dict]) -> str:
 
 
 def run() -> int:
-    # No argv: `cli._run_check_inner` serves `--help` from this module's
-    # docstring and refuses an unknown flag before dispatch, so every gate here
-    # takes nothing. The docstring is what `check budget --help` prints.
     budgets = _budgets()
     ceilings = _census_ceilings()
     floors = _census_floors(ceilings)
@@ -303,10 +164,7 @@ def run() -> int:
     newest = {name: ordered[-1] for name, ordered in gates.items()}
 
     if not budgets and not ceilings and not floors:
-        # Rule 5, and rule 4's census in the same line: no ceiling is declared,
-        # so nothing can fail — but what WAS measured is printed, because a
-        # gate that passes in silence has told a reader nothing about the tree.
-        # A run that did not end PASS says so beside its number.
+        # Nothing can fail, but what was measured is still printed.
         measured = []
         for name, data in sorted(newest.items()):
             ms = data.get('duration_ms')
@@ -336,9 +194,7 @@ def run() -> int:
     ok_count: list[str] = []
     lines: list[str] = []
 
-    # A tier whose newest run did not end PASS is said ONCE, before either
-    # column, and neither column grades it: its duration is the cost of a run
-    # that stopped, and its census is the part of the tier that ran.
+    # An ungraded tier is said once, before either column, and neither grades it.
     for tier in sorted(set(budgets) | set(counted_tiers)):
         data = newest.get(tier)
         if data is None or data.get('verdict') == GRADED_VERDICT:
@@ -357,8 +213,6 @@ def run() -> int:
         ceiling = budgets[tier]
         data = newest.get(tier)
         if data is None:
-            # NOT a pass. A tier nobody ran is a tier nobody measured, and
-            # reporting it as under budget is the zero census in a stopwatch.
             unmeasured.append(tier)
             lines.append(f'  UNMEASURED  {tier} — ceiling {ceiling}s, and no '
                          f'`gate` row for it in this milestone\'s ledger; run '
@@ -445,10 +299,7 @@ def run() -> int:
         print(f'[check:{NAME}] FAIL — {"; ".join(parts)}. {why}')
         return 1
 
-    # The summary names what was MEASURED and says what was not, because this
-    # is the line a CI tail keeps, and "3 tier(s) within their time budget"
-    # over one measured tier is the read-side sin in the one line that
-    # survives summarising.
+    # The summary names only what was measured; it is the line a CI tail keeps.
     parts = []
     if budgets:
         parts.append('within their time budget: '

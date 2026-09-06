@@ -299,3 +299,74 @@ def test_help_exits_zero_for_every_verb(capsys):
         assert driver.main(argv) == 0, argv
         out = capsys.readouterr().out
         assert '--skip' not in out and 'stops' not in out, argv
+
+
+# --- the plan supplies the version, and refuses one out of order -------------
+def _plan(root: Path, *versions: str) -> None:
+    body = '\n'.join(f'  - "{v}"' for v in versions)
+    (root / 'pm/roadmap/releases.md').write_text(
+        f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+
+
+def _claim(root: Path, mid: str, version: str, status: str) -> None:
+    mdir = root / f'pm/roadmap/{mid}-m'
+    mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / 'milestone.md').write_text(
+        f'---\nid: "{mid}"\nname: {mid}\nstatus: {status}\n'
+        f'version: "{version}"\n---\n\n# {mid}\n', encoding='utf-8')
+
+
+def _release(argv, root):
+    """`driver.main` with scripted checks, capturing both streams."""
+    registry = {c.name: c for c in (yes('a'),)}
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = driver.main(argv, registry=registry, steps=('a',))
+    return code, buf.getvalue()
+
+
+def test_release_with_no_argument_takes_the_current_version_from_the_plan():
+    """The plan already knows which version is current; making the human
+    retype it is how a typo ships the wrong number."""
+    with _tree(FLOW_TOML) as root:
+        _plan(root, '0.9.0', '1.0.0')
+        _claim(root, '0.9.0', '0.9.0', 'done')
+        code, out = _release(['release'], root)
+        assert code == 0, out
+        assert '1.0.0' in out
+        assert 'the plan names 1.0.0 as the current release' in out
+
+
+def test_a_version_that_is_not_current_is_refused_naming_both():
+    """Shipping out of order is exactly what a belt should stop."""
+    with _tree(FLOW_TOML) as root:
+        _plan(root, '0.9.0', '1.0.0')
+        _claim(root, '0.9.0', '0.9.0', 'building')
+        code, out = _release(['release', '1.0.0'], root)
+        assert code == 2, out
+        assert "'0.9.0'" in out          # what the plan says is current
+        assert '1.0.0' in out            # what was asked for
+        assert 'nothing was written' in out
+
+
+def test_no_plan_at_all_still_honours_an_explicit_version():
+    """A tree that has not adopted the plan is not locked out of `release`."""
+    with _tree(FLOW_TOML) as root:
+        code, out = _release(['release', '1.0.0'], root)
+        assert code == 0, out
+
+
+def test_no_plan_and_no_argument_is_refused_naming_pm_order():
+    with _tree(FLOW_TOML) as root:
+        code, out = _release(['release'], root)
+        assert code == 2, out
+        assert 'pm order --append' in out
+
+
+def test_every_entry_shipped_and_no_argument_is_refused_rather_than_guessed():
+    with _tree(FLOW_TOML) as root:
+        _plan(root, '0.9.0')
+        _claim(root, '0.9.0', '0.9.0', 'done')
+        code, out = _release(['release'], root)
+        assert code == 2, out
+        assert 'pm order --append' in out

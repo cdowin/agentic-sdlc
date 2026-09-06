@@ -510,17 +510,23 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     segments, noun, shape = SUBJECT[operation]
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
-    if not positional:
+    if not positional and operation != 'release':
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
                        f'`agentic-sdlc {spoken} '
                        f'{"0.2.0" if segments == 1 else shape}`')
     if len(positional) > 1:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
-    subject = positional[0]
-    defect = subject_defect(operation, subject)
-    if defect:
-        return _refuse(f'{spoken}: {defect}')
+    # `release` alone resolves its subject from the plan, below, once the
+    # config is loaded; every other operation is named on the command line.
+    subject = positional[0] if positional else ''
+    # A value that WAS given is graded, empty or not. Reading `release ''` as
+    # "no argument" would resolve it from the plan and run the belt over a
+    # version nobody named — the refusal matrix exists to stop exactly that.
+    if positional:
+        defect = subject_defect(operation, subject)
+        if defect:
+            return _refuse(f'{spoken}: {defect}')
     kind = WRITES[operation]
     if force and not kind:
         return _refuse(f'{spoken} writes nothing, so there is nothing to '
@@ -540,6 +546,36 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     defect = plan_defect(known, names)
     if defect:
         return _refuse(f'{spoken}: {defect}')
+
+    if operation == 'release':
+        # The plan already knows which version is current, so the human does
+        # not retype it — and shipping OUT of order is what a belt should stop.
+        current = model.current_release(cfg)
+        if not subject:
+            if current is None:
+                return _refuse(
+                    f'{spoken} needs a version, and the plan cannot supply one: '
+                    f'{cfg.rel(model.releases_file(cfg))} declares no `order` '
+                    f'(or every entry in it has shipped). Name the version, or '
+                    f'run `agentic-sdlc pm order --append <version>`')
+            subject = current
+            defect = subject_defect(operation, subject)
+            if defect:
+                return _refuse(
+                    f'{spoken}: the plan names {subject!r} as the current '
+                    f'release, and {defect}')
+            print(f'[{operation}] the plan names {subject} as the current '
+                  f'release — '
+                  f'{cfg.rel(model.releases_file(cfg))}, [pm] version_at = '
+                  f'{cfg.version_at!r}')
+        elif current is not None and subject != current:
+            return _refuse(
+                f'{spoken} {subject}: the current release is {current!r} — '
+                f'shipping out of the order declared in '
+                f'{cfg.rel(model.releases_file(cfg))} is refused, and nothing '
+                f'was written. Re-sequence the plan with `agentic-sdlc pm '
+                f'order` if {subject} really goes first')
+
     mid = subject.split('/')[0]
     mdir = model.milestone_dir(cfg, mid)
     if mdir is None:

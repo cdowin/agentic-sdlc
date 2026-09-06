@@ -58,6 +58,10 @@ should release on a red tree if I want (we mostly wouldn't but why stop someone?
   (a non-comment `exit 2`) replay a `--self-test` corpus. Zero was already loud; *how few*
   was not. Reporting only — refusing a consumer's corpus for being small would be this
   package deciding rather than reading.
+- **The rendered protocol says so too.** `pr-open` and `ci-green`'s postcondition sentences in
+  `docs/sdlc-protocol.md` read *"the operator is asked and the run refuses to advance"*; they now
+  read *"the step is reported not true; the walk finishes"*, so the document `install-sdlc`
+  writes no longer describes the halt this release removed.
 - `pm ready-for feature`'s `--help` and `README.md`'s ladder row said *"every story at
   `reviewing`"*; the verb has asked whether every story is FINISHED since `f7465c2`.
   `pm feature reviewing`'s advisory asked a third question again — `not in (reviewing,

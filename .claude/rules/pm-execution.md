@@ -28,8 +28,9 @@ The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
     a PM-tree or doc edit   make check                  the static gates alone
     an edit, inner loop     verify --story              the paths decide
     before a commit         make precommit              check + your narrow tier
-    closing a feature       verify --feature            what [verify] feature names
-    closing a milestone     verify --milestone          everything, once
+    closing a story         close story <id>            its checks, then `done`
+    closing a feature       close feature <id>          runs what [verify] feature names
+    closing a milestone     release <version>           its `gate` check is the full gate
 
 `make check`, `precommit` and `milestone` are the compositions `install-gates`
 ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What
@@ -40,6 +41,14 @@ from your ledger rather than quoting a number from somebody else's repo.
 read from the ledger. **Ask it rather than guessing** — guessing is how a wide
 gate ends up in an inner loop, which is the measured 170x this package exists
 to end.
+
+**A belt is its checks, then one write or a clean error** (D12). `close story`,
+`close feature`, `release` and `adopt` each run their check list, print one line
+per check, and then write exactly one thing — the grain's status, set to the first
+state of its kind's `done` list — or write nothing and name every false check,
+exit 1. `--force` writes anyway and the ledger's `deviation` row names the checks
+that were false. Nothing else is written, moved, bumped, pushed or tagged; what is
+yours to do next is printed as `next:` lines.
 
 `agentic-sdlc pm` writes a `status:` line. `agentic-sdlc check pm` reports a tree
 whose statuses contradict each other. Neither has an opinion about which state may

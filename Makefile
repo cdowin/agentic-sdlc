@@ -123,7 +123,7 @@ gdk_gate_verdict $(2) "$$summary" "$$log"; \
 exit "$$status"
 endef
 
-.PHONY: help unit integration test matrix fuzz budget gates hooks hooks-self-test precommit milestone pm
+.PHONY: help unit integration test matrix fuzz budget check gates hooks hooks-self-test precommit milestone pm
 
 help:
 	@echo 'agentic-sdlc — make targets'
@@ -184,6 +184,15 @@ fuzz:
 
 gates:
 	$(call gate,gates,GATES,$(SUM_GATES),$(DEVKIT) check all)
+
+# `check` IS `gates`, and the alias is self-hosting rather than convenience.
+# `Makefile.devkit` — the composition this package installs — names the static
+# gate `check`, and the guidance it installs tells a consumer to run `make
+# check` after a PM-tree edit. This repo called the same thing `gates` and had
+# no `check` at all, so we shipped an instruction we could not follow
+# ourselves. `check doc` caught it in two seconds, on the narrow rung, which is
+# the whole argument for the narrow rung.
+check: gates
 
 # ARM this checkout. `install-hooks` writes the corpus; writing it is not arming
 # it, and git runs nothing under tools/hooks/ until core.hooksPath points there.

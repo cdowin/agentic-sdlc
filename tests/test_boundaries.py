@@ -218,10 +218,13 @@ def _mutation_sites(rel: str, tree: ast.Module) -> list[str]:
 
 
 class TheCensusIsTheRealTree(unittest.TestCase):
-    """Before either allowlist means anything, it has to have scanned the tree."""
+    """Before either allowlist means anything, it has to have scanned the tree.
 
-    def test_the_source_census_clears_the_floor(self):
-        self.assertGreater(len(_sources()), MIN_SOURCES)
+    The floor itself is asserted inside `_sources()`, which every case below
+    goes through — so the case that restated it here was the same assertion
+    twice. What is NOT derivable from that is whether the floor ever fires, and
+    that is what stayed.
+    """
 
     def test_a_moved_SRC_breaks_the_build_instead_of_passing(self):
         import tempfile
@@ -731,7 +734,11 @@ def module_level_config_reads(path: Path) -> list[str]:
     try:
         tree = ast.parse(path.read_text(encoding='utf-8'))
     except (OSError, SyntaxError, UnicodeDecodeError):
-        return [f'{path.name}: {UNREADABLE}']
+        # A module this walk cannot READ is a module it cannot clear, so it is
+        # reported rather than skipped. (`UNREADABLE` was a name that did not
+        # exist: the one branch here that could not itself be exercised raised
+        # NameError instead of naming the file.)
+        return [f'{path.name}: unreadable — not parsed, so not cleared']
     hits = []
     # TOP LEVEL ONLY. A `def`/`class` body is where these calls BELONG, so a
     # walk that descends into one reports the fix as the defect.

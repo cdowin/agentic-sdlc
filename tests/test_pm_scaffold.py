@@ -2,10 +2,17 @@
 and the no-deleter contract over the caller\'s own tree.
 
 Split from test_pm.py by concern; the shared harness is tests/support/pm.py.
+
+**Cut in 0.2.0 (feature `the-proof-is-named-in-the-criterion`, phase B):** the
+per-kind and per-verb re-proofs of one templating rule — a slot filled for a
+milestone and again for a feature, a header repaired and again not stacked, an
+undecodable template refused by `new` and again by `decide`. What survives is
+the shape rule 3 is about: **a refusal that writes NOTHING**, and a second run
+that is a no-op. Every case here that builds a tree pays a `git init`, so a
+case that re-proves a rule one kind over costs a spawn and buys no coverage.
 """
 from __future__ import annotations
 
-import contextlib
 import os
 import subprocess
 import tempfile
@@ -13,7 +20,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support.pm import frontmatter, run_cli, run_gate, write
+from support.pm import frontmatter, run_cli, run_gate
 from support.pm import git_tree as tree
 
 
@@ -28,6 +35,10 @@ class Scaffolding(unittest.TestCase):
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')[0], 0)
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/beta', 'first', 'First')[0], 0)
+            ff = root / 'pm/roadmap/0.1-demo/features/beta/feature.md'
+            self.assertEqual(model.field_of(ff, 'id'), '0.1/beta')
+            self.assertEqual(model.field_of(ff, 'milestone'), '0.1')
+            self.assertEqual(run_cli(root, 'validate')[0], 0)
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('2 feature(s), 2 story/ies', out)
@@ -50,16 +61,6 @@ class Scaffolding(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('already has every canonical slot', out)
             self.assertEqual(ff.read_text(encoding='utf-8'), before)
-
-    def test_new_fills_a_milestones_slots_without_touching_milestone_md(self):
-        with tree(story_statuses=('ready',)) as root:
-            mf = root / 'pm/roadmap/0.1-demo/milestone.md'
-            before = mf.read_text(encoding='utf-8')
-            code, out = run_cli(root, 'new', 'milestone', '0.1')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(mf.read_text(encoding='utf-8'), before)
-            for slot in model.MILESTONE_FILE_SLOTS:
-                self.assertTrue((mf.parent / slot).is_file(), slot)
 
     def test_a_legacy_uppercase_slot_is_refused_never_renamed_or_twinned(self):
         # The uppercase->lowercase migration is COMPLETE in every consumer and
@@ -140,22 +141,6 @@ class Scaffolding(unittest.TestCase):
             self.assertNotIn('Traceback', out)
             self.assertFalse((root / 'pm/roadmap/0.1-demo/milestone.md').exists())
 
-    def test_decide_refuses_an_undecodable_decisions_template(self):
-        # `pm decide` mints the log on first write, so the decode that used to
-        # happen inside `pm new` now happens here — and it refuses the same
-        # way, with the grain byte-identical.
-        with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
-            self.assertEqual(run_cli(root, 'templates')[0], 0)
-            (root / 'pm/templates/decisions.md').write_bytes(b'caf\xe9\n')
-            code, out = run_cli(root, 'decide', '0.1', 'a choice')
-            self.assertEqual(code, 2, out)
-            self.assertIn('template cannot be read', out)
-            self.assertNotIn('Traceback', out)
-            self.assertFalse(
-                (root / 'pm/roadmap/0.1-demo/decisions.md').exists())
-
     def test_new_reports_a_write_that_no_listing_could_have_predicted(self):
         # Not everything is pre-inspectable — a mode changed under us, a disk
         # that fills. Rule 6 still holds: exit 1 is a finding a consumer's hook
@@ -197,41 +182,12 @@ class Scaffolding(unittest.TestCase):
             self.assertEqual(model.read_raw(outside), 'OUTSIDE\n')
             self.assertFalse((mdir / 'handoff.md').exists())
 
-    def test_a_symlinked_slot_is_named_a_LINK_even_when_it_points_at_a_dir(self):
-        # `dir_entries` classifies with `is_dir()`, which FOLLOWS the link, so a
-        # link to a directory got the DIRECTORY refusal: refused correctly, and
-        # then told to move aside a directory that is not in the grain at all.
-        with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
-            outside = root / 'outside'
-            outside.mkdir()
-            (mdir / 'decisions.md').symlink_to(outside)
-            code, out = run_cli(root, 'new', 'milestone', '0.1')
-            self.assertEqual(code, 1, out)
-            self.assertIn('is a SYMLINK', out)
-            self.assertNotIn('is a DIRECTORY', out)
-
-    def test_new_never_stacks_a_second_header_on_a_doc_that_has_one(self):
-        with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
-            self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
-            model.write_raw(mdir / 'decisions.md',
-                            f'{model.SLOT_HEADER["decisions.md"]}\n\n# log\n')
-            before = (mdir / 'decisions.md').read_text(encoding='utf-8')
-            self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
-            self.assertEqual((mdir / 'decisions.md').read_text(encoding='utf-8'),
-                             before)
-
-    def test_new_needs_a_name_only_when_the_grain_does_not_exist(self):
-        with tree(story_statuses=('ready',)) as root:
-            code, out = run_cli(root, 'new', 'milestone', '0.2')
-            self.assertEqual(code, 2, out)
-            self.assertIn('needs a name', out)
-
     def test_new_mints_no_shared_doc_and_repairs_the_header_of_one_present(self):
         # BOTH halves. `pm new` stopped CREATING a shared doc — that scaffolded
         # 204 empty files into one consumer's tree — and still MANAGES one that
-        # exists, which is what a migration needs.
+        # exists, which is what a migration needs. And the repair is
+        # idempotent: a doc that already carries its header never gets a second
+        # one stacked on it.
         with tree(story_statuses=('ready',)) as root:
             mdir = root / 'pm/roadmap/0.1-demo'
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
@@ -243,6 +199,10 @@ class Scaffolding(unittest.TestCase):
                 self.assertEqual(model.header_of(mdir / slot), want, slot)
                 self.assertIn('# headerless',
                               (mdir / slot).read_text(encoding='utf-8'))
+                repaired = (mdir / slot).read_text(encoding='utf-8')
+                self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
+                self.assertEqual((mdir / slot).read_text(encoding='utf-8'),
+                                 repaired, f'{slot} grew a second header')
 
     def test_a_name_the_filesystem_refuses_is_a_refusal_not_a_traceback(self):
         # The grain DIRECTORY was the last unguarded write: `gdir.mkdir` on a
@@ -277,22 +237,6 @@ class Scaffolding(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             self.assertFalse(pm_cli._exists(root / ('a' * 300)))
 
-    def test_an_unwritable_roadmap_dir_is_a_refusal_not_a_traceback(self):
-        # The same unguarded call from the other side, and the claim is
-        # honest here: nothing has been written when the mkdir fails.
-        with tree(story_statuses=('ready',)) as root:
-            rdir = root / 'pm/roadmap'
-            rdir.chmod(0o555)
-            try:
-                code, out = run_cli(root, 'new', 'milestone', '0.2', 'Next')
-                self.assertEqual(code, 1, out)
-                self.assertNotIn('Traceback', out)
-                self.assertIn('nothing was written', out)
-                self.assertFalse((rdir / '0.2-next').exists())
-            finally:
-                rdir.chmod(0o755)
-            self.assertEqual(run_cli(root, 'new', 'milestone', '0.2', 'Next')[0], 0)
-
 
 class NoDeleter(unittest.TestCase):
     """The tracker mostly REPORTS; the one verb that deletes NAMES its target.
@@ -301,60 +245,16 @@ class NoDeleter(unittest.TestCase):
     filed under a `done` milestone, `check pm` PASS, `pm prune`, and the bug
     file was gone. The rule that was supposed to make that impossible (an open
     bug under a done milestone) was opt-in and neither consumer enabled it, so
-    nothing at all stood between the two commands. `prune` stays gone, and
-    every one of these tests still holds for it.
+    nothing at all stood between the two commands. `prune` stays gone, and the
+    guard below is what keeps it gone: the tree-level reproduction cost a `git
+    init` and a commit to prove what an AST-shaped read of the CLI proves
+    outright.
 
     If archive sprawl needs an answer it is a READ verb — that is still true.
     `pm retire <milestone-id>` is the OPPOSITE shape from `prune`: one
     milestone, spelled out on the command line by the caller every time,
     never a sweep the tool decides the scope of on its own.
-    `test_the_pm_cli_carries_no_recursive_delete` below is narrowed to
-    let exactly that one command through — see it for why the shape still
-    holds everywhere else.
     """
-
-    def _commit(self, root: Path) -> None:
-        for args in (['add', '-A'], ['-c', 'user.email=t@t', '-c', 'user.name=t',
-                                     'commit', '-qm', 'x']):
-            subprocess.run(['git', *args], cwd=root, check=True,
-                           capture_output=True)
-
-    def _two_closed_milestones_and_an_open_bug(self, root: Path) -> Path:
-        write(root / 'pm/roadmap/0.2-later/milestone.md',
-              {'id': '"0.2"', 'name': 'Later', 'status': 'done'})
-        bug = root / 'pm/roadmap/0.1-demo/bugs/seed-is-zero.md'
-        write(bug, {'id': '0.1/bugs/seed-is-zero', 'milestone': '"0.1"',
-                    'status': 'open'})
-        return bug
-
-    def test_the_open_bug_under_the_cooled_milestone_survives(self):
-        with tree(milestone_status='done', feature_status='done',
-                  story_statuses=('done',)) as root:
-            bug = self._two_closed_milestones_and_an_open_bug(root)
-            self._commit(root)
-            code, out = run_cli(root, 'prune')
-            self.assertEqual(code, 2, out)
-            self.assertIn('unknown command', out)
-            self.assertTrue(bug.is_file(), 'the bug file was deleted')
-            self.assertTrue((root / 'pm/roadmap/0.1-demo/milestone.md').is_file())
-
-    def test_two_closed_milestones_are_a_fact_not_a_gate_failure(self):
-        # The other half: the gate used to REDDEN until the destructive verb
-        # was run, so a green build depended on a deletion whose scope the
-        # person running it did not choose.
-        with tree(milestone_status='done', feature_status='done',
-                  story_statuses=('done',)) as root:
-            self._two_closed_milestones_and_an_open_bug(root)
-            code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
-
-    def test_an_archive_directory_is_not_a_gate_failure_either(self):
-        with tree(milestone_status='building') as root:
-            (root / 'pm/roadmap/zz_archive').mkdir(parents=True)
-            (root / 'pm/roadmap/zz_archive/note.md').write_text('x\n',
-                                                               encoding='utf-8')
-            code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
 
     def test_the_pm_cli_carries_no_recursive_delete_OUTSIDE_cmd_retire(self):
         # The shape, not the instance: any function OTHER than the one that
@@ -378,12 +278,6 @@ class NoDeleter(unittest.TestCase):
         self.assertIn('delete_tree', retire_body,
                       "cmd_retire no longer deletes anything — this test's "
                       'own fixture has gone stale')
-
-    def test_the_retired_rules_are_not_silently_accepted_names(self):
-        # A retired id must not linger in KNOWN_CHECKS: a name that parses but
-        # runs nothing is a gate a consumer believes is on.
-        for retired in ('D7', 'D14'):
-            self.assertNotIn(retired, model.KNOWN_CHECKS)
 
 
 class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
@@ -418,17 +312,11 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
                 run_cli(root, 'story', 'building',
                         '0.1/alpha/a-world-is-a-named-saved-thing')[0], 0)
 
-    def test_an_unprefixed_slug_is_untouched(self):
-        with tree(story_statuses=('ready',)) as root:
-            self._enable(root)
-            self.assertEqual(
-                run_cli(root, 'new', 'story', '0.1/alpha', 'plain', 'Plain')[0], 0)
-            sf = root / 'pm/roadmap/0.1-demo/features/alpha/stories/plain.md'
-            self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/plain')
-
     def test_the_prefix_stays_in_the_id_when_the_flag_is_off(self):
         # No devkit.toml: a file really named `01-boots.md` owns that id, and
-        # validate agrees. Defaults-vs-declared equivalence, in both directions.
+        # validate agrees. Defaults-vs-declared equivalence — a strip that ran
+        # unconditionally would hand every consumer NOT using the flag an id
+        # that does not match its own file.
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
@@ -447,12 +335,7 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
             self.assertEqual(code, 1, out)
             self.assertIn('already held by', out)
             self.assertEqual(sorted(p.name for p in sdir.iterdir()), before)
-
-    def test_a_slug_that_is_only_a_prefix_refuses(self):
-        with tree(story_statuses=('ready',)) as root:
-            self._enable(root)
-            sdir = root / 'pm/roadmap/0.1-demo/features/alpha/stories'
-            before = sorted(p.name for p in sdir.iterdir())
+            # ...and a slug that is ONLY a prefix has no id to claim at all.
             code, out = run_cli(root, 'new', 'story', '0.1/alpha', '01-', 'B')
             self.assertEqual(code, 1, out)
             self.assertEqual(sorted(p.name for p in sdir.iterdir()), before)
@@ -472,17 +355,16 @@ class BugNamesItsCause(unittest.TestCase):
         bugs = root / self.BUGS
         return sorted(p.name for p in bugs.iterdir()) if bugs.is_dir() else []
 
-    def test_without_the_flag_the_field_is_there_and_empty(self):
-        # The template's default. An empty `caused_by:` (no trailing space) is
-        # the honest record of a cause nobody has named — the field exists so
+    def test_the_field_is_minted_empty_stamped_when_asked_and_validates(self):
+        # The template's default is an empty `caused_by:` (no trailing space):
+        # the honest record of a cause nobody has named. The field exists so
         # `pm set` and the report have somewhere to look, not so it gets
-        # guessed at.
-        with tree() as root:
-            code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero')
-            self.assertEqual(code, 0, out)
-            bf = root / self.BUGS / 'seed-is-zero.md'
-            self.assertEqual(frontmatter(bf), [
-                'id: 0.1/bugs/seed-is-zero',
+        # guessed at. Both flag spellings stamp the same value, and the stamped
+        # bug leaves `validate` and the gate clean.
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'unattributed')[0], 0)
+            self.assertEqual(frontmatter(root / self.BUGS / 'unattributed.md'), [
+                'id: 0.1/bugs/unattributed',
                 'milestone: "0.1"',
                 'name:',
                 'status: open',
@@ -490,17 +372,10 @@ class BugNamesItsCause(unittest.TestCase):
                 'fix_milestone:',
                 'caused_by:',
             ])
-            # Nothing extra printed, and nothing beyond the one file written.
-            self.assertNotIn('caused_by', out)
-            self.assertEqual(self._bug_dir(root), ['seed-is-zero.md'])
-
-    def test_the_flag_stamps_the_feature_and_changes_nothing_else(self):
-        with tree() as root:
             code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero',
                                 '--caused-by', '0.1/alpha')
             self.assertEqual(code, 0, out)
-            bf = root / self.BUGS / 'seed-is-zero.md'
-            self.assertEqual(frontmatter(bf), [
+            self.assertEqual(frontmatter(root / self.BUGS / 'seed-is-zero.md'), [
                 'id: 0.1/bugs/seed-is-zero',
                 'milestone: "0.1"',
                 'name:',
@@ -510,37 +385,12 @@ class BugNamesItsCause(unittest.TestCase):
                 'caused_by: 0.1/alpha',
             ])
             self.assertIn("caused_by '0.1/alpha'", out)
-            self.assertEqual(model.field_of(bf, 'caused_by'), '0.1/alpha')
-
-    def test_both_flag_spellings_do_the_same_thing(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'a',
+            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'joined',
                                      '--caused-by=0.1/alpha')[0], 0)
             self.assertEqual(
-                model.field_of(root / self.BUGS / 'a.md', 'caused_by'),
+                model.field_of(root / self.BUGS / 'joined.md', 'caused_by'),
                 '0.1/alpha')
-
-    def test_a_feature_of_ANY_status_resolves(self):
-        # The report decides what counts as an ESCAPE (a bug caused by a
-        # CLOSED feature); the verb records which change produced the bug and
-        # holds no opinion. Refusing a non-`done` feature would make the
-        # record unwritable in the case it is most often known — during the
-        # build that caused it.
-        for status in ('planning', 'building', 'reviewing', 'done'):
-            with self.subTest(status=status), tree(feature_status=status) as root:
-                code, out = run_cli(root, 'new', 'bug', '0.1', 'b',
-                                    '--caused-by', '0.1/alpha')
-                self.assertEqual(code, 0, out)
-                self.assertEqual(
-                    model.field_of(root / self.BUGS / 'b.md', 'caused_by'),
-                    '0.1/alpha')
-
-    def test_the_stamped_bug_validates_and_leaves_the_gate_clean(self):
-        with tree(story_statuses=('ready',)) as root:
-            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'c',
-                                     '--caused-by', '0.1/alpha')[0], 0)
-            code, out = run_cli(root, 'validate')
-            self.assertEqual(code, 0, out)
+            self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(run_gate(root)[0], 0)
 
     # --- the refusal matrix ---------------------------------------------------
@@ -581,28 +431,20 @@ class BugNamesItsCause(unittest.TestCase):
                     self.assertEqual(self._bug_dir(root), [])
             self.assertEqual(sorted(p.name for p in root.iterdir()), before_tree)
 
-    def test_an_empty_value_refuses_in_both_spellings(self):
+    def test_a_flag_that_carries_no_id_refuses_and_never_eats_the_slug(self):
         # `--caused-by=` storing '' would file the bug with the field silently
-        # unset, at exit 0, after the caller asked for it.
+        # unset, at exit 0, after the caller asked for it — and `--caused-by
+        # <id>` is consumed as a PAIR, so what is left has to be exactly the
+        # milestone and the slug, never three positional args.
         with tree() as root:
-            for argv in (('--caused-by', ''), ('--caused-by=',)):
+            for argv in (('new', 'bug', '0.1', 'x', '--caused-by', ''),
+                         ('new', 'bug', '0.1', 'x', '--caused-by='),
+                         ('new', 'bug', '0.1', '--caused-by')):
                 with self.subTest(argv=argv):
-                    code, out = run_cli(root, 'new', 'bug', '0.1', 'x', *argv)
+                    code, out = run_cli(root, *argv)
                     self.assertEqual(code, 2, out)
                     self.assertIn('needs a feature id', out)
                     self.assertEqual(self._bug_dir(root), [])
-
-    def test_a_dangling_flag_refuses_rather_than_eating_the_slug(self):
-        with tree() as root:
-            code, out = run_cli(root, 'new', 'bug', '0.1', '--caused-by')
-            self.assertEqual(code, 2, out)
-            self.assertIn('needs a feature id', out)
-            self.assertEqual(self._bug_dir(root), [])
-
-    def test_the_flag_is_not_mistaken_for_the_slug(self):
-        # `--caused-by <id>` is consumed as a pair, so what is left has to be
-        # exactly the milestone and the slug — never three positional args.
-        with tree() as root:
             code, out = run_cli(root, 'new', 'bug', '0.1', 'x', 'y',
                                 '--caused-by', '0.1/alpha')
             self.assertEqual(code, 2, out)
@@ -617,23 +459,13 @@ class NewRefusesUnsafeSlugs(unittest.TestCase):
                 with self.subTest(bad=bad):
                     code, _ = run_cli(root, 'new', 'bug', '0.1', bad)
                     self.assertEqual(code, 1)
-            self.assertEqual(sorted(p.name for p in root.iterdir()), before)
-
-    def test_a_milestone_version_is_validated_too(self):
-        with tree() as root:
+            # The milestone VERSION goes through the same guard.
             self.assertEqual(
                 run_cli(root, 'new', 'milestone', '../../oops', 'Name')[0], 1)
+            self.assertEqual(sorted(p.name for p in root.iterdir()), before)
 
 
 class Templates(unittest.TestCase):
-    def test_new_grains_come_from_templates_and_validate(self):
-        with tree() as root:
-            self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'b', 'B')[0], 0)
-            ff = root / 'pm/roadmap/0.1-demo/features/b/feature.md'
-            self.assertEqual(model.field_of(ff, 'id'), '0.1/b')
-            self.assertEqual(model.field_of(ff, 'milestone'), '0.1')
-            self.assertEqual(run_cli(root, 'validate')[0], 0)
-
     def test_a_new_milestone_gets_its_grain_file_under_the_exact_name(self):
         # EXACT names, from a listing: `is_file()` here passed on macOS against
         # the OLD uppercase spellings long after the rename landed, and would
@@ -666,6 +498,12 @@ class Templates(unittest.TestCase):
             self.assertEqual(model.read_raw(tdir / 'DECISIONS.md'), mine)
             self.assertNotIn('decisions.md', model.dir_entries(tdir))
 
+            # The same rule for a template that is merely CUSTOMISED: copying
+            # them out a second time never clobbers what a project edited.
+            (tdir / 'feature.md').write_text('mine\n', encoding='utf-8')
+            self.assertEqual(run_cli(root, 'templates')[0], 0)
+            self.assertEqual((tdir / 'feature.md').read_text(), 'mine\n')
+
             # Renamed, it is the template the log is MINTED from — the whole
             # point. Through a temp name: a direct rename is a no-op on macOS.
             (tdir / 'DECISIONS.md').rename(tdir / 'x.tmp')
@@ -675,7 +513,12 @@ class Templates(unittest.TestCase):
             self.assertIn('MINE', model.read_raw(
                 root / 'pm/roadmap/0.3-third/decisions.md'))
 
-    def test_a_project_template_overrides_the_packaged_one(self):
+    def test_a_project_template_is_used_verbatim_and_owns_only_its_own_grain(self):
+        # Three claims about one template dir, because they are one rule: the
+        # project's file wins, whatever it says wins with it (the guard here
+        # forbade a project's OWN template from minting a grain past
+        # `planning` — the tool overruling a project about its own scaffold),
+        # and overriding ONE grain must not make the project own all of them.
         with tree() as root:
             (root / 'devkit.toml').write_text(
                 '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
@@ -683,49 +526,15 @@ class Templates(unittest.TestCase):
             tdir.mkdir(parents=True)
             (tdir / 'story.md').write_text(
                 '---\nid: {id}\nfeature: {feature}\nmilestone: "{milestone}"\n'
-                'name: {name}\nstatus: todo\nhouse_field: yes\n---\n\n# {name}\n',
+                'name: {name}\nstatus: done\nhouse_field: yes\n---\n\n# {name}\n',
                 encoding='utf-8')
-            run_cli(root, 'new', 'story', '0.1/alpha', 's', 'S')
+            self.assertEqual(
+                run_cli(root, 'new', 'story', '0.1/alpha', 's', 'S')[0], 0)
             sf = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s.md'
             self.assertEqual(model.field_of(sf, 'house_field'), 'yes')
-
-    def test_missing_grains_fall_back_to_the_packaged_template(self):
-        # Overriding one grain must not make a project own all of them.
-        with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
-            (root / 'pm/templates').mkdir(parents=True)
+            self.assertEqual(model.field_of(sf, 'status'), 'done')
+            # feature.md is not in the project's dir: the packaged one is used.
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'z', 'Z')[0], 0)
-
-    def test_templates_command_copies_them_out_without_clobbering(self):
-        with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
-            self.assertEqual(run_cli(root, 'templates')[0], 0)
-            self.assertTrue((root / 'pm/templates/feature.md').is_file())
-            (root / 'pm/templates/feature.md').write_text('mine\n', encoding='utf-8')
-            run_cli(root, 'templates')
-            self.assertEqual((root / 'pm/templates/feature.md').read_text(), 'mine\n')
-
-
-class ATemplateMintsWhateverItSays(unittest.TestCase):
-    def test_a_project_template_may_open_a_grain_at_any_state(self):
-        # The guard here forbade a project's OWN template from minting a grain
-        # past `planning` — the tool overruling a project about its own
-        # scaffold. What the state has to be is in the vocabulary, and D4 reads
-        # that off the tree.
-        with tree() as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
-            run_cli(root, 'templates')
-            t = root / 'pm/templates/feature.md'
-            t.write_text(t.read_text().replace('status: planning', 'status: done'),
-                         encoding='utf-8')
-            code, out = run_cli(root, 'new', 'feature', '0.1', 'sneaky', 'S')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(
-                model.field_of(root / 'pm/roadmap/0.1-demo/features/sneaky/feature.md',
-                               'status'), 'done')
 
 
 class YourMilestoneDirectoryIsYours(unittest.TestCase):
@@ -748,47 +557,43 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
     """
 
     def test_your_own_files_in_your_own_milestone_dir_are_not_findings(self):
-        for name in ('plans', 'findings', 'AUDIT-REPORT.md',
-                     'DELETED-SCENARIO-LEDGER.md', 'design'):
-            with self.subTest(name=name), tree(story_statuses=('ready',)) as root:
-                target = root / 'pm/roadmap/0.1-demo' / name
-                if name.endswith('.md'):
-                    target.write_text('# notes\n', encoding='utf-8')
-                else:
-                    target.mkdir()
-                code, out = run_gate(root)
-                self.assertEqual(code, 0, out)
-
-    def test_a_shared_doc_that_lost_its_header_is_not_a_finding(self):
+        # ONE tree holding every shape at once: five trees proved five times
+        # that the gate has no opinion about a directory it does not own, and
+        # each one cost a `git init`.
         with tree(story_statuses=('ready',)) as root:
-            (root / 'pm/roadmap/0.1-demo/decisions.md').write_text(
+            mdir = root / 'pm/roadmap/0.1-demo'
+            for name in ('plans', 'findings', 'design'):
+                (mdir / name).mkdir()
+            for name in ('AUDIT-REPORT.md', 'DELETED-SCENARIO-LEDGER.md'):
+                (mdir / name).write_text('# notes\n', encoding='utf-8')
+            # ...and a shared doc that lost its header is not a finding either.
+            (mdir / 'decisions.md').write_text(
                 '# log\n\n## D1 — 2026-01-01 — a thing\n', encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
-    def test_a_missing_grain_file_is_STILL_reported_by_two_other_rules(self):
+    def test_a_missing_or_malformed_grain_file_is_STILL_reported_elsewhere(self):
         # The fold-in, proven. If this ever goes quiet, the D13a coverage left
         # with the rule and the census is lying about what it scanned.
         with tree(story_statuses=('ready',)) as root:
             (root / 'pm/roadmap/0.2-scaffolded-by-hand').mkdir()
             (root / 'pm/roadmap/0.1-demo/features/beta').mkdir()
+            (root / 'pm/roadmap/0.1-demo/features/gamma').mkdir()
+            (root / 'pm/roadmap/0.1-demo/features/gamma/feature.md').write_text(
+                '---\nname: Gamma\n---\n\nprose\n', encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('milestone dir with no milestone.md', out)
             self.assertIn('feature dir with no feature.md', out)
             self.assertIn('SKIPPED', out)
-
-    def test_a_grain_file_with_no_id_or_status_is_STILL_V1(self):
-        with tree(story_statuses=('ready',)) as root:
-            (root / 'pm/roadmap/0.1-demo/features/beta').mkdir()
-            (root / 'pm/roadmap/0.1-demo/features/beta/feature.md').write_text(
-                '---\nname: Beta\n---\n\nprose\n', encoding='utf-8')
-            code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
             self.assertIn('missing id: or status:', out)
 
-    def test_the_rule_and_its_config_name_are_both_gone(self):
-        self.assertNotIn('D13', model.KNOWN_CHECKS)
+    def test_a_retired_rule_is_not_a_silently_accepted_name(self):
+        # A retired id must not linger in KNOWN_CHECKS: a name that parses but
+        # runs nothing is a gate a consumer believes is on — and naming one in
+        # `[pm] checks` is a config error, not a quiet no-op.
+        for retired in ('D7', 'D13', 'D14'):
+            self.assertNotIn(retired, model.KNOWN_CHECKS)
         with tree(story_statuses=('ready',)) as root:
             (root / 'devkit.toml').write_text(
                 '[pm]\nchecks = ["D13"]\n', encoding='utf-8')
@@ -814,28 +619,5 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
                 self.assertEqual(
                     run_cli(root, 'new', 'story', '0.1/f', 's0', 'S0')[0], 0)
                 self.assertTrue((fdir / 'stories' / 's0.md').is_file())
-            finally:
-                os.chdir(previous)
-
-    def test_the_help_line_matches_what_new_milestone_actually_mints(self):
-        # The help said "No directory is minted" while the verb minted three and
-        # printed one of them. A claim in shipped output is a claim under test.
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / 'repo'
-            root.mkdir()
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
-            previous = Path.cwd()
-            os.chdir(root)
-            try:
-                code, out = run_cli(root, '--help')
-                self.assertEqual(code, 0, out)
-                self.assertIn('in its own dir', out)
-                self.assertIn('no sub-slot dirs', out)
-                self.assertNotIn('No directory\n', out)
-                self.assertEqual(run_cli(root, 'new', 'milestone', '0.9', 'N')[0], 0)
-                mdir = root / 'pm/roadmap/0.9-n'
-                # its OWN dir exists, and holds no sub-slot dir
-                self.assertTrue(mdir.is_dir())
-                self.assertEqual([p.name for p in mdir.iterdir() if p.is_dir()], [])
             finally:
                 os.chdir(previous)

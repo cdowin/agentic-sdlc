@@ -1,10 +1,38 @@
-# Handoff — 0.2.0 the conveyor
+# Handoff — 0.2.0 the conveyor, and the four repos around it
 
-**Written 2026-09-05, end of a long session. 19 commits on
-`milestone/0.2.0-the-conveyor` since `815de59`.**
+**Written 2026-09-05, end of a long session.** Four repos are checked out side
+by side in one workspace directory: `godot-devkit`, `agentic-sdlc`,
+`nullbound`, `trail`. This file is the record of the migration between them AND
+the state of the milestone in this one.
+
+<!-- rule-8: migration document. This file names the four repos on purpose — it is the
+     record of a migration BETWEEN them, and a plan that cannot say which repo a step
+     happens in is not a plan. It is exempt from the CONSUMER-NAME clause of the rule-8
+     gate and from nothing else; the exemption is one exact path, declared in
+     tests/test_consumer_independence.py (MIGRATION_DOC) and again here, so it cannot be
+     taken without editing both sides. When the migration lands, delete this file AND
+     that entry — the gate fails if the entry outlives the file, or the file stops
+     needing it. Nothing in src/, tools/, .github/ or an installable may name a repo,
+     and this exemption cannot reach any of them: it is a single top-level .md. -->
 
 Read this, then `pm/roadmap/0.2.0-the-conveyor/milestone.md`, then
 `decisions.md` (D1-D10). Everything else is derivable.
+
+## The four repos
+
+**Nothing below was re-measured this session** — rule 8 forbids this package
+reading another repo's tree, so these rows are what the last session that
+touched them recorded, unchanged except for this one.
+
+| repo | branch | state |
+|---|---|---|
+| **godot-devkit** | `milestone/0.25.0-the-godot-kit-alone` | **v0.24.0 RELEASED** — merged, tagged, artifact proven from a cold cache. 0.25.0 planned, not started, and blocked on the middle tier this milestone splits. |
+| **agentic-sdlc** | `milestone/0.2.0-the-conveyor` | **this repo.** 0.1.0 merged to main; 0.2.0 in flight — see below. |
+| **nullbound** | `feat/0.90.3-game-polish` | **pinned v0.24.0**, `make check` exit 0, 37 status words migrated. |
+| **trail** | `chore/devkit-v0.24.0` | **pinned v0.24.0**, `check` + `precommit` exit 0, 25 migrated. **PR not opened.** |
+
+**Carried forward and still not done: open trail's PR.** The branch is pushed
+and nobody opened it; `main` there is release-only and auto-tags on push.
 
 ---
 

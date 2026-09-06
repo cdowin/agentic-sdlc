@@ -19,6 +19,14 @@ no-ops that SAY SO. A failure on the first reds every consumer without a PM tree
 on the day it bumps its pin; a failure on the second reds every consumer on the
 day it runs `init`, which is worse — and did happen, on 2026-09-05, which is why
 the second case exists.
+
+**Barely cut in 0.2.0 (feature `the-proof-is-named-in-the-criterion`, phase B),
+deliberately.** This gate has had M1, M2 and K1 against it — a false PASS over a
+tree it never walked — so every census and disclosure case here is proven to
+bite, and every one of them stayed. What went was the cap ARITHMETIC asserted
+twice (`_body_lines` restating what the over-cap probe demonstrates) and the
+`--help` case, which asserted a docstring rather than a behaviour. Two more were
+folded into the tree that already built the fixture they needed.
 """
 from __future__ import annotations
 
@@ -87,36 +95,29 @@ def config(root: Path, text: str) -> None:
 # --- the deliberately-broken probe -------------------------------------------
 def test_a_document_over_its_cap_is_a_finding_naming_kind_length_and_cap():
     """THE probe. Without it the gate is a census with an opinion it never
-    acts on, which is a permanently-green gate wearing a cap's name."""
+    acts on, which is a permanently-green gate wearing a cap's name.
+
+    And the other half in the same tree: the gate must be SATISFIABLE from
+    config, or the ceiling is not an adoption mechanism, it is a wall. A tree
+    that cannot meet a default says so in its OWN devkit.toml, in a value a
+    reviewer can see and ratchet down.
+    """
     with pmfx.tree() as root:
         (root / STORY).write_text(
             (root / STORY).read_text(encoding='utf-8') + body(40),
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { story = 5 }\n')
         code, out = gate()
-    assert code == 1, out
-    assert 'OVER CAP' in out, out
-    assert STORY in out, out
-    assert 'story cap 5' in out, out
-    assert 'body line(s)' in out, out
-    assert '[check:grain-shape] FAIL — 1 finding(s)' in out, out
+        assert code == 1, out
+        assert 'OVER CAP' in out, out
+        assert STORY in out, out
+        assert 'story cap 5' in out, out
+        assert 'body line(s)' in out, out
+        assert '[check:grain-shape] FAIL — 1 finding(s)' in out, out
 
-
-def test_raising_the_ceiling_is_how_a_tree_adopts_at_its_own_pace():
-    """The other half of the probe: the gate must be satisfiable from config,
-    or the ceiling is not an adoption mechanism, it is a wall. A tree that
-    cannot meet a default says so in its OWN devkit.toml, in a value a reviewer
-    can see and ratchet down."""
-    with pmfx.tree() as root:
-        (root / STORY).write_text(
-            (root / STORY).read_text(encoding='utf-8') + body(40),
-            encoding='utf-8')
-        config(root, '[grain_shape]\ncaps = { story = 5 }\n')
-        over, _ = gate()
         config(root, '[grain_shape]\ncaps = { story = 500 }\n')
-        under, out = gate()
-    assert over == 1
-    assert under == 0, out
+        code, out = gate()
+    assert code == 0, out
     assert '[check:grain-shape] PASS' in out, out
 
 
@@ -169,22 +170,18 @@ def test_a_pm_tree_with_no_grain_WRITTEN_YET_is_a_no_op_that_says_so():
     the same question, or one fact yields two findings.
     """
     with pmfx.tree() as root:
-        for path in sorted((root / 'pm/roadmap').rglob('*'), reverse=True):
-            path.unlink() if path.is_file() else path.rmdir()
-        (root / 'pm/roadmap').mkdir(parents=True, exist_ok=True)
-        code, out = gate()
-    assert code == 0, out
-    assert 'holds no grain document yet' in out, out
-    assert '`check pm`' in out, out
-
-
-def test_a_ROADMAP_ONLY_TREE_is_what_a_stock_init_writes_and_it_passes():
-    """The measured case, pinned by name so a regression is unambiguous."""
-    with pmfx.tree() as root:
-        for path in sorted((root / 'pm/roadmap').rglob('*'), reverse=True):
-            path.unlink() if path.is_file() else path.rmdir()
         roadmap = root / 'pm/roadmap'
+        for path in sorted(roadmap.rglob('*'), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
         roadmap.mkdir(parents=True, exist_ok=True)
+        code, out = gate()
+        assert code == 0, out
+        assert 'holds no grain document yet' in out, out
+        assert '`check pm`' in out, out
+
+        # And the MEASURED case, in the same tree: what a stock
+        # `agentic-sdlc init` actually leaves behind is a `ROADMAP.md` and no
+        # grain. That is the tree this gate FAILED on 2026-09-05.
         (roadmap / 'ROADMAP.md').write_text('# Roadmap\n', encoding='utf-8')
         code, out = gate()
     assert code == 0, out
@@ -362,14 +359,6 @@ def test_frontmatter_is_not_prose_and_is_not_counted():
     assert code == 0, out
 
 
-def test_the_body_is_counted_after_the_fence_with_trailing_blanks_trimmed():
-    """The counting rule itself, pinned once so the tests above can assert on
-    behaviour rather than restate arithmetic. A file that ends in a newline
-    must not read one line longer than it looks."""
-    lines = ['---', 'id: x', '---', '', 'one', 'two', '', '', '']
-    assert grain_shape._body_lines(lines) == 3
-
-
 def test_a_grain_whose_frontmatter_is_damaged_is_measured_WHOLE():
     """No closing fence means no body boundary. Measuring 0 there would print
     PASS over the one document `check pm` is already calling damaged — a gate
@@ -427,15 +416,6 @@ def test_the_archive_and_dot_prefixed_paths_are_excluded_and_disclosed():
 
 
 # --- the contract surfaces ----------------------------------------------------
-def test_help_prints_the_module_docstring():
-    """The gate's contract, its config section and its honest scope live in one
-    copy, so `--help` cannot drift from it."""
-    with pmfx.tree() as root:
-        code, out = cli(root, '--help')
-    assert code == 0, out
-    assert out.strip() == (grain_shape.__doc__ or '').strip()
-
-
 def test_it_reads_each_document_once_and_spawns_nothing():
     """Acceptance criterion 1, structurally. The script this replaces spawned
     four subprocesses per file across 683 markdown files and cost 34.8 s — half

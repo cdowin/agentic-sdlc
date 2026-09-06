@@ -808,6 +808,16 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
 
 
 class ConfigValueErrors(unittest.TestCase):
+    def test_a_bad_version_at_is_exit_2_not_a_finding(self):
+        # Review F8: the criterion says "at exit 2" and its first proof only
+        # asserted that `load()` raises. This is the exit-code half, in the
+        # exit-2 family where §6's amend-first ordering puts it.
+        for bad in ('version_at = "whenever"', 'version_at = "START"',
+                    'version_at = ""', 'version_at = 7'):
+            with self.subTest(bad=bad), tree() as root:
+                write_config(root, f'[pm]\nchecks = ["R5"]\n{bad}\n')
+                self.assertEqual(gate_both_streams(root)[0], 2)
+
     def test_a_bad_version_pattern_is_exit_2_not_a_finding(self):
         for bad in ('version_pattern = "version = \\"(.*\\""',
                     'version_pattern = "^version = .*$"'):

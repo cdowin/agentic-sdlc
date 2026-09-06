@@ -827,8 +827,13 @@ class NoCodePathParsesAVersion(unittest.TestCase):
             'repo/pm/model.py': ('releases_file', 'declared_order',
                                  'milestone_version', 'version_claims',
                                  'milestone_of_version', 'release_is_shipped',
-                                 'current_release'),
+                                 'release_is_unverifiable', 'current_release',
+                                 # Review F4: the two likeliest regrowth sites.
+                                 # Both READ a version out of a file, which is
+                                 # one step from taking one apart.
+                                 'shipped_version'),
             'repo/checks/pm.py': ('_release_findings',),
+            'repo/conveyor/steps.py': ('check_version_sync', '_version_in'),
         }
         by_rel = {rel: path for rel, path in _sources()}
         offenders, scanned = [], 0
@@ -842,18 +847,27 @@ class NoCodePathParsesAVersion(unittest.TestCase):
                               f'this gate silently stops checking it')
                 scanned += 1
                 for node in ast.walk(found[name]):
-                    # `.split(...)` / `int(...)` over a version is the shape a
-                    # comparator grows back as.
-                    if (isinstance(node, ast.Call)
-                            and isinstance(node.func, ast.Attribute)
-                            and node.func.attr == 'split'):
-                        offenders.append(f'{rel}:{name} splits a string')
-                    if (isinstance(node, ast.Call)
-                            and isinstance(node.func, ast.Name)
-                            and node.func.id == 'int'):
-                        offenders.append(f'{rel}:{name} calls int()')
+                    if not isinstance(node, ast.Call):
+                        continue
+                    # Splitting a version on its SEPARATOR is the shape a
+                    # comparator grows back as. Splitting a file on newlines is
+                    # how you read one, so the argument is what decides —
+                    # otherwise the gate could not cover `shipped_version`,
+                    # which is exactly where a parser would reappear.
+                    if (isinstance(node.func, ast.Attribute)
+                            and node.func.attr == 'split'
+                            and any(isinstance(a, ast.Constant)
+                                    and a.value in ('.', '-', '+')
+                                    for a in node.args)):
+                        offenders.append(
+                            f'{rel}:{name} splits on a version separator')
+                    if (isinstance(node.func, ast.Name)
+                            and node.func.id in ('int', 'float', 'sorted',
+                                                 'max', 'min')):
+                        offenders.append(
+                            f'{rel}:{name} calls {node.func.id}()')
         # Rule 4: a gate scanning nothing FAILS rather than passing quietly.
-        self.assertGreaterEqual(scanned, 8,
+        self.assertGreaterEqual(scanned, 11,
                                 'the release surface collapsed — this gate is '
                                 'asserting emptiness over almost nothing')
         self.assertEqual([], offenders,

@@ -4,6 +4,7 @@ name: authoring is separate from binding
 status: planning
 depends_on: ["0.3.0"]
 branch: milestone/0.4.0-authoring-is-separate-from-binding
+version: 0.4.0
 ---
 
 # 0.4.0 — authoring is separate from binding

@@ -219,7 +219,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
-    """D8/D9/D10 over every `in_progress` milestone; two in progress is two answers."""
+    """D9/D10 over every `in_progress` milestone; two in progress is two answers."""
     live = (model.in_progress_milestones(cfg)
             if enabled & set(model.FLOW_CHECKS) else [])
 
@@ -249,6 +249,14 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
     what a version string looks like.
     """
     if 'R5' not in enabled:
+        return
+    # A plan that is THERE and unreadable is a finding, not the absence of a
+    # plan: saying "declares no `order`" over a BOM-damaged or fence-eaten file
+    # is rule 4's first sin — passing over what was never measured.
+    defect = model.plan_defect(cfg)
+    if defect is not None:
+        report(f'{cfg.rel(model.releases_file(cfg))} {defect} — R5 cannot read '
+               f'the plan, so {cfg.version_file} was NOT graded (R5)')
         return
     order = model.declared_order(cfg)
     if not order:

@@ -4,6 +4,7 @@ name: The agentic half, standing alone
 status: planning
 depends_on: []
 branch:
+version: 0.1.0
 ---
 
 # 0.1.0 — The agentic half, standing alone

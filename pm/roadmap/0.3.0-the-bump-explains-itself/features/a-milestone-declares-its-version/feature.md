@@ -62,7 +62,8 @@ that over the source.
 
 ## Proof budget
 
-  cases: 4
+  cases: 4 declared; 17 shipped — the review's F1/F2 semantics each needed a case, and the
+    source-shaped no-parser gate is a class the budget did not anticipate (finding F9, accepted)
   tier: pyunit
   lands in: the gate-rules module, beside the existing D8 cases
   what already covers this: D8 has match / mismatch / unreadable-file cases, all of which extend

@@ -4,6 +4,7 @@ name: the bump explains itself
 status: building
 depends_on: []
 branch: milestone/0.3.0-the-bump-explains-itself
+version: 0.3.0
 ---
 
 # 0.3.0 — the bump explains itself

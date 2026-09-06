@@ -93,9 +93,11 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 |---|---|
 | `pm <kind> <status> <id>` | Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — and one ledger row. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
 | `pm new`, `pm init`, `pm move`, `pm retire`, `pm set` | The other writes: scaffold a grain, stand up a tree, re-parent a story, retire a milestone into `ROADMAP.md`, set one frontmatter field |
-| `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for` | Reads. `ready-for feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker |
+| `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker |
 | `pm ledger record\|show\|report` | The ledger: one JSONL row per status flip, decision and dispatch; `report` adds them up per grain and never exits non-zero on a number |
 | `pm decide <id> <title…>` | Appends one dated heading to that grain's `decisions.md` |
+| `pm order [--append\|--insert\|--remove <v>]` | The release plan — `order` in `pm/roadmap/releases.md`. Bare, it prints each entry with the milestone claiming it and whether it shipped. Order is a DECISION, not a sort: nothing parses or compares a version string. It does not interrogate the tree — a duplicate, an empty string and an insert before an absent entry are all it refuses |
+| `pm next` | The first entry in `order` that has not shipped, and the milestone that claims it |
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md` and `.claude/skills/pm-operations/SKILL.md` |
 | `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`). `check <gate> --help` is that gate's contract |
 | `gates-extra` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
@@ -169,9 +171,12 @@ roadmap_dir  = "pm/roadmap"
 template_dir = "pm/templates"                 # `pm templates` copies the stock ones here
 review_dir   = "docs/reviews"
 story_ordinal_prefix = false                  # stories/NN-<slug>.md keeps NN in the file, not the id
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", "V1", "V2", "V3", "V4", "V5"]  # + D8 D9 D10 V6, opt-in
-version_file    = "pyproject.toml"            # D8 and `version-sync`: where the version lives
+checks = ["D1", "D2", "D3", "D4", "D5", "D6", "V1", "V2", "V3", "V4", "V5"]  # + D9 D10 R5 V6, opt-in
+version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
 version_pattern = '^version = "(.*)"$'
+version_at      = "start"                     # R5: which entry in `order` the version file
+                                              # must match — "start" (the first not yet shipped,
+                                              # bump-at-START) or "ship" (the last that has)
 
 [pm.states.story]                             # one table per kind: milestone, feature, story, bug
 todo        = ["planning", "ready"]
@@ -201,6 +206,44 @@ runner_targets = ["precommit", "milestone"]   # what `runner-targets-resolve` as
 `agentic-sdlc pm vocabulary` prints your declared states with their categories and the rule ids
 `[pm] checks` may name — read it after a pin bump. A key this version no longer reads is named at
 exit 2, never silently ignored.
+
+## The release plan
+
+A milestone declares the version it ships as, in one optional frontmatter field:
+
+```yaml
+id: stationary-enemies-spawn
+version: "0.91.0"
+```
+
+**The id is a slug and the version is a fact.** A milestone with no `version:` is backlog — it has
+not been proposed as a release at all, and that is never a finding.
+
+The order those versions ship in is a DECISION, so it is declared rather than sorted —
+`pm/roadmap/releases.md`, block-style frontmatter, one entry per line so a re-sequence diffs as a
+move:
+
+```yaml
+---
+order:
+  - "0.90.3"
+  - "0.90.3.2"
+  - "0.91.0"
+---
+```
+
+**Nothing here parses, compares or increments a version string.** `"1.1.1"` and `"cow"` are equally
+valid, and `0.90.3.2` — not semver, and the shape real trees reach for when work has to go between
+two planned releases — orders fine, because "did it increase" is a POSITION in that list. A
+comparator could not sort it, and sorting would re-couple the two facts `version:` just separated.
+
+Authoring and scheduling are separate acts: `pm order --append <version>` puts a milestone on the
+plan, `pm next` says what is next, and `pm roadmap` prints the whole sequence. `release` with no
+argument takes the current version from the plan, and refuses one that is out of order naming both.
+
+`R5` (opt-in) grades `[pm] version_file` against the current entry; `[pm] version_at` picks which
+one — `"start"`, the first not yet shipped, or `"ship"`, the last that has, for a project that
+bumps in the release commit.
 
 ## Wiring
 

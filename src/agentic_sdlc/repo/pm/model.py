@@ -124,8 +124,9 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
     return ''
 
 
-# D8/D9/D10 encode branch-per-milestone / bump-at-start and are OFF by default;
-# a trunk-shipping project is not drifting. D10 is stricter than D9.
+# D9/D10 encode branch-per-milestone and are OFF by default; a trunk-shipping
+# project is not drifting. D10 is stricter than D9. R5 is off for the same
+# reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6',
                   'V1', 'V2', 'V3', 'V4', 'V5')
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
@@ -235,8 +236,8 @@ class PmConfig:
     story_states: tuple[str, ...] = ()
     bug_states: tuple[str, ...] = ()
     checks: tuple[str, ...] = DEFAULT_CHECKS
-    # D8 only: where the shipped version lives, and the line that carries it.
-    # Both halves are configurable.
+    # R5 and `version-sync`: where the shipped version lives, and the line
+    # that carries it. Both halves are configurable.
     template_dir: str = ''
     version_file: str = 'pyproject.toml'
     version_pattern: str = r'^version = "(.*)"$'
@@ -1099,7 +1100,7 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     return None
 
 
-# --- flow helpers (D8/D9/D10, and the ledger's home) --------------------------
+# --- flow helpers (D9/D10, and the ledger's home) -----------------------------
 def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     """(id, branch, milestone.md) for every active milestone in `in_progress`.
     There is no "the building milestone" (D5): readers report over every

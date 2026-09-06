@@ -3,7 +3,7 @@ id: 0.2.0/every-gate-reports-its-cost/01-the-ledger-holds-what-a-gate-cost
 feature: 0.2.0/every-gate-reports-its-cost
 milestone: "0.2.0"
 name: A gate run is a ledger row, and a malformed one is refused
-status: reviewing
+status: building
 owner:
 depends_on: []
 ---

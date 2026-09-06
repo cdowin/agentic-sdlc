@@ -110,10 +110,13 @@ def test_the_seed_is_the_installables_LIVE_section_and_a_tree_seeded_with_it_LOA
         stops being commented is a gate acquiring an opinion the project cannot
         see it did not choose (hard rule 5);
       * and the config `init` writes satisfies `flow_of` on the tree's FIRST
-        `pm` call, `obe` included: the seed is today's LIFECYCLE plus the one
-        word for abandoned work, whose absence is the `also_done` defect (a
-        story at `obe` holding its feature open forever) shipped to every new
-        consumer as a repair they have to discover.
+        `pm` call, `obe` included: the milestone's seed is today's LIFECYCLE
+        plus the one word for abandoned work, whose absence is the `also_done`
+        defect (a story at `obe` holding its feature open forever) shipped to
+        every new consumer as a repair they have to discover — and a feature
+        and a story hold the SUBSET their belts write (story 01 of
+        the-code-knows-entry-and-exit: thirty stories sat at `reviewing`, a
+        state no belt writes, under the all-seven seed).
     """
     body = SEED_CONFIG.read_text(encoding='utf-8')
     assert model.render_seed() in body, (
@@ -125,9 +128,15 @@ def test_the_seed_is_the_installables_LIVE_section_and_a_tree_seeded_with_it_LOA
 
     cfg = load(body)
     assert sorted(cfg.flows) == sorted(model.FLOW_KINDS)
-    for kind in ('milestone', 'feature', 'story'):
+    expected = {
+        'milestone': model.LIFECYCLE + ('obe',),
+        'feature': ('planning', 'ready', 'building', 'reviewing', 'done',
+                    'obe'),
+        'story': ('planning', 'ready', 'building', 'done', 'obe'),
+    }
+    for kind, order in expected.items():
         flow = model.flow_of(cfg, kind)
-        assert flow.order == model.LIFECYCLE + ('obe',), kind
+        assert flow.order == order, kind
         assert flow.category('obe') == 'done', kind
     # A bug's vocabulary is declared exactly like the other three rather than
     # being a special case in the engine — which is the point of doing this per
@@ -177,13 +186,16 @@ def test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name():
     # a category with nothing in it
     ('[pm.states.story]\ntodo = ["a"]\nin_progress = ["b"]\n',
      'declares no state in done'),
-    # a transition to a state nobody declared
+    # a leftover `[pm.transitions.<kind>]` — the step-to-state table one 0.2.0
+    # build shipped and nothing read — is refused BY NAME, beside states...
     ('[pm.states.story]\ntodo = ["a"]\nin_progress = ["b"]\ndone = ["c"]\n'
-     '[pm.transitions.story]\nstory-done = "shipped"\n',
-     'does not declare'),
-    # transitions with no states at all
+     '[pm.transitions.story]\nstory-done = "c"\n',
+     '[pm.transitions.story] was retired and is refused'),
+    # ...and with no states at all: the key is what is refused, not its value
     ('[pm.transitions.story]\nstory-done = "done"\n',
-     'the states have to exist first'),
+     '[pm.transitions.story] was retired'),
+    # an empty transitions table is still the key
+    ('[pm.transitions]\n', '[pm.transitions] was retired'),
     # a grain kind this package never walks
     ('[pm.states.wombat]\ntodo = ["a"]\nin_progress = ["b"]\ndone = ["c"]\n',
      'names grain kind(s) wombat'),
@@ -296,20 +308,28 @@ class TestMove:
         assert model.move_defect(cfg, 'story', 'building') != ''
 
 
-def test_a_declared_step_names_its_state_and_an_undeclared_one_is_None():
-    """ASK BY CATEGORY, WRITE BY NAME — a category holds several states, so a
-    step that wrote "the done category" would make the engine guess a member,
-    and a step the project never declared is None rather than a guess."""
-    declared = load(FULL + '\n[pm.transitions.story]\nstory-done = "done"\n')
-    assert model.transition_target(declared, 'story', 'story-done') == 'done'
-    assert model.transition_target(load(FULL), 'story', 'story-done') is None
+def test_a_leftover_transitions_table_names_the_fix_and_the_reader_is_gone():
+    """The case this replaced asserted `transition_target` READ the table; it
+    could not fail once the reader was deleted, so it proves the deletion
+    instead. A tree carrying the retired table is refused before any verb
+    runs, the message says what replaced it — a belt writes the FIRST state of
+    its kind's `done` list — and says to remove the table rather than pasting
+    a replacement."""
+    assert not hasattr(model, 'transition_target')
+    with pytest.raises(ConfigError) as err:
+        load(FULL + '\n[pm.transitions.story]\nclaimed = "building"\n')
+    message = str(err.value)
+    assert '[pm.transitions.story] was retired' in message
+    assert 'FIRST state' in message and 'done list' in message
+    assert 'Remove the table' in message
 
 
 # --- `pm vocabulary` — the pin-bump verb --------------------------------------
-# It stopped being cosmetic in phase 6. Its docstring used to say "there are no
-# TRANSITIONS to print", which `[pm.transitions.<kind>]` falsifies, and it is
-# the one place a consumer can read what a VERSION's declared surface is
-# without scraping help text or a changelog (plan review finding P6).
+# It stopped being cosmetic in phase 6: it is the one place a consumer can read
+# what a VERSION's declared surface is without scraping help text or a
+# changelog. It echoes each kind's states with their category and NOTHING ELSE
+# about flow — the `[pm.transitions.<kind>]` block and the published step names
+# it printed for one build left with the table (story 01).
 def vocab(*argv: str) -> tuple[int, str]:
     """`pm vocabulary` in the tree the caller is already standing in."""
     from agentic_sdlc.repo.pm import cli
@@ -319,34 +339,29 @@ def vocab(*argv: str) -> tuple[int, str]:
     return code, buf.getvalue()
 
 
-# `FULL` ends on a value line with no trailing newline, so the join is
-# EXPLICIT: `FULL + TRANSITIONS` glued a `]` to a `[` and every case using it
-# failed as a TOML parse error rather than as the thing it was asserting.
-WITH_TRANSITIONS = FULL + ('\n[pm.transitions.story]\nclaimed = "building"\n'
-                           'story-done = "done"\n')
-
-
 class TestVocabulary:
     def test_a_renamed_vocabulary_is_what_gets_printed(self):
         """No engine word leaks into the flow block. If this ever prints
         `building` for a project that never wrote it, the verb is reporting the
         seed instead of the declaration — which is the one lie a discovery verb
-        can tell. P6's ruling rides along in the same output: the step keys are
-        the ENGINE's published vocabulary a project selects from, and saying so
-        is what keeps the table from being the engine's opinion wearing the
-        project's clothes."""
+        can tell. And nothing else about flow rides along: no transitions
+        block, no published step names — those were the one build's table,
+        and the table is refused now."""
         with tree(with_story('[pm.states.story]\ntodo = ["icebox"]\n'
                              'in_progress = ["in-dev"]\ndone = ["shipped"]\n')):
             code, out = vocab()
         assert code == 0, out
-        flow = out.split('[pm.states.milestone]')[1].split('published steps')[0]
+        flow = out.split('[pm.states.milestone]')[1].split('rules')[0]
         assert 'in-dev' in flow and 'shipped' in flow
         assert 'building' not in flow, (
             'the verb printed the seed instead of what the project declared')
-        assert 'ENGINE' in out and 'cannot invent one' in out
+        assert 'transitions' not in out and 'published steps' not in out
 
-    def test_the_json_payload_carries_the_flow_the_transitions_and_the_seed(self):
-        with tree(WITH_TRANSITIONS):
+    def test_the_json_payload_carries_the_flow_and_the_seed_and_no_transitions(self):
+        """Amended from the case that asserted a `transitions` key: with the
+        table refused at load, a payload that still carried the key would be
+        the verb describing a surface the reader no longer has."""
+        with tree(FULL):
             code, out = vocab('--json')
         assert code == 0, out
         payload = json.loads(out)
@@ -354,31 +369,13 @@ class TestVocabulary:
         assert payload['flow_kinds'] == list(model.FLOW_KINDS)
         assert payload['flow_declared'] is True
         flow = payload['grains']['story']['flow']
-        assert flow['categories']['in_progress'] == [
-            'building', 'reviewing', 'accepted', 'packaging']
-        assert flow['order'] == list(model.LIFECYCLE) + ['obe']
-        assert flow['transitions'] == {'claimed': 'building',
-                                       'story-done': 'done'}
+        assert flow['categories']['in_progress'] == ['building']
+        assert flow['order'] == ['planning', 'ready', 'building', 'done',
+                                 'obe']
+        assert sorted(flow) == ['categories', 'order']
+        assert 'published_steps' not in payload
+        assert 'transitions' not in payload['notes']
         assert payload['seed'] == model.render_seed()
-
-    def test_the_published_steps_come_from_the_conveyor_REGISTRY(self):
-        """Read off the registry itself, never a literal list here.
-
-        A literal would be a third spelling of `conveyor/steps.py` — the one in
-        the CLI, the one in this test, and the real one — and the first release
-        that adds a step would leave two of the three wrong while this passed.
-        So the census is derived, and the FLOOR is that it is not empty: an
-        emptied registry would satisfy a subset assertion in silence (rule 4).
-        """
-        from agentic_sdlc.repo.conveyor import steps
-        with tree(FULL):
-            code, out = vocab('--json')
-        assert code == 0, out
-        published = json.loads(out)['published_steps']
-        assert published, 'the step registry is empty — nothing was censused'
-        assert set(published) == set(steps.REGISTRIES)
-        for operation, names in published.items():
-            assert names == list(steps.registry_for(operation)), operation
 
 
 def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
@@ -450,6 +447,13 @@ DELETED = (
     ('pm.ready_for', '_needs_state'),
     ('pm.execlist', '_phase_key'),             # `seam`
     ('pm.cli', 'cmd_feature_reviewing'),       # `model.REVIEWING`'s verb
+    # story 01 of the-code-knows-entry-and-exit: the step-to-state table, its
+    # reader, the vocabulary section that printed it, and the ledger report's
+    # `reopens` column, which counted `reviewing -> building` by name
+    ('pm.model', 'transition_target'),
+    ('pm.cli', 'PUBLISHED_STEPS_NOTE'),
+    ('pm.cli', '_published_steps'),
+    ('pm.report', 'REOPENS_COLUMN'),
 )
 
 # Retired `[pm]` keys: a second declaration of the words, or an inference.
@@ -470,11 +474,14 @@ SEED_ASSIGNMENTS = {
 # and who may still read them, by module and function. Each is a declared
 # exception with its decision beside it; a reader added anywhere else fails.
 SEED_WORD_READERS = {
-    # the belts' step words — `[pm.transitions.<kind>]`'s job, not this
-    # feature's; the R4 site in the same module reads the flow instead
+    # the belts' step words (`CLAIMED` / `REVIEWING` / `DONE`); the R4 site
+    # in the same module reads the flow instead
     ('conveyor.steps', None),
-    # `reopens` is `reviewing -> building` by name, printing `-` for a
-    # vocabulary without those words: the precedent D7 cites
+    # `after_review` is "dispatched after the story's first move INTO
+    # `reviewing`", by name, printing `-` for a story that never entered it —
+    # every story under the shipped seed, since 0.2.0 dropped the word from
+    # the story flow. The `reopens` column beside it read the same word and
+    # left (story 01).
     ('pm.report', 'rework_data'),
     # D7: the dispatch snapshot's frozen keys, deprecated, removal at the next
     # major — phase 8 lands the category keys beside them

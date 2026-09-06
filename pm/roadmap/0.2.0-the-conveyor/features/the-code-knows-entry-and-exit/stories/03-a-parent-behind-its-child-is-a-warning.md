@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/03-a-parent-behind-its-child-is-a-warnin
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: A parent behind its child is a warning, not a finding, and nothing moves it
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -22,8 +22,9 @@ depends_on: []
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | each of D2/D3/D5/D6 prints WARN and exits 0; D1/D4 still DRIFT and exit 1 | amend tests/test_pm_gate.py |
-| 2 | unit | claimed writes the story and nothing else | amend tests/test_conveyor_close.py |
+| 1 | unit | each of D2/D3/D5/D6 prints WARN and exits 0; D1/D4 still DRIFT and exit 1 | amend tests/test_pm_gate.py (`DriftGate.RULES` carries the line shape per rule) |
+| 2 | unit | claimed writes the story and nothing else | amend tests/test_conveyor_close.py — the belt agent's file; not touched by this story's commit |
+| — | unit | `pm feature`/`pm milestone` print the one line they wrote | amend tests/test_pm_verbs.py |
 
 ## Out of scope
 

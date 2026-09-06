@@ -92,68 +92,44 @@ class StatusMoves(unittest.TestCase):
 
     def test_the_END_STATE_is_still_gated(self):
         # Report, do not refuse: a story at work under a feature that says it
-        # has not started is D5's finding whether the CLI or an editor put it
-        # there.
+        # has not started is D5's WARN whether the CLI or an editor put it
+        # there — a line naming both, exit 0 (story 03).
         with tree(feature_status='planning', story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'story', 'done', '0.1/alpha/s0')[0], 0)
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
+            self.assertEqual(code, 0, out)
+            self.assertIn('  WARN  story 0.1/alpha/s0', out)
             self.assertIn('two places in this tree disagree', out)
 
-    def test_feature_reviewing_REPORTS_unfinished_stories_and_still_moves(self):
-        # It used to refuse: "a feature cannot be under review while its own
-        # work is unfinished" is a claim about how a team works. Which stories
-        # are where is a fact, and it belongs in the output, not in a veto.
-        #
-        # B3: the advisory asks `model.holds(stories, done)` — the SAME
-        # question `pm ready-for feature` asks — where it used to ask
-        # `not in (reviewing, 'done')`. A story AT `reviewing` is not finished,
-        # so it is named here too; it used to flip silently and then be named
-        # by `ready-for`, which is one question with two answers. And it
-        # prints on every move INTO `in_progress`, not on the word
-        # `reviewing`: `building` gets the same advisory.
+    def test_a_feature_move_prints_what_it_wrote_and_nothing_else(self):
+        """Amended from the case that asserted the advisory (`not finished:
+        s0.md(...)`) on every move into `in_progress` — it could not fail once
+        the advisory was deleted, so it now proves the deletion: a write
+        prints the one line it wrote (story 03), and the stories left behind
+        are `check pm`'s WARN, asked of the tree."""
         for to in ('reviewing', 'building'):
             with self.subTest(to=to), \
                     tree(feature_status='ready',
-                         story_statuses=('reviewing', 'building')) as root:
+                         story_statuses=('ready', 'building')) as root:
                 code, out = run_cli(root, 'feature', to, '0.1/alpha')
                 self.assertEqual(code, 0, out)
-                self.assertIn('not finished', out)
-                self.assertIn('s1.md(building)', out)
-                self.assertIn('s0.md(reviewing)', out)
+                self.assertEqual(out.strip().splitlines(),
+                                 [f'[pm] feature 0.1/alpha: ready -> {to}'])
                 self.assertEqual(model.field_of(root / FFILE, 'status'), to)
 
-    def test_the_advisory_asks_the_category_so_obe_is_finished(self):
-        # The other half of B3, as a category: `obe` is in the seed's `done`
-        # list, so a dropped story does not keep the advisory talking — and
-        # not because of an `also_done` shim read from a default, which is
-        # what 0.2.0 removed. A project that puts `obe` in `in_progress`
-        # instead gets it named, because the declaration is the whole answer.
-        with tree(story_statuses=('done', 'obe')) as root:
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('not finished', out)
-        parked = {'todo': ('planning', 'ready'),
-                  'in_progress': ('building', 'reviewing', 'obe'),
-                  'done': ('done',)}
-        with tree(story_statuses=('done', 'obe')) as root:
-            write_config(root, declaring(story=parked))
-            code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertIn('not finished', out)
-            self.assertIn('s1.md(obe)', out)
-
-    def test_milestone_done_REPORTS_live_features_and_still_moves(self):
+    def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
+        # The advisory about the features left behind is gone (story 03);
+        # D3 asks that question of the tree it left, as a WARN naming both.
         with tree(feature_status='building') as root:
             code, out = run_cli(root, 'milestone', 'done', '0.1')
             self.assertEqual(code, 0, out)
-            self.assertIn('feature(s) not done', out)
-            self.assertIn('alpha(building)', out)
+            self.assertEqual(out.strip().splitlines(),
+                             ['[pm] milestone 0.1: building -> done'])
             self.assertEqual(model.field_of(root / MFILE, 'status'), 'done')
-            # ...and D3 asks the same question of the tree it left behind.
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn('is done but feature 0.1/alpha', out)
+            self.assertEqual(code, 0, out)
+            self.assertIn("  WARN  milestone 0.1 is 'done' (done) but feature "
+                          "0.1/alpha is 'building' (in_progress)", out)
 
 
 class StatusVerbQuartet(unittest.TestCase):
@@ -267,19 +243,18 @@ class FeatureClose(unittest.TestCase):
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'done')
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted(sdir.iterdir())}, before)
-            self.assertIn('NOT touched', out)
-            self.assertIn('s0.md(reviewing)', out)
-            self.assertIn('s1.md(building)', out)
-            self.assertIn('close story', out)
+            # ...and it does not narrate what it left alone any more (story
+            # 03): the close prints the one write it made.
+            self.assertNotIn('NOT touched', out)
+            self.assertNotIn('s0.md', out)
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha', '--cascade')
             self.assertEqual(code, 2, out)
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted(sdir.iterdir())}, before)
 
-    def test_the_second_close_writes_nothing_and_still_reports(self):
-        # Rule 3: the same command twice is a no-op the second time — and the
-        # no-op branch used to swallow the REPORT, so the second run was
-        # quieter than the first about the same tree.
+    def test_the_second_close_writes_nothing_and_says_so(self):
+        # Rule 3: the same command twice is a no-op the second time, and it
+        # says so; the story advisory it used to repeat is gone (story 03).
         with tree(feature_status='reviewing',
                   story_statuses=('reviewing', 'ready')) as root:
             fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
@@ -290,7 +265,7 @@ class FeatureClose(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('already done (no-op)', out)
-            self.assertIn('s1.md(ready)', out)
+            self.assertNotIn('s1.md', out)
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted((fdir / 'stories').iterdir())},
                              settled)
@@ -307,7 +282,6 @@ class FeatureClose(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'obe')
             self.assertIn('reviewed -> docs/reviews/alpha.md', out)
-            self.assertIn('NOT touched', out)
 
     def test_a_record_pointer_naming_no_file_is_refused_and_writes_nothing(self):
         """The half that IS a fact, and the one D1 reports afterwards: a
@@ -388,7 +362,7 @@ class ListFindsTheNail(unittest.TestCase):
                 if '\t' in line]
 
     def _tree(self):
-        return tree(story_statuses=('ready', 'building', 'reviewing', 'done'))
+        return tree(story_statuses=('ready', 'building', 'obe', 'done'))
 
     def test_every_story_one_tab_separated_row_and_every_filter_narrows(self):
         with self._tree() as root:
@@ -400,17 +374,63 @@ class ListFindsTheNail(unittest.TestCase):
             self.assertEqual(rows[0][1], 'ready')
             self.assertEqual(rows[0][3], '0.1/alpha')
 
-            code, out = run_cli(root, 'list', '--status', 'building,reviewing')
+            code, out = run_cli(root, 'list', '--status', 'building,obe')
             self.assertEqual(code, 0, out)
             self.assertEqual([r[1] for r in self._rows(out)],
-                             ['building', 'reviewing'])
+                             ['building', 'obe'])
             self.assertIn('2 of 4 story/ies', out)
+
+            # `--category` asks the same question every other reader asks —
+            # `obe` is finished — so the two `done`-category stories are one
+            # answer, and a word the project never declared is exit 2 rather
+            # than an empty match (a typo'd filter must not read as "nothing
+            # is open").
+            code, out = run_cli(root, 'list', '--category', 'done')
+            self.assertEqual(code, 0, out)
+            self.assertEqual([r[1] for r in self._rows(out)], ['obe', 'done'])
+            code, out = run_cli(root, 'list', '--category', 'finished')
+            self.assertEqual(code, 2, out)
+            self.assertIn('todo in_progress done', out)
+            code, out = run_cli(root, 'list', '--status', 'reviewing')
+            self.assertEqual(code, 2, out)
+            self.assertIn('[pm.states.story]', out)
 
             self.assertEqual(
                 run_cli(root, 'set', '0.1/alpha/s1', 'owner', 'ada')[0], 0)
             code, out = run_cli(root, 'list', '--owner', 'ada')
             self.assertEqual(code, 0, out)
             self.assertEqual([r[2] for r in self._rows(out)], ['ada'])
+
+    def test_kind_milestone_lists_every_milestone_with_its_category_and_branch(self):
+        """`--kind milestone` is what a SCRIPT asks instead of grepping
+        `status: building` out of milestone.md — the worktree tool did exactly
+        that and stopped matching the day a project renamed the word. Four
+        columns always, `-` for an absent branch, so a shell `read` never
+        misaligns; `--category` filters on the category, whatever the word."""
+        with tree(milestone_status='building') as root:
+            mfile = root / MFILE
+            model.set_field(mfile, 'branch', 'milestone/0.1')
+            write(root / 'pm/roadmap/0.2-later/milestone.md',
+                  {'id': '"0.2"', 'name': 'Later', 'status': 'planning'})
+            code, out = run_cli(root, 'list', '--kind', 'milestone')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self._rows(out), [
+                ['0.1', 'building', 'in_progress', 'milestone/0.1'],
+                ['0.2', 'planning', 'todo', '-']])
+            self.assertIn('2 of 2 milestone(s)', out)
+            code, out = run_cli(root, 'list', '--kind', 'milestone',
+                                '--category', 'in_progress')
+            self.assertEqual(code, 0, out)
+            self.assertEqual([r[0] for r in self._rows(out)], ['0.1'])
+            self.assertIn('1 of 2 milestone(s)', out)
+            # The story filters do not apply, and a kind this verb does not
+            # list names the two it does.
+            code, out = run_cli(root, 'list', '--kind', 'milestone',
+                                '--owner', 'ada')
+            self.assertEqual(code, 2, out)
+            code, out = run_cli(root, 'list', '--kind', 'bug')
+            self.assertEqual(code, 2, out)
+            self.assertIn('story or milestone', out)
 
     def test_the_milestone_filter_selects_and_names_its_set(self):
         # `--milestone 0.2` on a tree holding only 0.1 printed `0 of 0` at exit
@@ -795,8 +815,8 @@ class Vocabulary(unittest.TestCase):
     changelog — which is also why this verb keeps running when `[pm] checks`
     names an id the release retired.
 
-    What has NOT come back is an edge table: `[pm.transitions]` maps a STEP to
-    a state, never a state to a state. The flow half is proven in
+    What has NOT come back is an edge table, and the step-to-state table one
+    build carried is refused by name now. The flow half is proven in
     tests/test_pm_flow.py; this keeps the pin-bump surface.
     """
 
@@ -807,6 +827,8 @@ class Vocabulary(unittest.TestCase):
             self.assertEqual(code, 0, out)
             data = json.loads(out)
             self.assertEqual(data['grains']['story']['states'],
+                             ['planning', 'ready', 'building', 'done', 'obe'])
+            self.assertEqual(data['grains']['milestone']['states'],
                              list(model.LIFECYCLE) + ['obe'])
             self.assertEqual(data['grains']['bug']['states'],
                              ['open', 'fixed', 'closed'])
@@ -820,9 +842,10 @@ class Vocabulary(unittest.TestCase):
             # so the payload carries it. The ABSENCE half — `flow_declared:
             # false` and a null `flow` — is proven in tests/test_pm_flow.py.
             self.assertIs(data['flow_declared'], True)
-            self.assertEqual(data['grains']['story']['flow']['order'],
+            self.assertEqual(data['grains']['milestone']['flow']['order'],
                              list(model.LIFECYCLE) + ['obe'])
             self.assertNotIn('->', out)
+            self.assertNotIn('transitions', out)
 
             # ...and it is the PROJECT's vocabulary, never the stock one.
             write_config(root, declaring(story={
@@ -1183,7 +1206,6 @@ class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(model.field_of(root / FFILE, 'status'), 'shipped')
             self.assertIn('review record: docs/reviews/alpha.md', out)
-            self.assertIn('NOT touched', out)
 
     def test_review_record_with_an_empty_value_refuses_in_either_spelling(self):
         # Pre-fix: `--review-record=` stored '' and silently skipped the
@@ -1355,14 +1377,45 @@ class Retire(unittest.TestCase):
     def test_a_non_done_milestone_is_reported_not_refused(self):
         with tree(milestone_status='building',
                   feature_status='building') as root:
-            self._seed_roadmap(root)
+            index = self._seed_roadmap(root)
             BugStatus._bug(root, 'seed-is-zero', 'open')
-            code, out = run_cli(root, 'retire', '0.1')
+            code, out = run_cli(root, 'retire', '0.1', 'pulled')
             self.assertEqual(code, 0, out)
             self.assertIn('noticed: milestone 0.1 is building, not done', out)
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
             self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            # ...and the row says the word it was retired in.
+            self.assertIn('| building — pulled |', index.read_text())
+
+    def test_retire_of_an_obe_milestone_writes_a_row_that_says_so(self):
+        """0.2.0/bugs/a-collapsed-milestone-has-no-verb: `retire` only knew
+        one ending, and a collapsed milestone got a row under "What shipped"
+        that said it shipped. Any `done`-category state retires without a
+        "not done" notice, and the row's last cell opens with the state the
+        file held — `obe` here — so the index never calls abandoned work
+        delivered. No existing case could fail for this: every retire case
+        used `done` and read the summary cell for its own words only."""
+        with tree(milestone_status='obe', feature_status='obe',
+                  story_statuses=('obe',)) as root:
+            index = self._seed_roadmap(root)
+            code, out = run_cli(root, 'retire', '0.1', 'collapsed into 0.2')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('not done', out)
+            self.assertNotIn('noticed', out)
+            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            rows = [ln for ln in index.read_text().splitlines()
+                    if ln.startswith('| 0.1 |')]
+            self.assertEqual(len(rows), 1, index.read_text())
+            self.assertTrue(rows[0].endswith('| obe — collapsed into 0.2 |'),
+                            rows[0])
+        # ...and `done` says `done`, with an empty summary printing the word
+        # alone rather than a dangling dash.
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            index = self._seed_roadmap(root)
+            self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
+            self.assertIn('| done |', index.read_text())
 
     def test_dry_run_writes_nothing_byte_for_byte(self):
         with tree(milestone_status='done', feature_status='done',
@@ -1418,7 +1471,7 @@ class Retire(unittest.TestCase):
                 row = after[len(before):]
                 self.assertRegex(row, r'^\| 0\.1 \|[^\r\n]*\r\n$')
                 self.assertIn('2026-01-02', row)
-                self.assertIn('shipped X and Y', row)
+                self.assertIn('| done — shipped X and Y |', row)
                 self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
                 self.assertTrue((root / 'pm/roadmap/0.2-later').is_dir())
             finally:

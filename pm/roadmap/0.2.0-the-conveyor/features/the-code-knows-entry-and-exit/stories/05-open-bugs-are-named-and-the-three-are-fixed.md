@@ -3,7 +3,7 @@ id: 0.2.0/the-code-knows-entry-and-exit/05-open-bugs-are-named-and-the-three-are
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: An open bug against the milestone is named, and the three open bugs are fixed
-status: planning
+status: building
 owner:
 depends_on: []
 ---
@@ -22,10 +22,10 @@ depends_on: []
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | an open bug blocks; a closed one does not; another milestone's is ignored and counted | amend tests/test_pm_ready_for.py |
-| 2 | integration | a composition run leaves a `gate` row named for it | amend tests/test_makefile_gates.py |
-| 3 | unit | retire of an obe milestone | amend tests/test_pm_verbs.py |
-| 4 | unit | the slot names have one source | amend tests/test_grain_shape.py |
+| 1 | unit | an open bug blocks; a closed one does not; another milestone's is ignored and counted | amend tests/test_pm_ready_for.py (`MilestoneBelt.test_an_open_bug_against_the_milestone_blocks_and_is_named`) |
+| 2 | integration | a composition run leaves a `gate` row named for it | amend tests/test_makefile_gates.py — the Makefile agent's; not in this story's commit |
+| 3 | unit | retire of an obe milestone | amend tests/test_pm_verbs.py (`Retire.test_retire_of_an_obe_milestone_writes_a_row_that_says_so`) |
+| 4 | unit | the slot names have one source | amend tests/test_grain_shape.py (`test_the_slot_names_have_one_source`) |
 
 ## Out of scope
 

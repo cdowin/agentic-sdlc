@@ -2,7 +2,7 @@
 id: 0.2.0/bugs/a-collapsed-milestone-has-no-verb
 milestone: "0.2.0"
 name:
-status: open
+status: fixed
 caught_in: "0.2.0"
 fix_milestone: 0.2.0
 caused_by:

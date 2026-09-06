@@ -68,12 +68,16 @@ The seed `pm init` writes:
 
 | Grain | `todo` | `in_progress` | `done` |
 |---|---|---|---|
-| Milestone, Feature, Story | `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` |
+| Milestone | `planning` `ready` | `building` `reviewing` `accepted` `packaging` | `done` `obe` |
+| Feature | `planning` `ready` | `building` `reviewing` | `done` `obe` |
+| Story | `planning` `ready` | `building` | `done` `obe` |
 | Bug | `open` | `fixed` | `closed` |
 
-A grain uses the states it needs and SKIPS the rest: packaging a feature is a
-different act from packaging a milestone, and a story routinely skips packaging
-altogether. `done` does not mean SHIPPED — the flip is itself a commit that has not
+Each kind holds the states its belt WRITES and no others: a story is claimed
+(`building`) and closed (`done`), a feature is additionally `reviewing` while its
+record is written, and acceptance and packaging are milestone acts. There is no
+step-to-state table — a belt writes the first state of its kind's `done` list, and
+`pm <kind> <state>` reaches any declared state by hand. `done` does not mean SHIPPED — the flip is itself a commit that has not
 shipped when it is written. It means everything inside the tree's authority is
 finished: changelog written, reviews closed, findings landed, gates green. `obe` sits
 beside it because abandoned work is finished too. Branch, PR, merge and tag are git
@@ -107,9 +111,10 @@ requires the two readings to agree.
 
 ## Reading the tools
 
-- **`pm status [<milestone>]`** — the whole tree. It marks `<DRIFT>` using the same
-  predicates the gate reports on. Never hand-copy a tally out of it into a doc; that
-  is a second scoreboard and it will lie.
+- **`pm status [<milestone>]`** — the whole tree. It marks `<DRIFT: …>` (a dangling
+  review record) and `<WARN: …>` (a feature behind its own finished stories) off the
+  same predicates the gate reports on. Never hand-copy a tally out of it into a doc;
+  that is a second scoreboard and it will lie.
 - **`pm list [--status …] [--owner …] [--milestone …]`** — one tab-separated
   `<story-id>  <status>  <owner>  <feature-id>` per story. It is the "what is open"
   read; `pm status` is the "what is everything doing" read.
@@ -117,7 +122,15 @@ requires the two readings to agree.
   is acyclic. **UNVERIFIABLE** in its summary is not a failure: it
   counts refs into milestones no longer in the working tree, which is expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
-  names the file; fix it with the CLI, never with a `status:` edit.
+  names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
+  is not a failure and moves nothing: it names a grain stamped `ready` whose scaffolded
+  section is still empty (`## Acceptance criteria`, `## Ship criterion`), a readied
+  feature with no stories, a readied milestone with no `branch:` or an unphased
+  feature — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
+  a `todo` feature, a `todo` feature over finished stories, a `done` milestone over an
+  unfinished feature), both grains and both categories named. Counted on the verdict
+  line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the
+  only stamp; write the section, then stamp.
 
 ## Retiring a closed milestone — git history is the archive
 

@@ -121,10 +121,10 @@
 # what order they appear in within it are all this project's. A state in no
 # category, or in two, is exit 2 — a fact about this file, not drift in a tree.
 #
-# The values reproduce the shipped lifecycle exactly, so a tree that accepts
-# what `init` wrote behaves the way it always did. `accepted` and `packaging`
-# are `in_progress`: a category is about whether WORK REMAINS, not about
-# whether the outcome is decided. A word that means FINISHED-BUT-NOT-DELIVERED
+# The milestone's values reproduce the shipped lifecycle exactly; a feature
+# and a story hold the subset a belt writes for them. `accepted` and
+# `packaging` are `in_progress`: a category is about whether WORK REMAINS, not
+# about whether the outcome is decided. A word that means FINISHED-BUT-NOT-DELIVERED
 # — `obe`, `wontfix`, `duplicate` — belongs in `done`, because finished and
 # delivered are different axes (`docs/design/state-categories.md` §4).
 #
@@ -139,12 +139,12 @@ done        = ["done", "obe"]
 
 [pm.states.feature]
 todo        = ["planning", "ready"]
-in_progress = ["building", "reviewing", "accepted", "packaging"]
+in_progress = ["building", "reviewing"]
 done        = ["done", "obe"]
 
 [pm.states.story]
 todo        = ["planning", "ready"]
-in_progress = ["building", "reviewing", "accepted", "packaging"]
+in_progress = ["building"]
 done        = ["done", "obe"]
 
 [pm.states.bug]
@@ -152,20 +152,15 @@ todo        = ["open"]
 in_progress = ["fixed"]
 done        = ["closed"]
 
-# The other half of the flow, and it ships EMPTY rather than guessed: a
-# transition maps a conveyor STEP to the exact state that step writes.
-#
-#   [pm.transitions.story]
-#   claimed    = "building"
-#   story-done = "done"
-#
-# ASK BY CATEGORY, WRITE BY NAME — a category holds several states, so a step
-# that wrote "the done category" would make the engine guess a member. The KEYS
-# are the step names this package PUBLISHES; a project selects from them and
-# cannot invent one, exactly as `[<operation>] steps` already works. Run
-# `agentic-sdlc pm vocabulary` for the whole published set — that verb is what
-# a pin bump is read through, because a release that adds a step adds a key
-# this file does not have yet.
+# EACH KIND DECLARES ITS OWN STATES, and the lists above are what the belts
+# WRITE. `close story` claims a story (`building`) and closes it (`done`); a
+# feature is additionally `reviewing` while its review record is written; a
+# milestone walks all seven because acceptance and packaging are milestone
+# acts. A word a kind never holds is not seeded for it. There is NO
+# step-to-state table: a belt writes the FIRST state of its kind's `done`
+# list, and `pm <kind> <state>` reaches any declared state by hand. A
+# `[pm.transitions.<kind>]` table left over from an earlier 0.2.0 build is
+# refused by name.
 
 # --- your own gates -----------------------------------------------------------
 # Everything heavier than the five gates above is this project's to supply, and

@@ -368,7 +368,10 @@ def test_diff_names_a_missing_gitignore_entry():
 # --- ownership ----------------------------------------------------------------
 def test_a_differing_project_owned_file_is_reported_not_refused():
     """devkit.toml, Makefile and CLAUDE.md are the project's from the first
-    write. Divergence is what they are FOR, so it is not a collision."""
+    write. Divergence is what they are FOR, so it is not a collision. The one
+    thing init still does to a devkit.toml it did not write is APPEND the
+    flow, because that is the section nothing falls back on — every byte the
+    project wrote stays, in front of it."""
     with fresh_project() as root:
         assert devkit(root, 'init').returncode == 0
         mine = '# mine\n'
@@ -378,8 +381,47 @@ def test_a_differing_project_owned_file_is_reported_not_refused():
         kept = [(root / rel).read_text(encoding='utf-8')
                 for rel in ('devkit.toml', 'Makefile', 'CLAUDE.md')]
     assert done.returncode == 0, done.stdout + done.stderr
-    assert kept == [mine] * 3, 'a project-owned file was overwritten'
+    assert kept[1:] == [mine] * 2, 'a project-owned file was overwritten'
+    assert kept[0].startswith(mine), 'devkit.toml lost the project\'s bytes'
+    assert model.render_seed() in kept[0], kept[0]
     assert done.stdout.count('is yours — left alone') == 3, done.stdout
+    assert 'appended the flow to devkit.toml' in done.stdout, done.stdout
+
+
+def test_init_appends_the_flow_to_a_config_it_did_not_write_byte_preserving():
+    """F2/F3 of docs/reviews/2026-09-05-the-project-declares-its-flow.md,
+    measured the way the review measured them: a hand-written CRLF
+    devkit.toml with `[checks]` and `[pm]` and NO `[pm.states.*]`.
+
+    No existing case could fail for this. Every other case here initialises
+    a tree that has no devkit.toml, so the template is written whole and the
+    append path never runs; the one case that pre-writes the file (above)
+    read it back as text, which is where a CRLF-to-LF rewrite hides. This one
+    holds the BYTES: the original is a prefix of the result, the appended
+    block uses the file's own CRLF, the second run changes nothing, and a
+    verb that asks `flow_of` — the refusal that names `pm init` — now works.
+    """
+    theirs = ('[checks]\r\nall = ["doc"]\r\n\r\n[pm]\r\n'
+              'review_dir = "docs/reviews"\r\n')
+    with fresh_project(files={'devkit.toml': theirs}) as root:
+        path = root / 'devkit.toml'
+        path.write_bytes(theirs.encode())          # write_text would translate
+        done = devkit(root, 'init')
+        assert done.returncode == 0, done.stdout + done.stderr
+        first = path.read_bytes()
+        assert first.startswith(theirs.encode()), first
+        appended = first[len(theirs):].decode()
+        assert '\n' not in appended.replace('\r\n', ''), (
+            'the appended block does not use the file\'s CRLF')
+        assert appended.replace('\r\n', '\n').endswith(model.render_seed())
+        again = devkit(root, 'init')
+        assert again.returncode == 0, again.stdout + again.stderr
+        assert path.read_bytes() == first, 'a second run rewrote devkit.toml'
+        assert 'already declares [pm.states.*]' in again.stdout, again.stdout
+        # ...and the tree the refusal was about now answers.
+        vocab = devkit(root, 'pm', 'vocabulary', '--json')
+        assert vocab.returncode == 0, vocab.stderr
+        assert '"flow_declared": true' in vocab.stdout
 
 
 def test_force_overwrites_the_installed_files_and_not_the_projects_own():

@@ -46,6 +46,26 @@ from support.pm import (
 
 from agentic_sdlc.repo.pm import ledger
 
+# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
+# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
+# gives each kind the states its belt writes (a story: `building`, `done`), and
+# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
+# `in_progress` number whatever the word — so the tree keeps the declaration
+# the rows were written under rather than rewriting every row to a word that
+# proves nothing different. `support.pm.tree` is the builder; this only fixes
+# its `config`.
+from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
+from agentic_sdlc.repo.pm import model as _model  # noqa: E402
+
+LEGACY_FLOW = _declaring(feature=_model.DEFAULT_FLOWS['milestone'],
+                         story=_model.DEFAULT_FLOWS['milestone'])
+
+
+def tree(**kwargs):
+    """`support.pm.tree` under the all-seven flow these ledgers assume."""
+    kwargs.setdefault('config', LEGACY_FLOW)
+    return _seed_tree(**kwargs)
+
 BUG_ID = '0.1/bugs/b0'
 STORY = '0.1/alpha/s0'
 
@@ -185,7 +205,6 @@ def test_a_feature_close_writes_the_feature_row_and_no_story_row():
               story_statuses=('reviewing', 'reviewing', 'ready')) as root:
         code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
         assert code == 0, out
-        assert 'NOT touched' in out
         rows = ledger_rows(root)
     assert [(r['grain'], r['from'], r['to']) for r in rows] == [
         ('0.1/alpha', 'reviewing', 'done')]

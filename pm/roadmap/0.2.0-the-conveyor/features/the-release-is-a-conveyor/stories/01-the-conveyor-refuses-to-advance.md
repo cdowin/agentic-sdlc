@@ -3,7 +3,7 @@ id: 0.2.0/the-release-is-a-conveyor/01-the-conveyor-refuses-to-advance
 feature: 0.2.0/the-release-is-a-conveyor
 milestone: "0.2.0"
 name: The release runs as a step machine whose position is on disk
-status: reviewing
+status: building
 owner:
 depends_on: []
 ---

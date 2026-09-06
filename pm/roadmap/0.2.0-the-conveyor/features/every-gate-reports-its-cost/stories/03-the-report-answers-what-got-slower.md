@@ -3,7 +3,7 @@ id: 0.2.0/every-gate-reports-its-cost/03-the-report-answers-what-got-slower
 feature: 0.2.0/every-gate-reports-its-cost
 milestone: "0.2.0"
 name: pm ledger report says which gate got slower
-status: reviewing
+status: building
 owner:
 depends_on: ["0.2.0/every-gate-reports-its-cost/01-the-ledger-holds-what-a-gate-cost"]
 ---

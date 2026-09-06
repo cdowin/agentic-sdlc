@@ -39,10 +39,17 @@ milestone's `order`, and grouping — if a project wants it — is a label.
 ## One verb shape at every level
 
 ```
-pm milestone add ft-two-pin-adoption --position 1
-pm feature   add st-two-pins-one-make --after st-something
-pm milestone remove ft-two-pin-adoption
+pm add    ms-game-polish  ft-two-pin-adoption --position 1
+pm add    ft-two-pin-adoption  st-two-pins-one-make --after st-something
+pm remove ms-game-polish  ft-two-pin-adoption
 ```
+
+**The parent is named, and its kind is not.** An id carries its kind as a prefix
+(`identity-lives-in-frontmatter`), so `ms-`/`ft-` is derivable from both arguments and requiring
+the caller to repeat it would be redundant. That also makes `add` ONE verb rather than one per
+parent kind, which is the thesis of this feature applied to its own surface. `pm set <id> <key>
+<value>` is already kind-less for the same reason; the older `pm <kind> <status> <id>` shape is
+kind-FIRST only because the kind selects which `[pm.states.<kind>]` to check.
 
 `add` binds AND sequences, because "put this in this milestone, here" is one intent; `pm set <id>
 milestone <x>` remains the primitive for binding without caring where. `--position N`, `--before`
@@ -61,6 +68,17 @@ something the primitive cannot, and does the primitive stay reachable?** Yes to 
 neither primitive has, it has stopped being a convenience and become a second mechanism, and that
 is the thing to catch in review.
 
+**`order` lists child IDS, at every level including the root.** 0.3.0 writes the root's order as
+version strings because a milestone's id IS its version there; `a-milestone-declares-its-version`
+separates them, and the order follows the id. Two reasons: it is then the same kind of list at
+every level — child ids, nothing else — and renaming a version never touches the plan, which is
+the same decoupling argument one more time. "What version ships next" becomes
+`field_of(<first unshipped milestone>, 'version')`.
+
+That makes `pm order --append` a second spelling of `pm add` against the root, so it retires in
+favour of the uniform verb; the root is named by `releases.md`'s own `id:` like any other parent.
+Reading the plan stays `pm roadmap`.
+
 **What may be added to what is declared, not hard-coded:**
 
 ```toml
@@ -69,8 +87,9 @@ milestone = ["feature", "bug"]
 feature   = ["story"]
 ```
 
-So `pm milestone add ms-other` is refused by name — *a milestone contains feature, bug* — from the
-mapping rather than from a check written per level. It is also the config stating the model, which
+So `pm add ms-game-polish ms-other` is refused by name — *a milestone contains feature, bug* —
+from the mapping rather than from a check written per level, and both kinds in the refusal come
+from the ids themselves. It is also the config stating the model, which
 is the point of `the-config-is-the-model`: reading `[pm.contains]` tells you the shape of the tree
 with no prose at all.
 

@@ -11,13 +11,13 @@ consumed_by: []
 
 # Membership is the child's field, sequence is the parent's list
 
-0.3.0 built `order` for one edge: `releases.toml` sequences milestones while each milestone's
+0.3.0 built `order` for one edge: `releases.md` sequences milestones while each milestone's
 `version:` says which release it is. **That split is general, and the tool already has two ad-hoc
 answers to the same question that it can retire.**
 
 > **Membership is the child's field. Sequence is the parent's list.**
 
-- root → milestones, sequenced by `releases.toml` `order`
+- root → milestones, sequenced by `releases.md`'s `order`
 - milestone → features and bugs, sequenced by the milestone's `order`
 - feature → stories, sequenced by the feature's `order`
 
@@ -63,6 +63,12 @@ with no prose at all.
 
 **`order` is optional per container.** A milestone's bugs are not sequenced work, and an
 unsequenced child is simply unsequenced — a census line, never a finding.
+
+**And it is the same list in the same place at every level**, once 0.3.0 makes `releases.md` a
+grain: `order` is block-style frontmatter on the parent, written by the same list-aware writer,
+diffed the same way. `releases.md` is only distinguishable as "the root's grain" — it holds the
+order of milestones because the tree itself has no other record. Nothing about it is a special
+format, and TOML never appears in the PM layer at all.
 
 ## Ship criterion
 

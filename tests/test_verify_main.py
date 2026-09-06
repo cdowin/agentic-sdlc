@@ -28,6 +28,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from support import REPO_ROOT
 from support.pm import with_flow
 
 from agentic_sdlc import cli
@@ -331,19 +332,35 @@ class TheRefusalMatrix(unittest.TestCase):
         self.assertIn('--story', out)
 
 
+@contextlib.contextmanager
+def _in_this_repo():
+    """cwd'd into THIS checkout with the config caches cleared both ways —
+    under xdist a worker's cwd is wherever the previous fixture left it."""
+    previous = Path.cwd()
+    os.chdir(REPO_ROOT)
+    _clear_caches()
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+        _clear_caches()
+
+
 class SelfHosting(unittest.TestCase):
     """This repo's OWN `[verify]` section, held to the tree it describes."""
 
     def test_verify_check_passes_on_this_tree(self):
-        code, out = run('--check')
+        with _in_this_repo():
+            code, out = run('--check')
         self.assertEqual(0, code, f'this repo self-hosts the ladder:\n{out}')
         self.assertIn('3 of 3 rung(s) declared', out)
 
     def test_the_story_rung_here_is_the_unit_tier(self):
         # CLAUDE.md's ladder row says `make unit`; the config is the fact.
-        ladder = rules.read(cli._verify_section())
+        with _in_this_repo():
+            ladder = rules.read(cli._verify_section())
+            targets, _ = verb.make_targets(verb.repo_root())
         self.assertEqual('make unit', ladder.story)
-        targets, _ = verb.make_targets(verb.repo_root())
         for name in rules.RUNGS:
             self.assertIn(rules.rung_target(ladder.rung(name)), targets)
 

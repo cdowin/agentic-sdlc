@@ -1,5 +1,5 @@
 ---
-id: 0.2.0/the-code-knows-entry-and-exit/04-open-bugs-are-on-the-conveyor
+id: 0.2.0/the-code-knows-entry-and-exit/04-a-belt-is-its-checks-then-one-write
 feature: 0.2.0/the-code-knows-entry-and-exit
 milestone: "0.2.0"
 name: A belt is its checks, then one write or a clean error (D12)

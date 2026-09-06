@@ -442,8 +442,18 @@ def changed(root: Path, ref: str | None, to: str | None = None) -> list[str]:
             base = ''
     if to is not None:
         _git(root, ['rev-parse', '--verify', to])
-        return list(dict.fromkeys(
+        ranged = list(dict.fromkeys(
             _nul(_git(root, ['diff', '--name-only', '-z', base or to, to]))))
+        # A closed range is history, and the narrow commands run on the tree
+        # in front of us: a path the range touched that no longer exists here
+        # cannot be verified by running it, so it is named and left out rather
+        # than handed to a rule as a file that is not there.
+        gone = [path for path in ranged if not (root / path).exists()]
+        if gone:
+            print(f'verify --story: {len(gone)} path(s) in {base or to}..{to} '
+                  f'no longer exist in this tree and are not verified: '
+                  + ', '.join(gone))
+        return [path for path in ranged if path not in gone]
     paths = _nul(_git(root, ['diff', '--name-only', '-z', base])) if base \
         else _nul(_git(root, ['ls-files', '-z']))
     paths += _nul(_git(root, ['ls-files', '-z', '--others',

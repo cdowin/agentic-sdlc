@@ -551,6 +551,26 @@ class TheRefusalMatrix(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn('make story', out)
 
+    def test_to_closes_the_range_at_the_storys_own_commit(self):
+        """`close story` after other work has landed: the range is the
+        story's commits, `--ref <first>^ --to <last>`, not everything up to
+        HEAD. Before `--to` existed a late close of one story ran the narrow
+        rung over a hundred and sixty-six paths that were not its own."""
+        with Repo(LADDER + rule('src/**', 'make story')
+                  + rule('docs/**', 'make docs-only')) as repo:
+            base = repo._git('rev-parse', 'HEAD').strip()
+            repo.edit('src/a.py')
+            repo._git('add', '-A')
+            repo._git('commit', '-q', '-m', 'the story')
+            story = repo._git('rev-parse', 'HEAD').strip()
+            repo.edit('docs/later.md')
+            repo._git('add', '-A')
+            repo._git('commit', '-q', '-m', 'somebody else, later')
+            code, out = run('--story', '--ref', base, '--to', story)
+        self.assertEqual(0, code, out)
+        self.assertIn('make story', out)
+        self.assertNotIn('make docs-only', out)
+
 
 class GitAbsentOrNotARepo(unittest.TestCase):
     """Never "no changes, nothing to verify" — that is a pass over an unread diff."""

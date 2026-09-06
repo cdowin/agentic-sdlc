@@ -164,7 +164,7 @@ REV_MAX = 256
 USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
                           [--ref <rev>]
 
-  --story [--ref <rev>] [--ignore <path>]...
+  --story [--ref <rev>] [--to <rev>] [--ignore <path>]...
                           run what proves the changed paths (alias: --changed).
                           --ignore drops a path the CALLER wrote during this
                           run, so a belt's own writes do not read as the
@@ -190,6 +190,10 @@ class Args:
     mode: str
     ref: str | None = None
     ignore: tuple[str, ...] = ()
+    # The far end of the range. HEAD by default; a close that arrives after
+    # other work has landed names the story's own last commit, so the rung
+    # proves the story's edits and not everything that followed them.
+    to: str | None = None
 
 
 @dataclass(frozen=True)
@@ -249,7 +253,7 @@ def _dispatch(args: Args, ruleset: RuleSet, root: Path) -> int:
     if args.mode == 'check':
         return _check(ruleset, root)
     if args.mode == STORY:
-        return _run_story(ruleset, root, args.ref, args.ignore)
+        return _run_story(ruleset, root, args.ref, args.ignore, args.to)
     return _run_rung(ruleset, root, args.mode)
 
 
@@ -258,6 +262,7 @@ def _parse(argv: list[str]) -> Args:
     """One mode, an optional `--ref` for the two modes that read a diff."""
     modes: list[str] = []
     ref: str | None = None
+    to: str | None = None
     ignore: list[str] = []
     seen_ref = False
     index = 0
@@ -282,6 +287,13 @@ def _parse(argv: list[str]) -> Args:
             if index >= len(argv):
                 raise ValueError('--ref needs a rev — a tag, a hash or a ref')
             ref = argv[index]
+        elif token == '--to':
+            if to is not None:
+                raise ValueError('--to given twice')
+            index += 1
+            if index >= len(argv):
+                raise ValueError('--to needs a rev — the far end of the range')
+            to = argv[index]
         elif token == '--ignore':
             index += 1
             if index >= len(argv):
@@ -329,7 +341,12 @@ def _parse(argv: list[str]) -> Args:
         raise ValueError(
             f'--ignore has no meaning with --{mode}: that rung runs the make '
             f'target the project names and reads no diff')
-    return Args(mode=mode, ref=ref, ignore=tuple(ignore))
+    if to is not None:
+        if mode != STORY:
+            raise ValueError(f'--to has no meaning with --{mode}: only the '
+                             f'story rung reads a range')
+        _check_rev(to)
+    return Args(mode=mode, ref=ref, ignore=tuple(ignore), to=to)
 
 
 def _check_rev(rev: str) -> None:
@@ -405,12 +422,13 @@ def tracked(root: Path) -> list[str]:
     return _nul(_git(root, ['ls-files', '-z']))
 
 
-def changed(root: Path, ref: str | None) -> list[str]:
+def changed(root: Path, ref: str | None, to: str | None = None) -> list[str]:
     """The diff, plus untracked files: a new file is a changed path.
 
     Order is git's, deduplicated, because a path can appear in both halves.
     With no `--ref` the base is HEAD; in a repo with no commits yet there is no
-    HEAD, and every tracked file is new.
+    HEAD, and every tracked file is new. With `to`, the range is `ref..to` —
+    two commits — and the working tree's untracked files are not in it.
     """
     _require_repo(root)
     if ref is not None:
@@ -422,6 +440,10 @@ def changed(root: Path, ref: str | None) -> list[str]:
             base = 'HEAD'
         except GitError:
             base = ''
+    if to is not None:
+        _git(root, ['rev-parse', '--verify', to])
+        return list(dict.fromkeys(
+            _nul(_git(root, ['diff', '--name-only', '-z', base or to, to]))))
     paths = _nul(_git(root, ['diff', '--name-only', '-z', base])) if base \
         else _nul(_git(root, ['ls-files', '-z']))
     paths += _nul(_git(root, ['ls-files', '-z', '--others',
@@ -456,12 +478,13 @@ def _resolver(scans: Sequence[declares.Scan]) -> select.ReverseResolver | None:
 
 
 def plan_for(ruleset: RuleSet, root: Path, ref: str | None,
-             ignore: Sequence[str] = ()) -> select.Selection:
+             ignore: Sequence[str] = (),
+             to: str | None = None) -> select.Selection:
     """The story rung's selection for the current diff.
 
     `ignore` is the CALLER's own writes — see the comment below.
     """
-    paths = changed(root, ref)
+    paths = changed(root, ref, to)
     if ignore:
         # THE CALLER'S OWN WRITES, and only a caller can know which those are.
         #
@@ -515,11 +538,11 @@ def _run_all(commands: Sequence[str], root: Path) -> int:
 
 
 def _run_story(ruleset: RuleSet, root: Path, ref: str | None,
-               ignore: Sequence[str] = ()) -> int:
-    selection = plan_for(ruleset, root, ref, ignore=ignore)
+               ignore: Sequence[str] = (), to: str | None = None) -> int:
+    selection = plan_for(ruleset, root, ref, ignore=ignore, to=to)
     if not selection.matched and not selection.missed:
         print('verify --story: no changed paths against '
-              f'{ref or "HEAD"} — nothing to verify')
+              f'{ref or "HEAD"}{f" up to {to}" if to else ""} — nothing to verify')
         return EXIT_OK
     if selection.missed:
         # THE dangerous case. Named, one path per line, then the widest rung.

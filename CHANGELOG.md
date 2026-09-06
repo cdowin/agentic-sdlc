@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`verify --story --to <rev>`** closes the range at a commit: `--ref <first>^ --to <last>` is
+  the story's own edits, and `close story` now passes both from the `done:` line, so a story
+  closed after other work has landed is verified against what it changed rather than against
+  everything up to HEAD. Without `--to` nothing changes.
+
 ### A belt is its checks, then one write or a clean error (D12)
 
 - **Every belt — `close story`, `close feature`, `release`, `adopt` — is a check list followed

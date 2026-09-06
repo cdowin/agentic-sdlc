@@ -2,8 +2,8 @@
 id: 0.4.0/every-row-names-its-grain
 milestone: "0.4.0"
 name: Every automatic row names the grain it came from
-status: building
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-06-0.4.0-every-row-names-its-grain.md
 phase:
 depends_on: []
 consumed_by: []

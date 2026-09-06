@@ -344,3 +344,9 @@
 {"ts":"2026-09-06T23:34:45Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9552,"rank":5}
 {"ts":"2026-09-06T23:34:45Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":65264,"census":1174}
 {"ts":"2026-09-06T23:35:18Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2662}
+{"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":21001,"rank":1}
+{"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[does-not-exist]@the-real-repo","duration_ms":14474,"rank":2}
+{"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_empty","duration_ms":12132,"rank":3}
+{"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass","duration_ms":11485,"rank":4}
+{"ts":"2026-09-06T23:36:54Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_check_shell_names_the_UNTRACKED_case_not_the_roots_key","duration_ms":11276,"rank":5}
+{"ts":"2026-09-06T23:36:55Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":72162,"census":1174}

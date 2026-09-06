@@ -104,3 +104,5 @@
 {"ts":"2026-09-06T23:21:24Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing","from":"planning","to":"building"}
 {"ts":"2026-09-06T23:25:04Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing","from":"building","to":"done"}
 {"ts":"2026-09-06T23:28:24Z","kind":"decision","grain":"0.4.0","entry":"D8","title":"A snapshot places a row only when it is unambiguous, and a stated grain never falls through"}
+{"ts":"2026-09-06T23:35:42Z","kind":"status","grain":"0.4.0/every-row-names-its-grain","from":"building","to":"reviewing"}
+{"ts":"2026-09-06T23:36:55Z","kind":"status","grain":"0.4.0/every-row-names-its-grain","from":"reviewing","to":"done"}

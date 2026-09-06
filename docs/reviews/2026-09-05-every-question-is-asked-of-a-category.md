@@ -419,7 +419,7 @@ verdict: HOLD
 | V4 | MINOR | landed b23bf9d |
 | V5 | MINOR | landed b23bf9d |
 | V6 | MINOR | landed b23bf9d |
-| V7 | QUESTION | open: the feature record is the closer's file — criterion 1 says "transition" and should say "target state", one line at close |
+| V7 | QUESTION | landed 4687770 |
 | V8 | NIT | landed b23bf9d |
 | V9 | NIT | landed b23bf9d |
 ```

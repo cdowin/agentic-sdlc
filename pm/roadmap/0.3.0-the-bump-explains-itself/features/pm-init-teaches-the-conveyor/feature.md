@@ -28,6 +28,22 @@ while a milestone is `in_progress`, so on that tree `check budget` reported "las
 nothing yet" and `verify --plan` had nothing to print. **The ladder is where the measurements
 live**, and a project that never leaves the endpoints never gets them.
 
+**The same feature from the other side, on the NullBound adoption.** That tree never declared a
+flow at all, and the agent shipped a green `make check` over a PM CLI that was refusing every
+work-moving verb. Asked afterward why it had not noticed, the answer was specific and fixable:
+
+**the best writing about the conveyor in either package is in a file only new repos get.**
+`project-devkit.toml` argues `[pm.states.*]` superbly — "the ONE LIVE SECTION in this file", why
+there is no runtime fallback behind it, why `accepted` and `packaging` are `in_progress`, why a
+word meaning finished-but-not-delivered belongs in `done`. `init` writes that file for a repo that
+does not have one. **A consumer bumping a pin never sees a line of it**, and neither README
+carries the argument. What the bumping agent read instead was godot-devkit's "Install — two pins",
+which names two installer commands and one config key and does not mention the flow at all.
+
+`pm vocabulary` is the one command that says the quiet part — it prints `(undeclared)` and then
+the whole seed — and nothing routes anyone to it. It is not in the install path, not in the bump
+path, and not in `check pm`'s error, which names `pm init` instead.
+
 ## Ship criterion
 
 `pm init` prints the ladder it wrote AGAINST THE TREE — per kind, which declared states the tree

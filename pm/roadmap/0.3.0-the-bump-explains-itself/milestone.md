@@ -11,11 +11,22 @@ branch: milestone/0.3.0-the-bump-explains-itself
 > ## Northstar: **the tool teaches the conveyor.**
 > Expressing the flow is the power (0.2.0's northstar). This milestone is the next sentence: a
 > project that has just adopted the flow should be able to SEE whether it is using it. Every
-> finding below came from one real adoption — The Appalachian Trail, v0.24.0 (single kit) to
-> agentic-sdlc v0.2.0 + godot-devkit v1.0.0, 2026-09-06 — and the biggest one is that the
-> adopting agent ran `pm init`, watched `check pm` go green, and never noticed the tree used
-> three of its eight declared states. `docs/lessons/2026-09-06-adopting-the-two-kit-split.md`
-> in that repo is the write-up.
+> finding below came from a real adoption of the same split on 2026-09-06 — **two of them,
+> independently, and they failed in mirror-image ways.**
+>
+> **The Appalachian Trail** (v0.24.0 single kit → agentic-sdlc v0.2.0 + godot-devkit v1.0.0) ran
+> `pm init`, watched `check pm` go green, and never noticed the tree used three of its eight
+> declared states. `docs/lessons/2026-09-06-adopting-the-two-kit-split.md` in that repo is the
+> write-up.
+>
+> **NullBound** (same bump, same day) never declared a flow at all, and shipped a green
+> `make check` over a PM CLI that was refusing every work-moving verb. It followed godot-devkit's
+> "Install — two pins", which names two installers and one config key and never mentions the
+> flow; the error it did get was about unknown GATE NAMES, which routed the whole adoption at the
+> roster; and the one error that would have named the flow was queued behind a retired key.
+>
+> One tree declared the flow and did not use it. The other used a flow it never declared. **Both
+> passed every gate**, which is the milestone in one sentence.
 
 The consumer-visible theme is **a bump that reports itself completely**. An installer that says
 which files it touched AND which targets it removed; a config error that names the namespace it

@@ -8,10 +8,10 @@ What it holds, on purpose:
 
 - row 2 names `0.1/alpha/s0` through `stories_wip` — an old row that IS
   readable, and is attributed exactly as it always was;
-- rows 4 and 5 name nothing through the frozen keys — either a dispatch over
-  an idle tree or a dispatch over a tree whose words that shape could not
-  spell, and the rows cannot tell the two apart; the report discloses them
-  rather than counting them as empty;
+- rows 4 and 5 name nothing through the frozen keys — a dispatch over an
+  idle tree, over another milestone's work, or over a tree whose words that
+  shape could not spell; the report discloses them rather than counting them
+  as empty;
 - row 3 moves the story to `review`, a word this package's seed does not
   declare — its stint lands in no category column and is disclosed under the
   table (`unplaced_s` in `--json`).

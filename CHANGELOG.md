@@ -343,11 +343,22 @@ category keys beside the five it always had:
   category keys, which is a true statement about what each key can spell.
 - **An old-shape row is read as it was written, never through your current declaration** — that
   would be inventing history. A row that names a grain through the frozen keys is attributed as
-  it always was. A row that names nothing is EITHER a dispatch over an idle tree OR one over a
-  tree whose words the old shape could not spell, and the report says so rather than counting it
-  as empty: a line under `rows naming no grain` — `N of these predate category keys and name no
-  grain — unreadable under a renamed vocabulary, and not counted as empty` — and a `legacy`
+  it always was. A row that names nothing of this milestone is a dispatch over an idle tree,
+  over another milestone's work, or over a tree whose words the old shape could not spell, and
+  the report says so rather than counting it as empty: a line under `rows naming no grain` —
+  `N of these predate category keys and name no grain of this milestone — an idle tree, another
+  milestone's work, or words that shape could not spell; not counted as empty` — and a `legacy`
   key in `--json` (`{"rows": N, "unattributed": M}`, zeros when there is no boundary).
+- **A new-shape row that names a grain only through a deprecated key is disclosed, not
+  dropped.** Both key families are on every new row; when a grain sits at a seed word your
+  declaration does not place in `in_progress` (a story at `reviewing` under the stock seed,
+  since each kind seeds only the states its belt writes), the frozen key names it and the
+  category key does not. The report reads the category key — attributing by the deprecated one
+  would read a new row through an old seed — and says what that dropped, under the grain's
+  table: `<grain> named only through a deprecated key — at a word this declaration does not
+  place in in_progress, so counted in no column above: N dispatch row(s)`, with a `frozen_only`
+  key per grain in `--json` (`N`, or `null` when nothing was dropped). Before this the grain
+  printed `dispatches 0` and nothing said a row had named it.
 - **The dwell columns of `pm ledger report` are per CATEGORY — `todo`, `in_progress`, `done` —
   for every grain kind**, so a twelve-state project gets three columns and not twelve. A stint
   in `building` and a stint in `reviewing` are one `in_progress` number; `done` has a column

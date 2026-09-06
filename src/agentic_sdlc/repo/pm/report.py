@@ -121,13 +121,27 @@ LEGACY_BUCKETS = (
     (KIND_STORY, ('stories_wip', 'stories_review')),
     (KIND_FEATURE, ('features_building', 'features_review')),
 )
-LEGACY_KEYS = frozenset(key for _, keys in LEGACY_BUCKETS for key in keys)
 CATEGORY_KEYS = frozenset(key for _, keys in CATEGORY_BUCKETS for key in keys)
-# What a spend table says about rows the OLD shape could not have spelled.
-LEGACY_NOTE = ('predate category keys and name no grain — unreadable under '
-               'a renamed vocabulary, and not counted as empty')
+# What a spend table says about old-shape rows that named nothing HERE. Such a
+# row is one of three things and says only that it is not the fourth: a
+# dispatch over an idle tree, over another milestone's work (an id that is not
+# a grain of this milestone names nothing here, old shape or new), or over a
+# tree whose words that shape could not spell.
+LEGACY_NOTE = ('predate category keys and name no grain of this milestone — '
+               'an idle tree, another milestone\'s work, or words that shape '
+               'could not spell; not counted as empty')
 UNPLACED_NOTE = ('spent time in a state this declaration does not name — '
                  'seconds in no category column, not zero')
+# The dispatch-side twin of UNPLACED_NOTE. A NEW-shape row carries both key
+# families; when the frozen one names a grain and the category one does not,
+# the grain sat at a word this declaration does not place in `in_progress`
+# (the stock seed's `reviewing` for a story, since each kind seeds only the
+# states its belt writes). The row is read through the category keys — the
+# frozen pair is the deprecated opinion, and attributing by it would be
+# reading a new row through an old seed — and the drop is said out loud.
+FROZEN_ONLY_NOTE = ('named only through a deprecated key — at a word this '
+                    'declaration does not place in in_progress, so counted '
+                    'in no column above')
 
 # Our column label ← the row's `usage` key. The ORDER is `ledger.USAGE_FIELDS`,
 # so a field added there appears here rather than being silently dropped; only
@@ -828,13 +842,45 @@ def named_grains(row: dict, kinds: dict[str, str],
     only the frozen keys is an OLD-SHAPE row and is read through those, as
     they were written. `is_legacy` says which a row is, so the report can
     disclose the boundary rather than count an old row it cannot read as a
-    row that named nothing.
+    row that named nothing. A new-shape row whose frozen keys name a grain
+    the category keys do not is still read through the category keys — and
+    `frozen_only_grains` names what that dropped, so it is disclosed too.
     """
+    buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
+    return _named_through(row, buckets_by_kind, kinds, owned)
+
+
+def frozen_only_grains(row: dict, kinds: dict[str, str],
+                       owned: dict[str, set[str]]) -> set[str]:
+    """The grains a NEW-shape row names through the frozen keys and NOT
+    through the category keys — what `named_grains` reads past.
+
+    The two families agree whenever a grain's status is a seed word this
+    declaration places in `in_progress`; they disagree when the grain sits at
+    a seed word the declaration does not — `reviewing` for a story under the
+    stock seed — and then the frozen key names it, the category key is empty,
+    and `named_grains` attributes the row to nothing for that grain. That is
+    the right number under the declaration and the wrong silence (rule 4):
+    the row DID name the grain, in a key the writer still writes. The set is
+    the differential between the two readers — an owning feature the old
+    reader would have named is in it too — so the report can print the drop
+    beside the column it is missing from. Empty for an old-shape row, which
+    has one family and no disagreement to disclose.
+    """
+    if is_legacy(row):
+        return set()
+    return (_named_through(row, LEGACY_BUCKETS, kinds, owned)
+            - _named_through(row, CATEGORY_BUCKETS, kinds, owned))
+
+
+def _named_through(row: dict, buckets_by_kind: tuple, kinds: dict[str, str],
+                   owned: dict[str, set[str]]) -> set[str]:
+    """`named_grains`' rule over ONE key family: the ids in those buckets
+    that are grains of this milestone, plus the features owning any."""
     tree = row.get('tree')
     if not isinstance(tree, dict):
         return set()
     named: set[str] = set()
-    buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
     for kind, buckets in buckets_by_kind:
         for bucket in buckets:
             ids = tree.get(bucket)
@@ -859,11 +905,14 @@ def is_legacy(row: dict) -> bool:
 
 
 # --- the clock ----------------------------------------------------------------
-def state_columns(cfg: model.PmConfig, kind: str) -> tuple[str, ...]:
+def state_columns() -> tuple[str, ...]:
     """The dwell columns: one per CATEGORY — `todo`, `in_progress`, `done`.
 
     Three columns whatever the vocabulary: a twelve-state project gets three,
     not twelve, and a project that renames every word gets the same three.
+    The function takes neither the declaration nor a kind because the answer
+    depends on neither — `model.CATEGORIES` is the closed set every
+    declaration is validated against, not a reading of one.
     Which category a grain is stuck in is the question this section exists
     to answer (Chris, 2026-09-03: *"figure out which ones are taking the most
     time"*); which WORD within `in_progress` it sat at is `pm ledger show`.
@@ -960,19 +1009,25 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     per_type: dict[str, dict[str | None, dict]] = {g.gid: {} for g in grains}
     unattributed, totals = _blank(), _blank()
     # THE BOUNDARY, counted (decision D7): rows written before the snapshot
-    # carried categories, and how many of those named nothing. An old-shape
-    # row that names nothing is EITHER a dispatch over an idle tree OR a
-    # dispatch over a tree whose words that shape could not spell, and the
-    # rows cannot tell the two apart — so the report says so, rather than
-    # counting the second as the first.
+    # carried categories, and how many of those named nothing here. An
+    # old-shape row that names nothing here is a dispatch over an idle tree,
+    # over another milestone's work, or over a tree whose words that shape
+    # could not spell — so the report says so (LEGACY_NOTE), rather than
+    # counting the third as the first.
     legacy_rows = 0
     legacy_unattributed = 0
+    # THE DROP, counted per grain: new-shape rows that named this grain only
+    # through a frozen key. Not attributed — see `frozen_only_grains` — and
+    # not silent either.
+    frozen_only = {g.gid: 0 for g in grains}
     for row in dispatch:
         # Every row lands in the totals exactly once, whether or not it names
         # a grain — so the summary line is a statement about the FILE.
         _add(totals, row.data)
         legacy = is_legacy(row.data)
         legacy_rows += legacy
+        for gid in frozen_only_grains(row.data, kinds, owned):
+            frozen_only[gid] += 1
         named = named_grains(row.data, kinds, owned)
         if not named:
             _add(unattributed, row.data)
@@ -999,8 +1054,9 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                                 per_type[grain.gid].items(),
                                 key=lambda kv: (kv[0] is None, kv[0] or ''))],
             'states': {category: placed.get(category)
-                       for category in state_columns(cfg, grain.kind)},
+                       for category in state_columns()},
             'unplaced_s': unplaced or None,
+            'frozen_only': frozen_only[grain.gid] or None,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
     return {'section': SECTION_SPEND, 'grains': out,
@@ -1071,7 +1127,7 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
            f'{totals["grains"]} grain(s)']
     for kind in KIND_ORDER:
         entries = [e for e in data['grains'] if e['kind'] == kind]
-        states = state_columns(cfg, kind)
+        states = state_columns()
         headers = (GRAIN_COLUMN, SIZE_COLUMN, *SPEND_COLUMNS, *states,
                    TOTAL_COLUMN)
         aligns = (LEFT, LEFT) + (RIGHT,) * (len(headers) - 2)
@@ -1097,6 +1153,13 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
                     if e.get('unplaced_s')]
         for gid, spent in unplaced:
             out.append(f'   {gid} {UNPLACED_NOTE}: {spent} s')
+        # Its dispatch-side twin: a `0` in `dispatches` is "no row attributed",
+        # and a row that named the grain through a key this declaration
+        # cannot place must not read as that.
+        for entry in entries:
+            if entry.get('frozen_only'):
+                out.append(f'   {entry["grain"]} {FROZEN_ONLY_NOTE}: '
+                           f'{entry["frozen_only"]} dispatch row(s)')
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',

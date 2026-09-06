@@ -392,3 +392,10 @@
 {"ts":"2026-09-06T02:48:50Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":7000,"rank":4}
 {"ts":"2026-09-06T02:48:50Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":6994,"rank":5}
 {"ts":"2026-09-06T02:48:50Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":46361,"census":1226}
+{"ts":"2026-09-06T02:53:04Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2271}
+{"ts":"2026-09-06T02:53:12Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":501,"rank":1}
+{"ts":"2026-09-06T02:53:12Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":454,"rank":2}
+{"ts":"2026-09-06T02:53:12Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":396,"rank":3}
+{"ts":"2026-09-06T02:53:12Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":291,"rank":4}
+{"ts":"2026-09-06T02:53:12Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":288,"rank":5}
+{"ts":"2026-09-06T02:53:12Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8404,"census":737}

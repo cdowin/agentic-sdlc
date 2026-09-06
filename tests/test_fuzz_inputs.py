@@ -331,7 +331,10 @@ def _pm_argv(rng: random.Random, verb: str,
     if verb == 'milestone':
         return ('pm', 'milestone', 'ready', gid), (gid,)
     if verb == 'set':
-        return ('pm', 'set', gid, 'status', 'wombat'), (gid,)
+        # `owner`, not `status`: `set` refuses the status key by name
+        # before resolving the grain (a status is a move), and a verb that
+        # never writes is a verb the containment property never exercises.
+        return ('pm', 'set', gid, 'owner', 'wombat'), (gid,)
     if verb == 'get':
         return ('pm', 'get', gid, 'status'), (gid,)
     if verb == 'decide':

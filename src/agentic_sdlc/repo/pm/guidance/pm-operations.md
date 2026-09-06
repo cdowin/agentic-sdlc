@@ -125,10 +125,10 @@ requires the two readings to agree.
   counts refs into milestones no longer in the working tree, which is expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
   names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
-  is not a failure and moves nothing: it names a grain stamped `ready` whose scaffolded
-  section is still empty (`## Acceptance criteria`, `## Ship criterion`), a readied
-  feature with no stories, a readied milestone with no `branch:` or an unphased
-  feature — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
+  is not a failure and moves nothing: it names a grain that has left `todo` (its status
+  is in `in_progress` or `done`) whose scaffolded section is still empty
+  (`## Acceptance criteria`, `## Ship criterion`), such a feature with no stories, such a
+  milestone with no `branch:` or an unphased feature — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
   a `todo` feature, a `todo` feature over finished stories, a `done` milestone over an
   unfinished feature), both grains and both categories named. Counted on the verdict
   line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the

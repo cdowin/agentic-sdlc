@@ -27,6 +27,7 @@ from support.pm import (
     STORY_REL,
     cfg_for,
     declaring,
+    ledger_lines,
     run_cli,
     run_gate,
     tree,
@@ -588,9 +589,12 @@ class PhaseIsABucketNotAConstraint(unittest.TestCase):
 
 class FieldMutation(unittest.TestCase):
     def test_set_and_get_round_trip_on_any_field_and_any_grain(self):
-        # `status` was refused here because it "has a transition graph behind
-        # it". There is no graph, and the refusal never protected anything: the
-        # `sed` it pushed people towards is the write this verb does correctly.
+        # `status` is refused here — not for the "transition graph" the old
+        # refusal cited (there is none) but because a status is a MOVE: the
+        # status verbs ask `move_defect` and stamp a ledger row, and `set`
+        # does neither, so `set … status wombat` was a write that looked
+        # legitimate and was not (V2 of the feature review). The refusal
+        # names the verb that does it right, and the grain is untouched.
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'bug', '0.1', 'oops')
             for gid in ('0.1', '0.1/alpha', '0.1/alpha/s0', '0.1/bugs/oops'):
@@ -601,9 +605,21 @@ class FieldMutation(unittest.TestCase):
             code, out = run_cli(root, 'get', '0.1/alpha/s0', 'estimate')
             self.assertEqual(code, 0)
             self.assertIn('3d', out)
-            self.assertEqual(
-                run_cli(root, 'set', '0.1/alpha/s0', 'status', 'done')[0], 0)
-            self.assertEqual(model.field_of(root / STORY_REL, 'status'), 'done')
+            sf = root / STORY_REL
+            before = sf.read_bytes()
+            rows = ledger_lines(root)
+            for gid, word, verb in (('0.1/alpha/s0', 'wombat', 'story'),
+                                    ('0.1/alpha/s0', 'done', 'story'),
+                                    ('0.1/alpha', 'building', 'feature'),
+                                    ('0.1', 'ready', 'milestone'),
+                                    ('0.1/bugs/oops', 'fixed', 'bug')):
+                with self.subTest(gid=gid, word=word):
+                    code, out = run_cli(root, 'set', gid, 'status', word)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(f'pm {verb} {word} {gid}', out)
+                    self.assertIn('stamps the ledger', out)
+            self.assertEqual(sf.read_bytes(), before)
+            self.assertEqual(ledger_lines(root), rows)   # refused: no row
 
     def test_set_moves_owner_in_both_directions(self):
         # `claim`/`release` were fourteen lines calling this with the key

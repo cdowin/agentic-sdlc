@@ -46,7 +46,20 @@ pm milestone remove ft-two-pin-adoption
 
 `add` binds AND sequences, because "put this in this milestone, here" is one intent; `pm set <id>
 milestone <x>` remains the primitive for binding without caring where. `--position N`, `--before`
-and `--after` all place it; no flag appends.
+and `--after` all place it; no flag appends. `remove` is the symmetric pair — unbind and
+unsequence together — and `pm set <id> milestone ""` unbinds alone.
+
+**Both earn their place, and the reason is written here because this family usually rejects two
+spellings of one fact.** They are not two spellings: `set` writes ONE field and `add` does
+strictly more, so neither subsumes the other. Without `add`, the common intent costs two commands
+and a consumer who forgets the second leaves a bound-but-unsequenced child every time. Without
+`set`, binding without an opinion about position is unreachable.
+
+The test that separates a legitimate compound from a duplicate name is: **does the compound do
+something the primitive cannot, and does the primitive stay reachable?** Yes to both. What keeps
+`add` honest is that it must remain exactly `set` plus a list insert — the day it grows behaviour
+neither primitive has, it has stopped being a convenience and become a second mechanism, and that
+is the thing to catch in review.
 
 **What may be added to what is declared, not hard-coded:**
 

@@ -158,6 +158,13 @@ def snapshot(root: Path) -> dict[str, bytes]:
             if p.is_file() and '.git' not in p.parts}
 
 
+def reconfigure(root: Path, config: str) -> None:
+    """A second devkit.toml over the same scratch tree, flow included, with
+    the read cache cleared — one run, two declarations."""
+    (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
+    load_config.cache_clear()
+
+
 def decoy_bytes(root: Path) -> dict[str, bytes]:
     beside = root.parent / 'next-door'
     return {str(p.relative_to(beside)): p.read_bytes()
@@ -337,27 +344,103 @@ def test_pin_bumped_reads_the_line_names_it_and_writes_nothing(
 
 
 # --- installables-current -----------------------------------------------------
+# The two files `install-gates` writes; the library and the include that
+# sources it, so one can be claimed while the other is graded.
+GATE_MK, GATE_LIB_REL = 'Makefile.devkit', 'tools/dev/gdk_gate.sh'
+CLAIMED_CLAUSE = 'claimed by [adopt] ours and not graded'
+UNPLANNED_CLAUSE = 'ours name no file'
+
+
+def fork(root: Path, rel: str) -> None:
+    """One edited byte in an installed file — the invisible fork."""
+    target = root / rel
+    target.write_text(target.read_text(encoding='utf-8') + '\n# fork\n',
+                      encoding='utf-8')
+
+
 def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
     """Bites: an installed file silently diverged from what the pin ships —
     the invisible fork the install verbs exist to prevent. A byte-current
-    install is true; one edited byte is false, named with its verb."""
+    install is true; one edited byte is false, named with its verb; and the
+    same edited byte under `[adopt] ours` is the project's own file, true and
+    NAMED. Before `ours` the third phase could not be written at all: a
+    project that deliberately owns an installed file was stuck false
+    forever."""
     from agentic_sdlc.repo import install
 
-    with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
+    with tree({'Makefile': PIN + f'include {GATE_MK}\n'}) as root:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             assert install.main('install-gates', []) == 0, buf.getvalue()
         current = check('installables-current', root)
         assert current.is_true, current
-        target = root / 'Makefile.devkit'
-        target.write_text(target.read_text(encoding='utf-8') + '\nfork:\n',
-                          encoding='utf-8')
+        assert CLAIMED_CLAUSE not in current.detail, (
+            'a repo claiming nothing must print what it always printed')
+        fork(root, GATE_MK)
         drifted = check('installables-current', root)
         assert drifted.truth is driver.Truth.FALSE, drifted
-        assert 'Makefile.devkit' in drifted.detail
+        assert GATE_MK in drifted.detail
         assert 'install-gates --diff' in drifted.detail, drifted.detail
-        assert 'tools/dev/gdk_gate.sh' not in drifted.detail, (
+        assert GATE_LIB_REL not in drifted.detail, (
             'a current file was named as drifted')
+        reconfigure(root, f'[adopt]\nours = ["{GATE_MK}"]\n')
+        claimed = check('installables-current', root)
+        assert claimed.is_true, claimed
+        assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in claimed.detail, claimed.detail
+
+
+def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():
+    """Bites rule 4 in the mechanism built to relieve it: a claim that
+    silences the line is a hiding place, and one claimed file must not carry
+    an unclaimed drifted one out with it. Both files are forked and one is
+    claimed — the other is still false, still named with its `--diff` — and
+    when the graded file is restored the claim is STILL on the passing line."""
+    from agentic_sdlc.repo import install
+
+    config = f'[adopt]\nours = ["{GATE_MK}"]\n'
+    with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
+              config=config) as root:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-gates', []) == 0, buf.getvalue()
+        fork(root, GATE_MK)
+        fork(root, GATE_LIB_REL)
+        answer = check('installables-current', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert f'{GATE_LIB_REL} (differs' in answer.detail, answer.detail
+        assert 'install-gates --diff' in answer.detail, answer.detail
+        assert f'{GATE_MK} (differs' not in answer.detail, (
+            'a claimed file was graded anyway: ' + answer.detail)
+        assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in answer.detail, answer.detail
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert install.main('install-gates', ['--force']) == 0
+        passing = check('installables-current', root)
+        assert passing.is_true, passing
+        assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in passing.detail, (
+            'the claim vanished the moment nothing else was wrong — which is '
+            'the run where a hiding place would pay: ' + passing.detail)
+
+
+def test_a_claim_naming_no_file_this_version_installs_is_reported_not_refused():
+    """Bites: a typo'd claim read as a claim (silence), or as exit 2 (a
+    consumer's belt breaking because a file retired from the install plans
+    between two versions). It is a fact about the tree, so it is reported —
+    rule 9's line between reading and deciding."""
+    from agentic_sdlc.repo import install
+
+    stranger = 'docs/not-installed-by-this-version.md'
+    with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
+              config=f'[adopt]\nours = ["{stranger}"]\n') as root:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-gates', []) == 0, buf.getvalue()
+        answer = check('installables-current', root)
+        assert answer.is_true, answer
+        assert f'1 claim(s) in [adopt] {UNPLANNED_CLAUSE}' in answer.detail, (
+            answer.detail)
+        assert stranger in answer.detail, answer.detail
+        assert CLAIMED_CLAUSE not in answer.detail, (
+            'a claim over nothing was counted as a file the project owns')
 
 
 # --- config-updated -----------------------------------------------------------
@@ -437,23 +520,31 @@ def test_pm_validates_refuses_a_repo_with_no_pm_tree_and_passes_a_scratch_one():
 
 
 # --- config and the verb ------------------------------------------------------
-def reconfigure(root: Path, config: str) -> None:
-    (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
-    load_config.cache_clear()
-
-
 CONFIG_REFUSALS = [
     ('[adopt]\nsteps = ["tag"]\n', 'no check is registered'),
     ('[adopt]\nsteps = "pin-bumped"\n', 'list of strings'),
     ('[adopt]\npin_file = 3\n', 'one path'),
     ('[adopt]\nrunner_targets = "check"\n', 'non-empty list'),
     ('[adopt.commands]\npin-bumped = "x"\n', 'reads the tree'),
+    # `ours` is a list of PATHS, so it reuses `core/config.relpath_tuple` —
+    # `str_tuple` plus `_escapes_checkout`. SDLC.md §5: the matrix belongs to
+    # the GRAMMAR, enumerated over every leaving spelling in
+    # tests/test_grain_shape.py
+    # (`test_every_path_shaped_spelling_that_leaves_the_checkout_is_refused`);
+    # what this surface owes is proof that it GOES THROUGH it, which is the
+    # traversal row. The other two are the shapes `str_tuple` itself refuses:
+    # a bare string (iterable, character by character) and an empty list
+    # (declaring nothing, which downstream reads as everything).
+    ('[adopt]\nours = "Makefile.devkit"\n', 'list of strings'),
+    ('[adopt]\nours = []\n', 'remove the key'),
+    ('[adopt]\nours = ["../next-door/Makefile"]\n', 'inside this checkout'),
 ]
 
 
 def test_the_config_refusal_matrix_is_exit_2_and_runs_no_check():
-    """Bites: a typo narrowing the adopt list in silence, or a command over
-    a check that reads the tree — two authorities over one fact."""
+    """Bites: a typo narrowing the adopt list in silence, a command over a
+    check that reads the tree — two authorities over one fact — or a claim
+    the reader cannot read taken as a claim."""
     with tree() as root:
         for config, expected in CONFIG_REFUSALS:
             reconfigure(root, config)

@@ -1297,6 +1297,47 @@ def current_release(cfg: PmConfig) -> str | None:
     return shipped[-1] if shipped else None
 
 
+def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
+    """(the milestone directory holding the current release's ledger, or None,
+    plus why not).
+
+    **Gate cost is a fact about a RUN**, and the run happened whether or not
+    anybody had flipped a status. Binding the ledger to "the one milestone in
+    `in_progress`" refused on none and on several, and this tree spent a week
+    planning two milestones with every cost row silently dropped.
+
+    `order` plus `version_at` answer with exactly one BY CONSTRUCTION — a
+    position in a list is one place — and read no status field to do it.
+
+    The in-progress fallback is deliberate and is recorded as a decision: a
+    consumer bumping the pin has a building milestone and no plan yet, and
+    refusing every cost row on the bump would be a breaking change wearing a
+    minor version. A tree with neither is refused naming `pm order`, which is
+    then the one honest reason left.
+    """
+    version = current_release(cfg)
+    if version is not None:
+        mid = milestone_of_version(cfg, version)
+        mdir = milestone_dir(cfg, mid) if mid else None
+        if mdir is not None:
+            return mdir, ''
+        return None, (f'the current release {version} is claimed by no '
+                      f'milestone directory in {cfg.roadmap_dir} — '
+                      f'`agentic-sdlc pm roadmap` shows the plan against the '
+                      f'tree')
+    live = in_progress_milestones(cfg)
+    if len(live) == 1:
+        return live[0][2].parent, ''
+    if not declared_order(cfg):
+        return None, (f'{cfg.rel(releases_file(cfg))} declares no `order`, so '
+                      f'there is no current release to file against — '
+                      f'`agentic-sdlc pm order --append <version>` writes the '
+                      f'plan')
+    return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped '
+                  f'(or none has, under [pm] version_at = {cfg.version_at!r}), '
+                  f'so there is no current release to file against')
+
+
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     """D1 — a `reviewed:` pointer naming a file that is not there. An absent
     pointer is not a finding; only a dangling one is.

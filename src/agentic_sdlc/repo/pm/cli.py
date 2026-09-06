@@ -1541,14 +1541,10 @@ def _gate_ledger_dir(cfg: model.PmConfig) -> Path:
         raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                       f'there is no ledger this gate row belongs to; no row '
                       f'was written')
-    live = model.in_progress_milestones(cfg)
-    if not live:
-        raise Refused(f'no milestone in {cfg.rel(cfg.roadmap)} is in '
-                      f'progress, so there is no ledger this gate row '
-                      f'belongs to; no row was written')
-    if len(live) > 1:
-        _building_ledger_dir(cfg, 'this gate row')
-    return live[0][2].parent
+    mdir, why = model.release_ledger_dir(cfg)
+    if mdir is None:
+        raise Refused(f'{why}; no row was written')
+    return mdir
 
 
 def _required(flags: dict[str, str], name: str) -> str:

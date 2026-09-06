@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The gate ledger binds to the CURRENT RELEASE, not to the one in-progress milestone.** A cost
+  row is filed against the first unshipped entry in `order` (or the last shipped, under
+  `[pm] version_at = "ship"`), which answers with exactly one by construction and reads no status
+  field to do it. `no milestone in pm/roadmap is in progress, so there is no ledger this gate row
+  belongs to` stops being a refusal: gate cost is a fact about a RUN, and the run happened whether
+  or not somebody had flipped a status. A tree planning two milestones with neither flipped used to
+  drop every cost row silently. `check budget` and `verify --plan` read through the same resolver,
+  so the number a human sees and the number the gate grades cannot disagree. A tree that can answer
+  from neither the plan nor a single in-progress milestone still refuses, naming `pm order`.
+
 - **`pm/roadmap/ROADMAP.md` is RETIRED, and `pm roadmap` replaces it.** The file was two things
   wearing one name: a hand-maintained index of milestones still in the tree — the second scoreboard
   this package forbids one grain down — and the only surviving record of milestones `pm retire`

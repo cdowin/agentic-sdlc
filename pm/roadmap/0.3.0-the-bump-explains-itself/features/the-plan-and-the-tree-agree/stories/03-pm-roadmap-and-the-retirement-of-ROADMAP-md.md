@@ -3,7 +3,7 @@ id: 0.3.0/the-plan-and-the-tree-agree/03-pm-roadmap-and-the-retirement-of-ROADMA
 feature: 0.3.0/the-plan-and-the-tree-agree
 milestone: "0.3.0"
 name: pm roadmap prints the plan and ROADMAP.md retires
-status: building
+status: done
 owner:
 depends_on: ["0.3.0/the-plan-and-the-tree-agree/02-history-is-a-prefix"]
 ---
@@ -47,5 +47,5 @@ Deleting a consumer's existing `ROADMAP.md`. This release stops WRITING to it.
 
 ## Close
 
-done: in-place — `pm roadmap` derives the index, `retire` says what outlives the
+done: 1285784 — `pm roadmap` derives the index, `retire` says what outlives the
 directory, and the apply primitive stopped being able to gut a grain.

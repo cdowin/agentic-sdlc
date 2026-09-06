@@ -68,8 +68,11 @@ def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
     """Every row of every building milestone's ledger, or the defect that stopped the read."""
     cfg = model.load()
     out: list[tuple[str, ledger.Row]] = []
-    for _mid, _branch, mfile in model.in_progress_milestones(cfg):
-        path = ledger.ledger_path(mfile.parent)
+    # The SAME resolution the recorder writes through, so the number a human
+    # sees and the number the gate grades cannot disagree.
+    mdir, _why = model.release_ledger_dir(cfg)
+    for mdir in ([mdir] if mdir is not None else []):
+        path = ledger.ledger_path(mdir)
         if not path.is_file():
             continue
         try:

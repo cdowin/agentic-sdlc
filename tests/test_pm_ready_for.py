@@ -27,7 +27,7 @@ from support.pm import (bug, declaring, ledger_lines, ledger_rows, run_cli,
                         tree, write, write_config)
 
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import model, ready_for
+from agentic_sdlc.repo.pm import ledger, model, ready_for
 
 FEATURE_STORIES = 'pm/roadmap/stories'
 REVIEWS = 'docs/reviews'
@@ -262,7 +262,7 @@ class StoryBelt(unittest.TestCase):
                                  quiet[kind], f'{kind} answered differently')
             rows = ledger_rows(root)
         self.assertEqual([row['kind'] for row in rows],
-                         [ready_for.KIND_ENTER] * len(rungs), rows)
+                         [ledger.KIND_ENTER] * len(rungs), rows)
         by_rung = {row['rung']: row for row in rows}
         self.assertEqual(sorted(by_rung), sorted(k for k, _ in rungs))
         self.assertEqual(by_rung['story']['grain'], '0.1/alpha/s0')

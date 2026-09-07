@@ -254,6 +254,40 @@ def test_a_declared_skip_is_never_asked_and_rides_the_arrivals_one_row():
     assert f'[release] ok — {VERSION} → {want}' in out, out
 
 
+# The fork a belt's write prints on the way past. Declared here because the
+# thing under test is what SURVIVES the belt, and a report with nothing in it
+# survives anything.
+ASK = 'who signed this off?'
+ANSWERS = ('--by me', '--by agent <type>')
+
+
+def test_the_belt_hands_the_arrivals_report_on_as_LINES():
+    """The pressure line's ship criterion names three surfaces — every `pm`
+    write, every BELT write and every `check pm` run — and this is the belt.
+
+    The writer captures the arrival's whole report and used to join it into
+    ONE 555-character sentence, so at `close` — the surface where the question
+    is actually raised — the fork's two pasteable commands stopped being
+    commands. Bites the re-flow, not the presence: the answers are asserted as
+    whole LINES that END in the command they paste.
+    """
+    # From the SEED the fixture's flow is rendered from, not from this
+    # repo's config: the declaration is written before the tree is entered.
+    want = model.DEFAULT_FLOWS['milestone']['done'][0]
+    with tree(config=(f'[pm.arrive.milestone.{want}]\nask     = "{ASK}"\n'
+                      'answers = ['
+                      + ', '.join(f'"{a}"' for a in ANSWERS) + ']\n')) as root:
+        code, out = run(steps=(TRUE.name,))
+        assert code == 0, out
+        assert status(root) == want
+    lines = out.splitlines()
+    assert [ln for ln in lines if ln.startswith('[release] write: ')], out
+    for answer in ANSWERS:
+        paste = f'agentic-sdlc pm milestone {want} {VERSION} {answer}'
+        assert [ln for ln in lines if ln.endswith(paste)], (answer, out)
+    assert ASK in ' '.join(lines), out
+
+
 def test_a_refused_close_leaves_no_skip_behind_it():
     """The ORDERING the fold bought. The belt used to mint its skip rows
     DURING the check run; a run that then refused left a judgement on the

@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **A NO-OP MOVE IS NOT AN ARRIVAL, so it can no longer shadow a recorded answer.** Every status
+  verb minted a full arrival on the `(no-op)` branch too, so `pm feature building ft-x` run bare
+  after `pm feature building ft-x --by agent reviewer` appended `answer: none` for the SAME state
+  — and every reader takes the LAST disposition per (grain, state), so `check pm` U5 then named a
+  grain that HAD been dispositioned and the pressure line agreed with it. It also hid a
+  `close --skip`'s `skipped` field the same way. Now: **nothing transitioned, so no `status` row**,
+  and a bare re-run does not replace an ANSWERED state's disposition with `none`. Re-running WITH
+  an answer still records it — that is how a fork somebody skipped gets answered — and a bare move
+  that IS a transition still writes both rows and records `none`.
+
+  Two readings move with it. `report.arrivals` now folds consecutive arrivals at the SAME state
+  rather than at the same stamp, so a `from == to` row already in a ledger — this repo has eight —
+  no longer opens a second stint: the time before it stays part of the OPEN charge instead of
+  being billed as a closed one. **No migration is needed; the reader tolerates them.** And one
+  arrival's two rows are stamped ONCE, so a pair straddling a second boundary cannot read as two
+  events.
+
+- **The pressure line now reaches all three surfaces its criterion names.** A belt's write no
+  longer flattens the arrival's whole report into one line — measured at 555 characters on a
+  `close feature --force`, which is exactly where the fork's two pasteable commands stop being
+  commands — and `check pm` prints the census it already computed as a counted `OPEN` line, from
+  the same `arrive.census` U5 gates on, so the gate and a `pm` write cannot disagree.
+  `[pm] pressure = false` silences all three.
+
+- **`pm ledger report [<grain-id>]` takes the level you name.** A feature or story id was exit 2
+  (*"the ledger is per milestone"*), which is true of where the ROWS are and says nothing about
+  which level a reader asked for. A milestone id still reports everything; a feature or story id
+  reports the `time per state` and `time per actor` blocks rooted at that grain, with its
+  descendants under it and the actors narrowed to match. The ledger read is still the milestone's.
+  `--help` now names both blocks' columns in order, which is what `awk` needs.
+
+- **A dropped ARRIVAL row is disclosed whichever kind carries it.** `pm ledger report`'s discard
+  census counted `status` rows only, so a `disposition` row naming a grain the milestone does not
+  hold vanished with no line saying so — in precisely the disposition-only configuration the clock
+  claims to be complete in. The line now reads `N arrival row(s) name a grain this milestone does
+  not hold`.
+
 - **TIME IS MEASURED PER STATE, AND IT ROLLS UP AT ANY LEVEL**
   (`ft-time-is-measured-per-state-and-rolls-up`). `pm ledger report` summed seconds per CATEGORY,
   and `building` and `reviewing` are both `in_progress` — so the tool collapsed exactly the

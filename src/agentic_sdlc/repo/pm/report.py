@@ -857,17 +857,18 @@ def arrival_state(row: dict) -> str:
 
 
 def arrivals(rows: list) -> list[tuple[datetime, str]]:
-    """Every arrival on one grain, oldest first, each instant counted ONCE.
+    """Every arrival on one grain, oldest first, each STINT counted ONCE.
 
-    One move writes two rows at one stamp and they are one event, so the
-    repeat is folded. An unparseable `ts` is no arrival at all — `build` has
-    sorted it past every stamped row, so it can neither open nor close a stint.
+    The fold is on the STATE: one move writes two rows and a no-op re-run
+    writes another, and none is a second arrival at a state nobody left —
+    folding on the stamp alone billed part of an OPEN stint as a closed one.
+    An unparseable `ts` is no arrival: `build` sorted it past every stamp.
     """
     marks: list[tuple[datetime, str]] = []
     for row in rows:
         state = arrival_state(row.data)
         stamp = ledger.parse_ts(row.data.get('ts'))
-        if not state or stamp is None or marks[-1:] == [(stamp, state)]:
+        if not state or stamp is None or (marks and marks[-1][1] == state):
             continue
         marks.append((stamp, state))
     return marks
@@ -944,8 +945,24 @@ def _actor_of(row: dict) -> str:
             if isinstance(value, str) and value else answer)
 
 
+def subtree(rows: list[dict], focus: str) -> list[dict]:
+    """`focus`'s clock row and its descendants', re-based so it is the root:
+    tree order and `depth` are the shape, so a LEVEL is a slice, not a walk."""
+    at = next((i for i, row in enumerate(rows) if row['grain'] == focus), None)
+    if at is None:
+        return []
+    base = rows[at]['depth']
+    kept = [rows[at]]
+    for row in rows[at + 1:]:
+        if row['depth'] <= base:
+            break
+        kept.append(row)
+    return [dict(row, depth=row['depth'] - base) for row in kept]
+
+
 def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
-               rows: list, now: datetime | None = None) -> dict:
+               rows: list, now: datetime | None = None,
+               focus: str = '') -> dict:
     """The milestone, its features, their stories and its bugs, each with the
     seconds ITS OWN SUBTREE spent in each state and the charge it is accruing,
     plus who was named at each arrival. `grains` arrives in tree order from
@@ -976,7 +993,13 @@ def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
     out = [_clock_row(mid, KIND_MILESTONE, 0, rolled, open_s, charge)]
     out.extend(_clock_row(g.gid, g.kind, 2 if g.gid in stories else 1,
                           rolled, open_s, charge) for g in grains)
-    return {'rows': out, 'actors': actor_rows(kinds, mine)}
+    # Rolled over the milestone either way; the id says which level prints,
+    # actors included or the two tables disagree.
+    out = subtree(out, focus) if focus else out
+    named = {row['grain'] for row in out}
+    return {'rows': out,
+            'actors': actor_rows({gid: kind for gid, kind in kinds.items()
+                                  if not focus or gid in named}, mine)}
 
 
 def _clock_row(gid: str, kind: str, depth: int, rolled: dict, open_s: dict,
@@ -1123,7 +1146,7 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             'frozen_only': frozen_only[grain.gid] or None,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
-    in_flight, unplaceable = _in_flight_ages(cfg, kinds, status)
+    in_flight, unplaceable = _in_flight_ages(cfg, kinds, status, arrived)
     return {'section': SECTION_SPEND, 'grains': out,
             'clock': clock_data(cfg, mid, grains, owned, arrived),
             'in_flight': in_flight,
@@ -1222,7 +1245,7 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     # Rule 4: a distribution over nothing says so, rather than reading as
     # "nothing is in flight".
     if data.get('in_flight_unplaceable'):
-        out.append(f'   {data["in_flight_unplaceable"]} status row(s) '
+        out.append(f'   {data["in_flight_unplaceable"]} arrival row(s) '
                    f'{IN_FLIGHT_UNPLACEABLE}')
     out.append('')
     out.extend(clock_lines(cfg, data['clock']))
@@ -1330,32 +1353,32 @@ IN_FLIGHT_UNPLACEABLE = ('name a grain this milestone does not hold, so no age '
 
 
 def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
-                    status: list) -> tuple[list[dict], int]:
+                    status: list, arrived: list) -> tuple[list[dict], int]:
     """`(per kind: in-flight count, median age, worst), rows this could not
     place`.
 
     Read off the same status rows the dwell columns use; a grain nobody has
     moved contributes nothing, because it is UNMEASURED rather than young.
 
-    **The second number is what this shipped without.** A status row naming a
-    grain the milestone does not hold was DISCARDED, so a tree whose ledger
-    names renamed ids reported `[]` — no distribution, and nothing saying one
-    had been attempted (rule 4).
+    **The second number is what this shipped without.** A row naming a grain
+    the milestone does not hold was DISCARDED, so a tree whose ledger names
+    renamed ids reported `[]` with nothing saying one had been attempted
+    (rule 4). Over ARRIVALS, BOTH kinds: `status` alone left the
+    disposition-only ledger this feature serves silently short.
 
     No threshold, no colour, no exit code: a ceiling on how long a grain may
     stay in flight is this package having an opinion about somebody's week
     (rule 9).
     """
     by_grain: dict[str, list] = {}
-    unplaceable = 0
+    unplaceable = sum(1 for row in arrived
+                      if isinstance(row.data.get('grain'), str)
+                      and row.data.get('grain')
+                      and row.data['grain'] not in kinds)
     for row in status:
         gid = row.data.get('grain')
-        if not isinstance(gid, str) or not gid:
-            continue
-        if gid in kinds:
+        if isinstance(gid, str) and gid and gid in kinds:
             by_grain.setdefault(gid, []).append(row)
-        else:
-            unplaceable += 1
     ages: dict[str, list[int]] = {}
     for gid, rows in by_grain.items():
         rows.sort(key=lambda r: str(r.data.get('ts') or ''))
@@ -1791,6 +1814,29 @@ def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
     for section in SECTIONS:
         out.update(section.data(src, cfg, mid, mdir, rows))
     return out
+
+
+def clock_report(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
+                 src: Source, focus: str) -> dict:
+    """The clock at the LEVEL an id names — `pm ledger report <feature-id>`.
+    The rows are the milestone's, because that is where a ledger is (D6); the
+    id chooses which grain roots the table. Spend, review passes and gate cost
+    are the MILESTONE's questions and are not printed under it (rule 4)."""
+    grains, owned = walk_grains(src, cfg, mid, mdir)
+    arrived = [r for r in in_time_order(rows) if arrival_state(r.data)]
+    out = {'milestone': mid, 'focus': focus,
+           'clock': clock_data(cfg, mid, grains, owned, arrived, focus=focus)}
+    if src.rev:
+        out['rev'] = src.rev
+    return out
+
+
+def clock_render(cfg: model.PmConfig, data: dict) -> list[str]:
+    """The focused report as lines: the grain, its milestone, both tables."""
+    rows = data['clock']['rows']
+    return [f'{HEADING_PREFIX} {data["focus"]} — {CLOCK_TITLE} — '
+            f'{len(rows)} grain(s), from {heading_id(data)}',
+            ''] + clock_lines(cfg, data['clock'])
 
 
 def beyond_ledger(data: dict) -> bool:

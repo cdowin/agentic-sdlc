@@ -462,9 +462,7 @@ REFUSALS = [
     # Neither spelling is a flag here, and a verb that quietly accepted one
     # would be inventing a grammar its own --help does not print.
     (('--json=1',), 'unknown flag'),
-    (('0.1', '0.2'), 'one milestone id'),
-    ((FEATURE,), 'not a milestone'),
-    ((BUG,), 'not a milestone'),
+    (('0.1', '0.2'), 'one grain id'),
     (('0.1/../0.1',), 'resolves from id'),
     (('/etc/hosts',), 'resolves from id'),
     (('0.*',), 'resolves from id'),
@@ -479,6 +477,63 @@ def test_the_refusal_matrix():
             code, out = report(root, *argv)
             assert code == 2, (argv, out)
             assert needle in out, (argv, out)
+
+
+def test_a_dropped_ARRIVAL_row_is_disclosed_whichever_kind_carries_it(frozen):
+    """Rule 4, reopened by the new row kind and closed again.
+
+    The clock reads two kinds of arrival and its discard census counted one,
+    so a ledger whose arrivals are DISPOSITIONS alone — the configuration this
+    feature's own criterion asserts — dropped every row naming a renamed grain
+    with nothing at all saying it had.
+    """
+    gone = '0.1/alpha/renamed-away'
+    for carrier in (status_line('2026-09-03T10:00:00Z', gone, 'ready',
+                                'building'),
+                    disposition_line('2026-09-03T10:00:00Z', gone,
+                                     'building')):
+        with tree() as root:
+            put_ledger(root, carrier)
+            data = json.loads(report(root, '0.1', '--json')[1])
+            out = report(root, '0.1')[1]
+        assert data['in_flight_unplaceable'] == 1, carrier
+        assert f'1 arrival row(s) {pm_report.IN_FLIGHT_UNPLACEABLE}' in out
+
+
+def test_the_id_names_the_LEVEL_and_a_feature_reports_its_own_subtree(frozen):
+    """The criterion's first sentence: *at whatever level the id names*.
+
+    A feature id used to be exit 2 — "the ledger is per milestone" — which is
+    true of where the ROWS are and says nothing about which level a reader
+    asked for. The ledger stays the milestone's; the table roots at the grain
+    the id named, and stops at its own descendants.
+    """
+    with tree(story_statuses=('done', 'done')) as root:
+        put_ledger(
+            root,
+            status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
+            status_line('2026-09-03T10:10:00Z', STORY, 'building', 'done'),
+            disposition_line('2026-09-03T10:00:00Z', QUIET, 'building',
+                             '--by', 'me'),
+            disposition_line('2026-09-03T10:05:00Z', QUIET, 'done'),
+        )
+        code, out = report(root, FEATURE)
+        assert code == 0, out
+        data = json.loads(report(root, FEATURE, '--json')[1])
+        story_only = json.loads(report(root, STORY, '--json')[1])
+    assert data['focus'] == FEATURE and data['milestone'] == '0.1'
+    rows = data['clock']['rows']
+    # The feature roots the table at depth 0, its two stories hang under it,
+    # and the milestone and its other grains are not in it.
+    assert [(r['grain'], r['depth']) for r in rows] == [
+        (FEATURE, 0), (STORY, 1), (QUIET, 1)]
+    assert rows[0]['state_s'] == {'building': 900}
+    # The actor table narrows with the rows, or two tables under one heading
+    # would answer two different questions.
+    assert [a['actor'] for a in data['clock']['actors']] == ['--by me', 'none']
+    assert [r['grain'] for r in story_only['clock']['rows']] == [STORY]
+    assert story_only['clock']['actors'] == []
+    assert f'{FEATURE} — {pm_report.CLOCK_TITLE}' in out
 
 
 @pytest.mark.parametrize('kwargs,second', [

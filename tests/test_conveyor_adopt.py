@@ -850,7 +850,10 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.TRUE, answer
         assert 'telemetry is live' in answer.detail, answer.detail
-        assert 'last hook-written row is dispatch, 2h ago' in answer.detail, \
+        # `2h` and `2h 1s` are the same fact: the stamp is truncated to the
+        # second and the age is measured later, so pinning the rendering
+        # exactly is a race with the wall clock and not a claim about U4.
+        assert 'last hook-written row is dispatch, 2h' in answer.detail, \
             answer.detail
 
     # A row this CHECKOUT wrote is not evidence a courier ran: the make

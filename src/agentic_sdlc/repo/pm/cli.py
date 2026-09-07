@@ -319,7 +319,7 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
                                            disagree about a row)
-  ledger report [<milestone-id>] [--json] [--from <rev>]
+  ledger report [<grain-id>] [--json] [--from <rev>]
                                           (THE TELEMETRY REPORT — token spend,
                                            tool calls, wall-clock and gate cost,
                                            per grain, from rows the tree already
@@ -336,6 +336,21 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            routed by their grain, never by a
                                            status. Never exits non-zero on a
                                            number.
+                                           A MILESTONE id reports all of it; a
+                                           feature or story id reports the clock
+                                           at that level — that grain and its
+                                           descendants, rolled — since the LEVEL
+                                           is the id's and the ledger is still
+                                           the milestone's.
+                                           `time per state`, columns IN ORDER:
+                                             grain  <state>_s  closed_s
+                                             open_s  open_state
+                                           then `time per actor`:
+                                             actor  arrivals  grains  seconds
+                                           `<state>_s` is one column per state
+                                           this milestone's rows HELD, so
+                                           `… | awk` is the filter and no flag
+                                           is grown for a sum.
                                            --from <rev> reads the ledger and the
                                            grain docs out of git at that rev
                                            instead of the tree, for a milestone
@@ -572,11 +587,25 @@ def _arrived(cfg: model.PmConfig, kind: str, path: Path, gid: str, frm: str,
     or the exit code: an arrival RECORDS and REPORTS. The disposition row lands
     BEFORE the census, so the grain just answered is not counted as unanswered
     on its own write, and it carries `skipped` because a belt's close is an
-    arrival like any other (0.5.0/D6)."""
+    arrival like any other (0.5.0/D6).
+
+    **A no-op is not an arrival**: nothing transitioned, so no `status` row,
+    and a bare re-run may not replace an ANSWERED state's disposition with
+    `none` — every reader takes the LAST row per (grain, state), so that
+    write would look legitimate and not be (rule 4). With an answer it still
+    records: that is how a skipped fork is answered.
+    """
     lid = _ledger_id(path, gid)
-    _stamp(cfg, path, ledger.status_row(lid, frm, to),
-           ledger.disposition_row(lid, to, said, skipped))
-    arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said))
+    moved = frm != to
+    # One clock read for both rows: a pair straddling a second is two events.
+    stamp = ledger.utc_now()
+    answered = bool(said) or (not moved and arrive.answered_at(cfg, lid, to))
+    rows = [ledger.status_row(lid, frm, to, ts=stamp)] if moved else []
+    if moved or skipped or not answered:
+        rows.append(ledger.disposition_row(lid, to, said, skipped, ts=stamp))
+    if rows:
+        _stamp(cfg, path, *rows)
+    arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said, answered))
 
 
 def _answered(cfg: model.PmConfig, kind: str, args: list[str],
@@ -2375,9 +2404,9 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
     for arg in rest:
         if arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r} (ledger report takes '
-                        f'{JSON_FLAG}, {FROM_FLAG} <rev> and a milestone id)')
+                        f'{JSON_FLAG}, {FROM_FLAG} <rev> and a grain id)')
     if len(rest) > 1:
-        raise Usage(f'ledger report takes one milestone id, not '
+        raise Usage(f'ledger report takes one grain id, not '
                     f'{" ".join(rest)!r}')
     if given and not rest:
         # "The building milestone" is a fact about today's tree, not about a
@@ -2390,11 +2419,13 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
     try:
         src: report.Source = (report.GitSource(cfg.root, rev) if given
                               else report.DiskSource())
+        focus = ''
         if given:
             mdir = _report_milestone_dir_at(cfg, src, rest[0])
+        elif rest:
+            mdir, focus = _report_grain_dir(cfg, rest[0])
         else:
-            mdir = (_report_milestone_dir(cfg, rest[0]) if rest
-                    else _report_default_dir(cfg))
+            mdir = _report_default_dir(cfg)
         # `mdir` is the milestone's DOCUMENT since 0.4.0 — a pooled tree has
         # no per-milestone directory — so the id comes off it and the ledger is
         # addressed by that id. Both joins are asked of `src`: a rev read
@@ -2415,7 +2446,8 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         except ledger.LedgerError as err:
             raise Usage(f'{err}') from err
         try:
-            data = report.build(cfg, mid, mdir, rows, src)
+            data = (report.clock_report(cfg, mid, mdir, rows, src, focus)
+                    if focus else report.build(cfg, mid, mdir, rows, src))
         except report.RecordError as err:
             # The second document this verb parses, refused the same way as the
             # first: a verdict block that exists and cannot be read, named by
@@ -2430,12 +2462,14 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         return 0
     if not src.is_file(path) and not src.is_file(root):
         # No ledger is a fact about section 1 only; sections 2 and 4 read other
-        # documents, so the report still prints when those hold something.
+        # documents, so the report still prints when those hold something — and
+        # a focused report is section 1's clock alone, so it stops here.
         print(f'{report.HEADING_PREFIX} {report.heading_id(data)} — '
               f'{report.NO_LEDGER}')
-        if not report.beyond_ledger(data):
+        if focus or not report.beyond_ledger(data):
             return 0
-    for line in report.render(cfg, data):
+    for line in (report.clock_render(cfg, data) if focus
+                 else report.render(cfg, data)):
         print(line)
     return 0
 
@@ -2446,6 +2480,13 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.GitSource,
     its document in the pool, or the `<mid>-*` directory a rev from before the
     migration holds. A rev after the retirement is the ordinary mistake, so
     the message says which rev to reach for."""
+    # Graded against TODAY's tree, so the refusal says which of the two it
+    # is: the tree takes any grain id, and what refuses here is the rev.
+    grain = model.grain_index(cfg).get(mid)
+    if grain is not None and grain.kind != 'milestone':
+        raise Usage(f'{mid!r} is a {grain.kind} in this tree, and {FROM_FLAG} '
+                    f'reads ONE milestone out of git (D6) — name the milestone '
+                    f'that held it; a report on the tree takes any grain id')
     if not model.segment_is_literal(mid):
         raise Usage(f'no milestone resolves from id {mid!r} — the ledger is '
                     f'per milestone (D6), so {FROM_FLAG} reports a milestone '
@@ -2486,22 +2527,27 @@ def _report_default_dir(cfg: model.PmConfig) -> Path:
     return mdir
 
 
-def _report_milestone_dir(cfg: model.PmConfig, mid: str) -> Path:
-    """The directory of an explicitly named milestone, or exit 2; a feature or
-    story id is the wrong noun, since the ledger is per milestone.
-    """
+def _report_grain_dir(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
+    """(the milestone document the report reads, the grain it is NARROWED to).
+    The id names the LEVEL; a feature or story reports through the milestone
+    that owns it, because that is where its rows are (D6). '' is a milestone
+    and the whole report, anything else the clock at that level."""
     # `_grain_file` first, so an id that resolves to nothing gets the ONE
     # refusal every verb gives it — the shared grammar and the shared
     # sentence — rather than a second wording invented here.
-    _grain_file(cfg, mid)
-    grain = model.grain_index(cfg).get(mid)
+    _grain_file(cfg, gid)
+    grain = model.grain_index(cfg).get(gid)
     if grain is None:
-        raise Usage(f'no grain resolves from id {mid!r}')
-    if grain.kind != 'milestone':
-        raise Usage(f'{mid!r} is a {grain.kind}, not a milestone — the '
-                    f'ledger is per milestone (D6), so name one (or run it '
-                    f'bare for the current release\'s)')
-    return grain.path
+        raise Usage(f'no grain resolves from id {gid!r}')
+    if grain.kind == 'milestone':
+        return grain.path, ''
+    owner = model.milestone_of(cfg, gid)
+    holder = model.grain_index(cfg).get(owner) if owner else None
+    if holder is None:
+        raise Usage(f'{gid!r} is a {grain.kind} bound to no milestone in this '
+                    f'tree, so none of its rows is in a ledger — bind it with '
+                    f'`pm set {gid} milestone <id>`, or name a milestone')
+    return holder.path, gid
 
 
 # --- dispatch -----------------------------------------------------------------

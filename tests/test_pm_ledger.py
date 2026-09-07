@@ -46,7 +46,7 @@ from support.pm import (
     write_config,
 )
 
-from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import arrive, ledger
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -194,21 +194,40 @@ def test_the_row_lands_in_the_grains_OWN_milestone_directory():
 
 
 # `feature done` is its own route with its own early exits, so the no-op rule
-# (D2's cost note, carried by D8) is proven on it as well as on the generic one.
-@pytest.mark.parametrize('kwargs,argv,expected', [
-    (dict(story_statuses=('building',)), ('story', 'building', STORY),
-     ('building', 'building')),
-    (dict(feature_status='done'), ('feature', 'done', '0.1/alpha'),
-     ('done', 'done')),
+# (0.5.0/D3) is proven on it as well as on the generic one.
+@pytest.mark.parametrize('kwargs,argv', [
+    (dict(story_statuses=('building',)), ('story', 'building', STORY)),
+    (dict(feature_status='done'), ('feature', 'done', '0.1/alpha')),
 ])
-def test_a_no_op_flip_still_appends_a_from_equals_to_row(kwargs, argv,
-                                                         expected):
+def test_a_no_op_mints_no_flip_and_never_shadows_an_answer(kwargs, argv):
+    """A no-op is not an arrival. It used to append `from == to`, which every
+    reader of the clock takes for a second arrival at a state the grain never
+    left — so the stint it is still IN got billed as a closed one.
+
+    The disposition half STAYS, because re-running the move is how a fork
+    somebody skipped gets answered; what it may not do is answer `none` over
+    an answer already recorded, since every reader takes the LAST row per
+    (grain, state).
+    """
+    _kind, state, gid = argv
     with tree(**kwargs) as root:
+        # An unanswered state: the bare re-run records `none`, which is what
+        # puts the grain on the census until somebody answers.
+        assert run_cli(root, *argv)[0] == 0
+        assert status_rows(root) == []
+        assert only_row(root, ledger.KIND_DISPOSITION)['answer'] == (
+            ledger.NO_DISPOSITION)
+        put_ledger(root, ledger.dumps(ledger.disposition_row(
+            gid, state, arrive.Said('--by', 'me'),
+            ts='2026-09-07T00:00:00Z')))
         code, out = run_cli(root, *argv)
         assert code == 0, out
         assert '(no-op)' in out
-        row = only_row(root)
-    assert (row['from'], row['to']) == expected
+        assert status_rows(root) == []
+        answers = [r['answer'] for r in ledger_rows(root)
+                   if r['kind'] == ledger.KIND_DISPOSITION]
+    assert answers == ['--by'], (
+        'the answer was shadowed by a re-run that recorded nothing new')
 
 
 # --- a feature close touches one grain, so it writes one row ------------------
@@ -678,7 +697,6 @@ def test_every_tap_kind_spells_the_tap_check_pm_counts():
 def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
     from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo.pm import arrive, ready_for
-    assert ready_for.KIND_ENTER == ledger.KIND_ENTER
     minted = {
         ledger.KIND_ENTER: ready_for._enter_row('feature', '0.1/alpha', []),
         ledger.KIND_VERDICT: driver.verdict_row(

@@ -54,7 +54,8 @@ def utc_now() -> str:
 
 
 def status_row(grain_id: str, frm: str, to: str, ts: str = '') -> dict:
-    """One status transition; a no-op flip is a row like any other."""
+    """One status TRANSITION — `cli._arrived` asks whether there was one, a
+    `from == to` row being an arrival that did not happen."""
     return {'ts': ts or utc_now(), 'kind': KIND_STATUS, 'grain': grain_id,
             'from': frm, 'to': to}
 

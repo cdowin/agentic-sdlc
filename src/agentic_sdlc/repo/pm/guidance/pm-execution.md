@@ -199,7 +199,7 @@ a list of ids and nothing else — never a rendered roster.
   a fact rather than deriving one. Unset is normal: the verb then uses the one
   story in progress, and omits the key when there is none or several — never a
   guess.
-- `pm ledger report [<milestone-id>]` — the same rows added up per grain:
+- `pm ledger report [<grain-id>]` — the same rows added up per grain:
   dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
   each category. This is the answer to *how long did this take*, *what did it
   spend* and *what did the gates cost* — do not hand-write a table of them.
@@ -216,6 +216,9 @@ a list of ids and nothing else — never a rendered roster.
   rather than a zero. `time per actor` is the same rows read by who was named
   at each arrival. **The shell is the filter** — `pm ledger report <id> | awk`
   over those columns — never a new flag.
+  The id names the LEVEL: a milestone id reports all of it, a feature or story
+  id reports the clock rooted at that grain and its descendants. The ledger is
+  still the milestone's, because that is where the rows are.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

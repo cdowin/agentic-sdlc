@@ -54,15 +54,6 @@ NO_ENTRY_EDGE: dict[str, str] = {
            'checks and writes nothing, which is the answer you wanted',
 }
 
-# What the row calls itself, in the `<rung>.<edge>` spelling `rung.leave` uses;
-# `emit.TAP_ENTER` is WHICH tap.
-KIND_ENTER = 'rung.enter'
-
-# A CONSTANT because `ready` is also a word the story seed spells, and a
-# HOMONYM like `verdict.OPEN`: it is the ANSWER this verb gave, and says
-# nothing about any grain's status.
-READY_KEY = 'ready'
-
 # A category, asked through `model.holds` so this and `check pm` D2 cannot
 # disagree.
 DONE = model.DONE_CATEGORY
@@ -113,9 +104,9 @@ def _enter_row(rung: str, grain: str, blockers: list[Blocker]) -> dict:
     (ft-one-event-shape-serves-three-readers). Every field is the invocation or
     a check name — nothing here decides anything.
     """
-    return {'ts': ledger.utc_now(), 'kind': KIND_ENTER, 'grain': grain,
-            'rung': rung, READY_KEY: not blockers,
-            'blockers': [{'check': b.check, 'why': b.why} for b in blockers]}
+    return dict(zip(ledger.ENTER_KEYS, (
+        ledger.utc_now(), ledger.KIND_ENTER, grain, rung, not blockers,
+        [{'check': b.check, 'why': b.why} for b in blockers])))
 
 
 def _emit_enter(cfg: model.PmConfig, rung: str, grain: str,

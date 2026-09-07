@@ -481,20 +481,15 @@ RETIRED = ('also_done', 'review_slug_fallback', 'milestone_states',
 # to be a word, and one HOMONYM — `verdict.OPEN` is a review FINDING's
 # disposition (`pm ready-for tag` asks it), which shares its spelling with the
 # bug seed's first state and has nothing to do with a grain's status.
-# ...and one more of the same kind: `ready_for.READY_KEY` is the KEY the
-# `rung.enter` payload carries its boolean under — the answer a rung gave —
-# which shares its spelling with the story seed's second state and says nothing
-# about any grain's status.
 SEED_ASSIGNMENTS = {
     'pm.model': frozenset({'LIFECYCLE', '_LIFECYCLE_CATEGORIES',
                            'DEFAULT_FLOWS', 'DONE_CATEGORY'}),
     'pm.verdict': frozenset({'OPEN'}),
-    'pm.ready_for': frozenset({'READY_KEY'}),
     # The `rung.enter` payload's key list (0.5.0). `ready` is a FIELD NAME
     # there — "was the entry condition met" — and shares its spelling with a
-    # state word this project happens to declare; `ready_for.READY_KEY` is the
-    # same word for the same reason, and the two are bound by
-    # `tests/test_pm_ledger.py`, which mints the row and compares its keys.
+    # state word this project happens to declare. It is spelled ONCE, here:
+    # `ready_for._enter_row` zips against this tuple rather than keeping a
+    # second copy of the word.
     'pm.ledger': frozenset({'ENTER_KEYS'}),
 }
 

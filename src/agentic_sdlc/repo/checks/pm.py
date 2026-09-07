@@ -62,6 +62,8 @@ from agentic_sdlc.repo.pm import model
 
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
+# The pressure census: its criterion's third surface, after `pm` and a belt.
+OPEN_WORK = 'OPEN'
 # The third answer, dropped on the floor by a belt that branched on two of
 # them. A PREFIX: what could not be read is named after it.
 UNVERIFIABLE = 'UNVERIFIABLE'
@@ -156,7 +158,11 @@ def _run() -> int:
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
-    _unanswered_arrivals(cfg, enabled, warn)
+    # Read ONCE: U5 gates on it and the line below reports it, so this gate
+    # and a `pm` write cannot disagree. `pressure = false` silences both.
+    from agentic_sdlc.repo.pm import arrive as _arrive
+    open_work = _arrive.census(cfg)
+    _unanswered_arrivals(cfg, enabled, warn, open_work)
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
     _emit_sink_findings(cfg, enabled, warn)
@@ -171,6 +177,8 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
+    if open_work:
+        print(f'  {OPEN_WORK}  {open_work.line}')
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(mfiles), n_features, n_stories, n_bugs),
                     v_on, v_census)
@@ -399,19 +407,19 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'is not running (U1)')
 
 
-def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
+                         census) -> None:
     """U5 — a grain whose CURRENT state was arrived at with no disposition.
 
     A bare move still writes the status and records `answer: none` (D3), so
     "no action" is never blocked — just never invisible, and this is where it
     stays visible after the move's own line scrolls away. `arrive.census` is
-    the GUARD, so the gate and the pressure line cannot disagree about whether
-    there is anything to say; the grains are NAMED, never tallied (rule 11).
+    the GUARD and is handed IN, so this rule, the line below it and a `pm`
+    write are one derivation; the grains are NAMED, never tallied (rule 11).
     """
     if 'U5' not in enabled:
         return
     from agentic_sdlc.repo.pm import arrive, ledger
-    census = arrive.census(cfg)
     if census is None or not census.unanswered:
         return
     # The LAST disposition per (grain, state): a grain that bounced back has
@@ -446,14 +454,6 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 # gate that mutates to measure is a gate that lies about what it measured.
 
 
-def _ledger_paths(cfg: model.PmConfig) -> list[Path]:
-    """Both homes (0.4.0/D3): the tree's own ledger, and one per milestone."""
-    from agentic_sdlc.repo.pm import ledger
-    paths = [ledger.grainless_path(cfg.roadmap)]
-    paths += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
-    return paths
-
-
 def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str]]:
     """An unreadable or unparseable ledger is NEITHER answer — it is named and
     the scan continues, so one damaged file cannot make the tree look silent.
@@ -461,7 +461,7 @@ def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str
     from agentic_sdlc.repo.pm import ledger
     rows: list[tuple[Path, dict]] = []
     unreadable: list[str] = []
-    for path in _ledger_paths(cfg):
+    for path in ledger.ledger_paths(cfg):
         if not path.is_file():
             continue
         try:
@@ -616,7 +616,8 @@ def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     Raw text rather than `_ledger_rows`: a line this package cannot parse is
     still something a courier wrote, and U2 asks whether anything landed.
     """
-    paths = _ledger_paths(cfg)
+    from agentic_sdlc.repo.pm import ledger
+    paths = ledger.ledger_paths(cfg)
     found, unreadable = False, []
     for path in paths:
         if not path.is_file():

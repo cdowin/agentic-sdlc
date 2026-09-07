@@ -421,6 +421,17 @@ class TestTheSurfaceSaysTelemetry:
         said = pm_cli.USAGE or ''
         assert said.count('columns IN ORDER:') >= 4, said.count(
             'columns IN ORDER:')
+
+    def test_the_clock_help_names_its_columns_in_the_order_it_prints_them(self):
+        """Rule 11's read side for `ledger report`'s clock: the two column
+        tuples the block renders from, in order, in `--help`, so a total is
+        `… | awk` and never a flag this verb grew. `CLOCK_COLUMNS` shipped
+        carrying that claim in a comment and referenced by nothing."""
+        from agentic_sdlc.repo.pm import cli as pm_cli, report
+        entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
+        flat = ' '.join(entry.split())
+        for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
+            assert ' '.join(columns) in flat, (columns, flat)
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 

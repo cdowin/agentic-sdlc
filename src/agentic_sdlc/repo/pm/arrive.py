@@ -293,6 +293,18 @@ def _answered(rows: list, state: str) -> bool:
     return False
 
 
+def answered_at(cfg: model.PmConfig, gid: str, state: str) -> bool:
+    """Did this grain's LAST disposition for `state` carry an answer? Asked
+    on a NO-OP, where a fresh `none` would SHADOW the answer already given."""
+    path = ledger.ledger_of_grain(cfg, gid)
+    try:
+        rows = ledger.read_rows(path) if path is not None else []
+    except Exception:  # noqa: BLE001 — unreadable is not answered
+        return False
+    return _answered(sorted((r for r in rows if r.data.get('grain') == gid),
+                            key=lambda r: str(r.data.get('ts') or '')), state)
+
+
 def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
     """The whole tree's open work, or None when nothing is open — the WHOLE
     tree, because a grain nobody moves is otherwise silent forever."""
@@ -390,7 +402,7 @@ def emit_leave(cfg: model.PmConfig, row: dict) -> None:
 
 # --- the whole event ----------------------------------------------------------
 def report(cfg: model.PmConfig, kind: str, gid: str, to: str,
-           said: Said) -> dict:
+           said: Said, answered: bool = False) -> dict:
     """Say what this arrival has to say, and hand back the row it emitted, in
     read order: what the belt asks, what is installed, the fork, then the
     tree. Nothing at all when there is nothing to say."""
@@ -404,7 +416,8 @@ def report(cfg: model.PmConfig, kind: str, gid: str, to: str,
             _say(f'next: `{nxt.action}` asks {", ".join(nxt.checks)}')
         for capability in have:
             _say(capability.line)
-    for line in fork_lines(cfg, node, gid, said):
+    # Asking again for a disposition the census counts is the nag, not a fork.
+    for line in ([] if answered else fork_lines(cfg, node, gid, said)):
         _say(line)
     crossed = crossing(cfg, kind, gid)
     if crossed:

@@ -72,7 +72,6 @@ SKIP_ARITY = 2
 # A skip mints NO ROW OF ITS OWN. The belt collects what the caller answered
 # and hands it to the WRITE, which is an arrival, and `ledger.disposition_row`
 # carries it as a field on the one row that arrival mints (0.5.0/D6).
-#
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
 # What a checks-only belt says about the record, before its first check: it
@@ -383,7 +382,11 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         raise ValueError(f'{op} writes {state!r} and no writer was given')
     landed, said = write(ctx, state, tuple(dispositioned))
     if said:
-        lines.append(f'[{op}] write: {said}')
+        # As LINES: a belt that reflowed the fork destroyed the pasteable
+        # commands the arrival exists to offer.
+        head, *rest = said.splitlines()
+        lines.append(f'[{op}] write: {head}')
+        lines.extend(rest)
     if not landed:
         lines.append(f'[{op}] error — the write was refused; no status written')
         return Result(tuple(lines), names_false, '', 1,
@@ -662,7 +665,9 @@ def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
     the `status` row and `check pm` reads what it wrote. The answered checks
     ride along: the write IS the arrival that records them, so a close that
-    never happened leaves no row claiming a judgement (0.5.0/D6).
+    never happened leaves no row claiming a judgement (0.5.0/D6). The
+    arrival's report comes back as LINES: squashing it joined the fork's two
+    pasteable commands into one 555-character sentence.
     """
     from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
@@ -674,7 +679,7 @@ def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
             code = pm_cli.main(argv, skipped=tuple(skipped))
-        said = ' '.join(buffer.getvalue().split())
+        said = buffer.getvalue().strip()
         return code == 0, f'`pm {" ".join(argv)}` exited {code}: {said}'
 
     return write

@@ -352,6 +352,9 @@ REV_REFUSALS = [
     # report standing in for a question about history.
     (('0.1', '--from'), 'needs a rev'),
     (('--from', 'HEAD'), 'needs a milestone id'),
+    # A report on the TREE takes a feature id (the level is the id's); one at
+    # a rev reads one milestone, and the refusal says which of the two.
+    ((FEATURE, '--from', 'HEAD'), 'reads ONE milestone out of git'),
 ]
 
 

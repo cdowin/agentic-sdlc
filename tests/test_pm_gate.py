@@ -1054,7 +1054,10 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('RECORDING', out)
-            self.assertIn('last hook-written row: dispatch, 2h ago', out)
+            # The KIND and the magnitude, not the exact rendering: the stamp
+            # is truncated to the second and the age is measured later, so
+            # `2h` and `2h 1s` are the same fact and one of them is a race.
+            self.assertIn('last hook-written row: dispatch, 2h', out)
             self.assertIn('1 of 2 row(s)', out)
             self.assertNotIn('never', out)
 
@@ -3000,6 +3003,28 @@ class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn('(U5)', out)
         self.assertIn(self.STORY, out)
+
+    def test_every_run_reports_the_open_work_whatever_checks_are_on(self):
+        """The THIRD surface the pressure line's criterion names, beside a
+        `pm` write and a belt write. The gate read `arrive.census` as U5's
+        guard and never printed it, so the tree's open work was missing from
+        the surface somebody is standing in when they gate. Not a rule: it is
+        a counted line, and `[pm] pressure = false` is what silences it.
+        """
+        from agentic_sdlc.repo.pm import arrive
+        for checks in (self.CHECKS, '[pm]\nchecks = ["D1"]\n'):
+            with self.subTest(checks=checks), \
+                    self._only_the_story_moves() as root:
+                write_config(root, checks)
+                code, out = run_gate(root)
+                line = arrive.census(cfg_for(root)).line
+            self.assertEqual(code, 0, out)
+            self.assertIn(f'{pm_check.OPEN_WORK}  {line}', out)
+        with self._only_the_story_moves() as root:
+            write_config(root, '[pm]\npressure = false\n')
+            code, out = run_gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(pm_check.OPEN_WORK, out)
 
     def test_a_tree_with_nothing_in_progress_says_nothing(self):
         # `arrive.census` is the guard, so a tree the pressure line calls

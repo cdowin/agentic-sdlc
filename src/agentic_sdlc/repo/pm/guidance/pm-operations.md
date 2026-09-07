@@ -25,7 +25,7 @@ version, name and summary after its documents are gone. All of them in `ledger.j
 
     pm ledger show <grain-id>       that grain's rows oldest first, with the
                                     seconds between status changes
-    pm ledger report [<milestone>]  the same rows added up PER GRAIN:
+    pm ledger report [<grain-id>]   the same rows added up PER GRAIN:
                                     dispatches, tokens in and out, cache
                                     creation and reads, tool calls, wall-clock,
                                     and seconds in each category

@@ -421,7 +421,14 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
 
     def test_a_declared_answer_is_recorded_as_it_was_typed(self):
         """`--by agent developer` records a CLAIM; the tool does not go looking
-        for that agent. A claim in the record is a fact about what was said."""
+        for that agent. A claim in the record is a fact about what was said.
+
+        And it STAYS said. A bare re-run of the same move used to append
+        `answer: none` for the same state, which every reader takes as the
+        last word — so the gate then named a grain that had been answered and
+        the fork asked the question again. A no-op records nothing and asks
+        nothing; the tree keeps what it was told.
+        """
         with tree(feature_status='ready', config=self._declared()) as root:
             code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
                                 '--by', 'agent', 'developer')
@@ -431,6 +438,15 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(rows[0]['value'], 'agent developer')
             # Asking somebody what they just told you is the nag this is not.
             self.assertNotIn(self.ASK, out)
+            before, census = ledger_rows(root), self._stderr(out, 'open:')[0]
+            code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('(no-op)', out)
+            self.assertEqual(ledger_rows(root), before,
+                             'a no-op wrote a row over an answered arrival')
+            self.assertNotIn(self.ASK, out)
+            # The census counted the shadow too, and went `1 of 2` -> `2 of 2`.
+            self.assertEqual(self._stderr(out, 'open:')[0], census)
 
     def test_a_flag_the_arrival_does_not_declare_is_refused_by_name(self):
         """Rule 11: the refusal carries the answers this arrival DOES declare,
@@ -511,7 +527,9 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
         and every word of the fork traces to the declaration — so a hardcoded
         question or a hardcoded count fails a test rather than a review."""
         config = self._declared(extra='[pm]\nwip = 1\n')
-        with tree(feature_status='building', story_statuses=('done', 'ready'),
+        # A REAL move, because the age is measured from a `status` row and a
+        # no-op mints none: a grain nobody moved is UNMEASURED, never young.
+        with tree(feature_status='ready', story_statuses=('done', 'ready'),
                   config=config) as root:
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             cfg = loaded(root)

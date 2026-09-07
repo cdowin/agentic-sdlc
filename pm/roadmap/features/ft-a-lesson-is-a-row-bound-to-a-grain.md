@@ -3,8 +3,8 @@ id: ft-a-lesson-is-a-row-bound-to-a-grain
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: a lesson is a row bound to a grain and a rule
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-a-lesson-is-a-row.md
 depends_on: []
 consumed_by: []
 ---

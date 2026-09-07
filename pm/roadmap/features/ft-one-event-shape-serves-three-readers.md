@@ -3,8 +3,8 @@ id: ft-one-event-shape-serves-three-readers
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: one event shape serves hooks, telemetry and learning
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-one-event-shape.md
 depends_on: []
 consumed_by: []
 ---

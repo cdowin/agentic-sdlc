@@ -99,9 +99,18 @@ USAGE_LABELS = {'input': 'in', 'output': 'out',
 # The two summed keys a dispatch row carries outside `usage`.
 COUNT_KEYS = ('tool_calls', 'duration_s')
 
+# A hand-recorded ONE TOTAL, summed in its own column and folded into no other.
+# `in`/`out` is a split somebody MEASURED; this is a number somebody was TOLD,
+# and adding the two would report a spend nobody observed.
+TOTAL_KEY = ledger.TOTAL_KEY
+TOTAL_ROWS = 'total_rows'
+SPLIT_NOTE = ('reported ONE total rather than the measured split — summed in '
+              f'`{TOTAL_KEY}` and added into no other column, because a total '
+              'and a split are not the same measurement')
+
 # The columns every spend table opens with, before the per-state ones.
 SPEND_COLUMNS = ('dispatches',) + tuple(
-    USAGE_LABELS[key] for key in USAGE_KEYS) + COUNT_KEYS
+    USAGE_LABELS[key] for key in USAGE_KEYS) + (TOTAL_KEY,) + COUNT_KEYS
 GRAIN_COLUMN = 'grain'
 SIZE_COLUMN = 'size'
 TOTAL_COLUMN = 'total_s'
@@ -657,7 +666,7 @@ class Section(NamedTuple):
 def _blank() -> dict:
     """An accumulator that has seen nothing. Every sum starts ABSENT, not 0."""
     return {'dispatches': 0, 'usage': {key: None for key in USAGE_KEYS},
-            'tool_calls': None, 'duration_s': None}
+            TOTAL_KEY: None, 'tool_calls': None, 'duration_s': None}
 
 
 def _plus(running: int | None, value: object) -> int | None:
@@ -676,7 +685,7 @@ def _add(acc: dict, row: dict) -> None:
     usage = usage if isinstance(usage, dict) else {}
     for key in USAGE_KEYS:
         acc['usage'][key] = _plus(acc['usage'][key], usage.get(key))
-    for key in COUNT_KEYS:
+    for key in (TOTAL_KEY, *COUNT_KEYS):
         acc[key] = _plus(acc[key], row.get(key))
 
 
@@ -1157,6 +1166,8 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                        'unattributed': legacy_unattributed},
             'totals': {'dispatch_rows': len(dispatch),
                        'status_rows': len(status), 'grains': len(grains),
+                       TOTAL_ROWS: sum(1 for r in dispatch
+                                       if TOTAL_KEY in r.data),
                        **{k: v for k, v in totals.items()
                           if k != 'dispatches'}}}
 
@@ -1194,10 +1205,11 @@ def _table(title: str, headers: tuple[str, ...], aligns: tuple[str, ...],
 
 
 def _spend_cells(entry: dict) -> tuple[str, ...]:
-    """The columns every spend row shares: dispatches, four sums, two counts."""
+    """The columns every spend row shares: dispatches, the four measured sums,
+    the reported total, two counts."""
     return (_cell(entry['dispatches']),
             *(_cell(entry['usage'][key]) for key in USAGE_KEYS),
-            *(_cell(entry[key]) for key in COUNT_KEYS))
+            *(_cell(entry[key]) for key in (TOTAL_KEY, *COUNT_KEYS)))
 
 
 def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
@@ -1265,6 +1277,11 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
                f'{_cell(totals["tool_calls"])} tool calls / '
                f'{_cell(totals["duration_s"])} s across '
                f'{totals["dispatch_rows"]} dispatch row(s)')
+    # WHICH number that `out` is, said where it is read: the summary sums the
+    # measured split, so a row carrying only a total is spend it does not cover.
+    if totals.get(TOTAL_ROWS):
+        out.append(f'   {totals[TOTAL_ROWS]} of those row(s) {SPLIT_NOTE}: '
+                   f'{_cell(totals[TOTAL_KEY])} token(s)')
     return out
 
 

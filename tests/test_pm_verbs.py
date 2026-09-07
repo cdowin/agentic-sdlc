@@ -21,7 +21,7 @@ import os
 import tempfile
 import pathlib
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from support.pm import (
@@ -532,16 +532,38 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(self._stderr(out, 'have:'), [])
 
     # --- the pressure line ------------------------------------------------
+    # How far back the oldest grain is planted. Two whole units, so the
+    # rendering (`3d 5h`) is stable against the wall clock the case runs on.
+    AGED = timedelta(days=3, hours=5)
+
     def test_every_word_and_number_is_derived(self):
         """THE CASE THAT MATTERS. Every number on the pressure line traces to
         `[pm.states.*]`, to the ledger's own rows or to a frontmatter field,
         and every word of the fork traces to the declaration — so a hardcoded
-        question or a hardcoded count fails a test rather than a review."""
+        question or a hardcoded count fails a test rather than a review.
+
+        **Three of those numbers used to slip past it** (0.5.0/arrival N3, and
+        `bg-a-proof-row-names-a-case-that-proves-half`). The age was asserted
+        as `'oldest ' in census`, so `human_duration(99999)` hardcoded into
+        `Census.line` stayed green; the wip number as `str(cfg.wip) in census`,
+        so the whole clause could be deleted and the digit `1` was still
+        somewhere on the line; and the `reviewed record` clause only in its
+        ABSENT form, so deleting it from `Census.line` reddened nothing in
+        either tier. Each is pinned to its own derivation now, and the record
+        clause is asserted from BOTH sides on two trees.
+        """
         config = self._declared(extra='[pm]\nwip = 1\n')
         # A REAL move, because the age is measured from a `status` row and a
         # no-op mints none: a grain nobody moved is UNMEASURED, never young.
         with tree(feature_status='ready', story_statuses=('done', 'ready'),
                   config=config) as root:
+            # The oldest grain is planted at a KNOWN distance, so the duration
+            # on the line is one this fixture chose. Without it every grain is
+            # seconds old and any number renders plausibly.
+            planted = datetime.now(timezone.utc) - self.AGED
+            put_ledger(root, ledger.dumps(ledger.status_row(
+                '0.1', 'planning', 'building',
+                ts=planted.strftime(ledger.TS_FORMAT))))
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             cfg = loaded(root)
 
@@ -568,19 +590,46 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                         and model.category_of(cfg, g.kind, g.status)
                         == model.IN_PROGRESS]
             self.assertIn(f'{len(open_now)} {model.IN_PROGRESS}', census)
-            # the wip clause is the PROJECT's number, never this package's
-            self.assertIn(str(cfg.wip), census)
+            # the wip clause is the PROJECT's number, never this package's —
+            # bound to the WORD, because a bare `1` is on the line anyway
             self.assertEqual(cfg.wip, 1)
-            # the age is the ledger's own status rows, through the stopwatch
+            self.assertGreater(len(open_now), cfg.wip, census)
+            self.assertIn(f'wip of {cfg.wip}', census)
+            # the age is the ledger's own status rows, through the stopwatch:
+            # the planted row is the oldest, and the line renders ITS distance
             rows = [r for r in ledger_rows(root)
                     if r['kind'] == ledger.KIND_STATUS
                     and r['grain'] == '0.1/alpha']
             self.assertTrue(rows, 'no status row to derive an age from')
-            self.assertIn('oldest ', census)
+            aged = int((datetime.now(timezone.utc) - planted).total_seconds())
+            self.assertIn(f'oldest 0.1 {ledger.human_duration(aged)}', census)
             # and the artifact count is `reviewed:` resolving, off frontmatter
             self.assertEqual(model.review_record_for(cfg, '0.1/alpha'),
                              'docs/reviews/alpha.md')
             self.assertNotIn(f'{arrive.RECORD_FIELD} record', census)
+
+        # The other side of that clause, because an `assertNotIn` alone is
+        # green over a `Census.line` that never learned to say it: the same
+        # tree with the pointer unresolved, and the two counts read off the
+        # grains rather than typed in.
+        with tree(feature_status='ready', story_statuses=('done', 'ready'),
+                  with_record=False, config=config) as root:
+            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            cfg = loaded(root)
+            census = self._stderr(out, 'open:')[0]
+            pool = [g for g in model.grain_index(cfg).values()
+                    if g.kind in model.FLOW_KINDS
+                    and model.category_of(cfg, g.kind, g.status)
+                    == model.IN_PROGRESS
+                    and arrive.RECORD_FIELD in model.document(g.path).fields]
+            missing = [g for g in pool
+                       if not model.record_resolves(
+                           cfg.root / model.document(g.path).field(
+                               arrive.RECORD_FIELD))]
+            self.assertTrue(missing, 'nothing is missing a record, so the '
+                                     'clause below cannot fire')
+            self.assertIn(f'{len(missing)} of {len(pool)} ', census)
+            self.assertIn(f'no {arrive.RECORD_FIELD} record', census)
 
     def test_the_census_is_silent_when_nothing_is_open_and_off_in_one_line(self):
         """A tree with nothing open prints nothing — a conveyor that makes you

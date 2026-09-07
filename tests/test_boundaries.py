@@ -245,6 +245,24 @@ class TheCensusIsTheRealTree(unittest.TestCase):
 class OneWalk(unittest.TestCase):
     """PRIMITIVE 1 — filesystem enumeration lives in exactly one module."""
 
+    CORPUS = (
+        ("for path in root.rglob('*.py'):\n    pass", True),
+        ("names = sorted(root.glob('*.md'))", True),
+        ('for child in root.iterdir():\n    pass', True),
+        ('for base, dirs, files in os.walk(root):\n    pass', True),
+        ('names = os.listdir(root)', True),
+        ('with os.scandir(root) as entries:\n    pass', True),
+        # The receiver is what decides: `ast.walk` and this package's own
+        # `walk` module are not enumerations, and neither is prose.
+        ('for node in ast.walk(tree):\n    pass', False),
+        ('found = walk.descendants(root, Kind.FILE)', False),
+        ("HELP = 'rglob and iterdir and listdir'", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_enumeration_sites(SCRATCH_MODULE, ast.parse(planted)))
+
     def test_only_the_walk_module_enumerates(self):
         offenders: list[str] = []
         for rel, path in _sources():
@@ -269,6 +287,25 @@ class OneWalk(unittest.TestCase):
 
 class OneApply(unittest.TestCase):
     """PRIMITIVE 2 — filesystem mutation lives in exactly one module."""
+
+    CORPUS = (
+        ('target.write_text(payload)', True),
+        ('target.write_bytes(payload)', True),
+        ('target.unlink()', True),
+        ('target.mkdir(parents=True)', True),
+        ('os.replace(source, target)', True),
+        ('shutil.rmtree(scratch)', True),
+        # `Path.replace` takes ONE argument and `str.replace` needs two, which
+        # is the only honest way an AST tells them apart.
+        ('target.replace(other)', True),
+        ("line.replace('a', 'b')", False),
+        ('target.read_text()', False),
+        ('apply.plan(steps).apply()', False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_sites_for(planted))
 
     def test_only_the_apply_module_writes(self):
         offenders: list[str] = []
@@ -353,6 +390,13 @@ class TheOpenModeIsReadFromTheRightArgument(unittest.TestCase):
     rule 4 calls the cardinal sin.
     """
 
+    # Already (planted, must it be caught) — the table this feature generalised.
+    CORPUS = OPEN_SPELLINGS
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_sites_for(planted))
+
     def test_every_spelling_of_open_is_classified_by_its_real_mode(self):
         for source, is_write in OPEN_SPELLINGS:
             with self.subTest(source=source):
@@ -401,39 +445,39 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
     entry that would also excuse an overwrite, a `mkdir`, or a `write_text`.
     """
 
-    def test_append_is_admitted_in_the_ledger(self):
-        for source in ("p.open('a')", "p.open('ab')",
-                       "p.open(mode='a')",
-                       "p.open('a', encoding='utf-8', newline='\\n')"):
-            with self.subTest(source=source):
-                self.assertEqual([], _sites_for(source, APPEND_ONLY_MODULE))
+    # Graded AS the ledger, so every case asks what the exception admits.
+    # Append is what it was granted for; an overwrite there rewrites the bytes
+    # `merge=union` relies on nobody rewriting, which is the defect D1 exists
+    # to prevent; and the exception is by MODE, so it excuses no other
+    # mutation of that same file.
+    CORPUS = (
+        ("p.open('a')", False),
+        ("p.open('ab')", False),
+        ("p.open(mode='a')", False),
+        ("p.open('a', encoding='utf-8', newline='\\n')", False),
+        ("p.open('w')", True),
+        ("open(p, 'w')", True),
+        ("p.open('w+')", True),
+        ("p.open(mode='w')", True),
+        ("p.open('x')", True),
+        ('p.write_text(x)', True),
+        ('p.mkdir()', True),
+        ('p.unlink()', True),
+        ('os.remove(p)', True),
+        # A mode this file cannot read matches no entry in APPEND_MODES, so it
+        # cannot buy the exception either.
+        ('p.open(mode)', True),
+    )
 
-    def test_an_overwrite_in_the_ledger_is_still_a_finding(self):
-        for source in ("p.open('w')", "open(p, 'w')", "p.open('w+')",
-                       "p.open(mode='w')", "p.open('x')"):
-            with self.subTest(source=source):
-                self.assertNotEqual(
-                    [], _sites_for(source, APPEND_ONLY_MODULE),
-                    'the ledger exception is append-only — an overwrite there '
-                    'rewrites the bytes `merge=union` relies on nobody '
-                    'rewriting, which is the defect D1 exists to prevent')
-
-    def test_the_exception_does_not_excuse_other_mutations(self):
-        for source in ('p.write_text(x)', 'p.mkdir()', 'p.unlink()',
-                       'os.remove(p)'):
-            with self.subTest(source=source):
-                self.assertNotEqual([], _sites_for(source, APPEND_ONLY_MODULE),
-                                    'the exception is by MODE, not a blanket '
-                                    'allowlist for the file')
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_sites_for(planted, APPEND_ONLY_MODULE))
 
     def test_append_anywhere_else_is_a_finding(self):
         for rel in (SCRATCH_MODULE, 'cli.py', 'repo/pm/model.py'):
             for source in ("p.open('a')", "open(p, 'a')", "p.open('ab')"):
                 with self.subTest(rel=rel, source=source):
                     self.assertNotEqual([], _sites_for(source, rel))
-
-    def test_an_unreadable_mode_does_not_buy_the_exception(self):
-        self.assertNotEqual([], _sites_for('p.open(mode)', APPEND_ONLY_MODULE))
 
     def test_the_ledger_really_does_append(self):
         """The exception must not outlive the append it was granted for.
@@ -542,6 +586,23 @@ class OneRuleRoutesALedgerRow(unittest.TestCase):
         self.assertGreaterEqual(scanned, MIN_SOURCES)
 
 
+# The two halves a `Walk` carries. A count taken off either one is a number
+# with its disclosures dropped, which is the shape `census(label)` exists for.
+WALK_HALVES = ('kept', 'skipped')
+
+
+def _half_length_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every `len(...)` in this module taken over one half of a `Walk`."""
+    out: list[str] = []
+    for node in _calls(tree):
+        if not (isinstance(node.func, ast.Name) and node.func.id == 'len'):
+            continue
+        out.extend(f'{rel}:{node.lineno}: len(...{arg.attr})'
+                   for arg in node.args
+                   if isinstance(arg, ast.Attribute) and arg.attr in WALK_HALVES)
+    return out
+
+
 class WalkHasNoLength(unittest.TestCase):
     """A census must not be able to reach a number without its narrowings.
 
@@ -550,17 +611,25 @@ class WalkHasNoLength(unittest.TestCase):
     which renders the number and the disclosures as ONE string.
     """
 
+    CORPUS = (
+        ('total = len(found.kept)', True),
+        ('total = len(found.skipped)', True),
+        ('total = len(walk.descendants(root, Kind.FILE).kept)', True),
+        ('total = len(entries)', False),
+        ('total = len(found.census(label))', False),
+        ("said = found.census('module(s)')", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_half_length_sites(SCRATCH_MODULE, ast.parse(planted)))
+
     def test_len_of_a_walk_half_is_never_taken(self):
         offenders: list[str] = []
         for rel, path in _sources():
             if rel == WALK_MODULE:
                 continue
-            for node in _calls(_tree(path)):
-                if not (isinstance(node.func, ast.Name) and node.func.id == 'len'):
-                    continue
-                for arg in node.args:
-                    if isinstance(arg, ast.Attribute) and arg.attr in ('kept', 'skipped'):
-                        offenders.append(f'{rel}:{node.lineno}: len(...{arg.attr})')
+            offenders.extend(_half_length_sites(rel, _tree(path)))
         self.assertEqual(
             [], offenders,
             'a count taken off half a Walk. Call `.census(label)` so the number '
@@ -762,8 +831,48 @@ def _is_config_lookup(node: ast.expr, section_names: set[str]) -> bool:
     return False
 
 
+def _raw_config_imports(rel: str, tree: ast.Module) -> list[str]:
+    """Every import of a RAW config read in this module."""
+    return [f'{rel}:{lineno}: imports {bound}'
+            for bound, source, lineno in _import_bindings(rel, tree)
+            if source.rsplit('.', 1)[-1] in CONFIG_READERS
+            and source.startswith(f'{PACKAGE}.core.')]
+
+
+def _unguarded_collection_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every collection built straight from a config lookup, guard skipped."""
+    section_names = _names_config_is_bound_to(tree)
+    out: list[str] = []
+    for node in _calls(tree):
+        if not (isinstance(node.func, ast.Name)
+                and node.func.id in COLLECTORS):
+            continue
+        if any(_is_config_lookup(arg, section_names) for arg in node.args):
+            out.append(f'{rel}:{node.lineno}: {node.func.id}(<config lookup>)')
+    return out
+
+
 class ConfigGoesThroughTheGuards(unittest.TestCase):
     """PRIMITIVE 3 — every config VALUE crosses `core/config.py` on its way in."""
+
+    # Graded as a module that is NOT on the allowlist, which is what every
+    # module written after this one is.
+    CORPUS = (
+        ('from agentic_sdlc.core.project import load_config', True),
+        ('from agentic_sdlc.core.config import config_section', True),
+        ("names = tuple(config_section('doc').get('scope'))", True),
+        ("_CFG = config_section('doc')\nnames = tuple(_CFG.get('scope'))", True),
+        ("names = set(load_config().get('doc', {}).get('scope'))", True),
+        ('from agentic_sdlc.core.config import str_tuple', False),
+        ("names = str_tuple(section, 'scope', ())", False),
+        ('names = tuple(sorted(found))', False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        tree = ast.parse(planted)
+        return bool(_raw_config_imports(SCRATCH_MODULE, tree)
+                    or _unguarded_collection_sites(SCRATCH_MODULE, tree))
 
     def test_raw_config_imports_are_allowlisted(self):
         census = {rel for rel, _ in _sources()}
@@ -775,15 +884,11 @@ class ConfigGoesThroughTheGuards(unittest.TestCase):
         offenders: list[str] = []
         importers = 0
         for rel, path in _sources():
-            hits = [(bound, lineno)
-                    for bound, source, lineno in _import_bindings(rel, _tree(path))
-                    if source.rsplit('.', 1)[-1] in CONFIG_READERS
-                    and source.startswith(f'{PACKAGE}.core.')]
+            hits = _raw_config_imports(rel, _tree(path))
             if hits and rel in CONFIG_IMPORT_ALLOWLIST:
                 importers += 1
             elif hits:
-                offenders.extend(f'{rel}:{lineno}: imports {bound}'
-                                 for bound, lineno in hits)
+                offenders.extend(hits)
         self.assertEqual(
             [], offenders,
             'a raw config read imported outside the allowlist. Config comes in '
@@ -799,21 +904,32 @@ class ConfigGoesThroughTheGuards(unittest.TestCase):
         for rel, path in _sources():
             if rel == CONFIG_OWNER:
                 continue  # the guards themselves collect, AFTER validating
-            tree = _tree(path)
-            section_names = _names_config_is_bound_to(tree)
-            for node in _calls(tree):
-                if not (isinstance(node.func, ast.Name)
-                        and node.func.id in COLLECTORS):
-                    continue
-                if any(_is_config_lookup(arg, section_names) for arg in node.args):
-                    offenders.append(f'{rel}:{node.lineno}: '
-                                     f'{node.func.id}(<config lookup>)')
+            offenders.extend(_unguarded_collection_sites(rel, _tree(path)))
         self.assertEqual(
             [], offenders,
             'a collection built straight from a config lookup. `tuple(...)` of '
             'a bare string is a tuple of its CHARACTERS — seven gates shipped '
             'a silent PASS that way in v0.9.0. Route the value through a '
             + CONFIG_OWNER + ' guard:\n  ' + '\n  '.join(offenders))
+
+
+def _dead_imports(rel: str, tree: ast.Module) -> list[str]:
+    """Every name this module imports and never reads."""
+    # An import binds via `alias` nodes, never `ast.Name` — so every Name in
+    # the tree is a READ (or a rebind, which also keeps the import from being
+    # deletable without a look).
+    used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == '__all__'
+                        for t in node.targets)
+                and isinstance(node.value, (ast.List, ast.Tuple))):
+            used.update(c.value for c in node.value.elts
+                        if isinstance(c, ast.Constant)
+                        and isinstance(c.value, str))
+    return [f'{rel}:{lineno}: {bound} (from {source})'
+            for bound, source, lineno in _import_bindings(rel, tree)
+            if bound not in used]
 
 
 class NoImportIsDead(unittest.TestCase):
@@ -825,29 +941,31 @@ class NoImportIsDead(unittest.TestCase):
     keeps them unquoted) or in `__all__` (the `__init__.py` re-export form).
     """
 
+    CORPUS = (
+        ('import os', True),
+        ('from agentic_sdlc.core.config import str_tuple', True),
+        # A name inside a STRING is prose, not a read.
+        ("import os\nHELP = 'call os.getcwd()'", True),
+        ('import os\nHERE = os.getcwd()', False),
+        ('import os.path as osp\nHERE = osp.dirname(x)', False),
+        ("from x import y\n__all__ = ['y']", False),
+        # Annotations are reads, which is what `from __future__ import
+        # annotations` keeps true without quoting them.
+        ('from pathlib import Path\n\n\ndef f(p: Path) -> None:\n    pass',
+         False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_dead_imports(SCRATCH_MODULE, ast.parse(planted)))
+
     def test_every_import_is_read(self):
         offenders: list[str] = []
         bindings_seen = 0
         for rel, path in _sources():
             tree = _tree(path)
-            bindings = _import_bindings(rel, tree)
-            bindings_seen += len(bindings)
-            # An import binds via `alias` nodes, never `ast.Name` — so every
-            # Name in the tree is a READ (or a rebind, which also keeps the
-            # import from being deletable without a look).
-            used = {node.id for node in ast.walk(tree)
-                    if isinstance(node, ast.Name)}
-            for node in ast.walk(tree):
-                if (isinstance(node, ast.Assign)
-                        and any(isinstance(t, ast.Name) and t.id == '__all__'
-                                for t in node.targets)
-                        and isinstance(node.value, (ast.List, ast.Tuple))):
-                    used.update(c.value for c in node.value.elts
-                                if isinstance(c, ast.Constant)
-                                and isinstance(c.value, str))
-            offenders.extend(
-                f'{rel}:{lineno}: {bound} (from {source})'
-                for bound, source, lineno in bindings if bound not in used)
+            bindings_seen += len(_import_bindings(rel, tree))
+            offenders.extend(_dead_imports(rel, tree))
         self.assertGreaterEqual(bindings_seen, 100,
                                 'import census collapsed — this gate is '
                                 'asserting emptiness over nothing')
@@ -857,10 +975,39 @@ class NoImportIsDead(unittest.TestCase):
             'change:\n  ' + '\n  '.join(offenders))
 
 
+# A module in the bottom layer, for grading a planted import as `core/` sees it.
+CORE_SCRATCH = 'core/scratch_not_a_layer.py'
+
+
+def _upward_imports(rel: str, tree: ast.Module) -> list[str]:
+    """Every import this module makes against the layering."""
+    banned = tuple(name for prefix, names, _ in LAYER_RULES
+                   if rel.startswith(prefix) for name in names)
+    return [f'{rel}:{lineno}: {source}'
+            for _, source, lineno in _import_bindings(rel, tree)
+            if any(source == b or source.startswith(b + '.') for b in banned)]
+
+
 class LayersPointDownward(unittest.TestCase):
     """PRIMITIVE 4b — core/ -> repo/ -> cli.py, downward only. An upward
     import is the architecture running backwards, however locally
     convenient."""
+
+    CORPUS = (
+        ('from agentic_sdlc.repo import emit', True),
+        ('import agentic_sdlc.cli', True),
+        ('from agentic_sdlc.repo.pm import model', True),
+        # Relative, and resolved against the module's own package — spelling
+        # the target without its prefix dodges nothing.
+        ('from ..repo import emit', True),
+        ('from agentic_sdlc.core import walk', False),
+        ('from agentic_sdlc.core.config import str_tuple', False),
+        ('import tomllib', False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_upward_imports(CORE_SCRATCH, ast.parse(planted)))
 
     def test_no_layer_imports_upward(self):
         sources = _sources()
@@ -873,10 +1020,7 @@ class LayersPointDownward(unittest.TestCase):
                 f'{prefix} census too small ({len(in_layer)}) — a moved layer '
                 'passes this rule by not being scanned')
             for rel, path in in_layer:
-                for _, source, lineno in _import_bindings(rel, _tree(path)):
-                    if any(source == b or source.startswith(b + '.')
-                           for b in banned):
-                        offenders.append(f'{rel}:{lineno}: {source}')
+                offenders.extend(_upward_imports(rel, _tree(path)))
         self.assertEqual(
             [], offenders,
             'an import against the layering. A layer imports DOWNWARD only '
@@ -941,6 +1085,12 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
     callable — and that is asserted rather than reviewed, because the change
     that would break it is one line long and reads as a convenience.
     """
+
+    CORPUS = EMIT_EXECUTION_SPELLINGS
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_execution_sites(EMIT_MODULE, ast.parse(planted)))
 
     def test_the_emit_path_never_spawns_a_process(self):
         """The same question `tests/conftest.py` derives the `shell` mark
@@ -1161,6 +1311,15 @@ class EveryEventFieldIsDerived(unittest.TestCase):
     thinks. The same shape as the breadcrumb's guard: assert the TRACE, not the
     sentence, because a hardcoded next-step passes every substring check."""
 
+    # The table above says WHICH words a minter wrote; the corpus asks the one
+    # question a blind reader fails — did it see anything at all.
+    CORPUS = tuple((source, bool(expected))
+                   for source, expected in MINTER_SPELLINGS)
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_graded(planted))
+
     def test_the_reader_can_still_tell_a_derived_field_from_a_written_one(self):
         for source, expected in MINTER_SPELLINGS:
             with self.subTest(source=source):
@@ -1193,11 +1352,6 @@ class EveryEventFieldIsDerived(unittest.TestCase):
             + '\n  '.join(offenders))
 
 
-
-if __name__ == '__main__':
-    unittest.main()
-
-
 # --- primitive 6: config is read PER RUN, never at import ---------------------
 # Found 2026-09-05: `repo/checks/doc.py` bound `[doc] scope` and `[doc]
 # ephemeral` into module-level constants at import. Once the module was in
@@ -1211,16 +1365,8 @@ if __name__ == '__main__':
 CONFIG_CALLS = ('config_section', 'load_config')
 
 
-def module_level_config_reads(path: Path) -> list[str]:
+def _import_time_config_reads(label: str, tree: ast.Module) -> list[str]:
     """`config_section(...)` / `load_config(...)` called at module scope."""
-    try:
-        tree = ast.parse(path.read_text(encoding='utf-8'))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        # A module this walk cannot READ is a module it cannot clear, so it is
-        # reported rather than skipped. (`UNREADABLE` was a name that did not
-        # exist: the one branch here that could not itself be exercised raised
-        # NameError instead of naming the file.)
-        return [f'{path.name}: unreadable — not parsed, so not cleared']
     hits = []
     # TOP LEVEL ONLY. A `def`/`class` body is where these calls BELONG, so a
     # walk that descends into one reports the fix as the defect.
@@ -1234,27 +1380,104 @@ def module_level_config_reads(path: Path) -> list[str]:
             name = getattr(inner.func, 'id', None) or getattr(
                 inner.func, 'attr', None)
             if name in CONFIG_CALLS:
-                hits.append(f'{path.name}:{inner.lineno}: {name}() at import')
+                hits.append(f'{label}:{inner.lineno}: {name}() at import')
     return hits
 
 
-def test_no_module_reads_its_config_at_import_time():
-    """A config value bound at import is a refusal that fires once per process.
+def module_level_config_reads(path: Path) -> list[str]:
+    """The same reader over a file, with the one thing a snippet cannot have."""
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        # A module this walk cannot READ is a module it cannot clear, so it is
+        # reported rather than skipped. (`UNREADABLE` was a name that did not
+        # exist: the one branch here that could not itself be exercised raised
+        # NameError instead of naming the file.)
+        return [f'{path.name}: unreadable — not parsed, so not cleared']
+    return _import_time_config_reads(path.name, tree)
 
-    The cwd does not move mid-run in production, and `config_section` is
-    `lru_cache`d — so reading inside the function that needs it costs one
-    cached lookup and buys the exit-2 contract being true every time rather
-    than the first time.
-    """
-    offenders: list[str] = []
-    for path in sorted((REPO_ROOT / 'src').rglob('*.py')):
-        if '__pycache__' in path.parts:
+
+class ConfigIsReadPerRunNeverAtImport(unittest.TestCase):
+    """PRIMITIVE 6b — nothing binds a config value while it is being imported."""
+
+    CORPUS = (
+        ("SCOPE = config_section('doc')", True),
+        ("SCOPE = tuple(load_config().get('doc', {}))", True),
+        ("if True:\n    SCOPE = config_section('doc')", True),
+        # Where these calls BELONG. A walk that descends into a body reports
+        # the fix as the defect, so both spellings are probed.
+        ("def scope():\n    return config_section('doc')", False),
+        ("class C:\n    def scope(self):\n        return load_config()", False),
+        ("SCOPE = ('doc', 'ephemeral')", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_import_time_config_reads(SCRATCH_MODULE,
+                                              ast.parse(planted)))
+
+    def test_no_module_reads_its_config_at_import_time(self):
+        """A config value bound at import is a refusal that fires once per
+        process.
+
+        The cwd does not move mid-run in production, and `config_section` is
+        `lru_cache`d — so reading inside the function that needs it costs one
+        cached lookup and buys the exit-2 contract being true every time rather
+        than the first time.
+        """
+        offenders: list[str] = []
+        for path in sorted((REPO_ROOT / 'src').rglob('*.py')):
+            if '__pycache__' in path.parts:
+                continue
+            offenders.extend(module_level_config_reads(path))
+        self.assertEqual(
+            [], offenders,
+            'config read at import — the value is bound to whichever repo '
+            'imported the module FIRST, and a malformed section in any later '
+            'one stops raising:\n  ' + '\n  '.join(offenders))
+
+
+# Everything that turns a version string into something ordered or numeric.
+VERSION_PARSERS = (
+    'packaging', 'pkg_resources', 'distutils', 'LooseVersion',
+    'StrictVersion', 'parse_version', 'version_tuple', 'VERSION_RE',
+)
+# Splitting a version on its SEPARATOR is the shape a comparator grows back
+# as; splitting a file on newlines is how you read one, so the ARGUMENT is
+# what decides.
+VERSION_SEPARATORS = ('.', '-', '+')
+ORDERING_CALLS = ('int', 'float', 'sorted', 'max', 'min')
+
+
+def _version_comparator_imports(rel: str, tree: ast.Module) -> list[str]:
+    """Every import in this module of something that orders a version."""
+    out: list[str] = []
+    for node in ast.walk(tree):
+        names: list[str] = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or '']
+        out.extend(f'{rel}: imports {name}' for name in names
+                   if name.split('.')[0] in VERSION_PARSERS)
+    return out
+
+
+def _version_split_sites(label: str, func: ast.AST) -> list[str]:
+    """Every place inside one function that takes a version APART."""
+    out: list[str] = []
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Call):
             continue
-        offenders.extend(module_level_config_reads(path))
-    assert offenders == [], (
-        'config read at import — the value is bound to whichever repo imported '
-        'the module FIRST, and a malformed section in any later one stops '
-        'raising:\n  ' + '\n  '.join(offenders))
+        if (isinstance(node.func, ast.Attribute)
+                and node.func.attr == 'split'
+                and any(isinstance(a, ast.Constant)
+                        and a.value in VERSION_SEPARATORS for a in node.args)):
+            out.append(f'{label} splits on a version separator')
+        if (isinstance(node.func, ast.Name)
+                and node.func.id in ORDERING_CALLS):
+            out.append(f'{label} calls {node.func.id}()')
+    return out
 
 
 class NoCodePathParsesAVersion(unittest.TestCase):
@@ -1272,26 +1495,32 @@ class NoCodePathParsesAVersion(unittest.TestCase):
     ABSENCE, and an absence has no call site to assert against.
     """
 
-    # Everything that turns a version string into something ordered or numeric.
-    _PARSERS = (
-        'packaging', 'pkg_resources', 'distutils', 'LooseVersion',
-        'StrictVersion', 'parse_version', 'version_tuple', 'VERSION_RE',
+    CORPUS = (
+        ('import packaging', True),
+        ('from distutils.version import LooseVersion', True),
+        ('from packaging.version import parse as parse_version', True),
+        ("def bumped(v):\n    return v.split('.')[0]", True),
+        ('def bumped(v):\n    return int(v)', True),
+        ('def bumped(order):\n    return sorted(order)[-1]', True),
+        ('import re', False),
+        ("def read(text):\n    return text.splitlines()", False),
+        ("def read(text):\n    return text.split('\\n')", False),
+        ('def bumped(order, v):\n    return order.index(v) + 1', False),
     )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        tree = ast.parse(planted)
+        return bool(_version_comparator_imports(SCRATCH_MODULE, tree)
+                    or any(_version_split_sites(SCRATCH_MODULE, node)
+                           for node in ast.walk(tree)
+                           if isinstance(node, (ast.FunctionDef,
+                                                ast.AsyncFunctionDef))))
 
     def test_no_module_imports_a_version_comparator(self):
         offenders = []
         for rel, path in _sources():
-            tree = _tree(path)
-            for node in ast.walk(tree):
-                names = []
-                if isinstance(node, ast.Import):
-                    names = [a.name for a in node.names]
-                elif isinstance(node, ast.ImportFrom):
-                    names = [node.module or '']
-                for name in names:
-                    root = name.split('.')[0]
-                    if root in self._PARSERS:
-                        offenders.append(f'{rel}: imports {name}')
+            offenders.extend(_version_comparator_imports(rel, _tree(path)))
         self.assertEqual(
             [], offenders,
             'a version comparator was imported — order is a POSITION in '
@@ -1329,26 +1558,11 @@ class NoCodePathParsesAVersion(unittest.TestCase):
                               f'{rel}:{name} is gone — rename it here too, or '
                               f'this gate silently stops checking it')
                 scanned += 1
-                for node in ast.walk(found[name]):
-                    if not isinstance(node, ast.Call):
-                        continue
-                    # Splitting a version on its SEPARATOR is the shape a
-                    # comparator grows back as. Splitting a file on newlines is
-                    # how you read one, so the argument is what decides —
-                    # otherwise the gate could not cover `shipped_version`,
-                    # which is exactly where a parser would reappear.
-                    if (isinstance(node.func, ast.Attribute)
-                            and node.func.attr == 'split'
-                            and any(isinstance(a, ast.Constant)
-                                    and a.value in ('.', '-', '+')
-                                    for a in node.args)):
-                        offenders.append(
-                            f'{rel}:{name} splits on a version separator')
-                    if (isinstance(node.func, ast.Name)
-                            and node.func.id in ('int', 'float', 'sorted',
-                                                 'max', 'min')):
-                        offenders.append(
-                            f'{rel}:{name} calls {node.func.id}()')
+                # The argument is what decides, not the call — otherwise the
+                # gate could not cover `shipped_version`, which is exactly
+                # where a parser would reappear.
+                offenders.extend(_version_split_sites(f'{rel}:{name}',
+                                                      found[name]))
         # Rule 4: a gate scanning nothing FAILS rather than passing quietly.
         self.assertGreaterEqual(scanned, 11,
                                 'the release surface collapsed — this gate is '
@@ -1451,6 +1665,17 @@ class TheDocstringAndTheDescriptionNameOneProject(unittest.TestCase):
     and its scope is markdown, while a docstring is prose making a claim about
     what the package IS from inside a `.py` file. Nothing was pointed at it.
     """
+
+    # This reader takes TWO strings, so a planted case is the pair. The gate
+    # replaying it hands `catches` whatever the guard put here and reads
+    # nothing into it.
+    CORPUS = tuple(((sentence, vocabulary), bool(expected))
+                   for sentence, vocabulary, expected in DOCSTRING_SPELLINGS)
+
+    @staticmethod
+    def catches(planted: tuple[str, str]) -> bool:
+        sentence, vocabulary = planted
+        return bool(_foreign_words(sentence, vocabulary))
 
     def test_the_reader_names_the_words_a_vocabulary_never_used(self):
         """The comparison is only worth what it can still see: three assertions
@@ -1776,6 +2001,17 @@ class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
     syntactic and total: a `git` spawn either names a directory that is not this
     checkout, or it is a finding by `file:line`.
     """
+
+    # `[[]]` is one git call with nothing against it — a CLEAN case that is
+    # not an empty result, which is why "caught" is the guard's own word here
+    # rather than the truthiness of what its reader returned.
+    CORPUS = tuple((source, any(reasons for reasons in expected))
+                   for source, expected in GIT_SPAWN_SPELLINGS)
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return any(reasons for _, reasons
+                   in _git_spawn_sites(ast.parse(planted)))
 
     def test_the_classifier_can_still_tell_a_confined_spawn_from_a_loose_one(self):
         for source, expected in GIT_SPAWN_SPELLINGS:

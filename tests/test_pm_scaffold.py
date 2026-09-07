@@ -280,6 +280,31 @@ class Scaffolding(unittest.TestCase):
                 self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
                 self.assertEqual(doc.read_text(encoding='utf-8'), repaired,
                                  f'{slot} grew a second header')
+            # And over a RETIRED wording, which is the half the gate case
+            # cannot reach. `test_a_doc_opening_with_a_RETIRED_header_still_
+            # passes` (tests/test_grain_shape.py) only runs `check grain-shape`,
+            # and the gate reads `KNOWN_SLOT_HEADERS` independently of the
+            # writer — so `_header_wanted` could stop honouring a retired
+            # wording, both tiers stayed green, and `pm new` stacked a second
+            # header onto every doc written under the old words on upgrade day
+            # (bg-a-proof-row-names-a-case-that-proves-half).
+            retired = sorted(model.RETIRED_SLOT_HEADERS)
+            self.assertTrue(retired, 'a retired wording must stay recognised '
+                                     'once one exists — with the set empty '
+                                     'the loop below asks nothing')
+            for header in retired:
+                for slot in model.SLOT_HEADER:
+                    doc = shared(root, '0.1', slot)
+                    doc.write_text(f'{header}\n\n# 0.1 demo\n',
+                                   encoding='utf-8')
+                    before = doc.read_bytes()
+                    self.assertEqual(
+                        run_cli(root, 'new', 'milestone', '0.1')[0], 0)
+                    self.assertEqual(
+                        doc.read_bytes(), before,
+                        f'{slot} grew a second header over the retired '
+                        f'wording {header!r}')
+                    self.assertEqual(model.header_of(doc), header, slot)
 
     def test_a_name_the_filesystem_refuses_is_a_refusal_not_a_traceback(self):
         # The grain's own filename is the last unguarded write: a name too
@@ -445,7 +470,8 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
         # would still pass the day they diverge again.
         with tree(story_statuses=('ready',)) as root:
             for argv, kind, slug, doc in (
-                    (('new', 'milestone', 'later', 'Later'),
+                    (('new', 'milestone', 'later', 'Later',
+                      '--version', '9.9'),
                      'milestone', 'later', MILESTONES),
                     (('new', 'feature', '0.1', 'census', 'Census'),
                      'feature', 'census', FEATURES),
@@ -464,6 +490,12 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                                      gid)
                     # The PARENT is not in it, at any level.
                     self.assertNotIn('/', gid)
+            # The unlanded half of #8: a milestone's VERSION is the same shape
+            # of fact as a parent — a field the scaffold writes, never a piece
+            # of the id it mints.
+            mfile = root / MILESTONES / 'ms-later.md'
+            self.assertEqual(model.field_of(mfile, 'version'), '9.9')
+            self.assertNotIn('9.9', model.unquote(model.field_of(mfile, 'id')))
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
     def test_the_parent_is_the_binding_field_and_re_parenting_is_one_set(self):
@@ -483,6 +515,37 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
             self.assertEqual(
                 model.unquote(model.field_of(ff, 'milestone')), 'ms-later')
             self.assertEqual(model.unquote(model.field_of(ff, 'id')), before)
+
+    def test_a_version_is_optional_idempotent_and_refused_whole(self):
+        # The write verb's three obligations for the new flag, on one tree:
+        # omitting it is BACKLOG rather than a finding (R2), re-stamping the
+        # same value is a no-op to the byte (rule 3), and a value that would
+        # inject a line into the frontmatter is refused with nothing written —
+        # the bar `pm set` already holds for a scalar.
+        with tree(story_statuses=('ready',)) as root:
+            backlog = root / MILESTONES / 'ms-backlog.md'
+            code, out = run_cli(root, 'new', 'milestone', 'backlog', 'Backlog')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(model.field_of(backlog, 'version'), '')
+
+            code, out = run_cli(root, 'new', 'milestone', 'backlog',
+                                '--version', '0.2')
+            self.assertEqual(code, 0, out)
+            self.assertIn('stamped on', out)
+            stamped = model.read_raw(backlog)
+            self.assertEqual(model.field_of(backlog, 'version'), '0.2')
+            code, out = run_cli(root, 'new', 'milestone', 'backlog',
+                                '--version', '0.2')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(model.read_raw(backlog), stamped)
+
+            code, out = run_cli(root, 'new', 'milestone', 'oops', 'Oops',
+                                '--version', '0.3\nowner: someone-else')
+            self.assertEqual(code, 1, out)
+            self.assertIn('one line', out)
+            self.assertIn('nothing was written', out)
+            self.assertNotIn('Traceback', out)
+            self.assertFalse((root / MILESTONES / 'ms-oops.md').exists())
 
     def test_a_slug_already_carrying_its_prefix_is_not_doubled(self):
         with tree(story_statuses=('ready',)) as root:

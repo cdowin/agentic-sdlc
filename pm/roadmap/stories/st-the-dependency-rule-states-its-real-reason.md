@@ -56,5 +56,5 @@ done: c0c8f68 — rule 1's sentence names the hook corpus as the surface its rea
 distinguishes the package's own uvx-resolved runtime. The number did not move and what the rule
 permits did not change. D4 on the milestone carries the audit: PyYAML and ruamel.yaml are blocked by
 rule 3, a CLI framework by rule 6, a validation library by nothing and unnecessary. The one live
-trade — byte-exact to semantic preservation, ~165 lines of  — is recorded as **rule 3's**
+trade — byte-exact to semantic preservation, ~165 lines of `model.py` — is recorded as **rule 3's**
 to make and is NOT taken here.

@@ -71,9 +71,11 @@ UNMARKED_MODULES = (
     # about test cost proved by tests that spawn would be the joke
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
+    'test_check_doc.py',
     'test_cli_surface.py',
     'test_config_seed.py',
     'test_consumer_independence.py',
+    'test_contracts.py',
     'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
     'test_conveyor_lessons.py',
@@ -82,6 +84,7 @@ UNMARKED_MODULES = (
     'test_fuzz_markdown.py',
     'test_gates_extra.py',
     'test_grain_shape.py',
+    'test_guard_corpus.py',
     'test_install.py',
     'test_install_sdlc.py',
     'test_pm_changelog.py',

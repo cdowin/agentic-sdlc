@@ -7,6 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
+changelog: check pm's READY warnings now fire only on in_progress grains and roll every closed grain's gap into one counted READY line, U1 prints one line for every grain kind instead of one per kind, and U4 names install-hooks --write-settings in its second sentence with the row census capped at three kinds — three output shapes consumers grep, so minor.
 ---
 
 # a warning is actionable where it fires
@@ -69,11 +70,30 @@ that names the fix where it fires.
 Nothing is retired, so `model.RETIRED_CHECKS` is untouched and no rule id moves. `READY` is
 ungated by design (it has no `[pm] checks` id) and stays that way.
 
+## What it measured, on one frozen tree
+
+Two checkouts of this repo differing in `checks/pm.py` alone, pointed at one frozen copy of
+`pm/roadmap/` with the same `.claude/settings.json`, run back to back:
+
+| | before | after |
+|---|---|---|
+| `WARN` lines | **57** | **10** |
+| characters of warning text | **11,986** | **2,826** |
+| READY | 52 — 45 on `done` grains, 7 on `building` | 7, all `building`, plus one counted line |
+| U1 | 3 lines, 607 chars | 1 line, 390 chars |
+| U5 | 1 line | 1 line, untouched |
+| U4 | 1 line, 839 chars, fix at char ~700 | 1 line, 607 chars, fix at char ~180 |
+
+**Every one of the 47 lines that went is a line whose reader could not act on it where it
+fired**, and no family lost a member: the 45 are carried by the counted `READY` line, U1's three
+walls carry the same state names in three clauses of one line, and U4 says everything it said
+except a ten-kind row breakdown that `pm ledger report` prints on demand.
+
 ## Ship criterion
 
-`check pm` on this repo prints **5 warning lines, not 52**, at exit 0, and every one of the five
-names a fix its reader can perform from where it fired: two READY gaps on grains that are
-`building`, one U1 line, one U5 line, one U4 line.
+Every `WARN` line `check pm` prints on this repo names a fix its reader can perform from where it
+fired, at exit 0 — READY gaps only on grains that are `in_progress`, one U1 line, one U5 line, one
+U4 line whose fix is in its second sentence.
 
 **No family is deleted and no absence is silent.** Every READY gap on a closed grain is carried by
 one counted `READY` line that states how many there are and why they are not named; the line

@@ -268,7 +268,11 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
                           # 0.6.0: free prose a human wrote, not an id. A
                           # sentence naming a renamed grain reads fine after
                           # the rename; rewriting inside it would edit English.
-                          'changelog'})
+                          'changelog',
+                          # 0.6.0: a release string, not an id — no reader
+                          # resolves it to a grain, and two milestones may
+                          # legitimately spell the same one (R3 reports it).
+                          'version'})
 
     def test_every_template_key_is_swept_or_named_as_not_a_reference(self):
         with tree() as root:

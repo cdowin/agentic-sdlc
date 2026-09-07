@@ -239,17 +239,27 @@ way. `pm config --seed` shows the whole declaration with an example.
   validate                                (structural + referential integrity)
   install-skills [--force] [--diff]       (write the shared rule + operations skill)
   init                                    (scaffold a fresh tree + install guidance)
-  new milestone <slug> <name...>          (mints id `ms-<slug>` — the kind
+  new milestone <slug> <name...> [--version <ver>]
+                                          (mints id `ms-<slug>` — the kind
                                            prefix and the slug you typed, and
-                                           NOTHING ELSE. A parent is a binding,
-                                           never identity, so it is not in an
-                                           id and re-parenting stays one `pm
-                                           set`. <name...> is REQUIRED to
-                                           create; give an id already in the
+                                           NOTHING ELSE. THE SLUG IS A NAME,
+                                           NOT A VERSION: --version is where a
+                                           version goes, stamped on `version:`,
+                                           the field `pm next`, `pm roadmap`
+                                           and R5 read, and a milestone with
+                                           none is BACKLOG rather than a
+                                           finding. Typing the version as the
+                                           slug is how `ms-0.6.0` got minted
+                                           and hand-renamed. A parent is a
+                                           binding, never identity, so it is
+                                           not in an id and re-parenting stays
+                                           one `pm set`. <name...> is REQUIRED
+                                           to create; give an id already in the
                                            tree and omit it to fill missing
                                            slots instead — that path is
-                                           idempotent, and a shared doc appears
-                                           on first WRITE)
+                                           idempotent, --version re-stamped
+                                           with the same value is a no-op, and
+                                           a shared doc appears on first WRITE)
   new feature <milestone> <slug> <name...>
                                           (mints `ft-<slug>`; <milestone> is
                                            written to `milestone:` — the same
@@ -293,11 +303,26 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            <roadmap>/ledger.jsonl, with every
                                            gate and test row, and is reported in
                                            `rows naming no grain`)
-  ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N]
-                [--tool-calls N] [--duration-s N] [--event E]
+  ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
+                --tokens-total N] [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
                                            saw; a number not given is a key the
-                                           row does not carry, never a zero)
+                                           row does not carry, never a zero.
+                                           --tokens-total is what a subagent
+                                           completion actually reports — ONE
+                                           number — and it lands in its own
+                                           `tokens_total` key: `ledger report`
+                                           sums it in the `tokens_total`
+                                           column, never into `in`/`out`, and
+                                           says how many rows reported which
+                                           beside the summary that sums the
+                                           split. It is EXCLUSIVE
+                                           with the split flags and with
+                                           --from-transcript, because a row
+                                           carrying both can disagree with
+                                           itself. It is not evidence a courier
+                                           ran: `check pm` U4 wants a
+                                           session_id too)
   ledger record --gate <name> --verdict PASS|FAIL|HANG|SKIP --duration-ms <n>
                 [--census <n>]
                                           (what ONE gate run cost: the make
@@ -339,7 +364,12 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            rows: dispatches, tokens, tool calls,
                                            wall-clock and seconds in each
                                            CATEGORY (todo / in_progress / done),
-                                           per story/feature/bug. With no id it
+                                           per story/feature/bug. `in`/`out`
+                                           are the MEASURED split; a row that
+                                           reported one number instead is summed
+                                           in `tokens_total` and folded into
+                                           neither, and the summary line says
+                                           how many did. With no id it
                                            reports the CURRENT release's
                                            milestone (`pm next`'s answer, from
                                            the plan) — the rows themselves are
@@ -1579,6 +1609,39 @@ def cmd_validate(cfg: model.PmConfig, args: list[str]) -> int:
 CAUSED_BY = 'caused_by'
 CAUSED_BY_FLAG = '--caused-by'
 
+# A milestone's version is a FIELD, never its id: it is optional (a milestone
+# with none is backlog), it re-versions without a rename, and no reader here
+# parses it.
+VERSION = 'version'
+VERSION_FLAG = '--version'
+
+
+def _stamp_field(cfg: model.PmConfig, path: Path, gid: str, key: str,
+                 value: str) -> None:
+    """Write one frontmatter field onto a grain `new` just minted or filled,
+    through `set_field` so a project's own template still gets it, and ECHO
+    it: a field the caller asked for and never sees confirmed is one they have
+    to go read the file to trust."""
+    if not model.set_field(path, key, value):
+        raise Refused(
+            f'{cfg.rel(path)} was created, but {key}: could not be written '
+            f'into it — its frontmatter has no `---` block to put the field '
+            f'in; add one, or set it with `pm set {gid} {key} {value}`')
+    _ok(f'{key} {value!r} stamped on {cfg.rel(path)}')
+
+
+def _version(pairs: list[tuple[str, str]]) -> str:
+    """The `--version` value, or ''. Refused BEFORE any write: a multi-line
+    scalar would inject lines into the frontmatter it lands in, which is the
+    same bar `pm set` holds."""
+    value = ''
+    for _, raw in pairs:
+        value = raw
+    if '\n' in value or '\r' in value:
+        raise Refused(f'{VERSION_FLAG}: a frontmatter scalar is one line — '
+                      f'nothing was written')
+    return value.strip()
+
 
 def _caused_by(cfg: model.PmConfig, pairs: list[tuple[str, str]]) -> str:
     """The `--caused-by` value, proven to name a feature that exists, or ''.
@@ -1721,16 +1784,21 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
     # `new milestone` and `new feature` are idempotent — they fill missing
     # slots — so the name is optional when the grain is already there.
     if grain == 'milestone':
+        pairs, rest = _take_flags(rest, (VERSION_FLAG,), noun='a version')
         if not rest:
             raise Usage(USAGE)
+        version = _version(pairs)
         slug, name = _check_slug('milestone slug', rest[0]), ' '.join(rest[1:])
         mid, found = _claim(cfg, 'milestone', slug)
         if found is None and not name:
             raise _name_required('milestone', mid, slug)
         target = found or _mint_path(cfg, 'milestone', mid, name)
         name = name or model.field_of(target, 'name')
-        return _scaffold(cfg, 'milestone', target,
+        code = _scaffold(cfg, 'milestone', target,
                          {'id': mid, 'kind': 'milestone', 'name': name})
+        if version:
+            _stamp_field(cfg, target, mid, VERSION, version)
+        return code
     if grain == 'feature':
         if len(rest) < 2:
             raise Usage(USAGE)
@@ -1795,17 +1863,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         _mint(cfg, bf, body)
         _ok(f'created {cfg.rel(bf)}')
         if cause:
-            # Stamped through `set_field`, so a project's own bug.md still gets
-            # the field; a template with no frontmatter is refused out loud.
-            if not model.set_field(bf, CAUSED_BY, cause):
-                raise Refused(
-                    f'{cfg.rel(bf)} was created, but {CAUSED_BY}: could not be '
-                    f'written into it — its frontmatter has no `---` block to '
-                    f'put the field in; add one, or set it with `pm set {bid} '
-                    f'{CAUSED_BY} {cause}`')
-            # Echoed, because a field the caller asked for and never sees
-            # confirmed is a field they have to go read the file to trust.
-            _ok(f'{CAUSED_BY} {cause!r} stamped on {cfg.rel(bf)}')
+            _stamp_field(cfg, bf, bid, CAUSED_BY, cause)
         return 0
     if grain == 'handoff':
         # ON DEMAND ONLY. `new milestone` deliberately does NOT mint this
@@ -1921,8 +1979,10 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
 # `pm ledger record` copies what the transcript holds, omits what it lacks, and
 # labels nothing; it refuses only input it cannot read, and the one question it
 # cannot answer — which ledger, when two milestones are building.
+SPLIT_FLAGS = ('--tokens-in', '--tokens-out')
+TOTAL_FLAG = '--tokens-total'
 LEDGER_FLAGS = ('--from-transcript', '--event', '--agent-id', '--agent-type',
-                '--session-id', '--grain', '--tokens-in', '--tokens-out',
+                '--session-id', '--grain', *SPLIT_FLAGS, TOTAL_FLAG,
                 '--tool-calls', '--duration-s', '--duration-ms',
                 '--gate', '--verdict',
                 '--census')
@@ -2062,6 +2122,13 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
                     f'--gate <name> as well, or drop it: a flag this run '
                     f'parsed and dropped would change nothing and say so '
                     f'nowhere')
+    split = [flag for flag in SPLIT_FLAGS if flag in flags]
+    if TOTAL_FLAG in flags and (split or '--from-transcript' in flags):
+        raise Usage(f'{TOTAL_FLAG} is exclusive with '
+                    f'{" ".join(split or ["--from-transcript"])}: one total '
+                    f'reported and a split measured are two measurements, and '
+                    f'a row carrying both is a row that can disagree with '
+                    f'itself. Name whichever one you actually have')
     # `--from-transcript` and `--grain` answer two questions and both may be
     # asked at once: the transcript is where the NUMBERS come from, `--grain`
     # is what the work was ON. A dispatched agent is TOLD its grain in the
@@ -2273,13 +2340,15 @@ def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:
     in a ledger row is a lie nothing downstream can check, and the same path
     routes the row."""
     usage = {}
-    for key, flag in (('input', '--tokens-in'), ('output', '--tokens-out')):
+    for key, flag in zip(('input', 'output'), SPLIT_FLAGS):
         if flag in flags:
             usage[key] = _count_flag(flag, flags[flag])
     fields: dict[str, object] = {'grain': _ledger_id(path, grain)}
     if usage:
         # Only the keys the caller gave: absent, not 0, means nobody counted.
         fields['usage'] = usage
+    if TOTAL_FLAG in flags:
+        fields[ledger.TOTAL_KEY] = _count_flag(TOTAL_FLAG, flags[TOTAL_FLAG])
     for key, flag in (('tool_calls', '--tool-calls'),
                       ('duration_s', '--duration-s')):
         if flag in flags:

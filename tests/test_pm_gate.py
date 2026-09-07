@@ -471,12 +471,15 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
     def test_each_warning_fires_on_the_scaffold_and_is_silent_on_a_filled_grain(self):
         empty = f'# S0\n\n## Acceptance criteria\n\n{self.PROMPT}\n\n## Out of scope\n'
         filled = empty.replace(self.PROMPT, '- the gate says so\n')
-        # A story past `todo` whose section holds only the template's prompt
+        # A story IN PROGRESS whose section holds only the template's prompt
         # warns; the same story with one line under the heading does not; a
         # story still in `todo` — `planning` OR `ready`, the category and not
-        # the word — is not asked. Exit 0 throughout.
+        # the word — is not asked. A CLOSED one is counted rather than named
+        # (0.6.0/a-warning-is-actionable-where-it-fires: 45 of this repo's 52
+        # warnings named a gap on a grain that had already shipped). Exit 0
+        # throughout.
         for status, body, expect in (('building', empty, True),
-                                     ('done', empty, True),
+                                     ('done', empty, False),
                                      ('building', filled, False),
                                      ('ready', empty, False),
                                      ('planning', empty, False)):
@@ -535,6 +538,90 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertNotIn('WARN', out)
             self.assertNotIn('warning(s)', out)
+            # The NARROWING itself, on the same tree with the handoff taken
+            # away again: `in_progress` warns, `done` does not. Every
+            # milestone in this module was `building`, so the guard behind
+            # that sentence could be deleted and both tiers stayed green —
+            # one line per historical milestone on every consumer's tree,
+            # under a proof row claiming the case held it
+            # (bg-a-proof-row-names-a-case-that-proves-half).
+        for mstatus, expect in (('building', True), ('done', False)):
+            with self.subTest(milestone=mstatus), \
+                    tree(milestone_status=mstatus, feature_status=mstatus,
+                         story_statuses=(mstatus,),
+                         config='[pm]\nchecks = ["D1","D2","D11","D4","D5",'
+                                '"D6","V1","V4","V5"]\n') as root:
+                write(root / MFILE_REL,
+                      {'id': '"0.1"', 'name': 'Demo', 'status': mstatus,
+                       'branch': 'milestone/0.1'}, self.SHIP)
+                write(root / FFILE_REL,
+                      {'id': '0.1/alpha', 'milestone': '"0.1"',
+                       'name': 'Alpha', 'status': mstatus, 'reviewed': ''},
+                      self.SHIP)
+                self._story(root, mstatus,
+                            '# S0\n\n## Acceptance criteria\n\n- it works\n')
+                handoff = model.shared_doc(cfg_for(root), root / MFILE_REL,
+                                           model.HANDOFF_FILE_NAME)
+                self.assertFalse(
+                    handoff.is_file(),
+                    'the input this asks about is the ABSENT handoff; with '
+                    'the file there neither leg means anything')
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                said = (f'milestone 0.1 is {mstatus!r} with no '
+                        f'{model.HANDOFF_FILE_NAME}')
+                self.assertEqual(said in out, expect, out)
+
+    def test_a_closed_grains_gap_is_counted_on_one_line_and_never_silent(self):
+        """The narrowing above may not become silence — rule 11's floor.
+
+        NO EXISTING CASE COULD FAIL FOR THIS. Every case in the class asserts a
+        WARN line or its absence; none reads the counted line, so a narrowing
+        that DROPPED the closed grains instead of counting them passed all of
+        them. This plants the same empty section on a live grain and a closed
+        one in one tree and holds both halves of the census.
+        """
+        # D11 is off: a `done` feature over a `building` story is its finding,
+        # and this case is about the READY family, not that one.
+        with tree(milestone_status='building', feature_status='done',
+                  story_statuses=('building',),
+                  config='[pm]\nchecks = ["D1","D4","V1","V4","V5"]\n') as root:
+            write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
+                                     'status': 'building',
+                                     'branch': 'milestone/0.1'}, self.SHIP)
+            model.shared_doc(cfg_for(root), root / MFILE_REL,
+                             model.HANDOFF_FILE_NAME).write_text(
+                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+                encoding='utf-8')
+            # The feature is `done` with BOTH sections missing (2 gaps) and the
+            # story `building` with no `## Acceptance criteria` and no
+            # `owner:` (2 gaps) — different counts on each side of the line.
+            write(root / STORY_REL,
+                  {'id': '0.1/alpha/s0', 'feature': '0.1/alpha',
+                   'milestone': '"0.1"', 'name': 'S0', 'status': 'building',
+                   'owner': ''}, '# S0\n')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('  READY  2 gap(s) named on 2 in_progress grain(s); '
+                          '2 on 1 closed grain(s) counted rather than named',
+                          out)
+            # Named where it can be acted on, counted where it cannot — and
+            # the closed grain's id appears in no WARN line.
+            self.assertIn("story 0.1/alpha/s0 is 'building' and has no "
+                          "`## Acceptance criteria` section", out)
+            self.assertNotIn("feature 0.1/alpha is 'done'", out)
+            self.assertIn('; 2 warning(s)', out)
+
+    def test_the_ready_census_prints_at_zero(self):
+        # Rule 4: a family that graded nothing has to say so. A tree whose
+        # every grain is in `todo` grades none of them, and the line is what
+        # separates that from a family that stopped running.
+        with tree(milestone_status='planning', feature_status='planning',
+                  story_statuses=('planning',)) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('  READY  0 gap(s) named on 0 in_progress grain(s); '
+                          '0 on 0 closed grain(s)', out)
 
     def test_left_todo_is_the_category_not_the_order_within_it(self):
         # "Has left `todo`" is asked of the CATEGORY: under a renamed flow a
@@ -1818,9 +1905,15 @@ class StructuralIntegrity(unittest.TestCase):
                    'depends_on': '[]', 'consumed_by': '[]'})
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
-            u1 = [ln for ln in out.splitlines() if '(U1)' in ln and 'feature:' in ln]
+            u1 = [ln for ln in out.splitlines() if '(U1)' in ln]
             self.assertTrue(u1, out)
-            self.assertNotIn('reviewing', u1[0])
+            # ONE line for every kind since 0.6.0, so the question narrows to
+            # the FEATURE clause: the milestone kind has legitimately never
+            # held the word and names it in its own clause of the same line.
+            clause = [c for c in u1[0].split(';')
+                      if c.strip().startswith('feature:')]
+            self.assertTrue(clause, u1[0])
+            self.assertNotIn('reviewing', clause[0])
 
     def test_an_UNBOUND_grain_is_asked_every_question_a_bound_one_is(self):
         """`_drift_walk` descends milestone → feature → story by BINDING, so a
@@ -2869,10 +2962,14 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             self.assertEqual(code, 0, out)          # a WARN never decides the code
             self.assertIn('(U1)', out)
             self.assertIn('WARN', out)
-            self.assertIn('declared state(s) are in use', out)
-            # The milestone kind declares 8 and this tree holds one word.
-            self.assertIn('1 of 8 declared state(s) are in use', out)
+            self.assertIn('declared state(s) have never been held', out)
+            # The milestone kind declares 8 and this tree holds one word. ONE
+            # line for every kind since 0.6.0 — three near-identical paragraphs
+            # saying one sentence about `[pm.states.*]` is the shape that
+            # taught people to scroll.
+            self.assertIn('milestone: 1 of 8 in use', out)
             self.assertIn('packaging', out)
+            self.assertEqual(out.count('(U1)'), 1, out)
 
     def test_a_kind_with_no_grains_at_all_is_silent_rather_than_all_unused(self):
         # "Every declared state unused" means the tree holds no grain of that

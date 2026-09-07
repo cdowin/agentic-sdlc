@@ -495,11 +495,17 @@ TYPE_TOOL_USE = 'tool_use'
 # through raw and gets decided.
 SYNTHETIC_MODEL = '<synthetic>'
 
+# A hand-recorded ONE TOTAL, beside `usage`'s measured split. Two keys because
+# they are two measurements: a caller who was told "1234 tokens" cannot say
+# which way they split, and a reader must be able to tell the two apart rather
+# than see a guess.
+TOTAL_KEY = 'tokens_total'
+
 # Every key a usage row may carry, in order.
 ROW_KEYS = ('ts', 'kind', 'grain', 'session_id', 'agent_id', 'agent_type',
             'model', 'started_at', 'ended_at', 'duration_s', 'messages',
             'tool_calls', 'tools', 'tool_calls_before_first_write', 'usage',
-            'tree')
+            TOTAL_KEY, 'tree')
 
 
 class TranscriptError(Exception):

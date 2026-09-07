@@ -25,7 +25,8 @@ WARN (a line, never the exit code; both grains and both categories named):
   D2  a feature in `todo` while all its stories are `done`
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
-  U1  a DECLARED state no grain of that kind has ever held, with the count in use
+  U1  a DECLARED state no grain of that kind has ever held — ONE line for every
+      kind, each naming its unused states beside its count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
   U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
@@ -45,10 +46,12 @@ WARN (a line, never the exit code; both grains and both categories named):
       UNVERIFIABLE (WARN). An EMPTY binding is UNBOUND and a bound child in no
       `order` is UNSEQUENCED — COUNTED lines, never findings, because *nothing
       said* is a plan and *something wrong said* is drift
-  READY  a grain past `todo` with an empty scaffolded section (`## Ship criterion`,
-         `## Acceptance criteria`, `## Proof budget`), a story in progress with no
-         `owner:`, no stories, no `branch:`, or (a milestone) no
-         `handoff.md` — never auto-minted, so `pm new handoff <id>` is the fix
+  READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
+         `## Acceptance criteria`, `## Proof budget`), no stories, no `owner:`, no
+         `branch:`, or (a milestone) no `handoff.md` — never auto-minted, so
+         `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
+         one line rather than named: its criterion is nobody's next action, and
+         that was 45 of this repo's 52 warnings
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
 
 Archived milestones are out of scope; a zero census FAILS.
@@ -154,10 +157,12 @@ def _run() -> int:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
+    ready = _Ready(warn)
     n_features, n_stories, seen = _drift_walk(cfg, enabled, mfiles, report,
-                                              warn)
+                                              warn, ready)
 
-    _unreached_self(cfg, enabled, seen, report, warn)
+    _unreached_self(cfg, enabled, seen, report, ready)
+    ready.report()
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
@@ -198,46 +203,88 @@ def _cat(cfg: model.PmConfig, kind: str, status: str) -> str:
     return model.category_of(cfg, kind, status) or 'undeclared'
 
 
-def _feature_self(cfg: model.PmConfig, view, warn) -> None:
+class _Ready:
+    """READY's two audiences: a gap on an `in_progress` grain can still be
+    acted on, so it is NAMED; one on a closed grain cannot — a criterion is a
+    promise about work that has not happened — so it is COUNTED. D12 drew this
+    line first, for the same 351-of-359.
+    """
+
+    def __init__(self, warn) -> None:
+        self._warn = warn
+        self.named = self.counted = self.live = self.closed = 0
+
+    def grading(self, cfg: model.PmConfig, kind: str, status: str) -> bool | None:
+        """True while the grain can still act, False once it has closed, None
+        in `todo` — where nothing is asked and nothing is counted."""
+        category = model.category_of(cfg, kind, status)
+        if category is None or category == model.TODO:
+            return None
+        live = category == model.IN_PROGRESS
+        self.live += live
+        self.closed += not live
+        return live
+
+    def gap(self, live: bool, msg: str) -> None:
+        if live:
+            self.named += 1
+            self._warn(msg)
+        else:
+            self.counted += 1
+
+    def report(self) -> None:
+        # Printed at zero too: a family that graded nothing has to say so, and
+        # this count is what makes the narrowing above visible (rule 4).
+        print(f'  READY  {self.named} gap(s) named on {self.live} '
+              f'{model.IN_PROGRESS} grain(s); {self.counted} on {self.closed} '
+              f'closed grain(s) counted rather than named — a closed grain\'s '
+              f'scaffolded section is nobody\'s next action (READY)')
+
+
+def _feature_self(cfg: model.PmConfig, view, ready: _Ready) -> None:
     """The READY warnings a feature earns on its OWN document."""
-    if not model.left_todo(cfg, 'feature', view.status):
+    live = ready.grading(cfg, 'feature', view.status)
+    if live is None:
         return
     frel = cfg.rel(view.path)
     if view.total == 0:
-        warn(f'feature {view.fid} is {view.status!r} with no stories — past '
-             f'todo, and nothing to build  [{frel}]')
+        ready.gap(live, f'feature {view.fid} is {view.status!r} with no '
+                        f'stories — past todo, and nothing to build  [{frel}]')
     why = model.empty_section(view.path, model.SHIP_HEADING)
     if why:
-        warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
-             f'and nothing says what done means  [{frel}]')
+        ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
+                        f'past todo, and nothing says what done means  [{frel}]')
     # The anti-bloat contract, never verified to exist until here: an empty
     # proof budget is how a feature ships twice its budget with nobody able to
     # say so.
     why = model.empty_section(view.path, model.PROOF_HEADING)
     if why:
-        warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
-             f'and nothing says what it should COST  [{frel}]')
+        ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
+                        f'past todo, and nothing says what it should COST  '
+                        f'[{frel}]')
 
 
-def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str, warn) -> None:
+def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str,
+                ready: _Ready) -> None:
     """The READY warnings a story earns on its OWN document."""
     srel = cfg.rel(sfile)
-    if model.left_todo(cfg, 'story', sstat):
-        why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
-        if why:
-            warn(f'story {sid} is {sstat!r} and {why} — past todo, and '
-                 f'nothing says what must be true  [{srel}]')
-    if (_cat(cfg, 'story', sstat) == model.IN_PROGRESS
-            and not model.unquote(model.field_of(sfile, 'owner'))):
+    live = ready.grading(cfg, 'story', sstat)
+    if live is None:
+        return
+    why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
+    if why:
+        ready.gap(live, f'story {sid} is {sstat!r} and {why} — past todo, and '
+                        f'nothing says what must be true  [{srel}]')
+    if live and not model.unquote(model.field_of(sfile, 'owner')):
         # A LIVE BUG, not a tidy-up: two modules READ `owner:` and nothing
         # asked whether the claim had set it (`pm-execution.md` step 1).
-        warn(f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and carries no '
-             f'owner: — somebody is working on it and the tree cannot say who '
-             f' [{srel}]')
+        ready.gap(True, f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and '
+                        f'carries no owner: — somebody is working on it and '
+                        f'the tree cannot say who  [{srel}]')
 
 
 def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
-                    report, warn) -> None:
+                    report, ready: _Ready) -> None:
     """Every SELF rule, for the grains the descent did not visit.
 
     **`seen` is RECORDED, never inferred.** "Does this binding resolve" gets a
@@ -265,13 +312,13 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
                     if reason:
                         report(f'feature {grain.gid}: {reason} — point it at a '
                                f'real file or remove the field  [{rel}]')
-                _feature_self(cfg, model.read_feature(cfg, path), warn)
+                _feature_self(cfg, model.read_feature(cfg, path), ready)
             else:
-                _story_self(cfg, path, grain.gid, status, warn)
+                _story_self(cfg, path, grain.gid, status, ready)
 
 
 def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
-                report, warn) -> tuple[int, int, set[str]]:
+                report, warn, ready: _Ready) -> tuple[int, int, set[str]]:
     """D1-D6 over every grain the descent reaches, plus the READY warnings.
 
     The third return is the ids it VISITED, because `_unreached_self` must not
@@ -288,31 +335,34 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
         m_cat = model.category_of(cfg, 'milestone', mstat)
-        m_started = model.left_todo(cfg, 'milestone', mstat)
+        m_live = ready.grading(cfg, 'milestone', mstat)
 
         if 'D4' in enabled:
             reason = model.undeclared_status(cfg, 'milestone', mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
 
-        if m_started:
+        if m_live is not None:
             if not model.unquote(model.field_of(mfile, 'branch')):
-                warn(f'milestone {mid} is {mstat!r} with no branch: — past '
-                     f'todo, and a fresh checkout cannot find where its work '
-                     f'lives  [{cfg.rel(mfile)}]')
+                ready.gap(m_live, f'milestone {mid} is {mstat!r} with no '
+                                  f'branch: — past todo, and a fresh checkout '
+                                  f'cannot find where its work lives  '
+                                  f'[{cfg.rel(mfile)}]')
             why = model.empty_section(mfile, model.SHIP_HEADING)
             if why:
-                warn(f'milestone {mid} is {mstat!r} and {why} — past todo, '
-                     f'and nothing says what done means  [{cfg.rel(mfile)}]')
+                ready.gap(m_live, f'milestone {mid} is {mstat!r} and {why} — '
+                                  f'past todo, and nothing says what done '
+                                  f'means  [{cfg.rel(mfile)}]')
             # Never auto-minted, so its ABSENCE is the signal. IN_PROGRESS only:
             # a handoff is a cold-start aid, so warning on `done` would fire
             # once per historical milestone on every consumer's tree.
             handoff = model.shared_doc(cfg, mfile, model.HANDOFF_FILE_NAME)
-            if m_cat == model.IN_PROGRESS and not handoff.is_file():
-                warn(f'milestone {mid} is {mstat!r} with no '
-                     f'{model.HANDOFF_FILE_NAME} — past todo, and a cold '
-                     f'session has nowhere to start; `pm new handoff {mid}` '
-                     f'mints one  [{cfg.rel(handoff)}]')
+            if m_live and not handoff.is_file():
+                ready.gap(True, f'milestone {mid} is {mstat!r} with no '
+                                f'{model.HANDOFF_FILE_NAME} — past todo, and a '
+                                f'cold session has nowhere to start; `pm new '
+                                f'handoff {mid}` mints one  '
+                                f'[{cfg.rel(handoff)}]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(cfg, mid)]
@@ -337,7 +387,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
 
-            _feature_self(cfg, view, warn)
+            _feature_self(cfg, view, ready)
 
             for sfile in view.stories:
                 sid = model.unquote(model.field_of(sfile, 'id'))
@@ -348,7 +398,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                     reason = model.undeclared_status(cfg, 'story', sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
-                _story_self(cfg, sfile, sid, sstat, warn)
+                _story_self(cfg, sfile, sid, sstat, ready)
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     warn(f'story {sid} is {sstat!r} '
@@ -384,9 +434,13 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     unused states, and a rule that reddens every fresh consumer is undone within
     a version. What it buys is the fact staying VISIBLE after the install
     scrolls away.
+
+    ONE line for every kind: three near-identical paragraphs saying one sentence
+    about `[pm.states.*]` is how a line somebody could act on gets scrolled past.
     """
     if 'U1' not in enabled:
         return
+    clauses, unused_total, declared_total = [], 0, 0
     for kind in model.FLOW_KINDS:
         counts = model.state_usage(cfg).get(kind)
         if not counts:
@@ -396,11 +450,16 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
             # All unused means the tree holds no grain of this kind — a
             # different fact, and not this rule's to report.
             continue
-        warn(f'{kind}: {len(counts) - len(unused)} of {len(counts)} declared '
-             f'state(s) are in use; {", ".join(unused)} '
-             f'{"has" if len(unused) == 1 else "have"} never been held by any '
-             f'{kind} in this tree — declared and unused is a flow the project '
-             f'is not running (U1)')
+        unused_total += len(unused)
+        declared_total += len(counts)
+        clauses.append(f'{kind}: {len(counts) - len(unused)} of {len(counts)} '
+                       f'in use, {", ".join(unused)} never held')
+    if not clauses:
+        return
+    warn(f'{unused_total} of {declared_total} declared state(s) have never been '
+         f'held by any grain in this tree — {"; ".join(clauses)} — declared and '
+         f'unused is a flow the project is not running; `[pm.states.<kind>]` '
+         f'declares each one (U1)')
 
 
 def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
@@ -551,15 +610,23 @@ def _kind_of(row: dict) -> str:
     return kind if isinstance(kind, str) else ''
 
 
-def _kind_census(rows: list[tuple[Path, dict]]) -> str:
+def _kind_census(rows: list[tuple[Path, dict]], top: int = 0) -> str:
     """`'2 status, 1 gate'`, most-seen first — what the tree DID record, said
-    beside what it did not. An unreadable kind is counted, never dropped."""
+    beside what it did not. An unreadable kind is counted, never dropped.
+    `top` caps the names and rolls the tail into a count — a thirteen-kind
+    census was most of a warning nobody finished reading."""
     counts: dict[str, int] = {}
     for _path, row in rows:
         kind = _kind_of(row) or '(no kind)'
         counts[kind] = counts.get(kind, 0) + 1
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    return ', '.join(f'{n} {kind}' for kind, n in ranked)
+    tail = ranked[top:] if top else []
+    named = ', '.join(f'{n} {kind}' for kind, n in (ranked[:top] if top
+                                                    else ranked))
+    if not tail:
+        return named
+    return (f'{named} and {sum(n for _kind, n in tail)} row(s) across '
+            f'{len(tail)} more kind(s)')
 
 
 class Recording(NamedTuple):
@@ -725,19 +792,19 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
     kinds = '/'.join(dict.fromkeys(ledger.EVENT_KINDS.values()))
     if not rec.written:
         rows, _ = _ledger_rows(cfg)
-        held = _kind_census(rows) or 'no rows at all'
+        held = _kind_census(rows, top=3) or 'no rows at all'
+        # THE FIX FIRST. It used to sit at the end of 839 characters, behind a
+        # thirteen-kind census — the eleven wrapped lines this feature measured.
         warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
              f'wired in {wiring.where} and no {kinds} row has EVER '
              f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
-             f'{recording_phrase(rec)}. What the ledgers hold is {held}, '
-             f'which this checkout writes itself and which is not evidence '
-             f'that a courier ran. Wiring is a CONFIG fact: whether a harness '
-             f'loads {wiring.where} depends on the session\'s project '
-             f'root, so a session rooted above this checkout fires no {events} '
-             f'hook here and records nothing while every wiring answer stays '
-             f'green. `install-hooks --write-settings` lands the block, and '
-             f'`GDK_LEDGER_ROOT` points a session rooted elsewhere at this '
-             f'tree (U4)')
+             f'{recording_phrase(rec)}. `install-hooks --write-settings` lands '
+             f'the block here, and `GDK_LEDGER_ROOT` points a session rooted '
+             f'elsewhere at this tree: whether a harness fires the {events} '
+             f'hook depends on the session\'s project root, not on '
+             f'{wiring.where}. The ledgers hold {held}, which this checkout '
+             f'writes itself; `agentic-sdlc pm ledger report` breaks them '
+             f'down (U4)')
         return
     # COUNTED, never a finding: the age is what tells live telemetry from
     # telemetry that stopped.

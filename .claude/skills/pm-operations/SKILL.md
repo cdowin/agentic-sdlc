@@ -176,11 +176,13 @@ until 0.4.0 and retired with the generated execution list.)
   expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
   names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
-  is not a failure and moves nothing: it names a grain that has left `todo` (its status
-  is in `in_progress` or `done`) whose scaffolded section is still empty
+  is not a failure and moves nothing: it names an `in_progress` grain whose scaffolded
+  section is still empty
   (`## Acceptance criteria`, `## Ship criterion`), such a feature with no stories, such a
   milestone with no `branch:` — or a parent and child that disagree (D2, D5, D6: a story at work under
   a `todo` feature, a `todo` feature over finished stories), both grains and both categories named.
+  The same gap on a grain that has CLOSED is COUNTED on one `  READY  ` line instead of
+  named, because a shipped grain's criterion is nobody's next action.
   A parent in `done` over a child that is not is D11, and it FAILS rather than warning. Counted on the verdict
   line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the
   only stamp; write the section, then stamp.

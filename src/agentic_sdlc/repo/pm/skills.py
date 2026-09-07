@@ -295,7 +295,8 @@ def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
     print()
     print('  3. Scaffold your first milestone, then check it:')
     print()
-    print('       agentic-sdlc pm new milestone 0.1 "First Milestone"')
+    print('       agentic-sdlc pm new milestone first-light "First Milestone" '
+          '--version 0.1')
     print('       agentic-sdlc pm validate')
     print()
     print('  4. Keep your OWN vocabulary local — what a milestone means here, which')

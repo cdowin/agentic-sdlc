@@ -73,7 +73,7 @@ around it — and you build no named construct the story does not name.
    Then move the story with the pm CLI — to a state THIS PROJECT declares in
    `[pm.states.story]`, which you read from `pm vocabulary` rather than
    assuming. The stock story vocabulary has no `reviewing`: review is a feature
-   act, and `pm story reviewing <id>` exits 2 on a stock tree. **Never the full gate
+   act, and `pm story reviewing <id>` exits 2 on a stock tree. **Never the full gate  <!-- doc-scan:allow -->
    means never** — not once, not to be sure, not because the change felt big.
    N builders share one worktree, so a wide gate is not merely slow for you:
    it saturates the machine every other builder is verifying on. If you believe

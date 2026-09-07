@@ -102,7 +102,7 @@ it becomes true, rather than batching flips at the end.
 2. **Commit atomically.** One logical unit per commit.
 3. **Ready for review — a FEATURE act in the shipped vocabulary.** `pm feature
    reviewing <id>` while the record is written. The seed declares no review word for a
-   STORY (`planning` `ready` | `building` | `done` `obe`), so `pm story reviewing <id>`
+   STORY (`planning` `ready` | `building` | `done` `obe`), so `pm story reviewing <id>`  <!-- doc-scan:allow -->
    is refused at exit 2 naming `[pm.states.story]` unless your project declared one —
    `pm vocabulary` is the authority, and a story that is finished goes to `done`
    through `close story`.

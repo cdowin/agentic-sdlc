@@ -17,9 +17,8 @@ note 250, review 120.
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
 
-Shared docs (`decisions.md`, `handoff.md`) are also checked for the instruction line
-`model.SLOT_HEADER` gives them — the one channel that reaches a dispatched subagent.
-Any KNOWN header passes, matching what the scaffolder accepts.
+Shared docs are also checked for the instruction line `model.SLOT_HEADER` gives them —
+the one channel reaching a dispatched subagent. Any KNOWN header passes.
 """
 from __future__ import annotations
 

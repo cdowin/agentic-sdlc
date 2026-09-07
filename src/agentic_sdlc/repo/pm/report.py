@@ -759,14 +759,11 @@ def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
     """The grains under this milestone that one dispatch row names.
 
-    Two ways, and `grain` — what the dispatch was TOLD it was working on
-    (0.4.0/D2) — outranks the `tree` snapshot, because it is a statement rather
-    than an inference.
-
-    **A row that states a grain is attributed by it and by nothing else.**
-    Falling through to the snapshot billed a row stating a since-renamed story
-    to whichever OTHER story was live, and disclosed nothing;
-    `stated_elsewhere` counts those instead.
+    `grain` — what the dispatch was TOLD it was working on (0.4.0/D2) —
+    outranks the `tree` snapshot, being a statement rather than an inference,
+    and **a row that states a grain is attributed by it and by nothing else**:
+    falling through billed a row naming a since-renamed story to whichever
+    OTHER story was live. `stated_elsewhere` counts those.
 
     **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8): `pm
     ledger record` omits the `grain` key rather than pick one, so a reader

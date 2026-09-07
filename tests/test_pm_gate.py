@@ -927,16 +927,39 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
                 finally:
                     ctx.__exit__(None, None, None)
 
-    def test_version_at_ship_grades_the_last_shipped_entry_instead(self):
-        # The same tree, the other flow: this package bumps at CLOSE, so the
-        # version file should still read 0.0.9 while 0.1.0 is being built.
+    def test_bump_at_close_permits_the_file_at_either_adjacent_release(self):
+        """Found by RUNNING the release belt: `version-sync` wanted the new
+        version and R5 wanted the old one, at the same instant, on the same
+        tree, and neither was wrong.
+
+        Under `version_at = "ship"` the file carries the last shipped release
+        while the next is built, and the RELEASE COMMIT moves it — so between
+        that commit and the status flip it correctly names a release that has
+        not shipped. Both are valid; a third value is not.
+        """
         config = '[pm]\nchecks = ["R5"]\nversion_at = "ship"\n'
-        for version, expected in (('0.0.9', 0), ('0.1.0', 1)):
+        for version, expected in (('0.0.9', 0),   # last shipped, mid-build
+                                  ('0.1.0', 0),   # the release commit landed
+                                  ('9.9.9', 1)):  # neither
             with self.subTest(version=version):
                 ctx, root = self._tree(version, config=config)
                 try:
                     code, out = run_gate(root)
                     self.assertEqual(code, expected, out)
+                    if expected:
+                        self.assertIn("'0.0.9' or '0.1.0'", out)
+                finally:
+                    ctx.__exit__(None, None, None)
+
+    def test_bump_at_start_permits_exactly_one(self):
+        # `start` has no such window: the file carries the release being built
+        # from the moment it opens, so a second accepted value would be slack
+        # the flow does not need.
+        for version, expected in (('0.1.0', 0), ('0.0.9', 1)):
+            with self.subTest(version=version):
+                ctx, root = self._tree(version)
+                try:
+                    self.assertEqual(run_gate(root)[0], expected)
                 finally:
                     ctx.__exit__(None, None, None)
 

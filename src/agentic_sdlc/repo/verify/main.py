@@ -10,9 +10,9 @@ Each rung runs the make target `[verify] <rung>` names — three lines, one
 shape, and the Makefile stays the authority on what a target RUNS (D3). A
 rung the section does not declare is exit 2 naming the key, never a pass and
 never the rung above. `--plan` prints each rung's measured cost from the
-ledger's `gate` rows, or the word `unknown` — never a guess, and an `unrun`
-line joining `[checks] all` to those rows: a gate named in the roster that has
-never filed a cost row reads exactly like one that passes. `--check` reads the
+ledger's `gate` rows, or the word `unknown` — never a guess — plus an `unrun`
+line joining `[checks] all` to those rows, because a roster gate that never
+filed a cost row reads exactly like one that passes. `--check` reads the
 Makefile as text and reports a rung naming a target it does not declare. An
 absent `[verify]` section is exit 2 for every flag.
 

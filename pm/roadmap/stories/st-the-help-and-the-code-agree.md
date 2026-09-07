@@ -32,8 +32,12 @@ another". A consumer should not have to run the binary to learn its contract.
 
 ## The finding-1 ruling: the HELP changed, not the code
 
-`git log -S'both are findings, never a pass'` returns one commit, a docs-only
-compression that fused two true sentences into one false one. The exit-code line
+**Corrected after review (X7): the RULING stands and the provenance recorded
+for it was wrong.** `git log -S` returns three commits, not one, and "never as a
+pass" predates the compression it was blamed on. The ruling is right on its own
+merits — an unmeasured tier exiting 0 is defensible, and flipping it would redden
+every consumer with an unrun tier — so what changed is the reason written down,
+not the decision. The exit-code line
 in the same docstring never listed unmeasured, and an existing test already
 asserted exit 0 with its reasoning. Flipping the code would redden any tree
 declaring a ceiling for a tier not yet run — a breaking change wearing a minor

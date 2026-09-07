@@ -2117,6 +2117,27 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
     return version, ''
 
 
+def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
+    """Every value `[pm] version_file` may hold, and why, for [pm] version_at.
+
+    `start` has one answer. **`ship` has two, and that is what bump-at-CLOSE
+    means**: the file carries the last shipped release while the next is being
+    built, and the release COMMIT moves it — so between that commit and the
+    status flip it correctly names a release that has not shipped.
+
+    Found by running the belt: `version-sync` wanted 0.3.0 and R5 wanted 0.2.0
+    at the same instant, and neither was wrong. A file naming NEITHER still
+    fails, which is what R5 is for.
+    """
+    one, why = graded_release(cfg)
+    if one is None:
+        return [], why
+    if cfg.version_at == VERSION_AT_START:
+        return [one], ''
+    nxt = current_release(cfg)
+    return ([one] if nxt is None or nxt == one else [one, nxt]), ''
+
+
 def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
     """(the DOCUMENT of the milestone the current release belongs to, or None,
     plus why not).

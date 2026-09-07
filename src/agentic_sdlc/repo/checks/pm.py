@@ -399,10 +399,9 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """U2 — the ledger couriers are wired and the tree holds no row.
 
     **This rule exists because the telemetry was off for a whole milestone and
-    nobody could tell.** A courier fails open by design, so its refusals go to
+    nobody could tell**: a courier fails open by design, so its refusals go to
     a stderr nobody reads. **A tree that wires nothing is SILENT** — it opted
-    out, and this package does not conscript (0.4.0/D5); a settings file that
-    will not parse is UNVERIFIABLE, not a failure.
+    out (0.4.0/D5), and an unparseable settings file is UNVERIFIABLE.
     """
     if 'U2' not in enabled:
         return
@@ -652,7 +651,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
              f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
              f'writes the plan')
         return
-    current, why = model.graded_release(cfg)
+    accepted, why = model.graded_release_accepts(cfg)
+    current = accepted[0] if accepted else None
     if current is None:
         # The reason is READ, never invented: saying "every entry has shipped"
         # over a tree where none had was a confident wrong answer at exit 0
@@ -665,14 +665,15 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
         report(f'no version found in {cfg.version_file} — R5 cannot verify it '
                f'against the current release {current!r} (R5)')
         return
-    if version == current:
+    if version in accepted:
         return
     mid = model.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'
               if mid is not None
               else 'no milestone claims it — an `order` entry nothing carries')
-    report(f'{cfg.version_file} version {version!r} does not match the current '
-           f'release {current!r} ({claims}), which is the '
+    named = ' or '.join(repr(v) for v in accepted)
+    report(f'{cfg.version_file} version {version!r} does not match '
+           f'{named} ({claims}), which is the '
            f'{"first unshipped" if cfg.version_at == model.VERSION_AT_START else "last shipped"} '
            f'entry in {cfg.rel(model.releases_file(cfg))} under [pm] '
            f'version_at = {cfg.version_at!r} (R5)')

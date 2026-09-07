@@ -399,7 +399,18 @@
   answer `pm next` gives — instead of "the one milestone in progress"; a tree with no plan is
   refused in the plan's own words, naming the argument that answers it.
 
-- **A milestone declares `version:`, and D8 became R5.** The id goes back to being a slug: a
+## v0.3.0 — 2026-09-06 — the bump explains itself
+
+> **The northstar: the tool teaches the conveyor.** A project that has just adopted the flow should
+> be able to SEE whether it is using it. Every finding below came from two real adoptions of the
+> same devkit split on 2026-09-06 that failed in mirror-image ways: one tree declared the flow and
+> used three of its eight states; the other never declared one and shipped a green `make check` over
+> a PM CLI that was refusing every work-moving verb. **Both passed every gate.**
+
+- **BREAKING — a milestone declares `version:`, and D8 became R5.** A repo with `D8` in
+  `[pm] checks` goes from exit 0 to **exit 2** on `check pm` and `check all`, and `adopt`
+  refuses; `make check` fails until the key is removed. The message names R5 and says where
+  the rule went — it is refused BY NAME rather than silently ungated, which is the point. The id goes back to being a slug: a
   milestone says which version it ships as in one optional frontmatter field, and the engine
   never parses, compares or increments the string — `"1.1.1"` and `"cow"` are equally valid.
   Order comes from `order` in `pm/roadmap/releases.md`, a block-style list read by the same
@@ -520,30 +531,6 @@
   broke; and a removed `--cascade` flag survived a bump inside a consumer's own written rules, green,
   because no gate anywhere can read a sentence about a flag. The tool saying it is the only way
   anyone finds out.
-
-- **`pm config --seed` prints the seed, and a test holds it to the code.** `init` serves a repo
-  once; a consumer spends the rest of the tool's life BUMPING, and nothing served that — the seed
-  `devkit.toml` is the surface that actually teaches an adopting agent what this conveyor is, and
-  it was only ever reachable by reading the package. The verb prints it as your pinned version
-  ships it, exit 0, writing nothing.
-
-  **And the seed can no longer drift from the defaults.** `tests/test_config_seed.py` censuses
-  every `(section, key)` this package reads through `core/config.py` — the one door every value
-  goes through — and compares it, in BOTH directions, to the value the seed carries commented. It
-  found seven: `[checks] all` shipped `["doc", "shell"]` while `check all` had run `grain-shape`
-  too; `[grain_shape] caps` showed one kind of eight; `[pm] template_dir` was seeded at
-  `"pm/templates"` when the default is empty; `[pm] checks` was missing `U1` and `V7`; and `[pm]`
-  gained `milestone_dir`, `feature_dir`, `story_dir`, `bug_dir`, `ledger_dir` and `breadcrumbs`
-  in this release with the seed never learning any of them. Every one is now in the file at its
-  real value.
-
-- **The byte-identical guarantee is restated as GATES-ONLY** (CLAUDE.md hard rule 5), and the seed
-  states the split that decides the next key: a KNOB has a default behind it and stays COMMENTED at
-  exactly that value; a DECLARATION has none, its reader refuses BY NAME when it is absent, and it
-  is spelled out WITH ITS ARGUMENT. Two sections are declarations — `[pm.states.*]`, written live
-  because `pm` refuses on its first call without it, and `[verify]`, whose rungs name make targets
-  only your Makefile can have. So **the FILE is not optional even though every gate key in it is**,
-  which is the part that was never written down. Nothing became required, and no default moved.
 
 ## v0.2.0 — 2026-09-06
 

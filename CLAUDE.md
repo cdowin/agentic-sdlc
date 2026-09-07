@@ -13,8 +13,13 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 
 ## Hard rules
 
-1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). A consumer's
-   hook must never break on a transitive dependency.
+1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). The reason is
+   the HOOK CORPUS: `tools/hooks/` parses its payload with bare `python3 -c`, a consumer's system
+   interpreter with no managed environment, so a transitive dependency there is a broken commit
+   on someone else's machine. The package's own runtime resolves through `uvx`/`uv run` and is
+   not exposed to that — the rule still binds it, and what actually blocks the tempting libraries
+   is **rule 3** (byte-exact preservation) and **rule 6** (line shapes), not this one. Recorded
+   with the audit at `ms-the-rule-reaches-the-work` D4.
 2. **Pure text — boots nothing.** Every verb reads git, markdown and shell as text; nothing starts
    a build, an import or a cache. Safe anywhere, any time, in parallel.
 3. **A write touches only what it was asked to touch.** `pm` rewrites ONE frontmatter line and
@@ -87,8 +92,8 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
   and `install.py` with the files it writes under `installables/`. It imports `core/`, never the
   reverse. `cli.py` only routes; each verb module owns its behaviour and its `--help` docstring.
 - **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in `cli.py` + a
-  README row + a CHANGELOG line. **New verb** = module + route + README row + CHANGELOG line; a
-  verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
+  README row + the grain's `changelog:`. **New verb** = module + route + README row + `changelog:`;
+  a verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
   first the search (rule 10), then the cheapest tier, then a row in the story's
   `## How this is proven` table.
 - **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never
@@ -97,8 +102,9 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
   payloads and transcripts, versioned with the code that reads them. `unit` / `integration` /
   `test` select on the `shell` mark, DERIVED in `tests/conftest.py` from whether a module's
   source spawns; a hand-written mark is a collection refusal.
-- **`CHANGELOG.md` is hand-maintained.** A consumer-visible change goes into `## Unreleased` as
-  it lands. Rationale with a rejected alternative is `pm decide`, not a release note.
+- **`changelog:` is a field on the grain**, one consumer-visible sentence or the word `none`;
+  `agentic-sdlc changelog <id>` renders them in `order:`. `CHANGELOG.md` is retired (0.6.0).
+  Rationale with a rejected alternative is `pm decide`, not a release note.
 
 ## The ladder
 

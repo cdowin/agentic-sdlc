@@ -48,6 +48,7 @@ HELP_FLAGS = ('-h', '--help')
 # grain, which is what everything under `pm` is.
 LESSON_VERB = 'lesson'
 CHANGELOG_VERB = 'changelog'
+DISPATCH_VERB = 'dispatch'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -223,6 +224,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'verify':
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
+    if cmd == DISPATCH_VERB:
+        from agentic_sdlc.repo import dispatch
+        return dispatch.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)

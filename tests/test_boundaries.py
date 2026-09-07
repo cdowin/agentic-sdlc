@@ -606,6 +606,12 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # Validating the NAMES stays the router's job.
     'repo/verify/main.py',
     'repo/gates_extra.py',
+    # `[dispatch] project` and `contracts`, read through `text` and
+    # `relpath_tuple`. The preamble it renders is the only carrier a dispatched
+    # agent's contracts have, so a value that arrived unguarded would be a
+    # contract pointer nobody validated — and `contracts` is exactly the
+    # list-of-strings a bare read would iterate one CHARACTER at a time.
+    'repo/dispatch.py',
     # The conveyor reads `[release] steps`, `[release.commands]` and
     # `[<op>.version_files]`, and every one of those values goes through a
     # refusal before it is used: a step name through `name_defect`, a command

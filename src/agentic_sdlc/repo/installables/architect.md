@@ -13,12 +13,16 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 Stock values assume the standard devkit-consumer layout; after install the
 file is the project's — replace any line that names a different spelling.
 
 ```text
-project:         <one line: what this is, and its stack>
-per-change gate: make precommit    (the static checks + this project's
                                     GDK_PRECOMMIT_TIERS)
 full gate:       make milestone    (close-time only — never per change)
 pm tree:         pm/roadmap/       (schemas in pm/README.md; CLI: make pm ARGS="<command>")

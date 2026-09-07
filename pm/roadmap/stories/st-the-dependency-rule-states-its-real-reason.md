@@ -4,9 +4,10 @@ kind: story
 feature: ft-the-dispatch-carries-the-contract
 milestone: "ms-the-rule-reaches-the-work"
 name: the dependency rule states its real reason
-status: planning
+status: building
 owner:
 depends_on: []
+changelog: none
 ---
 
 # the dependency rule states its real reason

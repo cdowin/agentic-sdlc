@@ -13,10 +13,14 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:        <one line: what this is, and its stack>
 pm tree:        pm/roadmap/   (schemas in pm/README.md)
-pm cli:         make pm ARGS="<command>"   (or: agentic-sdlc pm <command>)
 story skill:    <path to a writing-stories skill, if the project ships one>
 refs tool:      <a reference-aware symbol search, if the project ships one;
                  otherwise raw grep, and say which you used>

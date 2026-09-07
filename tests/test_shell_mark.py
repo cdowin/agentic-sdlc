@@ -77,6 +77,7 @@ UNMARKED_MODULES = (
     'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
     'test_conveyor_lessons.py',
+    'test_dispatch.py',
     'test_emit.py',
     'test_fuzz_markdown.py',
     'test_gates_extra.py',

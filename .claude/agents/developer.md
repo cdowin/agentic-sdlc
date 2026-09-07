@@ -13,9 +13,13 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:         <one line: what this is, and its stack>
-per-change gate: make precommit          (never run the full gate per change)
 forbidden:       <the wide targets of this repo — the ones that run every tier
                   or every interpreter. Naming them here is what makes "never
                   the full gate" checkable rather than a hope>
@@ -23,7 +27,6 @@ test slice:      <the narrowest test command this project has — a tier target
                   from its Makefile.tiers; `make help` lists what this tree
                   actually defines>
 syntax check:    <the project's fastest correctness pass, if it has one>
-pm cli:          make pm ARGS="<command>"
 commit policy:   commit locally by pathspec, never push
                  (some projects reserve ALL commits for the orchestrator —
                   then you report diffs + proposed messages instead)

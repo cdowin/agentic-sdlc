@@ -13,8 +13,13 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:      <one line: what this is, and its stack>
 design law:   <the project's constitution / decisions log — read BEFORE
                proposing to flatten anything that looks like indirection>
 findings dir: docs/reviews/

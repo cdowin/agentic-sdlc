@@ -92,3 +92,37 @@ no count — it is rule 4's lie about the one thing this feature exists to tell 
 
 The line lost some resolution and kept its job: *is this work anywhere but here.* Five hours of
 0.5.0's commits were not lost for want of a NUMBER.
+
+## D4 — 2026-09-07 — rule 1 names the surface its reason protects
+
+Hard rule 1 said *"Stdlib only, forever… A consumer's hook must never break on a transitive
+dependency."* **The reason is true for one half of the package and not the other, and the rule did
+not say which** — so it read as a blanket technical claim, and every argument about it was had
+against the wrong constraint.
+
+**Where it holds absolutely:** `tools/hooks/cc-ledger-subagent.sh` and its siblings parse their
+payload with bare `python3 -c` — a consumer's system interpreter, no managed environment. A
+transitive dependency there is a broken commit on somebody else's machine. Non-negotiable.
+
+**Where it does not:** the package itself runs through `uvx --from …` / `uv run`, which resolve
+declared deps into an isolated env. Cold-start cost is real; *"a consumer's hook breaks"* is not the
+thing that would happen.
+
+**The audit — each candidate, and the rule that actually blocks it:**
+
+| candidate | blocked by | why |
+|---|---|---|
+| PyYAML | rule 3 | reserialises; `pm` must preserve every other byte, line endings included |
+| ruamel.yaml | rule 3 | round-trips comments, but guarantees SEMANTIC round-tripping, not byte-exact |
+| a CLI framework (click, typer) | rule 6 | output line shapes are contract and consumers grep them |
+| a validation library (pydantic) | nothing — and unnecessary | `check pm` already IS the validator |
+
+**So the one live trade is rule 3's, not rule 1's.** Relaxing byte-exact to semantic preservation
+would delete ~165 lines of hand-rolled frontmatter I/O in `model.py` — `set_list_field` alone is 70,
+and it is the function that produced this milestone's scalar-vs-list defect
+(`bg-pm-set-writes-a-scalar-its-own-gate-refuses`). **That trade is not taken here** and is recorded
+so the next person argues it against rule 3, where it lives.
+
+**Rule 1's NUMBER does not move and what it permits does not change.** Roughly 600 citations depend
+on the ordinals; the constraint section of this milestone's brief forbids renumbering. Only the
+sentence got more specific.

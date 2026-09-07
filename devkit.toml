@@ -309,3 +309,12 @@ prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{versio
 # its grain, exactly as every other row kind does; no path, no stdout, nothing
 # for a consumer to parse differently.
 sink = "ledger"
+
+# --- [dispatch] --------------------------------------------------------------
+# What `agentic-sdlc dispatch` renders at the top of an agent brief. A WORKFLOW
+# key: nothing stands behind it, and the reader refuses BY NAME when it is
+# absent. The CONTRACTS are POINTED AT, never copied — a 163-line paste in every
+# brief is the volume this milestone rejected.
+[dispatch]
+project = "agentic-sdlc — a reader/writer over a PM tree, shipped as a pinned-tag Python package. Stdlib only, pure text, exit codes are contract. Public repo, MIT."
+contracts = ["CLAUDE.md", "SDLC.md", ".claude/rules/pm-execution.md"]

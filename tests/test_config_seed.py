@@ -368,15 +368,20 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     _, declaration, _ = seed_sections()
     marked = {name for name, is_declaration in declaration.items()
               if is_declaration}
-    assert marked == {'verify'}, (
-        f'the seed marks {sorted(marked)} as DECLARATION; the only commented '
-        f'one is [verify] ([pm.states.*] is marked and written LIVE)')
+    assert marked == {'dispatch', 'verify'}, (
+        f'the seed marks {sorted(marked)} as DECLARATION; the commented ones '
+        f'are [verify] and [dispatch] ([pm.states.*] is marked and LIVE)')
     code = code_defaults()
     assert not [pair for pair in code if pair[0] in marked], (
         f'a section the seed calls a DECLARATION has a default behind it — '
         f'then it is a knob and belongs commented at that value')
+    # Each declaration's reader is ASKED, so "nothing behind it" is a fact
+    # about the code rather than a claim in the seed's comment.
     with pytest.raises(ConfigError):
         verify_rules.read({})
+    from agentic_sdlc.repo import dispatch as dispatch_verb
+    with pytest.raises(ConfigError):
+        dispatch_verb.settings({})
     assert any(DECLARATION_LINE.match(line) for line in SEED.splitlines()), (
         'the seed marks no DECLARATION at all — the split it states is then '
         'unreadable to anything but a human')

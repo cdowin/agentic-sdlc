@@ -49,3 +49,10 @@ This story makes the location UNINTERPRETED. `0.4.0/the-pools-are-the-tables` th
 
 Where the files sit — `0.4.0/the-pools-are-the-tables`. Collapsing the resolvers — story 02. Any
 binding field — `0.4.0/binding-is-a-field`.
+
+done: 1236872, e6286a5 — `id:` and `kind:` are read from the document; nothing derives either
+from a path. The four templates carry `kind:`, `grain_index` keys on `id:`, and a document that
+declares no `id:` is reported BY NAME and counted as skipped rather than dropped.
+V2 retires by name through `RETIRED_CHECKS`. Two of this story's own criteria were overruled and
+recorded: D1 (an undeclared `kind:` is a FINDING, not exit 2) and D2 (an id is unique across the
+tree, not per kind — `grain_index` is one namespace).

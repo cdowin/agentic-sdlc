@@ -46,3 +46,10 @@ kinds, which one `roadmap_dir` never could.
 
 The migration itself — `0.4.0/the-migration-is-whole-or-nothing`. Slug collisions surfaced by
 flattening: the migration reports them, `pm rename` resolves them.
+
+done: be5691e — `[pm] milestone_dir / feature_dir / story_dir / bug_dir / ledger_dir`, each
+defaulting to `<roadmap_dir>/<kind>s`, each through the shared `relpath` grammar so an absolute
+value is exit 2 naming the reason.
+The proof was thinner than it looked: the keys existed and nothing read them under test. One case
+proves the grammar is REUSED, one proves rule 5's equivalence, and one MOVES a pool and reads it
+from there — the case that catches a reader still falling back.

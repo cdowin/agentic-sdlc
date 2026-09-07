@@ -54,3 +54,10 @@ The fixtures are the cost here, not the assertions. They live beside
 
 Migrating a consumer. This ships the verb; running it is each project's own commit, and NullBound's
 is parked behind this milestone shipping.
+
+done: 12b9148, 310fd40 — the tree migrated in one pass; 138 grains, `make check` green after.
+It ships as `tools/dev/pm_migrate.py`, NOT a verb: the CLI is a published API and a one-time move
+does not earn a shape every consumer's gate depends on forever.
+It reports slug collisions and writes nothing rather than inventing an id (D4). Two defects it
+caused are recorded in the handoff: two ref fields it did not know, and six `decisions.md` files
+it deleted rather than moved — both repaired, and the script fixed.

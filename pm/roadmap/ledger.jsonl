@@ -668,3 +668,9 @@
 {"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":326,"rank":4}
 {"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::D5AStoryAheadOfItsFeature::test_a_story_at_work_under_a_feature_still_being_shaped_IS_drift","duration_ms":310,"rank":5}
 {"ts":"2026-09-07T03:21:51Z","kind":"gate","gate":"unit","verdict":"FAIL","duration_ms":17770,"census":844}
+{"ts":"2026-09-07T03:25:52Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":488,"rank":1}
+{"ts":"2026-09-07T03:25:52Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":463,"rank":2}
+{"ts":"2026-09-07T03:25:52Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":392,"rank":3}
+{"ts":"2026-09-07T03:25:52Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":328,"rank":4}
+{"ts":"2026-09-07T03:25:52Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::D5AStoryAheadOfItsFeature::test_a_story_at_work_under_a_feature_still_being_shaped_IS_drift","duration_ms":309,"rank":5}
+{"ts":"2026-09-07T03:25:52Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":17791,"census":845}

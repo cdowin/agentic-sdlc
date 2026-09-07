@@ -54,3 +54,10 @@ never builds a path from user input, so the guard has nothing left to guard.
 
 Pools, bindings, order, the migration. This story only collapses resolution over the tree that
 exists.
+
+done: ae34650, 73bf1ed — `grain_file(cfg, gid, kind)`, `children(cfg, kind, parent)` and
+`pool_walk(cfg, kind)` replace the per-kind layer. Twelve of the twenty are gone; EIGHT survive as
+the nested reader, each reachable only when `is_pooled(cfg)` is False.
+`test_boundaries.TheResolversCollapsed` pins BOTH rosters — a gone name returning means somebody
+re-derived an id from a path, a kept name leaving means the compat layer is going and D3 should
+close with it. D3 records why the eight stay.

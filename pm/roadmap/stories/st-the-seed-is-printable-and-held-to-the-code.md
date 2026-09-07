@@ -44,3 +44,10 @@ conveyor is.
 
 Making any currently-optional key required. A new required key still has to earn it the way
 `[pm.states.*]` did.
+
+done: 310fd40 — `pm config --seed` prints the seed the PINNED tool ships and writes nothing.
+`tests/test_config_seed.py` compares every COMMENTED default to an AST census of the code's real
+defaults and fails BY NAME on the first drift; it found seven on its first run, including a
+`[checks] all` roster two gates short and a `[pm] checks` list missing U1 and V7.
+Non-vacuity is proven by two planted probes. Hard rule 5 in `CLAUDE.md` now states the
+KNOB/DECLARATION split the seed is organised by.

@@ -57,3 +57,10 @@ reported by the same family.
 
 Any ordering the tool COMPUTES. `depends_on` stays a dependency statement — a DAG gives a partial
 order, and "what is next" wants a total one somebody decided.
+
+done: d1a74eb — `pm add <parent> <child>` binds AND sequences, `pm remove` undoes both, and
+`[pm.contains]` declares which kinds hold which, read off the two ids. One list shape at every
+level including the ROOT, so `releases.md` is a container like any other and its `order` holds
+milestone ids rather than versions.
+`pm order`, `pm sync`, `<!-- pm:execution -->`, V6, `story_ordinal_prefix` and `phase:` all retire
+BY NAME, each with its replacement where a consumer hits it. `execlist.py` is deleted.

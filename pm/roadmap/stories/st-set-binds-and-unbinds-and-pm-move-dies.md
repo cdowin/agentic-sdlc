@@ -46,3 +46,9 @@ disappear — it moves to `pm rename`, story 02, which is the one verb that need
 
 Reporting what is unbound — `0.4.0/the-unbound-census`. Sequence — `0.4.0/the-order-is-one-mechanism`.
 Renaming — story 02.
+
+done: 1236872, d1a74eb — `pm set <id> milestone <mid>` / `<id> feature <fid>` bind; an empty target
+unbinds. `pm move` is DELETED — from `cli.py`, `--help`, the skill text and the README — and its
+cases went with it rather than being retargeted. A binding naming a grain not in the tree is a V7
+finding; naming the wrong KIND is refused off `[pm.contains]`.
+Unbound is NORMAL and never an error: it is a counted `UNBOUND` line (0.4.0/the-unbound-census).

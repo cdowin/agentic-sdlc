@@ -47,3 +47,10 @@ of `pm move`'s version, which did the rename and skipped the sweep.
 
 Running a migration — `0.4.0/the-migration-is-whole-or-nothing` calls this verb rather than
 duplicating the sweep. Suggesting names: `--suggest` belongs to the migration and applies nothing.
+
+done: d1a74eb, f0a58b5 — `pm rename <old> <new>` rewrites the grain's `id:` and every inbound
+ref in one pass, whole or not at all. Nine ref fields, held to the tree's OWN declarations by a
+census over the shipped templates rather than to a remembered list — which is what caught
+`caught_in:` and `fix_milestone:` missing from the migration's copy.
+The ROOT is swept too: `releases.md` is a container and its `order` holds milestone ids, so a
+pools-only sweep left a dangling entry at exit 0.

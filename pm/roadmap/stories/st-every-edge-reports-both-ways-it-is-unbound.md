@@ -47,3 +47,10 @@ kind: story
 ## Out of scope
 
 Failing on anything unbound, under any config.
+
+done: d91fc69, f0a58b5 — V7 grades every binding: empty is UNBOUND (a counted line, never a
+finding, never in the exit code), and naming a grain not in the tree or one of the wrong KIND is
+drift. *Nothing said* is a plan; *something wrong said* is drift.
+It walks the POOLS rather than descending, because a grain nothing claims is exactly what a
+descent cannot see. And the READY warnings follow it there: an unbound grain is now asked every
+question a bound one is, which it was not.

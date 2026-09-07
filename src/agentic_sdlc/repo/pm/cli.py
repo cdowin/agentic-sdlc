@@ -99,6 +99,22 @@ every run; a state the project never declared is refused by name.
                                            than `open`. Writes nothing)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field — not status)
+  migrate [--suggest]                     (a NESTED tree becomes pooled — one
+                                           pass or none. Mints `<kind-prefix>-
+                                           <slug>` ids, writes `kind:` and the
+                                           binding the path used to carry,
+                                           builds each parent's `order` from
+                                           the NN- prefixes and `phase:` it is
+                                           retiring, moves every file into its
+                                           pool, and rewrites every inbound
+                                           ref. A slug collision REFUSES and
+                                           names the grains that share one —
+                                           an auto-picked id is a name nobody
+                                           chose (D4); resolve with `pm rename`
+                                           and re-run. --suggest prints
+                                           parent-qualified candidates and
+                                           applies none. Idempotent: a second
+                                           run says so. Git is the undo)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
   vocabulary [--json]                     (this version's declared surface:
@@ -831,6 +847,18 @@ def _open_for(cfg: model.PmConfig, mdir: Path) -> dict[str, str]:
         if seconds is not None:
             out[gid] = ledger.human_duration(seconds)
     return out
+
+
+def cmd_migrate(cfg: model.PmConfig, args: list[str]) -> int:
+    """A nested tree becomes pooled, whole or not at all — see `migrate.py`."""
+    rest = [a for a in args if a != '--suggest']
+    if rest:
+        raise Usage(f'pm migrate takes --suggest only, not {" ".join(rest)!r}')
+    from agentic_sdlc.repo.pm import migrate
+    code, lines = migrate.run(cfg, suggest='--suggest' in args)
+    for line in lines:
+        print(line)
+    return code
 
 
 def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
@@ -2424,6 +2452,7 @@ def main(argv: list[str]) -> int:
         'story': cmd_story, 'bug': cmd_bug, 'feature': cmd_feature,
         'milestone': cmd_milestone, 'retire': cmd_retire, 'move': cmd_move,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
+        'migrate': cmd_migrate,
         'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
         'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
         'templates': skills.cmd_templates, 'sync': cmd_sync,

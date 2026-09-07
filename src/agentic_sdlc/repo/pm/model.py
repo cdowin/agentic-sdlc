@@ -276,6 +276,17 @@ def case_variants(entries: dict[str, str], name: str) -> list[str]:
 class PmConfig:
     root: Path
     roadmap_dir: str = 'pm/roadmap'
+    # THE POOLS — one directory per kind, the tables of the database (0.4.0).
+    # Empty means "derive `<roadmap_dir>/<kind>s`", so a tree that declares
+    # none behaves exactly like one declaring every stock value and adopting
+    # costs zero edits. They are spelled out as four keys rather than folded
+    # into `roadmap_dir` because **the shape of the config is the shape of the
+    # model**: reading this block tells you there are four kinds and that they
+    # are peers, which one root never could.
+    milestone_dir_key: str = ''
+    feature_dir_key: str = ''
+    story_dir_key: str = ''
+    bug_dir_key: str = ''
     review_dir: str = 'docs/reviews'
     story_ordinal_prefix: bool = False
     # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
@@ -377,6 +388,10 @@ def load() -> PmConfig:
         roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
         review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
         story_ordinal_prefix=flag(sect, 'pm', 'story_ordinal_prefix', False),
+        milestone_dir_key=relpath(sect, 'pm', 'milestone_dir', ''),
+        feature_dir_key=relpath(sect, 'pm', 'feature_dir', ''),
+        story_dir_key=relpath(sect, 'pm', 'story_dir', ''),
+        bug_dir_key=relpath(sect, 'pm', 'bug_dir', ''),
         breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
         milestone_states=_order_of(flows, 'milestone'),
         feature_states=_order_of(flows, 'feature'),
@@ -689,6 +704,8 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
     probe(lambda: flag(section, 'pm', 'story_ordinal_prefix', False))
     probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
+    for _kind in FLOW_KINDS:
+        probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
                           ('review_dir', 'docs/reviews'),
                           ('template_dir', '')):
@@ -1041,6 +1058,248 @@ def segment_is_literal(value: str) -> bool:
             and not any(c in value for c in '/\\'))
 
 
+# =============================================================================
+# THE GRAIN LAYER (0.4.0) — identity is frontmatter, location is convention
+# =============================================================================
+# `model.py` used to say it plainly: *a grain's kind is read from which slot
+# its document sits in*. So a grain's kind, its id and its parent were all
+# functions of where the file sat, and `id:`/`milestone:`/`feature:` were
+# copies that V2 existed to police. That is one fact stored twice, which is
+# the defect this package forbids everywhere else.
+#
+# Now: `id:` and `kind:` are read from the document, the pools are where
+# documents live, and nothing interprets a path. What this deletes is an
+# addressing layer of ~20 functions that were one function with a kind baked
+# in — and the count going down is not the point. `milestone_dir` worked for
+# milestones and nothing else; `story_file` knew one three-segment shape;
+# a fifth kind meant four more functions. These take `kind` as an argument.
+#
+# **And the sharpest part is a security note.** An id used to be interpolated
+# into a `glob()` pattern and joined onto a directory, which is why
+# `segment_is_literal` had to reject `.`, `..`, `/`, `\` and every glob
+# character. Match-by-field never builds a path from user input, so the guard
+# has nothing left to guard.
+
+# The kind prefix a human reads off a bare id — in a commit message, a
+# dispatch, a review — without its location. `kind:` is what the TOOL reads;
+# this is for the person. NOT a namespace: it does not make ids unique across
+# repos, and cross-repo disambiguation is a display concern, never a filename.
+KIND_PREFIX = {'milestone': 'ms', 'feature': 'ft', 'story': 'st', 'bug': 'bg'}
+
+# The pool directory each kind DERIVES when the config names none. Spelled out
+# rather than `f'{kind}s'`, because English is not a rule the code should be
+# inferring — `storys` is what that inference produces.
+POOL_NAME = {'milestone': 'milestones', 'feature': 'features',
+             'story': 'stories', 'bug': 'bugs'}
+
+# The child's field that names its parent, per kind. **Membership is the
+# child's field** — the northstar, as one mapping.
+BINDS_TO = {'feature': ('milestone', 'milestone'),
+            'story': ('feature', 'feature'),
+            'bug': ('milestone', 'milestone')}
+
+
+@dataclass(frozen=True)
+class Grain:
+    """One grain document, read once: what it says it is and what it says it
+    belongs to. Nothing here is derived from `path`."""
+
+    gid: str
+    kind: str
+    path: Path
+    status: str = ''
+    binding: str = ''
+
+
+def pool_dir(cfg: PmConfig, kind: str) -> Path:
+    """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`.
+
+    Relative to the repo root the tool already discovers: an absolute root in
+    a committed config is wrong in every worktree, on every other machine and
+    in CI, which is why there is no `project_root_dir` key and asking for one
+    is exit 2.
+    """
+    declared = getattr(cfg, f'{kind}_dir_key', '')
+    if declared:
+        return cfg.root / declared
+    return cfg.roadmap / POOL_NAME[kind]
+
+
+def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
+    """Every document in one pool, sorted. Replaces `milestone_walk`,
+    `milestone_dirs` and `known_milestones` — three walks that were one walk
+    with a kind baked in."""
+    base = pool_dir(cfg, kind)
+    if not base.is_dir():
+        return []
+    return sorted(p for p in walk.descendants(base, Kind.FILE,
+                                              suffix='.md').kept
+                  if _is_grain_doc(p))
+
+
+def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
+    """One document as a `Grain`, or None when it declares no id.
+
+    `kind` is the POOL it was found in, and it is only a default: a document
+    that declares `kind:` is that kind, wherever it sits, because the location
+    is convention the tool does not interpret.
+    """
+    gid = unquote(field_of(path, 'id'))
+    if not gid:
+        return None
+    declared = unquote(field_of(path, 'kind')) or kind
+    field = BINDS_TO.get(declared, ('', ''))[1]
+    return Grain(gid=gid, kind=declared, path=path,
+                 status=field_of(path, 'status'),
+                 binding=unquote(field_of(path, field)) if field else '')
+
+
+def is_pooled(cfg: PmConfig) -> bool:
+    """Has this tree been migrated? True when any pool holds a document.
+
+    The one place the two layouts are told apart, and it is a fact about the
+    tree rather than a config key: a key would be a second copy of something
+    the directory already says, and a consumer mid-migration would have to
+    keep the two in agreement.
+    """
+    return any(pool_dir(cfg, kind).is_dir() and pool_walk(cfg, kind)
+               for kind in FLOW_KINDS)
+
+
+def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
+    """The pre-0.4.0 layout, read the way it was always read: kind from the
+    slot the document sits in, parent from the directory above.
+
+    Kept so a consumer's tree keeps working the day they bump and before they
+    run `pm migrate` — the alternative is a version that reads nothing until a
+    migration lands, which is a breaking change wearing a minor number. It is
+    the ONLY code left that treats a path as schema, and it goes when the
+    migration is behind every consumer.
+    """
+    out: dict[str, Grain] = {}
+
+    def take(path: Path, kind: str, binding: str) -> str:
+        gid = unquote(field_of(path, 'id'))
+        if not gid:
+            return ''
+        out.setdefault(gid, Grain(gid=gid, kind=kind, path=path,
+                                  status=field_of(path, 'status'),
+                                  binding=binding))
+        return gid
+
+    for mdir in milestone_dirs(cfg):
+        mid = take(mdir / MILESTONE_DOC, 'milestone', '')
+        for ffile in feature_files(mdir):
+            fid = take(ffile, 'feature', mid)
+            for sfile in story_files(ffile):
+                take(sfile, 'story', fid)
+        for bfile in bug_files(mdir):
+            take(bfile, 'bug', mid)
+    return out
+
+
+def grain_index(cfg: PmConfig) -> dict[str, Grain]:
+    """Every grain in the tree, by id. The one walk every resolver goes
+    through.
+
+    A duplicate id is NOT resolved here — the first one read wins for lookup
+    and `check pm` names every file that shares a slug. Uniqueness is a gate
+    FINDING and never a runtime lock: a counter needs an allocator and a git
+    repo has none, so two agents on two branches would collide invisibly
+    (0.4.0/D4). Do what you are asked; report contradictions.
+    """
+    if not is_pooled(cfg):
+        return _nested_index(cfg)
+    out: dict[str, Grain] = {}
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            grain = read_grain(cfg, path, kind)
+            if grain is not None:
+                out.setdefault(grain.gid, grain)
+    return out
+
+
+def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
+    """The document for an id, or None. `kind` narrows when a caller knows it.
+
+    The six resolvers this replaces each joined an id onto a directory. This
+    reads `id:` and matches, so no user input reaches a path.
+    """
+    grain = grain_index(cfg).get(gid)
+    if grain is None or (kind and grain.kind != kind):
+        return None
+    return grain.path
+
+
+def children(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
+    """Grains of `kind` whose binding field names `parent_id`.
+
+    Found by their BINDING, not by which directory they sit in — five per-kind
+    child listings become one.
+    """
+    return [g for g in grain_index(cfg).values()
+            if g.kind == kind and g.binding == parent_id]
+
+
+def unbound(cfg: PmConfig, kind: str) -> list[Grain]:
+    """Grains of `kind` that name no parent. Normal and expected: a grain
+    written and not yet bound is what separating authoring from binding is
+    FOR, and it is a census line, never a finding."""
+    return [g for g in grain_index(cfg).values()
+            if g.kind == kind and BINDS_TO.get(kind) and not g.binding]
+
+
+def milestone_of(cfg: PmConfig, gid: str) -> str:
+    """Which milestone a grain belongs to, followed through its bindings.
+
+    A feature or bug names its milestone; a story names its feature, so it
+    takes one more hop. `milestone_dir_of(path)` used to answer this by
+    counting path components — the same fact, derived from where a file sat.
+    """
+    index = grain_index(cfg)
+    seen: set[str] = set()
+    while gid and gid not in seen:
+        seen.add(gid)
+        grain = index.get(gid)
+        if grain is None:
+            return ''
+        if grain.kind == 'milestone':
+            return grain.gid
+        gid = grain.binding
+    return ''
+
+
+def duplicate_ids(cfg: PmConfig) -> dict[str, list[Path]]:
+    """{id: every document claiming it}, for the ids more than one claims.
+
+    Per KIND is the uniqueness rule, and this is the whole of its
+    implementation: the same slug in two different kinds is fine, because the
+    prefix distinguishes them.
+    """
+    seen: dict[tuple[str, str], list[Path]] = {}
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            grain = read_grain(cfg, path, kind)
+            if grain is not None:
+                seen.setdefault((grain.kind, grain.gid), []).append(path)
+    return {gid: paths for (_kind, gid), paths in seen.items()
+            if len(paths) > 1}
+
+
+def undeclared_kinds(cfg: PmConfig) -> list[tuple[Path, str]]:
+    """(document, the `kind:` it declares) for kinds this project does not
+    have. A fact about the INPUT — refused by name where a verb reads one,
+    reported by the gate over a tree."""
+    out = []
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            declared = unquote(field_of(path, 'kind'))
+            if declared and declared not in FLOW_KINDS:
+                out.append((path, declared))
+    return out
+
+
+# --- the nested layout, read only by the migration ----------------------------
 def milestone_dir(cfg: PmConfig, mid: str) -> Path | None:
     if not segment_is_literal(mid):
         return None

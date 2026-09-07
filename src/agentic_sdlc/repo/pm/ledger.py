@@ -178,6 +178,28 @@ def ledger_path(milestone_dir: Path) -> Path:
     return milestone_dir / LEDGER_FILE_NAME
 
 
+# The pool the ledgers live in once a tree is migrated: milestone-scoped
+# machine state is not a grain, so it gets a table of its own named by the same
+# mechanism as the others (0.4.0/the-pools-are-the-tables).
+LEDGERS_POOL = 'ledgers'
+
+
+def ledger_for(cfg, milestone_id: str) -> Path:
+    """The ledger of one milestone, in EITHER layout.
+
+    Pooled: `<roadmap>/ledgers/<milestone-id>.jsonl`. Nested: the
+    `ledger.jsonl` inside the milestone's own directory, which is where every
+    row written before the migration already is. One function, because a
+    reader that guessed would find the rows in one layout and silently none in
+    the other.
+    """
+    from agentic_sdlc.repo.pm import model
+    if model.is_pooled(cfg):
+        return cfg.roadmap / LEDGERS_POOL / f'{milestone_id}.jsonl'
+    mdir = model.milestone_dir(cfg, milestone_id)
+    return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
+
+
 def grainless_dir(roadmap_dir: Path) -> Path:
     """The DIRECTORY whose ledger holds every row that names no grain
     (0.4.0/D3) — the roadmap root, so the file sits beside the milestones

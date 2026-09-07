@@ -2,7 +2,7 @@
 id: 0.4.0/the-pools-are-the-tables
 milestone: "0.4.0"
 name: Each kind gets a pool, and the config says where it is
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: ["0.4.0/identity-lives-in-frontmatter"]

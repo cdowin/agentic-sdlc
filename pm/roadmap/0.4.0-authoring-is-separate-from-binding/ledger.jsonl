@@ -128,3 +128,6 @@
 {"ts":"2026-09-07T00:09:19Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exist","from":"planning","to":"building"}
 {"ts":"2026-09-07T00:09:27Z","kind":"status","grain":"0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-records","from":"building","to":"done"}
 {"ts":"2026-09-07T00:09:37Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exist","from":"building","to":"done"}
+{"ts":"2026-09-07T00:09:54Z","kind":"status","grain":"0.4.0/identity-lives-in-frontmatter","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:54Z","kind":"status","grain":"0.4.0/the-pools-are-the-tables","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:55Z","kind":"status","grain":"0.4.0/identity-lives-in-frontmatter/01-a-grain-reads-its-id-and-kind-from-its-own-frontmatter","from":"planning","to":"building"}

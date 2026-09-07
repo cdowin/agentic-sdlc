@@ -3,8 +3,8 @@ id: 0.4.0/identity-lives-in-frontmatter/01-a-grain-reads-its-id-and-kind-from-it
 feature: 0.4.0/identity-lives-in-frontmatter
 milestone: "0.4.0"
 name: id and kind come from frontmatter, and the path is not consulted
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: []
 ---
 

@@ -2,7 +2,7 @@
 id: 0.4.0/identity-lives-in-frontmatter
 milestone: "0.4.0"
 name: Identity and kind live in frontmatter, and the path stops being schema
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: []

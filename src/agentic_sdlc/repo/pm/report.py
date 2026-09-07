@@ -1042,7 +1042,13 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
         rel = src.review_record_for(cfg, fid)
         path = (cfg.root / rel) if rel else None
         if path is None:
-            beside = ffile.parent / model.REVIEW_FILE_NAME
+            # BESIDE the grain, wherever it sits: in a pool that is
+            # `<id>-review.md` next to the document, and in a nested tree the
+            # slot inside its directory. `shared_doc` is the one place that
+            # difference is known.
+            beside = model.shared_doc(
+                cfg, model.Grain(gid=fid, kind='feature', path=ffile),
+                model.REVIEW_FILE_NAME)
             if src.is_file(beside):
                 path, rel = beside, cfg.rel(beside)
         if path is not None and rel is not None:

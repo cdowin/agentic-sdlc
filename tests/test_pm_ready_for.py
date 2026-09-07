@@ -110,8 +110,9 @@ def stories(root: Path, **statuses: str) -> None:
         existing.unlink()
     for name, status in statuses.items():
         write(sdir / f'{name}.md',
-              {'id': f'0.1/alpha/{name}', 'feature': '0.1/alpha',
-               'milestone': '"0.1"', 'name': name, 'status': status})
+              {'id': f'0.1/alpha/{name}', 'kind': 'story',
+               'feature': '0.1/alpha', 'milestone': '"0.1"', 'name': name,
+               'status': status})
 
 
 def bytes_of(root: Path) -> dict[str, bytes]:

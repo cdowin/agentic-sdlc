@@ -1614,7 +1614,7 @@ def _event_kind(raw: str) -> str:
     return kind
 
 
-def _row_ledger_dir(cfg: model.PmConfig, path: Path | None) -> Path:
+def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
     """The ledger this row belongs to: the milestone that owns the row's GRAIN,
     read from the grain's own document and from nothing else (D1).
 
@@ -1643,13 +1643,12 @@ def _row_ledger_dir(cfg: model.PmConfig, path: Path | None) -> Path:
             raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                           f'there is no ledger a row naming no grain belongs '
                           f'to; no row was written')
-        return ledger.grainless_dir(cfg.roadmap)
-    mdir = model.milestone_dir_of(cfg, path)
-    if mdir is None:
-        raise Refused(f'{cfg.rel(path)} sits under no milestone directory in '
-                      f'{cfg.roadmap_dir}, so there is no ledger its row '
-                      f'belongs to; no row was written')
-    return mdir
+        return ledger.grainless_path(cfg.roadmap)
+    found = _ledger_of(cfg, model.unquote(model.field_of(path, 'id')))
+    if found is None:
+        raise Refused(f'{cfg.rel(path)} names no milestone, so there is no '
+                      f'ledger its row belongs to; no row was written')
+    return found
 
 
 def _tree_snapshot(cfg: model.PmConfig) -> dict:
@@ -1780,14 +1779,13 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
         fields.update(_by_hand(gpath, grain, flags))
     row = ledger.usage_row(kind, **fields)
-    mdir = _row_ledger_dir(cfg, gpath)
+    target = _row_ledger(cfg, gpath)
     try:
-        ledger.append_row(mdir, row)
+        ledger.append_to(target, row)
     except OSError as err:
-        raise Usage(f'{cfg.rel(ledger.ledger_path(mdir))} could not be appended '
+        raise Usage(f'{cfg.rel(target)} could not be appended '
                     f'to ({err}); no row was written') from err
-    _ok(f'ledger {kind} row appended to '
-        f'{cfg.rel(ledger.ledger_path(mdir))}')
+    _ok(f'ledger {kind} row appended to {cfg.rel(target)}')
     return 0
 
 
@@ -1832,14 +1830,14 @@ def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
         print(f'[pm] no gate row filed — there is no PM tree at '
               f'{cfg.rel(cfg.roadmap)}', file=sys.stderr)
         return 0
-    mdir = _row_ledger_dir(cfg, None)
+    target = _row_ledger(cfg, None)
     try:
-        ledger.append_row(mdir, ledger.gate_row(gate, verdict, duration,
-                                                census))
+        ledger.append_to(target, ledger.gate_row(gate, verdict, duration,
+                                                 census))
     except OSError as err:
-        raise Usage(f'{cfg.rel(ledger.ledger_path(mdir))} could not be appended '
+        raise Usage(f'{cfg.rel(target)} could not be appended '
                     f'to ({err}); no row was written') from err
-    _ok(f'ledger gate row appended to {cfg.rel(ledger.ledger_path(mdir))}')
+    _ok(f'ledger gate row appended to {cfg.rel(target)}')
     return 0
 
 
@@ -2015,10 +2013,10 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
         raise Usage(USAGE)
     gid = rest[0]
     path = _grain_file(cfg, gid)
-    mdir = model.milestone_dir_of(cfg, path)
-    if mdir is None:
-        raise Usage(f'{cfg.rel(path)} is not inside a milestone directory, so '
-                    f'no ledger owns {gid!r}')
+    owner = _ledger_of(cfg, model.unquote(model.field_of(path, 'id')) or gid)
+    if owner is None:
+        raise Usage(f'{cfg.rel(path)} names no milestone, so no ledger owns '
+                    f'{gid!r}')
     # Both spellings: the id the caller typed and the id the file claims, which
     # is what `_stamp` wrote.
     names = {gid, _ledger_id(path, gid)}
@@ -2029,7 +2027,7 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
     # `report` disagree about the same row: `report` billed the story for it
     # and `show` printed `no rows`. D3's argument against per-feature ledgers
     # rests on this verb answering.
-    files = [ledger.ledger_path(mdir)]
+    files = [owner]
     grainless = ledger.grainless_path(cfg.roadmap)
     if grainless not in files:
         files.append(grainless)
@@ -2137,8 +2135,11 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         else:
             mdir = (_report_milestone_dir(cfg, rest[0]) if rest
                     else _report_default_dir(cfg))
-        mid = _ledger_id(model.milestone_doc(mdir), mdir.name, src)
-        path = ledger.ledger_path(mdir)
+        # `mdir` is the milestone's DOCUMENT since 0.4.0 — a pooled tree has
+        # no per-milestone directory — so the id comes off it directly and
+        # the ledger is addressed by that id.
+        mid = _ledger_id(model.milestone_doc(mdir), mdir.stem, src)
+        path = ledger.ledger_for(cfg, mid)
         # Two files, one report. The milestone's ledger holds every ATTRIBUTED
         # row; the tree's root ledger holds the rows that name no grain (D3),
         # which is where `gate` and `test` rows live by construction. Reading
@@ -2208,13 +2209,13 @@ def _report_default_dir(cfg: model.PmConfig) -> Path:
     """Which milestone a bare `ledger report` is ABOUT — the current release's,
     from `order` plus `[pm] version_at`.
 
-    Not a routing rule and not `_row_ledger_dir`'s twin: no row is placed by
+    Not a routing rule and not `_row_ledger`'s twin: no row is placed by
     this, and nothing here decides where anything is written (D1/D7). It
     answers a MISSING ARGUMENT from the plan, which is the same act as
     `pm next`, and it refuses with the plan's own words when the plan cannot
     answer.
     """
-    mdir, why = model.release_ledger_dir(cfg)
+    mdir, why = model.release_milestone(cfg)
     if mdir is None:
         raise Usage(f'{why}{REPORT_HINT}')
     return mdir
@@ -2224,16 +2225,18 @@ def _report_milestone_dir(cfg: model.PmConfig, mid: str) -> Path:
     """The directory of an explicitly named milestone, or exit 2; a feature or
     story id is the wrong noun, since the ledger is per milestone.
     """
-    path = _grain_file(cfg, mid)
-    if path.name != model.MILESTONE_DOC:
-        raise Usage(f'{mid!r} is a {_grain_kind(mid)}, not a milestone — the '
+    # `_grain_file` first, so an id that resolves to nothing gets the ONE
+    # refusal every verb gives it — the shared grammar and the shared
+    # sentence — rather than a second wording invented here.
+    _grain_file(cfg, mid)
+    grain = model.grain_index(cfg).get(mid)
+    if grain is None:
+        raise Usage(f'no grain resolves from id {mid!r}')
+    if grain.kind != 'milestone':
+        raise Usage(f'{mid!r} is a {grain.kind}, not a milestone — the '
                     f'ledger is per milestone (D6), so name one (or run it '
                     f'bare for the current release\'s)')
-    mdir = model.milestone_dir_of(cfg, path)
-    if mdir is None:
-        raise Usage(f'{cfg.rel(path)} is not inside a milestone directory, so '
-                    f'no ledger owns {mid!r}')
-    return mdir
+    return grain.path
 
 
 # --- dispatch -----------------------------------------------------------------

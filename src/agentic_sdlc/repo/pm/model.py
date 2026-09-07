@@ -1149,6 +1149,21 @@ def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
                   if _is_grain_doc(p))
 
 
+def pool_census(cfg: PmConfig, kind: str) -> tuple[int, int]:
+    """(documents this pool holds, files in it that are not documents).
+
+    Rule 4: a scan that skipped something says so. In a pool the skipped file
+    is a `.md` that opens no frontmatter, or anything that is not `.md` at
+    all — a README beside the grains, a note somebody left.
+    """
+    base = pool_dir(cfg, kind)
+    if not base.is_dir():
+        return 0, 0
+    every = [p for p in walk.descendants(base, Kind.FILE).kept]
+    kept = pool_walk(cfg, kind)
+    return len(kept), len(every) - len(kept)
+
+
 def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     """One document as a `Grain`, or None when it declares no id.
 
@@ -1980,9 +1995,11 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
     return shipped[-1], ''
 
 
-def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
-    """(the milestone directory holding the current release's ledger, or None,
-    plus why not).
+def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
+    """(the DOCUMENT of the milestone the current release belongs to, or None,
+    plus why not). Renamed from `release_ledger_dir` in 0.4.0: it never routed
+    a write after D7, and a pooled tree has no per-milestone directory for it
+    to name.
 
     **Gate cost is a fact about a RUN**, and the run happened whether or not
     anybody had flipped a status. Binding the ledger to "the one milestone in
@@ -2012,7 +2029,10 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
                       f'tree')
     live = in_progress_milestones(cfg)
     if len(live) == 1:
-        return live[0][2].parent, ''
+        # The milestone's DOCUMENT, like the branch above: a pooled
+        # tree has no per-milestone directory, and every caller wants
+        # the grain, not a place.
+        return live[0][2], ''
     if not declared_order(cfg):
         return None, (f'{cfg.rel(releases_file(cfg))} declares no `order`, so '
                       f'there is no current release to file against — '

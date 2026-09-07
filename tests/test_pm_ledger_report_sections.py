@@ -101,16 +101,19 @@ verdict: SHIP
 def feature(root, fid: str, status: str, record: str = '',
             stories: tuple = ()) -> None:
     slug = fid.partition('/')[2]
-    fdir = root / 'pm/roadmap/features' / slug
-    write(fdir / 'feature.md', {'id': fid, 'milestone': '"0.1"',
-                                'name': slug, 'status': status,
-                                'reviewed': ''})
+    pools = root / 'pm/roadmap'
+    write(pools / 'features' / f'{slug}.md',
+          {'id': fid, 'kind': 'feature', 'milestone': '"0.1"',
+           'name': slug, 'status': status, 'reviewed': ''})
     if record:
-        (fdir / 'review.md').write_text(record, encoding='utf-8')
+        # Beside the grain, under its own name: a pool is flat, so a bare
+        # `review.md` would be one file for every feature.
+        (pools / 'features' / f'{slug}-review.md').write_text(
+            record, encoding='utf-8')
     for name, sstatus in stories:
-        write(fdir / 'stories' / f'{name}.md',
-              {'id': f'{fid}/{name}', 'feature': fid, 'milestone': '"0.1"',
-               'name': name, 'status': sstatus})
+        write(pools / 'stories' / f'{slug}-{name}.md',
+              {'id': f'{fid}/{name}', 'kind': 'story', 'feature': fid,
+               'milestone': '"0.1"', 'name': name, 'status': sstatus})
 
 
 def seeded(root) -> None:
@@ -197,8 +200,8 @@ YIELD_TABLE = """\
 [ledger:report] 0.1 — yield per review pass — 3 record(s), 2 pass(es), 7 finding(s)
 
 -- verdict (3)
-feature    record                                        pass  verdict           findings  landed  rejected  deferred  open
-0.1/alpha  docs/reviews/alpha.md                            1  SHIP-WITH-FIXES          4       2         1         1     0
+feature    record                               pass  verdict           findings  landed  rejected  deferred  open
+0.1/alpha  docs/reviews/alpha.md                   1  SHIP-WITH-FIXES          4       2         1         1     0
 0.1/beta   pm/roadmap/features/beta-review.md      1  HOLD                     3       0         0         2     1
 0.1/delta  pm/roadmap/features/delta-review.md     -  no verdict block         -       -         -         -     -
 

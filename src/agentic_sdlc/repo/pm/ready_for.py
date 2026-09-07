@@ -63,14 +63,22 @@ def _answer(subject: str, blockers: list[str], census: str) -> int:
 
 
 # --- grain resolution ---------------------------------------------------------
-def _grain(cfg: model.PmConfig, kind: str, gid: str, doc: str, noun: str,
+def _grain(cfg: model.PmConfig, kind: str, gid: str, want: str, noun: str,
            asks: str) -> Path:
     """The grain file `gid` names, of the right kind, or exit 2; a story id
     handed to `ready-for feature` would get the wrong question answered.
+
+    The kind comes from the grain's own `kind:` since 0.4.0, with the
+    filename as the fallback for a document that declares none — it used to
+    come from the FILENAME, which is the path being schema.
     """
     path = _grain_file(cfg, gid)
-    if path.name != doc:
-        raise Usage(f'{gid!r} is a {_grain_kind(gid)}, not a {noun} — '
+    found = model.unquote(model.field_of(path, 'kind'))
+    if not found:
+        found = {model.MILESTONE_DOC: 'milestone',
+                 model.FEATURE_DOC: 'feature'}.get(path.name, _grain_kind(gid))
+    if found != want:
+        raise Usage(f'{gid!r} is a {found}, not a {noun} — '
                     f'`ready-for {kind}` asks {asks}')
     return path
 
@@ -164,18 +172,24 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     each that is not, with the word the file holds; no stories is vacuously
     ready.
     """
-    ffile = _grain(cfg, FEATURE, fid, model.FEATURE_DOC, FEATURE,
+    ffile = _grain(cfg, FEATURE, fid, 'feature', FEATURE,
                    "about a feature's stories")
-    walk = model.slot_walk(ffile.parent / model.STORIES_DIR)
+    # The stories BOUND to this feature, not the ones in a directory beneath
+    # it: membership is the child's field since 0.4.0.
+    kept = model.story_files(cfg, model.unquote(model.field_of(ffile, 'id'))
+                             or fid)
     held = model.holds(
         cfg, 'story',
         ((model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile),
           model.field_of(sfile, 'status') or '(no status:)')
-         for sfile in walk.kept),
+         for sfile in kept),
         DONE)
     blockers = list(held.names)
-    census = walk.census('story/ies')
-    if not walk.kept:
+    _held, skipped = model.pool_census(cfg, 'story')
+    census = (f'{len(kept)} story/ies'
+              + (f', {skipped} file(s) skipped (no frontmatter — not a '
+                 f'grain)' if skipped else ''))
+    if not kept:
         census += (f' — {VACUOUS}: an empty set is satisfied, and refusing it '
                    f'would make this verb unusable on a doc-only feature')
     elif not blockers:
@@ -217,7 +231,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     promised to this milestone outside `done`. Zero features exits 1,
     deliberately opposite to the empty-story ruling.
     """
-    mfile = _grain(cfg, MILESTONE, mid, model.MILESTONE_DOC, MILESTONE,
+    mfile = _grain(cfg, MILESTONE, mid, 'milestone', MILESTONE,
                    "about a milestone's features")
     features = _features(cfg, mfile)
     subject = f'{MILESTONE} {mid}'
@@ -273,7 +287,7 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     """Is every finding in every record this milestone points at not `open`?
     An unparseable record is UNVERIFIABLE and blocks; no records blocks.
     """
-    mfile = _grain(cfg, TAG, mid, model.MILESTONE_DOC, MILESTONE,
+    mfile = _grain(cfg, TAG, mid, 'milestone', MILESTONE,
                    "about a milestone's review records")
     blockers: list[str] = []
     records: dict[Path, Record] = {}

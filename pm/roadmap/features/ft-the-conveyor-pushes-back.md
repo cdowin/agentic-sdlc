@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-move-is-an-event"
 name: the conveyor pushes back
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-07-0.5.0-arrival.md
 depends_on: []
 consumed_by: []
 ---

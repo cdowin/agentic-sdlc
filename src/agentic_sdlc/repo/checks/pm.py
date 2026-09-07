@@ -633,15 +633,10 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
 def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """U3 — `[emit]` is declared and its sink has never been written to.
 
-    `recording-is-on-or-the-gate-is-red` (0.4.0) exists because the couriers
-    were wired, executable and recorded nothing for a whole release with nobody
-    able to tell. **The emit sink is the same trap on a fresh surface**: a
-    declared `[emit]` whose sink has never been written to looks exactly like a
-    tree that opted out.
-
-    **Opting out stays quiet.** A tree with no `[emit]` is not broken and gets
-    no line at all; the finding is *declared and silent*, a contradiction the
-    tree is holding rather than an absence of configuration.
+    **The same trap as `recording-is-on-or-the-gate-is-red` (0.4.0) on a fresh
+    surface**: a declared `[emit]` whose sink was never written to looks exactly
+    like a tree that opted out. Opting out stays quiet — a tree with no
+    `[emit]` gets no line at all.
 
     A malformed `[emit]` value is exit 2 through `emit.settings()`, never a
     finding — a fact about the input, the way every other config refusal is.
@@ -651,10 +646,9 @@ def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     from agentic_sdlc.repo import emit
     if not emit.declared():
         return
-    # A malformed value raises here — including `kinds = []`, which
-    # `core.config.str_tuple` refuses by name rather than reading as "no tap
-    # emits". So every declared section this rule reaches emits SOMETHING, and
-    # silence in the sink is never something the project asked for.
+    # A malformed value raises here — including `kinds = []`, refused by name
+    # rather than read as "no tap emits". So every section this rule reaches
+    # emits SOMETHING, and silence is never what the project asked for.
     conf = emit.settings()
     taps = ', '.join(conf.kinds)
     if conf.sink == emit.SINK_STDOUT:
@@ -708,13 +702,10 @@ def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
     """Did a TAP write this row?
 
-    A tap's row NAMES its tap in `kind` — bare (`enter`) or dotted
-    (`rung.enter`, `check.verdict`, `rung.leave`) — so the last dotted segment
-    is the tap. Read off `emit.TAPS`, which is the shipped vocabulary of the
-    section this rule grades, rather than off a copy of the row-kind list: a
-    second spelling of the schema is the scoreboard this package deletes
-    everywhere else, and a rule keyed on a copy goes blind the day the copy
-    goes stale.
+    A tap's row NAMES its tap in `kind`, bare (`enter`) or dotted
+    (`rung.enter`), so the last dotted segment is the tap. Read off `emit.TAPS`
+    rather than a copy of the row-kind list: a rule keyed on a second spelling
+    of the schema goes blind the day the copy goes stale.
     """
     return _kind_of(row).rsplit('.', 1)[-1] in taps
 
@@ -743,13 +734,9 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
 
 
 def _unbound_rows(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """The unbound family one level down from R1, in both directions.
-
-    MEMBERSHIP: a feature naming no milestone, a story naming no feature — a
-    counted line, never a finding, because a tree mid-planning legitimately has
-    many and a gate that reddens on planning is a gate people switch off.
-    SEQUENCE: the same pair over every container's `order` — UNSEQUENCED
-    counted, DANGLING reported. The BROKEN halves are V7's own findings.
+    """The unbound family one level down from R1, in both directions (V7 at the
+    top of this module). COUNTED, never a finding, because a tree mid-planning
+    legitimately has many and a gate that reddens on planning gets switched off.
     """
     if 'V7' not in enabled:
         return
@@ -765,13 +752,12 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
     """Every container's `order` against what it holds — one walk, every level."""
     index = model.grain_index(cfg)
     # The ROOT is R1's, not this walk's: the plan has carried its own rule and
-    # its own line since 0.3.0, and two lines for one fact is the second
-    # scoreboard this milestone is deleting.
+    # its own line since 0.3.0, and two lines for one fact is a second
+    # scoreboard.
     #
     # `BINDS_TO` and NOT `[pm.contains]`: that key says what `pm add` may
     # WRITE, and reading it here let a narrowed mapping ungate the level it
-    # dropped. What an `order` says about what it holds is a fact about the
-    # tree, and no config narrows it.
+    # dropped. No config narrows what an `order` says about what it holds.
     holds = {parent for parent, _field in model.BINDS_TO.values()}
     parents = [g for g in index.values()
                if g.kind in holds and g.kind != model.ROOT_KIND]
@@ -811,13 +797,10 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
     """R1-R4 and R6 — the plan and the tree held to each other.
 
     **This is THE UNBOUND FAMILY, whose first member is the milestone-to-release
-    edge**, not a set of milestone-specific rules. Every level of the tree has
-    the same pair: a binding that names nothing, and a grain that names no
-    binding. When 0.4.0 makes authoring separate from binding everywhere, a
-    feature with no milestone and a story with no feature join this census as
-    further ROWS rather than as new rules — naming the family now costs a
-    sentence, and naming it later costs a rename in every consumer's output
-    that greps these lines.
+    edge**, not a set of milestone-specific rules: every level has the same pair
+    — a binding that names nothing, and a grain that names no binding. Naming
+    the family here costs a sentence; naming it later costs a rename in every
+    consumer's output that greps these lines.
     """
     claims = model.version_claims(cfg)
     scheduled = set(order)
@@ -828,8 +811,7 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
         # is the one container a config can turn off on its own.
         seq = model.sequence_census(cfg, root)
         for mid in seq.unverifiable:
-            # Never a failure: the row survives its milestone on purpose
-            # (ROADMAP.md's only real job, now retired).
+            # Never a failure: the row survives its milestone on purpose.
             warn(f'UNBOUND: {mid} is in '
                  f'{cfg.rel(model.releases_file(cfg))} `order` and no milestone '
                  f'in this tree declares that id — DANGLING if it was never '
@@ -842,8 +824,8 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
                   f'add {root.gid} <milestone-id>` schedules one (R1)')
 
     if 'R2' in enabled:
-        # Backlog: a named, counted line, never a finding. A healthy tree has
-        # many, and a gate that reddens on planning is a gate people switch off.
+        # Backlog: a named, counted line, never a finding — a healthy tree has
+        # many (the same reason as `_unbound_rows`).
         backlog = [mid for _, mid in model.known_milestones(cfg)
                    if mid and mid not in scheduled
                    and not model.milestone_version(cfg, mid)]
@@ -902,18 +884,15 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
 
 
 def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """The release family: the plan (`order`) and the tree held to each other.
-
-    R1-R4 and R6 are the unbound family, in `_unbound_family`. R5, below, is the
-    version file against the CURRENT release — a POSITION in `order`, never a
-    parse, so it fits bump-at-start and bump-at-close both ([pm] version_at) and
-    has no opinion about what a version string looks like.
+    """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
+    the version file against the CURRENT release — a POSITION in `order`, never
+    a parse, so it fits bump-at-start and bump-at-close both ([pm] version_at)
+    and has no opinion about what a version string looks like.
     """
     if not enabled & set(model.RELEASE_CHECKS):
         return
-    # A plan that is THERE and unreadable is a finding, not the absence of a
-    # plan: saying "declares no `order`" over a BOM-damaged or fence-eaten file
-    # is rule 4's first sin — passing over what was never measured.
+    # A plan that is THERE and unreadable is a finding, not the absence of one:
+    # "declares no `order`" over a BOM-damaged file is rule 4's first sin.
     defect = model.plan_defect(cfg)
     if defect is not None:
         report(f'{cfg.rel(model.releases_file(cfg))} {defect} — R5 cannot read '

@@ -63,6 +63,32 @@ number, never the tool's. Over it, every write says so and names the oldest. Rul
 reads a declaration and reports a fact; it never refuses, because `--force` is the deviation and this
 is not even a gate.
 
+## The move asks a QUESTION, and both answers are already typed
+
+Pressure is not a nag and not a report. **At every move, the conveyor asks the one question that move
+raises, and prints both answers as commands you can run.**
+
+    feature ft-x: building -> reviewing
+
+    do you need a review?
+      a) agentic-sdlc close feature ft-x
+      b) agentic-sdlc close feature ft-x --skip review-recorded "<why>"
+
+    open: 6 in_progress, oldest 41m
+
+That is the whole mechanism. Not *"you should close this"* — a fork, with both branches spelled, so
+the cheap answer costs one paste and the expensive answer costs one paste. **The friction that made me
+batch was never the review; it was that closing meant deciding what to type while something else was
+already running.**
+
+The question is DERIVED like everything else: which checks the belt will ask, which of them the
+project declared skippable, and which are already true. A belt with nothing skippable prints one
+option, not a fake choice. A move with no fork prints no question.
+
+**Fast is the requirement, not thoroughness.** A conveyor that makes you read is a conveyor you skip.
+One line for the move, one question, two commands, one census line — and nothing when there is nothing
+to say.
+
 ## What it must not become
 
 **Never a refusal.** A conveyor that blocks you from opening work is a conveyor people route around.

@@ -1534,6 +1534,23 @@ def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
             if len(paths) > 1]
 
 
+def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
+    """{'feature': [ids naming no milestone], 'story': [...], 'bug': [...]}.
+
+    Only kinds that BIND, and only an EMPTY binding — a binding naming a grain
+    that is not in the tree is V7's, because that is drift rather than a
+    decision nobody has made yet.
+    """
+    out: dict[str, list[str]] = {}
+    for gid, grain in sorted(grain_index(cfg).items()):
+        bind = BINDS_TO.get(grain.kind)
+        if bind is None:
+            continue
+        if not unquote(field_of(grain.path, bind[1])):
+            out.setdefault(grain.kind, []).append(gid)
+    return out
+
+
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     """Documents in a pool that the index cannot key on, and why.
 

@@ -23,13 +23,17 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
-  V7  a binding (`milestone:`/`feature:`) that is empty, names no grain in the
-      tree, or names one of the wrong kind
+  V7  a binding (`milestone:`/`feature:`) naming a grain that is not in the tree,
+      or one of the wrong kind. An EMPTY binding is UNBOUND — a counted line
+      below, never a finding
   READY  a grain past `todo` with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), a story in progress with no
          `owner:`, no stories, no `phase:`, no `branch:`, or (a milestone) no
          `handoff.md` — never auto-minted, so `pm new handoff <id>` is the fix
   R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
+  UNBOUND  the same family one level down (V7): features naming no `milestone:`,
+      stories naming no `feature:`, bugs naming no `milestone:`. Counted, never a
+      finding — *nothing said* is a plan, *something wrong said* is drift
 
 Archived milestones are out of scope; a zero census FAILS.
 """
@@ -111,6 +115,7 @@ def _run() -> int:
 
     n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
 
+    _unbound_rows(cfg, enabled)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
     _recording_findings(cfg, enabled, warn)
@@ -415,6 +420,27 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                 report(f'in-progress milestone {mid} declares branch: {branch!r}, '
                        f'the mainline itself — work must live off '
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
+
+
+def _unbound_rows(cfg: model.PmConfig, enabled: set[str]) -> None:
+    """The unbound family one level down from R1: a feature naming no
+    milestone, a story naming no feature, a bug naming no milestone.
+
+    Counted lines, never findings and never in the exit code — a tree
+    mid-planning legitimately has many, and a gate that reddens on planning is
+    a gate people switch off. The BROKEN half (a binding naming a grain that is
+    not in the tree) is V7's own finding, out of `validate.run`.
+
+    Called from the run rather than from `_unbound_family`, which only executes
+    when an R rule is enabled and none is by default.
+    """
+    if 'V7' not in enabled:
+        return
+    for kind, ids in sorted(model.unbound_grains(cfg).items()):
+        field = model.BINDS_TO[kind][1]
+        print(f'  UNBOUND  {len(ids)} {kind}(s) name no {field}: — '
+              f'{", ".join(ids)}; `agentic-sdlc pm set <id> {field} '
+              f'<{field}-id>` binds one (V7)')
 
 
 def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],

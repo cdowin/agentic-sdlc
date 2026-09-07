@@ -252,7 +252,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
 
 
 def _unbound_findings(cfg: model.PmConfig) -> list[str]:
-    """V7 — every grain's binding names a grain of the right kind, in the tree.
+    """V7 — a binding that names a grain not in the tree, or one of the wrong
+    kind. An EMPTY binding is not here: it is unbound, which is a counted line.
 
     The walk above descends from the milestones, so a grain whose binding
     resolves to nothing is never REACHED by it. This one starts at the POOLS,
@@ -269,9 +270,8 @@ def _unbound_findings(cfg: model.PmConfig) -> list[str]:
         ref = model.unquote(model.field_of(grain.path, field))
         rel = cfg.rel(grain.path)
         if not ref:
-            out.append(f'{rel}: {grain.kind} {gid!r} names no {field}: — '
-                       f'membership is the field now, so a grain with none '
-                       f'belongs to nothing and every roll-up walks past it')
+            # NOT a finding: a grain nobody has bound yet is a plan in
+            # progress, and `check pm` counts it in the unbound family.
             continue
         found = index.get(ref)
         if found is None:

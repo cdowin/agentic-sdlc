@@ -1275,12 +1275,49 @@ class StructuralIntegrity(unittest.TestCase):
             # ...and it was COUNTED, so the census is not quietly short one.
             self.assertIn('2 feature(s)', out)
 
-    def test_a_grain_with_an_empty_binding_is_reported(self):
+    def test_a_grain_with_an_empty_binding_is_COUNTED_and_never_a_finding(self):
+        # The unbound/broken split, and it is the whole rule: *nothing said* is
+        # a plan, *something wrong said* is drift. A tree mid-planning
+        # legitimately has many unbound grains, and a gate that reddens on
+        # planning is a gate people switch off.
         with tree(story_statuses=('ready',)) as root:
             model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
             code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn('names no feature:', out)
+            self.assertEqual(code, 0, out)
+            self.assertIn('UNBOUND  1 story(s) name no feature:', out)
+            self.assertIn('0.1/alpha/s0', out)
+            # The line names the command that binds one, because a count with
+            # no next step is a count somebody has to go looking behind.
+            self.assertIn('pm set <id> feature', out)
+            self.assertNotIn('DRIFT', out)
+
+    def test_a_tree_that_is_ENTIRELY_unbound_still_exits_zero(self):
+        # The claim people will doubt, so it is pinned rather than argued: no
+        # config makes an unbound grain an error, and every edge unbound at
+        # once is still exit 0.
+        with tree(story_statuses=('ready',)) as root:
+            for rel, field in (('features/alpha.md', 'milestone'),
+                               ('stories/s0.md', 'feature')):
+                model.set_field(root / 'pm/roadmap' / rel, field, '')
+            bug(root, 'crash')
+            model.set_field(root / 'pm/roadmap/bugs/crash.md', 'milestone', '')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            for line in ('1 feature(s) name no milestone:',
+                         '1 story(s) name no feature:',
+                         '1 bug(s) name no milestone:'):
+                self.assertIn(line, out)
+
+    def test_the_unbound_rows_go_quiet_when_V7_is_off(self):
+        # A counted line rides with the rule that owns the edge; disabling V7
+        # takes both halves, so a consumer never gets the census without the
+        # finding that gives it meaning.
+        with tree(story_statuses=('ready',)) as root:
+            write_config(root, '[pm]\nchecks = ["D1","D4"]\n')
+            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('UNBOUND', out)
 
     def test_a_binding_that_names_the_wrong_KIND_is_reported(self):
         # `feature: 0.1` resolves — to a MILESTONE. A binding that lands on a

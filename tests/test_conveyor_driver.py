@@ -295,11 +295,23 @@ def test_the_version_refusal_matrix_is_exit_2(value, capsys):
 
 
 def test_help_exits_zero_for_every_verb(capsys):
+    """Rule 11's read side: `--skip` is a capability, and a capability nobody
+    can find is a capability you do not have. Bites: the flag shipped and
+    named nowhere the operator stands — which is how the thirteenth grain got
+    opened instead of the twelfth close.
+
+    `adopt` names it too, as the thing it REFUSES: a flag that works one belt
+    over and is silent here is the same defect wearing the other face.
+    """
     for argv in (['release', '--help'], ['adopt', '-h'], ['close', 'help'],
                  ['close', 'story', '--help'], ['--help']):
         assert driver.main(argv) == 0, argv
         out = capsys.readouterr().out
-        assert '--skip' not in out and 'stops' not in out, argv
+        assert driver.SKIP_FLAG in out, argv
+        assert 'stops' not in out, argv
+    assert driver.main(['adopt', '-h']) == 0
+    adopt = capsys.readouterr().out
+    assert 'neither is accepted here' in adopt, adopt
 
 
 # --- the plan supplies the version, and refuses one out of order -------------

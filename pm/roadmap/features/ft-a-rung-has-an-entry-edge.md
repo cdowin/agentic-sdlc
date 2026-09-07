@@ -3,7 +3,7 @@ id: ft-a-rung-has-an-entry-edge
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: a rung has an entry edge, and it is ready-for
-status: planning
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
@@ -25,18 +25,27 @@ start*. An agent's alternative is to guess, or to read prose written for a human
 
 `ready-for` is already the right shape and needs no redesign: exit 0 ready, exit 1 not ready naming
 every blocker and never a tally, exit 2 usage. Writes nothing. This feature extends the verb to the
-rungs that lack it and emits `rung.enter` from all of them.
+rung that lacks one, and emits `rung.enter` from all of them **to the sink `[emit]` declares** — a
+tree that declares no `[emit]` section emits nothing at all, which is how the verb keeps its
+"writes nothing" contract.
 
     ready-for story <id>        the story rung's entry condition
     ready-for feature <id>      shipped
     ready-for milestone <id>    shipped
     ready-for tag <id>          shipped
-    ready-for adopt <version>   the pin bump's entry condition
+
+There is no `ready-for adopt`, and the refusal says why rather than reading as a typo — every check
+in the adopt belt is either the work the bump DOES or one that runs a command, so the derived entry
+set is empty and the rung could only ever answer NOT READY. Recorded as D4; see `## Out of scope`.
 
 What `ready-for story` must be true of is a DECLARATION, not a guess — the story belt's own check
-list read from `registry_for("story")`, minus the ones that can only be answered after the work
-(`evidence-written` cannot be true before the story is built). The entry condition is the subset that
-is decidable up front, and which those are comes from the registry, never from a list in this file.
+list read from `registry_for("story")`, narrowed to the names the registry puts in
+`ENTRY_CONDITIONS`. Which those are comes from the registry, never from a list in this file, and the
+census states only what the derivation KNOWS about the rest: that they were not declared entry
+conditions, plus the action the belt runs at the close. *"Answers after the work"* is true of
+`evidence-written` and false of `committed`, which reads git and answers fine up front — it is
+excluded on a ruling written at `ENTRY_CONDITIONS`, and a verb printing a reason it did not derive
+is rule 4's shape one size down.
 
 ## Why the blockers matter more than the boolean
 
@@ -51,23 +60,44 @@ each edge and is told.** That is hard rule 11 at the surface an operator is actu
 
 ## Ship criterion
 
-`pm ready-for` answers for every rung a belt exists for, each condition read from that belt's
-registry entry, each blocker named. `ready-for story` exists and the story belt is no longer the only
-rung an agent must guess at.
+`pm ready-for` answers for **`story`, `feature`, `milestone` and `tag`** — every rung whose belt has
+a condition that is decidable before the work — each condition read from that belt's registry entry,
+each blocker named. `ready-for story` exists and the story belt is no longer the rung an agent must
+guess at. The fifth belt, `adopt`, is answered by the ABSENCE said out loud: the derivation returns
+an empty set for it, so the verb names the rung and says why rather than reporting a typo (D4).
 
-A full story-to-close loop is drivable from `ready-for` plus `rung.leave` alone, with no line of
-human prose parsed. That is the feature's real test and it belongs in the suite as one.
+`rung.enter` is emitted from every rung to the sink `[emit]` declares, and emission is never
+load-bearing — a malformed, escaping or unwritable sink is one line on stderr and moves neither the
+exit code nor a printed byte.
+
+The story-to-close loop drivable from `ready-for` plus `rung.leave` alone is the MILESTONE's
+criterion, not this feature's (`ms-a-move-is-an-event.md`, *"an agent can drive a full story-to-close
+loop from emitted events alone"*). Nothing in `src/` emits `rung.leave` yet, so the case cannot be
+written here; it is deferred by name in `## Out of scope`.
 
 ## Proof budget
 
-  cases: 4
+  cases: 5
   tier: pyunit
   lands in: `tests/test_pm_ready_for.py`
-  what already covers this: the three shipped conditions have cases there already; the new rungs are
-    rows on the same harness. The drive-the-loop assertion is one integration case and is the only
-    new shape.
+  what already covers this: the three shipped conditions have cases there already; the new rung is
+    rows on the same harness. The fifth is the emission-failure case (review E4) — the swallow was
+    correct and held by nothing, while the sibling feature's identical swallow WAS tested.
 
 ## Out of scope
 
 Any refusal. `ready-for` reports and the caller decides — a rung that says "not ready" never stops a
 belt, because `--force` is the deviation and the ledger records it.
+
+**`ready-for adopt`, and it is a ruling rather than a gap** (D4). The derived entry set for the
+adopt belt is empty — `pin-bumped`, `installables-current` and `config-updated` are the work the
+bump does, and the other five run commands, which `ready-for` never does — so the rung could only
+ever exit 1. Writing the condition by hand instead is the rejected alternative: it would be the one
+rung whose question this package DECIDED rather than read. What ships is the named refusal.
+
+**The drive-the-loop case, deferred to `ft-one-event-shape-serves-three-readers`.** It needs
+`rung.leave`, whose shape that feature declares and which `ft-a-move-emits-the-breadcrumb-it-prints`
+emits; both are `status: planning`, so nothing in `src/` emits the event the loop would be driven
+by. Not carried as `depends_on:` — that would hold this feature's close on two features that have
+not started, for a case the MILESTONE's criterion already owns. It is deferred here by name so the
+criterion stays honest, and the milestone's close is where it comes due.

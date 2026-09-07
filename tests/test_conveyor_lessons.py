@@ -178,6 +178,10 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
                   lesson_row(rule=OTHER_RULE, text='another rule'))
         record(root, *mine, *theirs)
 
+        # Emission is OPT-IN: declaring the section is what turns the sink on
+        # (0.5.0/D1, `emit.emit`), and this case is about what lands on it.
+        write_config(root, '[emit]\n')
+
         run = belt(root, [
             check('stories-done', replace(driver.Answer.no(said),
                                           names=lessons.blockers_named(said))),

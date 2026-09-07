@@ -21,6 +21,7 @@ from __future__ import annotations
 import difflib
 import json
 import re
+import shlex
 import sys
 from importlib import resources
 from pathlib import Path
@@ -273,11 +274,18 @@ def hook_settings(root: Path) -> str:
     A relative path resolves only when the harness's cwd IS `root`, so a
     session rooted anywhere else fires nothing and says nothing. An absolute
     one is the same block wherever the settings file carrying it lives.
+
+    QUOTED, because the harness hands this string to a shell: absolutising the
+    path is what introduced the class, since a relative `tools/hooks/…` has no
+    space to break on and `/Users/me/my repo/tools/…` does. An unquoted one
+    still reads as an absolute existing file to anything that splits on the
+    first space, so it fails where nothing is looking.
     """
     events: dict[str, list[dict]] = {}
     groups: dict[tuple[str, str | None], dict] = {}
     for event, matcher, rel, is_async in _WIRING:
-        entry: dict = {'type': 'command', 'command': f'bash {root / rel}'}
+        script = shlex.quote(str(root / rel))
+        entry: dict = {'type': 'command', 'command': f'bash {script}'}
         if is_async:
             entry['async'] = True
         group = groups.get((event, matcher))
@@ -295,10 +303,23 @@ SETTINGS_NAMES = (
     'ABSOLUTE, so this block works in whatever settings file your harness '
     'actually reads, including one above this repo. Export '
     'GDK_LEDGER_ROOT={root} in that session when its cwd is not inside this '
-    'tree, or the couriers derive no tree and file nothing:')
+    'tree, or the couriers derive no tree and file nothing. An absolute path '
+    'names one machine, so a SHARED checkout puts the block in '
+    '{local} and gitignores it — every surface here reads that file too:')
+# The per-user override a harness writes for itself, and the one place a
+# public repo can carry absolute wiring. Read back by `check pm` U2/U4 and by
+# `adopt`'s `telemetry-live`, off `checks.pm.AGENT_SETTINGS_LOCAL`.
+AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
 SETTINGS_OFFER = ('{rel} was NOT written — pass {flag} and this verb writes it '
                   'when nothing is in the way')
-SETTINGS_WROTE = 'wrote {rel} — these hooks are in force now'
+# ONE line, like every other disposition: `grep '^[install]'` is how a run
+# is summarised, and it is the only place the concrete export survives when
+# the offer is taken (the pasteable block is not printed after a write).
+SETTINGS_WROTE = (
+    'wrote {rel} — in force for a session rooted here. A session rooted '
+    'anywhere else reads its own settings file, and needs this same block '
+    'plus `export GDK_LEDGER_ROOT={root}` — this package cannot observe '
+    'which file a harness loads')
 SETTINGS_CURRENT = '{rel} already carries exactly this block'
 SETTINGS_WITHHELD = (
     '{rel} exists and is yours — it carries permissions, env and MCP entries '
@@ -307,23 +328,28 @@ SETTINGS_WITHHELD = (
 SETTINGS_DEFECT = '{rel} {defect} — nothing was written'
 
 
-def _settings_step(root: Path, write: bool) -> bool:
+def settings_step(root: Path, write: bool) -> bool:
     """Name the settings file, say what became of it, print what to paste.
 
     True when a write was ASKED FOR and withheld, which is exit 1 like any
     other withheld replacement.
+
+    PUBLIC, because `init` calls it too: a brand-new consumer that never
+    reaches this step gets neither the fragment nor the destination, which is
+    strictly less than the hand-paste this verb exists to replace.
     """
     target = root / AGENT_SETTINGS
     body = hook_settings(root) + '\n'
-    line, withheld, paste = _settings_write(target, body, write)
+    line, withheld, paste = _settings_write(root, target, body, write)
     _say(line)
     if paste:
         # Last on stdout and unprefixed, so the block can be pasted whole.
-        print(f'\n{SETTINGS_NAMES.format(path=target, root=root)}\n\n{body}')
+        print(f'\n{SETTINGS_NAMES.format(path=target, root=root, local=AGENT_SETTINGS_LOCAL)}'
+              f'\n\n{body}')
     return withheld
 
 
-def _settings_write(target: Path, body: str,
+def _settings_write(root: Path, target: Path, body: str,
                     write: bool) -> tuple[str, bool, bool]:
     """(the report line, was a write withheld, is there still a paste to do).
 
@@ -351,7 +377,7 @@ def _settings_write(target: Path, body: str,
         return SETTINGS_DEFECT.format(
             rel=AGENT_SETTINGS,
             defect=f'could not be written ({result.error})'), True, True
-    return SETTINGS_WROTE.format(rel=AGENT_SETTINGS), False, False
+    return SETTINGS_WROTE.format(rel=AGENT_SETTINGS, root=root), False, False
 
 
 HEADER_ONLY_NOTE = '   (project-config header only)'
@@ -867,6 +893,6 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # reaches --write-settings, and the wiring is the step no gate observes.
     settings_withheld = False
     if next_step and command in SETTINGS_COMMANDS:
-        settings_withheld = _settings_step(root, write_settings)
+        settings_withheld = settings_step(root, write_settings)
     # A withheld replacement is non-zero even when additions landed.
     return 1 if collisions or settings_withheld else 0

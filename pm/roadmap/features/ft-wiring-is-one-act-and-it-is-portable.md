@@ -75,3 +75,8 @@ false.
 
 Choosing the consumer's session root. Rule 8 — this package knows nothing about its consumers. This
 makes the wiring work from wherever they stand; where they stand is theirs.
+
+`pm ledger record --grain --tokens-total`, named in the criterion above and duplicated verbatim
+in the sibling feature, so neither declared an owner and it shipped under neither. It lives in
+`pm/ledger.py` + `pm/cli.py`, which is neither feature's surface — deferred by name to
+`bg-a-hand-recorded-dispatch-cannot-carry-a-total`.

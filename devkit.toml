@@ -250,3 +250,12 @@ milestone = "make milestone"
 # `prove-artifact` ships with NO default, because the proof names a git URL and
 # a URL is a project's fact, not this package's (rule 8). Ours:
 prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
+
+[emit]
+# This package's thesis for 0.5.0 is "a move is an event" — and it shipped the
+# seam declaring no sink, so its own ledger held zero `rung.enter` rows while
+# the milestone that built them was in flight. Self-hosting, found by the
+# entry-edge review (m5). `ledger` routes each row to the milestone that owns
+# its grain, exactly as every other row kind does; no path, no stdout, nothing
+# for a consumer to parse differently.
+sink = "ledger"

@@ -1,10 +1,10 @@
 """emit.py — one event, WRITTEN to a declared sink; nothing here is ever run.
 
-0.5.0/D1 carries the argument; `[emit]` declares `sink` and `kinds`, and a
-courier the consumer arms carries the rows on. Nothing here spawns, imports a
-module named in config or resolves a config string to a callable — held shut by
-AST in `tests/test_boundaries.py`. An unreachable sink is a FINDING (rule 11),
-never a crash and never silence, and never load-bearing for a verdict."""
+0.5.0/D1. Declaring `[emit]` turns emission ON; a tree with no section emits
+nothing, and a courier the consumer arms carries the rows onward. Nothing here
+spawns, imports a module named in config or resolves a string to a callable —
+held shut by AST in `tests/test_boundaries.py` — and an unreachable sink is a
+FINDING (rule 11), never a crash, never silence, never a verdict."""
 from __future__ import annotations
 
 import sys
@@ -29,6 +29,10 @@ TAPS = ('enter', 'verdict', 'leave')
 TAP_ENTER, TAP_VERDICT, TAP_LEAVE = TAPS
 
 FINDING_PREFIX = f'[{SECTION}]'
+
+# What a SINK may go wrong with, all of it a finding: the filesystem (routing
+# walk, append) and `dumps` refusing a row. A malformed `[emit]` is exit 2 (9).
+SINK_ERRORS = (OSError, TypeError, ValueError)
 
 
 class Settings(NamedTuple):
@@ -59,42 +63,36 @@ def settings() -> Settings:
 
 
 def emit(cfg, tap: str, row: dict) -> str:
-    """Write ONE event to the declared sink; '' when there is nothing to report,
-    else the finding, already said on stderr. `cfg` is the loaded
-    `model.PmConfig`, `tap` is one of `TAPS`, and `row` is a whole row from the
-    minters whose `grain` ROUTES it (0.4.0/D1). Nothing about a sink raises, and
-    an undeclared tap writes and says nothing."""
+    """Write ONE event to the declared sink; '' when there is nothing to
+    report, else the finding, already said on stderr. `row` is a whole row from
+    the minters, whose `grain` ROUTES it (0.4.0/D1). A tree that declared no
+    `[emit]` is silent HERE rather than at each caller — a guarantee every tap
+    has to remember is one a tap forgets — and nothing a sink does raises."""
     if tap not in TAPS:
         raise ValueError(f'refusing to emit an event for {tap!r}: the taps '
                          f'are {", ".join(TAPS)}')
+    if not declared():
+        return ''
     conf = settings()
     if tap not in conf.kinds:
         return ''
-    if conf.sink == SINK_STDOUT:
-        return _to_stdout(tap, row)
-    grain = _grain_of(row)
-    target = _sink_file(cfg, conf.sink, grain)
-    if target is None:
-        return _finding(f'no milestone owns {grain}, so the {SINK_LEDGER} '
-                        f'sink has nowhere to file its {tap} event; the '
-                        f'command itself is unaffected')
+    where = repr(conf.sink)
     try:
+        if conf.sink == SINK_STDOUT:
+            print(ledger.dumps(row), flush=True)
+            return ''
+        grain = _grain_of(row)
+        target = _sink_file(cfg, conf.sink, grain)
+        if target is None:
+            return _finding(f'no milestone owns {grain}, so the {SINK_LEDGER} '
+                            f'sink has nowhere to file its {tap} event; the '
+                            f'command itself is unaffected')
+        where = f'{conf.sink!r} ({cfg.rel(target)})'
         ledger.append_to(target, row)
-    except OSError as err:
-        return _finding(f'the {SINK_KEY} {conf.sink!r} ({cfg.rel(target)}) '
-                        f'could not be written ({err}); the {tap} event was '
+    except SINK_ERRORS as err:
+        return _finding(f'the {SINK_KEY} {where} could not be written '
+                        f'({type(err).__name__}: {err}); the {tap} event was '
                         f'NOT recorded and the command itself is unaffected')
-    return ''
-
-
-def _to_stdout(tap: str, row: dict) -> str:
-    """One row, one line, beside the prose and never inside it."""
-    try:
-        print(ledger.dumps(row), flush=True)
-    except (OSError, ValueError) as err:
-        return _finding(f'the {SINK_KEY} {SINK_STDOUT!r} (stdout) could not '
-                        f'be written ({err}); the {tap} event was NOT '
-                        f'recorded and the command itself is unaffected')
     return ''
 
 
@@ -109,8 +107,7 @@ def _sink_file(cfg, sink: str, grain: str) -> Path | None:
 
 
 def _grain_of(row: dict) -> str:
-    """The grain this row names, or '' — typed, since `merge=union` brings
-    rows from other branches and versions."""
+    """The grain this row names, or '' — a merged row may hold any type."""
     grain = row.get('grain')
     return grain if isinstance(grain, str) else ''
 

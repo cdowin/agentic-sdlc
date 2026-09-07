@@ -1,4 +1,5 @@
-"""test_conveyor_deviation.py — the row a FORCED write leaves (D12).
+"""test_conveyor_deviation.py — the rows a write leaves: FORCED (D12) and
+DISPOSITIONED (D13).
 
 Story 04's proof table, criterion 3: `--force` writes and the ledger row names
 the checks that were false. Two rows at most per run — the `status` row the
@@ -6,6 +7,13 @@ write makes (minted by `pm`, not here) and one `deviation` row with
 `outcome: forced` whose `step` lists every false check and whose `reason`
 carries each one's own sentence. Without `--force` a false check writes NO
 row: a row for a refused write is rule 4's cardinal sin with a timestamp.
+
+The `disposition` row a `--skip <check> "<why>"` mints is a SIBLING of that
+row kind and lands on the same harness, which is why the D13 cases are here
+rather than in a family of their own (rule 10, "prove it once"). The two must
+not bleed: a skip counted as a false check would brand a judgement a breach,
+which is the failure D13 exists to end, and a forced check swallowed into a
+disposition would be the reverse.
 
 A stub registry keeps the checks scripted; the WRITE is the real one, through
 `pm milestone <state> <id>`, on a scratch tree that declares its flow.
@@ -21,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
-from support.pm import FLOW_TOML  # noqa: E402
+from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
@@ -38,18 +46,39 @@ TRUE = driver.Check('always-true', lambda c: driver.Answer.yes('yes'))
 FALSE = driver.Check('always-false', lambda c: driver.Answer.no('no'))
 CANNOT = driver.Check('cannot-say',
                       lambda c: driver.Answer.unverifiable('nobody looked'))
-STUB = {c.name: c for c in (TRUE, FALSE, CANNOT)}
+
+# The check a skip is FOR: an expensive question, recorded as ASKED whenever it
+# runs. A skip that still ran it would be a `skipped:` line over a review that
+# happened anyway — the flag's whole economy is that the question goes unasked.
+ASKED: list[str] = []
+
+
+def _spy(name: str) -> driver.Check:
+    def check(ctx):
+        ASKED.append(name)
+        return driver.Answer.yes('asked')
+
+    return driver.Check(name, check)
+
+
+EXPENSIVE = _spy('review-recorded')
+STUB = {c.name: c for c in (TRUE, FALSE, CANNOT, EXPENSIVE)}
+
+# The DECLARATION, which is the whole of what makes a check skippable. Stock
+# carries no such key, so a tree built with `tree()` alone is today's belt.
+SKIPPABLE = f'[release]\nskippable = ["{EXPENSIVE.name}"]\n'
+WHY = 'one-line fix, read inline'
 
 
 @contextlib.contextmanager
-def tree():
+def tree(config: str = ''):
     """A one-milestone scratch repo, entered, DECLARING its flow — `[pm.states.*]`
-    has no runtime fallback (tests/support/pm.py `FLOW_TOML`)."""
+    has no runtime fallback (tests/support/pm.py `with_flow`)."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         (root / MDIR).mkdir(parents=True)
         (root / MFILE).write_text(MILESTONE, encoding='utf-8')
-        (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')
+        (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
         (root / '.git').mkdir(exist_ok=True)  # a MARKER: `repo_root` walks for it
         previous = Path.cwd()
         os.chdir(root)
@@ -175,3 +204,103 @@ def test_a_ledger_that_is_a_directory_warns_and_the_forced_write_still_lands():
         assert code == 0, out
         assert status(root) == driver.done_state(model.load(), 'milestone')
         assert 'WARNING' in out and 'deviation row' in out, out
+
+
+# --- D13: the third answer — a check the caller DISPOSITIONED ------------------
+def test_a_declared_skip_is_never_asked_writes_the_status_and_mints_one_row():
+    """The ship criterion, end to end. Bites the three ways this can go wrong
+    at once: the expensive check running anyway (the skip saved nothing), the
+    close being refused over a question the caller already answered (the
+    batching this feature exists to end), and the judgement leaving no record
+    (a skip nobody can sweep at the milestone is a skip that never happened).
+    """
+    ASKED.clear()
+    with tree(config=SKIPPABLE) as root:
+        want = driver.done_state(model.load(), 'milestone')
+        code, out = run(driver.SKIP_FLAG, EXPENSIVE.name, WHY,
+                        steps=(TRUE.name, EXPENSIVE.name))
+        assert code == 0, out
+        assert ASKED == [], f'the skipped check was asked anyway: {ASKED}'
+        assert status(root) == want
+        written = rows(root)
+        assert [r['kind'] for r in written] == [
+            ledger.KIND_STATUS, driver.KIND_DISPOSITION], written
+        row = written[1]
+        assert row['check'] == EXPENSIVE.name and row['why'] == WHY
+        assert row['grain'] == VERSION and row['operation'] == 'release'
+        assert set(row) == set(driver.DISPOSITION_KEYS), 'the row keys moved'
+        # `ts`, not `at`: every reader in this package sorts on `ts`, and a
+        # disposition spelled otherwise files at the beginning of time.
+        assert ledger.parse_ts(row['ts']) is not None, row
+    assert f'[release] skipped: {EXPENSIVE.name} — "{WHY}"' in out, out
+    assert f'[release] ok — {VERSION} → {want}' in out, out
+
+
+def test_a_skip_with_no_reason_or_no_reason_in_it_is_refused_and_writes_nothing():
+    """**An unexplained skip IS a deviation, and `--force` is already its
+    verb.** Bites: `--skip review-recorded` accepted bare, which would make the
+    flag a second `--force` that leaves a friendlier-looking row — the tool
+    lying about what happened, in the one field the record exists for.
+    """
+    for argv, expected in (
+            ((driver.SKIP_FLAG, EXPENSIVE.name), 'a check and a reason'),
+            ((driver.SKIP_FLAG, EXPENSIVE.name, '   '), 'is not a reason'),
+            ((driver.SKIP_FLAG, EXPENSIVE.name, '...'), 'no letter or digit'),
+    ):
+        ASKED.clear()
+        with tree(config=SKIPPABLE) as root:
+            code, out = run(*argv, steps=(TRUE.name, EXPENSIVE.name))
+            assert code == 2, (argv, out)
+            assert expected in out, (argv, out)
+            assert status(root) == 'building', argv
+            assert rows(root) == [], argv
+            assert ASKED == [], argv
+
+
+def test_a_skip_the_project_did_not_declare_is_refused_by_name():
+    """Rule 9, both halves. Stock declares NOTHING skippable, so stock
+    behaviour is unchanged — that is what keeps this feature inside the rule.
+    Bites: the tool deciding for itself that a review is the skippable one.
+    """
+    ASKED.clear()
+    with tree() as root:  # no `[release] skippable` at all — the stock tree
+        code, out = run(driver.SKIP_FLAG, EXPENSIVE.name, WHY,
+                        steps=(TRUE.name, EXPENSIVE.name))
+        assert code == 2, out
+        assert repr(EXPENSIVE.name) in out, out
+        assert 'declared no check skippable' in out, out
+        assert ASKED == [] and rows(root) == [] and status(root) == 'building'
+    with tree(config=SKIPPABLE) as root:  # declared — for a DIFFERENT check
+        code, out = run(driver.SKIP_FLAG, TRUE.name, WHY,
+                        steps=(TRUE.name, EXPENSIVE.name))
+        assert code == 2, out
+        assert repr(TRUE.name) in out and repr(EXPENSIVE.name) in out, out
+        assert rows(root) == [] and status(root) == 'building'
+
+
+def test_a_skip_and_a_force_in_one_run_leave_two_rows_that_do_not_bleed():
+    """`--force` is UNCHANGED and keeps its meaning. Bites: the skipped check
+    counted among the false ones — a judgement filed as a breach, which is the
+    exact reading that made an operator open another grain instead of closing
+    this one — or the false check absorbed into a disposition, which is that
+    lie the other way round.
+    """
+    ASKED.clear()
+    with tree(config=SKIPPABLE) as root:
+        want = driver.done_state(model.load(), 'milestone')
+        code, out = run('--force', driver.SKIP_FLAG, EXPENSIVE.name, WHY,
+                        steps=(TRUE.name, EXPENSIVE.name, FALSE.name))
+        assert code == 0, out
+        assert status(root) == want
+        written = rows(root)
+        assert [r['kind'] for r in written] == [
+            ledger.KIND_STATUS, ledger.KIND_DEVIATION,
+            driver.KIND_DISPOSITION], written
+        deviation, disposition = written[1], written[2]
+        assert deviation['step'] == FALSE.name, 'the skip landed in the row'
+        assert deviation['outcome'] == driver.FORCED
+        assert EXPENSIVE.name not in deviation['reason'], deviation
+        assert disposition['check'] == EXPENSIVE.name
+    assert f'[release] forced — {VERSION} → {want} over 1 false check(s)' \
+        in out, out
+    assert f'[release] skipped: {EXPENSIVE.name} — "{WHY}"' in out, out

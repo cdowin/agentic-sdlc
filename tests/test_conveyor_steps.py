@@ -26,6 +26,7 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.repo import emit  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
@@ -208,10 +209,15 @@ def test_a_recorded_lesson_changes_no_verdict_no_exit_code_and_no_write():
     because committing the row only made room for the next one. Two trees built
     identically, one carrying a lesson against the milestone, both committed
     clean before the belt runs.
+
+    `[emit]` is DECLARED here because declaring it is what turns emission on
+    (0.5.0/D1): without the section nothing is written to the ledger, the
+    surfacer's write never happens, and this case would pass while probing
+    nothing — which is why the emission count is asserted before the verdicts.
     """
     runs = []
     for recorded in (False, True):
-        with tree() as root:
+        with tree(config=f'[{emit.SECTION}]\n') as root:
             mledger = ledger.ledger_for(model.load(), VERSION)
             if recorded:
                 ledger.append_to(mledger, lesson_row(VERSION))

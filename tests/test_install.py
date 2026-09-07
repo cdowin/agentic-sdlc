@@ -34,6 +34,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import sys
 import tempfile
 import re
@@ -48,15 +49,21 @@ from support import consumers
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
+from agentic_sdlc.repo.checks import pm as pm_check  # noqa: E402
 
 
 @contextlib.contextmanager
-def repo(files: dict[str, str] | None = None):
+def repo(files: dict[str, str] | None = None, name: str = 'repo'):
     """An empty repo, cwd'd into. `.git` is a MARKER directory: `repo_root`
     walks up for it and never asks git, so `git init` here was a process
-    per case that bought nothing (tests/support/pm.py `_mark`)."""
+    per case that bought nothing (tests/support/pm.py `_mark`).
+
+    `name` is the directory the checkout sits in, because a path this package
+    interpolates into a shell command is only as safe as the worst checkout
+    path — see `SPACED_ROOT`.
+    """
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / 'repo'
+        root = Path(tmp) / name
         root.mkdir()
         for rel, body in (files or {}).items():
             target = root / rel
@@ -783,6 +790,81 @@ def test_this_repo_carries_the_roles_it_runs_byte_current():
         assert rel in present, f'{rel} is not present in this repo'
 
 
+def _registered_wiring(root: Path) -> tuple[set, list[str]]:
+    """((event, matcher, script rel, async) …, the COMMITTED commands).
+
+    Both settings files, because the block `install-hooks` emits carries
+    ABSOLUTE paths and a public repo must not commit a machine path — so the
+    honest home for it is `.claude/settings.local.json`, which the harness
+    writes itself and this repo gitignores. Reading only the committed file
+    would call a correctly-wired checkout unwired.
+    """
+    wiring, committed = set(), []
+    for rel in (install.AGENT_SETTINGS, SETTINGS_LOCAL):
+        path = root / rel
+        if not path.is_file():
+            continue
+        block = json.loads(path.read_text(encoding='utf-8'))
+        for event, groups in (block.get('hooks') or {}).items():
+            for group in groups:
+                for entry in group.get('hooks', []):
+                    command = entry.get('command', '')
+                    parts = shlex.split(command)
+                    if len(parts) != 2 or parts[0] != 'bash':
+                        continue
+                    if rel == install.AGENT_SETTINGS:
+                        committed.append(command)
+                    script = parts[1]
+                    for _name, target in install.PLANS['install-hooks']:
+                        if script == target or script.endswith(f'/{target}'):
+                            wiring.add((event, group.get('matcher'), target,
+                                        bool(entry.get('async'))))
+    return wiring, committed
+
+
+def test_this_repo_registers_the_wiring_install_hooks_emits():
+    """The self-hosting gate CLAUDE.md makes of `.claude/settings.json`.
+
+    **This is the tree whose nine dispatches recorded zero rows** (issue #13),
+    and nothing graded its wiring: the `install-ci` and `install-agents`
+    self-hosting cases have no `install-hooks` twin, and `--diff` writes and
+    compares nothing here (`--write-settings writes nothing under --diff`). A
+    hook this verb starts emitting and this repo never registers is a guard on
+    disk that never fires, discovered by nobody.
+
+    Asked of the wiring, not of the bytes: the paths this verb emits are
+    ABSOLUTE and machine-specific, so byte-parity with what a run prints is
+    the one thing this repo must NOT have.
+    """
+    wiring, _committed = _registered_wiring(REPO_ROOT)
+    missing = sorted(set(install._WIRING) - wiring)
+    assert not missing, (
+        f'this repo registers no hook for {missing} — `agentic-sdlc '
+        f'install-hooks {install.SETTINGS_FLAG}` writes '
+        f'{install.AGENT_SETTINGS} when nothing is in the way, and prints the '
+        f'block when something is; paste it into {SETTINGS_LOCAL}')
+
+
+def test_this_repo_commits_no_machine_path_in_its_hook_wiring():
+    """The other half, and the reason the first is asked of both files.
+
+    `install-hooks` emits `bash /Users/<someone>/<their tree>/tools/hooks/…`.
+    That is correct for the operator who ran it and wrong for everyone who
+    clones this public repo — a committed absolute path names one machine's
+    filesystem, and rule 8's spirit is that a shipped file knows nothing about
+    who is reading it. The absolute block belongs in the gitignored per-user
+    override, with `GDK_LEDGER_ROOT` exported by any session rooted elsewhere;
+    what stays committed resolves for a session rooted here.
+    """
+    _wiring, committed = _registered_wiring(REPO_ROOT)
+    absolute = [command for command in committed
+                if Path(shlex.split(command)[1]).is_absolute()]
+    assert not absolute, (
+        f'{install.AGENT_SETTINGS} is committed and carries a machine path: '
+        f'{absolute}. Move the absolute block to {SETTINGS_LOCAL} (gitignored) '
+        f'and export GDK_LEDGER_ROOT for a session rooted outside this tree')
+
+
 def test_every_installable_on_disk_is_reachable_through_a_verb():
     """A payload no verb names is a file that ships in the wheel, drifts, and
     is discovered by nobody. Asked of the directory, not of a second list.
@@ -922,6 +1004,30 @@ def _commands(block: dict) -> list[str]:
             for group in event for entry in group['hooks']]
 
 
+# A checkout path with a space in it: `~/my repo`, `~/Google Drive/…`, and
+# every macOS home under `Application Support`. The relative form the block
+# used to carry had no space to break on, so absolutising the path INTRODUCED
+# the class — and the run still exits 0 and reports a write.
+SPACED_ROOT = 'my repo'
+# The harness's own per-user override: it writes this file itself, and a
+# repo gitignores it. An ABSOLUTE block cannot be committed to a public
+# tree, so this is where a self-hosting checkout puts the one it was
+# printed. Spelled off `checks.pm`, never a second copy of the name.
+SETTINGS_LOCAL = pm_check.AGENT_SETTINGS_LOCAL
+
+
+def _script_of(command: str) -> str:
+    """The script a SHELL would run, not the text after the first space.
+
+    `command.split(' ', 1)[1]` under a spaced root yields the whole remainder,
+    which is still absolute and still an existing file — so the assertion the
+    guard makes stays true on a command `sh -c` cannot run.
+    """
+    parts = shlex.split(command)
+    assert parts[0] == 'bash' and len(parts) == 2, command
+    return parts[1]
+
+
 def test_every_emitted_command_is_an_absolute_path_to_an_installed_file():
     """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing from a session
     rooted at a parent directory, and says nothing when it does not."""
@@ -931,12 +1037,57 @@ def test_every_emitted_command_is_an_absolute_path_to_an_installed_file():
         commands = _commands(_block(out))
         assert commands, out
         for command in commands:
-            script = Path(command.split(' ', 1)[1])
+            script = Path(_script_of(command))
             assert script.is_absolute(), f'{command} is relative\n{out}'
             assert script.is_file(), f'{command} names no installed file'
             # `.resolve()`: the emitted path is the one `repo_root()` found,
             # symlinks and all, which is the canonical spelling of the tree.
             assert script.is_relative_to(root.resolve()), command
+
+
+def test_a_checkout_path_with_a_space_emits_a_command_a_shell_can_run():
+    """The emitted command is handed to a shell, so it is QUOTED.
+
+    Probed end to end before the fix: under `.../my repo`, `--write-settings`
+    exited 0, wrote the file and reported it, and every one of the five
+    commands ran as `bash /private/.../my` — five hooks, none of them firing,
+    nothing red anywhere. This asserts what a shell would do with the string
+    rather than what a `split(' ', 1)` sees.
+    """
+    with repo(name=SPACED_ROOT) as root:
+        assert ' ' in str(root), root
+        code, out = run('install-hooks', install.SETTINGS_FLAG)
+        assert code == 0, out
+        written = json.loads(
+            (root / install.AGENT_SETTINGS).read_text(encoding='utf-8'))
+        for command in _commands(written):
+            script = Path(_script_of(command))
+            assert script.is_file(), f'{command} names no installed file'
+            assert script.is_relative_to(root.resolve()), command
+        # The block a `sh -c` would run, split by the shell's own rules: one
+        # word for `bash`, one for the path, whatever the path holds.
+        assert all(len(shlex.split(command)) == 2
+                   for command in _commands(written)), written
+
+
+def test_the_write_reports_what_it_did_and_not_what_it_cannot_observe():
+    """Rule 4 at the one surface this milestone exists to make honest.
+
+    `these hooks are in force now` asserts an outcome this package cannot see:
+    whether a harness LOADS this file depends on the session's project root,
+    which is issue #13's whole story and is spelled in this same run's own
+    block. The write is a fact; being in force is an inference — and the
+    concrete `GDK_LEDGER_ROOT` export, which lives only in the pasteable block
+    that a successful write does NOT print, rides on this line instead.
+    """
+    with repo() as root:
+        code, out = run('install-hooks', install.SETTINGS_FLAG)
+        assert code == 0, out
+        wrote = [line for line in headers(out)
+                 if install.AGENT_SETTINGS in line and 'wrote' in line]
+        assert len(wrote) == 1, out
+        assert 'in force now' not in out, out
+        assert f'GDK_LEDGER_ROOT={root.resolve()}' in wrote[0], wrote
 
 
 def test_the_run_names_the_file_the_wiring_belongs_in_and_offers_to_write_it():
@@ -947,6 +1098,10 @@ def test_the_run_names_the_file_the_wiring_belongs_in_and_offers_to_write_it():
         assert code == 0, out
         assert str(root / install.AGENT_SETTINGS) in out, out
         assert install.SETTINGS_FLAG in out, out
+        # The per-user override, named through the READER's constant: the verb
+        # that prints it and the rules that read it back must not drift into
+        # two spellings of one file name.
+        assert SETTINGS_LOCAL in out, out
         assert not (root / install.AGENT_SETTINGS).exists(), (
             'the default run wrote a harness config nobody asked it to')
 

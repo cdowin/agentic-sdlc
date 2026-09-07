@@ -63,3 +63,8 @@ hand-written dispatch row in this milestone carries no token data for exactly th
 Making the harness load the settings file, and choosing where a consumer roots a session. Rule 8 —
 this package knows nothing about its consumers. Making the wiring work from any scope is
 `ft-wiring-is-one-act-and-it-is-portable`; this feature makes the silence VISIBLE.
+
+`pm ledger record --grain --tokens-total`, named in the criterion above and duplicated verbatim
+in the sibling feature, so neither declared an owner and it shipped under neither. It lives in
+`pm/ledger.py` + `pm/cli.py`, which is neither feature's surface — deferred by name to
+`bg-a-hand-recorded-dispatch-cannot-carry-a-total`.

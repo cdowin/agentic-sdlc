@@ -3,10 +3,10 @@
 A check is a question about the tree with a one-line answer; nothing here
 performs anything (D12), and no check re-implements a predicate that has a
 verb — `pm ready-for` and `verify` are called, never copied. Config lives in
-`[<op>] steps`, `[<op>.commands]`, `[<op>] command_timeout`, `[release]
-changelog` / `version_files`, `[adopt] pin_file` / `runner_targets` / `ours`
-(README); a repo with no `devkit.toml` runs the shipped defaults
-byte-identically.
+`[<op>] steps`, `[<op>] skippable`, `[<op>.commands]`, `[<op>]
+command_timeout`, `[release] changelog` / `version_files`, `[adopt] pin_file` /
+`runner_targets` / `ours` (README); a repo with no `devkit.toml` runs the
+shipped defaults byte-identically.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from pathlib import Path
 from agentic_sdlc import __version__
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
-                                      relpath_tuple)
+                                      relpath_tuple, str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import Answer, Check, Context, grain_path
 from agentic_sdlc.repo.pm import model, verdict
@@ -76,6 +76,14 @@ DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
     'feature': DEFAULT_FEATURE_STEPS,
 }
 
+# WHICH CHECKS ARE DISPOSITIONABLE IS A DECLARATION, and the stock declaration
+# is nothing (D13). `--skip <check> "<why>"` is refused BY NAME for any check
+# not named in `[<op>] skippable`, so a project that declares nothing gets
+# today's belt, byte for byte — which is what keeps this key inside rule 9. A
+# project that lists `tree-clean` is making a mistake the tool will let it make,
+# because "the tool reads what the project declared" has no other meaning.
+DEFAULT_SKIPPABLE: tuple[str, ...] = ()
+
 # The one shipped default: the target `install-gates` writes.
 DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 
@@ -92,9 +100,28 @@ COMMANDABLE = frozenset((
 #
 # Why the story belt contributes exactly one: `story-verified` runs a command
 # over the edit, and `ready-for` boots nothing (hard rule 2); `evidence-written`
-# is the author's `done:` line and `committed` is the act of committing the
-# work — neither can be true before the story is built, and asking `committed`
-# would shell out to git in the verb an agent runs dozens of times a milestone.
+# is the author's `done:` line, which cannot be true before the story is built.
+#
+# `committed` is the one whose exclusion is a RULING rather than a fact, and one
+# word here reverses it, so the argument lives in full. It is NOT that reading
+# git is forbidden — hard rule 2 says every verb reads git, markdown and shell
+# as text, and `check_committed` below does exactly that, as does `tree-clean`.
+# Two legs:
+#
+#   (i)  as an entry condition it asks a DIFFERENT QUESTION from the one it asks
+#        at the close. At the close: "this story's work is committed." Up front
+#        it could only mean "start from a clean tree" — one check meaning two
+#        things at two edges is the tool deciding what a check MEANS, which is
+#        rule 9's edge, and the two would drift the first time either moved.
+#   (ii) `SDLC.md` states this project's own execution model: N builders share
+#        one worktree and builders never commit. During any real inner-loop
+#        invocation `git status --porcelain` is dirty with other builders'
+#        in-flight edits, so `ready-for story` would answer NOT READY on nearly
+#        every real call. A rung that cries wolf is one an agent learns to
+#        ignore, and the ignoring generalises to the rungs that do work.
+#
+# The git call is a COST, not a rule — it is a subprocess in the verb an agent
+# runs dozens of times a milestone — and it is not what decides this.
 #
 # `stories-done`, `features-done` and `findings-resolved` are absent because
 # each IS a rung — `SHIPPED_ACTION` declares `pm ready-for feature|milestone|
@@ -380,6 +407,47 @@ def steps_for(operation: str, registry: dict | None = None) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def skippable_for(operation: str, names: tuple[str, ...] | None = None,
+                  registry: dict | None = None) -> tuple[str, ...]:
+    """The checks this project will answer ITSELF — `[<operation>] skippable`,
+    stock empty (`DEFAULT_SKIPPABLE`).
+
+    Read through `str_tuple`, the same door every other list key uses, so a
+    bare string is refused rather than iterated into four one-letter check
+    names. An entry that is not a check of this belt, or is a check this
+    belt's `steps` does not run, is exit 2 by name: a declaration this machine
+    cannot act on is a reading failure (rule 9), and the alternative is
+    `--skip review-recrded` refused for a reason the caller cannot see.
+
+    What a listed check MEANS is the project's business and nothing here
+    grades it. `tree-clean` is a fact about the world rather than a judgement,
+    and a project that lists it gets exactly what it declared.
+    """
+    known = registry_for(operation) if registry is None else registry
+    listed = steps_for(operation, known) if names is None else names
+    declared = str_tuple(_section(operation), operation, 'skippable',
+                         DEFAULT_SKIPPABLE)
+    out: list[str] = []
+    for index, value in enumerate(declared, start=1):
+        defect = name_defect(value, f'[{operation}] skippable #{index}')
+        if defect:
+            raise ConfigError(defect)
+        if value not in known:
+            raise ConfigError(
+                f'[{operation}] skippable names {value!r}, which no check is '
+                f'registered for — the known checks are: '
+                f'{", ".join(sorted(known))}')
+        if value not in listed:
+            raise ConfigError(
+                f'[{operation}] skippable names {value!r}, which is not in '
+                f'[{operation}] steps, so it never runs — declaring a check '
+                f'skippable when nothing asks it is a belief about this belt '
+                f'that is not true')
+        if value not in out:
+            out.append(value)
+    return tuple(out)
+
+
 def commands_for(operation: str, names: tuple[str, ...] | None = None,
                  registry: dict | None = None) -> dict[str, str]:
     """`[<operation>.commands]` merged over the shipped defaults; a command
@@ -446,6 +514,7 @@ def validate_config(operation: str, names: tuple[str, ...],
     """Read every `[<operation>]` key this module will need, so a typo is
     exit 2 before the first check runs."""
     commands_for(operation, names, registry)
+    skippable_for(operation, names, registry)
     _timeout(operation)
     if 'changelog-unreleased-nonempty' in names:
         _changelog_of(operation)
@@ -1076,8 +1145,8 @@ def check_telemetry_live(ctx: Context) -> Answer:
     with its own stub `pm:` target and exits 0 from an empty directory.
 
     Three ways a bumping consumer records nothing, each silent, each named:
-    the settings entries were never pasted (`install-hooks` PRINTS that block
-    and never writes the file, which is the consumer's); the `pm` target is not
+    the wiring was never registered with the harness (`install-hooks` prints
+    the block and `--write-settings` lands it); the `pm` target is not
     `.PHONY`, and a PM tree IS a `pm/` directory, so make treats it as up to
     date; or `[pm.states.<kind>]` is undeclared, which makes every work-moving
     verb refuse by name.
@@ -1098,6 +1167,10 @@ def check_telemetry_live(ctx: Context) -> Answer:
     never be is SILENTLY opted out — so a tree that has recorded nothing is
     reported in the line rather than in the verdict, and `check pm` U4 says the
     same thing on every run.
+
+    The wiring answer is `check pm`'s reader, not a second one, and the LEDGER
+    outranks it: a tree whose couriers are registered in a settings file above
+    this checkout is recording, and reading only the config called it dead.
     """
     command = _configured(ctx, 'telemetry-live')
     if command:
@@ -1111,11 +1184,19 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'records cannot be probed — `install-hooks` writes the corpus, or '
             f'drop `telemetry-live` from [adopt] steps if this tree does not '
             f'record')
-    # BOTH couriers: `install-hooks` prints two entries, and half-wired
-    # settings read as wired against a one-name search.
-    settings = ctx.root / pm_model.AGENT_SETTINGS
-    text = _read_text(settings) if settings.is_file() else ''
-    unwired = [name for name in pm_model.LEDGER_COURIERS if name not in text]
+    # BOTH couriers, and `check pm`'s reader rather than a second one: it
+    # parses the `hooks` block of the committed settings file AND the per-user
+    # override beside it, so an allowlist mention is not wiring and a
+    # gitignored registration is not invisible.
+    from agentic_sdlc.repo import install
+    from agentic_sdlc.repo.checks import pm as pm_check
+    registered = pm_check.wired_couriers(ctx.root)
+    if registered.unread:
+        return Answer.unverifiable(
+            f'{registered.unread}, so whether this tree\'s couriers are '
+            f'registered cannot be read — not a finding, and not a pass either')
+    unwired = [name for name in pm_model.LEDGER_COURIERS
+               if name not in registered.couriers]
     # The vehicle, in THIS tree: `vocabulary` is a read that needs make to
     # reach the CLI *and* the CLI to have a flow to answer with, which is
     # modes 2 and 3 in one call.
@@ -1131,18 +1212,33 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'(a PM tree IS a `pm/` directory, so make exits 0 without running '
             f'the recipe) and an undeclared [pm.states.*], which makes every '
             f'verb refuse by name: {_clip(out)}')
-    if unwired:
+    recorded = _recorded_phrase(ctx)
+    # The third answer. `recording_phrase` has always had it; branching on two
+    # of them dropped it through to `yes`, so this said "telemetry is live"
+    # over a ledger it could not read while `check pm` U4 called the same tree
+    # UNVERIFIABLE — one fact, two verdicts, which is rule 4's first sin.
+    if recorded.startswith(pm_check.UNVERIFIABLE):
+        return Answer.unverifiable(
+            f'the couriers are on disk and the vehicle answers, but the last '
+            f'hook-written row cannot be read: {recorded}. Not a finding, and '
+            f'not a pass either — `check pm` U4 says the same')
+    if unwired and recorded == pm_check.NEVER:
         return Answer.no(
             f'no ledger setup for this tree, no telemetry — the vehicle '
-            f'answers and {pm_model.AGENT_SETTINGS} does not fire '
-            f'{", ".join(unwired)}. `install-hooks` PRINTS the entries and '
-            f'never writes that file, because it is yours and has no merge; '
-            f'paste them and this goes green. Nothing here is mandatory — a '
-            f'tree that has opted out is not broken, only quiet')
-    recorded = _recorded_phrase(ctx)
-    wiring = (f'both couriers are wired in {pm_model.AGENT_SETTINGS} and '
-              f'`make -s pm` reaches the verb in this tree')
-    from agentic_sdlc.repo.checks import pm as pm_check
+            f'answers, nothing in this checkout registers '
+            f'{", ".join(unwired)}, and no courier row has ever landed. '
+            f'`install-hooks {install.SETTINGS_FLAG}` writes '
+            f'{pm_model.AGENT_SETTINGS} when nothing is in the way, and prints '
+            f'the block for whatever settings file your harness actually reads '
+            f'when something is; a session rooted outside this tree also needs '
+            f'`GDK_LEDGER_ROOT={ctx.root}`. Nothing here is mandatory — a tree '
+            f'that has opted out is not broken, only quiet')
+    where = (f'both couriers are registered in {registered.where}'
+             if not unwired else
+             'nothing in this checkout registers the couriers, so the settings '
+             'file the harness loaded is above it — the LEDGER is what proves '
+             'the path, and it did')
+    wiring = f'{where} and `make -s pm` reaches the verb in this tree'
     if recorded == pm_check.NEVER:
         # TRUE, and honest: the wiring is right and nothing has come through.
         # Telemetry is never mandatory (0.4.0/D5), so the fact goes in the
@@ -1150,7 +1246,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
         return Answer.yes(
             f'{wiring}, and NOTHING has come through — last hook-written row: '
             f'{recorded}. Wiring is a CONFIG fact: whether a harness loads '
-            f'{pm_model.AGENT_SETTINGS} depends on the session\'s project '
+            f'{registered.where} depends on the session\'s project '
             f'root, so a session rooted above this checkout records nothing '
             f'while every wiring answer here stays green. `check pm` U4 '
             f'reports the same row on every run')
@@ -1461,11 +1557,14 @@ def registry_for(operation: str) -> dict[str, Check]:
 # runs it.
 STEP_DOC: dict[str, str] = {
     'telemetry-live':
-        'BOTH ledger couriers are wired in `.claude/settings.json` AND '
-        '`make -s pm` reaches the verb in THIS tree — a probe of your vehicle, '
-        'not a file read and not the courier\'s own hermetic self-test, which '
-        'passes from an empty directory. Never mandatory: a tree that has '
-        'opted out is quiet, not broken.',
+        'BOTH ledger couriers are registered with your harness AND `make -s '
+        'pm` reaches the verb in THIS tree — a probe of your vehicle, not a '
+        'file read and not the courier\'s own hermetic self-test, which '
+        'passes from an empty directory. The registration is read out of '
+        '`.claude/settings.json` and `.claude/settings.local.json`, and a '
+        'courier row in the ledger outranks both: it proves the path wherever '
+        'the config lives. Never mandatory: a tree that has opted out is '
+        'quiet, not broken.',
     'tree-clean':
         '`git status --porcelain` names no path outside the roadmap '
         'directory — the same reading `committed` makes on the story belt. '

@@ -146,3 +146,51 @@ machine", it makes backwards a special case that needs permission, and it puts t
 business of deciding which move is legitimate — the exact opinion rule 9 forbids. Arrival is
 strictly less machinery and strictly more honest: the tree records where things went, not where they
 were permitted to go.
+
+## D4 — 2026-09-07 — ready-for has no adopt rung; inventing an entry condition for it is the rejected alternative
+
+**`pm ready-for` takes `story | feature | milestone | tag`, and it will not take `adopt`.** An
+adopt BELT exists — `driver.OPERATIONS` names it and `close`'s registry answers for it — so the
+absence is a real gap in `ft-a-rung-has-an-entry-edge`'s ship criterion (*"answers for every rung a
+belt exists for"*) rather than an oversight, and it is recorded here because a gap nobody wrote
+down reads as a bug the next person will "fix".
+
+**The reason is the derivation, run against the adopt list.** `ready-for <rung>` does not hold a
+list of conditions: `_entry_condition` composes `[<op>] steps` with `registry_for(<op>)` and
+`steps.ENTRY_CONDITIONS`, and asks whatever survives. Run it over `DEFAULT_ADOPT_STEPS` and nothing
+survives, for one of two reasons:
+
+- `pin-bumped`, `installables-current` and `config-updated` are the work the bump DOES. They are
+  true only AFTER the belt has run, which is the same reason `evidence-written` is not a story
+  entry condition.
+- `hooks-self-test`, `telemetry-live`, `runner-targets-resolve`, `checks-pass` and `pm-validates`
+  are all in `COMMANDABLE` with a `SHIPPED_ACTION`, and an entry condition that runs a command is
+  passed over by name: `ready-for` boots nothing (hard rule 2), and a rung that shelled out would
+  stop being safe to ask dozens of times a day.
+
+So the derived entry set for `adopt` is EMPTY. `ready_for_story`'s zero-census branch would fire on
+every invocation and the verb could only ever exit 1 — *"nothing was asked"* — on every tree, for
+every consumer, forever. **A rung that can only answer NOT READY is worse than no rung**: an agent
+learns to ignore it, and the ignoring generalises to the three rungs that do work.
+
+**Rejected: writing an adopt entry condition by hand** — *"the pin is behind"*, *"the working tree
+is clean"*, *"the current version parses"*. It is one small function, it would make the criterion's
+sentence literally true, and it is the rejected alternative because of what it costs. Every other
+rung's condition is READ from the belt's own registry, which is why a project that narrows its
+`[<op>] steps` gets its own answer back; a hand-written adopt condition would be the one rung whose
+question this package DECIDED rather than read — rule 9's edge — and it would answer READY over a
+census of nothing the belt will actually ask, which is rule 4's first sin wearing a different hat.
+
+**What ships instead is the ABSENCE, said out loud** (rule 11). `pm ready-for adopt 0.5.0` used to
+answer `unknown kind 'adopt'`, which reads as a typo — the exact failure `cli.py`'s
+`RETIRED_COMMANDS` handling exists to prevent. The refusal now names `adopt` and says why it has no
+entry condition, `ft-a-rung-has-an-entry-edge`'s synopsis no longer advertises the form, and the
+feature's `## Out of scope` carries the line.
+
+**What would reopen this:** an adopt check that is decidable up front and runs nothing. `pin-bumped`
+becomes one the moment it is split into *"is the pin behind?"* (a read of two version sites, true
+before the work) and *"was the pin bumped?"* (the write). If that split ever happens for its own
+reasons, `ENTRY_CONDITIONS` gains a name and this rung starts answering — with no change to
+`ready_for.py`, which is the point of deriving it.
+
+## D5 — 2026-09-07 — A check has three answers; deleting the check is the rejected alternative

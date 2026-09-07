@@ -663,6 +663,11 @@ EMIT_IMPORTS = frozenset((
 # how an imported module becomes a callable.
 EXECUTORS = ('eval', 'exec', 'compile', '__import__', 'import_module',
              'entry_points', 'getattr', 'setattr')
+# `sys` is on the allowlist for `print(file=sys.stderr)` and nothing else, so a
+# SUBSCRIPT on it — `sys.modules['subprocess'].run(...)` — reaches an already
+# imported module with no import statement for the allowlist to see. Banned by
+# name, because "impossible to route around" has to be literal.
+MODULE_MAP_OWNER, MODULE_MAP_ATTR = 'sys', 'modules'
 # The `os.<name>` spellings that start a process WITHOUT importing `subprocess`
 # — invisible to the `shell` derivation, because none of them imports it.
 OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
@@ -672,6 +677,18 @@ OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
 # What the emit path must still BE, so this class cannot pass over a file that
 # was emptied or moved: it appends to a sink and it reads its own section.
 EMIT_MUST_CALL = ('append_to', 'config_section')
+# (source, is it a route to behaviour) — the classifier graded on what it
+# CATCHES rather than on the shipped file being empty, since three assertions
+# of emptiness pass perfectly over a guard that stopped seeing anything. The
+# last row is the legitimate `sys` use the allowlist exists to keep legal.
+EMIT_EXECUTION_SPELLINGS = (
+    ("sys.modules['subprocess'].run(cmd)", True),
+    ("importlib.import_module(sink).write(row)", True),
+    ("entry_points(group=sink)", True),
+    ("getattr(mod, sink)()", True),
+    ("os.system(cmd)", True),
+    ("print(line, file=sys.stderr)", False),
+)
 
 
 def _import_bindings(rel: str, tree: ast.Module) -> list[tuple[str, str, int]]:
@@ -898,6 +915,13 @@ def _execution_sites(rel: str, tree: ast.Module) -> list[str]:
               and isinstance(func.value, ast.Name) and func.value.id == 'os'
               and func.attr in OS_SPAWNERS):
             out.append(f'{rel}:{node.lineno}: os.{func.attr}()')
+    for node in ast.walk(tree):
+        owner = node.value if isinstance(node, ast.Subscript) else None
+        if (isinstance(owner, ast.Attribute) and owner.attr == MODULE_MAP_ATTR
+                and isinstance(owner.value, ast.Name)
+                and owner.value.id == MODULE_MAP_OWNER):
+            out.append(f'{rel}:{node.lineno}: '
+                       f'{MODULE_MAP_OWNER}.{MODULE_MAP_ATTR}[...]')
     return out
 
 
@@ -922,6 +946,14 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
             f'to run from a git hook, and hard rule 2 is gone for all of them.')
 
     def test_the_emit_path_resolves_no_string_to_a_callable(self):
+        for source, is_execution in EMIT_EXECUTION_SPELLINGS:
+            with self.subTest(source=source):
+                sites = _execution_sites(EMIT_MODULE, ast.parse(source))
+                self.assertEqual(
+                    is_execution, bool(sites),
+                    f'{source!r} classified as '
+                    f'{"harmless" if is_execution else "a route to behaviour"} '
+                    f'— the guard below is only worth what it can still see')
         offenders = _execution_sites(EMIT_MODULE, _tree(SRC / EMIT_MODULE))
         self.assertEqual(
             [], offenders,

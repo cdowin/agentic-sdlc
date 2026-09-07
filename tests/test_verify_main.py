@@ -56,6 +56,19 @@ ALL_RUNGS = ('story', 'feature', 'milestone')
 FLAGS = ('--story', '--feature', '--milestone', '--plan', '--check')
 
 
+# The sentinels are what the recipes WRITE, so they are ignored the way a real
+# tree ignores `.gate-reports/`: a rung re-reads the state after its target and
+# records nothing when the two disagree, and a gate's own leavings are not
+# drift. Every case still proves the run by the file on disk.
+SENTINELS = '*.ran\n'
+
+# A PM tree, because `verify` records where one already IS and refuses to mint
+# one (a verb that runs a make target has no business creating `pm/`). Empty:
+# git lists no empty directory, so it is not in the state either.
+ROADMAP = 'pm/roadmap'
+LEDGER = f'{ROADMAP}/ledger.jsonl'
+
+
 class Repo:
     """A scratch repo with a Makefile, a devkit.toml and a file or two.
 
@@ -75,7 +88,11 @@ class Repo:
         self.root = self.root.resolve()
         if makefile is not None:
             (self.root / 'Makefile').write_text(makefile, encoding='utf-8')
-        for rel, body in (files or {'src/a.py': 'x\n'}).items():
+        (self.root / ROADMAP).mkdir(parents=True, exist_ok=True)
+        payload = dict(files or {'src/a.py': 'x\n'})
+        payload.setdefault('.gitignore', '')
+        payload['.gitignore'] += SENTINELS
+        for rel, body in payload.items():
             target = self.root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(body, encoding='utf-8')
@@ -402,7 +419,16 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
     # re-run one; the module's own `boom` recipe cannot say which happened.
     MAKEFILE = MAKEFILE.replace('boom:\n\t@exit 3',
                                 'boom:\n\t@touch boom.ran\n\t@exit 3')
-    LEDGER = 'pm/roadmap/ledger.jsonl'
+
+    @staticmethod
+    def row(**over) -> dict:
+        """A whole `verify` row for this fixture's story rung; `over` is the
+        one field a case is about."""
+        base = {'ts': '2026-09-05T10:00:00Z', 'kind': 'verify',
+                'rung': 'story', 'gate': 'story', 'verdict': 'PASS',
+                'exit_code': 0, 'duration_ms': 5, 'graded': 0}
+        base.update(over)
+        return base
 
     def _first_run(self, repo, sentinel='story.ran', code=0):
         """Run the story rung once, prove it RAN, and put the tree back
@@ -519,53 +545,131 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
             self.assertFalse(repo.ran('story'))
             self.assertIn('REUSED PASS', out)
 
-    def test_a_row_this_cannot_read_whole_re_runs_rather_than_trusting_it(self):
-        """Never the record over the tree. Each row below names THIS tree's
-        exact state, so the only thing standing between it and a reuse is the
-        field it gets wrong — and the last row, which gets nothing wrong, is
-        what proves the other six were refused rather than merely unmatched.
+    def test_a_hand_written_row_over_this_state_is_read_whole_and_reused(self):
+        """The control the pure `_verdict` table stands on.
+
+        Seven malformed rows are refused by a FUNCTION CALL in
+        `tests/test_verify_cache.py`, in the unit tier where the trust boundary
+        belongs. This is the one case that needs the wiring: a row this verb
+        never wrote, naming this tree's exact state, found in the ledger, read
+        whole and reported instead of the target.
         """
         from agentic_sdlc.repo.verify import cache
 
-        def row(**over):
-            base = {'ts': '2026-09-05T10:00:00Z', 'kind': 'verify',
-                    'rung': 'story', 'gate': 'story', 'verdict': 'PASS',
-                    'exit_code': 0, 'duration_ms': 5}
-            base.update(over)
-            return base
+        with Repo(LADDER + STORY_RULE) as repo:
+            state, defect = cache.tree_state(repo.root)
+            self.assertIsNotNone(state, defect)
+            path = repo.root / LEDGER
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # A `verify` row is telemetry a run files about ITSELF, so writing
+            # it leaves the digest above true — the exclusion under test too.
+            path.write_text(json.dumps(self.row(state=state.digest)) + '\n',
+                            encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), out)
+            self.assertIn('REUSED PASS', out)
 
-        cases = (
-            ('no verify row at all', lambda state: []),
-            ('a line that is not JSON', lambda state: ['{"kind": "verify"']),
-            ('no verdict', lambda state: [row(state=state, verdict=None)]),
-            ('PASS with a failing exit code',
-             lambda state: [row(state=state, exit_code=3)]),
-            ('a duration that is not a number',
-             lambda state: [row(state=state, duration_ms='fast')]),
-            ('a timestamp nothing can age',
-             lambda state: [row(state=state, ts='yesterday')]),
-            ('a row naming another tree', lambda state: [row(state='0' * 64)]),
-            # The control: the same row, whole.
-            ('a row this CAN read', lambda state: [row(state=state)]),
-        )
-        for label, build in cases:
-            with self.subTest(case=label), Repo(LADDER + STORY_RULE) as repo:
-                state, defect = cache.tree_state(repo.root)
-                self.assertIsNotNone(state, defect)
-                path = repo.root / self.LEDGER
-                path.parent.mkdir(parents=True, exist_ok=True)
-                # The ledger is NOT in the state (it is where the gate files
-                # its own cost row), so writing it here leaves the digest above
-                # true — which is the exclusion under test as well.
-                path.write_text(''.join(
-                    (line if isinstance(line, str) else json.dumps(line)) + '\n'
-                    for line in build(state.digest)), encoding='utf-8')
-                code, out = run('--story')
-                self.assertEqual(0, code, out)
-                reused = label == 'a row this CAN read'
-                self.assertEqual(not reused, repo.ran('story'),
-                                 f'{label}: {out}')
-                self.assertEqual(reused, 'REUSED' in out, out)
+    def test_a_ledgers_work_rows_are_in_the_state_and_its_telemetry_is_not(self):
+        """E1's first half: the digest reads a ledger ROW BY ROW.
+
+        A whole-FILE exclusion took the rows `check pm` grades — a status
+        flip, a decision, a deviation — out of the state along with the rows a
+        run files about its own execution. A `verify` row must leave the state
+        alone (or no run could ever repeat); a `status` row must move it.
+        """
+        with Repo(LADDER + STORY_RULE) as repo:
+            self._first_run(repo)
+            path = repo.root / LEDGER
+            self.assertTrue(path.is_file(), 'the first run records its verdict')
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(self.row(state='0' * 64)) + '\n')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), f'telemetry is not drift:\n{out}')
+            self.assertIn('REUSED PASS', out)
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(
+                    {'ts': '2026-09-05T11:00:00Z', 'kind': 'status',
+                     'grain': 'st-x', 'from': 'building', 'to': 'done'}) + '\n')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'),
+                            f'a status row is a fact about the tree:\n{out}')
+            self.assertNotIn('REUSED', out)
+
+    def test_a_row_check_budget_grades_landing_since_refuses_the_reuse(self):
+        """E1's second half, and the reviewer's own probe.
+
+        `check budget` grades the NEWEST `gate` row per target and `make
+        milestone` — the milestone rung itself — runs it, so ONE appended row
+        flips that gate PASS -> FAIL over a byte-identical tree. Those rows
+        cannot be in the digest (every gate writes one, so no state would ever
+        repeat), so the verdict row COUNTS them and a count that moved runs the
+        target. The state still matches: only the count refuses.
+        """
+        with Repo(LADDER + STORY_RULE) as repo:
+            self._first_run(repo)
+            path = repo.root / LEDGER
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(
+                    {'ts': '2026-09-05T12:00:00Z', 'kind': 'gate',
+                     'gate': 'unit', 'verdict': 'PASS',
+                     'duration_ms': 99000}) + '\n')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'),
+                            f'a row `check budget` grades moved:\n{out}')
+            self.assertNotIn('REUSED', out)
+            self.assertIn('`check budget` grades', out)
+            # …and the guard is not a permanent kill: this run counted the new
+            # row, so the tree is reusable again.
+            (repo.root / 'story.ran').unlink()
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), out)
+            self.assertIn('REUSED PASS', out)
+
+    def test_a_submodules_own_checkout_is_in_the_state(self):
+        """E2: a directory git lists is another checkout, not a constant.
+
+        Rolling a submodule back one commit is `M lib` to the superproject's
+        own `git status`, and a consumer vendoring code that way would have
+        reused a green over a tree that changed.
+        """
+        with Repo(LADDER + STORY_RULE) as repo:
+            lib = repo.root.parent / 'lib'
+            first = _a_repo_with_two_commits(lib)
+            _git_in(repo.root, '-c', 'protocol.file.allow=always',
+                    'submodule', 'add', '-q', str(lib), 'lib')
+            self._first_run(repo)
+            _git_in(repo.root / 'lib', 'checkout', '-q', first)
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'),
+                            f'a rolled-back submodule must re-run:\n{out}')
+            self.assertNotIn('REUSED', out)
+
+
+def _git_in(root: Path, *args: str) -> str:
+    """git, in a scratch tree, with an identity: these fixtures commit."""
+    done = subprocess.run(
+        ['git', '-c', 'user.name=t', '-c', 'user.email=t@e', *args],
+        cwd=root, check=True, capture_output=True, text=True)
+    return done.stdout.strip()
+
+
+def _a_repo_with_two_commits(root: Path) -> str:
+    """A repo to be vendored, and the hash of its FIRST commit."""
+    root.mkdir(parents=True)
+    (root / 'f.txt').write_text('one\n', encoding='utf-8')
+    _git_in(root, 'init', '-q', '.')
+    _git_in(root, 'add', '-A')
+    _git_in(root, 'commit', '-qm', 'one')
+    first = _git_in(root, 'rev-parse', 'HEAD')
+    (root / 'f.txt').write_text('two\n', encoding='utf-8')
+    _git_in(root, 'commit', '-qam', 'two')
+    return first
 
 
 @contextlib.contextmanager

@@ -54,12 +54,21 @@ Each level asks a question the level below cannot, and a belt never runs a belt 
 Only the entry condition to each level is enforced, because that is a fact about the tree:
 
 ```
+agentic-sdlc pm ready-for story     <sid>    what the story belt asks that is decidable
+                                             BEFORE the work — `[story] steps` narrowed to
+                                             what the registry declares an entry condition
 agentic-sdlc pm ready-for feature   <fid>    every story `done`?
 agentic-sdlc pm ready-for milestone <mid>    every feature `done`, each with a record?
 agentic-sdlc pm ready-for tag       <mid>    every finding at a disposition other than `open`?
 ```
 
 Exit `0` ready · `1` not, naming every blocker · `2` usage or config. Honesty is judgement.
+
+There is no `ready-for adopt`: every check in that belt is either the work the bump does or one
+that runs a command, so nothing is decidable up front and the rung could only ever say NOT READY
+(0.5.0/D4). `agentic-sdlc adopt <version>` is checks-only and writes nothing. Each rung files a
+`rung.enter` event where `[emit]` declares a sink — **this repo declares none, so its own tree
+emits nothing**, and turning that on is a milestone-scope call about the self-hosting clause.
 
 ## 1. Milestone-branch SDLC
 

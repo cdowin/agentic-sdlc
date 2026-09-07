@@ -32,6 +32,7 @@ import ast
 import contextlib
 import hashlib
 import inspect
+import json
 import os
 import re
 import subprocess
@@ -156,6 +157,34 @@ def census(root: Path) -> dict[str, str]:
             continue
         found[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
     return found
+
+
+# --- the one step init cannot take ---------------------------------------------
+def test_init_names_the_settings_file_the_hooks_are_registered_in():
+    """`init` installs the hooks and cannot ARM them with a harness.
+
+    Through 0.5.0 it called `install.main(..., next_step=False)`, which skips
+    the settings step entirely — so the brand-new consumer this composition
+    exists for got no destination, no block and no flag, while the seven-step
+    Next list named `.claude/settings.json`, `--write-settings`, the block and
+    `GDK_LEDGER_ROOT` zero times. That is strictly less than the hand-paste
+    the step replaced.
+    """
+    with fresh_project() as root:
+        done = devkit(root, 'init')
+        assert done.returncode == 0, done.stdout + done.stderr
+        out = done.stdout
+        # `.resolve()`: the emitted path is the one `repo_root()` found,
+        # symlinks and all, which is the canonical spelling of the tree.
+        here = root.resolve()
+        assert str(here / install.AGENT_SETTINGS) in out, out
+        assert install.SETTINGS_FLAG in out, out
+        assert f'GDK_LEDGER_ROOT={here}' in out, out
+        # The BLOCK, parseable and last on stdout, so it can be pasted whole.
+        block = json.loads(out[out.index('{\n  "hooks"'):out.rindex('}') + 1])
+        assert set(block['hooks']) >= {'Stop', 'SubagentStop'}, block
+        # And `init` still writes nothing there: the offer is the whole act.
+        assert not (root / install.AGENT_SETTINGS).exists(), out
 
 
 # --- the file set -------------------------------------------------------------

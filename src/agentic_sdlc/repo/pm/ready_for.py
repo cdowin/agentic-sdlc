@@ -1,8 +1,9 @@
 """ready_for.py — the four belt-entry conditions, each answering with an exit
 code.
 
-    ready-for story     <story-id>      the story belt's own checks, minus the
-                                        ones that answer only after the work
+    ready-for story     <story-id>      the story belt's own checks, narrowed
+                                        to what the registry declares an entry
+                                        condition
     ready-for feature   <feature-id>    every story in `done`?
     ready-for milestone <milestone-id>  every feature in `done` with a
                                         non-empty record, and no open bug?
@@ -36,6 +37,22 @@ from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
 # The closed set of questions; an unknown kind names all four.
 STORY, FEATURE, MILESTONE, TAG = 'story', 'feature', 'milestone', 'tag'
 KINDS = (STORY, FEATURE, MILESTONE, TAG)
+
+# A rung a BELT exists for and this verb deliberately does not answer, with the
+# why (rule 11: an absence gets a NAMED line). `unknown kind 'adopt'` reads as a
+# typo and sends the reader hunting a misspelling instead of the ruling — the
+# failure `cli.py`'s `RETIRED_COMMANDS` handling exists to prevent.
+ADOPT = 'adopt'
+NO_ENTRY_EDGE: dict[str, str] = {
+    ADOPT: 'every check in the adopt belt is either the work the bump itself '
+           'DOES (pin-bumped, installables-current, config-updated — true only '
+           'after) or one that runs a command, and `ready-for` runs nothing '
+           '(hard rule 2). The derived entry condition is therefore EMPTY, so '
+           'this rung could only ever answer NOT READY, on every tree, '
+           'forever. It was declined rather than hand-written: see D4 in the '
+           "milestone's decisions log. `agentic-sdlc adopt <version>` runs the "
+           'checks and writes nothing, which is the answer you wanted',
+}
 
 # What the row calls itself, in the `<rung>.<edge>` spelling `rung.leave` uses;
 # `emit.TAP_ENTER` is WHICH tap.
@@ -109,9 +126,13 @@ def _emit_enter(cfg: model.PmConfig, rung: str, grain: str,
     verb keeps its "writes nothing" contract. Every failure below is a finding
     on stderr and never the exit code: a code that moved because a SINK was
     unwritable would make this verb unusable as a predicate.
+
+    Building the row is INSIDE the guard, so "every failure below" is true of
+    the whole body; the case that holds it is
+    `StoryBelt::test_a_broken_emit_is_a_finding_on_stderr_and_never_the_answer`.
     """
-    row = _enter_row(rung, grain, blockers)
     try:
+        row = _enter_row(rung, grain, blockers)
         if emit.declared():
             emit.emit(cfg, emit.TAP_ENTER, row)
     except Exception as err:  # noqa: BLE001 — a finding, never the answer
@@ -280,9 +301,31 @@ def _story_subject(cfg: model.PmConfig, sid: str) -> None:
                     f'before the work')
 
 
-def _entry_condition(operation: str) -> tuple[list, list[str], tuple[str, ...]]:
-    """(the checks to ask, one sentence per check NOT asked, the whole declared
-    list) — the reason this rung is not a list of ids.
+class Derived(NamedTuple):
+    """What `_entry_condition` composed: the checks to ask, the passed-over
+    names in their two buckets, and the whole declared list.
+
+    THREE buckets and not two, because the two reasons a check is passed over
+    are different facts, and one label over both states a reason this module
+    did not derive.
+    """
+
+    asked: list[tuple[str, object]]
+    not_declared: list[str]
+    """Not in `ENTRY_CONDITIONS`, each with the close action where there is
+    one."""
+    runs_a_command: list[str]
+    """In it, but a command answers them — and this verb runs nothing."""
+    names: tuple[str, ...]
+
+    @property
+    def over(self) -> list[str]:
+        return self.not_declared + self.runs_a_command
+
+
+def _entry_condition(operation: str) -> Derived:
+    """The checks to ask, the ones passed over in their two buckets, and the
+    whole declared list — the reason this rung is not a list of ids.
 
     Three runtime sources, no fourth: `driver.step_names` for the project's own
     `[<op>] steps` (a narrowed list is the list), `driver.registry_for` for the
@@ -290,25 +333,31 @@ def _entry_condition(operation: str) -> tuple[list, list[str], tuple[str, ...]]:
     DECLARES decidable before the work. An entry condition that still runs a
     command is passed over too: `ready-for` boots nothing (hard rule 2), and a
     rung that shelled out would stop being safe to ask dozens of times a day.
+
+    **What the census says about a check it did not ask is what this function
+    KNOWS, and no more.** It used to say *"answers after the work"* of
+    everything outside `ENTRY_CONDITIONS` — true of `evidence-written`, FALSE
+    of `committed`, which reads `git status --porcelain` and answers fine up
+    front and is excluded on the ruling written at `ENTRY_CONDITIONS`. Rule 4
+    is a gate printing PASS over what it did not measure; a verb printing a
+    reason it did not derive is that shape one size down.
     """
     from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo.conveyor import steps as step_defs
     names = driver.step_names(operation)
     known = driver.registry_for(operation)
     commands = step_defs.commands_for(operation, names, known)
-    asked: list[tuple[str, object]] = []
-    over: list[str] = []
+    derived = Derived([], [], [], names)
     for name in names:
         runs = commands.get(name) or step_defs.SHIPPED_ACTION.get(name, '')
         if name not in step_defs.ENTRY_CONDITIONS:
-            over.append(f'{name} (answers after the work'
-                        + (f', by `{runs}`' if runs else '') + ')')
+            derived.not_declared.append(
+                name + (f' (by `{runs}`)' if runs else ''))
         elif runs:
-            over.append(f'{name} (an entry condition that runs `{runs}`, and '
-                        f'this verb runs nothing)')
+            derived.runs_a_command.append(f'{name} (runs `{runs}`)')
         else:
-            asked.append((name, known[name]))
-    return asked, over, names
+            derived.asked.append((name, known[name]))
+    return derived
 
 
 def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
@@ -318,7 +367,8 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
     """
     from agentic_sdlc.repo.conveyor import driver
     _story_subject(cfg, sid)
-    asked, over, names = _entry_condition(STORY)
+    derived = _entry_condition(STORY)
+    asked, names = derived.asked, derived.names
     ctx = driver.Context(root=cfg.root, operation=STORY, version=sid)
     blockers: list[Blocker] = []
     for name, check in asked:
@@ -342,8 +392,16 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
                 f'check(s) and the registry declares none of them decidable '
                 f'before the work, so this rung has no entry condition in '
                 f'this tree; a READY over nothing asked is not a pass'))
-    if over:
-        census += f'; {len(over)} at the close: {", ".join(over)}'
+    # Rule 11: one clause per REASON, so the reason is stated once and each
+    # name carries only what is true of it.
+    if derived.not_declared:
+        census += (f'; {len(derived.not_declared)} the registry does not '
+                   f'declare an entry condition, asked at the close: '
+                   f'{", ".join(derived.not_declared)}')
+    if derived.runs_a_command:
+        census += (f'; {len(derived.runs_a_command)} declared an entry '
+                   f'condition but answered by a command, and this verb runs '
+                   f'nothing: {", ".join(derived.runs_a_command)}')
     return _answer(cfg, STORY, sid, f'{STORY} {sid}', blockers, census)
 
 
@@ -531,6 +589,9 @@ def cmd_ready_for(cfg: model.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(f'ready-for needs a kind — one of {", ".join(KINDS)}')
     kind, rest = args[0], args[1:]
+    if kind in NO_ENTRY_EDGE:
+        raise Usage(f'{kind} has no entry condition — {NO_ENTRY_EDGE[kind]}. '
+                    f'ready-for asks one of {", ".join(KINDS)}')
     if kind not in KINDS:
         raise Usage(f'unknown kind {kind!r} — ready-for asks one of '
                     f'{", ".join(KINDS)}')

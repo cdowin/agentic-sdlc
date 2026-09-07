@@ -5,9 +5,9 @@ get it there.
 is never a command this package RUNS.** A sink is opened, appended to, closed.
 The four claims that would cost real time if they broke, and nothing else:
 
-  1. a tree that declares no `[emit]` gets the ledger and all three taps, and a
-     value of the wrong shape is exit 2 rather than a gate quietly emitting
-     nothing;
+  1. declaring the section is what opts a tree IN — no `[emit]` at all writes
+     nothing anywhere, a bare one is the ledger and all three taps, and a value
+     of the wrong shape is exit 2 rather than a gate quietly emitting nothing;
   2. the ledger sink routes by the GRAIN the row names and by nothing else —
      the same rule every other row is filed under (0.4.0/D1);
   3. a path sink is APPENDED to, and `-` is one JSON line on stdout beside the
@@ -69,19 +69,31 @@ def lines_of(root, rel: str) -> list[str]:
 
 # --- 1: the declaration -------------------------------------------------------
 
-def test_a_tree_declaring_no_emit_takes_the_ledger_and_every_tap():
-    """Hard rule 5's gate half: both keys have a stock default behind them, so
-    a tree with no `[emit]` behaves exactly like one that spelled the defaults
-    out. A malformed value is exit 2 — a sink quietly emitting nothing is the
-    read-side cardinal sin with a config file in front of it.
+def test_no_emit_section_writes_nothing_and_a_bare_one_takes_every_default(
+        capsys):
+    """Hard rule 5's gate half, and the guarantee under it: both KEYS have a
+    stock default behind them, so a bare `[emit]` behaves exactly like one that
+    spelled them out — while the SECTION is what opts a tree in, so a tree with
+    none is byte-identical to 0.4.0. That second half is asserted through
+    `emit()` itself, because a guarantee held at the call sites is one the next
+    tap forgets. A malformed value is exit 2 — a sink quietly emitting nothing
+    is the read-side cardinal sin with a config file in front of it.
     """
     # The two spellings of the tap set. `TAPS` is literal because the seed
     # census folds it; these constants are what a caller names.
     assert emit.TAPS == (emit.TAP_ENTER, emit.TAP_VERDICT, emit.TAP_LEAVE)
 
-    with emitting() as (_root, _cfg):
+    with emitting() as (root, cfg):
         assert not emit.declared(), 'a tree with no [emit] declared one'
         assert emit.settings() == emit.Settings(emit.SINK_LEDGER, emit.TAPS)
+        for tap in emit.TAPS:
+            assert emit.emit(cfg, tap, row(f'rung.{tap}', STORY)) == ''
+        assert lines_of(root, MILESTONE_LEDGER) == [], (
+            'a tree that declared no [emit] was emitted for anyway — the '
+            'stock-defaulted KEYS are not a stock-defaulted section, and this '
+            'tree is meant to be byte-identical to 0.4.0')
+        assert lines_of(root, GRAINLESS_LEDGER) == []
+        assert capsys.readouterr() == ('', '')
 
     with emitting('[emit]\nsink = "-"\nkinds = ["leave"]\n') as (_root, _cfg):
         assert emit.declared()
@@ -111,7 +123,8 @@ def test_the_ledger_sink_files_an_event_by_the_grain_it_names(capsys):
     """The default sink, and the routing every other row already uses: the
     milestone that owns the row's GRAIN, followed through its bindings, with no
     status read on the write path (0.4.0/D1)."""
-    with emitting() as (root, cfg):
+    # A bare section: the opt-in, at every default the keys hold.
+    with emitting('[emit]\n') as (root, cfg):
         assert emit.emit(cfg, emit.TAP_LEAVE, row('rung.leave', STORY)) == ''
         assert emit.emit(cfg, emit.TAP_ENTER, row('rung.enter', STORY)) == ''
         filed = ledger_rows(root, MILESTONE_LEDGER)
@@ -204,3 +217,18 @@ def test_a_sink_that_cannot_be_written_is_a_finding_and_never_a_crash(capsys):
         # condition, and it refuses rather than emitting into the dark.
         with pytest.raises(ValueError):
             emit.emit(cfg, 'landed', row('rung.landed', STORY))
+
+    # A row `ledger.dumps` cannot serialise fails in the same posture as a sink
+    # that cannot be opened: named on stderr, never raised into the belt that
+    # called it. Both sinks, because a file and a stream fail in different
+    # places and only one of them was ever guarded.
+    unserialisable = row('rung.leave', STORY, blockers={'a set'})
+    for declaration in (f'sink = "{sink}"', f'sink = "{emit.SINK_STDOUT}"'):
+        with emitting(f'[emit]\n{declaration}\n') as (root, cfg):
+            finding = emit.emit(cfg, emit.TAP_LEAVE, unserialisable)
+            assert finding.startswith('[emit] WARNING'), (
+                f'{declaration} raised or swallowed a row it could not '
+                f'serialise instead of naming it: {finding!r}')
+            assert 'TypeError' in finding, finding
+            assert finding in capsys.readouterr().err
+            assert lines_of(root, sink) == []

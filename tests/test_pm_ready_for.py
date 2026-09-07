@@ -26,6 +26,7 @@ from pathlib import Path
 from support.pm import (bug, declaring, ledger_lines, ledger_rows, run_cli,
                         tree, write, write_config)
 
+from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import model, ready_for
 
 FEATURE_STORIES = 'pm/roadmap/stories'
@@ -148,22 +149,42 @@ ALL_AT_THE_CLOSE = '[story]\nsteps = ["evidence-written", "committed"]\n'
 # which is what keeps every other case a read.
 EMITTING = '[emit]\nsink = "ledger"\n'
 
+# A directory inside the fixture, so a sink can name one; `docs/` is what a
+# real tree has and the class this probes is "the path is not a file".
+SINK_DIR = 'docs'
+# The four ways `[emit]` is wrong, one per class the guard has to swallow. The
+# first three raise out of `emit.settings()` before `emit.emit`'s own `try`
+# ever runs, which is exactly the path `_emit_enter`'s `except` is the only
+# thing standing under; the fourth is caught inside `emit`.
+BROKEN_EMIT = (
+    ('[emit]\nkinds = ["nope"]\n', 'a tap this version does not emit'),
+    ('[emit]\nsink = 7\n', 'a sink that is not a string'),
+    ('[emit]\nsink = "../out.jsonl"\n', 'a sink outside the checkout'),
+    (f'[emit]\nsink = "{SINK_DIR}"\n', 'a sink that is a directory'),
+)
+
 
 class StoryBelt(unittest.TestCase):
-    """The inner loop's entry edge: the story belt's own checks, minus the
-    ones that can only answer after the work.
+    """The inner loop's entry edge: the story belt's own checks, narrowed to
+    the ones the registry declares an entry condition.
 
     The condition is DERIVED at runtime — `[story] steps` for the list and
     `steps.ENTRY_CONDITIONS` for which of them is decidable up front — so these
-    cases assert the derivation and its census, never a list of check names
-    this module hard-codes beside the one in the source.
+    cases assert the derivation and its census.
+
+    The one hard-coded name, and why it stays (review N3): the first case pins
+    `asked == ['story-exists']`. That is what would catch a TYPO in
+    `ENTRY_CONDITIONS`, which would otherwise silently empty the entry set and
+    leave every other assertion here true of nothing. Every other case names a
+    list only inside a config it wrote itself.
     """
 
     def test_the_condition_comes_from_the_registry_and_the_census_names_the_rest(self):
         # Rule 11 at the surface: every check the belt will ask at the CLOSE is
         # named as one this rung did not ask, and why. Silence about a check
         # would teach a reader the belt has three.
-        asked, over, names = ready_for._entry_condition('story')
+        derived = ready_for._entry_condition('story')
+        asked, names = derived.asked, derived.names
         with tree() as root:
             code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/s0')
         self.assertEqual(code, 0, out)
@@ -172,7 +193,12 @@ class StoryBelt(unittest.TestCase):
         self.assertIn('all true', out)
         for name in names:
             self.assertIn(name, out)
-        self.assertEqual(len(over), len(names) - len(asked))
+        self.assertEqual(len(derived.over), len(names) - len(asked))
+        # m1: the census may not state a reason the derivation did not derive.
+        # `committed` reads `git status --porcelain` and answers before the
+        # work too — it is excluded by ENTRY_CONDITIONS' ruling, not by
+        # decidability — so no bucket here may claim it answers after the work.
+        self.assertNotIn('answers after the work', out)
 
     def test_a_project_that_declares_its_own_steps_gets_its_own_answer(self):
         """The derivation, from the other end. A tree that narrows `[story]
@@ -246,6 +272,49 @@ class StoryBelt(unittest.TestCase):
                          ['stories-done'])
         self.assertIn('0.1/alpha/s0 is ready',
                       by_rung['feature']['blockers'][0]['why'])
+
+    def test_a_broken_emit_is_a_finding_on_stderr_and_never_the_answer(self):
+        """**Emission is never load-bearing**, which is the claim
+        `_emit_enter`'s bare `except` makes and the one thing about it that a
+        refactor can quietly take away.
+
+        The case the tree above cannot be: it compares a quiet tree against a
+        tree whose `[emit]` is VALID, so the `except` branch never runs under
+        it. Rule 10 puts this one where it bites — a `ConfigError` escaping
+        `_emit_enter` would turn every `ready-for` on a tree with a stale
+        `[emit]` into exit 2, in the verb consumers run as a Makefile
+        predicate, and nothing would go red. The sibling implementation of the
+        identical swallow is already held (`test_conveyor_lessons.py`, *"a
+        malformed [emit] must be one named line here and never a verdict"*);
+        this is the other half of one contract.
+
+        Four failure classes × a READY rung and a NOT-READY one, and what is
+        asserted is `(exit code, stdout)` against the same rung on a tree that
+        declared no sink at all — the finding belongs on STDERR, so a merged
+        read would not have been able to tell the two apart.
+        """
+        rungs = (('story', '0.1/alpha/s0', 0), ('feature', '0.1/alpha', 1))
+        quiet = {}
+        with tree() as root:
+            for kind, gid, expected in rungs:
+                quiet[kind] = run_cli(root, 'ready-for', kind, gid,
+                                      stdout_only=True)
+                self.assertEqual(quiet[kind][0], expected, quiet[kind])
+        for config, why in BROKEN_EMIT:
+            for kind, gid, _ in rungs:
+                with self.subTest(why=why, rung=kind), tree() as root:
+                    (root / SINK_DIR).mkdir(parents=True, exist_ok=True)
+                    write_config(root, config)
+                    self.assertEqual(
+                        run_cli(root, 'ready-for', kind, gid,
+                                stdout_only=True), quiet[kind],
+                        f'{why}: the answer moved')
+                    merged = run_cli(root, 'ready-for', kind, gid)[1]
+                    self.assertIn(emit.FINDING_PREFIX, merged, merged)
+                    self.assertIn('not recorded', merged.lower(), merged)
+                    self.assertEqual(
+                        ledger_lines(root), [],
+                        f'{why}: a broken sink still wrote a row')
 
 
 # --- story -> feature ---------------------------------------------------------

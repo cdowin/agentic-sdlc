@@ -114,10 +114,27 @@
 # ledger_dir    = ""              # else <roadmap_dir>/ledgers — machine state
 #                                 # rather than grains, same mechanism
 #
-# breadcrumbs = true              # after a move, the `next:` line on STDERR
-#                                 # naming the rung that follows. STDOUT is
+# breadcrumbs = true              # after a move, the `next:` and `have:` lines
+#                                 # on STDERR — the rung that follows, and the
+#                                 # installed capabilities [pm.arrive.…] have
+#                                 # binds to the state arrived at. STDOUT is
 #                                 # byte-identical either way; turn it off in
 #                                 # one line if you parse `pm` strictly
+# pressure    = true              # the CONVEYOR PUSHING BACK, on STDERR: the
+#                                 # fork a move raises with both answers
+#                                 # already typed, the line saying a close just
+#                                 # made a PARENT ready, and one census of the
+#                                 # tree's open work. Silent when nothing is
+#                                 # open, and never a refusal. The disposition
+#                                 # ROW is written either way — a tree records
+#                                 # what it did whether or not anybody reads
+#                                 # the stream
+# wip         = 0                 # THIS PROJECT'S declared work-in-progress
+#                                 # limit; 0 declares none, and there is no
+#                                 # stock ceiling because how much work you may
+#                                 # have open is not a fact about your tree.
+#                                 # Exceeding it is a REPORTED line on the
+#                                 # census above and never a refusal (rule 9)
 # contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
 #                                 # WHICH KINDS HOLD WHICH — what `pm add
 #                                 # <parent-id> <child-id>` allows, read off
@@ -178,6 +195,28 @@
 #                                   # each file — bash has no TOML reader, so
 #                                   # it is written twice on purpose. Change
 #                                   # one, change the other.
+# WHAT ARRIVING AT A STATE ASKS — [pm.arrive.<kind>.<state>], a DECLARATION
+# with nothing behind it, like [pm.states.*] itself. There is one event in this
+# system and it is ARRIVAL: a grain reaches a state. It is NOT a transition
+# table and never becomes one — the unit is the state arrived at, never the
+# pair (from, to), so a second pass through a state asks the same question and
+# backwards was never a special case.
+#
+#   [pm.arrive.feature.building]
+#   ask     = "what is building this?"
+#   answers = ["--by me", "--by agent <type>"]
+#   have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
+#
+#   [pm.arrive.feature.reviewing]
+#   ask     = "what happens to it?"
+#   answers = ["--review agent <type>", "--skip review \"<why>\""]
+#
+# `ask` and `answers` are declared together or not at all: a question with no
+# answers typed is advice, and rule 9 forbids the tool having one. Every answer
+# opens with `--` and IS a flag the move accepts, so answering costs one paste;
+# a move at a state with no node prints no question. `have` is a CENSUS of
+# installed files — "this exists, here, now", never "you should run it".
+#
 # The states themselves are [pm.states.<kind>] below — the one section written
 # LIVE — and every question `pm` and `check pm` ask is asked of a state's
 # CATEGORY (todo / in_progress / done), never of the word. The flat
@@ -211,9 +250,11 @@
 # to is a WARNING naming it — never a crash, never a changed exit code, and
 # never silence.
 #
-# Dropping a tap from the list silences that tap; an empty list is exit 2 rather
-# than a silent opt-out, and no section at all is every tap to the ledger, which
-# is what a tree that never heard of this key already does.
+# Dropping a tap from the list silences that tap, and an empty list is exit 2
+# rather than a silent opt-out. UNCOMMENTING the section is what turns emission
+# on — the keys under it are stock-defaulted, so a bare `[emit]` behaves exactly
+# like the two lines below spelled out. NO section at all emits nothing at all,
+# so a tree that never heard of this key behaves as it did before it existed.
 # [emit]
 # sink  = "ledger"
 # kinds = ["enter", "verdict", "leave"]

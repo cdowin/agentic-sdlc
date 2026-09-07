@@ -17,3 +17,10 @@ __pycache__/
 # configuration, never committed: this tree is public and the names are
 # the maintainer's own repositories. See tests/support/consumers.py.
 .consumer-names
+
+# The harness's per-user hook registration. `install-hooks` emits ABSOLUTE
+# script paths, and this tree is public — a committed machine path names one
+# person's filesystem. The block goes here, with GDK_LEDGER_ROOT exported by
+# any session rooted outside this checkout. tests/test_install.py grades both
+# halves: what is registered, and that nothing absolute is committed.
+.claude/settings.local.json

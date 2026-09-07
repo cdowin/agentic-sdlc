@@ -22,8 +22,11 @@ digest over every file git lists, tracked and untracked — and a later run whos
 tree is byte-identical prints `[verify:cache] REUSED …` with that run's age,
 census and cost and exits with its code, instead of running the target. One
 byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
-`--plan` or `--check`. Ignored files and the ledger are not in the digest: they
-are what a gate WRITES while it runs (`verify/cache.py`).
+`--plan` or `--check`. Ignored files and the ledger rows a run files about
+ITSELF are not in the digest — a state covering what a gate writes while it
+runs could never repeat — so the rows `check budget` grades are COUNTED in the
+row instead, and a reuse over a ledger that has grown one runs the target
+(`verify/cache.py`).
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -206,9 +209,14 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
         print(f'{cache.CACHE_TAG} {NO_CACHE} — `{command}` runs whatever is '
               f'recorded; this run replaces it')
     else:
-        found = cache.recorded(root, target, state.digest)
-        if found is not None:
+        found, graded = cache.recorded(root, target, state.digest)
+        if found is not None and found.graded == graded:
             return _reuse(found, command, state)
+        if found is not None:
+            # The state matches and the reuse is refused anyway: what moved is
+            # the one input no state can carry, and saying so is the difference
+            # between a guard and a cache that looks broken.
+            print(cache.stale_line(found, graded, command))
     started = time.monotonic()
     # Where this run's own rows begin, so the census a reused verdict quotes is
     # the GATE's rather than one this verb invented (rule 4).
@@ -239,8 +247,19 @@ def _reuse(found: cache.Verdict, command: str, state: cache.State) -> int:
 
 def _record(root: Path, name: str, target: str, state: cache.State, code: int,
             elapsed: int, mark: int) -> None:
-    """File what this run decided; a record that could not be written is SAID
-    and never fails the run."""
+    """File what this run decided, against a state RE-READ after the target —
+    a tree edited during a 90 s suite was never wholly read by it, and a
+    verdict keyed to a state the target only half saw is rule 4's first sin
+    with a record behind it. Disagreement records NOTHING, and says so; a
+    record that could not be written is SAID and never fails the run."""
+    after, defect = cache.tree_state(root)
+    if after is None or after.digest != state.digest:
+        moved = after.short() if after is not None else f'none ({defect})'
+        print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '
+              f'{state.short()} -> {moved}), so this run proved a tree no '
+              f'later run can be keyed on and no verdict is recorded',
+              file=sys.stderr)
+        return
     verdict = cache.PASS if code == 0 else cache.FAIL
     defect = cache.record(root, name, target, state, verdict, code, elapsed,
                           cache.census_since(root, target, mark))

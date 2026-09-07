@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.core import apply
-from agentic_sdlc.repo.pm import ledger, model, rename, report, templates
+from agentic_sdlc.repo.pm import (arrive, ledger, model, rename, report,
+                                   templates)
 
 PROG = 'agentic-sdlc pm'
 
@@ -356,59 +357,9 @@ def _ok(msg: str) -> None:
     print(f'[pm] {msg}')
 
 
-# Which belt closes a grain of each kind, and which belt the grain ABOVE it
-# needs next. Both are `steps.registry_for` keys, and that is the whole of the
-# mapping this module holds: the CHECKS each belt asks are read from the
-# registry at runtime and never restated here, so a check added to a belt turns
-# up in the breadcrumb without anybody remembering to add it.
-CLOSES = {'story': 'story', 'feature': 'feature', 'milestone': 'release'}
-# A milestone's `done` names nothing above it — there is no belt over a
-# milestone, and inventing a sentence for that case would be the engine having
-# an opinion about what somebody does after a release.
-ABOVE = {'story': 'feature', 'feature': 'release'}
-
-
-def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
-    """One line after a status write: what the conveyor asks NEXT, DERIVED.
-
-    Rule 9 says the tool never decides what a move MEANS, and a breadcrumb
-    survives that only by being READ. Three runtime sources: the project's
-    `[pm.states.<kind>]` for the category, `driver.step_names(<belt>)` for the
-    checks that belt will ask, and `driver.SUBJECT` for its argument — so
-    `close feature asks stories-done, …` is the engine reading back what it
-    will run, where *"you should review now"* would be an opinion.
-
-    `step_names` and not `registry_for`, because the registry is what SHIPS and
-    the belt runs `[<belt>] steps`: reading the registry told a consumer who
-    had narrowed that list four checks it had said it did not want.
-
-    Why at the move at all: prose in three documents had already failed to stop
-    a builder batching nine reviews to the end of a milestone.
-    """
-    if not cfg.breadcrumbs:
-        return
-    category = model.flow_of(cfg, kind).category(to)
-    belt = (CLOSES.get(kind) if category == model.IN_PROGRESS
-            else ABOVE.get(kind) if category == model.DONE_CATEGORY else None)
-    if belt is None:
-        return
-    from agentic_sdlc.repo.conveyor import driver
-    try:
-        checks = list(driver.step_names(belt))
-    except Exception:
-        # A breadcrumb is a courtesy on top of a write that already happened.
-        # A `[<belt>] steps` the belt itself would refuse is that belt's
-        # finding to report when it runs, not this line's to raise after the
-        # status is on disk.
-        return
-    if not checks:
-        return
-    verb = 'release' if belt == 'release' else f'close {belt}'
-    # The belt's own subject, so the sentence can be copied: `release` takes a
-    # VERSION and would refuse a grain id.
-    subject = driver.SUBJECT.get(belt, (0, '', '<id>'))[2]
-    print(f'[pm] next: `agentic-sdlc {verb} {subject}` asks '
-          f'{", ".join(checks)}', file=sys.stderr)
+# WHICH BELT CLOSES WHICH GRAIN, and the derivation that reads it, live in
+# `arrive.py`: one `derive_next` feeds the printed breadcrumb and the emitted
+# `rung.leave` row, so a change reaching one and not the other cannot happen.
 
 
 def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
@@ -534,9 +485,13 @@ def _ledger_of(cfg: model.PmConfig, gid: str) -> Path | None:
     return ledger.ledger_of_grain(cfg, gid)
 
 
-def _stamp(cfg: model.PmConfig, path: Path, row: dict) -> None:
-    """Append one row to the ledger of the milestone that owns `path`. Never
+def _stamp(cfg: model.PmConfig, path: Path, *rows: dict) -> None:
+    """Append rows to the ledger of the milestone that owns `path`. Never
     raises and never changes an exit code; a missing row is said on stderr.
+
+    Varargs because ONE arrival mints two rows — the status and its
+    disposition — and the ledger is resolved once for both: a grain no
+    milestone owns is one WARNING about the event, not one per row.
     """
     target = _ledger_of(cfg, model.unquote(model.field_of(path, 'id')))
     if target is None:
@@ -544,18 +499,56 @@ def _stamp(cfg: model.PmConfig, path: Path, row: dict) -> None:
               f'no {ledger.LEDGER_FILE_NAME} row was appended for it; the '
               f'write itself landed', file=sys.stderr)
         return
+    for row in rows:
+        try:
+            ledger.append_to(target, row)
+        except OSError as err:
+            print(f'[pm] WARNING — {cfg.rel(target)} could not be '
+                  f'appended to ({err}); the write itself landed, but this '
+                  f'transition is NOT in the ledger', file=sys.stderr)
+            return
+
+
+def _arrived(cfg: model.PmConfig, kind: str, path: Path, gid: str, frm: str,
+             to: str, said: 'arrive.Said' = arrive.NOTHING) -> None:
+    """THE ONE EVENT — a grain reached a state, and everything else reads it.
+
+    The status is already on disk when this runs and nothing here can change
+    it or the exit code: an arrival RECORDS and REPORTS. The disposition row
+    lands BEFORE the census, so the grain just answered is not counted as
+    unanswered on its own write.
+    """
+    lid = _ledger_id(path, gid)
+    _stamp(cfg, path, ledger.status_row(lid, frm, to),
+           arrive.disposition_row(lid, to, said))
+    arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said))
+
+
+def _answered(cfg: model.PmConfig, kind: str, args: list[str],
+              other: tuple[str, ...] = ()) -> tuple['arrive.Said', list[str]]:
+    """Split the arrival's declared answer off the command line.
+
+    The target state is `args[0]` for every status verb, so the node — and
+    therefore which flags this move accepts — is read before the grain is
+    resolved, exactly as `_movable` reads the state. `other` names the flags
+    the verb parses for itself; anything else is refused BY NAME, carrying the
+    answers this arrival DOES declare rather than the useless truth that the
+    flag is unknown (rule 11).
+    """
+    to = args[0] if args else ''
+    node = model.arrival_at(cfg, kind, to) if to else None
     try:
-        ledger.append_to(target, row)
-    except OSError as err:
-        print(f'[pm] WARNING — {cfg.rel(target)} could not be '
-              f'appended to ({err}); the write itself landed, but this '
-              f'transition is NOT in the ledger', file=sys.stderr)
-
-
-def _stamp_status(cfg: model.PmConfig, path: Path, frm: str, to: str,
-                  gid: str) -> None:
-    """One status row for a flip that has already landed on disk."""
-    _stamp(cfg, path, ledger.status_row(_ledger_id(path, gid), frm, to))
+        said, rest = arrive.take(node, list(args))
+    except arrive.Incomplete as err:
+        raise Usage(str(err)) from err
+    stray = [a for a in rest
+             if a.startswith(model.ANSWER_PREFIX) and a not in other]
+    if stray:
+        raise Usage(f'unknown flag {stray[0]!r}'
+                    + (arrive.unknown_flag_hint(node)
+                       or f' — this project declares no arrival action for '
+                          f'{kind} {to!r}, so the move takes no answer'))
+    return said, rest
 
 
 def _movable(cfg: model.PmConfig, kind: str, to: str) -> None:
@@ -569,9 +562,10 @@ def _movable(cfg: model.PmConfig, kind: str, to: str) -> None:
 
 # --- story --------------------------------------------------------------------
 def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
-    if len(args) != 2:
+    said, rest = _answered(cfg, 'story', args)
+    if len(rest) != 2:
         raise Usage(USAGE)
-    to, sid = args
+    to, sid = rest
     _movable(cfg, 'story', to)
     sf = model.story_file(cfg, sid)
     if sf is None:
@@ -580,13 +574,10 @@ def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
     cur = _was(sf)
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
-        _stamp_status(cfg, sf, cur, to, sid)
-        _breadcrumb(cfg, 'story', to)
-        return 0
-    _set_status(cfg, sf, to)
-    _ok(f'story {sid}: {cur} -> {to}')
-    _stamp_status(cfg, sf, cur, to, sid)
-    _breadcrumb(cfg, 'story', to)
+    else:
+        _set_status(cfg, sf, to)
+        _ok(f'story {sid}: {cur} -> {to}')
+    _arrived(cfg, 'story', sf, sid, cur, to, said)
     return 0
 
 
@@ -599,9 +590,10 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     and it refused every flat `bg-` id the migration mints — so no bug on a
     migrated tree was movable at all, and `pm new bug` now mints those.
     """
-    if len(args) != 2:
+    said, rest = _answered(cfg, 'bug', args)
+    if len(rest) != 2:
         raise Usage(USAGE)
-    to, bid = args
+    to, bid = rest
     _movable(cfg, 'bug', to)
     defect = model.id_defect(bid)
     if defect:
@@ -612,13 +604,10 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     cur = _was(bf)
     if cur == to:
         _ok(f'bug {bid} already {to} (no-op)')
-        _stamp_status(cfg, bf, cur, to, bid)
-        _breadcrumb(cfg, 'bug', to)
-        return 0
-    _set_status(cfg, bf, to)
-    _ok(f'bug {bid}: {cur} -> {to}')
-    _stamp_status(cfg, bf, cur, to, bid)
-    _breadcrumb(cfg, 'bug', to)
+    else:
+        _set_status(cfg, bf, to)
+        _ok(f'bug {bid}: {cur} -> {to}')
+    _arrived(cfg, 'bug', bf, bid, cur, to, said)
     return 0
 
 
@@ -630,7 +619,8 @@ def _feature_or_usage(cfg: model.PmConfig, fid: str) -> tuple[Path, str]:
     return ff, _was(ff)
 
 
-def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
+def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str],
+                       said: 'arrive.Said' = arrive.NOTHING) -> int:
     """Any feature move that is not a close: one write, and it says so. A
     feature ahead of or behind its stories is `check pm`'s WARN, not this
     verb's.
@@ -641,13 +631,10 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str]) -> int:
     ff, cur = _feature_or_usage(cfg, fid)
     if cur == to:
         _ok(f'feature {fid} already {to} (no-op)')
-        _stamp_status(cfg, ff, cur, to, fid)
-        _breadcrumb(cfg, 'feature', to)
-        return 0
-    _set_status(cfg, ff, to)
-    _ok(f'feature {fid}: {cur} -> {to}')
-    _stamp_status(cfg, ff, cur, to, fid)
-    _breadcrumb(cfg, 'feature', to)
+    else:
+        _set_status(cfg, ff, to)
+        _ok(f'feature {fid}: {cur} -> {to}')
+    _arrived(cfg, 'feature', ff, fid, cur, to, said)
     return 0
 
 
@@ -684,7 +671,8 @@ def _take_flags(args: list[str], flags: tuple[str, ...],
     return pairs, rest
 
 
-def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
+def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
+                     said: 'arrive.Said' = arrive.NOTHING) -> int:
     """Close a feature: a move into the `done` category, by whichever word,
     plus `reviewed:` from `--review-record`. Touches no story; an
     already-closed feature still runs the record stamp.
@@ -729,29 +717,32 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str]) -> int:
         _ok(f'feature {fid}: {cur} -> {to}'
             + (f' (review record: {record})' if record
                else ' (no review record)'))
-    _stamp_status(cfg, ff, cur, to, fid)
-    _breadcrumb(cfg, 'feature', to)
+    _arrived(cfg, 'feature', ff, fid, cur, to, said)
     return 0
 
 
 def cmd_feature(cfg: model.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
-    sub, rest = args[0], args[1:]
+    said, kept = _answered(cfg, 'feature', args, other=('--review-record',))
+    if not kept:
+        raise Usage(USAGE)
+    sub, rest = kept[0], kept[1:]
     # The target is validated before any dispatch; the current state is never
     # gated on, so repair from any state stays.
     _movable(cfg, 'feature', sub)
     # A move into the `done` category is the close, by whichever word.
     if model.category_of(cfg, 'feature', sub) == model.DONE_CATEGORY:
-        return cmd_feature_done(cfg, sub, rest)
-    return cmd_feature_simple(cfg, sub, rest)
+        return cmd_feature_done(cfg, sub, rest, said)
+    return cmd_feature_simple(cfg, sub, rest, said)
 
 
 # --- milestone ----------------------------------------------------------------
 def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
-    if len(args) != 2:
+    said, rest = _answered(cfg, 'milestone', args)
+    if len(rest) != 2:
         raise Usage(USAGE)
-    to, mid = args
+    to, mid = rest
     _movable(cfg, 'milestone', to)
     mf = model.milestone_file(cfg, mid)
     if mf is None:
@@ -759,13 +750,10 @@ def cmd_milestone(cfg: model.PmConfig, args: list[str]) -> int:
     cur = _was(mf)
     if cur == to:
         _ok(f'milestone {mid} already {to} (no-op)')
-        _stamp_status(cfg, mf, cur, to, mid)
-        _breadcrumb(cfg, 'milestone', to)
-        return 0
-    _set_status(cfg, mf, to)
-    _ok(f'milestone {mid}: {cur} -> {to}')
-    _stamp_status(cfg, mf, cur, to, mid)
-    _breadcrumb(cfg, 'milestone', to)
+    else:
+        _set_status(cfg, mf, to)
+        _ok(f'milestone {mid}: {cur} -> {to}')
+    _arrived(cfg, 'milestone', mf, mid, cur, to, said)
     # No advisory about the features left behind: D3 asks that of the tree.
     return 0
 

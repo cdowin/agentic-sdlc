@@ -26,12 +26,39 @@ Write it down, commit, move on. The tree is a record, not a deliverable.
 
 The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
 
+    may I start?            pm ready-for story <id>     the belt's entry edge, no gate at all
     a PM-tree or doc edit   make check                  the static gates alone
     an edit, inner loop     verify --story              what [verify] story names
     before a commit         make precommit              check + your narrow tier
     closing a story         close story <id>            its checks, then `done`
     closing a feature       close feature <id>          runs what [verify] feature names
     closing a milestone     release <version>           its `gate` check is the full gate
+
+**Every rung has an ENTRY edge as well as an exit one, and it is
+`agentic-sdlc pm ready-for story|feature|milestone|tag <id>`.** Exit 0 ready,
+exit 1 not ready naming every blocker (never a tally), exit 2 usage. It writes
+nothing, runs nothing and boots nothing, so it is safe to ask as often as you
+like — including as a predicate in a Makefile. **Ask it instead of guessing
+whether the work below you is finished**; guessing is how a close gets started
+over a story still in motion.
+
+    ready-for story <id>       what the story belt asks that is decidable
+                               BEFORE the work — your `[story] steps` narrowed
+                               to what the registry declares an entry
+                               condition, with every check it did NOT ask
+                               named and why
+    ready-for feature <id>     every story in the `done` category?
+    ready-for milestone <id>   every feature done with a review record, no open bug?
+    ready-for tag <id>         every finding at a disposition other than `open`?
+
+There is no `ready-for adopt`: every check in the adopt belt is either the work
+the bump does or one that runs a command, so there is nothing decidable up
+front and the rung would only ever say NOT READY. Run `agentic-sdlc adopt
+<version>` — it is checks only and writes nothing.
+
+Where `[emit]` declares a sink, each rung files a `rung.enter` event carrying
+the answer and the blocker list, which is the same work queue the exit code
+summarises. A tree that declares no `[emit]` emits nothing.
 
 `make check`, `precommit` and `milestone` are the compositions `install-gates`
 ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What

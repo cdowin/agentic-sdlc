@@ -180,8 +180,13 @@ class StatusMoves(unittest.TestCase):
     def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
         # The advisory about the features left behind is gone (story 03);
         # D3 asks that question of the tree it left, as a WARN naming both.
+        #
+        # STDOUT ONLY, and that is the claim (amended 0.5.0/D3): an arrival
+        # reports the tree's open work on STDERR, so the stream a consumer
+        # parses stays the one line the write wrote.
         with tree(feature_status='building') as root:
-            code, out = run_cli(root, 'milestone', 'done', '0.1')
+            code, out = run_cli(root, 'milestone', 'done', '0.1',
+                                stdout_only=True)
             self.assertEqual(code, 0, out)
             self.assertEqual(out.strip().splitlines(),
                              ['[pm] milestone 0.1: building -> done'])

@@ -995,6 +995,11 @@ def hours_ago(hours: int) -> str:
     return when.strftime(ledger.TS_FORMAT)
 
 
+# What separates a courier row from a hand-minted one: the hook payload's own
+# session id, passed through `--session-id` (`cc-ledger-*.sh`, `ledger.ROW_KEYS`).
+SESSION = 'sess-0000'
+
+
 class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
     """U4 — the couriers are wired, and the last row THEY wrote, with its age.
 
@@ -1044,13 +1049,80 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             put_ledger(root,
                        status_line(hours_ago(3), '0.1/alpha/s0', 'planning',
                                    'ready'),
-                       dispatch_line(hours_ago(2), grain='0.1/alpha/s0'))
+                       dispatch_line(hours_ago(2), grain='0.1/alpha/s0',
+                                     session_id=SESSION))
             code, out = self._gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('RECORDING', out)
             self.assertIn('last hook-written row: dispatch, 2h ago', out)
             self.assertIn('1 of 2 row(s)', out)
             self.assertNotIn('never', out)
+
+    def test_a_hand_minted_dispatch_row_is_not_evidence_a_courier_ran(self):
+        """The KIND alone is not the courier's signature.
+
+        `pm ledger record SubagentStop` mints `dispatch` and `session` rows by
+        hand, from inside the checkout, and the sibling feature extends that
+        verb for exactly that use. This repo's own `check pm` counted sixteen
+        of them as *"came from a courier"* while no courier had ever run — the
+        feature's premise failing in the one line built to end it. The courier
+        carries the hook payload's `session_id`; a hand row does not.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            put_ledger(root, dispatch_line(hours_ago(2), grain='0.1/alpha/s0'))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('last hook-written row: never', out)
+            # NAMED, so the reader sees what the tree does hold.
+            self.assertIn('1 dispatch', out)
+            self.assertNotIn('came from a courier', out)
+
+    def test_a_courier_row_counts_wherever_the_wiring_lives(self):
+        """The tree the config-only predicate went silent on.
+
+        `install-hooks` tells a consumer, verbatim, that the block works in
+        whatever settings file their harness reads, *"including one above this
+        repo"*. Gating the whole rule on an in-checkout settings file printed
+        NOTHING on a tree holding an hour-old courier row — the proof already
+        in hand, thrown away by an early return keyed on the config.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            put_ledger(root, dispatch_line(hours_ago(1), grain='0.1/alpha/s0',
+                                           session_id=SESSION))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('RECORDING', out)
+            self.assertIn('last hook-written row: dispatch, 1h ago', out)
+            self.assertIn('no settings file in this checkout', out)
+
+    def test_the_per_user_override_is_wiring_and_an_allowlist_is_not(self):
+        """Two directions of the same read, both probed on real shapes.
+
+        `.claude/settings.local.json` is the file Claude Code writes itself and
+        a repo gitignores — and it is where absolute wiring has to live in a
+        public checkout, because a machine path must not be committed. An
+        allowlist entry is the opposite: `install-hooks`' own next-step text
+        tells consumers to add `Bash(bash tools/hooks/cc-ledger-session.sh
+        --self-test)` to `permissions.allow`, and a substring search over the
+        raw text read that as the couriers being WIRED.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            path = root / pm_check.AGENT_SETTINGS_LOCAL
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(self.WIRED, encoding='utf-8')
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('(U4)', out)
+            self.assertIn(pm_check.AGENT_SETTINGS_LOCAL, out)
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, json.dumps({'permissions': {'allow': [
+                'Bash(bash tools/hooks/cc-ledger-session.sh --self-test)',
+                'Bash(bash tools/hooks/cc-ledger-subagent.sh --self-test)']}}))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U4)', out)
+            self.assertNotIn('(U2)', out)
 
     def test_a_tree_that_wires_nothing_stays_silent_and_so_does_the_rule_off(self):
         """The opt-out, and the switch. A tree that wires no courier is not

@@ -63,6 +63,10 @@ Stand a repo up on this toolkit. Writes, in order:
   .gitignore         the run-artifact directories, appended if absent
   CLAUDE.md          a skeleton naming the standard targets + installed rules
 
+The one file it does NOT write is `.claude/settings.json`: registering the
+hooks with a harness is the step this package offers and never takes by
+default. The run prints the block and names the file it belongs in.
+
 Run it again any time: it fills what is missing and reports the rest.
 --diff  prints what a run would change, per file, and writes nothing.
 --force overwrites the DEVKIT-owned files (the installables). devkit.toml,
@@ -308,4 +312,17 @@ def main(argv: list[str]) -> int:
           'the id')
     print('     `ms-0.1` — the kind prefix and your slug), then '
           '`agentic-sdlc check pm`.')
+    print(f'  8. The hooks are on disk and NOT registered: a harness runs them '
+          f'because')
+    print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '
+          f'The block is')
+    print(f'     below — `agentic-sdlc install-hooks {install.SETTINGS_FLAG}` '
+          f'lands it in this')
+    print('     tree, or paste it into whatever settings file your harness '
+          'reads.')
+    # Last on stdout, so the block stays pasteable whole. `init` wrote the
+    # scripts and armed the git hooks; the harness registration is the one
+    # step it cannot take, and a run that names neither the file nor the
+    # fragment leaves a consumer with less than the hand-paste it replaced.
+    install.settings_step(root, False)
     return 0

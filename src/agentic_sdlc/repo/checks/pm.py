@@ -48,6 +48,7 @@ Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,9 +58,19 @@ from agentic_sdlc.repo.pm import model
 
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
+# The third answer, and the one a belt that branches on two of them drops on
+# the floor: not a finding, and not a pass either. A PREFIX, because every
+# surface that prints it names what could not be read after it.
+UNVERIFIABLE = 'UNVERIFIABLE'
 # A row whose `ts` will not parse is not a row aged zero (rule 4): a ledger is
 # `merge=union`, and rows arrive from other branches and other versions.
 UNDATEABLE = 'at a timestamp this reader cannot parse'
+# The harness's per-user override. `install-hooks` emits ABSOLUTE script paths,
+# and a public repo must not commit a machine path — so the block belongs in a
+# gitignored file, and a reader that consults only the committed one calls that
+# tree unwired. BOTH are read, never one instead of the other.
+AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
+SETTINGS_FILES = (model.AGENT_SETTINGS, AGENT_SETTINGS_LOCAL)
 
 
 def run() -> int:
@@ -419,20 +430,80 @@ def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str
     return rows, unreadable
 
 
-def _wired_couriers(cfg: model.PmConfig) -> tuple[list[str], str]:
-    """(the couriers `.claude/settings.json` fires, why it could not be read).
+class Wiring(NamedTuple):
+    """Which couriers a settings file REGISTERS, and which file said so.
 
-    **No settings file at all is an empty list, not a defect** — a tree that
-    wires nothing opted out (0.4.0/D5) and this package does not conscript.
+    PUBLIC, because `adopt`'s `telemetry-live` asks the same question: two
+    readers of one config is how a belt and a gate come to disagree about
+    whether a tree is wired.
     """
-    settings = cfg.root / model.AGENT_SETTINGS
-    if not settings.is_file():
-        return [], ''
+
+    couriers: tuple[str, ...]   # the couriers a `hooks` entry actually fires
+    where: str                  # the settings file(s) that fire them
+    unread: str                 # why a settings file could not be read
+
+
+def _hook_commands(node: object) -> list[str]:
+    """Every `command` string under a settings file's `hooks` key.
+
+    UNDER `hooks`, never the whole file: `install-hooks`' own next-step text
+    tells a consumer to add `Bash(bash tools/hooks/cc-ledger-session.sh
+    --self-test)` to `permissions.allow`, and a substring search over the raw
+    text reads that allowlist entry as wiring — a full WARN asserting the
+    couriers are wired on a tree with no hook registered anywhere.
+    """
+    found: list[str] = []
+    if isinstance(node, dict):
+        command = node.get('command')
+        if isinstance(command, str):
+            found.append(command)
+        for key, value in node.items():
+            if key != 'command':
+                found.extend(_hook_commands(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_hook_commands(item))
+    return found
+
+
+def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
+    """(the couriers this one file registers, why it could not be read)."""
+    if not path.is_file():
+        return (), ''
     try:
-        text = model.read_raw(settings)
+        data = json.loads(model.read_raw(path))
     except (OSError, UnicodeDecodeError) as err:
-        return [], err.__class__.__name__
-    return sorted(name for name in model.LEDGER_COURIERS if name in text), ''
+        return (), err.__class__.__name__
+    except ValueError as err:
+        return (), f'it is not JSON: {err}'
+    hooks = data.get('hooks') if isinstance(data, dict) else None
+    commands = _hook_commands(hooks)
+    return tuple(sorted(name for name in model.LEDGER_COURIERS
+                        if any(name in command for command in commands))), ''
+
+
+def wired_couriers(root: Path) -> Wiring:
+    """Which ledger couriers this checkout's settings files fire.
+
+    **No settings file at all is an empty tuple, not a defect** — a tree that
+    wires nothing opted out (0.4.0/D5) and this package does not conscript.
+
+    Takes a ROOT rather than a config, because the belt asks this before it has
+    resolved a PM tree.
+    """
+    found: set[str] = set()
+    where: list[str] = []
+    unread: list[str] = []
+    for rel in SETTINGS_FILES:
+        couriers, why = _settings_couriers(root / rel)
+        if why:
+            unread.append(f'{rel} could not be read ({why})')
+        elif couriers:
+            found.update(couriers)
+            where.append(rel)
+    return Wiring(tuple(sorted(found)), ' and '.join(where),
+                  '; '.join(unread))
+
 
 
 def _age_of(row: dict) -> str:
@@ -497,7 +568,7 @@ def recording_phrase(rec: Recording) -> str:
     """`'dispatch, 3h ago'`, `'never'`, or why neither could be answered — the
     sentence every surface that reports recording prints, spelled once."""
     if rec.unreadable:
-        return (f'UNVERIFIABLE ({", ".join(rec.unreadable)} could not be '
+        return (f'{UNVERIFIABLE} ({", ".join(rec.unreadable)} could not be '
                 f'read)')
     if not rec.written:
         return NEVER
@@ -536,15 +607,15 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """
     if 'U2' not in enabled:
         return
-    wired, unread = _wired_couriers(cfg)
-    if unread:
-        warn(f'{model.AGENT_SETTINGS} could not be read '
-             f'({unread}), so whether the ledger couriers are '
+    wiring = wired_couriers(cfg.root)
+    if wiring.unread:
+        warn(f'{wiring.unread}, so whether the ledger couriers are '
              f'wired is UNVERIFIABLE — not a finding, and not a pass either '
              f'(U2)')
         return
-    if not wired:
+    if not wiring.couriers:
         return
+    wired = list(wiring.couriers)
     found, unreadable = _tree_has_a_row(cfg)
     if unreadable:
         warn(f'{", ".join(unreadable)} could not be read, so whether this tree '
@@ -554,7 +625,7 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     if found:
         return
     warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} wired in '
-         f'{model.AGENT_SETTINGS} and {cfg.roadmap_dir} holds no ledger row at '
+         f'{wiring.where} and {cfg.roadmap_dir} holds no ledger row at '
          f'all — this tree is recording NOTHING, silently, because a courier '
          f'fails open by design. Four causes, in the order they cost people '
          f'time: the `pm` make target is not .PHONY (a PM tree IS a `pm/` '
@@ -568,12 +639,23 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 def _hook_written(row: dict) -> bool:
     """Did a COURIER write this row?
 
-    Off `ledger.EVENT_KINDS`, the writer's own vocabulary rather than a second
-    copy of it. Every other kind is written from INSIDE this checkout (see U4
-    at the top of this module).
+    The kind AND a `session_id`. The kind is off `ledger.EVENT_KINDS`, the
+    writer's own vocabulary rather than a second copy of it — but the kind
+    ALONE is not enough: `pm ledger record SubagentStop` mints exactly those
+    kinds by hand from inside the checkout, and this repo's own `check pm`
+    counted sixteen hand-written `dispatch` rows as evidence a courier ran when
+    no courier had ever run. A session id comes from the hook payload and a
+    hand row does not carry one.
+
+    The failure direction is SAFE: a courier row that somehow arrives without a
+    session id reads as `never`, which is a WARN nobody can act on wrongly —
+    noisy, never blind, which is the whole posture of this rule.
     """
     from agentic_sdlc.repo.pm import ledger
-    return _kind_of(row) in set(ledger.EVENT_KINDS.values())
+    if _kind_of(row) not in set(ledger.EVENT_KINDS.values()):
+        return False
+    session = row.get('session_id')
+    return isinstance(session, str) and bool(session.strip())
 
 
 def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
@@ -593,15 +675,21 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
     if 'U4' not in enabled:
         return
     from agentic_sdlc.repo.pm import ledger
-    wired, unread = _wired_couriers(cfg)
-    if unread:
-        warn(f'{model.AGENT_SETTINGS} could not be read ({unread}), so the '
-             f'last hook-written row cannot be read beside its wiring — '
-             f'UNVERIFIABLE, not a finding and not a pass either (U4)')
-        return
-    if not wired:
+    wiring = wired_couriers(cfg.root)
+    if wiring.unread:
+        warn(f'{wiring.unread}, so the last hook-written row cannot be read '
+             f'beside its wiring — UNVERIFIABLE, not a finding and not a pass '
+             f'either (U4)')
         return
     rec = hook_recording(cfg)
+    wired = list(wiring.couriers)
+    # THE OPT-OUT, and the whole of it: wires nothing AND records nothing.
+    # Gating on the config alone went silent on a tree holding an hour-old
+    # courier row, because `install-hooks` tells a consumer the block works
+    # in a settings file ABOVE this repo — the topology this package now
+    # ships. The ledger proves the path wherever the config lives.
+    if not wired and not rec.written:
+        return
     if rec.unreadable:
         warn(f'{", ".join(rec.unreadable)} could not be read, so the last '
              f'hook-written row is UNVERIFIABLE — not a finding, and not a '
@@ -613,21 +701,26 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
         rows, _ = _ledger_rows(cfg)
         held = _kind_census(rows) or 'no rows at all'
         warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
-             f'wired in {model.AGENT_SETTINGS} and no {kinds} row has EVER '
+             f'wired in {wiring.where} and no {kinds} row has EVER '
              f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
              f'{recording_phrase(rec)}. What the ledgers hold is {held}, '
              f'which this checkout writes itself and which is not evidence '
              f'that a courier ran. Wiring is a CONFIG fact: whether a harness '
-             f'loads {model.AGENT_SETTINGS} depends on the session\'s project '
+             f'loads {wiring.where} depends on the session\'s project '
              f'root, so a session rooted above this checkout fires no {events} '
              f'hook here and records nothing while every wiring answer stays '
-             f'green (U4)')
+             f'green. `install-hooks --write-settings` lands the block, and '
+             f'`GDK_LEDGER_ROOT` points a session rooted elsewhere at this '
+             f'tree (U4)')
         return
     # COUNTED, never a finding: the age is what tells live telemetry from
     # telemetry that stopped.
+    seen = (f'wired in {wiring.where}' if wiring.where else
+            f'wired in no settings file in this checkout, so the config a '
+            f'harness loaded lives above it')
     print(f'  RECORDING  last hook-written row: {recording_phrase(rec)} — '
           f'{rec.written} of {rec.total} row(s) in {cfg.roadmap_dir}/ came '
-          f'from a courier  [{rec.where}] (U4)')
+          f'from a courier; {seen}  [{rec.where}] (U4)')
 
 
 def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:

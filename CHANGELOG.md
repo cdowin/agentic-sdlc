@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **`agentic-sdlc pm ready-for story <story-id>`** — the inner loop's entry edge, and the fourth
+  rung the verb answers for (`ft-a-rung-has-an-entry-edge`). Exit 0 ready, exit 1 not ready naming
+  every blocker, exit 2 usage; writes nothing, like the three rungs beside it. **The condition is
+  DERIVED at every call, never a list this package holds**: `[story] steps` (your list, narrowed if
+  you narrowed it) × `registry_for("story")` for the check objects × the registry's own
+  `ENTRY_CONDITIONS` for which of them is decidable before the work. A project that declares
+  different steps is answered about ITS list, and a project whose whole list answers only after the
+  work is told `nothing was asked` at exit 1 — a READY over a census of zero is not a pass.
+
+  Every check the belt WILL ask and this rung did not is named in the census with why, so silence
+  never teaches a reader the belt is smaller than it is. On stock defaults:
+
+      [pm] READY — story st-…: 1 of 4 [story] check(s) decidable before the work
+      (story-exists), all true; 3 the registry does not declare an entry condition,
+      asked at the close: story-verified (by `agentic-sdlc verify --story`), committed,
+      evidence-written
+
+  **There is no `ready-for adopt`, and asking for one is refused BY NAME** rather than as an unknown
+  kind. Every check in the adopt belt is either the work the bump does (`pin-bumped`,
+  `installables-current`, `config-updated`) or one that runs a command, which this verb never does —
+  so the derived entry set is empty and the rung could only ever answer NOT READY. The refusal says
+  that and points at `agentic-sdlc adopt <version>`, which runs the checks and writes nothing.
+
+- **Every `ready-for` rung emits a `rung.enter` event** — `{ts, kind, grain, rung, ready, blockers}`
+  — to the sink `[emit]` declares. **A tree with no `[emit]` section emits nothing**, which is how
+  the verb keeps its writes-nothing contract. The blocker list is the payload's work queue, whole
+  and not capped at what the terminal printed, and each blocker's `check` name is read from the
+  belt registry rather than chosen. **Emission is never load-bearing**: a malformed `kinds`, a sink
+  of the wrong type, a sink outside the checkout and a sink that cannot be written are each one
+  `[emit] WARNING` line on stderr, and none of them moves an exit code or a printed byte.
+
 - **`tree-clean` reads what `committed` reads: no modified path OUTSIDE the roadmap directory**
   (`ft-a-lesson-surfaces-where-you-stand`). `tree-clean` is `release`'s first check and it counted
   every modified path, while `committed` on the story belt already excluded the roadmap directory
@@ -25,6 +56,21 @@
   is in the way, and is a no-op on the second run. A settings file that already exists is
   refused by path and left byte for byte — `--force` included — because it carries permissions,
   env and MCP entries this package knows nothing about.
+
+  The emitted command is SHELL-QUOTED, because a path with a space in it (`~/my repo`,
+  `~/Google Drive/…`) produced a block the harness could not run while the write reported
+  success — the relative form had no space to break on, so absolutising the path introduced the
+  class. The write reports what it did and not what it cannot observe: *"in force for a session
+  rooted here"*, with the concrete `export GDK_LEDGER_ROOT=<root>` on the same line, because
+  whether a harness LOADS a settings file is not something this package can see. An ABSOLUTE path
+  names one machine, so the run also names `.claude/settings.local.json` — the per-user override a
+  harness writes for itself and a repo gitignores — as the home for the block in a shared
+  checkout; every surface that reads the wiring reads that file too.
+
+  **`agentic-sdlc init` reaches the same step.** It composed the five install verbs with the
+  next-step reporting off, so the brand-new consumer this verb exists for got no destination, no
+  block and no flag — strictly less than the hand-paste it replaced. Its Next list has an eighth
+  entry naming the file and the flag, and the pasteable block is last on stdout.
 
 - **The ledger couriers take their tree from `GDK_LEDGER_ROOT`.** Both couriers derived the repo
   from the stop event's `cwd`, so a session rooted at a parent directory that is not itself a git
@@ -168,14 +214,17 @@
   other row already lands in, routed by the grain the event names), a path inside the checkout
   (appended to as JSON lines), or `"-"` (one JSON line per event on stdout, beside the human prose
   and never inside it — a consumer parsing prose keeps parsing prose). `kinds` narrows which of the
-  three taps — `enter`, `verdict`, `leave` — produce a row. Both keys are stock-defaulted, so **a
-  tree declaring no `[emit]` behaves exactly as 0.4.0 did, exit codes and stdout included**, and
-  `pm config --seed` carries both commented at their real values. A sink this package cannot write
-  to is a `[emit] WARNING — …` line on stderr naming it: never a crash, never a changed exit code
-  and never silence, because emission is not load-bearing for any verdict. **No code path spawns a
-  process, imports a module named in config, or resolves a config string to a callable** — a hook
-  is an event this package writes, never a command it runs (0.5.0/D1), which is what keeps every
-  gate here safe to run from a git hook in parallel. `tests/test_boundaries.py` holds
+  three taps — `enter`, `verdict`, `leave` — produce a row. **Declaring the section is what turns
+  emission on**: both keys are stock-defaulted inside it, so a bare `[emit]` is the ledger and all
+  three taps and `pm config --seed` carries both commented at their real values — while **a tree
+  declaring no `[emit]` at all emits nothing and behaves exactly as 0.4.0 did, exit codes and
+  stdout included**, which `emit()` itself holds rather than each call site. A sink this package
+  cannot write to — or a row it cannot serialise — is a `[emit] WARNING — …` line on stderr naming
+  it: never a crash, never a changed exit code and never silence, because emission is not
+  load-bearing for any verdict. **No code path spawns a process, imports a module named in config,
+  or resolves a config string to a callable** — a hook is an event this package writes, never a
+  command it runs (0.5.0/D1), which is what keeps every gate here safe to run from a git hook in
+  parallel. `tests/test_boundaries.py` holds
   `repo/emit.py` to an import allowlist and to the same no-subprocess derivation the `shell` tier
   is built on, so a spawn added there is a build break rather than a review.
 
@@ -198,15 +247,41 @@
   `session` are the kinds a courier files (`ledger.EVENT_KINDS`), everything else is written from
   inside the repo and is not evidence a hook ever fired. A tree that has recorded one gets a
   counted `RECORDING  last hook-written row: dispatch, 3h ago` line; a tree that has not gets a
-  WARN naming what the ledgers DO hold. A tree that wires no courier stays silent — telemetry is
-  *clearly available, warned when absent, never mandatory* (0.4.0/D5).
+  WARN naming what the ledgers DO hold. A tree that wires no courier AND has recorded nothing
+  stays silent — telemetry is *clearly available, warned when absent, never mandatory*
+  (0.4.0/D5).
+
+  **The kind alone is not the courier's signature: the row must also carry a `session_id`.**
+  `pm ledger record SubagentStop` mints `dispatch` and `session` rows by hand from inside a
+  checkout, and this repo's own gate counted sixteen of them as *"came from a courier"* when no
+  courier had ever run. The session id comes from the hook payload; a hand row has none. The
+  failure direction is noisy, never blind — a courier row that somehow arrives without one reads
+  as `never`.
+
+  **The wiring is READ, not grepped.** `.claude/settings.json` was searched as raw text for a
+  courier's filename, so an allowlist entry (`Bash(bash tools/hooks/cc-ledger-session.sh
+  --self-test)`, which this package's own next-step text tells consumers to add) fired the full
+  WARN on a tree with no hook registered anywhere, and a registration in `.claude/
+  settings.local.json` was invisible. Both files are parsed, only `command` entries under `hooks`
+  count, and the line names which file was read. **The LEDGER outranks the config**: a tree with
+  no in-checkout settings file and a courier row still gets its `RECORDING` line, because the
+  block works in a settings file above the repo and reading only the config called such a tree
+  dead.
 
 - **`adopt`'s `telemetry-live` reports the row it observed, not only the config it read.** Its
   verdict line now carries the same phrase U4 prints — `the last hook-written row is dispatch, 3h
   ago`, or `last hook-written row: never` — off one shared reader, so the belt and the gate cannot
   disagree about whether a tree is recording. It still never refuses an adoption on its own, and
   the line no longer says `telemetry is live` over a tree where nothing has ever come through:
-  `wired` alone is the tool asserting an outcome it did not observe (rule 4).
+  `wired` alone is the tool asserting an outcome it did not observe (rule 4). Nor over a ledger it
+  could not read — the shared reader has always had a third answer, `UNVERIFIABLE`, and a belt
+  branching on two of the three let it fall through to a pass while `check pm` U4 on the same tree
+  called it *"not a finding, and not a pass either"*. It is `UNVERIFIABLE` on both surfaces now.
+  It reads the wiring through the same reader too, so a registration in
+  `.claude/settings.local.json` no longer reads as unwired and a tree recording through a settings
+  file above the checkout is no longer reported as having no telemetry. Its refusal names
+  `install-hooks --write-settings` and `GDK_LEDGER_ROOT` — it is the only surface a fresh consumer
+  reaches, because `check pm` U2 returns early on a tree that wires nothing.
 
 - **NEW OUTPUT LINE: a recorded `lesson` surfaces at the belt that touches its grain or runs its
   rule** (`ft-a-lesson-surfaces-where-you-stand`). A `lesson` row in the ledger is printed beside

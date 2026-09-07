@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a guard declares its violation corpus
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-07-0.6.0-a-guard-declares-its-violation-corpus.md
 depends_on: []
 consumed_by: []
 changelog: A source-shaped guard now declares the violations it must catch — `CORPUS` (planted input, must it be caught) and `catches()`, its own classifier over one — and `tests/test_guard_corpus.py` derives the roster of AST-shaped guards under `tests/` from source, replays every declared case, and holds the ones declaring nothing as an exact named roster that can only shrink. The shape is `prepare-commit-msg --self-test` plus `check hooks`, one layer over; nothing in the shipped CLI changed.

@@ -2221,3 +2221,4 @@
 {"ts":"2026-09-07T23:39:03Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_nothing_that_ships_acts_on_an_engine_artifact","duration_ms":681,"rank":5}
 {"ts":"2026-09-07T23:39:03Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6988,"census":1107}
 {"ts":"2026-09-07T23:39:03Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":7090,"state":"fab673adaabd03d6e93425318a9f18a062de14c1a22067eb1f2192a88c3d22be","graded":"e4adaf47e6e830d2da8c072ade0cb53295595686afc4915fab4fd94e2738d89e","census":1107}
+{"ts":"2026-09-07T23:39:28Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2865}

@@ -21,6 +21,11 @@ Deliberately AST, not grep: `subprocess.run(['git', 'mv', ...])` is not a
 `Path.rename`, a string `'rglob'` in a docstring is not a call, and a grep
 cannot tell those apart. An AST walk decides from the syntax, with no inference
 and nothing to tune.
+
+**Every guard here declares `CORPUS` and `catches()`, and a new one must.**
+`tests/test_guard_corpus.py` replays each corpus and names any AST-shaped guard
+that declares none: the classifiers below all assert an EMPTY offender list,
+and a reader that stopped reading returns one too.
 """
 from __future__ import annotations
 

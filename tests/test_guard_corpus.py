@@ -43,6 +43,7 @@ stated rather than implied.
 from __future__ import annotations
 
 import ast
+import functools
 import importlib
 import unittest
 from pathlib import Path
@@ -200,15 +201,23 @@ def _guards(module: str, tree: ast.Module) -> list[Guard]:
     return out
 
 
-def _modules() -> list[Path]:
-    return sorted(TESTS.glob(MODULE_GLOB))
+@functools.cache
+def _modules() -> tuple[Path, ...]:
+    return tuple(sorted(TESTS.glob(MODULE_GLOB)))
 
 
-def _roster() -> list[Guard]:
-    """Every guard under `tests/`, read from source and never imported."""
-    return [guard for path in _modules()
-            for guard in _guards(path.name,
-                                 ast.parse(path.read_text(encoding='utf-8')))]
+@functools.cache
+def _roster() -> tuple[Guard, ...]:
+    """Every guard under `tests/`, read from source and never imported.
+
+    Cached for the same reason `conftest.module_spawns` is: every case below
+    asks for the whole roster, and a file does not change under a running
+    session. Reading 33k lines of `tests/` four times cost the inner loop four
+    seconds, and a tier that got slower is a finding (rule 10).
+    """
+    return tuple(guard for path in _modules()
+                 for guard in _guards(path.name,
+                                      ast.parse(path.read_text(encoding='utf-8'))))
 
 
 def _declared(guard: Guard) -> tuple[tuple, object]:

@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a warning is actionable where it fires
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-07-0.6.0-a-warning-is-actionable-where-it-fires.md
 depends_on: []
 consumed_by: []
 changelog: check pm's READY warnings now fire only on in_progress grains and roll every closed grain's gap into one counted READY line, U1 prints one line for every grain kind instead of one per kind, and U4 names install-hooks --write-settings in its second sentence with the row census capped at three kinds — three output shapes consumers grep, so minor.

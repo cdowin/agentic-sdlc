@@ -816,6 +816,14 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
     ff, cur = _feature_or_usage(cfg, fid)
 
     if rec:
+        # Escape FIRST: a pointer outside the checkout is refused before it is
+        # resolved, so a file that happens to exist there cannot be stamped
+        # (hard rule 8). This verb checked only that the path resolved.
+        if model.pointer_escapes(rec):
+            raise Refused(
+                f'feature {fid} -> {to}: review record {rec!r} names a path '
+                f'outside this checkout — nothing outside it is read (hard '
+                f'rule 8), and nothing was written')
         # The one thing checked about a record: the path resolves. Length is
         # not this tool's question.
         target = model.record_path(cfg, rec)

@@ -593,7 +593,9 @@ class GitSource(Source):
         if ffile is None:
             return None
         pointer = model.unquote(self.field_of(ffile, 'reviewed'))
-        if pointer and pointer != 'null' and not pointer.startswith('/'):
+        # `pointer_escapes`, not `startswith('/')`: the local check accepted
+        # `../outside.md` and `~/x.md` (0.6.0, F1's class).
+        if pointer and pointer != 'null' and not model.pointer_escapes(pointer):
             if self.is_file(cfg.root / pointer):
                 return pointer
         return None

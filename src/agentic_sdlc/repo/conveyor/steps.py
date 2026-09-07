@@ -1431,10 +1431,13 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
         return None, (f'{ctx.version} points at no review record — '
                       f'`reviewed:` is blank; run the feature review and '
                       f'`pm set {ctx.version} reviewed <path>`')
-    if pointer.startswith('/') or pointer.startswith('~'):
+    # `model.pointer_escapes`, not a local spelling of it: this hand-rolled
+    # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
+    # predicate refuses. F1's class, in a second verb (0.6.0).
+    if model.pointer_escapes(pointer):
         return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
-    path = cfg.root / pointer
+    path = model.record_path(cfg, pointer)
     if not path.is_file():
         return None, f'reviewed: names no file ({pointer})'
     size = path.stat().st_size

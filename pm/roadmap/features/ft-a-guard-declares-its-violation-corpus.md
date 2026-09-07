@@ -3,7 +3,7 @@ id: ft-a-guard-declares-its-violation-corpus
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a guard declares its violation corpus
-status: building
+status: done
 reviewed: docs/reviews/2026-09-07-0.6.0-a-guard-declares-its-violation-corpus.md
 depends_on: []
 consumed_by: []

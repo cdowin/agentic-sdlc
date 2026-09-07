@@ -3,7 +3,7 @@ id: ft-a-warning-is-actionable-where-it-fires
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a warning is actionable where it fires
-status: building
+status: done
 reviewed: docs/reviews/2026-09-07-0.6.0-a-warning-is-actionable-where-it-fires.md
 depends_on: []
 consumed_by: []

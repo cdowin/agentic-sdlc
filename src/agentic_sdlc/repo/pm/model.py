@@ -2541,7 +2541,7 @@ def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     pointer = unquote(field_of(ffile, 'reviewed'))
     if not pointer or pointer == 'null':
         return None
-    target = Path(pointer) if pointer.startswith('/') else cfg.root / pointer
+    target = record_path(cfg, pointer)
     if record_resolves(target):
         return None
     return f'reviewed: {pointer!r} resolves to nothing'

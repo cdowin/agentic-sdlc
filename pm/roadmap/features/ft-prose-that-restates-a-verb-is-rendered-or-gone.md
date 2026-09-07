@@ -3,7 +3,7 @@ id: ft-prose-that-restates-a-verb-is-rendered-or-gone
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: prose that restates a verb is rendered or gone
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-07-0.6.0-prose-that-restates-a-verb.md
 depends_on: []
 consumed_by: []

@@ -3,7 +3,7 @@ id: ft-the-dispatch-carries-the-contract
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: the dispatch carries the contract
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-07-0.6.0-the-dispatch-carries-the-contract.md
 depends_on: []
 consumed_by: []

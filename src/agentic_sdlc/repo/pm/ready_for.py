@@ -205,7 +205,13 @@ class Record:
 
 def _pointer_defect(pointer: str) -> str | None:
     """Why this `reviewed:` value may not be followed, decided by shape before
-    anything is opened (hard rule 8)."""
+    anything is opened (hard rule 8).
+
+    RICHER than `model.pointer_escapes`, deliberately: this belt names WHICH
+    shape is wrong so the operator can fix it, where the predicate answers
+    yes/no for a caller that only refuses. They must never DISAGREE about the
+    verdict, and `tests/test_contracts.py` holds them to that.
+    """
     if not pointer or pointer == 'null':
         return 'reviewed: is blank — no review record is named'
     if len(pointer) > MAX_POINTER_LEN:

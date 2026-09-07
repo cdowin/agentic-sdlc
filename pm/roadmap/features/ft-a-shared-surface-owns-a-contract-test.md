@@ -3,7 +3,7 @@ id: ft-a-shared-surface-owns-a-contract-test
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a shared surface owns a contract test
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-07-0.6.0-a-shared-surface-owns-a-contract-test.md
 depends_on: []
 consumed_by: []

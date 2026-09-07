@@ -423,10 +423,15 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
     @staticmethod
     def row(**over) -> dict:
         """A whole `verify` row for this fixture's story rung; `over` is the
-        one field a case is about."""
+        one field a case is about. `graded` is the digest of the rows `check
+        budget` grades in a ledger holding none — asked of the module rather
+        than spelled here, so the fixture cannot agree with a literal."""
+        from agentic_sdlc.repo.verify import cache
+
         base = {'ts': '2026-09-05T10:00:00Z', 'kind': 'verify',
                 'rung': 'story', 'gate': 'story', 'verdict': 'PASS',
-                'exit_code': 0, 'duration_ms': 5, 'graded': 0}
+                'exit_code': 0, 'duration_ms': 5,
+                'graded': cache.graded_of('').digest}
         base.update(over)
         return base
 

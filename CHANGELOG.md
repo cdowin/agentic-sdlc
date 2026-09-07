@@ -242,8 +242,9 @@
   session rows) are out, because a state covering what a gate writes while it runs could never
   repeat — and every other row is IN, because a status flip or a decision is a fact about the tree.
   Two of the dropped kinds are graded anyway, by `check budget` inside `make milestone`, so the row
-  carries **how many of them the ledger held** and a reuse over a ledger that has grown one runs the
-  target and says which check reads them. `verify` records where a PM tree already is and **never
+  carries **a digest of them as that run left them** — not a count, which a row edited in place by a
+  merge or a trim would slip past — and a reuse over a ledger whose graded rows moved runs the target
+  and says which check reads them. `verify` records where a PM tree already is and **never
   creates one**. `--no-cache` beside `--plan` or `--check` is exit 2 — those run no rung.
 
 - **The two files `pm install-skills` writes stop asserting behaviour this package retired, and

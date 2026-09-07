@@ -13,8 +13,8 @@ Out of the digest: ignored files, and the ledger rows a run files about ITSELF
 never repeat. Every OTHER ledger row is IN, line by line (`ledger_digest`):
 a status or a decision is a fact about the tree, and dropping the ledger FILE
 dropped those too. Two dropped kinds are graded anyway, by `check budget`
-inside `make milestone`, so the row carries HOW MANY the ledger held and a
-reuse over a ledger that has grown one refuses (`stale_line`).
+inside `make milestone`, so the row carries a DIGEST of them as that run left
+them (`graded_of`) and a reuse over rows that moved refuses (`stale_line`).
 """
 from __future__ import annotations
 
@@ -75,8 +75,8 @@ class State:
 
 @dataclass(frozen=True)
 class Graded:
-    """The ledger rows `check budget` grades, as one comparable value: what a
-    tree state cannot carry, because the run being graded writes them."""
+    """The rows `check budget` grades, as one comparable value: what no tree
+    state can carry, because the run being graded writes them."""
 
     digest: str
     rows: int
@@ -110,13 +110,13 @@ def tree_state(root: Path) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest. A question git could not answer is never a hit, and the
-    defect is returned to be PRINTED (rule 11)."""
+    defect comes back to be PRINTED (rule 11)."""
     return _state_of(root, _is_ledger())
 
 
 def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
-    """`tree_state`, carrying the ledger predicate: built once and passed down
-    into every submodule, so one PM config read serves the whole walk."""
+    """`tree_state`, carrying the ledger predicate down into every submodule so
+    one PM config read serves the whole walk."""
     listing = _git(root, 'ls-files', '-z', '--cached', '--others',
                    '--exclude-standard')
     if listing is None:
@@ -135,7 +135,7 @@ def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
             content = _ledger_content(path)
             # Nothing but a run's own leavings contributes NOTHING, not an
             # empty field: the first run CREATES that file, and a state moving
-            # for it could never match the row that run wrote.
+            # for that could never match the row that run wrote.
             if content is None:
                 continue
         else:
@@ -199,8 +199,7 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 
 def _ledger_content(path: Path) -> bytes | None:
-    """A ledger's rows minus the ones a run files about itself; None when that
-    leaves nothing at all."""
+    """A ledger's rows minus a run's own; None when that leaves nothing."""
     try:
         raw = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
@@ -271,9 +270,9 @@ def ledger_file(root: Path) -> Path | None:
 def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
                                                          Graded | None]:
     """(the LAST verdict recorded for this make target over this exact tree
-    state, the rows `check budget` grades AS THEY ARE NOW) — one pass, because
-    both answers are the same file. Keyed on the TARGET, because what ran is
-    what was proven. `None` either side means *run the target*."""
+    state, the rows `check budget` grades AS THEY ARE NOW) — one pass, one
+    file. Keyed on the TARGET, because what ran is what was proven; `None`
+    either side means *run the target*."""
     path = ledger_file(root)
     if path is None or not state:
         return None, None
@@ -322,8 +321,8 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
 
 
 def _graded_in(path: Path) -> Graded | None:
-    """`graded_of` for a ledger FILE: the empty answer for one that is not
-    there yet, None for one that is and cannot be read."""
+    """`graded_of` for a FILE: the empty answer for one not there yet, None for
+    one that is and cannot be read."""
     if not path.is_file():
         return graded_of('')
     try:
@@ -333,10 +332,9 @@ def _graded_in(path: Path) -> Graded | None:
 
 
 def graded_of(raw: str) -> Graded:
-    """Every row `check budget` grades, digested in file order, and how many
-    there are. A DIGEST and not a count: an edit in place — a merge, a hand
-    trim, a restored older ledger — leaves the count alone and moves exactly
-    what that check reads (it grades the NEWEST row per target)."""
+    """Every row `check budget` grades, digested in file order, and how many.
+    A DIGEST, not a count: an edit in place — a merge, a trim, a restored older
+    ledger — holds the count and moves the NEWEST row per target."""
     digest = hashlib.new(STATE_ALGO)
     rows = 0
     for line in raw.splitlines():
@@ -398,8 +396,8 @@ def _row(line: str) -> dict | None:
 
 def _verdict(row: dict) -> Verdict | None:
     """A `verify` row as a `Verdict`, or None when ANY field is missing or the
-    wrong shape — the whole trust boundary. Rows arrive from other branches,
-    versions and hands; a half-read row that became a PASS is rule 4's sin."""
+    wrong shape — the trust boundary. Rows arrive from other branches, versions
+    and hands; a half-read row that became a PASS is rule 4's sin."""
     if ledger.parse_ts(row.get('ts')) is None:
         return None
     if row.get('verdict') not in ledger.VERIFY_VERDICTS:
@@ -438,8 +436,8 @@ def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
                 now: datetime | None = None) -> list[str]:
     """What a reuse prints: the run it came from with its age, census and cost;
     the state that made it reusable and the flag that refuses it; and what this
-    read did NOT re-measure. Never abbreviated, never conditional — the third
-    line most of all, since a state is a claim about the working tree alone."""
+    read did NOT re-measure — never conditional, the third line most of all,
+    since a state is a claim about the working tree alone."""
     census = f'census {found.census}' if found.census is not None \
         else 'census unknown'
     # `command` names the recorded run honestly: the row was found BY its

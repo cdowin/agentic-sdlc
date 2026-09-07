@@ -24,9 +24,9 @@ census and cost and exits with its code, instead of running the target. One
 byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
 `--plan` or `--check`. Ignored files and the ledger rows a run files about
 ITSELF are not in the digest — a state covering what a gate writes while it
-runs could never repeat — so the rows `check budget` grades are COUNTED in the
-row instead, and a reuse over a ledger that has grown one runs the target
-(`verify/cache.py`).
+runs could never repeat — so the rows `check budget` grades are DIGESTED into
+the row instead, and a reuse over a ledger whose graded rows moved runs the
+target and says so (`verify/cache.py`).
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.

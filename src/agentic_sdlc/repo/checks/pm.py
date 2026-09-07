@@ -903,8 +903,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
     if 'R5' not in enabled:
         return
     if not order:
-        # A tree mid-adoption has no plan yet. Reddening it would be milestone
-        # risk 1: a rule that fails every fresh consumer gets switched off.
+        # A tree mid-adoption has no plan yet; a rule that fails every fresh
+        # consumer gets switched off.
         warn(f'R5 is enabled and {cfg.rel(model.releases_file(cfg))} declares '
              f'no `order` — nothing to grade {cfg.version_file} against; '
              f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
@@ -913,9 +913,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
     accepted, why = model.graded_release_accepts(cfg)
     current = accepted[0] if accepted else None
     if current is None:
-        # The reason is READ, never invented: saying "every entry has shipped"
-        # over a tree where none had was a confident wrong answer at exit 0
-        # (review B3).
+        # The reason is READ, never invented: "every entry has shipped" over a
+        # tree where none had was a confident wrong answer at exit 0 (B3).
         warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
              f'(under [pm] version_at = {cfg.version_at!r})')
         return
@@ -943,13 +942,10 @@ def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
     """`'4 milestone(s), 44 feature(s), 79 story/ies, 11 bug(s)'` — with every
     narrowing each walk made, rendered beside the count it narrowed.
 
-    Pooled: each pool renders its OWN census, because that is the walk that
-    produced the number. The count is the POOL's rather than the drift walk's
-    on purpose: a document with damaged frontmatter declares no `id:`, so no
-    descent reaches it, and a census counting only what the descent saw would
-    quietly drop the document `unkeyed_documents` just reported by name.
-
-    Nested: the drift walk's own counts, with `tree_walk`'s disclosures.
+    Pooled counts are the POOL's rather than the drift walk's on purpose: a
+    document with damaged frontmatter declares no `id:`, so no descent reaches
+    it, and a census counting only what the descent saw would quietly drop the
+    document `unkeyed_documents` just reported by name.
     """
     if model.is_pooled(cfg):
         return ', '.join(model.pool_census(cfg, kind, label) for kind, label in

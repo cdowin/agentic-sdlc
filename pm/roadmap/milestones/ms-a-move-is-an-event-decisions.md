@@ -89,3 +89,60 @@ that stays possible, and this decision is not a commitment to never do it.
 until all five bugs close. The milestone's Risks section already says weight is shed from the
 lessons half and never from the edges; the bugs are not sheddable at all, because they are open
 against released code.
+
+## D3 — 2026-09-07 — Arrival is the primitive; states declare what arriving asks
+
+**There is one event in this system and it is ARRIVAL: a grain reaches a state.** Everything this
+milestone has been building — hooks, the fork, dispositions, telemetry, lessons, breadcrumbs — is a
+reader of that one event. They were being designed as five mechanisms because nobody had named the
+one underneath them.
+
+**The config already declares the nodes. It gains one table: what ARRIVING at each state asks.**
+
+    [pm.states.feature]                     # today — the nodes and their categories
+    todo        = ["planning", "ready"]
+    in_progress = ["building", "reviewing"]
+    done        = ["done", "obe"]
+
+    [pm.arrive.feature.building]            # new — the action tied to the state
+    ask     = "what is building this?"
+    answers = ["--by me", "--by agent <type>"]
+
+    [pm.arrive.feature.reviewing]
+    ask     = "what happens to it?"
+    answers = ["--review agent <type>", "--skip review \"<why>\""]
+
+**An arrival does four things, and all four are derived from what the project declared:**
+
+    1  writes the status                        (today)
+    2  asks its question, both answers typed    ft-the-conveyor-pushes-back
+    3  records the disposition, or `none`       ft-every-edge-carries-a-disposition
+    4  emits the event                          ft-one-event-shape-serves-three-readers
+
+The belts are unchanged and sit on top: a belt is its checks, then one write — **and a write is an
+arrival**, so a belt's close is an arrival like any other, and a skipped check is that arrival's
+disposition.
+
+**DIRECTION IS NOT MODELLED, and that is the point.** The unit is arrival, never the pair
+`(from, to)`. `building -> planning` is an arrival at `planning`. A second pass through `building`
+asks *"what is building this?"* again — which is the correct question, because it is the question, and
+the answer genuinely may have changed. So:
+
+- there is no transition table, and there never will be one. Rule 9 already says the tool has no
+  opinion about which state may follow which; making arrival the unit means it never needs one.
+- backwards costs nothing to support because it was never a special case.
+- a grain that bounces is not an error, it is an arrival log with more rows, which is exactly what a
+  reader wants to see.
+
+**Telemetry is passive and reads that log.** Time in a state is the gap between two arrivals on one
+grain. Who did the work is an arrival's disposition. What was skipped is an arrival's disposition at
+`done`. None of it needs a harness hook, which is the failure this milestone hit: nine dispatches,
+zero rows, because the only telemetry path ran through something outside the tree. **A tree that
+records its own arrivals knows what it did without asking anyone.** Hook-written rows keep enriching
+it — tokens, tool calls — joined on the disposition's `ref`.
+
+**Rejected: modelling transitions as edges with allowed sources.** It is the obvious reading of "state
+machine", it makes backwards a special case that needs permission, and it puts the tool in the
+business of deciding which move is legitimate — the exact opinion rule 9 forbids. Arrival is
+strictly less machinery and strictly more honest: the tree records where things went, not where they
+were permitted to go.

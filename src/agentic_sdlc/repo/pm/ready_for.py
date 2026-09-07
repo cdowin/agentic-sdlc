@@ -13,18 +13,13 @@ Nothing is written. A feature with no stories is vacuously ready; a
 milestone with no features, or no records, is not. UNVERIFIABLE is never a
 pass.
 
-**The story rung's condition is DECLARED, never spelled here.** It is the
-project's own `[story] steps` — `driver.step_names`, so a narrowed list is the
-list — intersected with `steps.ENTRY_CONDITIONS`, the registry's own statement
-of which checks are decidable before the work. Every check this verb does not
-ask is NAMED in the census with why (rule 11), and the ones it does ask are the
-belt's own check objects, asked rather than re-implemented.
+**The story rung's condition is DECLARED, never spelled here** — the derivation
+is `_entry_condition`, and every check this verb does not ask is NAMED in the
+census with why (rule 11).
 
 Every rung emits `rung.enter` — `{rung, grain, ready, blockers}` — to the sink
-`[emit]` declares, and nothing at all where a tree declares no `[emit]`, which
-is how this verb keeps writing nothing. Emission is never load-bearing: it
-changes no exit code and no printed line, and a sink that could not be written
-is a finding on stderr (rule 11).
+`[emit]` declares, and nothing at all where a tree declares none. Emission is
+never load-bearing: see `_emit_enter`.
 """
 from __future__ import annotations
 
@@ -38,28 +33,24 @@ from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import ledger, model, verdict
 from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
 
-# The closed set of questions. Four, and an unknown one names all four; the
-# story rung is first because it is the one an agent asks dozens of times a
-# milestone.
+# The closed set of questions; an unknown kind names all four.
 STORY, FEATURE, MILESTONE, TAG = 'story', 'feature', 'milestone', 'tag'
 KINDS = (STORY, FEATURE, MILESTONE, TAG)
 
-# The row kind the entry tap writes. `emit.TAP_ENTER` is WHICH tap; this is
-# what the row calls itself, in the `<rung>.<edge>` spelling `rung.leave` uses.
+# What the row calls itself, in the `<rung>.<edge>` spelling `rung.leave` uses;
+# `emit.TAP_ENTER` is WHICH tap.
 KIND_ENTER = 'rung.enter'
 
-# The payload's boolean key, a CONSTANT because `ready` is also a word the
-# story seed spells and `tests/test_pm_flow.py` holds every state literal to a
-# named assignment. This is a HOMONYM, like `verdict.OPEN`: it is the ANSWER
-# this verb gave, and it says nothing about any grain's status.
+# A CONSTANT because `ready` is also a word the story seed spells, and a
+# HOMONYM like `verdict.OPEN`: it is the ANSWER this verb gave, and says
+# nothing about any grain's status.
 READY_KEY = 'ready'
 
-# The question is a category, asked through `model.holds` so this and `check
-# pm` D2 cannot disagree.
+# A category, asked through `model.holds` so this and `check pm` D2 cannot
+# disagree.
 DONE = model.DONE_CATEGORY
 
-# Named blockers are capped; the remainder is disclosed, never silently
-# dropped.
+# Named blockers are capped; the remainder is disclosed, never dropped.
 MAX_NAMED = 50
 
 # Both bounds are refusals, not truncations.
@@ -76,12 +67,11 @@ UNVERIFIABLE = 'UNVERIFIABLE'
 
 # --- reporting ----------------------------------------------------------------
 class Blocker(NamedTuple):
-    """One reason a rung is not ready: the check it belongs to, and the
-    sentence printed for it.
+    """One reason a rung is not ready.
 
-    `check` is '' when the blocker is the RUNG's own answer rather than a
-    named check's — a milestone with no features has no check to blame, and
-    inventing a name for it would put a word in the registry's mouth.
+    `check` is '' when the blocker is the RUNG's own answer rather than a named
+    check's — a milestone with no features has no check to blame, and inventing
+    a name would put a word in the registry's mouth.
     """
 
     check: str
@@ -89,13 +79,11 @@ class Blocker(NamedTuple):
 
 
 def _check_answered_by(rung: str) -> str:
-    """The belt check this rung IS, read from the registry's shipped actions.
+    """The belt check this rung IS, read from the registry's shipped actions;
+    '' for a rung no check names.
 
-    `SHIPPED_ACTION` declares what answers each check, and three of its entries
-    are `agentic-sdlc pm ready-for <rung> <id>` — so `stories-done` is the name
-    the feature rung's blockers carry, DERIVED, and the emitted payload names
-    the check `close feature` will print rather than a word chosen here. '' for
-    a rung no check names.
+    DERIVED, so a blocker here carries the name `close feature` will print
+    rather than a word chosen in this module.
     """
     from agentic_sdlc.repo.conveyor import steps as step_defs
     named = [name for name, action in step_defs.SHIPPED_ACTION.items()
@@ -104,10 +92,9 @@ def _check_answered_by(rung: str) -> str:
 
 
 def _enter_row(rung: str, grain: str, blockers: list[Blocker]) -> dict:
-    """The `rung.enter` payload: which rung was asked, of what, the answer,
-    and the blockers as the caller's work queue (ft-one-event-shape-serves-
-    three-readers). Every field is the invocation or a check name — nothing
-    here decides anything.
+    """The `rung.enter` payload, with the blockers as the caller's work queue
+    (ft-one-event-shape-serves-three-readers). Every field is the invocation or
+    a check name — nothing here decides anything.
     """
     return {'ts': ledger.utc_now(), 'kind': KIND_ENTER, 'grain': grain,
             'rung': rung, READY_KEY: not blockers,
@@ -118,12 +105,10 @@ def _emit_enter(cfg: model.PmConfig, rung: str, grain: str,
                 blockers: list[Blocker]) -> None:
     """Write the entry event, or nothing, and never change the answer.
 
-    A tree with no `[emit]` section opted out and is owed no line
-    (`emit.declared`) — which is also how this verb keeps its "writes nothing"
-    contract on a tree that asked for nothing. Every failure below is a finding
-    said once on stderr, in `emit`'s own prefix, because an exit code that
-    moved because a SINK was unwritable would make this verb unusable as a
-    predicate.
+    A tree with no `[emit]` opted out and is owed no line — which is how this
+    verb keeps its "writes nothing" contract. Every failure below is a finding
+    on stderr and never the exit code: a code that moved because a SINK was
+    unwritable would make this verb unusable as a predicate.
     """
     row = _enter_row(rung, grain, blockers)
     try:
@@ -139,8 +124,8 @@ def _answer(cfg: model.PmConfig, rung: str, grain: str, subject: str,
             blockers: list[Blocker], census: str) -> int:
     """Print the verdict for one question and return its exit code — the one
     place the 0/1 contract is spelled, and the one place `rung.enter` is
-    emitted from, so no rung can answer without an event or emit one it did
-    not print.
+    emitted from, so no rung answers without an event or emits one it did not
+    print.
     """
     if not blockers:
         _ok(f'{READY} — {subject}: {census}')
@@ -161,17 +146,14 @@ def _answer(cfg: model.PmConfig, rung: str, grain: str, subject: str,
 
 # --- grain resolution ---------------------------------------------------------
 def _kind_of(path: Path) -> str:
-    """What the document at `path` says it is.
-
-    The grain's own `kind:` since 0.4.0, with the filename as the fallback for
-    a document that declares none — it used to come from the FILENAME, which is
-    the path being schema.
+    """The grain's own `kind:` since 0.4.0, with the filename as the fallback
+    for a document that declares none — it used to come from the FILENAME,
+    which is the path being schema.
     """
     found = model.unquote(model.field_of(path, 'kind'))
     if not found:
         # A nested tree's documents declare no `kind:`; there the slot name IS
-        # the kind, which is the derivation 0.4.0 deletes and this is the last
-        # place it survives.
+        # the kind — the derivation 0.4.0 deletes, surviving here alone.
         found = {model.MILESTONE_DOC: 'milestone',
                  model.FEATURE_DOC: 'feature'}.get(path.name, 'story')
     return found
@@ -182,9 +164,9 @@ def _grain(cfg: model.PmConfig, kind: str, gid: str, want: str, noun: str,
     """The grain file `gid` names, of the right kind, or exit 2; a story id
     handed to `ready-for feature` would get the wrong question answered.
 
-    The kind is `_kind_of`'s, so an absent one falls back to the document name
-    — which reads anything that is not a milestone or a feature document as a
-    story, and is why the story rung asks the grain INDEX instead.
+    `_kind_of`'s kind, whose filename fallback reads anything that is not a
+    milestone or feature document as a story — which is why the story rung asks
+    the grain INDEX instead.
     """
     path = _grain_file(cfg, gid)
     found = _kind_of(path)
@@ -212,8 +194,7 @@ class Record:
 
 def _pointer_defect(pointer: str) -> str | None:
     """Why this `reviewed:` value may not be followed, decided by shape before
-    anything is opened (hard rule 8).
-    """
+    anything is opened (hard rule 8)."""
     if not pointer or pointer == 'null':
         return 'reviewed: is blank — no review record is named'
     if len(pointer) > MAX_POINTER_LEN:
@@ -241,9 +222,7 @@ def _pointer_defect(pointer: str) -> str | None:
 
 def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | None]:
     """(record, defect) for one `reviewed:` pointer — exactly one is not None.
-    The single resolver behind `milestone` and `tag`; an empty record is a
-    defect.
-    """
+    The single resolver behind `milestone` and `tag`; empty is a defect."""
     defect = _pointer_defect(pointer)
     if defect is not None:
         return None, defect
@@ -282,18 +261,15 @@ def _story_subject(cfg: model.PmConfig, sid: str) -> None:
     """Refuse what cannot be a story id, and an id naming another kind.
 
     An id that names NOTHING is deliberately NOT refused here: `story-exists`
-    is the belt's own check for exactly that, `close story` answers it at exit
-    1, and this rung answering 2 to the same tree would be two rulings about
-    one fact. The shape check comes first so a hostile id is still refused
-    without a grain being read.
+    is the belt's own check for that, and this rung answering 2 where the belt
+    answers 1 would be two rulings about one fact. The shape check comes first
+    so a hostile id is refused without a grain being read.
     """
     defect = model.id_defect(sid)
     if defect:
         raise Usage(f'no grain resolves from id {sid!r} — {defect}')
-    # The INDEX's kind, not the document name's: the index carries the kind the
-    # grain was read as, where the filename fallback in `_kind_of` reads
-    # anything that is not a milestone or feature document as a story — which
-    # is right for the rungs that want one of those two and would let a bug
+    # The INDEX's kind, not the document name's: `_kind_of`'s fallback is right
+    # for the rungs that want a milestone or a feature, and would let a bug
     # through here.
     grain = model.grain_index(cfg).get(sid)
     if grain is None:
@@ -306,15 +282,14 @@ def _story_subject(cfg: model.PmConfig, sid: str) -> None:
 
 def _entry_condition(operation: str) -> tuple[list, list[str], tuple[str, ...]]:
     """(the checks to ask, one sentence per check NOT asked, the whole declared
-    list) — the derivation, and the reason this rung is not a list of ids.
+    list) — the reason this rung is not a list of ids.
 
     Three runtime sources, no fourth: `driver.step_names` for the project's own
     `[<op>] steps` (a narrowed list is the list), `driver.registry_for` for the
-    check objects behind those names, and `steps.ENTRY_CONDITIONS` for which of
-    them the registry DECLARES decidable before the work. A check that is an
-    entry condition and still runs a command is passed over too, with that as
-    the reason: `ready-for` boots nothing (hard rule 2), and a rung that shelled
-    out would stop being safe to ask dozens of times a milestone.
+    check objects, and `steps.ENTRY_CONDITIONS` for which of them the registry
+    DECLARES decidable before the work. An entry condition that still runs a
+    command is passed over too: `ready-for` boots nothing (hard rule 2), and a
+    rung that shelled out would stop being safe to ask dozens of times a day.
     """
     from agentic_sdlc.repo.conveyor import driver
     from agentic_sdlc.repo.conveyor import steps as step_defs
@@ -338,11 +313,8 @@ def _entry_condition(operation: str) -> tuple[list, list[str], tuple[str, ...]]:
 
 def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
     """The inner loop's entry edge: the story belt's own checks that are
-    decidable before the work, asked of the tree as it stands.
-
-    The checks are ASKED, never re-implemented — `close story` and this rung
-    read one registry, so the sentence a blocker carries here is the sentence
-    that belt will print.
+    decidable before the work, ASKED rather than re-implemented, so a blocker
+    here carries the sentence `close story` will print.
     """
     from agentic_sdlc.repo.conveyor import driver
     _story_subject(cfg, sid)
@@ -363,9 +335,8 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
         if not blockers:
             census += ', all true'
     else:
-        # Rule 4's floor: a verdict over a census of zero is not a pass. The
-        # belt declared checks and none of them can be answered yet, so nothing
-        # was asked — and READY would be a claim about a question nobody put.
+        # Rule 4's floor: nothing was asked, so READY would be a claim about a
+        # question nobody put.
         blockers.append(Blocker(
             '', f'nothing was asked — [{STORY}] steps declares {len(names)} '
                 f'check(s) and the registry declares none of them decidable '
@@ -379,9 +350,7 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
 # --- story -> feature ---------------------------------------------------------
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     """Is every story under this feature in the `done` category? Exit 1 names
-    each that is not, with the word the file holds; no stories is vacuously
-    ready.
-    """
+    each that is not, with the word the file holds; no stories is vacuous."""
     ffile = _grain(cfg, FEATURE, fid, 'feature', FEATURE,
                    "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
@@ -394,8 +363,6 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
           model.field_of(sfile, 'status') or '(no status:)')
          for sfile in kept),
         DONE)
-    # One check answers this whole rung — `stories-done`, read from the
-    # registry — so every blocker carries the name `close feature` will print.
     check = _check_answered_by(FEATURE)
     blockers = [Blocker(check, name) for name in held.names]
     skipped = model.pool_skipped(cfg, 'story')
@@ -414,8 +381,8 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
 def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
     """(id, path) per feature BOUND TO this milestone, in its declared order.
 
-    Takes the milestone's DOCUMENT, not its directory: a pooled tree has no
-    per-milestone directory, and membership is the child's field.
+    Takes the DOCUMENT, not a directory: a pooled tree has none, and membership
+    is the child's field.
     """
     mid = model.unquote(model.field_of(mfile, 'id'))
     return [(model.unquote(model.field_of(ff, 'id')) or cfg.rel(ff), ff)
@@ -424,8 +391,7 @@ def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
 
 def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     """((id, status) for every bug whose `fix_milestone:` is `mid`), scanned
-    across the whole active tree — a bug is filed where it was caught.
-    """
+    across the whole active tree — a bug is filed where it was caught."""
     against = []
     scanned = 0
     for milestone in model.milestones(cfg):
@@ -442,8 +408,7 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
     promised to this milestone outside `done`. Zero features exits 1,
-    deliberately opposite to the empty-story ruling.
-    """
+    deliberately opposite to the empty-story ruling."""
     mfile = _grain(cfg, MILESTONE, mid, 'milestone', MILESTONE,
                    "about a milestone's features")
     features = _features(cfg, mfile)
@@ -452,8 +417,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     if not features:
         return _answer(cfg, MILESTONE, mid, subject,
                        # Worded to share no phrase with the feature belt's
-                       # empty-set line; the two rulings are opposite. No check
-                       # is blamed: the rung itself is the one answering.
+                       # empty-set line; the two rulings are opposite.
                        [Blocker('', f'{mid} has no features — an empty feature '
                                     f'set does not satisfy this belt; a '
                                     f'mis-typed id looks exactly like this')],
@@ -489,9 +453,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
 def _pointers(cfg: model.PmConfig, mid: str,
               mfile: Path) -> list[tuple[str, str]]:
     """(owner, pointer) for every record this milestone points at: the
-    features' plus the milestone document's own, never a `review_dir`
-    sweep.
-    """
+    features' plus the milestone's own, never a `review_dir` sweep."""
     owned = [(fid, model.unquote(model.field_of(ffile, 'reviewed')))
              for fid, ffile in _features(cfg, mfile)]
     owned.append((mid, model.unquote(model.field_of(mfile, 'reviewed'))))
@@ -500,8 +462,7 @@ def _pointers(cfg: model.PmConfig, mid: str,
 
 def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     """Is every finding in every record this milestone points at not `open`?
-    An unparseable record is UNVERIFIABLE and blocks; no records blocks.
-    """
+    An unparseable record is UNVERIFIABLE and blocks; no records blocks."""
     mfile = _grain(cfg, TAG, mid, 'milestone', MILESTONE,
                    "about a milestone's review records")
     check = _check_answered_by(TAG)
@@ -509,8 +470,7 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     records: dict[Path, Record] = {}
     for owner, pointer in _pointers(cfg, mid, mfile):
         if not pointer or pointer == 'null':
-            # Whether the review happened is `ready-for milestone`'s question,
-            # one rung down.
+            # Whether the review happened is `ready-for milestone`'s question.
             continue
         record, defect = _record(cfg, pointer)
         if defect is not None:
@@ -541,8 +501,8 @@ def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
                                     f'{", ".join(blocking)} open in {rel}'))
         else:
             # Printed on the passing path too, so an unopened record cannot
-            # look like a clean one — and the non-blocking ones are NAMED, not
-            # swallowed: not holding the tag is not the same as not existing.
+            # look like a clean one, and the non-blocking findings are NAMED:
+            # not holding the tag is not the same as not existing.
             said = f'{RECORD}{rel} — {mine} finding(s), none blocking'
             if carried:
                 said += (f'; {len(carried)} open below MAJOR carried forward: '
@@ -567,8 +527,7 @@ PREDICATES = {STORY: ready_for_story, FEATURE: ready_for_feature,
 
 def cmd_ready_for(cfg: model.PmConfig, args: list[str]) -> int:
     """`pm ready-for <kind> <id>` — one kind, one id, no flags. Every refusal
-    is exit 2, so 1 keeps meaning "the belt below is not finished".
-    """
+    is exit 2, so 1 keeps meaning "the belt below is not finished"."""
     if not args:
         raise Usage(f'ready-for needs a kind — one of {", ".join(KINDS)}')
     kind, rest = args[0], args[1:]

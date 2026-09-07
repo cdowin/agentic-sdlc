@@ -70,9 +70,8 @@ CATEGORY_BUCKETS = (
     (KIND_STORY, (ledger.STORIES_IN_PROGRESS,)),
     (KIND_FEATURE, ('features_in_progress',)),
 )
-# The old shape, read as-is (D7): rows written before the category keys carry
-# only these, matched by the seed's words when written, and never re-read
-# through a later declaration.
+# The old shape, read as-is (D7): matched by the seed's words when written, and
+# never re-read through a later declaration.
 LEGACY_BUCKETS = (
     (KIND_STORY, ('stories_wip', 'stories_review')),
     (KIND_FEATURE, ('features_building', 'features_review')),
@@ -85,9 +84,7 @@ LEGACY_NOTE = ('predate category keys and name no grain of this milestone — '
                'could not spell; not counted as empty')
 UNPLACED_NOTE = ('spent time in a state this declaration does not name — '
                  'seconds in no category column, not zero')
-# The dispatch-side twin of UNPLACED_NOTE: a new-shape row whose frozen key
-# names a grain the category key does not is read through the category keys,
-# and the drop is said out loud.
+# UNPLACED_NOTE's dispatch-side twin: the drop is said out loud.
 FROZEN_ONLY_NOTE = ('named only through a deprecated key — at a word this '
                     'declaration does not place in in_progress, so counted '
                     'in no column above')
@@ -109,9 +106,8 @@ SIZE_COLUMN = 'size'
 TOTAL_COLUMN = 'total_s'
 NO_GRAIN_TITLE = 'rows naming no grain'
 # Said beside that bucket and counted apart from it: a row that named its grain
-# precisely and named one this milestone does not hold is the OPPOSITE of a row
-# that named none, and the ordinary cause is the tree's own ledger, which every
-# milestone's report reads.
+# precisely, and named one this milestone does not hold, is the OPPOSITE of a
+# row that named none.
 ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
                   'milestone\'s work, read out of the tree\'s shared ledger; '
                   'not unattributed')
@@ -120,8 +116,7 @@ ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
 # columns, so a new kind appears rather than counting into nothing.
 FEATURE_COLUMN = 'feature'
 RECORD_COLUMN = 'record'
-# One record, N passes; the ordinal is a column so two passes' rows can be told
-# apart.
+# One record, N passes; the ordinal is a column so two passes are told apart.
 PASS_COLUMN = 'pass'
 VERDICT_COLUMN = 'verdict'
 FINDINGS_COLUMN = 'findings'
@@ -131,8 +126,7 @@ VERDICT_TITLE = 'verdict'
 SEVERITY_TITLE = 'findings by severity'
 DEFERRED_TITLE = 'deferred to'
 
-# Section 3's; this module reads no seed word (tests/test_pm_flow.py asserts
-# it).
+# Section 3's; this module reads no seed word (tests/test_pm_flow.py asserts it).
 STORY_COLUMN = 'story'
 PASSES_COLUMN = 'passes'
 DISTRIBUTION_TITLE = 'verdict distribution'
@@ -145,8 +139,7 @@ STATUS_COLUMN = 'status'
 FEATURE_STATUS_COLUMN = 'feature_status'
 ESCAPE_TITLE = 'bugs naming a cause'
 
-# Section 5's row keys, and the separator that makes the per-dispatch list one
-# cell.
+# Section 5's row keys; the separator makes the per-dispatch list one cell.
 BEFORE_WRITE_KEY = 'tool_calls_before_first_write'
 TOOL_CALLS_KEY = 'tool_calls'
 OUTPUT_KEY = 'output'
@@ -192,9 +185,8 @@ LEFT, RIGHT = 'left', 'right'
 # --- WHERE the report reads from ----------------------------------------------
 # Every file this module opens goes through a `Source`; `build` is one function
 # over one tree, so a report read from history is the same report by
-# construction. `DiskSource` delegates to the walkers the gate uses;
-# `GitSource` runs `rev-parse`, `ls-tree`, `cat-file` and `show`, none of which
-# writes or touches the index (D6). The slot names are `model`'s.
+# construction. `GitSource` runs `rev-parse`, `ls-tree`, `cat-file` and `show`,
+# none of which writes or touches the index (D6).
 FEATURES_DIR = model.FEATURES_DIR
 STORIES_DIR = model.STORIES_DIR
 BUGS_DIR = model.BUGS_DIR
@@ -203,8 +195,7 @@ MD_SUFFIX = '.md'
 GIT = 'git'
 GIT_MISSING = (f'{GIT} is not on PATH, so a report `--from` a rev cannot be '
                f'read — a retired milestone is only in history')
-# `<rev>:<path>`, git's own spelling, so a reader can paste it after `git
-# show`.
+# git's own spelling, so a reader can paste it after `git show`.
 REV_SEPARATOR = ':'
 
 # The two object types `git ls-tree` names for the things a PM tree is made of.
@@ -214,9 +205,8 @@ BLOB = 'blob'
 
 class GitError(OSError):
     """A git invocation that failed, carrying git's own stderr verbatim. An
-    `OSError`, so a blob absent at the rev lands in the `RecordError`
-    handler that already exists.
-    """
+    `OSError`, so a blob absent at the rev lands in the `RecordError` handler
+    that already exists."""
 
 
 def check_rev(rev: str) -> None:

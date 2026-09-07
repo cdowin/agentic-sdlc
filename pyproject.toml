@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentic-sdlc"
-version = "0.4.0"
+version = "0.5.0"
 description = "A deterministic SDLC as a pinned-tag CLI: a markdown-and-frontmatter PM tracker with its own drift gate, static repo gates (doc, shell, repo-hygiene, hooks), the agent-workflow guard corpus, and installers for the CI, agent and hook files a project runs the loop with. Stdlib only."
 readme = "README.md"
 requires-python = ">=3.11"

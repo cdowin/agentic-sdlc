@@ -3,8 +3,8 @@ id: 0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-reco
 feature: 0.4.0/telemetry-arrives-with-the-bump
 milestone: "0.4.0"
 name: adopt says whether telemetry is live, by probing
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing", "0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing"]
 ---
 
@@ -56,3 +56,15 @@ If the probe reaches for anything this tree has and a consumer does not,
 Writing `.claude/settings.json` on a consumer's behalf — `install.py`'s reasoning stands (*"hand
 maintained and there is no merge"*); this story makes the omission visible, it does not overturn
 the decision. Any change to what the couriers record.
+
+## Close
+
+done: c4685d1 — `telemetry-live` is adopt's eighth check and it PROBES: the courier's own
+`--self-test` against the consumer's real vehicle, which is the only thing that answers whether
+`make -s pm ARGS=…` reaches the verb.
+finding: the review's "adopt does not call `--self-test`" was already half wrong — `hooks-self-test`
+delegates to `check hooks`, which replays the corpus. What was genuinely missing is the WIRING
+question, which no check asked.
+NOT DONE — AC7: NullBound and godot-devkit were not run against. They are other repos and this
+session was scoped to this one; `adopt 0.4.0` here reports `ok: telemetry-live`, which proves the
+check and not the reach. Named rather than quietly dropped.

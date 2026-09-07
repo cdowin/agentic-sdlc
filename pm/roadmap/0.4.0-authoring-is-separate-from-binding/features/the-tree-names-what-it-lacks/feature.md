@@ -2,7 +2,7 @@
 id: 0.4.0/the-tree-names-what-it-lacks
 milestone: "0.4.0"
 name: The tree names what it lacks, at every layer rule 11 reaches
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: ["0.4.0/every-row-names-its-grain"]

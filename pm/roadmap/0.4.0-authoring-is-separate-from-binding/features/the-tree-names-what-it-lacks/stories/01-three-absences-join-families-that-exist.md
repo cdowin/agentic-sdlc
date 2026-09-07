@@ -3,8 +3,8 @@ id: 0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exis
 feature: 0.4.0/the-tree-names-what-it-lacks
 milestone: "0.4.0"
 name: owner, the Proof budget and an unrun gate are named where they are missing
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted"]
 ---
 
@@ -48,3 +48,14 @@ rule 11's "cheapest layer" clause.
 
 Refusing on any of the three. Anything about what `owner:` should CONTAIN — a name is the project's
 business, presence is the tool's.
+
+## Close
+
+done: 36bf3e6 — two READY lines and one report line; no new rule id, no new verb, no new gate
+module, which was the constraint.
+finding: the roster join is SILENT when no roster gate has a cost row. `[checks] all` names gates
+and a `gate` row names a make TARGET — two namespaces — so a tree gating inside a composed target
+has one row for the composition and none per gate. Reporting all of them there would nag every
+consumer forever; the join means something only when some are measured and one never is.
+finding: the `## Proof budget` warning fires on this repo's own 0.2.0 features, correctly. A WARN
+on history is the right cost for a contract that was never verified.

@@ -122,3 +122,7 @@
 {"ts":"2026-09-06T23:58:30Z","kind":"status","grain":"0.4.0/the-surface-says-telemetry","from":"reviewing","to":"done"}
 {"ts":"2026-09-06T23:58:31Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red","from":"building","to":"reviewing"}
 {"ts":"2026-09-06T23:59:05Z","kind":"status","grain":"0.4.0/recording-is-on-or-the-gate-is-red","from":"reviewing","to":"done"}
+{"ts":"2026-09-07T00:09:18Z","kind":"status","grain":"0.4.0/telemetry-arrives-with-the-bump","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:18Z","kind":"status","grain":"0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-records","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:19Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:19Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exist","from":"planning","to":"building"}

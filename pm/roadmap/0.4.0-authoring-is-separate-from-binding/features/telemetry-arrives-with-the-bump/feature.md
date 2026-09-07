@@ -2,7 +2,7 @@
 id: 0.4.0/telemetry-arrives-with-the-bump
 milestone: "0.4.0"
 name: Telemetry arrives with the bump, in every consumer
-status: planning
+status: building
 reviewed:
 phase:
 depends_on: ["0.4.0/every-row-names-its-grain", "0.4.0/one-rule-routes-a-row", "0.4.0/recording-is-on-or-the-gate-is-red", "0.4.0/the-surface-says-telemetry"]

@@ -2,7 +2,7 @@
 id: ft-every-grain-is-on-a-stopwatch
 milestone: ms-0.4.0
 name: every grain is on a stopwatch, and the tool says so
-status: building
+status: done
 reviewed: docs/reviews/2026-09-06-0.4.0-every-grain-is-on-a-stopwatch.md
 phase:
 depends_on: []

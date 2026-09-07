@@ -152,3 +152,14 @@
 {"ts":"2026-09-07T03:29:24Z","kind":"status","grain":"st-each-kind-has-a-configured-pool","from":"building","to":"done"}
 {"ts":"2026-09-07T03:29:42Z","kind":"status","grain":"st-every-edge-reports-both-ways-it-is-unbound","from":"building","to":"done"}
 {"ts":"2026-09-07T04:34:52Z","kind":"decision","grain":"ft-the-unbound-census","entry":"D1","title":"pm list --unbound is a COLUMN, not a flag"}
+{"ts":"2026-09-07T04:41:37Z","kind":"status","grain":"ft-the-unbound-census","from":"planning","to":"done"}
+{"ts":"2026-09-07T04:43:10Z","kind":"status","grain":"ft-the-config-is-the-model","from":"planning","to":"done"}
+{"ts":"2026-09-07T04:44:46Z","kind":"status","grain":"ft-the-order-is-one-mechanism","from":"planning","to":"done"}
+{"ts":"2026-09-07T04:46:18Z","kind":"status","grain":"ft-the-migration-is-whole-or-nothing","from":"planning","to":"done"}
+{"ts":"2026-09-07T04:47:50Z","kind":"status","grain":"ft-binding-is-a-field","from":"planning","to":"done"}
+{"ts":"2026-09-07T04:49:34Z","kind":"status","grain":"ft-identity-lives-in-frontmatter","from":"building","to":"done"}
+{"ts":"2026-09-07T04:51:08Z","kind":"status","grain":"ft-the-pools-are-the-tables","from":"building","to":"done"}
+{"ts":"2026-09-07T04:52:38Z","kind":"status","grain":"ft-every-grain-is-on-a-stopwatch","from":"building","to":"done"}
+{"ts":"2026-09-07T04:54:08Z","kind":"status","grain":"ft-every-move-breadcrumbs-the-next-step","from":"building","to":"done"}
+{"ts":"2026-09-07T04:55:39Z","kind":"status","grain":"ft-telemetry-arrives-with-the-bump","from":"building","to":"done"}
+{"ts":"2026-09-07T04:57:10Z","kind":"status","grain":"ft-the-tree-names-what-it-lacks","from":"building","to":"done"}

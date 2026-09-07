@@ -2,7 +2,7 @@
 id: ft-the-tree-names-what-it-lacks
 milestone: ms-0.4.0
 name: The tree names what it lacks, at every layer rule 11 reaches
-status: building
+status: done
 reviewed: docs/reviews/2026-09-06-0.4.0-the-tree-names-what-it-lacks.md
 phase:
 depends_on: ["ft-every-row-names-its-grain"]

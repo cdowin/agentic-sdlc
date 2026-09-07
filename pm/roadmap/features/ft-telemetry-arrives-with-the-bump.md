@@ -2,7 +2,7 @@
 id: ft-telemetry-arrives-with-the-bump
 milestone: ms-0.4.0
 name: Telemetry arrives with the bump, in every consumer
-status: building
+status: done
 reviewed: docs/reviews/2026-09-06-0.4.0-telemetry-arrives-with-the-bump.md
 phase:
 depends_on: ["ft-every-row-names-its-grain", "ft-one-rule-routes-a-row", "ft-recording-is-on-or-the-gate-is-red", "ft-the-surface-says-telemetry"]

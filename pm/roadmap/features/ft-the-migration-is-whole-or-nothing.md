@@ -2,7 +2,7 @@
 id: ft-the-migration-is-whole-or-nothing
 milestone: ms-0.4.0
 name: The tree migrates once, whole, and every rename sweeps its refs
-status: planning
+status: done
 reviewed: docs/reviews/2026-09-06-0.4.0-the-pooled-model.md
 phase:
 depends_on: ["ft-identity-lives-in-frontmatter", "ft-the-pools-are-the-tables", "ft-binding-is-a-field", "ft-the-order-is-one-mechanism", "ft-every-row-names-its-grain", "ft-one-rule-routes-a-row", "ft-recording-is-on-or-the-gate-is-red"]

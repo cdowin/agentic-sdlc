@@ -2,7 +2,7 @@
 id: ft-binding-is-a-field
 milestone: ms-0.4.0
 name: A binding is a field, and pm move dies
-status: planning
+status: done
 reviewed: docs/reviews/2026-09-06-0.4.0-binding-is-a-field.md
 phase:
 depends_on: ["ft-identity-lives-in-frontmatter", "ft-the-pools-are-the-tables"]

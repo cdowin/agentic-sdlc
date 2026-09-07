@@ -95,6 +95,27 @@ every run; a state the project never declared is refused by name.
                                            than `open`. Writes nothing)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field — not status)
+  rename <old-id> <new-id>                (rewrite the grain's own `id:` AND
+                                           every inbound reference in the tree
+                                           — depends_on, consumed_by, reviewed,
+                                           caused_by, caught_in, fix_milestone,
+                                           the bindings (milestone:/feature:)
+                                           and every `order` entry — in one
+                                           pass, WHOLE OR NOT AT ALL: one
+                                           reference this verb cannot rewrite
+                                           and nothing at all is written.
+                                           Matched whole-token, so 0.1/alphabet
+                                           is not a reference to 0.1/alpha.
+                                           FRONTMATTER ONLY: prose naming the
+                                           id is yours, the ledger keeps its
+                                           rows under the old id because history
+                                           is not rewritten, and the document
+                                           keeps its FILENAME — nothing reads a
+                                           path as schema. A <new-id> failing
+                                           the id grammar is refused before the
+                                           tree is read; one another grain
+                                           already holds is refused naming that
+                                           grain, never auto-resolved)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
   vocabulary [--json]                     (this version's declared surface:
@@ -2102,11 +2123,10 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
             mdir = (_report_milestone_dir(cfg, rest[0]) if rest
                     else _report_default_dir(cfg))
         # `mdir` is the milestone's DOCUMENT since 0.4.0 — a pooled tree has
-        # no per-milestone directory — so the id comes off it directly and
-        # the ledger is addressed by that id. Both joins are asked of `src`:
-        # which layout the tree is in is a fact about the TREE BEING READ, and
-        # a rev read that asked today's disk would look for a retired
-        # milestone's rows in the layout the retire left behind.
+        # no per-milestone directory — so the id comes off it directly and the
+        # ledger is addressed by that id. Both joins are asked of `src`: a rev
+        # read that asked today's disk would look for a retired milestone's
+        # rows in the layout the retire left behind.
         mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
         path = src.ledger_for(cfg, mid)
         # Two files, one report. The milestone's ledger holds every ATTRIBUTED
@@ -2148,13 +2168,12 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def _report_milestone_dir_at(cfg: model.PmConfig, src: report.Source,
+def _report_milestone_dir_at(cfg: model.PmConfig, src: report.GitSource,
                              mid: str) -> Path:
-    """The milestone directory at a rev, or exit 2 naming what is not there.
-    Resolved by version prefix over `git ls-tree`, active tree then
-    archive, as `model.milestone_dir` globs on disk; a rev after the
-    retirement is the ordinary mistake, so the message says which rev to
-    reach for.
+    """The milestone's handle at a rev, or exit 2 naming what is not there —
+    its document in the pool, or the `<mid>-*` directory a rev from before
+    the migration holds. A rev after the retirement is the ordinary mistake,
+    so the message says which rev to reach for.
     """
     if not model.segment_is_literal(mid):
         raise Usage(f'no milestone resolves from id {mid!r} — the ledger is '
@@ -2162,16 +2181,26 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.Source,
                     f'id (`0.23.0`) and never a feature, story or bug')
     mdir = src.milestone_dir(cfg, mid)
     if mdir is None:
-        raise Usage(f'no milestone directory {mid}-* under {cfg.roadmap_dir}/ '
-                    f'or {cfg.roadmap_dir}/{model.ARCHIVE_DIR_NAME}/ at '
-                    f'{src.rev} — a milestone is retired at the close AFTER '
-                    f'its own, so name the rev it was still in the tree at '
-                    f'(usually its release tag)')
-    doc = model.milestone_doc(mdir)
+        # Named in the layout THAT REV is in: naming a directory the pools
+        # replaced sends the reader looking for one nobody has.
+        raise Usage(f'{_report_nothing_declares(cfg, src, mid)} — a milestone '
+                    f'is retired at the close AFTER its own, so name the rev '
+                    f'it was still in the tree at (usually its release tag)')
+    doc = src.milestone_doc(mdir)
     if not src.is_file(doc):
         raise Usage(f'{src.spec(doc)} is not there, so {mid!r} is a directory '
                     f'at {src.rev} and not a milestone')
     return mdir
+
+
+def _report_nothing_declares(cfg: model.PmConfig, src: report.GitSource,
+                             mid: str) -> str:
+    """Where the rev was looked in, and what was not there."""
+    if src.is_pooled(cfg):
+        pool = src.spec(model.pool_dir(cfg, 'milestone'))
+        return f'no document in {pool} declares `id: {mid}`'
+    return (f'no milestone directory {mid}-* under {cfg.roadmap_dir}/ or '
+            f'{cfg.roadmap_dir}/{model.ARCHIVE_DIR_NAME}/ at {src.rev}')
 
 
 def _report_default_dir(cfg: model.PmConfig) -> Path:

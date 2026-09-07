@@ -271,8 +271,11 @@ class _Blob:
 
 
 class Source:
-    """The tree the report reads, as the ten reads it makes — no more, none
-    writing; both subclasses are checked against this list.
+    """The tree the report reads, as the fourteen reads it makes — no more,
+    none writing; both subclasses are checked against this list. The last four
+    are the LAYOUT family: which layout a tree is in is a fact about THAT
+    tree, and a rev read that asked `model.is_pooled` would look for a retired
+    milestone's ledger, document and records in the layout the retire left.
     """
 
     #: The rev this source reads, or `''` for the working tree; `render` puts
@@ -307,6 +310,18 @@ class Source:
         raise NotImplementedError
 
     def ledger_rows(self, path: Path) -> list:
+        raise NotImplementedError
+
+    def is_pooled(self, cfg: model.PmConfig) -> bool:
+        raise NotImplementedError
+
+    def milestone_doc(self, handle: Path) -> Path:
+        raise NotImplementedError
+
+    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+        raise NotImplementedError
+
+    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
         raise NotImplementedError
 
 
@@ -345,13 +360,25 @@ class DiskSource(Source):
     def ledger_rows(self, path: Path) -> list:
         return ledger.read_rows(path)
 
+    def is_pooled(self, cfg: model.PmConfig) -> bool:
+        return model.is_pooled(cfg)
+
+    def milestone_doc(self, handle: Path) -> Path:
+        return model.milestone_doc(handle)
+
+    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+        return ledger.ledger_for(cfg, mid)
+
+    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
+        return model.shared_doc(cfg, path, name)
+
 
 class GitSource(Source):
     """The same tree at a rev, through `git show`, read-only by construction.
-    The rev is the caller's; the directory is resolved by version prefix as
-    `model.milestone_dir` globs on disk; paths keep `model`'s shapes but
-    never reach the filesystem. Blobs and object types are memoised, since
-    a rev is immutable.
+    The rev is the caller's; a grain resolves by the `id:` it declares as it
+    does on disk, falling back to the version-prefix glob for a rev from
+    before the migration; paths keep `model`'s shapes but never reach the
+    filesystem. Blobs and object types are memoised, since a rev is immutable.
     """
 
     def __init__(self, root: Path, rev: str) -> None:
@@ -361,6 +388,8 @@ class GitSource(Source):
         self._blobs: dict[str, bytes] = {}
         self._types: dict[str, str] = {}
         self._trees: dict[tuple[str, bool], list[tuple[str, str]]] = {}
+        # One report reads one tree, so the layout is asked of the rev once.
+        self._pooled: bool | None = None
         # `rev-parse --verify` first, so "no such rev" is answered once, in
         # git's words.
         self._git(['rev-parse', '--verify', rev])
@@ -478,16 +507,41 @@ class GitSource(Source):
                 ['show', f'{self.rev}{REV_SEPARATOR}{rel}'])
         return self._blobs[rel].decode('utf-8')
 
-    # --- the ten reads --------------------------------------------------------
+    # --- the layout, asked of the REV ------------------------------------------
+    def is_pooled(self, cfg: model.PmConfig) -> bool:
+        """`model.is_pooled` at the rev. Asked of the REV because the two
+        disagree in the case this verb exists for: a retire empties the pools
+        on disk while the rev still holds every grain."""
+        if self._pooled is None:
+            self._pooled = any(self._grain_docs(model.pool_dir(cfg, kind))
+                               for kind in model.FLOW_KINDS)
+        return self._pooled
+
+    def _pool_grain(self, cfg: model.PmConfig, kind: str,
+                    gid: str) -> Path | None:
+        """The document in one pool DECLARING this id, at the rev — what
+        `model.grain_index` answers on disk, for one id."""
+        for path in self._grain_docs(model.pool_dir(cfg, kind)):
+            if model.unquote(self.field_of(path, 'id')) == gid:
+                return path
+        return None
+
+    # --- the fourteen reads ---------------------------------------------------
     def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
+        """The milestone's HANDLE at the rev: its document in the pool, or the
+        `<mid>-*` directory a pre-migration rev holds."""
         if not model.segment_is_literal(mid):
             return None
+        if self.is_pooled(cfg):
+            return self._pool_grain(cfg, 'milestone', mid)
         for base in (cfg.roadmap, cfg.roadmap / model.ARCHIVE_DIR_NAME):
             for found in self._dirs(base, f'{mid}-*'):
                 return found
         return None
 
     def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
+        if self.is_pooled(cfg):
+            return self._pool_grain(cfg, 'feature', fid)
         mid, _, slug = fid.partition('/')
         if not model.segment_is_literal(slug):
             return None
@@ -499,20 +553,35 @@ class GitSource(Source):
 
     def _pool_children(self, cfg: model.PmConfig, kind: str,
                        parent_id: str) -> list[Path]:
-        """The pooled layout AT THE REV: list the pool and keep the documents
-        whose binding names the parent. Empty when the rev predates the pools,
-        which is what sends every caller below to the nested read."""
-        pool = model.pool_dir(cfg, kind)
+        """`model._children_paths` at the rev: the pool's documents whose
+        binding names the parent, in the parent's declared `order` and by id
+        after that — the ORDER is half of the equality with the disk read."""
         field = model.BINDS_TO.get(kind, ('', ''))[1]
         if not field:
             return []
-        return [path for path in self._grain_docs(pool)
-                if model.unquote(self.field_of(path, field)) == parent_id]
+        found: dict[str, Path] = {}
+        for path in self._grain_docs(model.pool_dir(cfg, kind)):
+            if model.unquote(self.field_of(path, field)) != parent_id:
+                continue
+            found[model.unquote(self.field_of(path, 'id')) or path.stem] = path
+        parent = self._grain_at(cfg, parent_id)
+        declared = (model.list_field_of(self._doc(parent), model.ORDER_KEY)
+                    if parent is not None else [])
+        out = [found.pop(gid) for gid in declared if gid in found]
+        return out + [found[gid] for gid in sorted(found)]
+
+    def _grain_at(self, cfg: model.PmConfig, gid: str) -> Path | None:
+        """Any grain's document at the rev — the parent whose `order`
+        `_pool_children` reads."""
+        for kind in model.FLOW_KINDS:
+            found = self._pool_grain(cfg, kind, gid)
+            if found is not None:
+                return found
+        return None
 
     def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
-        pooled = self._pool_children(cfg, 'feature', mid)
-        if pooled:
-            return pooled
+        if self.is_pooled(cfg):
+            return self._pool_children(cfg, 'feature', mid)
         mdir = self.milestone_dir(cfg, mid)
         if mdir is None:
             return []
@@ -521,16 +590,14 @@ class GitSource(Source):
                 if self.is_file(d / model.FEATURE_DOC)]
 
     def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
-        pooled = self._pool_children(cfg, 'story', fid)
-        if pooled:
-            return pooled
+        if self.is_pooled(cfg):
+            return self._pool_children(cfg, 'story', fid)
         ffile = self.feature_file(cfg, fid)
         return self._grain_docs(ffile.parent / STORIES_DIR) if ffile else []
 
     def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
-        pooled = self._pool_children(cfg, 'bug', mid)
-        if pooled:
-            return pooled
+        if self.is_pooled(cfg):
+            return self._pool_children(cfg, 'bug', mid)
         mdir = self.milestone_dir(cfg, mid)
         return self._grain_docs(mdir / BUGS_DIR) if mdir is not None else []
 
@@ -578,6 +645,24 @@ class GitSource(Source):
         if not self.is_file(path):
             return []
         return ledger.read_rows(self._doc(path))
+
+    def milestone_doc(self, handle: Path) -> Path:
+        """`model.milestone_doc` at the rev: a pooled handle IS the document."""
+        return handle if self.is_file(handle) else handle / model.MILESTONE_DOC
+
+    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+        """`ledger.ledger_for` at the rev."""
+        if self.is_pooled(cfg):
+            return ledger.ledgers_dir(cfg) / f'{mid}.jsonl'
+        mdir = self.milestone_dir(cfg, mid)
+        return (ledger.ledger_path(mdir) if mdir is not None
+                else ledger.grainless_path(cfg.roadmap))
+
+    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
+        """`model.shared_doc` at the rev."""
+        if self.is_pooled(cfg):
+            return path.with_name(f'{path.stem}-{name}')
+        return path.parent / name
 
 
 class Grain(NamedTuple):
@@ -1034,12 +1119,10 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
         path = (cfg.root / rel) if rel else None
         if path is None:
             # BESIDE the grain, wherever it sits: in a pool that is
-            # `<id>-review.md` next to the document, and in a nested tree the
-            # slot inside its directory. `shared_doc` is the one place that
-            # difference is known.
-            beside = model.shared_doc(
-                cfg, model.Grain(gid=fid, kind='feature', path=ffile),
-                model.REVIEW_FILE_NAME)
+            # `<stem>-review.md` next to the document, and in a nested tree the
+            # slot inside its directory. Asked of the SOURCE, since which of
+            # the two it is, is a fact about the tree being read.
+            beside = src.shared_doc(cfg, ffile, model.REVIEW_FILE_NAME)
             if src.is_file(beside):
                 path, rel = beside, cfg.rel(beside)
         if path is not None and rel is not None:

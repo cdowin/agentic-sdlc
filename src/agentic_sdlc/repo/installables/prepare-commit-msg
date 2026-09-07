@@ -7,6 +7,8 @@
 # git passes $1 = message file, $2 = source
 # (message|template|merge|squash|commit), $3 = SHA (amend/-c).
 # `bash prepare-commit-msg --self-test` replays the message corpus.
+# Never blocks a commit (never exit 2): a hook that can stop a commit is a
+# hook that can strand an agent mid-belt, and this one only appends text.
 set -eu
 
 # --- project config (yours to edit after install — the file is your repo's) --

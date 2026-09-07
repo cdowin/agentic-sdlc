@@ -4,9 +4,16 @@ D1's whole argument in four cases: the namesake package captures patterns
 faithfully, never reads them back in any way that changes an outcome, and
 nothing in its architecture reports that. So what is proven here is the read
 BACK — the three surfaces a belt has, the exactness that keeps it from being a
-nag, and the one claim the feature lives or dies on:
+nag, and the assembly half of the claim the feature lives or dies on:
 
   **a lesson changes no verdict and no exit code**, present or absent.
+
+The BELT half of that claim is not here and cannot be: it needs a check that
+reads the filesystem the surfacer writes to, which means git, which means the
+shell tier. It is `test_conveyor_steps.py`'s
+`test_a_recorded_lesson_changes_no_verdict_no_exit_code_and_no_write`, over the
+real `tree-clean`. Keeping these four cases in the unit tier is the point of
+the split; keeping the pointer is the point of rule 11.
 
 The reader is in the belts because the `lesson` row kind is
 `ft-a-lesson-is-a-row-bound-to-a-grain`'s; `lessons.paths` belongs in
@@ -221,11 +228,24 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
 # --- 3: the case that must exist ----------------------------------------------
 
 def test_a_lesson_changes_no_verdict_and_no_exit_code():
-    """**A lesson is never a gate.** A check's exit code is the check's
-    business and a recorded observation has no vote — so the same belt over the
-    same checks answers identically with a lesson against every one of them and
-    with none, on the passing path and the refusing one. An unreachable sink
-    and a malformed `[emit]` are lines too, never a verdict.
+    """**A lesson is never a gate**, at the ASSEMBLY altitude: `driver.run`'s
+    lines, its exit code and its write decision are the same with a lesson
+    against every check and with none, on the passing path and the refusing
+    one. An unreachable sink and a malformed `[emit]` are lines too.
+
+    **What this case cannot see, and where that lives.** Every check here is a
+    closure returning a constant, and `tree()` is not a git repository — so no
+    check here READS the filesystem the surfacer writes to, and the shape that
+    actually broke `release` (an emission before a cleanliness check) is
+    invisible from this tier by construction. The check that can see it spawns
+    git, so it belongs to the shell tier and it is
+    `test_conveyor_steps.py::test_a_recorded_lesson_changes_no_verdict_no_exit_code_and_no_write`
+    — the real `steps.check_tree_clean`, two committed-clean trees. Named here
+    rather than assumed: a claim proven somewhere else is still a claim, and a
+    reader of this module has to be able to find it.
+
+    Two trees, built fresh, rather than one tree run twice: run over the same
+    tree, `bare`'s own emitted rows are already on disk when `taught` reads it.
     """
     passing = [check('a', driver.Answer.yes('a holds')),
                check(RULE, driver.Answer.yes('the done: line is there'))]
@@ -235,16 +255,17 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
     for checks, expected in ((passing, 0), (failing, 1)):
         with tree() as root:
             bare = belt(root, checks)
+        with tree() as root:
             record(root, lesson_row(grain=FEATURE), lesson_row(rule='a'),
                    lesson_row(rule=RULE))
             taught = belt(root, checks)
 
-            assert taught.taught, 'nothing surfaced; the case is vacuous'
-            assert taught.code == bare.code == expected
-            assert taught.writes == bare.writes
-            assert taught.verdicts == bare.lines, (
-                'a lesson reshaped the belt\'s own lines; it is only ever a '
-                'line BESIDE a verdict (rule 6)')
+        assert taught.taught, 'nothing surfaced; the case is vacuous'
+        assert taught.code == bare.code == expected
+        assert taught.writes == bare.writes
+        assert taught.verdicts == bare.lines, (
+            'a lesson reshaped the belt\'s own lines; it is only ever a '
+            'line BESIDE a verdict (rule 6)')
 
     # A sink that cannot be reached, and a section that will not parse: both
     # are the emit seam's business and neither is the belt's.

@@ -626,34 +626,57 @@ def ready_for(ctx: Context, target: str) -> Answer:
     return replace(answer, names=lessons.blockers_named(said))
 
 
-# --- the release checks -------------------------------------------------------
-def _belt_written(ctx: Context) -> str:
-    """The one tracked path a gate run dirties by itself, or '': `gdk_gate.sh`
-    files gate cost rows into the milestone ledger."""
-    from agentic_sdlc.repo.pm import ledger
-
-    cfg = _pm_cfg(ctx)
-    mid = subject_grain(ctx)
-    if model.milestone_file(cfg, mid) is None:
-        return ''
-    # `ledger_for`, not the document's parent directory: pooled, the ledger
-    # sits in its own table and the milestones pool holds no ledger at all.
-    return cfg.rel(ledger.ledger_for(cfg, mid))
+# --- cleanliness, asked once for both belts -----------------------------------
+# What a cleanliness check reads, and what it must NOT: the roadmap directory is
+# this tool's own bookkeeping, and a belt writes there BY DESIGN — `release`
+# writes the milestone's status into it, `gate` files its cost rows in the
+# milestone ledger, every `[emit]` tap files an event, and the lesson reader
+# surfaces one before the first check runs. A check that forbids the tool's own
+# writes is measuring the wrong thing, and it can refuse a state no re-run
+# reaches: commit the row, run again, another row lands, exit 1 forever.
+class _GitUnreadable(Exception):
+    """git itself did not answer — UNVERIFIABLE, never a false."""
 
 
-def check_tree_clean(ctx: Context) -> Answer:
+def _uncommitted(ctx: Context) -> tuple[list[str], str]:
+    """(the paths modified outside the roadmap directory, that directory) from
+    ONE `git status --porcelain`, or a raise on a bad config.
+
+    Both belts ask this question and they used to answer it differently:
+    `committed` (story) excluded the roadmap directory and `tree-clean`
+    (release) did not, so the same tree could satisfy one and never the other.
+    That disagreement WAS the defect; one reading is the fix.
+
+    **What is inside the directory is not counted, and that is deliberate.** A
+    tally of it would move with the belt's OWN writes — a surfaced lesson, a
+    gate cost row, an `[emit]` event — and rule 6's line shapes may not depend
+    on what this run happened to record. The directory is NAMED in every
+    sentence below instead, which is the disclosure rule 11 asks for and does
+    not change under the tool's feet.
+    """
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
-        return Answer.unverifiable(f'git status failed: {_clip(out)}')
-    if not out.strip():
-        return Answer.yes('no modified paths')
+        raise _GitUnreadable(f'git status failed: {_clip(out)}')
+    cfg = _pm_cfg(ctx)
+    # `line[3:]`, not a strip: `git status --porcelain` is COLUMNAR and column
+    # 0 carries meaning, so a blanket strip eats the first character of a path.
     paths = [line[3:] for line in out.split('\n') if len(line) > 3]
-    mine = _belt_written(ctx)
-    said = f'{len(paths)} modified path(s): {_clip(", ".join(paths))}'
-    if mine and mine in paths:
-        said += (f' — {mine} holds the gate cost rows `gate` filed on the '
-                 f'last run; commit them')
-    return Answer.no(said)
+    inside = f'{cfg.roadmap_dir}/'
+    return [p for p in paths if not p.startswith(inside)], inside
+
+
+# --- the release checks -------------------------------------------------------
+def check_tree_clean(ctx: Context) -> Answer:
+    """Nothing modified OUTSIDE the roadmap directory — the same ruling
+    `committed` makes on the story belt, from the same reading."""
+    try:
+        outside, inside = _uncommitted(ctx)
+    except _GitUnreadable as err:
+        return Answer.unverifiable(str(err))
+    if not outside:
+        return Answer.yes(f'no modified path outside {inside}')
+    return Answer.no(f'{len(outside)} modified path(s) outside {inside}: '
+                     f'{_clip(", ".join(outside))}')
 
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
@@ -1222,20 +1245,16 @@ def check_story_verified(ctx: Context) -> Answer:
 
 def check_committed(ctx: Context) -> Answer:
     """No uncommitted work outside the roadmap directory; names what is
-    outstanding and never commits."""
-    code, out = _git(ctx, 'status', '--porcelain', strip=False)
-    if code != 0:
-        return Answer.unverifiable(f'git status failed: {_clip(out)}')
-    cfg = _pm_cfg(ctx)
-    paths = [line[3:] for line in out.split('\n') if len(line) > 3]
-    tree_paths = [p for p in paths
-                  if not p.startswith(f'{cfg.roadmap_dir}/')]
-    if not tree_paths:
-        return Answer.yes(
-            f'no modified path outside {cfg.roadmap_dir}/'
-            + (f' ({len(paths)} inside it)' if paths else ''))
-    return Answer.no(f'{len(tree_paths)} uncommitted path(s): '
-                     f'{_clip(", ".join(tree_paths))} — commit by explicit '
+    outstanding and never commits. `_uncommitted` is the shared reading —
+    `tree-clean` asks the same question of the same paths."""
+    try:
+        outside, inside = _uncommitted(ctx)
+    except _GitUnreadable as err:
+        return Answer.unverifiable(str(err))
+    if not outside:
+        return Answer.yes(f'no modified path outside {inside}')
+    return Answer.no(f'{len(outside)} uncommitted path(s) outside {inside}: '
+                     f'{_clip(", ".join(outside))} — commit by explicit '
                      f'pathspec; this belt never commits')
 
 
@@ -1445,7 +1464,12 @@ STEP_DOC: dict[str, str] = {
         'not a file read and not the courier\'s own hermetic self-test, which '
         'passes from an empty directory. Never mandatory: a tree that has '
         'opted out is quiet, not broken.',
-    'tree-clean': '`git status --porcelain` is empty.',
+    'tree-clean':
+        '`git status --porcelain` names no path outside the roadmap '
+        'directory — the same reading `committed` makes on the story belt. '
+        'The belt writes INSIDE that directory by design (the status it '
+        'lands, `gate`\'s cost rows, every `[emit]` event), so what is '
+        'modified there is counted, named and not held against you.',
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
     'changelog-unreleased-nonempty':
@@ -1491,7 +1515,8 @@ STEP_DOC: dict[str, str] = {
         '`[verify] story` names, the way `feature-verified` runs its rung.',
     'committed':
         'nothing is uncommitted outside the roadmap directory; it names what '
-        'is and never commits.',
+        'is and never commits — the same reading `tree-clean` makes on '
+        '`release`, so the two belts cannot disagree about one tree.',
     'evidence-written':
         'the story file carries `done: <hash(es)> — <what shipped>`; read, '
         'never written.',

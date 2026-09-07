@@ -10,6 +10,7 @@ is the whole answer.
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -25,10 +26,12 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
+from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
 VERSION = '9.9.9'
-MDIR = f'pm/roadmap/{VERSION}-scratch'
+ROADMAP_DIR = 'pm/roadmap'
+MDIR = f'{ROADMAP_DIR}/{VERSION}-scratch'
 MILESTONE = f'''---
 id: "{VERSION}"
 name: A scratch milestone
@@ -114,6 +117,126 @@ def test_tree_clean_names_every_modified_path_and_the_first_is_not_short_by_one(
         assert not answer.is_true
         listed = answer.detail.split(': ', 1)[1].split(', ')
         assert listed == ['SDLC.md', 'zzz.md'], listed
+
+
+def test_tree_clean_and_committed_answer_the_same_tree_the_same_way():
+    """Bites: the two cleanliness checks drifting apart again.
+
+    `committed` (story belt) excluded the roadmap directory and `tree-clean`
+    (release) did not, so the same tree satisfied one belt and could never
+    satisfy the other — and a belt writes in that directory BY DESIGN, so the
+    release side was unrecoverable rather than merely strict. Both are asked of
+    one tree here, dirty inside the directory and dirty outside it.
+    """
+    with tree({'src/a.py': 'one\n'}) as root:
+        both = (steps.RELEASE_STEPS['tree-clean'],
+                steps.STORY_STEPS['committed'])
+        (root / MDIR / 'ledger.jsonl').write_text('{"kind": "lesson"}\n',
+                                                  encoding='utf-8')
+        for shipped in both:
+            answer = shipped.check(ctx(root))
+            assert answer.is_true, (
+                f'{shipped.name} refused a tree whose ONLY modified path is '
+                f'inside {ROADMAP_DIR}/ — the belt wrote it: {answer.detail}')
+            assert ROADMAP_DIR in answer.detail, (
+                f'{shipped.name} skipped a path and did not say so '
+                f'(rule 11): {answer.detail}')
+        (root / 'src/a.py').write_text('two\n', encoding='utf-8')
+        for shipped in both:
+            answer = shipped.check(ctx(root))
+            assert not answer.is_true and 'src/a.py' in answer.detail
+            assert answer.detail.startswith('1 ') and \
+                MDIR not in answer.detail, (
+                f'{shipped.name} counted or named the roadmap path it does '
+                f'not read: {answer.detail}')
+
+
+# --- a lesson is never a gate -------------------------------------------------
+# `test_conveyor_lessons.py` owns the lesson surfaces and runs in the unit tier
+# over scripted checks. The claim BELOW cannot be made there: the surfacer
+# writes to the filesystem, so the only check that can catch it reads the
+# filesystem, and reading it means git — the shell tier, which is here.
+LESSON_AT = '2026-09-07T00:00:00Z'
+LESSON_SOURCE = 'docs/reviews/scratch.md'
+LESSON_TEXT = 'the belt writes in the roadmap directory by design'
+
+
+def lesson_row(grain: str) -> dict:
+    """One `lesson` row, minted from the READER's own field list so a renamed
+    column goes red here rather than surfacing nothing."""
+    values = {'grain': grain, 'rule': '', 'source': LESSON_SOURCE,
+              'text': LESSON_TEXT, 'at': LESSON_AT}
+    return {'ts': LESSON_AT, 'kind': lessons.KIND,
+            **{name: values[name] for name in lessons.FIELDS}}
+
+
+def commit(root: Path) -> None:
+    """Everything on disk, committed — so `tree-clean` starts true and every
+    later modification is the BELT's."""
+    subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
+    subprocess.run(['git', '-c', 'user.email=t@example.invalid',
+                    '-c', 'user.name=t', 'commit', '-q', '--allow-empty',
+                    '-m', 'recorded'], cwd=root, check=True)
+
+
+def release_over_tree_clean(root: Path) -> tuple[int, list[str], list[str]]:
+    """`release` through the VERB over the real `tree-clean` and nothing else:
+    (exit code, stdout lines, the states the write seam was handed)."""
+    writes: list[str] = []
+
+    def write(_ctx: driver.Context, state: str) -> tuple[bool, str]:
+        writes.append(state)
+        return True, f'wrote {state}'
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = driver.main(['release', VERSION], root=root,
+                           registry={'tree-clean':
+                                     steps.RELEASE_STEPS['tree-clean']},
+                           steps=('tree-clean',), write=write)
+    return code, out.getvalue().splitlines(), writes
+
+
+def test_a_recorded_lesson_changes_no_verdict_no_exit_code_and_no_write():
+    """**A lesson is never a gate**, asked of a check that READS the filesystem
+    the surfacer just wrote to.
+
+    Bites the shape a scripted-check case cannot see: `Surfacer.at_entry` runs
+    before the first check and `emit.emit` appends `lesson.enter` to the
+    milestone's git-TRACKED ledger, so a `tree-clean` that counted the roadmap
+    directory turned `release` from exit 0 to exit 1 — and it never cleared,
+    because committing the row only made room for the next one. Two trees built
+    identically, one carrying a lesson against the milestone, both committed
+    clean before the belt runs.
+    """
+    runs = []
+    for recorded in (False, True):
+        with tree() as root:
+            mledger = ledger.ledger_for(model.load(), VERSION)
+            if recorded:
+                ledger.append_to(mledger, lesson_row(VERSION))
+            commit(root)
+            runs.append(release_over_tree_clean(root))
+            said = (mledger.read_text(encoding='utf-8')
+                    if mledger.is_file() else '')
+            emitted = said.count(f'"{lessons.KIND}.')
+            assert emitted == (1 if recorded else 0), (
+                f'the surfacer emitted {emitted} event(s) into the tracked '
+                f'ledger; if the emission moved, this case no longer probes '
+                f'what it says it does')
+    (bare_code, bare_lines, bare_writes) = runs[0]
+    (code, lines, writes) = runs[1]
+
+    surfaced = [line for line in lines if f'] {lessons.WORD}' in line]
+    assert surfaced == [f'[release] {lessons.WORD}: {lessons.SCOPE_GRAIN} '
+                        f'{VERSION} — {LESSON_TEXT} '
+                        f'(source: {LESSON_SOURCE})'], (
+        f'nothing surfaced, so the case proves nothing: {lines}')
+    assert (code, writes) == (bare_code, bare_writes) == (0, ['done']), (
+        f'a recorded lesson changed the belt: bare {bare_code}/{bare_writes} '
+        f'vs {code}/{writes}')
+    assert [line for line in lines if f'] {lessons.WORD}' not in line] == \
+        bare_lines, 'a lesson reshaped a line that is not its own (rule 6)'
 
 
 # --- on-milestone-branch ------------------------------------------------------

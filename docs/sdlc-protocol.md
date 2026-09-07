@@ -32,7 +32,7 @@ tree, in CI and pre-push.
 
 | # | check | runs | what must be true |
 |---|---|---|---|
-| 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` is empty. |
+| 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. The belt writes INSIDE that directory by design (the status it lands, `gate`'s cost rows, every `[emit]` event), so what is modified there is counted, named and not held against you. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
 | 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the changelog's `## Unreleased` section holds at least one bullet. |
 | 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and no open bug names the milestone. |
@@ -79,7 +79,7 @@ tree, in CI and pre-push.
 |---|---|---|---|
 | 1 | `story-exists` | — *(reads the tree)* | the story id resolves to exactly one document. |
 | 2 | `story-verified` | `agentic-sdlc verify --story` *(shipped)* | `agentic-sdlc verify --story` exits 0 — the make target `[verify] story` names, the way `feature-verified` runs its rung. |
-| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits. |
+| 3 | `committed` | — *(reads the tree)* | nothing is uncommitted outside the roadmap directory; it names what is and never commits — the same reading `tree-clean` makes on `release`, so the two belts cannot disagree about one tree. |
 | 4 | `evidence-written` | — *(reads the tree)* | the story file carries `done: <hash(es)> — <what shipped>`; read, never written. |
 
 **Then, all true:** the story's status → the first state of `[pm.states.story] done` (`pm vocabulary` prints it), through `pm story <state> <id>`, which mints the ledger's `status` row. Any check false → `error:` lines, exit 1, no status written. `--force` writes anyway and the ledger's `deviation` row names the false checks.

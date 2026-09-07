@@ -3,8 +3,8 @@ id: ft-a-sink-wired-and-silent-is-a-finding
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: a sink wired and silent is a finding
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-a-sink-wired-and-silent-is-a-finding.md
 depends_on: []
 consumed_by: []
 ---

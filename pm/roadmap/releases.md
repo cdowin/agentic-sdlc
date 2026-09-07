@@ -6,6 +6,7 @@ order:
   - "ms-0.2.0"
   - "ms-0.3.0"
   - "ms-0.4.0"
+  - "ms-a-move-is-an-event"
 ---
 
 # The release plan

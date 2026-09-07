@@ -734,3 +734,9 @@
 {"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[exits-nonzero]@the-real-repo","duration_ms":10154,"rank":4}
 {"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":10065,"rank":5}
 {"ts":"2026-09-07T04:14:33Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":87617,"census":1247}
+{"ts":"2026-09-07T04:39:26Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":7393,"rank":1}
+{"ts":"2026-09-07T04:39:26Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7269,"rank":2}
+{"ts":"2026-09-07T04:39:26Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":5366,"rank":3}
+{"ts":"2026-09-07T04:39:26Z","kind":"test","tier":"test","nodeid":"tests/test_check_hooks.py::test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one","duration_ms":3482,"rank":4}
+{"ts":"2026-09-07T04:39:26Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_verdict_shape_is_broken","duration_ms":3087,"rank":5}
+{"ts":"2026-09-07T04:39:26Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":88357,"census":1247}

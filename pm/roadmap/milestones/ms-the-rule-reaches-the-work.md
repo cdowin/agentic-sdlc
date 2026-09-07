@@ -4,7 +4,7 @@ kind: milestone
 name: the rule reaches the work
 status: planning
 depends_on: ["ms-a-move-is-an-event"]
-branch:
+branch: milestone/0.6.0-the-rule-reaches-the-work
 version: 0.6.0
 order:
   - "bg-a-bug-is-a-grain-nested-in-a-parent"
@@ -29,9 +29,9 @@ order:
 > cannot fail is not a gate.** 0.5.0 spent a day finding second scoreboards in the CODE. Every one of
 > them had a twin in the INSTRUCTIONS, and nothing was looking there.
 
-0.5.0 closed thirteen features and found 93 review findings, 29 of them blocking. Sorting those
-findings by what would have prevented each is the whole brief for this milestone, because they were
-not random — they fell into four shapes, and three are mechanisable.
+0.5.0 closed fifteen features and found 114 review findings across thirteen records, 29 of them
+blocking. Sorting those findings by what would have prevented each is the whole brief for this
+milestone, because they were not random — they fell into four shapes, and three are mechanisable.
 
 ## What 0.5.0 measured, and could not act on
 

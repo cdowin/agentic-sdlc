@@ -1744,6 +1744,21 @@ class DamagedFrontmatter(unittest.TestCase):
             self.assertIn('1 story/ies, 2 note(s) skipped', out)
             self.assertIn('0 bug(s), 1 note(s) skipped', out)
 
+    def test_a_shared_doc_is_not_counted_as_somebodys_stray_note(self):
+        # A grain's `decisions.md` opens no frontmatter either, so it landed in
+        # the note count — honest, and about to be useless: a tree grows one
+        # per grain that has ever been decided on, and at forty of them a REAL
+        # stray note is invisible inside the number. Two reasons, so both keep
+        # meaning something.
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(run_cli(root, 'decide', '0.1/alpha', 'a choice')[0], 0)
+            (root / 'pm/roadmap/features/README.md').write_text(
+                '# how features are written here\n', encoding='utf-8')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('1 shared doc(s) beside their grains', out)
+            self.assertIn('1 note(s) skipped', out)
+
     def test_a_clean_tree_discloses_nothing_because_it_skipped_nothing(self):
         with tree(feature_status='building', story_statuses=('ready',)) as root:
             code, out = run_gate(root)

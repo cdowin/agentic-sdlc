@@ -33,9 +33,12 @@ conveyor is.
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1 | unit | one case: exit 0, the text, and `porcelain` unchanged | new |
-| 2 | unit | the seed-vs-defaults comparison | new — this IS the feature |
-| 4 | unit | the byte-identical case, narrowed to gate keys and asserting the workflow half REFUSES | amend |
+| 1 | unit | `test_config_seed.py::test_pm_config_seed_prints_the_seed_and_writes_nothing` — exit 0, stdout byte-equal to the seed, every file under the tree unchanged (hashed, not `git status`: this tier spawns nothing) | new |
+| 1 | unit | `::test_pm_config_is_reachable_from_the_cli` — rule 11's half. RED until `pm/cli.py` routes the verb, and its message IS the diff | new |
+| 2 | unit | `::test_every_commented_default_in_the_seed_is_the_codes_own_default` — the census of every `(section, key)` read through `core/config.py`, compared to the seed in BOTH directions | new — this IS the feature |
+| 2 | unit | `::test_the_census_reads_every_module_that_reads_config` — the floor it stands on: an empty census, an unnamed dynamic reader or an unfoldable fallback FAILS rather than shrinking the comparison (rule 4) | new |
+| 3 | unit | `::test_the_seeds_declarations_are_the_keys_with_nothing_behind_them` — the seed's `DECLARATION` marks are read back and the CODE is asked whether each is true | new |
+| 4 | shell | `test_init_verb.py::test_the_config_template_carries_every_section_the_gates_read` — narrowed to gate keys, plus both declaration readers REFUSING an absent section | amend |
 
 ## Out of scope
 

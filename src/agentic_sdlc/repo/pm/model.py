@@ -1112,6 +1112,14 @@ def pool_dir(cfg: PmConfig, kind: str) -> Path:
     return cfg.roadmap / POOL_NAME[kind]
 
 
+def _slot_of(name: str) -> str:
+    """The shared-doc slot a filename is (`<stem>-decisions.md`), or ''."""
+    for slot in SLOT_HEADER:
+        if name.endswith(f'-{slot}'):
+            return slot
+    return ''
+
+
 def pool_scan(cfg: PmConfig, kind: str) -> Walk:
     """One pool as a `Walk` — the kept documents AND what it narrowed away.
 
@@ -1123,6 +1131,7 @@ def pool_scan(cfg: PmConfig, kind: str) -> Walk:
         return Walk(())
     return (walk.descendants(base, Kind.FILE, suffix='.md')
             .filter(lambda p: not _is_hidden(base, p), SkipReason.DOTTED_NAME)
+            .filter(lambda p: _slot_of(p.name) == '', SkipReason.SHARED_DOC)
             .filter(_is_grain_doc, SkipReason.NO_FRONTMATTER))
 
 

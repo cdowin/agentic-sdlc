@@ -131,3 +131,5 @@
 {"ts":"2026-09-07T00:09:54Z","kind":"status","grain":"0.4.0/identity-lives-in-frontmatter","from":"planning","to":"building"}
 {"ts":"2026-09-07T00:09:54Z","kind":"status","grain":"0.4.0/the-pools-are-the-tables","from":"planning","to":"building"}
 {"ts":"2026-09-07T00:09:55Z","kind":"status","grain":"0.4.0/identity-lives-in-frontmatter/01-a-grain-reads-its-id-and-kind-from-its-own-frontmatter","from":"planning","to":"building"}
+{"ts":"2026-09-07T02:04:09Z","kind":"decision","grain":"ft-identity-lives-in-frontmatter","entry":"D1","title":"An undeclared kind: is a FINDING, not exit 2"}
+{"ts":"2026-09-07T02:04:31Z","kind":"decision","grain":"ft-identity-lives-in-frontmatter","entry":"D2","title":"An id is unique across the whole tree, not per kind"}

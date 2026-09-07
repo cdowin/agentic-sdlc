@@ -37,7 +37,7 @@ of `pm move`'s version, which did the rename and skipped the sweep.
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
 | 1, 5 | unit | a fixture holding one of each ref kind; assert every one moved | new — this is most of the budget, and the reason for it |
-| 2 | unit | one unrewritable ref; assert `porcelain` is empty afterwards | new |
+| 2 | unit | one unrewritable ref; assert every PM file's BYTES are unchanged afterwards — `porcelain` spawns git and would move the module out of the unit tier this row asks for, and the bytes are the same claim one layer cheaper (the shape `test_pm_ready_for.py` already uses) | new |
 | 3 | unit | the shared id grammar, REUSED (one case), plus the duplicate refusal | the grammar's matrix exists |
 | 4 | unit | run it twice | the idempotence bar every write verb carries |
 

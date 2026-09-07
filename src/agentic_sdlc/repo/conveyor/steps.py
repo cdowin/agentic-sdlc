@@ -572,10 +572,10 @@ def _configured(ctx: Context, step: str) -> str:
 
 
 # --- the pm predicates this module CALLS --------------------------------------
-def _subject_grain(ctx: Context) -> str:
-    """The GRAIN id this step is about — `ctx.version` for a close, and for
-    `release`/`adopt` the milestone CLAIMING that version. The two were one
-    string until a milestone's id stopped being its version."""
+def subject_grain(ctx: Context) -> str:
+    """The GRAIN this operation is about — `ctx.version` for a close, and for
+    `release`/`adopt` the milestone CLAIMING that version. One name, because
+    the driver's WRITE asks the same question its checks do."""
     if ctx.operation not in ('release', 'adopt'):
         return ctx.version
     try:
@@ -588,7 +588,7 @@ def _subject_grain(ctx: Context) -> str:
 def ready_for(ctx: Context, target: str) -> Answer:
     """`pm ready-for <target> <grain>` through `pm.cli.main` (0 ready, 1 not
     ready naming the blockers, 2 usage), never re-implemented."""
-    code, said = _pm_run(ctx, 'ready-for', target, _subject_grain(ctx))
+    code, said = _pm_run(ctx, 'ready-for', target, subject_grain(ctx))
     if code == 0:
         return Answer.yes(said or f'`pm ready-for {target}` exited 0')
     if code == 1:
@@ -605,7 +605,7 @@ def _belt_written(ctx: Context) -> str:
     from agentic_sdlc.repo.pm import ledger
 
     cfg = _pm_cfg(ctx)
-    mid = _subject_grain(ctx)
+    mid = subject_grain(ctx)
     if model.milestone_file(cfg, mid) is None:
         return ''
     # `ledger_for`, not the document's parent directory: pooled, the ledger
@@ -630,7 +630,7 @@ def check_tree_clean(ctx: Context) -> Answer:
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, _subject_grain(ctx))
+    path = model.milestone_file(cfg, subject_grain(ctx))
     if path is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')

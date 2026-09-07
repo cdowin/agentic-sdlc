@@ -14,8 +14,8 @@ DRIFT (each FAILs, naming the path):
   R5  the version file equals the CURRENT release in `order` ([pm] version_at)
   R6  an entry behind the last shipped one whose milestone never closed, and a
       `done` milestone that is on no plan
-  D9  an `in_progress` milestone declares a `branch:`
-  D10 that branch is not the mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
+  D9/D10  an `in_progress` milestone declares a `branch:`, and it is not the
+      mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
 WARN (a line, never the exit code; both grains and both categories named):
   D2  a feature in `todo` while all its stories are `done`
   D3  a milestone in `done` with a feature that is not

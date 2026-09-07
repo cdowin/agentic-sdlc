@@ -417,10 +417,11 @@ def _config(root: Path | None) -> 'model.PmConfig':
 def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
     the `status` row and `check pm` reads what it wrote."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
 
     def write(ctx: Context, state: str) -> tuple[bool, str]:
-        argv = [kind, state, ctx.version]
+        argv = [kind, state, step_defs.subject_grain(ctx)]
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):

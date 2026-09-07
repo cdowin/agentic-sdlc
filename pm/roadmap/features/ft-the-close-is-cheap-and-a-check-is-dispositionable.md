@@ -3,7 +3,7 @@ id: ft-the-close-is-cheap-and-a-check-is-dispositionable
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: the close is cheap, and a check is dispositionable
-status: planning
+status: done
 reviewed: docs/reviews/2026-09-07-0.5.0-the-close-is-cheap.md
 depends_on: []
 consumed_by: []

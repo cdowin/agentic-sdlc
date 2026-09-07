@@ -116,6 +116,7 @@ def _run() -> int:
 
     n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
 
+    _unreached_self(cfg, enabled, report, warn)
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -143,6 +144,89 @@ ADVANCE_IT = 'advance it (`done` is the LAST state, not the next one)'
 def _cat(cfg: model.PmConfig, kind: str, status: str) -> str:
     """The category a WARN line prints beside a word, or 'undeclared'."""
     return model.category_of(cfg, kind, status) or 'undeclared'
+
+
+def _feature_self(cfg: model.PmConfig, view, warn) -> None:
+    """The READY warnings a feature earns on its OWN document."""
+    if not model.left_todo(cfg, 'feature', view.status):
+        return
+    frel = cfg.rel(view.path)
+    if view.total == 0:
+        warn(f'feature {view.fid} is {view.status!r} with no stories — past '
+             f'todo, and nothing to build  [{frel}]')
+    why = model.empty_section(view.path, model.SHIP_HEADING)
+    if why:
+        warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
+             f'and nothing says what done means  [{frel}]')
+    # The anti-bloat contract, never verified to exist: the template carries
+    # the section, the milestone's rules call it "where test bloat is stopped,
+    # not at review", and an empty one is how a feature ships twice its budget
+    # with nobody able to say so.
+    why = model.empty_section(view.path, model.PROOF_HEADING)
+    if why:
+        warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
+             f'and nothing says what it should COST  [{frel}]')
+
+
+def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str, warn) -> None:
+    """The READY warnings a story earns on its OWN document."""
+    srel = cfg.rel(sfile)
+    if model.left_todo(cfg, 'story', sstat):
+        why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
+        if why:
+            warn(f'story {sid} is {sstat!r} and {why} — past todo, and '
+                 f'nothing says what must be true  [{srel}]')
+    if (_cat(cfg, 'story', sstat) == model.IN_PROGRESS
+            and not model.unquote(model.field_of(sfile, 'owner'))):
+        # A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says to set
+        # `owner:` in the same edit as the claim, two modules READ the field,
+        # and nothing asked whether it was there.
+        warn(f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and carries no '
+             f'owner: — somebody is working on it and the tree cannot say who '
+             f' [{srel}]')
+
+
+def _unreached_self(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+    """The same READY warnings, for grains the DESCENT never reaches.
+
+    `_drift_walk` walks milestone → feature → story by binding, so a grain
+    nobody has bound is asked nothing — and 0.4.0 made authored-but-unbound the
+    normal state, which is exactly when a grain is least finished. The gate
+    counted it and said nothing about it.
+
+    Only the SELF rules: D3 and D5 compare a grain to its parent, and a grain
+    with no parent has no such question to answer.
+    """
+    if not model.is_pooled(cfg):
+        return
+    index = model.grain_index(cfg)
+
+    def reached(grain) -> bool:
+        want, field = model.BINDS_TO[grain.kind]
+        ref = model.unquote(model.field_of(grain.path, field))
+        found = index.get(ref)
+        return found is not None and found.kind == want
+
+    for path in model.pool_walk(cfg, 'feature'):
+        grain = model.read_grain(cfg, path, 'feature')
+        if grain is None or reached(grain):
+            continue
+        view = model.read_feature(cfg, path)
+        if 'D4' in enabled:
+            reason = model.undeclared_status(cfg, 'feature', view.status)
+            if reason:
+                report(f'feature {view.fid}: {reason}  [{cfg.rel(path)}]')
+        _feature_self(cfg, view, warn)
+    for path in model.pool_walk(cfg, 'story'):
+        grain = model.read_grain(cfg, path, 'story')
+        if grain is None or reached(grain):
+            continue
+        sstat = model.field_of(path, 'status')
+        if 'D4' in enabled:
+            reason = model.undeclared_status(cfg, 'story', sstat)
+            if reason:
+                report(f'story {grain.gid}: {reason}  [{cfg.rel(path)}]')
+        _story_self(cfg, path, grain.gid, sstat, warn)
 
 
 def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
@@ -218,27 +302,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
 
-            if model.left_todo(cfg, 'feature', view.status):
-                if view.total == 0:
-                    warn(f'feature {view.fid} is {view.status!r} with no '
-                         f'stories — past todo, and nothing to build  [{frel}]')
-                why = model.empty_section(view.path, model.SHIP_HEADING)
-                if why:
-                    warn(f'feature {view.fid} is {view.status!r} and {why} — '
-                         f'past todo, and nothing says what done means'
-                         f'  [{frel}]')
-                # The anti-bloat contract, and it had never been verified to
-                # exist: the template carries the section, the milestone's own
-                # rules call it "where test bloat is stopped, not at review",
-                # and an empty one is how a feature ships twice its budget with
-                # nobody able to say so. `empty_section` already answers this
-                # question for two other headings; this is one constant and one
-                # call in the loop that already runs.
-                why = model.empty_section(view.path, model.PROOF_HEADING)
-                if why:
-                    warn(f'feature {view.fid} is {view.status!r} and {why} — '
-                         f'past todo, and nothing says what it should COST'
-                         f'  [{frel}]')
+            _feature_self(cfg, view, warn)
 
             for sfile in view.stories:
                 sid = model.field_of(sfile, 'id')
@@ -248,22 +312,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                     reason = model.undeclared_status(cfg, 'story', sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
-                if model.left_todo(cfg, 'story', sstat):
-                    why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
-                    if why:
-                        warn(f'story {sid} is {sstat!r} and {why} — past todo, '
-                             f'and nothing says what must be true  [{srel}]')
-                if (_cat(cfg, 'story', sstat) == model.IN_PROGRESS
-                        and not model.unquote(model.field_of(sfile, 'owner'))):
-                    # A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says
-                    # to set `owner:` in the same edit as the claim, two
-                    # modules READ the field, and nothing asked whether it was
-                    # there — so a tree could run for a milestone with every
-                    # story unowned.
-                    warn(f'story {sid} is {sstat!r} '
-                         f'({model.IN_PROGRESS}) and carries no owner: — '
-                         f'somebody is working on it and the tree cannot say '
-                         f'who  [{srel}]')
+                _story_self(cfg, sfile, sid, sstat, warn)
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     warn(f'story {sid} is {sstat!r} '

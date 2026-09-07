@@ -1333,6 +1333,43 @@ class StructuralIntegrity(unittest.TestCase):
             # ...and it was COUNTED, so the census is not quietly short one.
             self.assertIn('2 feature(s)', out)
 
+    def test_an_UNBOUND_grain_is_asked_every_question_a_bound_one_is(self):
+        """`_drift_walk` descends milestone → feature → story by BINDING, so a
+        grain nobody has bound was never asked a single READY warning.
+
+        0.4.0 made authored-but-unbound the NORMAL state — you write a feature,
+        then bind it — so the gate went quiet exactly where a grain is least
+        finished: `check pm` counted it, named it under UNBOUND, and said
+        nothing about its empty `## Ship criterion`. Rule 11 in the family of
+        rules written to serve rule 11.
+
+        Only the SELF questions. D3 and D5 compare a grain to its parent, and a
+        grain with no parent has no such question to answer.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            write(root / 'pm/roadmap/features/loose.md',
+                  {'id': 'ft-loose', 'kind': 'feature', 'milestone': '',
+                   'name': 'Loose', 'status': 'building', 'reviewed': '',
+                   'phase': ''}, '# Loose\n\nprose\n')
+            write(root / 'pm/roadmap/stories/wild.md',
+                  {'id': 'st-wild', 'kind': 'story', 'feature': '',
+                   'milestone': '', 'name': 'W', 'status': 'building',
+                   'owner': ''}, '# W\n\nprose\n')
+            code, out = run_gate(root)
+            # Still exit 0: every one of these is a WARN, and being unbound is
+            # a plan rather than drift.
+            self.assertEqual(code, 0, out)
+            for line in ("feature ft-loose is 'building' with no stories",
+                         'ft-loose', '## Ship criterion', '## Proof budget',
+                         'st-wild', '## Acceptance criteria',
+                         'carries no owner:'):
+                self.assertIn(line, out)
+            # ...and it is STILL counted under UNBOUND: the warnings are about
+            # the document, the census is about the edge, and neither replaces
+            # the other.
+            self.assertIn('1 feature(s) name no milestone:', out)
+            self.assertIn('1 story(s) name no feature:', out)
+
     def test_a_grain_with_an_empty_binding_is_COUNTED_and_never_a_finding(self):
         # The unbound/broken split, and it is the whole rule: *nothing said* is
         # a plan, *something wrong said* is drift. A tree mid-planning

@@ -16,9 +16,12 @@ The reader is in the belts because the `lesson` row kind is
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
@@ -57,42 +60,48 @@ def record(root: Path, *rows: dict, rel: str = LEDGER_REL) -> None:
         ledger.append_to(root / rel, row)
 
 
-def lesson_lines(result: driver.Result) -> list[str]:
-    return [line for line in result.lines
-            if f'] {lessons.WORD}' in line]
+class Run(NamedTuple):
+    """What one belt run did: its EXIT CODE, its stdout, and every write."""
 
+    code: int
+    lines: list[str]
+    writes: list[str]
 
-def verdict_lines(result: driver.Result) -> list[str]:
-    return [line for line in result.lines
-            if f'] {lessons.WORD}' not in line]
+    @property
+    def taught(self) -> list[str]:
+        return [line for line in self.lines if f'] {lessons.WORD}' in line]
 
-
-class Writer:
-    """Records every write it was asked for; the belt's one write, stubbed."""
-
-    def __init__(self):
-        self.calls: list[str] = []
-
-    def __call__(self, ctx: driver.Context, state: str) -> tuple[bool, str]:
-        self.calls.append(state)
-        return True, f'wrote {state}'
+    @property
+    def verdicts(self) -> list[str]:
+        return [line for line in self.lines if f'] {lessons.WORD}' not in line]
 
 
 def check(name: str, answer: driver.Answer) -> driver.Check:
     return driver.Check(name, lambda ctx: answer)
 
 
-def belt(root: Path, checks, *, operation: str = 'feature',
-         subject: str = FEATURE, state: str = 'done',
-         cfg=None) -> tuple[driver.Result, Writer]:
-    """One belt run over scripted checks, with the tree's lessons surfacing."""
+def belt(root: Path, checks, *argv: str) -> Run:
+    """One belt run through the VERB, over scripted checks, on a scratch tree.
+
+    Through `driver.main` rather than `driver.run`, so the wiring the surfacing
+    hangs on — which grain this run is standing on, and the config the sink is
+    read from — is what the case exercises. The write is stubbed: what a belt
+    writes is `test_conveyor_close.py`'s claim, not this module's.
+    """
+    cfg_for(root)  # the config caches a moved cwd invalidates
     registry = {c.name: c for c in checks}
-    ctx = driver.Context(root=root, operation=operation, version=subject)
-    writer = Writer()
-    result = driver.run(
-        registry, tuple(registry), ctx, state=state, write=writer,
-        surfacer=lessons.surfacer_for(cfg or cfg_for(root), operation, subject))
-    return result, writer
+    writes: list[str] = []
+    out = io.StringIO()
+
+    def write(ctx: driver.Context, state: str) -> tuple[bool, str]:
+        writes.append(state)
+        return True, f'wrote {state}'
+
+    with contextlib.redirect_stdout(out):
+        code = driver.main(list(argv or ('close', 'feature', FEATURE)),
+                           root=root, registry=registry,
+                           steps=tuple(registry), write=write)
+    return Run(code, out.getvalue().splitlines(), writes)
 
 
 # --- 1: what a lesson is, and how exactly it is matched -----------------------
@@ -145,6 +154,9 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
     named — each printed with its `source` and emitted on the sink."""
     with tree(story_statuses=('building',)) as root:
         code, said = run_cli(root, 'ready-for', 'feature', FEATURE)
+        # What the belt actually holds is the verb's output flattened to one
+        # line, which is where the marker has to survive being read.
+        said = ' '.join(said.split())
         assert code == 1, said
         assert lessons.blockers_named(said) == (STORY,), (
             f'the blockers were not read off `pm ready-for`\'s own marker: '
@@ -157,15 +169,14 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
                   lesson_row(rule=OTHER_RULE, text='another rule'))
         record(root, *mine, *theirs)
 
-        result, _writer = belt(root, [
+        run = belt(root, [
             check('stories-done', replace(driver.Answer.no(said),
                                           names=lessons.blockers_named(said))),
             check(RULE, driver.Answer.yes('the story carries a done: line')),
             check('review-recorded', driver.Answer.yes(RECORD)),
         ])
 
-        printed = lesson_lines(result)
-        assert printed == [
+        assert run.taught == [
             f'[feature] lesson: grain {FEATURE} — the move surface '
             f'(source: {RECORD})',
             f'[feature] lesson: grain {STORY} — the blocker surface '
@@ -174,14 +185,14 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
             f'(source: {RECORD})',
         ], ('the three surfaces are not the entry grain, the blocker the '
             'ready-for check named, and the rule that ran — in that order')
-        assert 'another' not in ' '.join(printed), (
+        assert 'another' not in ' '.join(run.taught), (
             'a lesson against another grain or another rule surfaced on an '
             'unrelated run — that is the nag rule 11 warns about')
 
-        # Each printed line sits beside the verdict it belongs to, never
-        # inside it: the check lines are untouched (rule 6).
-        assert result.lines.index(printed[1]) == \
-            result.lines.index('[feature] error: stories-done: ' + said) + 1
+        # Each line sits BESIDE the verdict it belongs to, never inside it:
+        # the check's own line is untouched (rule 6).
+        assert run.lines.index(run.taught[1]) == \
+            run.lines.index('[feature] error: stories-done: ' + said) + 1
 
         emitted = [row for row in ledger_rows(root)
                    if str(row.get('kind', '')).startswith(f'{lessons.KIND}.')]
@@ -195,6 +206,16 @@ def test_a_lesson_surfaces_at_the_three_places_a_belt_stands_and_nowhere_else():
         assert emitted[0]['lesson'] == mine[0], (
             'the event restates the lesson instead of carrying the recorded '
             'row verbatim')
+
+        # The outer belt stands on a VERSION, and the grain it touches is the
+        # milestone claiming it — one resolver, so the surface and the write
+        # cannot disagree about what is being moved.
+        record(root, lesson_row(grain=MILESTONE, text='the milestone surface'))
+        outer = belt(root, [check('gate', driver.Answer.yes('green'))],
+                     'release', MILESTONE)
+        assert outer.taught == [
+            f'[release] lesson: grain {MILESTONE} — the milestone surface '
+            f'(source: {RECORD})']
 
 
 # --- 3: the case that must exist ----------------------------------------------
@@ -211,19 +232,17 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
     failing = [check('a', driver.Answer.no('a fails')),
                check(RULE, driver.Answer.unverifiable('cannot tell'))]
 
-    for checks in (passing, failing):
+    for checks, expected in ((passing, 0), (failing, 1)):
         with tree() as root:
-            bare, bare_writer = belt(root, checks)
+            bare = belt(root, checks)
             record(root, lesson_row(grain=FEATURE), lesson_row(rule='a'),
                    lesson_row(rule=RULE))
-            taught, taught_writer = belt(root, checks)
+            taught = belt(root, checks)
 
-            assert lesson_lines(taught), 'nothing surfaced; the case is vacuous'
-            assert taught.exit_code == bare.exit_code
-            assert taught.false == bare.false
-            assert taught.written == bare.written
-            assert taught_writer.calls == bare_writer.calls
-            assert verdict_lines(taught) == list(bare.lines), (
+            assert taught.taught, 'nothing surfaced; the case is vacuous'
+            assert taught.code == bare.code == expected
+            assert taught.writes == bare.writes
+            assert taught.verdicts == bare.lines, (
                 'a lesson reshaped the belt\'s own lines; it is only ever a '
                 'line BESIDE a verdict (rule 6)')
 
@@ -233,18 +252,17 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
         record(root, lesson_row(grain=FEATURE))
         write_config(root, '[emit]\nsink = "events.jsonl"\n')
         (root / 'events.jsonl').mkdir()
-        unreachable, _ = belt(root, passing, cfg=cfg_for(root))
-        assert unreachable.exit_code == 0 and unreachable.written == 'done'
-        assert lesson_lines(unreachable), 'the lesson was not printed either'
+        unreachable = belt(root, passing)
+        assert unreachable.code == 0 and unreachable.writes == ['done']
+        assert unreachable.taught, 'the lesson was not printed either'
 
         write_config(root, '[emit]\nkinds = "verdict"\n')
-        malformed, _ = belt(root, passing, cfg=cfg_for(root))
-        assert malformed.exit_code == 0 and malformed.written == 'done'
-        warnings = [line for line in lesson_lines(malformed)
-                    if 'WARNING' in line]
+        malformed = belt(root, passing)
+        assert malformed.code == 0 and malformed.writes == ['done']
+        warnings = [line for line in malformed.taught if 'WARNING' in line]
         assert len(warnings) == 1 and 'NOT emitted' in warnings[0], (
             f'a malformed [emit] must be one named line here and never a '
-            f'refused belt: {lesson_lines(malformed)}')
+            f'refused belt: {malformed.taught}')
 
 
 # --- 4: several match, and nothing chooses ------------------------------------
@@ -264,9 +282,7 @@ def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
                lesson_row(grain=FEATURE, text='second', source='docs/b.md'),
                lesson_row(grain=FEATURE, text='', source=''),
                lesson_row(grain=FEATURE, text='x' * (lessons.TEXT_LIMIT + 50)))
-        result, _writer = belt(root, [check('a', driver.Answer.yes('ok'))])
-
-        printed = lesson_lines(result)
+        printed = belt(root, [check('a', driver.Answer.yes('ok'))]).taught
         assert len(printed) == 4, 'a match was dropped, folded or ranked away'
         assert [line.split(' — ')[1] for line in printed[:2]] == [
             'first (source: docs/a.md)', 'second (source: docs/b.md)'], (

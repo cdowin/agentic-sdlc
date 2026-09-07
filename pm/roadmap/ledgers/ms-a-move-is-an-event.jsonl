@@ -17,3 +17,4 @@
 {"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-shipped-rules-name-retired-behaviour","from":"open","to":"fixed"}
 {"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-retire-drops-the-summary-it-accepts","from":"open","to":"fixed"}
 {"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-commit-hook-dedupes-on-an-exact-string","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:22:01Z","kind":"dispatch","grain":"ft-a-lesson-surfaces-where-you-stand","agent_type":"developer","duration_s":1264,"tool_calls":95,"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":[],"features_in_progress":[],"stories_in_progress":[]}}

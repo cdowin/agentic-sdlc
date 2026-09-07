@@ -19,7 +19,7 @@ FIELDS = ('grain', 'rule', 'source', 'text', 'at')
 COLUMNS = FIELDS
 
 # The line this module adds BESIDE a verdict; it never reshapes one (rule 6).
-# A row that points at nothing says so, and a row is unbounded where a line is not.
+# A row pointing at nothing says so, and a row is unbounded where a line is not.
 WORD = 'lesson'
 SCOPE_GRAIN = 'grain'
 SCOPE_RULE = 'rule'
@@ -78,7 +78,7 @@ def paths(cfg) -> list[Path]:
     """Both ledger homes (0.4.0/D3), and THE HELPER THAT BELONGS IN `ledger.py`:
     `checks/pm.py` spells it privately, and a third is a third answer."""
     found = [ledger.grainless_path(cfg.roadmap)]
-    found += [ledger.ledger_for(cfg, grain.gid) for grain in model.milestones(cfg)]
+    found += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
     return list(dict.fromkeys(found))
 
 
@@ -104,8 +104,8 @@ def read(cfg) -> Store:
 
 
 def blockers_named(said: str) -> tuple[str, ...]:
-    """The grains `pm ready-for` NAMED as blockers: the token after each of its
-    own `BLOCKED` marker, imported and never copied — the verb owns that line."""
+    """The grains `pm ready-for` NAMED as blockers: the token after each of
+    its own `BLOCKED` marker, imported and never copied — the verb owns it."""
     from agentic_sdlc.repo.pm.ready_for import BLOCKED
 
     marker = BLOCKED.strip()

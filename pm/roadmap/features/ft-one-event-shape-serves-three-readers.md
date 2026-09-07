@@ -30,8 +30,9 @@ A belt is its checks, then one write. That sentence has exactly three moments wo
      next_rung, next_checks, next_actions}
 
 `ran` is the shipped command the check runs or the literal `reads the tree` — the same two values
-`install-sdlc` already renders into the protocol tables. `next_actions` are the `next:` lines the
-belt already prints. `deviation` keeps its existing shape and gains the check list; `lesson` is
+`install-sdlc` already renders into the protocol tables. `next_actions` is the arrival breadcrumb's
+own derived COMMAND, from the one `arrive.derive_next` — not every `next:` line the belt prints,
+because a fact the row wants and the printed line lacks belongs in the line, not here. `deviation` keeps its existing shape and gains the check list; `lesson` is
 `ft-a-lesson-is-a-row-bound-to-a-grain`.
 
 **There is no `rung.exit_failed`.** A belt that writes nothing emits `check.verdict` rows with false

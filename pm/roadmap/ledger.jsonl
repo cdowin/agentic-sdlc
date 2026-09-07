@@ -1584,3 +1584,4 @@
 {"ts":"2026-09-07T21:11:58Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":850,"rank":4}
 {"ts":"2026-09-07T21:11:58Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":836,"rank":5}
 {"ts":"2026-09-07T21:11:58Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6900,"census":1049}
+{"ts":"2026-09-07T21:13:01Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2967}

@@ -7,6 +7,7 @@ depends_on: ["ms-a-move-is-an-event"]
 branch:
 version: 0.6.0
 order:
+  - "ft-the-branch-exists-on-the-remote-from-the-first-commit"
   - "ft-the-dispatch-carries-the-contract"
   - "ft-a-guard-declares-its-violation-corpus"
   - "ft-a-shared-surface-owns-a-contract-test"

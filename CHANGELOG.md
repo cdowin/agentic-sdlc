@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`agentic-sdlc lesson record|show` — a lesson is a ROW bound to a grain.** `lesson record
+  --grain <id> --rule <id> --source <path> "<text>"` appends one append-only ledger row, routed to
+  the milestone that owns the grain like every other row; `lesson show [--grain <id> | --rule
+  <id>]` prints them tab-separated **in the order they were recorded**, columns named in `--help`.
+  The row points at its source and never restates it, so a `--source` naming no file — or naming a
+  path outside the checkout, which resolves on exactly one machine and cannot be edited back out of
+  a committed append-only file — is refused and nothing lands. Nothing is inferred, scored or
+  ranked (D1): the filters are `==`, ordering is by the recorded stamp, and an AST guard holds the
+  writer and the reader to it. The belts surface them where you stand — against the grain at a
+  move, against a check's name beside that check's verdict.
+
 - **A NO-OP MOVE IS NOT AN ARRIVAL, so it can no longer shadow a recorded answer.** Every status
   verb minted a full arrival on the `(no-op)` branch too, so `pm feature building ft-x` run bare
   after `pm feature building ft-x --by agent reviewer` appended `answer: none` for the SAME state

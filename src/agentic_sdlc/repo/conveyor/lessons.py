@@ -389,9 +389,14 @@ def main(argv: list[str]) -> int:
     """`lesson record` and `lesson show`, with the config read once — and
     never before `--help` has answered."""
     args = list(argv)
-    if not args or args[0] in HELP_WORDS:
+    if args and args[0] in HELP_WORDS:
         print(USAGE)
-        return 0 if args else 2
+        return 0
+    if not args:
+        # A REFUSAL, so it goes where every other refusal here goes: a consumer
+        # piping stdout gets rows or nothing, never usage text (rule 6).
+        print(USAGE, file=sys.stderr)
+        return 2
     word, rest = args[0], args[1:]
     if word not in (RECORD, SHOW):
         return _refused(f'unknown {WORD} command {word!r} (expected: '

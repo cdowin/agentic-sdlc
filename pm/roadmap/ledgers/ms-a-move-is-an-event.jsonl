@@ -11,3 +11,9 @@
 {"ts":"2026-09-07T16:11:59Z","kind":"dispatch","grain":"ft-telemetry-proves-the-path-not-the-config","agent_type":"developer","duration_s":1427,"tool_calls":142,"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":[],"features_in_progress":[],"stories_in_progress":[]}}
 {"ts":"2026-09-07T16:15:21Z","kind":"dispatch","grain":"ft-a-rung-has-an-entry-edge","agent_type":"developer","duration_s":1617,"tool_calls":105,"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":[],"features_in_progress":[],"stories_in_progress":[]}}
 {"ts":"2026-09-07T16:15:38Z","kind":"dispatch","grain":"ft-wiring-is-one-act-and-it-is-portable","agent_type":"developer","duration_s":888,"tool_calls":65,"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":[],"features_in_progress":[],"stories_in_progress":[]}}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-migration-rewrites-only-quoted-refs","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-check-pm-reopens-every-file-per-field","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-new-verbs-mint-a-compound-id","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-shipped-rules-name-retired-behaviour","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-retire-drops-the-summary-it-accepts","from":"open","to":"fixed"}
+{"ts":"2026-09-07T16:16:50Z","kind":"status","grain":"bg-the-commit-hook-dedupes-on-an-exact-string","from":"open","to":"fixed"}

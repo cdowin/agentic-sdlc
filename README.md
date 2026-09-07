@@ -30,13 +30,13 @@ about your words.
 Pin a tag so every machine and CI runs identical code:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.2.0" agentic-sdlc --version
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc --version
 ```
 
 Then, from inside a git repo:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.2.0" agentic-sdlc init
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc init
 make help
 ```
 
@@ -277,7 +277,7 @@ bumps in the release commit.
 one-line diff:
 
 ```make
-DEVKIT_VERSION := v0.2.0
+DEVKIT_VERSION := v0.4.0
 include Makefile.devkit
 
 my-scan: ## a gate this project owns

@@ -3,7 +3,7 @@ id: ft-the-vocabulary-is-constants-not-literals
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: the vocabulary is constants, not literals
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

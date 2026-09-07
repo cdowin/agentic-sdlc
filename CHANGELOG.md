@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.0 — 2026-09-07 — a move is an event
+
 - **`agentic-sdlc lesson record|show` — a lesson is a ROW bound to a grain.** `lesson record
   --grain <id> --rule <id> --source <path> "<text>"` appends one append-only ledger row, routed to
   the milestone that owns the grain like every other row; `lesson show [--grain <id> | --rule

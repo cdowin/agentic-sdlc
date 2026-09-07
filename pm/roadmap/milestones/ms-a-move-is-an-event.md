@@ -2,7 +2,7 @@
 id: "ms-a-move-is-an-event"
 kind: milestone
 name: a move is an event
-status: ready
+status: done
 depends_on: ["ms-0.4.0"]
 branch: milestone/0.5.0-a-move-is-an-event
 version: 0.5.0

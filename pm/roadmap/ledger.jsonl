@@ -1631,3 +1631,7 @@
 {"ts":"2026-09-07T21:24:01Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":5810,"rank":5}
 {"ts":"2026-09-07T21:24:01Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":42541,"census":1470}
 {"ts":"2026-09-07T21:24:01Z","kind":"verify","rung":"feature","gate":"test","verdict":"PASS","exit_code":0,"duration_ms":42644,"state":"e64ca09fd2cc6d93e71a48ff6f21c654b9aef1140503e05513bf503fa744c76c","graded":"1b280c1fc3ff943cf7cefb8ba8c46a51ed88a1937f2807fd1b01ea78b6a6d743","census":1470}
+{"ts":"2026-09-07T21:30:47Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2999}
+{"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":72435}
+{"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":93}
+{"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":75895}

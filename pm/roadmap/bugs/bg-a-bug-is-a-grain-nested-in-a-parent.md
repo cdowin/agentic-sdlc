@@ -101,7 +101,14 @@ retire. A bug becomes what it already was: a grain nested in a parent.
     every other kind already uses. The check starts being able to fail on the day it lands, on this
     tree, with no backfill.
   * **`pm new bug <milestone> <slug>` is `pm new feature <milestone> <slug>`'s shape** — the
-    argument is the parent, the verb writes the binding, and nothing else is stamped from it.
+    argument is the parent, the verb writes the binding, and nothing else is stamped from it. The
+    bug template loses both fields and the comment that explains them, which is the sentence that
+    taught every author the conflation in the first place:
+
+        <!-- A bug lives in the milestone that will FIX it; `caught_in:` keeps where it was found. -->
+
+    Rendered prose describing a field that no longer exists is this milestone's own theme; the
+    template is a shipped file, so it is `install`-side, not a hand edit to a consumer's tree.
   * **`pm add`'s DANGLING notice reads the parent's `order:`**, not the child's binding; and
     `pm remove <parent> <child>` verifies membership against that same list, so a printed remedy is
     one that runs.

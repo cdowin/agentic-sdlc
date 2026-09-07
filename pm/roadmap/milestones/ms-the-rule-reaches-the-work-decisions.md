@@ -66,3 +66,29 @@ may not run. Every project runs containment.
 fails. Keeping both would put two rules on one byte, which is the second scoreboard this milestone is
 named for. `RETIRED_CHECKS['D3']` names where it went, so a consumer config still listing it is told
 rather than silently ungated — the same treatment D8 got when it became R5.
+
+## D3 — 2026-09-07 — the remote reader reads refs and never spawns
+
+`ft-the-branch-exists-on-the-remote-from-the-first-commit` asks the pressure line to carry unpushed
+commits — *"count and the oldest one's age"*. It ships as a REF COMPARISON with no count and no age.
+
+The first implementation ran `git rev-list --count HEAD --not --remotes` and `git log --format=%ct`.
+It worked, and the suite failed 235 cases in the `not shell` tier by nodeid, each saying *tried to
+spawn a process*. That is correct and it is hard rule 2: `census` is called by every `pm` write and
+by `check pm`, so a git call there puts a subprocess on the hot path of a verb whose whole contract
+is that it boots nothing and is safe in parallel. **Rule 2 has no fast path**, and the tier
+derivation is what noticed — prose would not have.
+
+So `remote.py` reads `.git/HEAD`, `.git/refs/`, `.git/packed-refs` and `.git/config` as text. That
+answers *published* and *in sync* exactly. It cannot answer HOW FAR ahead without walking the commit
+graph, so **it does not answer it** — the same posture as `verify --plan` printing `unknown` rather
+than a guess (rule 11).
+
+**Rejected: compute the count only on the belts, and leave the census cheap.** Two readers of one
+fact, disagreeing about precision, is the second scoreboard this milestone is named for.
+
+**Rejected: cache the count.** Hard rule 2 forbids starting a cache, and a stale count is worse than
+no count — it is rule 4's lie about the one thing this feature exists to tell the truth about.
+
+The line lost some resolution and kept its job: *is this work anywhere but here.* Five hours of
+0.5.0's commits were not lost for want of a NUMBER.

@@ -25,6 +25,8 @@ and nothing to tune.
 from __future__ import annotations
 
 import ast
+import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -1348,3 +1350,134 @@ class NoCodePathParsesAVersion(unittest.TestCase):
         self.assertEqual([], offenders,
                          'a release helper took a version apart — "did it '
                          'increase" is a position in `order`, never a parse')
+
+
+# --- primitive 7: one project, said the same way in both files -----------------
+# `bg-the-package-docstring-names-another-project`. `src/agentic_sdlc/__init__.py`
+# is two lines, and the first one was about a different project: headless scene
+# introspection for a game engine, copied from the sibling repo this package was
+# extracted from and shipped in every release since. It is the MODULE docstring,
+# so it is what `help(agentic_sdlc)` prints and the first thing a reader opening
+# the package sees.
+#
+# `[project] description` held the true sentence the whole time — one fact stored
+# twice, in disagreement, with nothing that could say so out loud. That is hard
+# rule 7's shape one altitude up: `__version__` and `version` move together
+# because a gate makes them, and these two do now as well.
+#
+# THE RULE, both directions, with neither sentence written down in this file:
+#   * the docstring NAMES this package — every word of `[project] name` is in it;
+#   * and it names nothing else — every word IT uses is a word `[project] name`
+#     or `[project] description` already uses.
+#
+# A subset rather than a ban list, for the reason `EMIT_IMPORTS` is one: "a
+# sentence about somebody else's project" is not a vocabulary anybody can
+# enumerate, and a roster of foreign project names would be this package knowing
+# about a repo that is not it (rule 8). What makes the drift impossible is that
+# the only words admitted here are the ones the description already chose —
+# widening the docstring means widening the description in the same change,
+# which is the two sites moving together, which is the whole point.
+PYPROJECT = REPO_ROOT / 'pyproject.toml'
+PROJECT_TABLE = 'project'
+NAME_FIELD = 'name'
+DESCRIPTION_FIELD = 'description'
+PACKAGE_INIT = '__init__.py'
+# Floors, in the spirit of MIN_SOURCES: a subset test passes perfectly over an
+# empty docstring, and over a description nobody wrote. Both sit well under what
+# is really there (20 and 40 distinct words) and well over zero.
+MIN_DOCSTRING_WORDS = 10
+MIN_DESCRIPTION_WORDS = 20
+# (sentence, vocabulary, the words the vocabulary never used). Graded against a
+# SYNTHETIC vocabulary, so the reader is proven on what it CATCHES without
+# pinning the probe to whatever `[project] description` happens to say. The
+# foreign sentence names a SHAPE and never a repo (rule 8).
+DOCSTRING_SPELLINGS = (
+    ('gizmo — a tracker and its gate.', 'gizmo a tracker and its gate', []),
+    ('gizmo — headless scene introspection for a game engine.',
+     'gizmo a tracker and its gate',
+     ['engine', 'for', 'game', 'headless', 'introspection', 'scene']),
+    # Case is not a hiding place, and neither is a hyphen: a compound word is
+    # its parts, so `markdown-and-frontmatter` cannot carry a foreign name past
+    # the comparison by being punctuated into one token.
+    ('GIZMO — a TRACKER, and its gate.', 'gizmo a tracker and its gate', []),
+    ('a markdown-and-frontmatter tracker.',
+     'a markdown and frontmatter tracker', []),
+    ('gizmo — a tracker, 4.x.', 'gizmo a tracker', ['x']),
+)
+
+
+def _words(text: str) -> set[str]:
+    """The alphabetic words of a sentence, case-folded."""
+    return set(re.findall(r'[a-z]+', text.lower()))
+
+
+def _foreign_words(sentence: str, vocabulary: str) -> list[str]:
+    """Every word `sentence` uses that `vocabulary` never does, sorted."""
+    return sorted(_words(sentence) - _words(vocabulary))
+
+
+def _package_docstring() -> str | None:
+    """What `help(agentic_sdlc)` prints, read from the shipped file.
+
+    By AST rather than by import, like everything else here: the docstring is a
+    literal in the source, so reading it this way boots nothing (rule 2) and is
+    exactly the sentence a reader opening the file gets.
+    """
+    return ast.get_docstring(_tree(SRC / PACKAGE_INIT))
+
+
+def _project_naming_fields() -> tuple[str, str]:
+    """(`[project] name`, `[project] description`) from the real pyproject.toml.
+
+    READ, never restated. A copy of either sentence in this file would be the
+    THIRD copy, and a third copy drifts exactly the way the second one did.
+    """
+    with PYPROJECT.open('rb') as handle:
+        table = tomllib.load(handle)[PROJECT_TABLE]
+    return table[NAME_FIELD], table[DESCRIPTION_FIELD]
+
+
+class TheDocstringAndTheDescriptionNameOneProject(unittest.TestCase):
+    """PRIMITIVE 7 — the package describes itself the same way in both files.
+
+    The sentence was wrong for four releases and no gate could have said so:
+    `check doc` holds this repo's prose to its make-target and file-path claims,
+    and its scope is markdown, while a docstring is prose making a claim about
+    what the package IS from inside a `.py` file. Nothing was pointed at it.
+    """
+
+    def test_the_reader_names_the_words_a_vocabulary_never_used(self):
+        """The comparison is only worth what it can still see: three assertions
+        of emptiness pass perfectly over a reader that stopped comparing."""
+        for sentence, vocabulary, expected in DOCSTRING_SPELLINGS:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(expected, _foreign_words(sentence, vocabulary))
+
+    def test_the_docstring_names_this_package_and_no_other(self):
+        docstring = _package_docstring()
+        name, description = _project_naming_fields()
+        self.assertIsNotNone(
+            docstring,
+            f'{PACKAGE_INIT} has no module docstring — `help(agentic_sdlc)` '
+            f'prints nothing, and an absence is a finding (rule 11)')
+        self.assertGreaterEqual(
+            len(_words(docstring)), MIN_DOCSTRING_WORDS,
+            f'{len(_words(docstring))} distinct word(s) in the docstring — a '
+            f'subset check over a sentence this short is a gate that checks '
+            f'nothing')
+        self.assertGreaterEqual(
+            len(_words(description)), MIN_DESCRIPTION_WORDS,
+            f'{len(_words(description))} distinct word(s) in [project] '
+            f'description — the vocabulary below would admit almost anything')
+        self.assertEqual(
+            [], _foreign_words(name, docstring),
+            'the module docstring does not name this package. `help()` opens '
+            'with it, so it says what the thing IS, starting with what it is '
+            'called')
+        self.assertEqual(
+            [], _foreign_words(docstring, f'{name} {description}'),
+            'the module docstring uses words [project] description never does. '
+            'One fact, two files: a sentence here that pyproject.toml does not '
+            'support is the second copy drifting — this one shipped four '
+            'releases describing a different project. Say it in the '
+            "description's words, or widen the description in this same change")

@@ -11,22 +11,30 @@ from pathlib import Path
 
 from agentic_sdlc.repo.pm import model
 
-_REF_KEYS = ('depends_on', 'consumed_by')
+# PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
+# shape `check pm` grades and cannot produce what this reader refuses (rule 4).
+REF_KEYS = ('depends_on', 'consumed_by')
 
 # A scalar, not a list: one bug has one cause, and it is not the binding.
 CAUSED_BY = 'caused_by'
+EMPTY = ('', '[]', 'null', '~')
 
 
 class Unparseable(Exception):
     """A ref list this parser cannot read — a finding, never an empty list."""
 
 
-def _refs(path: Path, key: str) -> list[str]:
+def render_refs(ids: list[str]) -> str:
+    """`ids` as the inline list `refs_in` reads back."""
+    return '[' + ', '.join(f'"{i}"' for i in ids) + ']'
+
+
+def refs_in(key: str, raw: str) -> list[str]:
     """The ids inside a `key: ["a", "b"]` inline list; any other shape is a
     finding.
     """
-    raw = model.field_of(path, key).strip()
-    if not raw or raw in ('[]', 'null', '~'):
+    raw = raw.strip()
+    if raw in EMPTY:
         return []
     if not (raw.startswith('[') and raw.endswith(']')):
         raise Unparseable(f'{key}: {raw!r} is not an inline list — write '
@@ -53,18 +61,18 @@ def _refs(path: Path, key: str) -> list[str]:
 
 def _safe_refs(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return _refs(path, key)
+        return refs_in(key, model.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
 
 
-def _scalar_ref(path: Path, key: str) -> list[str]:
+def scalar_ref_in(key: str, raw: str) -> list[str]:
     """The one id inside a `key: <id>` scalar, as a 0-or-1 list; a bracket,
     comma, quote or space in it is a finding.
     """
-    raw = model.field_of(path, key).strip()
-    if not raw or raw in ('[]', 'null', '~'):
+    raw = raw.strip()
+    if raw in EMPTY:
         return []
     if raw[0] in '[{' or raw[-1] in ']}':
         raise Unparseable(f'{key}: {raw!r} is a list or a mapping — {key} is '
@@ -77,7 +85,7 @@ def _scalar_ref(path: Path, key: str) -> list[str]:
 
 def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return _scalar_ref(path, key)
+        return scalar_ref_in(key, model.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -209,7 +217,7 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
         # on the raw `id:` meant a quoted one matched none of its own.
         if expect:
             graph[expect] = []
-        for key in _REF_KEYS:
+        for key in REF_KEYS:
             resolved = _check_refs(cfg, ffile, key, on, bad, census)
             if key == 'depends_on' and expect:
                 # Which kind a ref names is a question about the GRAIN;

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply
 from agentic_sdlc.repo.pm import (arrive, ledger, model, rename, report,
-                                   templates)
+                                   templates, validate)
 
 PROG = 'agentic-sdlc pm'
 
@@ -148,7 +148,15 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `rung.enter` where `[emit]` declares
                                            a sink)
   get <grain-id> <key>                    (read one frontmatter field)
-  set <grain-id> <key> <value>            (write one frontmatter field — not status)
+  set <grain-id> <key> <value>            (write one frontmatter field. NOT
+                                           status (a move) and NOT order (a
+                                           block list `add`/`remove` own). A
+                                           list-shaped field — depends_on,
+                                           consumed_by — is written AS the
+                                           inline list `check pm` grades, so a
+                                           bare id, a comma-separated pair and
+                                           ["a", "b"] all land as ["a", "b"]
+                                           and an empty value as [])
   rename <old-id> <new-id>                (rewrite the grain's own `id:` AND
                                            every inbound reference in the tree
                                            — depends_on, consumed_by, reviewed,
@@ -1358,10 +1366,29 @@ def _binding_defect(cfg: model.PmConfig, gid: str, key: str,
                     f'{want} in {key}:. Nothing was written')
 
 
+def _shaped(key: str, value: str) -> str:
+    """`value` in the shape `check pm` grades `key` in — `validate.REF_KEYS` is
+    the one answer, and a bare id is bracketed and re-read by the gate's own
+    parser, so every rejection the reader has is a refusal here (rule 4)."""
+    try:
+        if key in validate.REF_KEYS:
+            raw = value.strip()
+            if raw in validate.EMPTY:
+                return '[]'
+            return validate.render_refs(validate.refs_in(
+                key, raw if raw.startswith('[') else f'[{raw}]'))
+        if key == validate.CAUSED_BY:
+            validate.scalar_ref_in(key, value)
+    except validate.Unparseable as err:
+        raise Usage(f'{err}. Nothing was written') from err
+    return value
+
+
 def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     """Set one frontmatter field through a tool rather than a regex. `status`
     is refused by name: a status is a move, and only the status verbs ask
-    `move_defect` and stamp the ledger.
+    `move_defect` and stamp the ledger; `order` likewise, being a block list
+    `pm add` owns. Every other field is written in its `_shaped` form.
     """
     if len(args) != 3:
         raise Usage(USAGE)
@@ -1377,8 +1404,15 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
                     f'{value} {gid}` — the {kind} verb checks {value!r} '
                     f'against [pm.states.{kind}] and stamps the ledger; '
                     f'`set` would do neither')
+    if key == model.ORDER_KEY:
+        raise Usage(f'{key} is a sequence, not a field: run `{PROG} add '
+                    f'<parent-id> <child-id> [--position N | --before <id> | '
+                    f'--after <id>]` (or `{PROG} remove`) — `{key}` is a BLOCK '
+                    f'list, and the scalar `set` writes is a form `pm add` '
+                    f'refuses and every reader of the sequence sees as empty')
     if '\n' in value or '\r' in value:
         raise Refused('a frontmatter scalar is one line')
+    value = _shaped(key, value)
     path = _grain_file(cfg, gid)
     _binding_defect(cfg, gid, key, value)
     before = model.field_of(path, key)

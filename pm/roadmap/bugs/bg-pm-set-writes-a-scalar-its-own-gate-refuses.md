@@ -3,7 +3,7 @@ id: bg-pm-set-writes-a-scalar-its-own-gate-refuses
 kind: bug
 milestone: "ms-the-rule-reaches-the-work"
 name: `pm set` writes a scalar that `check pm` then refuses
-status: open
+status: closed
 caused_by:
 ---
 
@@ -41,3 +41,17 @@ rather than drift the tool produced.
 
 If a field's shape is genuinely ambiguous, refuse at exit 2 naming the shape — a refusal the operator
 can act on beats a success they cannot.
+
+## Fixed
+
+`validate.REF_KEYS` went public — the one answer to "is this field list-shaped" — and `pm set`
+routes its value through `validate.refs_in`/`render_refs`, the gate's own parser, so there is still
+one copy of the knowledge. `caused_by` gets the scalar half; `order` is refused by name at exit 2,
+pointing at `pm add`/`pm remove`, because it is a BLOCK list and the scalar was a form `pm add`
+already refused.
+
+Proven in `tests/test_pm_verbs.py::FieldMutation` —
+`test_a_list_shaped_field_is_written_in_the_shape_the_gate_grades` drives `set` then asserts
+`check pm` exits 0, re-plants the scalar by hand and asserts it exits 1 (the probe), and asserts
+the second identical `set` leaves the file byte-identical;
+`test_a_value_of_the_WRONG_shape_is_refused_naming_the_shape` covers the four refusals.

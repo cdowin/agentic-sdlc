@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **`remote:` — the conveyor now asks whether the work is anywhere but this disk.** 0.5.0 ran five
+  hours and thirty-four commits with nothing pushed and no surface looked. A milestone arriving at
+  an `in_progress` state reports whether its branch exists on a remote and prints `git push -u
+  origin <branch>`; the pressure line carries the branch when it is on this disk only, silent
+  otherwise; and `release`'s `on-milestone-branch` reports published-or-not without refusing (rule
+  6 — the belt already prints the push as a `next:` step). **The tool never pushes** (hard rule 2).
+  `src/agentic_sdlc/repo/pm/remote.py` reads `.git/HEAD`, `refs/`, `packed-refs` and `config` as
+  TEXT and spawns nothing, so `census` can ask on every write; it reports *published* and *in sync*
+  and does not guess how far ahead. Local refs only — `check repo-hygiene` still owns the fetch, and
+  a tree with no remote is quiet rather than broken.
+
+- **`pm set` writes the SHAPE `check pm` grades, so a write cannot fail the next gate run.**
+  `pm set <id> depends_on <other>` wrote the scalar `depends_on: other` and exited 0, and `check
+  pm` then failed the tree with `is not an inline list` — one verb writing what another refuses
+  (rule 4's second sin), which sat undetected through 0.5.0. The list-shaped keys are
+  `validate.REF_KEYS` and there is still only one copy of them: `set` now routes the value through
+  the gate's own parser, so a bare id, a comma-separated pair and `["a", "b"]` all land as `["a",
+  "b"]`, an empty value lands as `[]`, and every shape the reader rejects is a refusal at exit 2
+  naming the shape with nothing written. `caused_by` is the scalar half and refuses a list the same
+  way. **`pm set <id> order …` is refused by name** and points at `pm add`/`pm remove`: `order` is
+  a BLOCK list, and the scalar `set` used to write is a form `pm add` refuses and every reader of
+  the sequence sees as empty.
+
 - **A BUG IS A GRAIN NESTED IN A PARENT — `fix_milestone:` and `caught_in:` retire (breaking).**
   `milestone:` is the parent binding and the only one, so the bug walk is the feature walk. Both
   retired fields are named where they survive, never silently ignored. **`ready-for milestone`
@@ -30,6 +53,18 @@
   whose `order:` had never held the id — and the `pm remove` it named then refused, because
   `remove` verifies membership against the binding the rebind had just changed. **The command the
   tool printed could not succeed at the moment it printed it.**
+
+- **The package docstring described a different project, and a gate now holds it to `[project]
+  description`.** `src/agentic_sdlc/__init__.py`'s first line is what `help(agentic_sdlc)` prints,
+  and for four releases it advertised headless scene introspection for a game engine — the sentence
+  came with the extraction from the sibling repo this package was split out of, and survived a
+  rename, a repackaging and every review since. `pyproject.toml` carried the true description the
+  whole time: one fact stored twice, in disagreement, with nothing that could say so out loud. The
+  sentence is now this package's, and `tests/test_boundaries.py` reads BOTH sites at runtime and
+  holds them to one project — the docstring names this package (every word of `[project] name` is
+  in it) and names nothing else (every word it uses is a word `[project] name` or `[project]
+  description` already uses). Neither sentence is copied into the test, because a third copy drifts
+  the same way the second one did.
 
 ## v0.5.0 — 2026-09-07 — a move is an event
 

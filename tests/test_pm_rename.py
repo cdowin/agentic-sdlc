@@ -282,6 +282,6 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
 
     def test_every_id_a_reader_resolves_is_swept(self):
         declared = ({model.ORDER_KEY, validate.CAUSED_BY}
-                    | set(validate._REF_KEYS)
+                    | set(validate.REF_KEYS)
                     | {field for _, field in model.BINDS_TO.values()})
         self.assertEqual(declared - set(rename.REF_FIELDS), set())

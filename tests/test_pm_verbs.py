@@ -1221,6 +1221,55 @@ class FieldMutation(unittest.TestCase):
             self.assertIn('risk: high', after)
             self.assertEqual([ln for ln in after if ln != 'risk: high'], lines)
 
+    def test_a_list_shaped_field_is_written_in_the_shape_the_gate_grades(self):
+        # `set … depends_on 0.1/alpha` wrote the SCALAR and exited 0, and
+        # `check pm` then failed the tree on it — one verb writing what another
+        # refuses, which is rule 4's second sin. The round trip closes here,
+        # and the probe at the end keeps the PASS from being vacuous.
+        with tree(story_statuses=('ready',)) as root:
+            sf = root / STORY_REL
+            for value in ('0.1/alpha', '["0.1/alpha"]', '  0.1/alpha  '):
+                with self.subTest(value=value):
+                    self.assertEqual(run_cli(root, 'set', '0.1/alpha/s0',
+                                             'depends_on', value)[0], 0)
+                    self.assertEqual(model.field_of(sf, 'depends_on'),
+                                     '["0.1/alpha"]')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            before = sf.read_bytes()
+            run_cli(root, 'set', '0.1/alpha/s0', 'depends_on', '0.1/alpha')
+            self.assertEqual(sf.read_bytes(), before)   # idempotent
+            self.assertEqual(
+                run_cli(root, 'set', '0.1/alpha/s0', 'depends_on', '')[0], 0)
+            self.assertEqual(model.field_of(sf, 'depends_on'), '[]')
+            model.set_field(sf, 'depends_on', '0.1/alpha')   # the probe
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('is not an inline list', out)
+
+    def test_a_value_of_the_WRONG_shape_is_refused_naming_the_shape(self):
+        # Both directions of the one sin: a list key handed something the
+        # gate's parser cannot read, a scalar key handed a list, and `order`,
+        # a BLOCK list `pm add` owns and `set_list_field` refuses to rewrite.
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'new', 'bug', '0.1', 'oops')
+            for gid, key, value, rel, needle in (
+                    ('0.1/alpha/s0', 'depends_on', 'a b', STORY_REL,
+                     'contains a separator'),
+                    ('0.1/alpha/s0', 'consumed_by', '[[x]]', STORY_REL,
+                     'nests brackets'),
+                    ('bg-oops', 'caused_by', '["0.1/alpha"]',
+                     'pm/roadmap/bugs/bg-oops.md', 'is a list or a mapping'),
+                    ('0.1/alpha', 'order', '0.1/alpha/s0', FFILE,
+                     'is a sequence, not a field')):
+                with self.subTest(key=key):
+                    path = root / rel
+                    before = path.read_bytes()
+                    code, out = run_cli(root, 'set', gid, key, value)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(needle, out)
+                    self.assertEqual(path.read_bytes(), before)
+
 
 class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):
     """`pm set <id> <rel> <target>` is how a grain is bound, so it is where a

@@ -3,7 +3,7 @@ id: bg-the-package-docstring-names-another-project
 kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: the package docstring describes Godot scene introspection
-status: open
+status: closed
 caused_by:
 ---
 

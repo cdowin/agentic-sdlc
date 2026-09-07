@@ -23,7 +23,7 @@ from agentic_sdlc.core.config import (ConfigError, config_section,
                                       relpath_tuple, str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import Answer, Check, Context, grain_path
-from agentic_sdlc.repo.pm import model, verdict
+from agentic_sdlc.repo.pm import model, remote, verdict
 
 # --- the shipped defaults -----------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -751,10 +751,24 @@ def check_on_milestone_branch(ctx: Context) -> Answer:
             f'fresh session never has to guess at `git branch -a`, and this '
             f'check will not assume the current branch is the right one')
     here = _branch(ctx)
-    if here == declared:
-        return Answer.yes(f'HEAD is {here!r}')
-    return Answer.no(f'HEAD is {here!r}; {cfg.rel(path)} declares '
-                     f'branch: {declared!r}')
+    if here != declared:
+        return Answer.no(f'HEAD is {here!r}; {cfg.rel(path)} declares '
+                         f'branch: {declared!r}')
+    # REPORTED, never refused: refusing would change a shipped exit code for a
+    # condition that has always been tolerated (rule 6).
+    return Answer.yes(f'HEAD is {here!r}{_published(cfg.root, here)}')
+
+
+def _published(root: Path, branch: str) -> str:
+    """Whether the branch is anywhere but this disk, as a clause. Refs only.
+    '' when the tree has no remote — quiet, not broken."""
+    state = remote.read(root)
+    if state is None:
+        return ''
+    if state.in_sync:
+        return ', published'
+    seen = 'ahead of' if state.published else 'on no'
+    return f', {seen} remote — `{remote.push_command(branch)}`' 
 
 
 def _unreleased_span(text: str) -> tuple[int, int, list[str]] | str:

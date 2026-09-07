@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model
+from agentic_sdlc.repo.pm import ledger, model, remote
 
 # Which belt closes a grain of each kind, and which belt the grain ABOVE it
 # needs next — `steps.registry_for` keys, and the whole of the mapping: the
@@ -222,6 +222,7 @@ class Census:
     record_pool: int
     wip: int
     unreadable: int
+    unpushed_branch: str = ''
 
     def __bool__(self) -> bool:
         return self.open_count > 0
@@ -248,6 +249,9 @@ class Census:
             clauses.append(f'{self.unreadable} '
                            f'{_ledgers(self.unreadable)} could not be read, so '
                            f'the ages above are short by whatever is in them')
+        # Rule 11: a NAMED line. Silent when the work IS somewhere else.
+        if self.unpushed_branch:
+            clauses.append(f'{self.unpushed_branch} is on this disk only')
         return head + (' — ' + ', '.join(clauses) if clauses else '')
 
 
@@ -339,10 +343,12 @@ def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
             if not document.field(RECORD_FIELD) or not model.record_resolves(
                     cfg.root / document.field(RECORD_FIELD)):
                 no_record += 1
+    elsewhere = remote.read(cfg.root)
     return Census(open_count=len(grains), oldest_id=oldest_id,
                   oldest_seconds=oldest_seconds, unanswered=unanswered,
                   no_record=no_record, record_pool=record_pool, wip=cfg.wip,
-                  unreadable=unreadable)
+                  unreadable=unreadable,
+                  unpushed_branch=(elsewhere.branch if elsewhere else ''))
 
 
 # --- the crossing -------------------------------------------------------------
@@ -401,6 +407,23 @@ def emit_leave(cfg: model.PmConfig, row: dict) -> None:
 
 
 # --- the whole event ----------------------------------------------------------
+def remote_lines(cfg: model.PmConfig, kind: str, to: str) -> list[str]:
+    """`remote:` — whether a milestone's branch exists anywhere but this disk.
+
+    Asked at the arrival into `in_progress`, the moment the work starts being
+    worth something. INVENTORY and a command, never a push (rule 9).
+    """
+    if kind != 'milestone' or model.category_of(cfg, kind, to) != model.IN_PROGRESS:
+        return []
+    state = remote.read(cfg.root)
+    if state is None or not state:
+        return []
+    where = ('has commits no remote-tracking ref holds' if state.published
+             else 'is on no remote')
+    return [f'remote: this branch {where} — the work is on this disk only',
+            f'        `{remote.push_command(state.branch)}`']
+
+
 def report(cfg: model.PmConfig, kind: str, gid: str, to: str,
            said: Said, answered: bool = False) -> dict:
     """Say what this arrival has to say, and hand back the row it emitted, in
@@ -416,6 +439,8 @@ def report(cfg: model.PmConfig, kind: str, gid: str, to: str,
             _say(f'next: `{nxt.action}` asks {", ".join(nxt.checks)}')
         for capability in have:
             _say(capability.line)
+        for line in remote_lines(cfg, kind, to):
+            _say(line)
     # Asking again for a disposition the census counts is the nag, not a fork.
     for line in ([] if answered else fork_lines(cfg, node, gid, said)):
         _say(line)

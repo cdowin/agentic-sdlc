@@ -60,7 +60,10 @@ SUPPORT = TESTS / 'support'
 # derivation cannot know a name is never called. Eight modules carried one
 # after their `git init` went away, and dropping the dead import moved 419
 # tests back to the inner loop.
-MARKED_MODULES = 18
+# 19 at 0.6.0: `test_pm_remote.py` joined, and it is the DELIBERATE shape — the
+# reader under it spawns nothing (that is its contract), while the cases spawn
+# git to build a real tree with real refs.
+MARKED_MODULES = 19
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',

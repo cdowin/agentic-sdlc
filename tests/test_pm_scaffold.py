@@ -28,6 +28,22 @@ from agentic_sdlc.repo.pm import cli, model, templates
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
 
+
+def both_streams(root: Path) -> tuple[int, str]:
+    """`run_gate` with stderr too — a config REFUSAL prints there, so a
+    stdout-only read would assert against an empty string."""
+    import contextlib
+    import io
+
+    from agentic_sdlc.core.project import load_config, repo_root
+    from agentic_sdlc.repo.checks import pm as pm_check
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = pm_check.run()
+    return code, buf.getvalue()
+
 # The pools, and where a grain's shared docs sit now: beside the document,
 # under the document's own stem. `0.1.md` owns `0.1-decisions.md`, and that is
 # the whole of the 0.4.0 rule these cases exercise — a grain is a DOCUMENT, so
@@ -673,12 +689,28 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # A retired id must not linger in KNOWN_CHECKS: a name that parses but
         # runs nothing is a gate a consumer believes is on — and naming one in
         # `[pm] checks` is a config error, not a quiet no-op.
+        # D13/D14 never shipped as ids a consumer could name; V2 and V3 DID,
+        # for three releases, so a config still listing one has to be told
+        # where the rule went rather than that it does not exist. "Unknown
+        # rule" reads as a typo and silently ungates.
         for retired in ('D13', 'D14'):
             self.assertNotIn(retired, model.KNOWN_CHECKS)
+        for retired in ('V2', 'V3', 'D7', 'D8'):
+            self.assertNotIn(retired, model.KNOWN_CHECKS, retired)
+            self.assertIn(retired, model.RETIRED_CHECKS, retired)
         with tree(story_statuses=('ready',)) as root:
-            (root / 'devkit.toml').write_text(
-                '[pm]\nchecks = ["D13"]\n', encoding='utf-8')
-            self.assertEqual(run_gate(root)[0], 2)
+            for named, says in (('D13', ''), ('V2', 'identity'),
+                                ('V3', 'membership is now the field')):
+                with self.subTest(named=named):
+                    (root / 'devkit.toml').write_text(
+                        f'[pm]\nchecks = ["{named}"]\n', encoding='utf-8')
+                    code, out = both_streams(root)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(named, out)
+                    # A retired id is told where the rule WENT; an id that
+                    # never existed only gets named.
+                    if says:
+                        self.assertIn(says, out)
 
     def test_new_mints_no_empty_directory(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -11,6 +11,7 @@ order:
   - "ft-a-guard-declares-its-violation-corpus"
   - "ft-a-shared-surface-owns-a-contract-test"
   - "ft-prose-that-restates-a-verb-is-rendered-or-gone"
+  - "ft-the-changelog-is-a-field-and-a-verb"
   - "ft-a-warning-is-actionable-where-it-fires"
   - "bg-the-milestone-scaffold-still-mints-the-version"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
@@ -72,6 +73,23 @@ is already in the tree: the rendered document is the only one that never drifted
 WRITER met an old READER, both halves individually correct, no test of either failing. `developer.md`
 gained a checklist item asking builders to enumerate readers, but a checklist is a reminder; the suite
 is the enforcement.
+
+## And the last hand-maintained scoreboard
+
+`ft-the-changelog-is-a-field-and-a-verb` widens the theme by one axis, deliberately. The rest of this
+milestone is about instructions that cannot reach the work; the changelog is a DOCUMENT that cannot
+check itself against the tree — but it is the same defect, one fact stored twice with no way to
+disagree out loud.
+
+0.3.0 retired `ROADMAP.md` because `order:` plus `pm roadmap` said it without a second copy.
+`CHANGELOG.md` is the last one left, and 0.5.0's own `## Unreleased` is the argument: 469 lines,
+roughly twelve agent authors, two concurrent editors who had to be told about each other, no binding
+between any entry and the grain it describes, and an order that is append-order rather than the
+`order:` the milestone already declares.
+
+So the northstar reads a little wider than its title: **an instruction that cannot reach the work is
+not an instruction; a gate that cannot fail is not a gate; and a document that cannot be checked
+against the tree is not a record.**
 
 ## Constraints this milestone must respect
 

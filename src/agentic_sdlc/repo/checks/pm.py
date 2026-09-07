@@ -58,17 +58,15 @@ from agentic_sdlc.repo.pm import model
 
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
-# The third answer, and the one a belt that branches on two of them drops on
-# the floor: not a finding, and not a pass either. A PREFIX, because every
-# surface that prints it names what could not be read after it.
+# The third answer, dropped on the floor by a belt that branched on two of
+# them. A PREFIX: what could not be read is named after it.
 UNVERIFIABLE = 'UNVERIFIABLE'
 # A row whose `ts` will not parse is not a row aged zero (rule 4): a ledger is
 # `merge=union`, and rows arrive from other branches and other versions.
 UNDATEABLE = 'at a timestamp this reader cannot parse'
-# The harness's per-user override. `install-hooks` emits ABSOLUTE script paths,
-# and a public repo must not commit a machine path — so the block belongs in a
-# gitignored file, and a reader that consults only the committed one calls that
-# tree unwired. BOTH are read, never one instead of the other.
+# The harness's per-user override. `install-hooks` emits ABSOLUTE paths and a
+# public repo must not commit a machine path, so the block belongs in a
+# gitignored file — a reader of one file calls such a tree unwired.
 AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
 SETTINGS_FILES = (model.AGENT_SETTINGS, AGENT_SETTINGS_LOCAL)
 
@@ -433,10 +431,8 @@ def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str
 class Wiring(NamedTuple):
     """Which couriers a settings file REGISTERS, and which file said so.
 
-    PUBLIC, because `adopt`'s `telemetry-live` asks the same question: two
-    readers of one config is how a belt and a gate come to disagree about
-    whether a tree is wired.
-    """
+    PUBLIC: `telemetry-live` asks this too, and two readers of one config is
+    how a belt and a gate come to disagree."""
 
     couriers: tuple[str, ...]   # the couriers a `hooks` entry actually fires
     where: str                  # the settings file(s) that fire them
@@ -444,14 +440,9 @@ class Wiring(NamedTuple):
 
 
 def _hook_commands(node: object) -> list[str]:
-    """Every `command` string under a settings file's `hooks` key.
-
-    UNDER `hooks`, never the whole file: `install-hooks`' own next-step text
-    tells a consumer to add `Bash(bash tools/hooks/cc-ledger-session.sh
-    --self-test)` to `permissions.allow`, and a substring search over the raw
-    text reads that allowlist entry as wiring — a full WARN asserting the
-    couriers are wired on a tree with no hook registered anywhere.
-    """
+    """Every `command` string under a settings file's `hooks` key — never the
+    whole file, where a `permissions.allow` entry naming a courier (which this
+    package's own next-step text tells consumers to add) read as wiring."""
     found: list[str] = []
     if isinstance(node, dict):
         command = node.get('command')
@@ -486,11 +477,8 @@ def wired_couriers(root: Path) -> Wiring:
     """Which ledger couriers this checkout's settings files fire.
 
     **No settings file at all is an empty tuple, not a defect** — a tree that
-    wires nothing opted out (0.4.0/D5) and this package does not conscript.
-
-    Takes a ROOT rather than a config, because the belt asks this before it has
-    resolved a PM tree.
-    """
+    wires nothing opted out (0.4.0/D5). A ROOT, not a config: the belt asks
+    before it has resolved a PM tree."""
     found: set[str] = set()
     where: list[str] = []
     unread: list[str] = []
@@ -633,23 +621,22 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'`[pm.states.*]` is undeclared, so every work-moving verb refuses; '
          f'`python3` or the transcript path does not resolve; the entries name '
          f'a script that is not there. **`bash tools/hooks/'
-         f'cc-ledger-session.sh --self-test` answers all four** (U2)')
+         f'cc-ledger-session.sh --self-test` answers all four**. A fifth is '
+         f'outside this tree: a session rooted elsewhere loads its own '
+         f'settings file and derives its own root, which is what '
+         f'`install-hooks --write-settings` and `GDK_LEDGER_ROOT` are for '
+         f'(U2)')
 
 
 def _hook_written(row: dict) -> bool:
     """Did a COURIER write this row?
 
     The kind AND a `session_id`. The kind is off `ledger.EVENT_KINDS`, the
-    writer's own vocabulary rather than a second copy of it — but the kind
-    ALONE is not enough: `pm ledger record SubagentStop` mints exactly those
-    kinds by hand from inside the checkout, and this repo's own `check pm`
-    counted sixteen hand-written `dispatch` rows as evidence a courier ran when
-    no courier had ever run. A session id comes from the hook payload and a
-    hand row does not carry one.
-
-    The failure direction is SAFE: a courier row that somehow arrives without a
-    session id reads as `never`, which is a WARN nobody can act on wrongly —
-    noisy, never blind, which is the whole posture of this rule.
+    writer's own vocabulary — but alone it is not enough: `pm ledger record
+    SubagentStop` mints exactly those kinds by hand from inside the checkout,
+    and this repo counted sixteen of them as evidence a courier ran when none
+    ever had. The session id comes from the hook payload; a hand row has none.
+    A courier row lacking one reads as `never` — noisy, never blind.
     """
     from agentic_sdlc.repo.pm import ledger
     if _kind_of(row) not in set(ledger.EVENT_KINDS.values()):
@@ -685,9 +672,8 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
     wired = list(wiring.couriers)
     # THE OPT-OUT, and the whole of it: wires nothing AND records nothing.
     # Gating on the config alone went silent on a tree holding an hour-old
-    # courier row, because `install-hooks` tells a consumer the block works
-    # in a settings file ABOVE this repo — the topology this package now
-    # ships. The ledger proves the path wherever the config lives.
+    # courier row, wired in a settings file above the repo — the topology this
+    # package now ships. The ledger proves the path wherever the config is.
     if not wired and not rec.written:
         return
     if rec.unreadable:

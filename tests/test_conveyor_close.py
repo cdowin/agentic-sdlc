@@ -13,6 +13,7 @@ place.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import subprocess
@@ -154,16 +155,48 @@ def rows(root: Path) -> list[dict]:
 # telemetry about its own run: the gate wrapper records what a target COST on
 # every real gate, and `verify` records its VERDICT and the tree state it ran
 # on beside it. The belt's one write is a grain's status, and the milestone
-# ledger (`LEDGER`, the file a status row lands in) is still graded byte for
-# byte below.
+# ledger (`LEDGER`, the file a status row lands in) is graded byte for byte.
 GRAINLESS_LEDGER = 'pm/roadmap/ledger.jsonl'
 
+# By KIND, not by file. A whole-file exclusion also stopped these assertions
+# seeing a row naming NO grain written during a refusal, which is a real shape:
+# `ledger.ledger_for` files a `deviation` grainlessly when the grain resolves
+# to no milestone. These three kinds are what a check files about its own run
+# and nothing else is allowed.
+TELEMETRY_KINDS = frozenset({ledger.KIND_GATE, ledger.KIND_VERIFY,
+                             ledger.KIND_TEST})
 
-def snapshot(root: Path) -> dict[str, bytes]:
-    return {str(p.relative_to(root)): p.read_bytes()
-            for p in sorted(root.rglob('*'))
-            if p.is_file() and '.git' not in p.parts
-            and p != root / GRAINLESS_LEDGER}
+
+def _kind_of(line: str) -> str:
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return ''
+    return row.get('kind', '') if isinstance(row, dict) else ''
+
+
+def _belt_rows(path: Path) -> tuple[str, ...]:
+    """The grainless ledger's rows MINUS a check's telemetry about its own
+    run; `()` when the file is not there, so a run that created it and wrote
+    nothing but telemetry into it reads the same as one that never touched
+    it."""
+    if not path.is_file():
+        return ()
+    return tuple(line for line in path.read_text(encoding='utf-8').splitlines()
+                 if line.strip() and _kind_of(line) not in TELEMETRY_KINDS)
+
+
+def snapshot(root: Path) -> dict[str, object]:
+    """Every byte the belt could have written — with the grainless ledger read
+    as ROWS rather than bytes, so the telemetry a check files about itself is
+    allowed and everything else in that file is still graded."""
+    files: dict[str, object] = {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in sorted(root.rglob('*'))
+        if p.is_file() and '.git' not in p.parts
+        and p != root / GRAINLESS_LEDGER}
+    files[GRAINLESS_LEDGER] = _belt_rows(root / GRAINLESS_LEDGER)
+    return files
 
 
 def first_done(kind: str) -> str:

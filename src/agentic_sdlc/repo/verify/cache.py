@@ -1,28 +1,20 @@
 """cache.py — what a rung remembers, and the TREE STATE it remembers it against.
 
 A run whose digest is byte-identical to a recorded one reports that verdict
-rather than buying the answer again — which is hard rule 4's first cardinal sin
-(a gate that missed drift and printed PASS) if it is ever wrong or ever quiet.
-So: the digest covers UNTRACKED files, hashing the CONTENT of every path
-`git ls-files --cached --others --exclude-standard` names, plus HEAD and, for a
-submodule, that checkout's own state; a reuse is always printed (`reuse_lines`);
-a malformed, missing or unreadable row answers `None`, which means run the
-target; and a state over 0 files is refused.
+rather than buying the answer again — hard rule 4's first cardinal sin (a gate
+that missed drift and printed PASS) if it is ever wrong or ever quiet. So: the
+digest hashes the CONTENT of every path `git ls-files --cached --others
+--exclude-standard` names, UNTRACKED included, plus HEAD and a submodule's own
+checkout; a reuse is always printed; a malformed, missing or unreadable row
+answers `None`, which means run the target; a state over 0 files is refused.
 
-NOT in the digest: ignored files, and the ledger rows a run files about ITSELF
-— the wrapper's `gate` cost row, the tier's `test` rows, this module's `verify`
-row, the couriers' session rows. A state covering those could never repeat.
-Every OTHER row IS in it, line by line (`ledger_digest`): a status, a decision,
-a deviation or a row this version cannot parse is a fact about the tree, and
-`check pm` grades several of them. Dropping the ledger FILE dropped those too.
-
-Two dropped kinds are graded anyway: `check budget` reads the newest `gate` row
-per target and `test` row per tier, inside `make milestone`, which IS the
-milestone rung. They cannot be hashed (the run writes them) and they cannot be
-forgotten (a reused PASS would stand over a tree whose gate now exits 1), so the
-row carries HOW MANY of them the ledger held and a reuse over a ledger that has
-grown one refuses. What no state covers at all is said out loud instead, on
-every reuse: the third `[verify:cache]` line.
+Out of the digest: ignored files, and the ledger rows a run files about ITSELF
+(`SELF_FILED_KINDS`) — a state covering what a gate writes while it runs could
+never repeat. Every OTHER ledger row is IN, line by line (`ledger_digest`):
+a status or a decision is a fact about the tree, and dropping the ledger FILE
+dropped those too. Two dropped kinds are graded anyway, by `check budget`
+inside `make milestone`, so the row carries HOW MANY the ledger held and a
+reuse over a ledger that has grown one refuses (`stale_line`).
 """
 from __future__ import annotations
 
@@ -37,8 +29,8 @@ from pathlib import Path
 from agentic_sdlc.repo.pm import ledger
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
-# by the older spelling can match a state computed by the newer one. v2 reads
-# the ledgers' rows and a submodule's checkout, which v1 did not.
+# by the older spelling can match a newer state. v2 reads a ledger's rows and a
+# submodule's checkout.
 STATE_ALGO = 'sha256'
 STATE_TAG = b'agentic-sdlc/verify-state/v2'
 STATE_SHOWN = 12          # of the digest, in a line a human reads
@@ -56,13 +48,11 @@ MARK_EXEC = b'x'
 MARK_PLAIN = b'-'
 SEP = b'\x00'
 
-# What `check budget` grades and no digest can carry, because the run that is
-# being graded is the run that writes them.
+# What `check budget` grades and no digest can carry, because the run being
+# graded is the run that writes them.
 GRADED_KINDS = (ledger.KIND_GATE, ledger.KIND_TEST)
 
-# Every kind a run files about its own execution rather than about the work:
-# the two above, this module's verdict row, and the couriers' event rows. A
-# ledger's OTHER rows are hashed like any other byte in the tree.
+# Every kind a run files about its own execution rather than about the work.
 SELF_FILED_KINDS = frozenset({ledger.KIND_VERIFY, *GRADED_KINDS,
                               *ledger.EVENT_KINDS.values()})
 
@@ -84,6 +74,15 @@ class State:
 
 
 @dataclass(frozen=True)
+class Graded:
+    """The ledger rows `check budget` grades, as one comparable value: what a
+    tree state cannot carry, because the run being graded writes them."""
+
+    digest: str
+    rows: int
+
+
+@dataclass(frozen=True)
 class Verdict:
     """One recorded verdict, whole: a row missing a field never becomes one."""
 
@@ -95,7 +94,7 @@ class Verdict:
     duration_ms: int
     census: int | None
     state: str
-    graded: int
+    graded: str
 
     def age(self, now: datetime | None = None) -> str:
         """How old this verdict is, as `ledger.human_duration` spells one."""
@@ -111,13 +110,12 @@ def tree_state(root: Path) -> tuple[State | None, str]:
     """(the state of this working tree, '' | why there is none). HEAD, then
     every path git lists — tracked and untracked, ignored excluded — with its
     content's digest. A question git could not answer is never a hit, and the
-    defect is returned to be PRINTED (rule 11).
-    """
+    defect is returned to be PRINTED (rule 11)."""
     return _state_of(root, _is_ledger())
 
 
 def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
-    """`tree_state`, carrying the ledger predicate — built once and passed down
+    """`tree_state`, carrying the ledger predicate: built once and passed down
     into every submodule, so one PM config read serves the whole walk."""
     listing = _git(root, 'ls-files', '-z', '--cached', '--others',
                    '--exclude-standard')
@@ -126,7 +124,7 @@ def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
                       'compare a recorded verdict against')
     digest = hashlib.new(STATE_ALGO)
     digest.update(STATE_TAG)
-    # Unborn HEAD is the empty string: a state like any other, and it moves the
+    # Unborn HEAD is the empty string: a state like any other, moving the
     # moment a commit lands.
     head = _git(root, 'rev-parse', 'HEAD')
     _field(digest, b'HEAD', head.strip() if head else b'')
@@ -135,10 +133,9 @@ def _state_of(root: Path, is_ledger) -> tuple[State | None, str]:
         path = root / os.fsdecode(raw)
         if is_ledger(path):
             content = _ledger_content(path)
-            # A ledger holding nothing but a run's own leavings contributes
-            # NOTHING rather than an empty field: the first run CREATES that
-            # file, and a state that moved for it could never match the row
-            # that run wrote.
+            # Nothing but a run's own leavings contributes NOTHING, not an
+            # empty field: the first run CREATES that file, and a state moving
+            # for it could never match the row that run wrote.
             if content is None:
                 continue
         else:
@@ -177,18 +174,16 @@ def _field(digest, *parts: bytes) -> None:
 
 def _content_of(path: Path, is_ledger) -> bytes | None:
     """What one path contributes: the executable bit and the digest of its
-    bytes, the marker for a path that is not a plain file, or None when the
-    path is a state this cannot characterise at all."""
+    bytes, a marker for a path that is not a plain file, or None when this
+    cannot characterise it at all."""
     try:
         if path.is_symlink():
             # The TARGET: a link repointed is a change even when both files are.
             return MARK_LINK + os.fsencode(os.readlink(path))
         if path.is_dir():
-            # A submodule: one path in `ls-files`, another checkout's state —
-            # so the digest is that checkout's OWN state, which carries its
-            # HEAD and its working tree. A commit rolled back inside it is
-            # `M <path>` to the superproject's own `git status`, and a constant
-            # here made it invisible.
+            # A submodule: one path in `ls-files`, another checkout's state.
+            # A commit rolled back inside it is `M <path>` to the
+            # superproject's own `git status`; a constant here hid that.
             inner, _ = _state_of(path, is_ledger)
             return None if inner is None else \
                 MARK_SUB + inner.digest.encode('ascii')
@@ -204,7 +199,7 @@ def _content_of(path: Path, is_ledger) -> bytes | None:
 
 
 def _ledger_content(path: Path) -> bytes | None:
-    """A ledger's rows minus the ones a run files about itself, None when that
+    """A ledger's rows minus the ones a run files about itself; None when that
     leaves nothing at all."""
     try:
         raw = path.read_text(encoding='utf-8')
@@ -216,13 +211,10 @@ def _ledger_content(path: Path) -> bytes | None:
 
 
 def ledger_digest(raw: str) -> bytes | None:
-    """The digest of every line of a ledger this tree's runs did NOT file about
-    themselves, or None when there is no such line.
-
-    A line that will not parse, or names a kind this version does not know, is
-    KEPT. Only a row provably filed by a run may be dropped: the wrong answer
-    here is the one that hides a status flip, and `check pm` grades those.
-    """
+    """The digest of every ledger line a run did NOT file about itself, or None
+    when there is no such line. A line that will not parse, or names a kind
+    this version does not know, is KEPT: only a row provably filed by a run may
+    be dropped, and the wrong answer here hides a status flip."""
     digest = hashlib.new(STATE_ALGO)
     kept = 0
     for line in raw.splitlines():
@@ -239,8 +231,8 @@ def ledger_digest(raw: str) -> bytes | None:
 
 def _is_ledger():
     """A predicate naming the files whose ROWS the digest reads rather than
-    whose bytes it hashes. By file name and extension, never by directory: the
-    pool is the consumer-settable `[pm] ledger_dir`, and a directory-wide rule
+    whose bytes it hashes. By name and extension, never by directory: the pool
+    is the consumer-settable `[pm] ledger_dir`, and a directory-wide rule
     pointed at a source tree would take real inputs out of the state."""
     try:
         from agentic_sdlc.repo.pm import model
@@ -277,14 +269,11 @@ def ledger_file(root: Path) -> Path | None:
 
 
 def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
-                                                         int | None]:
+                                                         Graded | None]:
     """(the LAST verdict recorded for this make target over this exact tree
-    state, how many rows `check budget` grades this ledger holds NOW).
-
-    One pass, because both answers are the same file. The verdict is keyed on
-    the TARGET, because what ran is what was proven; the row says which rung
-    bought it. `None` for either always means *run the target*.
-    """
+    state, the rows `check budget` grades AS THEY ARE NOW) — one pass, because
+    both answers are the same file. Keyed on the TARGET, because what ran is
+    what was proven. `None` either side means *run the target*."""
     path = ledger_file(root)
     if path is None or not state:
         return None, None
@@ -293,19 +282,13 @@ def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
     except (OSError, UnicodeDecodeError):
         return None, None
     found: Verdict | None = None
-    graded = 0
     for line in raw.splitlines():
         row = _row(line)
-        if row is None:
-            continue
-        kind = row.get('kind')
-        if kind in GRADED_KINDS:
-            graded += 1
-        elif kind == ledger.KIND_VERIFY:
+        if row is not None and row.get('kind') == ledger.KIND_VERIFY:
             got = _verdict(row)
             if got is not None and got.gate == gate and got.state == state:
                 found = got
-    return found, graded
+    return found, graded_of(raw)
 
 
 def record(root: Path, rung: str, gate: str, state: State, verdict: str,
@@ -318,41 +301,51 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return ('this tree has no PM config, so there is nowhere to record the '
                 'verdict — the next run pays for the same answer again')
     if not path.parent.is_dir():
-        # `append_to` would MAKE the roadmap directory, and a verb that runs a
-        # make target has no business minting a PM tree in silence (rule 3).
+        # `append_to` would MAKE that directory, and a verb that runs a make
+        # target has no business minting a PM tree in silence (rule 3).
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
     graded = _graded_in(path)
     if graded is None:
-        return (f'{path} could not be read, so how many rows `check budget` '
-                f'grades it holds is unknown — and a row that cannot say that '
+        return (f'{path} could not be read, so what `check budget` would grade '
+                f'over this tree is unknown — and a row that cannot say that '
                 f'is a row nothing may reuse')
     try:
         ledger.append_to(path, ledger.verify_row(
             rung=rung, gate=gate, verdict=verdict, state=state.digest,
             duration_ms=duration_ms, exit_code=exit_code, census=census,
-            graded=graded))
+            graded=graded.digest))
     except (OSError, ValueError) as err:
         return f'the verdict could not be recorded in {path} ({err})'
     return ''
 
 
-def _graded_in(path: Path) -> int | None:
-    """How many rows `check budget` grades this ledger holds; 0 for a ledger
-    that is not there yet, None for one that is and cannot be read."""
+def _graded_in(path: Path) -> Graded | None:
+    """`graded_of` for a ledger FILE: the empty answer for one that is not
+    there yet, None for one that is and cannot be read."""
     if not path.is_file():
-        return 0
+        return graded_of('')
     try:
-        raw = path.read_text(encoding='utf-8')
+        return graded_of(path.read_text(encoding='utf-8'))
     except (OSError, UnicodeDecodeError):
         return None
-    total = 0
+
+
+def graded_of(raw: str) -> Graded:
+    """Every row `check budget` grades, digested in file order, and how many
+    there are. A DIGEST and not a count: an edit in place — a merge, a hand
+    trim, a restored older ledger — leaves the count alone and moves exactly
+    what that check reads (it grades the NEWEST row per target)."""
+    digest = hashlib.new(STATE_ALGO)
+    rows = 0
     for line in raw.splitlines():
         row = _row(line)
-        if row is not None and row.get('kind') in GRADED_KINDS:
-            total += 1
-    return total
+        if row is None or row.get('kind') not in GRADED_KINDS:
+            continue
+        _field(digest, line.strip().encode('utf-8', 'surrogateescape'))
+        rows += 1
+    return Graded(digest=digest.hexdigest(), rows=rows)
 
 
 def ledger_size(root: Path) -> int:
@@ -366,7 +359,7 @@ def ledger_size(root: Path) -> int:
 
 def census_since(root: Path, gate: str, offset: int) -> int | None:
     """The census the GATE itself filed for this target after `offset`, or
-    None. Copied rather than counted: `verify` scans no files, and the number a
+    None. Copied, never counted: `verify` scans no files, and the number a
     reused verdict quotes must be the one that run reported (rule 4)."""
     path = ledger_file(root)
     if path is None:
@@ -406,21 +399,20 @@ def _row(line: str) -> dict | None:
 def _verdict(row: dict) -> Verdict | None:
     """A `verify` row as a `Verdict`, or None when ANY field is missing or the
     wrong shape — the whole trust boundary. Rows arrive from other branches,
-    versions and hands, and a half-read row that became a PASS is rule 4's
-    first sin with a record behind it."""
+    versions and hands; a half-read row that became a PASS is rule 4's sin."""
     if ledger.parse_ts(row.get('ts')) is None:
         return None
     if row.get('verdict') not in ledger.VERIFY_VERDICTS:
         return None
     fields = {}
-    for name in ('ts', 'rung', 'gate', 'verdict', 'state'):
+    # `graded` is required, not defaulted: a row from a spelling that did not
+    # digest what `check budget` grades cannot say whether it may be reused.
+    for name in ('ts', 'rung', 'gate', 'verdict', 'state', 'graded'):
         value = row.get(name)
         if not isinstance(value, str) or not value.strip():
             return None
         fields[name] = value
-    # `graded` is required, not defaulted: a row from a spelling that did not
-    # count what `check budget` grades cannot say whether it may be reused.
-    for name in ('exit_code', 'duration_ms', 'graded'):
+    for name in ('exit_code', 'duration_ms'):
         value = row.get(name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return None
@@ -437,18 +429,17 @@ def _verdict(row: dict) -> Verdict | None:
 
 
 # --- what a reuse SAYS --------------------------------------------------------
-# Joins the `[verify:check]` family, and all three lines carry it: one grep
-# finds every run that did not pay (rule 6).
+# Joins the `[verify:check]` family, and every line carries it: one grep finds
+# every run that did not pay (rule 6).
 CACHE_TAG = '[verify:cache]'
 
 
-def reuse_lines(found: Verdict, command: str, state: State,
+def reuse_lines(found: Verdict, command: str, state: State, graded: Graded,
                 now: datetime | None = None) -> list[str]:
-    """What a reuse prints: the run it came from, its age, its census and its
-    cost; the state that made it reusable and the flag that refuses it; and
-    what this read did NOT re-measure. Never abbreviated, never conditional —
-    the third line most of all, because a state is a claim about the working
-    tree and nothing else."""
+    """What a reuse prints: the run it came from with its age, census and cost;
+    the state that made it reusable and the flag that refuses it; and what this
+    read did NOT re-measure. Never abbreviated, never conditional — the third
+    line most of all, since a state is a claim about the working tree alone."""
     census = f'census {found.census}' if found.census is not None \
         else 'census unknown'
     # `command` names the recorded run honestly: the row was found BY its
@@ -462,21 +453,20 @@ def reuse_lines(found: Verdict, command: str, state: State,
         f'`--no-cache` runs it anyway',
         f'{CACHE_TAG} NOT re-measured: anything outside this working tree — '
         f'the interpreters `make matrix` runs, an installed tool, the '
-        f'environment — and the {found.graded} ledger row(s) `check budget` '
-        f'grades, of which that run filed the last (one landing SINCE it '
-        f'refuses this reuse and runs `{command}`)',
+        f'environment — and the {graded.rows} ledger row(s) `check budget` '
+        f'grades, which are byte-identical to the ones that run left (one '
+        f'landing or changing SINCE it runs `{command}` instead)',
     ]
 
 
-def stale_line(found: Verdict, graded: int | None, command: str,
+def stale_line(found: Verdict, graded: Graded | None, command: str,
                now: datetime | None = None) -> str:
     """Why a verdict recorded against THIS state was not reused: the rows
-    `check budget` grades moved under it. Rule 11 — the operator is standing in
-    front of a gate that could have been a read, and silence here reads as a
+    `check budget` grades moved under it. Rule 11 — silence here reads as a
     cache that simply does not work."""
     return (f'{CACHE_TAG} a {found.verdict} is recorded for this exact tree '
-            f'state ({found.age(now)} ago) and the ledger now holds '
-            f'{"?" if graded is None else graded} row(s) `check budget` grades '
-            f'where that run left {found.graded} — it grades the NEWEST one '
-            f'per target, and no tree state can carry a row the run itself '
-            f'writes, so `{command}` runs')
+            f'state ({found.age(now)} ago) and the '
+            f'{"unreadable" if graded is None else graded.rows} row(s) '
+            f'`check budget` grades are not the ones that run left — it grades '
+            f'the NEWEST one per target, and no tree state can carry a row the '
+            f'run itself writes, so `{command}` runs')

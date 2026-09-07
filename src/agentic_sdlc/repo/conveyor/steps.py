@@ -77,8 +77,8 @@ DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
 }
 
 # WHICH CHECKS ARE DISPOSITIONABLE IS A DECLARATION, and the stock declaration
-# is nothing (D13). `--skip <check> "<why>"` is refused BY NAME for any check
-# not named in `[<op>] skippable`, so a project that declares nothing gets
+# is nothing (0.5.0/D5). `--skip <check> "<why>"` is refused BY NAME for any
+# check not named in `[<op>] skippable`, so a project that declares nothing gets
 # today's belt, byte for byte — which is what keeps this key inside rule 9. A
 # project that lists `tree-clean` is making a mistake the tool will let it make,
 # because "the tool reads what the project declared" has no other meaning.
@@ -1168,9 +1168,9 @@ def check_telemetry_live(ctx: Context) -> Answer:
     reported in the line rather than in the verdict, and `check pm` U4 says the
     same thing on every run.
 
-    The wiring answer is `check pm`'s reader, not a second one, and the LEDGER
-    outranks it: a tree whose couriers are registered in a settings file above
-    this checkout is recording, and reading only the config called it dead.
+    The wiring answer is `check pm`'s reader, and the LEDGER outranks it: a
+    tree registered in a settings file above this checkout is recording, and
+    reading only the config called it dead.
     """
     command = _configured(ctx, 'telemetry-live')
     if command:
@@ -1184,9 +1184,8 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'records cannot be probed — `install-hooks` writes the corpus, or '
             f'drop `telemetry-live` from [adopt] steps if this tree does not '
             f'record')
-    # BOTH couriers, and `check pm`'s reader rather than a second one: it
-    # parses the `hooks` block of the committed settings file AND the per-user
-    # override beside it, so an allowlist mention is not wiring and a
+    # BOTH couriers, through `check pm`'s reader: it parses the `hooks` block
+    # of both settings files, so an allowlist mention is not wiring and a
     # gitignored registration is not invisible.
     from agentic_sdlc.repo import install
     from agentic_sdlc.repo.checks import pm as pm_check
@@ -1213,10 +1212,9 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'the recipe) and an undeclared [pm.states.*], which makes every '
             f'verb refuse by name: {_clip(out)}')
     recorded = _recorded_phrase(ctx)
-    # The third answer. `recording_phrase` has always had it; branching on two
-    # of them dropped it through to `yes`, so this said "telemetry is live"
-    # over a ledger it could not read while `check pm` U4 called the same tree
-    # UNVERIFIABLE — one fact, two verdicts, which is rule 4's first sin.
+    # The third answer, which branching on two of them dropped through to
+    # `yes`: this said "telemetry is live" over a ledger it could not read
+    # while U4 called that tree UNVERIFIABLE — one fact, two verdicts.
     if recorded.startswith(pm_check.UNVERIFIABLE):
         return Answer.unverifiable(
             f'the couriers are on disk and the vehicle answers, but the last '

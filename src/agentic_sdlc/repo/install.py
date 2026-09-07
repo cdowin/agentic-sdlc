@@ -275,11 +275,10 @@ def hook_settings(root: Path) -> str:
     session rooted anywhere else fires nothing and says nothing. An absolute
     one is the same block wherever the settings file carrying it lives.
 
-    QUOTED, because the harness hands this string to a shell: absolutising the
-    path is what introduced the class, since a relative `tools/hooks/…` has no
-    space to break on and `/Users/me/my repo/tools/…` does. An unquoted one
-    still reads as an absolute existing file to anything that splits on the
-    first space, so it fails where nothing is looking.
+    QUOTED, because the harness hands this to a shell: a relative
+    `tools/hooks/…` had no space to break on and an absolute one does, and an
+    unquoted path still reads as absolute-and-existing to anything that splits
+    on the first space — so it fails where nothing is looking.
     """
     events: dict[str, list[dict]] = {}
     groups: dict[tuple[str, str | None], dict] = {}
@@ -307,14 +306,13 @@ SETTINGS_NAMES = (
     'names one machine, so a SHARED checkout puts the block in '
     '{local} and gitignores it — every surface here reads that file too:')
 # The per-user override a harness writes for itself, and the one place a
-# public repo can carry absolute wiring. Read back by `check pm` U2/U4 and by
-# `adopt`'s `telemetry-live`, off `checks.pm.AGENT_SETTINGS_LOCAL`.
+# public repo can carry absolute wiring. Read back off
+# `checks.pm.AGENT_SETTINGS_LOCAL` by U2/U4 and `telemetry-live`.
 AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
 SETTINGS_OFFER = ('{rel} was NOT written — pass {flag} and this verb writes it '
                   'when nothing is in the way')
-# ONE line, like every other disposition: `grep '^[install]'` is how a run
-# is summarised, and it is the only place the concrete export survives when
-# the offer is taken (the pasteable block is not printed after a write).
+# ONE line, like every other disposition, and the only place the concrete
+# export survives when the offer is taken (a write prints no block).
 SETTINGS_WROTE = (
     'wrote {rel} — in force for a session rooted here. A session rooted '
     'anywhere else reads its own settings file, and needs this same block '
@@ -334,9 +332,9 @@ def settings_step(root: Path, write: bool) -> bool:
     True when a write was ASKED FOR and withheld, which is exit 1 like any
     other withheld replacement.
 
-    PUBLIC, because `init` calls it too: a brand-new consumer that never
-    reaches this step gets neither the fragment nor the destination, which is
-    strictly less than the hand-paste this verb exists to replace.
+    PUBLIC, because `init` calls it too: a consumer that never reaches this
+    step gets neither fragment nor destination, which is strictly less than
+    the hand-paste it replaced.
     """
     target = root / AGENT_SETTINGS
     body = hook_settings(root) + '\n'

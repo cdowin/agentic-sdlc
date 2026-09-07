@@ -10,7 +10,7 @@ ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2
 is a declaration this machine could not read (D11). What the caller does next
 is printed as `next:` lines; nothing else is written, moved, pushed or tagged.
 
-A check has THREE answers, not two (D13). `--skip <check> "<why>"` is the
+A check has THREE answers, not two (0.5.0/D5). `--skip <check> "<why>"` is the
 third: the caller ANSWERED the question, so the check is not asked, the line
 reads `skipped: <check> — "<why>"`, the close is a clean one, and a
 `disposition` row records the judgement against the grain forever. Only a
@@ -63,7 +63,7 @@ QUOTE_LIMIT = 40
 # `ledger.deviation_row`'s keys.
 FORCED = 'forced'
 
-# --- the disposition a caller gives a check (D13) -----------------------------
+# --- the disposition a caller gives a check (0.5.0/D5) ------------------------
 # The flag and how many words it takes: the CHECK and the WHY, in that order,
 # positionally, so a reason opening with a dash is still a reason.
 SKIP_FLAG = '--skip'
@@ -76,6 +76,13 @@ SKIP_ARITY = 2
 # package — `ledger.read_rows`, `parse_ts`, `pm ledger show`'s sort — keys the
 # stamp as `ts`, and a second spelling of the timestamp would file every
 # disposition at the beginning of time.
+#
+# TWO ROW SHAPES CARRY THIS WORD, and a reader must branch. An ARRIVAL's
+# disposition (0.5.0/D3) answers "what happened AT this state" and always
+# carries `state`; a CHECK's disposition answers "what happened to this
+# question" and always carries `check`. `check` is the discriminator, and
+# whether the two should be one row is the milestone's to settle — not
+# something either half may decide alone.
 KIND_DISPOSITION = 'disposition'
 DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'operation', 'check', 'why')
 # The word an UNVERIFIABLE answer is named by on the line.
@@ -798,8 +805,10 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         # not a status and not a row; it says so before its first check. A
         # `skipped:` line with no `disposition` behind it would be the record
         # this flag exists to make, missing.
-        return _refuse(f'{spoken} writes nothing, so a skip has nowhere to be '
-                       f'recorded — it is checks only, and {NOTHING_RECORDED}')
+        return _refuse(f'{spoken} writes nothing — not a status and not a row '
+                       f'— so a skip has nowhere to be recorded; it is checks '
+                       f'only. `{SKIP_FLAG}` is a close belt\'s flag: '
+                       f'{CLOSE_VERB} story, {CLOSE_VERB} feature, release')
 
     # Everything above refused without touching the filesystem.
     try:

@@ -67,10 +67,12 @@ Nothing runs a rung wider than the thing you changed.
 `agentic-sdlc verify --plan` prints the three `verify` rungs with the cost each one last took, read
 from your ledger. Ask it instead of guessing.
 
-A rung also RECORDS its verdict, against the state of the tree it ran on — so closing seven features
-on an unchanged tree costs one gate run and six reads. The reuse is always printed, naming the run it
-came from and its age; one byte anywhere in the working tree, tracked or untracked, and it re-runs.
-`--no-cache` re-runs unconditionally.
+A rung also RECORDS its verdict, against the state of the tree it ran on — so asking the same rung
+about the same tree twice costs one gate run and one read, and `close feature` straight after a
+green `verify --feature` is a read. Closing seven features is still seven runs: a belt writes the
+grain's `status:` line, which is a byte in the state the next close computes. The reuse is always
+printed, naming the run it came from, its age and what it did NOT re-measure; one byte anywhere in
+the working tree, tracked or untracked, and it re-runs. `--no-cache` re-runs unconditionally.
 
 ## Quickstart
 
@@ -98,13 +100,22 @@ A belt's output is one line per check, then one line saying what happened:
 Fix what it named and run it again; every check is a read of the tree, so nothing is carried
 between runs. All true → the one write and `next:` lines naming what is yours to do.
 
+**A check has three answers, not two.** `--skip <check> "<why>"` is the third: the caller ANSWERED
+that check, so it is not asked, the line reads `skipped: <check> — "<why>"`, the write happens, and
+the milestone's ledger gets a `disposition` row carrying the reason against the grain. Only a check
+your project named in `[<belt>] skippable` may be skipped — **stock declares none**, so stock is
+today's belt — and a skip with no reason is refused, because an unexplained skip is a deviation and
+`--force` is already the verb for one. `--force` still writes over false checks and still mints a
+`deviation` row; the two are different in kind, and *"which closes skipped a review, and why"* is a
+question the tree answers.
+
 ## Verbs
 
 `agentic-sdlc --help` and `agentic-sdlc pm --help` are the live rosters; this is the same set.
 
 | Verb | Reads / writes |
 |---|---|
-| `pm <kind> <status> <id>` | Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — and one ledger row. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
+| `pm <kind> <status> <id> [<answer>…]` | **One ARRIVAL.** Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — plus a `status` row, a `disposition` row and a `rung.leave` event. On **stderr**, all derived and never a refusal: `next:` (the belt that closes it and the checks it will ask), `have:` (the installed files `[pm.arrive.<kind>.<state>] have` binds to this state — a declared one that is ABSENT is a named line), the FORK that state declares with **both answers already typed as commands you can paste**, `ready:` when the write made a PARENT ready, and one census of the tree's open work. An `<answer>` is whichever flag `[pm.arrive.…] answers` declares; it is recorded as a claim and never verified, a flag the state does not declare is refused naming the ones it does, and a bare move still writes and records `none` — which puts the grain on the census until somebody answers. **There is no transition table**: the unit is the state arrived at, never the pair, so `building -> planning` is an arrival at `planning` and asks `planning`'s question. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
 | `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone, set one frontmatter field. `pm new <kind> <slug>` mints **`<kind-prefix>-<slug>`** — the same id `tools/dev/pm_migrate.py` mints, one path for both — and the parent argument writes the child's BINDING, never a piece of the id. `pm retire <id> [<summary...>]` keeps the milestone's id on the plan and files a `retire` row in `<roadmap>/ledger.jsonl` holding its version, name and summary, which `pm roadmap` prints. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
 | `pm config --seed` | Prints the seed `devkit.toml` this pinned version ships — every gate key commented at the default the code actually holds, and the two declarations spelled out with their arguments. Writes nothing. `init` serves a new repo once; this serves every bump after it |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for story\|feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker and never a tally. **`story` is the inner loop's edge**: it asks the story belt's own `[story] steps` narrowed to what the registry declares decidable before the work, and NAMES every check it did not ask with why. There is no `adopt` rung — every adopt check is either the work the bump does or one that runs a command, so the derived condition is empty; the refusal says so rather than reading as a typo. Emits `rung.enter` where `[emit]` declares a sink, and nothing where a tree declares none |
@@ -117,14 +128,14 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md`, `.claude/skills/pm-operations/SKILL.md` and `.claude/skills/handoff/SKILL.md` |
 | `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`). `check <gate> --help` is that gate's contract |
 | `gates-extra` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
-| `verify --story \| --feature \| --milestone \| --plan \| --check` `[--no-cache]` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. A rung records its verdict against the tree state it ran on (HEAD plus a digest over every file git lists, tracked and untracked) and a run over a byte-identical tree prints `[verify:cache] REUSED …` with that run's age, census and cost and exits with its code, instead of running the target; `--no-cache` runs it anyway. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
+| `verify --story \| --feature \| --milestone \| --plan \| --check` `[--no-cache]` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. A rung records its verdict against the tree state it ran on (HEAD plus a digest over every file git lists, tracked and untracked, a submodule's own checkout included) and a run over a byte-identical tree prints `[verify:cache] REUSED …` with that run's age, census, cost and what it did not re-measure, and exits with its code, instead of running the target; `--no-cache` runs it anyway. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `close story <id>`, `close feature <id>` | The inner belts: checks, then the grain's status set to the first state of its kind's `done` list, or nothing |
 | `release <version>` | The outer belt: tree clean, on the milestone branch, changelog non-empty, features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Retitle, push, PR, merge and tag are printed as `next:` — never performed |
 | `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone is only where a ledger row would land |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
 | `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, changelog-writer, doc-hygiene, pm-operator — each with a Project config section that is yours after install |
-| `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
+| `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE, shell-quoted script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. An absolute path names one machine, so a shared checkout puts the block in the gitignored `.claude/settings.local.json` — `check pm` and `adopt` read both. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
 | `install-gates` | `Makefile.devkit` (`help`, `pm`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library |
 | `install-sdlc` | `docs/sdlc-protocol.md`, **rendered** from your `[story]` / `[feature]` / `[release]` / `[adopt]` check lists and the `done` state each belt writes |
 | `version` | This package's version |
@@ -232,6 +243,17 @@ todo        = ["planning", "ready"]
 in_progress = ["building"]
 done        = ["done", "obe"]                 # a belt writes the FIRST of these
 
+[pm.arrive.feature.building]                  # WHAT ARRIVING AT A STATE ASKS. Declared or absent;
+ask     = "what is building this?"            #   never a transition table — the unit is the state
+answers = ["--by me", "--by agent <type>"]    #   ARRIVED AT, so backwards is a move like any other
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
+
+[pm]
+pressure    = true                            # the fork, the READY crossing and the open-work
+                                              #   census, on stderr; off in one line
+wip         = 0                               # YOUR work-in-progress limit; 0 declares none, and
+                                              #   exceeding it is a reported line, never a refusal
+
 [tests]
 budget = { unit = 20, integration = 130 }     # `check budget`: seconds per tier, from the ledger
 cases  = { unit = 1250, integration = 800 }   # and a size ceiling per tier
@@ -243,6 +265,8 @@ milestone = "make milestone"
 
 [release]                                     # also [adopt], [story], [feature]:
 steps = ["tree-clean", "gate"]                #   the check list, when not the shipped default
+skippable = ["review-recorded"]               #   which checks `--skip <check> "<why>"` may answer;
+                                              #   STOCK IS EMPTY, so nothing is skippable until you say so
 [release.commands]
 gate = "make milestone"                       # the command a named check runs
 prove-artifact = "uvx --from git+…@v{version} agentic-sdlc --version"

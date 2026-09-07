@@ -249,8 +249,16 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
         want = driver.done_state(model.load(), 'milestone')
         assert model.field_of(root / 'pm/roadmap/milestones/1.0.0.md',
                               'status') == want
-        rows = ledger.read_rows(root / 'pm/roadmap/ledgers/1.0.0.jsonl')
-        assert [r.data['kind'] for r in rows] == [ledger.KIND_STATUS]
+        rows = [r.data for r in
+                ledger.read_rows(root / 'pm/roadmap/ledgers/1.0.0.jsonl')]
+        assert rows[0]['kind'] == ledger.KIND_STATUS, rows
+        # The BELT minted none of its own: no `deviation`, and no `disposition`
+        # carrying a `check`. Everything else in this file is `pm`'s, written
+        # by the status flip — including the ARRIVAL disposition (0.5.0/D3),
+        # which shares the word and is told apart by carrying `state` where a
+        # check's carries `check`.
+        assert not [r for r in rows
+                    if r['kind'] == ledger.KIND_DEVIATION or 'check' in r], rows
     lines = out.strip().split('\n')
     nexts = [line for line in lines if line.startswith('next: ')]
     assert len(nexts) == len(steps.AFTER['release']), out

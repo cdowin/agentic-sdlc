@@ -54,16 +54,31 @@ A second `verify --feature` on an unchanged tree reports the recorded verdict wi
 target, prints that it did and where the verdict came from, and exits with the recorded code. One
 byte changed anywhere in the working tree — tracked, untracked, or HEAD — and it re-runs.
 
-Closing N features on an unchanged tree costs one gate run and N-1 reads.
+Asking one rung twice about one tree costs one gate run and one read: a bare `verify --feature`
+repeated, and `close feature` run straight after a green standalone `verify --feature`.
+
+**Closing N features on an unchanged tree still costs N runs, and that is recorded here rather than
+claimed away.** A belt is its checks then ONE write (D12), and that write is the grain's `status:`
+line — a tracked byte inside the state the next close computes, so close #1 is precisely what
+invalidates close #2. Attribution, measured: restoring only that line returns the digest to its
+pre-close value. Making it free means the BELT handing its rung a state computed before its own
+write is planned, which is a design question about the belt and not a setting on this cache; a
+feature document is also input to `check pm` inside `make milestone`, so simply dropping grain
+documents from the state would be the same cardinal sin one level down. See
+`docs/reviews/2026-09-07-0.5.0-verify-remembers-its-last-green.md` (E3).
 
 ## Proof budget
 
-  cases: 5
-  tier: pyunit
-  lands in: `tests/test_verify.py`
-  what already covers this: the rung-resolution cases exist there; these are rows on that harness.
-    The untracked-file invalidation case is the one that must exist, because it is the only way this
-    feature can commit rule 4's first sin.
+  cases: 7
+  tier: pyunit for the trust boundary, shell for the wiring
+  lands in: `tests/test_verify_cache.py` (pure) and `tests/test_verify_main.py` (end to end)
+  what already covers this: the rung-resolution cases exist in `test_verify_main.py`; the reuse
+    cases are rows on that harness, because only a sentinel file can prove a target did not run.
+    `_verdict`, `ledger_digest` and the reuse lines are pure functions and are proven by CALL, in
+    the tier `make unit` runs — the trust boundary is the one piece that can commit rule 4's first
+    sin, and a `shell`-marked module is deselected by the story rung. The untracked-file
+    invalidation case is the one that must exist, because it is the cheapest way to make a green
+    tree red without touching a tracked byte.
 
 ## Out of scope
 

@@ -320,9 +320,8 @@ def main(argv: list[str]) -> int:
           f'lands it in this')
     print('     tree, or paste it into whatever settings file your harness '
           'reads.')
-    # Last on stdout, so the block stays pasteable whole. `init` wrote the
-    # scripts and armed the git hooks; the harness registration is the one
-    # step it cannot take, and a run that names neither the file nor the
-    # fragment leaves a consumer with less than the hand-paste it replaced.
+    # Last on stdout, so the block stays pasteable whole. Registering the
+    # hooks with a harness is the one step `init` cannot take, and naming
+    # neither file nor fragment left a consumer with nothing to take it.
     install.settings_step(root, False)
     return 0

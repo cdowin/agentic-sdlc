@@ -145,27 +145,27 @@ VERIFY_VERDICTS = ('PASS', 'FAIL')
 
 
 def verify_row(rung: str, gate: str, verdict: str, state: str,
-               duration_ms: int, exit_code: int, graded: int,
+               duration_ms: int, exit_code: int, graded: str,
                census: int | None = None, ts: str = '') -> dict:
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
 
-    `graded` is how many rows `check budget` grades the ledger held when this
-    verdict was recorded — the one input a tree state CANNOT carry, because the
-    run being graded is the run that writes them. Its reader reuses this row
-    only while that count still holds.
+    `graded` digests the rows `check budget` grades as the ledger held them
+    when this verdict was recorded — the one input a tree state CANNOT carry,
+    because the run being graded is the run that writes them. Its reader reuses
+    this row only while that digest still holds.
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
                          f'{verdict!r} is not one of {VERIFY_VERDICTS}')
-    for name, value in (('rung', rung), ('gate', gate), ('state', state)):
+    for name, value in (('rung', rung), ('gate', gate), ('state', state),
+                        ('graded', graded)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'refusing to mint a {KIND_VERIFY} row: {name} is '
                              f'{value!r}, and a verdict nothing can be keyed on '
                              f'is a verdict nothing may reuse')
-    for name, value in (('duration_ms', duration_ms), ('exit_code', exit_code),
-                        ('graded', graded)):
+    for name, value in (('duration_ms', duration_ms), ('exit_code', exit_code)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f'refusing to mint a {KIND_VERIFY} row for '
                              f'{rung!r}: {name} is {value!r}, which is not a '

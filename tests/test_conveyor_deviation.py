@@ -1,19 +1,22 @@
 """test_conveyor_deviation.py — the rows a write leaves: FORCED (D12) and
-DISPOSITIONED (D13).
+DISPOSITIONED (0.5.0/D5).
 
 Story 04's proof table, criterion 3: `--force` writes and the ledger row names
-the checks that were false. Two rows at most per run — the `status` row the
-write makes (minted by `pm`, not here) and one `deviation` row with
-`outcome: forced` whose `step` lists every false check and whose `reason`
-carries each one's own sentence. Without `--force` a false check writes NO
-row: a row for a refused write is rule 4's cardinal sin with a timestamp.
+the checks that were false. The BELT mints one `deviation` row with
+`outcome: forced`, whose `step` lists every false check and whose `reason`
+carries each one's own sentence — and nothing else of its own. Without
+`--force` a false check writes NO row: a row for a refused write is rule 4's
+cardinal sin with a timestamp. (`pm` mints its own rows on the same write —
+the `status` flip and, since 0.5.0/D3, an arrival `disposition` — so every
+case here reads the belt's rows by SHAPE through `belt_rows`, never by
+position.)
 
 The `disposition` row a `--skip <check> "<why>"` mints is a SIBLING of that
-row kind and lands on the same harness, which is why the D13 cases are here
-rather than in a family of their own (rule 10, "prove it once"). The two must
-not bleed: a skip counted as a false check would brand a judgement a breach,
-which is the failure D13 exists to end, and a forced check swallowed into a
-disposition would be the reverse.
+row kind and lands on the same harness, which is why the 0.5.0/D5 cases are
+here rather than in a family of their own (rule 10, "prove it once"). The two
+must not bleed: a skip counted as a false check would brand a judgement a
+breach, which is the failure 0.5.0/D5 exists to end, and a forced check
+swallowed into a disposition would be the reverse.
 
 A stub registry keeps the checks scripted; the WRITE is the real one, through
 `pm milestone <state> <id>`, on a scratch tree that declares its flow.
@@ -105,6 +108,21 @@ def rows(root: Path) -> list[dict]:
     return [r.data for r in ledger.read_rows(path)] if path.exists() else []
 
 
+def belt_rows(root: Path) -> list[dict]:
+    """The rows the BELT minted, in order — its `deviation` and its check
+    `disposition`s, and nothing `pm` wrote on the same write.
+
+    `pm` mints the `status` row and, since 0.5.0/D3, an ARRIVAL disposition
+    beside it. That row and this belt's share one `kind` and have disjoint
+    keys: an arrival's always carries `state`, a check's always carries
+    `check`. Reading by SHAPE rather than by position says which collision
+    this module is living with, and survives whichever way it is settled.
+    """
+    return [r for r in rows(root)
+            if r['kind'] == ledger.KIND_DEVIATION
+            or (r['kind'] == driver.KIND_DISPOSITION and 'check' in r)]
+
+
 def status(root: Path) -> str:
     return model.field_of(root / MFILE, 'status')
 
@@ -119,10 +137,10 @@ def test_force_writes_the_status_and_one_row_naming_the_false_checks():
         code, out = run('--force', steps=(TRUE.name, FALSE.name, CANNOT.name))
         assert code == 0, out
         assert status(root) == want
-        written = rows(root)
-        assert [r['kind'] for r in written] == [ledger.KIND_STATUS,
-                                                ledger.KIND_DEVIATION], written
-        forced = written[1]
+        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
+        written = belt_rows(root)
+        assert [r['kind'] for r in written] == [ledger.KIND_DEVIATION], written
+        forced = written[0]
         assert forced['outcome'] == driver.FORCED
         assert forced['step'] == f'{FALSE.name}, {CANNOT.name}'
         assert f'{FALSE.name}: no' in forced['reason']
@@ -148,8 +166,8 @@ def test_all_true_writes_the_status_row_and_no_deviation_row():
     with tree() as root:
         code, out = run(steps=(TRUE.name,))
         assert code == 0, out
-        written = rows(root)
-        assert [r['kind'] for r in written] == [ledger.KIND_STATUS], written
+        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
+        assert belt_rows(root) == [], 'a clean run minted a row of its own'
         assert f'[release] ok — {VERSION} → ' in out
 
 
@@ -162,9 +180,9 @@ def test_a_u2028_in_a_reason_reads_back_as_one_row():
         with tree() as root:
             code, _ = run('--force', steps=(split.name,))
             assert code == 0
-            written = rows(root)
-            assert len(written) == 2
-            assert written[1]['reason'] == f'{split.name}: a b'
+            written = belt_rows(root)
+            assert len(written) == 1, written
+            assert written[0]['reason'] == f'{split.name}: a b'
     finally:
         del STUB[split.name]
 
@@ -206,7 +224,7 @@ def test_a_ledger_that_is_a_directory_warns_and_the_forced_write_still_lands():
         assert 'WARNING' in out and 'deviation row' in out, out
 
 
-# --- D13: the third answer — a check the caller DISPOSITIONED ------------------
+# --- 0.5.0/D5: the third answer — a check the caller DISPOSITIONED -----------
 def test_a_declared_skip_is_never_asked_writes_the_status_and_mints_one_row():
     """The ship criterion, end to end. Bites the three ways this can go wrong
     at once: the expensive check running anyway (the skip saved nothing), the
@@ -222,10 +240,11 @@ def test_a_declared_skip_is_never_asked_writes_the_status_and_mints_one_row():
         assert code == 0, out
         assert ASKED == [], f'the skipped check was asked anyway: {ASKED}'
         assert status(root) == want
-        written = rows(root)
-        assert [r['kind'] for r in written] == [
-            ledger.KIND_STATUS, driver.KIND_DISPOSITION], written
-        row = written[1]
+        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
+        written = belt_rows(root)
+        assert [r['kind'] for r in written] == [driver.KIND_DISPOSITION], \
+            written
+        row = written[0]
         assert row['check'] == EXPENSIVE.name and row['why'] == WHY
         assert row['grain'] == VERSION and row['operation'] == 'release'
         assert set(row) == set(driver.DISPOSITION_KEYS), 'the row keys moved'
@@ -292,11 +311,11 @@ def test_a_skip_and_a_force_in_one_run_leave_two_rows_that_do_not_bleed():
                         steps=(TRUE.name, EXPENSIVE.name, FALSE.name))
         assert code == 0, out
         assert status(root) == want
-        written = rows(root)
+        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
+        written = belt_rows(root)
         assert [r['kind'] for r in written] == [
-            ledger.KIND_STATUS, ledger.KIND_DEVIATION,
-            driver.KIND_DISPOSITION], written
-        deviation, disposition = written[1], written[2]
+            ledger.KIND_DEVIATION, driver.KIND_DISPOSITION], written
+        deviation, disposition = written
         assert deviation['step'] == FALSE.name, 'the skip landed in the row'
         assert deviation['outcome'] == driver.FORCED
         assert EXPENSIVE.name not in deviation['reason'], deviation

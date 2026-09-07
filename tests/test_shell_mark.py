@@ -95,6 +95,10 @@ UNMARKED_MODULES = (
     'test_prose_census.py',
     'test_replay_migration.py',
     'test_verdict.py',
+    # The reuse trust boundary — a row read or refused, a ledger row in the
+    # state or out of it — proven by CALL, so the rung that runs on every edit
+    # exercises the one piece that can report a verdict nobody measured.
+    'test_verify_cache.py',
     'test_verify_rules.py',
     'test_wheel_payload.py',
 )

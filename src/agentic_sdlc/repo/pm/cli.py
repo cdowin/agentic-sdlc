@@ -26,6 +26,28 @@ or done — never of the word. Which words sit in which category is this
 project's [pm.states.<kind>] in devkit.toml, written by `pm init` and read
 every run; a state the project never declared is refused by name.
 
+THERE IS ONE EVENT HERE AND IT IS ARRIVAL: a grain reaches a state. Every
+`<kind> <status> <id>` write is one, and an arrival writes the status, asks the
+question [pm.arrive.<kind>.<status>] declares with both answers already typed,
+records the answer (or `none`), names the installed capabilities that table
+binds to the state, and reports the tree's open work. All of it on STDERR, all
+of it derived, none of it a refusal. There is no transition table: the unit is
+the state ARRIVED AT, never the pair, so a move backwards is a move like any
+other. `[pm] pressure = false` silences the fork and the census; `[pm]
+breadcrumbs = false` silences `next:` and `have:`; the ROW is written either
+way. `pm config --seed` shows the whole declaration with an example.
+
+  <kind> <status> <id> [<answer>...]      (an ANSWER is whichever flag
+                                           [pm.arrive.<kind>.<status>] answers
+                                           declares — `--by agent <type>`,
+                                           `--skip review "<why>"`, whatever
+                                           this project chose. It is recorded
+                                           as a claim and never verified; a
+                                           flag the state does not declare is
+                                           refused naming the ones it does, and
+                                           a move with no answer still writes
+                                           and records `none`)
+
   story <status> <story-id>               (any state in [pm.states.story])
   bug <status> <bug-id>                   (any state in [pm.states.bug];
                                            bug-id is whatever the document

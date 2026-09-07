@@ -194,3 +194,106 @@ reasons, `ENTRY_CONDITIONS` gains a name and this rung starts answering — with
 `ready_for.py`, which is the point of deriving it.
 
 ## D5 — 2026-09-07 — A check has three answers; deleting the check is the rejected alternative
+
+**`--skip <check> "<why>"` is a first-class close, and D12 is revised to say so.** D12's sentence —
+*"a belt is its checks, then one write or a clean error"* — stands whole. What changes is what
+counts as a check being ANSWERED: a disposition is an answer. The belt still writes exactly one
+thing, still names every check on its own line, and still refuses when a check is false and nobody
+spoke. `--force` is untouched and keeps its meaning: writing ANYWAY, false checks named, no reason
+given, one `deviation` row. The two are different in kind and their rows do not bleed.
+
+    true            the check passed
+    dispositioned   the caller answered it: skipped, and why
+    false           not true, and nobody said anything — the belt writes nothing
+
+**The hard requirement CAUSED the batching, and that is a measured claim, not a worry.** `close
+feature` refused without a review record; a review is expensive; so closing was expensive, so
+closing got deferred. Offered *"pay for a review, or file a deviation against yourself"*, an
+operator does neither — it opens another grain. This milestone's own build did that thirteen times,
+having written the rule down twice. A rule that is written down twice and broken thirteen times is
+not a discipline problem; it is a priced-wrong verb.
+
+**A skipped check is not asked.** That is the whole economy: `--skip feature-verified "..."` does
+not run the tier, and `--skip review-recorded "..."` does not look for the record. A `skipped:` line
+over a question that was asked anyway would save nothing and mean nothing.
+
+**A skip with no reason is REFUSED**, because an unexplained skip IS a deviation and already has a
+verb. The reason goes through `ledger.reason_defect` — the same grammar the deviation row's reason
+uses, so there is one definition of what a reason is — and a `disposition` row carries it against
+the grain forever: `{ts, kind, grain, operation, check, why}`, one row per skipped check, because a
+forced write is one act while a disposition is one judgement about one question. **`ts`, not the
+grain's `at`**: every reader here — `ledger.read_rows`, `parse_ts`, `pm ledger show`'s sort — keys
+the stamp as `ts`, and a second spelling would file every disposition at the beginning of time.
+
+**Which checks are dispositionable is a DECLARATION** — `[<belt>] skippable = ["review-recorded"]`
+— and the stock declaration is NOTHING, so a repo with no `devkit.toml` runs today's belt byte for
+byte. That is what keeps this inside rule 9: the tool reads what the project declared and has no
+opinion about which check is a judgement. `tree-clean` and `on-milestone-branch` are facts about the
+world rather than judgements, and **a project that lists one is making a mistake the tool will let
+it make**, because that is what rule 9 means. A skip of a check the project did not declare is
+refused BY NAME at exit 2, and so is a `skippable` entry naming a check this belt does not run.
+
+**`adopt` takes neither flag.** It is checks-only and says so before its first check: no status, no
+row. A `skipped:` line there would be a judgement with nowhere to be recorded, which is the record
+this flag exists to make, missing. Both flags are named in its `--help` as the ones it refuses,
+rather than left to be discovered by trying them (rule 11).
+
+**Rejected: making review optional by deleting `review-recorded` from the shipped list.** It is the
+one-line version, it needs no flag, no config key and no row, and it makes the close as cheap as
+this decision does. It is wrong because **then nothing records that a judgement was made.** A tree
+with no `review-recorded` check cannot distinguish the feature whose author read the diff and
+decided it did not warrant a review from the feature nobody looked at at all — and those are the two
+cases a milestone review most needs told apart. The check is not the cost; the check is the
+QUESTION, and the answer is what the tree is for. Deleting it deletes the question so that the
+absence of an answer stops being visible, which is rule 11's failure with the evidence removed.
+
+**Rejected, second: letting `--force` carry a reason.** One flag, no new row kind, no config. It
+fails on the word: a `deviation` row reads as a breach of the belt, and a considered engineering
+call filed as a breach is a lie about what happened — the same class of lie as a gate printing PASS
+over nothing, pointed at the operator instead of the tree. The two acts want two words because they
+are two acts, and a milestone review sweeping *"which closes skipped a review, and why"* needs the
+one that is not an admission of guilt.
+
+**What is left for the read side (rule 11):** `pm ledger show <grain>` prints a `disposition` row's
+`ts` and `kind` and stops there, because its renderer branches on `status` only — the row is
+visible and its `check` and `why` are not. That is a column, not a verb, and it belongs in
+`cmd_ledger_show` beside the status branch.
+
+## D6 — 2026-09-07 — One word, two shapes: the skip is folded into the arrival it belongs to
+
+Two agents built two halves of one word and neither would decide alone — correctly. `arrive.py` mints
+`{ts, kind: "disposition", grain, state, answer, value}` on every arrival; `driver.py` mints
+`{ts, kind: "disposition", grain, operation, check, why}` on every skipped check. Both added a shape
+discriminator (`state` present vs `check` present), both pinned it with a test, and both wrote the
+same sentence: *whether these should be one row is the milestone's to settle.*
+
+**They fold. One row per arrival, and a skip is a field on it.**
+
+    {ts, kind: "disposition", grain, state, answer, value?,
+     skipped: [{check, why}, …]}
+
+D3 is the reason and it is not a preference. *A belt is its checks, then one write — and a write is
+an arrival, so a belt's close is an arrival like any other, and a skipped check is that arrival's
+disposition.* A `close feature --skip review-recorded "…"` is ONE thing happening: the grain arrived
+at `done`, and this is how its question was answered. Two rows describe it as two events, and the
+tree then holds two facts where one occurred.
+
+**What folding buys, concretely.** `pm ledger report`'s per-state time is the gap between consecutive
+arrival rows on a grain (`ft-time-is-measured-per-state-and-rolls-up`). With one kind and one shape
+that is a walk. With two shapes under one kind it is a walk plus a filter — and a filter that a
+future reader can forget is rule 4's first sin waiting: it would report a plausible number computed
+over the wrong rows, and nothing would say so.
+
+**Rejected: two distinct kinds, `disposition` and `skip`.** It is cheaper than folding, it removes the
+collision just as completely, and I nearly took it. It fails on D3: it spells a close as an arrival
+PLUS some other kind of event, when the whole point of naming arrival the primitive was that there is
+only one event in this system. A second kind is a second scoreboard for the same fact.
+
+**Rejected: leaving the discriminator.** It works, it is tested, and it is what is in the tree right
+now. But `disposition` would mean two things depending on which key is present, and every future
+reader would have to know that — the exact "one word, two shapes" defect this package deletes
+everywhere else.
+
+**Cost, stated plainly:** the belt currently mints skip rows during its check run, before the write.
+Folding means collecting them and emitting once, at the arrival. That is a real change to
+`driver.py`'s ordering and it is the work this decision buys.

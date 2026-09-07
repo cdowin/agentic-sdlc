@@ -74,8 +74,8 @@ IN_PLACE = 'in-place'
 # The four above answer *what happened to this finding*. A belt asks a
 # different question of a different thing — *what happened to this CHECK* — and
 # the caller has exactly one non-`true` answer to give: SKIPPED, with a reason
-# (`close feature <id> --skip <check> "<why>"`, D13). Two axes, one word, one
-# file: the conveyor imports this rather than minting a second spelling of
+# (`close feature <id> --skip <check> "<why>"`, 0.5.0/D5). Two axes, one word,
+# one file: the conveyor imports this rather than minting a second spelling of
 # "disposition", which would be the second scoreboard in miniature.
 #
 # `false` is not on this list on purpose. It is not a disposition — it is the

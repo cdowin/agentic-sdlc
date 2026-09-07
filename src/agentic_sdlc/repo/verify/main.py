@@ -210,8 +210,9 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
               f'recorded; this run replaces it')
     else:
         found, graded = cache.recorded(root, target, state.digest)
-        if found is not None and found.graded == graded:
-            return _reuse(found, command, state)
+        if found is not None and graded is not None \
+                and found.graded == graded.digest:
+            return _reuse(found, command, state, graded)
         if found is not None:
             # The state matches and the reuse is refused anyway: what moved is
             # the one input no state can carry, and saying so is the difference
@@ -232,11 +233,12 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
     return EXIT_OK
 
 
-def _reuse(found: cache.Verdict, command: str, state: cache.State) -> int:
+def _reuse(found: cache.Verdict, command: str, state: cache.State,
+           graded: cache.Graded) -> int:
     """The recorded verdict, its provenance and its own exit code. The FAILED
     line keeps the shape a fresh failure prints — one grep either way — and the
     cache lines above it say which run this was."""
-    for line in cache.reuse_lines(found, command, state):
+    for line in cache.reuse_lines(found, command, state, graded):
         print(line)
     if found.verdict == cache.PASS:
         return EXIT_OK

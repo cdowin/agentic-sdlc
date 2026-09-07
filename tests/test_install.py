@@ -950,11 +950,7 @@ def test_install_hooks_prints_the_settings_entries_that_fire_every_cc_hook():
         code, out = run('install-hooks')
         assert code == 0, out
         assert '.claude/settings.json' in out, out
-        opened = out.index('{\n  "hooks"')
-        block = json.loads(out[opened:out.rindex('}') + 1])
-        commands = [entry['command']
-                    for event in block['hooks'].values()
-                    for group in event for entry in group['hooks']]
+        commands = _commands(_block(out))
         for rel in CC_HOOKS:
             assert any(rel in command for command in commands), (
                 f'{rel} is installed but no settings entry fires it\n{out}')
@@ -968,7 +964,7 @@ def test_the_two_ledger_couriers_are_registered_async_and_unmatched():
     with repo():
         code, out = run('install-hooks')
         assert code == 0, out
-        block = json.loads(out[out.index('{\n  "hooks"'):out.rindex('}') + 1])
+        block = _block(out)
         wired = {}
         for event, groups in block['hooks'].items():
             for group in groups:

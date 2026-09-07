@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+- **A MOVE IS AN EVENT, and the event is ARRIVAL** (`ft-every-edge-carries-a-disposition`,
+  `ft-the-conveyor-pushes-back`, `ft-a-move-names-the-capability-you-are-standing-in`,
+  `ft-a-move-emits-the-breadcrumb-it-prints`; 0.5.0/D3). Every `pm <kind> <status> <id>` write is
+  one arrival, and an arrival does four things — all of them derived, none of them a refusal, and
+  all of them on **STDERR**, so the stream a consumer parses is byte-identical to 0.4.0's.
+
+      $ agentic-sdlc pm feature reviewing 0.1/alpha
+      [pm] feature 0.1/alpha: building -> reviewing
+      [pm] next: `agentic-sdlc close feature <feature-id>` asks stories-done, feature-verified, …
+      [pm]
+      [pm] what happens to it?
+      [pm]   a) agentic-sdlc pm feature reviewing 0.1/alpha --review agent <type>
+      [pm]   b) agentic-sdlc pm feature reviewing 0.1/alpha --skip review "<why>"
+      [pm]
+      [pm] open: 3 in_progress, over the declared [pm] wip of 1, oldest 0.1/alpha 6h 6m — 2 of 3 carry no disposition
+
+  **The new declaration is `[pm.arrive.<kind>.<state>]`** — a WORKFLOW key with nothing behind it,
+  like `[pm.states.*]` itself:
+
+      [pm.arrive.feature.building]
+      ask     = "what is building this?"
+      answers = ["--by me", "--by agent <type>"]
+      have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+  `ask` and `answers` are declared together or not at all — a question with no answers typed is
+  advice, and rule 9 forbids the tool having one. Every answer opens with `--` and **is a flag the
+  move accepts**, so answering costs one paste; a state with no node prints no question. A bare
+  move still writes and mints `disposition: none`, and that grain then shows on the census until
+  somebody answers. `have` is a CENSUS of installed files — a declared file that is **absent** is a
+  named line, never silence (rule 11).
+
+  **There is no transition table and there never will be one.** The unit is the state ARRIVED AT,
+  never the pair `(from, to)`: `building -> planning` is an arrival at `planning`, a second pass
+  through a state asks the same question, and backwards was never a special case. The
+  `{ts, kind: "disposition", grain, state, answer, value}` row carries no `from` for that reason,
+  and time in a state is the gap between two arrivals on one grain — telemetry with no harness
+  hook involved at all.
+
+  Two new `[pm]` knobs, both stock-ON and both in `pm config --seed`: **`pressure`** silences the
+  fork, the READY crossing and the census in one line (rule 6), and **`wip`** is the project's own
+  work-in-progress limit — `0` declares none, exceeding it is a REPORTED clause and never a
+  refusal. `breadcrumbs = false` now silences `have:` beside `next:`; the emitted row carries both
+  either way, because it is not on the stream a strict consumer parses.
+
+  Every status move also emits **`rung.leave`** — `{ts, kind, grain, state, answer, rung,
+  next_checks, next_actions, have}` — from the SAME `derive_next` the printed breadcrumb renders,
+  so a change reaching one renderer and not the other fails a test.
+
+- **A check has THREE answers, and `--skip <check> "<why>"` is the third**
+  (`ft-the-close-is-cheap-and-a-check-is-dispositionable`, 0.5.0/D5, which revises 0.2.0/D12).
+  `close story`, `close feature` and `release` accept it: the caller ANSWERED that check, so the
+  check is **not asked**, the line reads `skipped: <check> — "<why>"`, the status is written, the
+  close is a clean one, and the milestone's `ledger.jsonl` gets one
+  `{ts, kind: "disposition", grain, operation, check, why}` row per skipped check. Repeatable.
+
+      $ agentic-sdlc close feature ft-x --skip review-recorded "one-line fix, read inline"
+      [feature] ok: stories-done — [pm] READY — feature ft-x: 1 story/ies, all done
+      [feature] ok: feature-verified — `make test` exited 0
+      [feature] skipped: review-recorded — "one-line fix, read inline"
+      [feature] ok — ft-x → done
+
+  **Which checks are skippable is a DECLARATION** — `[story] / [feature] / [release] skippable =
+  ["review-recorded"]` — and **stock declares none**, so a repo with no `devkit.toml` runs exactly
+  the belt it ran before. A skip of a check the project did not declare is refused BY NAME at exit
+  2, and so is a `skippable` entry naming a check that belt does not run. **A skip with no reason
+  is refused**, because an unexplained skip IS a deviation and `--force` is already its verb.
+  `--force` is unchanged: it writes anyway, names the false checks, and mints its `deviation` row;
+  the two row kinds are siblings and do not bleed. `adopt` takes neither flag — it writes nothing,
+  so a skip there would have nowhere to be recorded — and its `--help` names both as refused.
+
 - **`agentic-sdlc pm ready-for story <story-id>`** — the inner loop's entry edge, and the fourth
   rung the verb answers for (`ft-a-rung-has-an-entry-edge`). Exit 0 ready, exit 1 not ready naming
   every blocker, exit 2 usage; writes nothing, like the three rungs beside it. **The condition is
@@ -151,18 +221,30 @@
   rows `verify --plan` already reads: which rung, which make target, the verdict, the target's own
   exit code, what it cost, the census the gate itself filed, and the **tree state** it ran on — git
   HEAD plus a SHA-256 over every path `git ls-files --cached --others --exclude-standard` names,
-  each file's CONTENT, its executable bit and its symlink target. A later run whose state is
-  byte-identical prints two `[verify:cache]` lines — the run it came from, its age, its census, its
-  cost, and the state's own file count — and exits with the recorded code **without running the
-  target**. Closing N features on an unchanged tree is one gate run and N-1 reads.
+  each file's CONTENT, its executable bit and its symlink target, and, for a **submodule**, that
+  checkout's own state recursively, so a vendored library rolled back one commit is drift and not a
+  constant. A later run whose state is byte-identical prints three `[verify:cache]` lines — the run
+  it came from, its age, its census, its cost, the state's own file count, and **what the read did
+  not re-measure** — and exits with the recorded code **without running the target**. What this
+  buys is a rung asked twice about one tree: a second `verify --feature`, or a `close feature`
+  straight after a green standalone one, is a read. **It is not N closes for one gate run** — a
+  belt's one write is the grain's `status:` line, a tracked byte, so close #1 is exactly what
+  invalidates close #2's state; making that free is a design question about where a belt computes
+  its state, not a cache setting.
   Hard rule 4 is the whole design: **the state covers untracked files**, so a new module that breaks
   collection invalidates it; **a reuse is always printed**, because a reused green that reads like a
   fresh green is the first cardinal sin; **`--no-cache` runs the target anyway** and records what it
-  found; and **a malformed, missing or unreadable row re-runs** — a row is refused unless every field
-  reads whole and its verdict and exit code agree. Ignored files and the ledgers are not in the state
-  and that is stated where it is computed: they are what a gate WRITES while it runs, so a state
-  covering them could never repeat. `--no-cache` beside `--plan` or `--check` is exit 2 — those run
-  no rung.
+  found; **a malformed, missing or unreadable row re-runs** — a row is refused unless every field
+  reads whole and its verdict and exit code agree; and **the state is re-read after the target**, so
+  a tree edited mid-run records nothing and says the tree moved. Ignored files are not in the state,
+  and a ledger is read ROW BY ROW rather than hashed whole: the rows a run files about ITSELF (the
+  wrapper's `gate` cost row, the tier's `test` rows, this verb's own `verify` row, the couriers'
+  session rows) are out, because a state covering what a gate writes while it runs could never
+  repeat — and every other row is IN, because a status flip or a decision is a fact about the tree.
+  Two of the dropped kinds are graded anyway, by `check budget` inside `make milestone`, so the row
+  carries **how many of them the ledger held** and a reuse over a ledger that has grown one runs the
+  target and says which check reads them. `verify` records where a PM tree already is and **never
+  creates one**. `--no-cache` beside `--plan` or `--check` is exit 2 — those run no rung.
 
 - **The two files `pm install-skills` writes stop asserting behaviour this package retired, and
   a test now holds every installable to that.** `.claude/rules/pm-execution.md` auto-loads into

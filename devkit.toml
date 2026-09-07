@@ -181,6 +181,39 @@ cases = { unit = 930, integration = 430 }
 # the side `docs/design/state-categories.md` §4 takes and why there is no
 # fourth category here.
 
+# WHAT ARRIVING AT A STATE ASKS (0.5.0/D3). There is one event here and it is
+# ARRIVAL: a grain reaches a state. This is NOT a transition table and never
+# becomes one — the unit is the state arrived at, never the pair (from, to), so
+# `building -> planning` is an arrival at `planning`, a second pass through a
+# state asks the same question, and backwards was never a special case.
+#
+# Self-hosted for the reason every rule here is: this tree built thirteen
+# grains and closed none, having written the rule down twice. The move is the
+# surface the operator is already standing in, so the question is asked there —
+# with both answers already typed, because the friction was never the review,
+# it was deciding what to type while something else was running.
+[pm.arrive.feature.building]
+ask     = "what is building this?"
+answers = ["--by me", "--by agent <type>"]
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+[pm.arrive.feature.reviewing]
+ask     = "what happens to it?"
+answers = ["--review agent <type>", "--skip review \"<why>\""]
+
+[pm.arrive.feature.obe]
+ask     = "why is this abandoned?"
+answers = ["--why \"<reason>\""]
+
+[pm.arrive.story.building]
+ask     = "what is building this?"
+answers = ["--by me", "--by agent <type>"]
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+[pm.arrive.story.obe]
+ask     = "why is this abandoned?"
+answers = ["--why \"<reason>\""]
+
 [pm.states.milestone]
 todo        = ["planning", "ready"]
 in_progress = ["building", "reviewing", "accepted", "packaging"]

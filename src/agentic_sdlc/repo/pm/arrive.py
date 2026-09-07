@@ -31,10 +31,20 @@ from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import ledger, model
 
 # --- the row kinds this event mints -------------------------------------------
-# MINTED HERE AND NOT IN `ledger.py` ONLY BECAUSE THIS LANDED FIRST: both
-# builders below are `ledger.status_row`-shaped and belong beside it, keyed the
-# same way and routed by the same `ledger_of_grain`. See this module's report.
+# `pm/ledger.py` owns every other row grammar and both builders below belong
+# beside `KIND_STATUS`; they are minted here because that module is another
+# grain's to edit, and a row is read by its `kind`, so the move changes no byte
+# on disk.
+#
+# TWO ROW SHAPES CARRY `disposition`, and a reader must branch — the same note
+# `conveyor/driver.py` carries from the other side. An ARRIVAL's disposition
+# (0.5.0/D3) answers "what happened AT this state" and always carries `state`;
+# a CHECK's disposition (0.5.0/D5) answers "what happened to this question" and
+# always carries `check`. `state` and `check` are the discriminators, and
+# whether the two should be one row is the milestone's to settle — not
+# something either half may decide alone.
 KIND_DISPOSITION = 'disposition'
+DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'value')
 # `<rung>.<edge>`, the spelling `ready_for.KIND_ENTER` already uses; the last
 # dotted segment is the tap `check pm` reads off `emit.TAPS`.
 KIND_LEAVE = 'rung.leave'
@@ -124,6 +134,12 @@ def take(node: model.Arrival | None,
             raise Incomplete(
                 f'{arg} needs the rest of the answer — this project declares '
                 f'{", ".join(repr(a) for a in node.answers)}')
+        # The one free-text field on the row, held to the guard every other
+        # free-text field in this ledger crosses: a value carrying a newline
+        # would not be one row, and a durable log is not a paste buffer.
+        defect = ledger.reason_defect(value) if value else ''
+        if defect:
+            raise Incomplete(f'{arg} cannot record that answer: {defect}')
         return Said(arg, value), list(args[:index])
     return NOTHING, list(args)
 
@@ -180,6 +196,17 @@ def disposition_row(grain_id: str, state: str, said: Said,
     if said.value:
         row['value'] = said.value
     return row
+
+
+def disposition_of(row: dict) -> bool:
+    """Is this row an ARRIVAL's disposition, rather than a CHECK's?
+
+    `state` is the discriminator, and it is asked here so that every reader —
+    the census below, `check pm`, `pm ledger report` — asks it the same way
+    rather than each branching on its own idea of the shape.
+    """
+    return (row.get('kind') == KIND_DISPOSITION
+            and isinstance(row.get('state'), str))
 
 
 # --- the ONE derivation, two renderers ----------------------------------------
@@ -273,7 +300,7 @@ def _carry(count: int) -> str:
 
 
 def _ledgers(count: int) -> str:
-    return f'{ledger.LEDGER_FILE_NAME}' if count == 1 else 'ledgers'
+    return 'ledger' if count == 1 else 'ledgers'
 
 
 @dataclass(frozen=True)
@@ -299,7 +326,10 @@ class Census:
     @property
     def line(self) -> str:
         """One line, and only when there is something to say."""
-        head = f'open: {self.open_count} in_progress'
+        # The CATEGORY word is `model.IN_PROGRESS`, not a literal: a project
+        # renaming its states does not rename the three categories, but the
+        # word on this line is still the one the reader asked the tree with.
+        head = f'open: {self.open_count} {model.IN_PROGRESS}'
         if self.wip and self.open_count > self.wip:
             head += f', over the declared [pm] wip of {self.wip}'
         if self.oldest_id:
@@ -360,9 +390,7 @@ def _answered(rows: list, state: str) -> bool:
     arrived again and the question is asked again — which is the whole of D3.
     """
     for row in reversed(rows):
-        if row.data.get('kind') != KIND_DISPOSITION:
-            continue
-        if row.data.get('state') != state:
+        if not disposition_of(row.data) or row.data.get('state') != state:
             continue
         return row.data.get('answer') not in (NO_DISPOSITION, None)
     return False

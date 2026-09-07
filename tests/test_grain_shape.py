@@ -535,9 +535,29 @@ def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():
         assert 'NO HEADER' in out, out
         assert HANDOFF in out, out
         # The finding names the repair AND the literal line, so it is fixable
-        # without opening the source.
-        assert 'pm new milestone' in out, out
+        # without opening the source — and the repair names THIS grain's verb
+        # and id, not a generic one.
+        assert 'pm new milestone 0.1' in out, out
         assert 'Cold-start only' in out, out
+
+
+def test_the_repair_names_the_verb_that_actually_repairs_it():
+    """`NO HEADER` said `pm new milestone <id>` for every shared doc. Follow
+    that on a FEATURE's decisions log and `pm new milestone 0.1` answers
+    `already has every canonical slot (no-op)` and changes nothing: the gate
+    stays red and its hint is a dead end.
+
+    A shared doc is `<stem>-<slot>`, so the grain is the document beside it and
+    it declares its own kind and id. The hint is derived from that.
+    """
+    with pmfx.tree() as root:
+        doc = root / 'pm/roadmap/features/alpha-decisions.md'
+        doc.write_text('# alpha — decisions\n\nnotes\n', encoding='utf-8')
+        code, out = gate()
+        assert code == 1, out
+        assert 'NO HEADER' in out, out
+        assert 'pm new feature 0.1/alpha' in out, out
+        assert 'pm new milestone' not in out, out
 
 
 def test_a_doc_opening_with_a_RETIRED_header_still_passes():

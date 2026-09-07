@@ -129,6 +129,30 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     return NOTE
 
 
+def _repair_verb(shared: Path) -> str:
+    """The `pm new` that would restore this shared doc's header line.
+
+    Not `pm new milestone <id>` for everything: a feature's decisions log is
+    repaired by `pm new feature`, and pointing the author at the milestone verb
+    is a hint that leaves the gate red — it answers "already has every
+    canonical slot (no-op)" and changes nothing.
+
+    A shared doc is `<stem>-<slot>`, so the grain is the document beside it,
+    which declares its own kind and id. An unreadable neighbour falls back to
+    the generic sentence rather than guessing a verb.
+    """
+    for slot in model.SLOT_HEADER:
+        if not shared.name.endswith(f'-{slot}'):
+            continue
+        grain = shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix)
+        kind = model.unquote(model.field_of(grain, 'kind'))
+        gid = model.unquote(model.field_of(grain, 'id'))
+        if kind and gid:
+            return f'`pm new {kind} {gid}`'
+        break
+    return '`pm new <kind> <id>` for the grain it sits beside'
+
+
 def _slot_named(name: str, lines: list[str] | None = None) -> str:
     """The shared-doc slot this document is, or the name itself.
 
@@ -272,8 +296,8 @@ def run() -> int:
             findings.append((
                 'NO HEADER',
                 f'{rel} does not open with its slot instruction line — the one '
-                f'channel that reaches a dispatched subagent. `pm new '
-                f'milestone <id>` restores it, or prepend it yourself: '
+                f'channel that reaches a dispatched subagent. '
+                f'{_repair_verb(path)} restores it, or prepend it yourself: '
                 f'{want!r}'))
         length = _body_lines(lines)
         if length > caps[kind]:

@@ -1635,3 +1635,5 @@
 {"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":72435}
 {"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":93}
 {"ts":"2026-09-07T21:32:00Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":75895}
+{"ts":"2026-09-07T21:40:47Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3099}
+{"ts":"2026-09-07T21:50:07Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2971}

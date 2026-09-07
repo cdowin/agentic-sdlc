@@ -7,8 +7,10 @@ depends_on: ["ms-a-move-is-an-event"]
 branch:
 version: 0.6.0
 order:
+  - "bg-a-bug-is-a-grain-nested-in-a-parent"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
   - "bg-the-milestone-scaffold-still-mints-the-version"
+  - "bg-the-package-docstring-names-another-project"
   - "ft-the-branch-exists-on-the-remote-from-the-first-commit"
   - "ft-the-dispatch-carries-the-contract"
   - "ft-a-guard-declares-its-violation-corpus"
@@ -18,6 +20,7 @@ order:
   - "ft-a-read-verb-is-a-declaration"
   - "ft-a-warning-is-actionable-where-it-fires"
   - "ft-the-vocabulary-is-constants-not-literals"
+  - "bg-a-hand-recorded-dispatch-cannot-carry-a-total"
 ---
 
 # 0.6.0 — the rule reaches the work
@@ -104,6 +107,31 @@ a tidy-up's clothes.
 **Do not grow the always-loaded file to fix this.** `CLAUDE.md` is 163 lines against a documented 200
 target, and over-long files are followed LESS well. The answer is placement, not volume.
 
+## Four bugs open the order, and one of them is the model
+
+`order` opens with bugs rather than a feature, the way 0.5.0 put #6 and #7 ahead of its own theme.
+Two were found scaffolding this milestone; two were found closing 0.5.0.
+
+    bg-a-bug-is-a-grain-nested-in-a-parent           the release gate has been vacuous since 0.2.0
+    bg-pm-set-writes-a-scalar-its-own-gate-refuses   `pm set` writes a shape `check pm` then refuses
+    bg-the-milestone-scaffold-still-mints-the-version  the unlanded half of #8
+    bg-the-package-docstring-names-another-project   four releases of prose about another project
+
+**The first one runs first because it is the model, not a defect in it.** A bug is a grain nested in
+a parent — the same relationship a story has to a feature and a feature to a milestone — and it is
+the only kind that states that relationship three times, in `milestone:`, `caught_in:` and
+`fix_milestone:`. `ready_for_milestone` reads the copy nothing writes, so **`release` could not have
+refused on an open bug for four releases**, and 0.5.0's own record claims in plain words that it
+would have. That is rule 4's first cardinal sin, running green, on the tree that ships the rule.
+
+It leads the order because the other three sit inside the model it corrects: the field they are
+hand-stamped with today is the field it deletes.
+
+**The fourth is the same defect as the changelog, one layer down.** `src/agentic_sdlc/__init__.py`
+has described Godot scene introspection since the extraction — a second copy of `pyproject.toml`'s
+`description`, in a file no gate reads, shipped in every release this package has cut. A document
+that cannot be checked against the tree is not a record, and a docstring is a document.
+
 ## Ship criterion
 
 A dispatched agent receives this project's contracts before its first tool call, from a surface the
@@ -116,6 +144,9 @@ No shipped file states what a verb does in prose that the verb does not generate
 
 `check pm`'s warnings are actionable at the rung they fire on — a warning nobody can act on where they
 are standing is a defect, not information.
+
+A bug is bound to its parent and to nothing else: `release` refuses while a bug nested under the
+milestone is outside `done`, and it refuses on the field the scaffold actually writes.
 
 ## Risks
 

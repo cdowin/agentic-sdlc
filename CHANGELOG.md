@@ -63,6 +63,23 @@
   `pm-execution.md`'s claim step now says the flip is bookkeeping and **not** what turns recording
   on — it never was after the routing change, and reading it that way is how the silence lasted.
 
+- **`adopt` gains `telemetry-live`: is this tree recording, and if not, which of the three ways.**
+  A consumer bumps the pin, gets the courier scripts, and pastes the `.claude/settings.json` block
+  **by hand** — and nothing verified the paste. The failure is files present, hooks unarmed, zero
+  rows, zero complaints, which is the state this package's own tree was in for a whole milestone.
+
+  **A probe, not an inspection.** Reading settings.json proves a string is present; the courier's
+  own `--self-test` drives *your* vehicle end to end, which is the only thing that answers *does
+  `make -s pm ARGS=…` reach the verb here*. Every courier already shipped that corpus and no belt
+  called it. The three ways it reports: the entries were never pasted; the `pm` target is not
+  `.PHONY` so `make` exits 0 without reaching the verb; `[pm.states.*]` is undeclared so every
+  work-moving verb refuses. In plain words rather than a rule id — *no ledger setup for this tree,
+  no telemetry*.
+
+  **Never mandatory.** A tree that has not wired the couriers opted out and is not broken; what it
+  must never be is *silently* opted out. `install-hooks` now says the printed block is **not yet in
+  force** and that `adopt` and `check pm` U2 will report it until it is.
+
 - **Every status write breadcrumbs what the conveyor asks next**, and every read verb names its
   columns. `pm story building <id>` now prints, on stderr, the belt that closes that grain and the
   checks the belt will actually run — `close feature` asks stories-done, feature-verified,

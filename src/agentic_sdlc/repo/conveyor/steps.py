@@ -42,6 +42,12 @@ DEFAULT_ADOPT_STEPS = (
     'installables-current',
     'config-updated',
     'hooks-self-test',
+    # After `hooks-self-test`, which proves the corpus replays, and before the
+    # gates: this one asks whether the couriers are WIRED and whether the
+    # vehicle they call answers. A consumer that bumps the pin gets the scripts
+    # and pastes the settings block by hand, and nothing verified the paste —
+    # so the failure is files present, hooks unarmed, no rows, no complaint.
+    'telemetry-live',
     'runner-targets-resolve',
     'checks-pass',
     'pm-validates',
@@ -194,6 +200,30 @@ def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
 def _branch(ctx: Context) -> str:
     code, out = _git(ctx, 'rev-parse', '--abbrev-ref', 'HEAD')
     return out if code == 0 else ''
+
+
+def _run(ctx: Context, argv: list[str]) -> tuple[int, str]:
+    """Any command in the checkout, with `_make`'s failure vocabulary — a
+    missing binary is an exit code, never a crash."""
+    try:
+        done = subprocess.run(argv, cwd=str(ctx.root), capture_output=True,
+                              text=True, timeout=_timeout(ctx.operation))
+    except FileNotFoundError:
+        return 127, f'{argv[0]} is not on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, f'{argv[0]} timed out'
+    except OSError as err:
+        return 126, str(err)
+    return done.returncode, (done.stdout + done.stderr).strip()
+
+
+def _read_text(path) -> str:
+    """A file's text, or `''` — this module reads to DECIDE, and a file it
+    cannot open is a check that says so rather than a traceback."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
 
 
 def _make(ctx: Context, *args: str) -> tuple[int, str]:
@@ -950,6 +980,68 @@ def check_hooks_self_test(ctx: Context) -> Answer:
                         found=f'{HOOKS_DIR}/ replayed')
 
 
+def check_telemetry_live(ctx: Context) -> Answer:
+    """Is this tree RECORDING — and if not, which of the three ways.
+
+    **A probe, not an inspection.** Reading `.claude/settings.json` proves a
+    string is present; the courier's own `--self-test` drives the consumer's
+    real vehicle end to end, which is the only thing that answers "does `make
+    -s pm ARGS=…` reach the verb here". Every courier ships that corpus and
+    nothing called it from the belt.
+
+    Three ways a bumping consumer records nothing, each silent, each named:
+
+      1. the settings entries were never pasted — the scripts are on disk and
+         nothing fires them. `install-hooks` PRINTS that block and never writes
+         it, because the file is the consumer's and has no merge;
+      2. the vehicle does not answer — the `pm` target is not `.PHONY` (a PM
+         tree IS a `pm/` directory, so make treats it as up to date) or does
+         not pass its environment through. The courier detects this exact case
+         and says so on a stderr nobody reads;
+      3. the CLI is inert — `[pm.states.<kind>]` has no default, so a tree that
+         declared no flow has every work-moving verb refuse by name.
+
+    **It never refuses an adoption on its own.** The posture is *clearly
+    available, warned when absent, never mandatory* (0.4.0/D5): a consumer that
+    has not wired the couriers opted out, and this package does not conscript.
+    What it must never be is SILENTLY opted out, which is the state the
+    package's own tree was in for a whole milestone.
+    """
+    command = _configured(ctx, 'telemetry-live')
+    if command:
+        return run_command(ctx, 'telemetry-live', command)
+    courier = ctx.root / HOOKS_DIR / 'cc-ledger-session.sh'
+    if not courier.is_file():
+        return Answer.unverifiable(
+            f'{HOOKS_DIR}/cc-ledger-session.sh is not in this checkout, so '
+            f'whether this tree records cannot be probed — `install-hooks` '
+            f'writes it')
+    settings = ctx.root / '.claude' / 'settings.json'
+    wired = settings.is_file() and 'cc-ledger-session.sh' in _read_text(settings)
+    code, out = _run(ctx, ['bash', str(courier), '--self-test'])
+    if code == 127:
+        return Answer.unverifiable('bash is not on PATH')
+    if code != 0:
+        return Answer.no(
+            f'no ledger setup for this tree, no telemetry — the courier\'s own '
+            f'self-test failed, so the vehicle does not answer here. The usual '
+            f'cause is a `pm` make target that is not .PHONY (a PM tree IS a '
+            f'`pm/` directory, so make exits 0 without reaching the verb), or '
+            f'an undeclared [pm.states.*] making every verb refuse: '
+            f'{_clip(out)}')
+    if not wired:
+        return Answer.no(
+            f'no ledger setup for this tree, no telemetry — the couriers work '
+            f'(their self-test passes against your vehicle) and '
+            f'.claude/settings.json does not fire them. `install-hooks` PRINTS '
+            f'the entries and never writes that file, because it is yours and '
+            f'has no merge; paste them and this goes green. Nothing here is '
+            f'mandatory — a tree that has opted out is not broken, only quiet')
+    return Answer.yes('telemetry is live: the couriers are wired in '
+                      '.claude/settings.json and their self-test passes '
+                      'against this tree\'s vehicle')
+
+
 def check_runner_targets_resolve(ctx: Context) -> Answer:
     """Every composed gate target resolves under `make -n`; an empty tier
     list passes and says so."""
@@ -1221,6 +1313,7 @@ ADOPT_STEPS: dict[str, Check] = _registry(
     Check('installables-current', check_installables_current),
     Check('config-updated', check_config_updated),
     Check('hooks-self-test', check_hooks_self_test),
+    Check('telemetry-live', check_telemetry_live),
     Check('runner-targets-resolve', check_runner_targets_resolve),
     Check('checks-pass', check_checks_pass),
     Check('pm-validates', check_pm_validates),
@@ -1255,6 +1348,11 @@ def registry_for(operation: str) -> dict[str, Check]:
 # One sentence per check for the rendered document, beside the check that
 # runs it.
 STEP_DOC: dict[str, str] = {
+    'telemetry-live':
+        'the ledger couriers are wired in `.claude/settings.json` AND their '
+        'own `--self-test` passes against this tree\'s vehicle — a probe, not '
+        'a file read. Never mandatory: a tree that has opted out is quiet, not '
+        'broken.',
     'tree-clean': '`git status --porcelain` is empty.',
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',

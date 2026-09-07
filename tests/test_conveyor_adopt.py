@@ -180,14 +180,14 @@ def decoy_bytes(root: Path) -> dict[str, bytes]:
 
 
 # --- the census ---------------------------------------------------------------
-def test_the_adopt_registry_is_exactly_the_shipped_seven():
+def test_the_adopt_registry_is_exactly_the_shipped_eight():
     """Bites: a check added to the registry and not the list, or the
     reverse — a name nothing runs."""
     assert set(steps.ADOPT_STEPS) == set(steps.DEFAULT_ADOPT_STEPS)
     assert steps.DEFAULT_ADOPT_STEPS == (
         'pin-bumped', 'installables-current', 'config-updated',
-        'hooks-self-test', 'runner-targets-resolve', 'checks-pass',
-        'pm-validates')
+        'hooks-self-test', 'telemetry-live', 'runner-targets-resolve',
+        'checks-pass', 'pm-validates')
     assert driver.WRITES['adopt'] == ''
     for name in steps.DEFAULT_ADOPT_STEPS:
         assert name in steps.STEP_DOC, f'{name} ships no sentence'
@@ -648,3 +648,63 @@ def _drift_rels(root) -> set[str]:
     from agentic_sdlc.repo.conveyor import driver, steps
     ctx = driver.Context(root=root, operation='adopt', version=VERSION)
     return {rel for _verb, rel, _v in steps._installable_drift(ctx)}
+
+
+# --- 0.4.0/telemetry-arrives-with-the-bump ------------------------------------
+def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
+    """A consumer bumps the pin, gets the courier scripts, and pastes the
+    settings block by hand — and nothing verified the paste. The failure is
+    files present, hooks unarmed, zero rows, zero complaints, which is the
+    state this package's own tree was in for a whole milestone.
+
+    A PROBE, not a file read: reading settings.json proves a string is there;
+    the courier's own `--self-test` drives the consumer's real vehicle, which
+    is the only thing that answers "does `make -s pm ARGS=…` reach the verb
+    here".
+    """
+    # No courier at all: unverifiable, never a pass and never a failure.
+    with tree() as root:
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert 'install-hooks' in answer.detail, answer.detail
+
+    # The courier is there and nothing fires it — mode 1, and the sentence a
+    # consumer needs rather than a rule id.
+    with tree() as root:
+        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
+        courier.parent.mkdir(parents=True, exist_ok=True)
+        courier.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert 'no ledger setup for this tree, no telemetry' in answer.detail
+        assert 'install-hooks' in answer.detail and 'yours' in answer.detail
+
+    # The vehicle does not answer — mode 2/3, the courier's own self-test says
+    # so and the check carries its words rather than inventing any.
+    with tree() as root:
+        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
+        courier.parent.mkdir(parents=True, exist_ok=True)
+        courier.write_text('#!/usr/bin/env bash\necho "the vehicle never '
+                           'reached the verb" >&2\nexit 1\n', encoding='utf-8')
+        settings = root / '.claude' / 'settings.json'
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"hooks": {"Stop": [{"hooks": [{"command": '
+                            '"bash tools/hooks/cc-ledger-session.sh"}]}]}}',
+                            encoding='utf-8')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert '.PHONY' in answer.detail and '[pm.states.*]' in answer.detail
+
+    # Wired and working.
+    with tree() as root:
+        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
+        courier.parent.mkdir(parents=True, exist_ok=True)
+        courier.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+        settings = root / '.claude' / 'settings.json'
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{"hooks": {"Stop": [{"hooks": [{"command": '
+                            '"bash tools/hooks/cc-ledger-session.sh"}]}]}}',
+                            encoding='utf-8')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'telemetry is live' in answer.detail

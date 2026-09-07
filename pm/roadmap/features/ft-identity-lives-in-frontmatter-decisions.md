@@ -53,3 +53,34 @@ silently wrong the day it does not.
 that claims it. Uniqueness stays a GATE FINDING and never a runtime lock — an allocator needs a
 counter and a git repo has none (D4 on the milestone), so two agents on two branches produce a
 merge conflict a human can see rather than a duplicate id nobody can.
+
+## D3 — 2026-09-07 — The nested compat readers survive the resolver collapse, and go with the layout
+
+**The story says the twenty are "gone from `src/`, proven by name". Twelve are.
+Eight survive, named here, and they are the NESTED reader.**
+
+Gone outright: `orphan_dirs`, `milestone_dir_of`, `_has_milestone_file`'s partner
+`_has_feature_file`'s partner `orphan_dirs`, `id_is_literal`'s path use, `grain_docs`'
+per-slot callers, `slot_walk`'s per-slot callers, `_milestone_candidates`' second caller,
+`AmbiguousStory`'s pooled arm, and the six per-kind resolvers' bodies — each is now one
+line delegating to `grain_file`/`children`/`pool_walk`, which is the collapse the story
+asked for.
+
+Surviving, all eight only reachable when `is_pooled(cfg)` is False: `_nested_index`,
+`_nested_feature_files`, `_nested_story_files`, `milestone_dir`, `feature_dir`,
+`milestone_walk`, `milestone_dirs`, and `story_file`'s ordinal-prefix arm (which is
+where `AmbiguousStory` still lives).
+
+**Why they stay.** The CHANGELOG promises a consumer that a nested tree keeps working
+the day they bump — the alternative is a version that reads nothing until a migration
+lands, which is a breaking change wearing a minor number. Deleting the eight would make
+0.4.0 major-shaped for a benefit nobody asked for: the migration is a script run once
+per tree, so a consumer bumps, reads their tree unchanged, and moves when they choose.
+
+**Rejected:** deleting them now and calling 0.4.0 breaking. This repo is the only
+consumer today, so the cost would be near zero HERE and the promise is not to us.
+
+**Rejected:** keeping them without a retirement condition, which is how a compat layer
+becomes permanent. The condition is stated and testable: they go when no nested tree is
+left, and `is_pooled` is the one predicate that reaches them. Every one carries a
+docstring saying so, and `tools/dev/pm_migrate.py` is what moves the last tree.

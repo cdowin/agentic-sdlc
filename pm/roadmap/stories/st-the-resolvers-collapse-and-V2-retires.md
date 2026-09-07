@@ -27,8 +27,10 @@ never builds a path from user input, so the guard has nothing left to guard.
 ## Acceptance criteria
 
 1. `grain_file`, `children` and `pool_walk` exist, each taking `kind`, and every caller of the
-   twenty named in the feature file goes through them. The twenty are gone from `src/`, proven by
-   name the way `_building_ledger_dir` was.
+   twenty named in the feature file goes through them. Twelve are gone from `src/`; **eight
+   survive as the NESTED reader**, each reachable only when `is_pooled(cfg)` is False, each
+   carrying its retirement condition — see D3 on this feature, which names all eight and says why
+   deleting them would make 0.4.0 a breaking change for a benefit nobody asked for.
 2. **No user-facing verb is removed by this story.** These are internal resolvers; the verb surface
    gets more general, not smaller.
 3. `AmbiguousStory` — *"two files claim one story id"* — is gone with the failure mode. Uniqueness
@@ -43,7 +45,7 @@ never builds a path from user input, so the guard has nothing left to guard.
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1, 3 | unit | a name gate over `src/`, beside `OneRuleRoutesALedgerRow` in `test_boundaries.py` | amend that class's neighbour |
+| 1, 3 | unit | a name gate over `src/` pinning the twelve gone and the eight kept, beside `OneRuleRoutesALedgerRow` in `test_boundaries.py` | amend that class's neighbour |
 | 2 | unit | `test_cli_surface.py`'s verb roster is unchanged | existing, unamended — that IS the claim |
 | 4 | unit | `test_boundaries.py` already scans `src/` for path arithmetic classes | amend |
 | 5 | unit | the grammar's matrix moves or is deleted with it | amend |

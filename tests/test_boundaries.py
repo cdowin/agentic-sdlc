@@ -445,6 +445,63 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
             f'found {appends}. If the append is gone, delete the exception.')
 
 
+class TheResolversCollapsed(unittest.TestCase):
+    """0.4.0 — the addressing layer that existed BECAUSE the path was schema.
+
+    Twenty functions that were one function with a kind baked in: `story_file`
+    knew one three-segment shape, `milestone_dir` worked for milestones and
+    nothing else, and a fifth kind meant writing four more. They are
+    `grain_file(cfg, gid, kind)`, `children(cfg, kind, parent)` and
+    `pool_walk(cfg, kind)` now.
+
+    **Both halves are pinned, and the second is the one that rots.** Twelve are
+    GONE, and a name coming back means somebody re-derived an id from a path.
+    Eight SURVIVE as the nested reader, reachable only when `is_pooled(cfg)` is
+    False — that is a deliberate compat layer with a stated retirement
+    condition (D3 on `identity-lives-in-frontmatter`), and pinning the roster
+    is what stops it becoming permanent by accident: delete the last nested
+    tree and this case is what tells you the eight can go.
+    """
+
+    # Gone. Each answered a question about a PATH or a grain DIRECTORY, and a
+    # pooled tree has neither.
+    GONE = ('orphan_dirs', 'milestone_dir_of', '_building_ledger_dir')
+
+    # Kept, and only for the nested layout. Shrinking this list is the goal;
+    # GROWING it means a new path-shaped resolver got written, which is the
+    # thing 0.4.0 deleted.
+    NESTED_ONLY = ('_nested_index', '_nested_feature_files',
+                   '_nested_story_files', 'milestone_dir', 'feature_dir',
+                   'milestone_walk', 'milestone_dirs', 'AmbiguousStory')
+
+    def test_the_path_shaped_resolvers_are_gone(self):
+        model = SRC / 'repo' / 'pm' / 'model.py'
+        source = model.read_text(encoding='utf-8')
+        for name in self.GONE:
+            self.assertNotIn(f'def {name}(', source,
+                             f'{name} is back in model.py. An id names no '
+                             f'location in 0.4.0, so nothing derives one from '
+                             f'a path.')
+
+    def test_the_nested_reader_is_exactly_this_roster(self):
+        model = SRC / 'repo' / 'pm' / 'model.py'
+        source = model.read_text(encoding='utf-8')
+        for name in self.NESTED_ONLY:
+            opener = f'class {name}(' if name[0].isupper() else f'def {name}('
+            self.assertIn(opener, source,
+                          f'{name} left without this roster being updated — '
+                          f'if the nested reader is going, the whole of it '
+                          f'goes together and D3 gets closed.')
+
+    def test_the_three_general_resolvers_take_a_kind(self):
+        from agentic_sdlc.repo.pm import model as pm_model
+        import inspect
+        for name, arg in (('grain_file', 'kind'), ('children', 'kind'),
+                          ('pool_walk', 'kind')):
+            fn = getattr(pm_model, name)
+            self.assertIn(arg, inspect.signature(fn).parameters, name)
+
+
 class OneRuleRoutesALedgerRow(unittest.TestCase):
     """0.4.0/D1 — a row is filed against the milestone that owns its GRAIN, and
     no write path reads a status to decide where bytes go.

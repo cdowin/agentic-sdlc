@@ -16,6 +16,7 @@ order:
   - "ft-a-warning-is-actionable-where-it-fires"
   - "bg-the-milestone-scaffold-still-mints-the-version"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
+  - "ft-the-vocabulary-is-constants-not-literals"
 ---
 
 # 0.6.0 — the rule reaches the work

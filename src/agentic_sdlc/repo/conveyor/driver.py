@@ -233,9 +233,7 @@ def done_state(cfg: 'model.PmConfig', kind: str) -> str:
 
 # --- the middle tap: one check resolved ---------------------------------------
 # `rung.enter` is `pm ready-for`'s, `rung.leave` is the arrival's; this is the
-# one between. Every field is DERIVED — the ids from the invocation, the name
-# from `registry_for(operation)`, the word from `VERDICT_WORDS`, `ran` from
-# `[<op>.commands]` over the shipped actions.
+# one between, and what each field DERIVES from is the rendered schema's note.
 #
 # **There is deliberately no `rung.exit_failed`.** A belt that writes nothing
 # emits these rows with false verdicts and no `rung.leave`: the ABSENCE is the
@@ -261,24 +259,14 @@ class Verdicts:
         self.operation = operation
         self.grain = grain
         self.ran = ran
-        self._defect = ''
 
-    def say(self, check: str, answer: Answer) -> list[str]:
-        """Emit one row; no lines unless the sink could not be reached, which
-        is ONE warning a run and never a verdict (D1)."""
-        row = verdict_row(self.operation, self.grain, check, answer,
-                          self.ran.get(check, ''))
-        try:
-            emit.emit(self.cfg, emit.TAP_VERDICT, row)
-        except Exception as err:  # noqa: BLE001 — never load-bearing (D1)
-            if self._defect:
-                return []
-            self._defect = (
-                f'[{self.operation}] WARNING — the {emit.TAP_VERDICT} event '
-                f'for {check} was not emitted ({type(err).__name__}: {err}); '
-                f'the verdict above stands and the belt is unaffected')
-            return [self._defect]
-        return []
+    def say(self, check: str, answer: Answer) -> None:
+        """Emit one row and contribute NO line — "never load-bearing" (D1)
+        made structural. An unreachable sink is `emit.emit`'s own finding on
+        stderr; a malformed `[emit]` was refused before the first check."""
+        emit.emit(self.cfg, emit.TAP_VERDICT,
+                  verdict_row(self.operation, self.grain, check, answer,
+                              self.ran.get(check, '')))
 
 
 def ran_for(operation: str, names: Sequence[str],
@@ -356,7 +344,7 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
                          f'{answer.detail}')
             false.append((name, answer.detail))
         if verdicts is not None:
-            lines += verdicts.say(name, answer)
+            verdicts.say(name, answer)
         if surfacer is not None:
             # The RULE surface, and the blockers this check named — after the
             # verdict line, because the verdict is the check's own business.
@@ -853,6 +841,10 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         # malformed `[<op>.commands]` is exit 2 before the first check, not a
         # field this run then has to leave out of its events.
         ran = ran_for(operation, names, known)
+        # The sink's own declaration too (rule 9): the SINK is never
+        # load-bearing, the DECLARATION is like every other one.
+        if emit.declared():
+            emit.settings()
     except ConfigError as err:
         return _refuse(f'{spoken}: {err}')
     defect = plan_defect(known, names)

@@ -9,7 +9,6 @@ every match prints in recorded order.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit
@@ -96,6 +95,10 @@ def read(cfg) -> Store:
             continue
         lessons.extend(les for les in (lesson_of(row.data) for row in rows)
                        if les is not None)
+    # Two files, one timeline: FILE order printed a later milestone's oldest
+    # lesson before an earlier one's newest, and `--help` promises RECORDED
+    # order. Ordering by the stamp is not ranking (D1); `show` sorts the same.
+    lessons.sort(key=lambda one: one.ts)
     return Store(tuple(lessons), tuple(unreadable))
 
 
@@ -304,15 +307,9 @@ def flags_given(rest: list[str], known: tuple[str, ...]
     return given, left, ''
 
 
-def _source_file(cfg, source: str) -> Path:
-    """The record a lesson points at, as `--review-record` resolves one."""
-    return Path(source) if source.startswith('/') else cfg.root / source
-
-
 def record(cfg, rest: list[str]) -> int:
     """Append one row, routed by grain. Both pointers resolve BEFORE the
-    append: a source that is not there, or a grain no milestone owns, is the
-    drift `--review-record` already refuses to stamp."""
+    append, and this ledger is committed and append-only."""
     given, words, defect = flags_given(rest, RECORD_FLAGS)
     if not defect and ([f for f in RECORD_FLAGS if not given.get(f)]
                        or len(words) != 1):
@@ -320,9 +317,17 @@ def record(cfg, rest: list[str]) -> int:
                   f'quoted text, and every one of them is required')
     if defect:
         return _refused(defect, 2)
-    target = _source_file(cfg, given[SOURCE_FLAG])
+    source = given[SOURCE_FLAG]
+    # Rule 8: this ledger is committed and APPEND-ONLY, so a pointer that
+    # resolves on one machine cannot be edited back out afterwards.
+    if model.pointer_escapes(source):
+        return _refused(f'{SOURCE_FLAG} {source!r} names a path outside this '
+                        f'checkout; nothing was recorded, because a pointer '
+                        f'only its author can follow points at nothing for '
+                        f'every other reader of this ledger', 1)
+    target = model.record_path(cfg, source)
     if not model.record_resolves(target):
-        return _refused(f'{SOURCE_FLAG} {given[SOURCE_FLAG]!r} names no file '
+        return _refused(f'{SOURCE_FLAG} {source!r} names no file '
                         f'({cfg.rel(target)}); nothing was recorded, because a '
                         f'row pointing at nothing is the paraphrase this row '
                         f'exists not to be', 1)

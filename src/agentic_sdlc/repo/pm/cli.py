@@ -720,10 +720,6 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str],
     return 0
 
 
-def _resolve_record(cfg: model.PmConfig, rec: str) -> Path:
-    return Path(rec) if rec.startswith('/') else cfg.root / rec
-
-
 def _take_flags(args: list[str], flags: tuple[str, ...],
                 noun: str = 'a value') -> tuple[list[tuple[str, str]],
                                                 list[str]]:
@@ -782,7 +778,7 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
     if rec:
         # The one thing checked about a record: the path resolves. Length is
         # not this tool's question.
-        target = _resolve_record(cfg, rec)
+        target = model.record_path(cfg, rec)
         if not model.record_resolves(target):
             raise Refused(
                 f'feature {fid} -> {to}: review record {rec!r} names no file '
@@ -2332,9 +2328,8 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 def _lesson_cells(row: dict) -> str:
-    """What a recorded lesson SAYS here: the rule, the text, and ALWAYS the
-    source, so the reader goes to the record rather than trusting this line.
-    `agentic-sdlc lesson show` is the verb that filters them."""
+    """The rule, the text, and ALWAYS the source, so the reader goes to the
+    record rather than trusting this line. `lesson show` filters them."""
     return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
             f'(source: {row.get("source", "")})')
 
@@ -2352,10 +2347,8 @@ def _enter_cells(row: dict) -> str:
 
 
 def _verdict_cells(row: dict) -> str:
-    """The rung, the check, the verdict word, the detail the belt's own line
-    carried and what it ran — without them a refused run and a passed one are
-    the same characters here, and the ABSENCE that signals a belt that wrote
-    nothing is unreadable."""
+    """The rung, the check, the verdict word, the belt's own detail and what
+    it ran — without them a refused run and a passed one read alike here."""
     cells = (f'  {row.get("rung", "")}  {row.get("check", "")}  '
              f'{row.get("verdict", "")}')
     if row.get('detail'):
@@ -2393,9 +2386,8 @@ def _arrival_cells(row: dict) -> str:
 
 def _disposition_cells(row: dict) -> str:
     """The arrival, plus every check a belt answered instead of asking
-    (0.5.0/D6). Rule 11's read side — this verb printed the kind and stopped,
-    which teaches a reader the tool does not hold the answer. Read defensively:
-    a hand-written row must not make a grain unprintable."""
+    (0.5.0/D6). Read defensively: a hand-written row must not make a grain
+    unprintable."""
     cells = _arrival_cells(row)
     entries = row.get('skipped')
     if not isinstance(entries, list) or not entries:

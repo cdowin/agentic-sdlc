@@ -425,9 +425,8 @@ class Taps:
     def __init__(self):
         self.rows: list[tuple[str, driver.Answer]] = []
 
-    def say(self, check: str, answer: driver.Answer) -> list[str]:
+    def say(self, check: str, answer: driver.Answer) -> None:
         self.rows.append((check, answer))
-        return []
 
 
 def test_one_verdict_row_per_check_asked_and_none_for_one_the_caller_answered():

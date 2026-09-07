@@ -42,8 +42,15 @@ condition was asked, one check resolved, the one write happened.
 There is deliberately no fourth kind for a belt that stopped. One that writes
 nothing emits its false verdicts and no `rung.leave`, and the absence IS the
 signal — a row saying "the thing did not happen" is the tool narrating rather
-than recording. A `lesson` row is recorded by hand (`agentic-sdlc lesson
-record`) and read back beside the check it names.
+than recording. That reading needs the `verdict` tap on: `[emit] kinds` takes
+any subset, and a missing `rung.leave` means "refused" only against the
+`check.verdict` rows of the same run.
+
+The table is the BELT's own kinds, not a census of the sink. Other kinds ride
+the same three taps with their own shape — `lesson.enter` and `lesson.verdict`
+carry the lessons surfaced at a move — so a courier keys on the TAP and treats
+the payload as the kind's. A `lesson` row itself is recorded by hand
+(`agentic-sdlc lesson record`) and read back beside the check it names.
 
 <!-- GUIDANCE -->
 

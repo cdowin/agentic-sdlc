@@ -644,7 +644,7 @@ def _arrive_node_defect(kind: str, state: str, node: object) -> str:
                 return (f'{where} {HAVE_KEY}.{path} must say what the '
                         f'capability is for, got {why!r} — a path with no '
                         f'sentence beside it is a line nobody can act on')
-            if not path or _pointer_escapes(path):
+            if not path or pointer_escapes(path):
                 return (f'{where} {HAVE_KEY} names {path!r}, which is not a '
                         f'path inside this checkout — this package reads no '
                         f'path outside its own tree (hard rule 8)')
@@ -2161,11 +2161,15 @@ def record_resolves(path: Path) -> bool:
     return path.is_file()
 
 
-def _pointer_escapes(pointer: str) -> bool:
-    """Does a `reviewed:` pointer name somewhere outside the checkout? The
-    shapes `core.config.relpath` refuses, as a predicate: a bad pointer is a
-    finding about one feature, not a config error.
-    """
+def record_path(cfg: PmConfig, pointer: str) -> Path:
+    """The file a record pointer names — `--review-record`'s and `--source`'s
+    ONE resolution, so the escape guard beside it is asked at both."""
+    return Path(pointer) if pointer.startswith('/') else cfg.root / pointer
+
+
+def pointer_escapes(pointer: str) -> bool:
+    """Outside the checkout? The shapes `core.config.relpath` refuses, as a
+    predicate: a bad pointer is a finding, never a config error."""
     return (pointer.startswith(('/', '~', '\\'))
             or ':' in pointer.split('/', 1)[0]
             or '..' in Path(pointer).parts)
@@ -2181,7 +2185,7 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     if pointer and pointer != 'null':
         # Repo-relative, always (hard rule 8): an absolute pointer is a
         # record nobody reviewing this repo can read.
-        if _pointer_escapes(pointer):
+        if pointer_escapes(pointer):
             return None
         if record_resolves(cfg.root / pointer):
             return pointer

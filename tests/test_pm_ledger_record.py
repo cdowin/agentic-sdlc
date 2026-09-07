@@ -989,9 +989,9 @@ def test_the_human_form_is_one_line_per_row_with_the_gap_after_the_first():
         code, out = run_cli(root, 'ledger', 'show', STORY)
     assert code == 0, out
     assert out.strip().splitlines() == [
-        '2026-09-03T10:00:00Z  status    ready -> building',
-        '2026-09-03T10:13:32Z  status    building -> reviewing  +812s',
-        '2026-09-03T10:20:00Z  status    reviewing -> done  +388s',
+        '2026-09-03T10:00:00Z  status         ready -> building',
+        '2026-09-03T10:13:32Z  status         building -> reviewing  +812s',
+        '2026-09-03T10:20:00Z  status         reviewing -> done  +388s',
         # `done` is terminal for a story, so the run ends with the total.
         'first row → terminal row: 1200s',
     ]
@@ -1021,12 +1021,50 @@ def test_a_disposition_prints_its_state_answer_and_every_skipped_check():
         code, out = run_cli(root, 'ledger', 'show', STORY)
     assert code == 0, out
     assert out.strip().splitlines()[:4] == [
-        f'{one}  status    ready -> building',
-        f'{one}  disposition  building  --by agent developer',
-        f'{two}  status    building -> done  +812s',
-        f'{two}  disposition  done  none  skipped: review-recorded — '
+        f'{one}  status         ready -> building',
+        f'{one}  disposition    building  --by agent developer',
+        f'{two}  status         building -> done  +812s',
+        f'{two}  disposition    done  none  skipped: review-recorded — '
         f'"read inline", story-verified — "no code changed"',
     ], out
+
+
+def test_the_three_taps_print_their_payload_and_not_a_bare_kind():
+    """D5's finding for `disposition`, carried to the kinds this milestone
+    added. A refused run and a passed one rendered as the SAME eight characters
+    here, so "there is no rung.exit_failed, the absence is the signal" held on
+    the JSONL and failed at the verb the ship criterion names. Bites: a cell
+    dropping off, which is indistinguishable from a row that never carried it.
+    """
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.pm import ready_for
+    nxt = arrive.Next('feature', 'close feature', '0.1/alpha',
+                      ('stories-done', 'findings-landed'))
+    minted = [
+        ready_for._enter_row('story', STORY,
+                             [ready_for.Blocker('evidence-written', 'why')]),
+        driver.verdict_row('story', STORY, 'tree-clean',
+                           driver.Answer.no('2 file(s) dirty'),
+                           'git status --porcelain'),
+        ledger.leave_row(STORY, 'done', nxt, (), arrive.NOTHING),
+    ]
+    with tree() as root:
+        put_ledger(root, *[ledger.dumps(dict(row, ts=TIMELINE[0]))
+                           for row in minted])
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+    assert code == 0, out
+    printed = out.strip().splitlines()
+    assert len(printed) == len(minted), out
+    assert printed[0].endswith(
+        f'{ledger.NOT_READY}  blocked: evidence-written'), printed[0]
+    assert printed[1].endswith(
+        'tree-clean  error — 2 file(s) dirty  '
+        '(ran: git status --porcelain)'), printed[1]
+    assert printed[2].endswith(
+        'done  none  next: feature (stories-done, findings-landed)'), printed[2]
+    # The kind column fits the widest kind, or the cells above start ragged.
+    for line, row in zip(printed, minted):
+        assert line.startswith(f'{TIMELINE[0]}  {row["kind"]:<13}  '), line
 
 
 def test_no_total_line_while_the_grain_is_still_in_flight():

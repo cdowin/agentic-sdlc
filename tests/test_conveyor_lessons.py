@@ -277,8 +277,10 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
             'a lesson reshaped the belt\'s own lines; it is only ever a '
             'line BESIDE a verdict (rule 6)')
 
-    # A sink that cannot be reached, and a section that will not parse: both
-    # are the emit seam's business and neither is the belt's.
+    # A sink that cannot be reached is the emit seam's business and never the
+    # belt's; a section that will not PARSE is the belt's, at exit 2. That
+    # split is deliberate: the sink is never load-bearing, the declaration is
+    # read like every other declaration.
     with tree() as root:
         record(root, lesson_row(grain=FEATURE))
         write_config(root, '[emit]\nsink = "events.jsonl"\n')
@@ -289,17 +291,68 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
 
         write_config(root, '[emit]\nkinds = "verdict"\n')
         malformed = belt(root, passing)
-        assert malformed.code == 0 and malformed.writes == ['done']
-        warnings = [line for line in malformed.taught if 'WARNING' in line]
-        assert len(warnings) == 1 and 'NOT emitted' in warnings[0], (
-            f'a malformed [emit] must be one named line here and never a '
-            f'refused belt: {malformed.taught}')
+        assert malformed.code == 2 and malformed.writes == [], (
+            f'a malformed [emit] is a DECLARATION this run could not read, so '
+            f'it is exit 2 before the first check and nothing is written '
+            f'(rule 9) — not a mid-belt warning over a sink that will stay '
+            f'silent forever: {malformed.taught}')
 
 
 # --- 4: several match, and nothing chooses ------------------------------------
 
-RANKING = ('sorted', 'sort', 'rank', 'ranked', 'score', 'scored', 'confidence',
-           'frequency', 'similarity', 'best', 'top')
+# D1's rule is that nothing is inferred, scored or ranked — no ordering by
+# VALUE. Ordering by TIME is not ranking, it is the order they were recorded,
+# so this is NOT a ban on the word `sort`: it is a ban on any sort key that is
+# not the row's own stamp, plus the vocabulary of choosing.
+STAMP = 'ts'
+ORDERING = ('sorted', 'sort')
+# Each of these picks one row over another. `[:3]` and `[-1]` do too and are
+# NOT held here: a slice of a lesson list and `_clip`'s `text[:limit]` are the
+# same node without types. Named rather than implied — issue #14.
+CHOOSING = ('min', 'max', 'nlargest', 'nsmallest', 'most_common', 'reverse')
+# Matched against the whole identifier AND each `_`-separated part, lowered, so
+# `confidence_derived` — D1's own counter-example, one suffix away — is caught
+# while `stop` is not `top`.
+RANKING = ('rank', 'ranked', 'score', 'scored', 'confidence', 'frequency',
+           'similarity', 'best', 'top', 'weight', 'priority')
+
+
+def _spelt(name: str) -> str:
+    return name.id if isinstance(name, ast.Name) else getattr(name, 'attr', '')
+
+
+def _keyed_on_the_stamp(call: ast.Call) -> bool:
+    """Is this ordering call keyed on the recorded stamp and nothing else? A
+    bare `sorted(x)` orders by the tuple's first field, which is a VALUE."""
+    if len(call.keywords) != 1 or call.keywords[0].arg != 'key':
+        return False
+    key = call.keywords[0].value
+    bound = {arg.arg for node in ast.walk(key)
+             if isinstance(node, ast.Lambda) for arg in node.args.args}
+    read = {_spelt(node) for node in ast.walk(key)
+            if isinstance(node, (ast.Name, ast.Attribute))}
+    return read - bound == {STAMP}
+
+
+def _chooses(source: ast.AST) -> list[str]:
+    """Every identifier or field NAME here that ranks, scores or chooses, and
+    every ordering call whose key is something other than the stamp. String
+    constants are graded too: `row['confidence_derived']` is D1's own
+    counter-example and it is not an identifier."""
+    found: list[str] = []
+    for node in ast.walk(source):
+        name = ''
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            name = _spelt(node)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            name = node.value
+        if name and (set(name.lower().split('_')) | {name.lower()}) & (
+                set(RANKING) | set(CHOOSING)):
+            found.append(name)
+        if (isinstance(node, ast.Call) and _spelt(node.func) in ORDERING
+                and not _keyed_on_the_stamp(node)):
+            found.append(f'{_spelt(node.func)}(…) not keyed on {STAMP!r}')
+    return sorted(set(found))
 
 LESSON_MODULE = 'src/agentic_sdlc/repo/conveyor/lessons.py'
 # The ROW MINTER lives among minters that legitimately sort, so the ledger is
@@ -319,6 +372,58 @@ def lesson_sources() -> list[tuple[str, ast.AST]]:
               and lessons.KIND in node.name]
     assert len(found) > 1, 'the minter left the census — nothing is scanned'
     return found
+
+
+# The reader is probed before it grades: a guard that quietly stopped catching
+# things passes forever, which is rule 4's first sin (issue #14's class).
+CHOOSING_SPELLINGS = (
+    ('found.sort(key=lambda one: one.ts)', False),
+    ('sorted(found, key=lambda one: one.ts)', False),
+    ('sorted(found)', True),
+    ('found.sort()', True),
+    ('sorted(found, key=lambda l: len(l.text))', True),
+    ('found.sort(key=lambda one: one.ts, reverse=True)', True),
+    ('max(found, key=lambda l: len(l.text))', True),
+    ('min(found, key=lambda l: l.ts)', True),
+    ('heapq.nlargest(3, found)', True),
+    ('Counter(x).most_common(3)', True),
+    ('found.reverse()', True),
+    ("row['confidence_derived'] = 0.1", True),
+    ('weight = {}', True),
+    ('priority = []', True),
+    # NOT held, and said out loud: a slice of a lesson list and `_clip`'s
+    # `text[:limit]` are the same node without types — issue #14.
+    ('found[:3]', False),
+    ('text[:limit]', False),
+    # `stop` is not `top`, or the guard reddens on prose.
+    ('stopped = True', False),
+)
+
+
+@pytest.mark.parametrize('source,chosen', CHOOSING_SPELLINGS)
+def test_the_ranking_reader_tells_a_stamp_from_a_ranking(source, chosen):
+    """The census below is only worth its line if this holds."""
+    assert bool(_chooses(ast.parse(source))) is chosen, source
+
+
+def test_lessons_read_from_two_ledgers_print_oldest_first():
+    """`--help` promises "the order they were recorded" and `read()` walked
+    `ledger_paths` — grainless first, then one file per milestone — extending
+    per file. Across two ledgers that printed NEWEST before OLDEST, and the
+    operator could not tell, because `ts` is the last column."""
+    with tree() as root:
+        # `ledger_paths` reads the grainless file FIRST, so the NEWEST row goes
+        # there: file order and recorded order have to disagree, or the case
+        # passes over an unsorted reader (issue #14's class).
+        record(root, lesson_row(grain=FEATURE, text='OLDEST',
+                                ts='2020-01-01T00:00:00Z'))
+        grainless = ledger.grainless_path(cfg_for(root).roadmap)
+        ledger.append_to(grainless, ledger.lesson_row(
+            FEATURE, RULE, RECORD, 'NEWEST', ts='2026-09-07T00:00:00Z'))
+        code, out = run_lesson(root, lessons.SHOW)
+    assert code == 0, out
+    assert [line.split('\t')[3] for line in out.splitlines()] == [
+        'OLDEST', 'NEWEST'], out
 
 
 def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
@@ -348,13 +453,14 @@ def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
     # The WRITE half joins the guard the read half already carried: a lesson
     # ranked at the moment it is recorded is ranked just as permanently.
     for where, source in lesson_sources():
-        names = {node.attr if isinstance(node, ast.Attribute) else node.id
-                 for node in ast.walk(source)
-                 if isinstance(node, (ast.Name, ast.Attribute))}
-        assert not names & set(RANKING), (
-            f'{sorted(names & set(RANKING))} in {where} — anything inferred '
-            f'needs a feedback edge, and a reader/writer has nowhere to put '
-            f'one (D1)')
+        chosen = _chooses(source)
+        assert not chosen, (
+            f'{chosen} in {where} — nothing here may rank, score, weigh or '
+            f'pick one lesson over another: anything inferred needs a feedback '
+            f'edge and a reader/writer has nowhere to put one (D1). Ordering '
+            f'by {STAMP!r} is NOT ranking — it is the order they were '
+            f'recorded, which is what `lesson show --help` promises. NOT held '
+            f'by this census: a slice of a lesson collection — issue #14')
 
 
 # --- 5: the coupling to `pm ready-for`'s printed blockers ---------------------
@@ -583,12 +689,18 @@ def test_a_recorded_lesson_lands_routed_by_grain_and_reads_back_verbatim():
     ((lessons.SOURCE_FLAG, 'docs/reviews/nowhere.md'),
      'a source resolving to nothing'),
     ((lessons.GRAIN_FLAG, '0.9/nobody'), 'a grain no milestone owns'),
+    # A pointer that resolves on ONE machine. This ledger is committed and
+    # `append_to` appends, so the row cannot be edited back out afterwards —
+    # and hard rule 8 says no file here reads a path outside the checkout.
+    ((lessons.SOURCE_FLAG, '../outside.md'), 'a source above the checkout'),
+    ((lessons.SOURCE_FLAG, '/etc/hosts'), 'an absolute source'),
 ])
 def test_a_pointer_resolving_to_nothing_is_refused_and_nothing_is_written(
         flags, why):
     """Exactly as `--review-record` refuses one (exit 1, nothing stamped). A
     lesson whose `source` names no file is the paraphrase D1 forbids, and one
-    whose grain no ledger owns would surface at no move ever."""
+    whose grain no ledger owns would surface at no move ever. The last two
+    RESOLVE — `/etc/hosts` is a real file — and are refused anyway."""
     with tree() as root:
         argv = [lessons.RECORD, lessons.GRAIN_FLAG, FEATURE,
                 lessons.RULE_FLAG, RULE, lessons.SOURCE_FLAG, RECORD, TEXT]

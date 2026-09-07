@@ -86,8 +86,7 @@ KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
 
 # A FIELD NAME — "was the entry condition met" — spelled once because it
-# collides with a state word, and the two words it renders as, here rather than
-# in `ready_for` so the verb that ANSWERS and the verb that READS cannot drift.
+# collides with a state word, beside the two words its readers render it as.
 READY_FIELD = 'ready'
 READY, NOT_READY = 'READY', 'NOT READY'
 ENTER_KEYS = ('ts', 'kind', 'grain', 'rung', READY_FIELD, 'blockers')

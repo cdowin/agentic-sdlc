@@ -69,6 +69,7 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_cli_surface.py',
+    'test_config_seed.py',
     'test_consumer_independence.py',
     'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
@@ -86,6 +87,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_report_sections.py',
     'test_pm_order.py',
     'test_pm_ready_for.py',
+    'test_pm_rename.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',

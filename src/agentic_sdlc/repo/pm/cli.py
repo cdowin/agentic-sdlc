@@ -1415,8 +1415,8 @@ def _scaffold(cfg: model.PmConfig, kind: str, doc: Path,
 
 
 def _slugify(text: str) -> str:
-    """ASCII-only: the result becomes a permanent directory name in a NESTED
-    tree, and `str.isalnum()` is Unicode-aware."""
+    """ASCII-only: it becomes a permanent directory name, and `str.isalnum()`
+    is Unicode-aware."""
     keep = 'abcdefghijklmnopqrstuvwxyz0123456789'
     out = ''.join(c if c in keep else '-' for c in text.lower())
     while '--' in out:
@@ -1427,10 +1427,8 @@ def _slugify(text: str) -> str:
 def _mint_path(cfg: model.PmConfig, kind: str, slug: str, name: str = '',
                parent_id: str = '') -> Path:
     """The file a NEW grain is written to, in whichever layout the tree is in.
-
-    A NESTED tree keeps its shape, and that is not a nicety: minting into a
-    pool there flips `is_pooled`, and every reader then sees the one new file
-    and none of the tree behind it.
+    A NESTED tree keeps its shape: minting into a pool there flips `is_pooled`,
+    and every reader then sees the one new file and none of the tree behind it.
     """
     if not model.is_nested(cfg):
         return model.pool_dir(cfg, kind) / f'{slug}.md'

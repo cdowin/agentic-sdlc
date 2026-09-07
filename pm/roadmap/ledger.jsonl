@@ -728,3 +728,9 @@
 {"ts":"2026-09-07T03:29:42Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":325,"rank":4}
 {"ts":"2026-09-07T03:29:42Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::D5AStoryAheadOfItsFeature::test_a_story_at_work_under_a_feature_still_being_shaped_IS_drift","duration_ms":309,"rank":5}
 {"ts":"2026-09-07T03:29:42Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":17803,"census":845}
+{"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":16515,"rank":1}
+{"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":16463,"rank":2}
+{"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own@the-real-repo","duration_ms":10209,"rank":3}
+{"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[exits-nonzero]@the-real-repo","duration_ms":10154,"rank":4}
+{"ts":"2026-09-07T04:14:33Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":10065,"rank":5}
+{"ts":"2026-09-07T04:14:33Z","kind":"gate","gate":"test","verdict":"FAIL","duration_ms":87617,"census":1247}

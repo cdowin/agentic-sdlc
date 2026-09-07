@@ -623,10 +623,16 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     mfile = model.milestone_file(cfg, mid)
     mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
     nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
+    # A belt that WRITES needs the grain, and is refused BEFORE the first
+    # check — which is also why nothing spawns here. The sentence names what
+    # was looked for: "no milestone 'st-nobody-wrote-this'" about a STORY id
+    # sent the reader hunting for a milestone nobody had named.
     if mfile is None and kind:
-        # A belt that WRITES needs the grain: the status it sets lives in that
-        # document, and so does the ledger row a forced write leaves.
-        print(f'agentic-sdlc: {spoken} {subject}: {nowhere} — refused, and '
+        missing = (nowhere if operation in ('release', 'adopt')
+                   else f'no {operation} {subject!r} in '
+                        f'{cfg.rel(cfg.roadmap)}/, or it is bound to no '
+                        f'milestone')
+        print(f'agentic-sdlc: {spoken} {subject}: {missing} — refused, and '
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:

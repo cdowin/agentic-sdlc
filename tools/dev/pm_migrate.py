@@ -121,15 +121,13 @@ _PHASES = ('foundation', 'core', 'polish')
 
 
 def _without_ordinal(slug: str) -> str:
-    """`01-boots` -> `boots`. The number sequenced the build; the slug is the
-    identity, and `order` carries the sequence now."""
+    """`01-boots` -> `boots`; `order` carries the sequence now."""
     match = _ORDINAL.match(slug)
     return match.group('slug') if match is not None else slug
 
 
 def _phase_key(phase: str) -> tuple:
-    """A feature's `phase:` as a sort key — read once, to flatten into the
-    milestone's `order`, and then never again."""
+    """A feature's `phase:` as a sort key, read once to build `order`."""
     word = (phase or '').strip().strip('"\'').lower()
     if word in _PHASES:
         return (0, _PHASES.index(word), '')
@@ -288,11 +286,11 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
                    f'written ({applied.error}); the tree is unchanged']
     for move in staged.moves:
         apply.remove_file(move.old_path)
-    # A husk goes only when it is EMPTY. `plan()` stages four document classes
-    # and everything else under a milestone directory used to go with the
-    # `delete_tree` — four `ledger.jsonl`, six `decisions.md`, a handoff and a
-    # loose design note, on this repo's own tree, none of them named. Git is
-    # the undo for a MOVE; there is no undo for a file nobody was told about.
+    # A husk goes only when it is EMPTY. Everything else under a milestone
+    # directory used to go with the `delete_tree` — on this repo's own tree,
+    # four `ledger.jsonl`, six `decisions.md`, a handoff and a design note,
+    # none of them named. Git is the undo for a MOVE; there is none for a file
+    # nobody was told about.
     left: list[str] = []
     for mdir in husks:
         remaining = sorted(walk.descendants(mdir, Kind.FILE).kept)

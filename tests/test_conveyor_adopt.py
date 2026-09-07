@@ -267,7 +267,9 @@ def test_a_belt_that_writes_still_needs_the_milestone_grain():
             code = driver.main(['close', 'feature', f'{VERSION}/nope'])
         out = buf.getvalue()
         assert code == 1, out
-        assert NOWHERE in out and 'refused' in out, out
+        # The sentence names the FEATURE it could not place, not a milestone
+        # nobody typed.
+        assert f"no feature '{VERSION}/nope'" in out and 'refused' in out, out
         assert 'nothing was written' in out, out
         assert asked(out) == [], out
         assert snapshot(root) == before

@@ -284,6 +284,9 @@ class PmConfig:
     feature_dir_key: str = ''
     story_dir_key: str = ''
     bug_dir_key: str = ''
+    # The ledgers are a table too — machine state rather than grains, but the
+    # same mechanism, so the file shows it the same way.
+    ledger_dir_key: str = ''
     review_dir: str = 'docs/reviews'
     story_ordinal_prefix: bool = False
     # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
@@ -389,6 +392,7 @@ def load() -> PmConfig:
         feature_dir_key=relpath(sect, 'pm', 'feature_dir', ''),
         story_dir_key=relpath(sect, 'pm', 'story_dir', ''),
         bug_dir_key=relpath(sect, 'pm', 'bug_dir', ''),
+        ledger_dir_key=relpath(sect, 'pm', 'ledger_dir', ''),
         breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
         milestone_states=_order_of(flows, 'milestone'),
         feature_states=_order_of(flows, 'feature'),

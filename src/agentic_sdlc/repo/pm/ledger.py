@@ -185,18 +185,25 @@ def ledger_path(milestone_dir: Path) -> Path:
 LEDGERS_POOL = 'ledgers'
 
 
+def ledgers_dir(cfg) -> Path:
+    """The table the ledgers live in — `[pm] ledger_dir`, or
+    `<roadmap>/ledgers`. Relative to the repo root, through the same path
+    grammar every other key uses."""
+    return (cfg.root / cfg.ledger_dir_key if cfg.ledger_dir_key
+            else cfg.roadmap / LEDGERS_POOL)
+
+
 def ledger_for(cfg, milestone_id: str) -> Path:
     """The ledger of one milestone, in EITHER layout.
 
-    Pooled: `<roadmap>/ledgers/<milestone-id>.jsonl`. Nested: the
-    `ledger.jsonl` inside the milestone's own directory, which is where every
-    row written before the migration already is. One function, because a
-    reader that guessed would find the rows in one layout and silently none in
-    the other.
+    Pooled: `<ledger_dir>/<milestone-id>.jsonl`. Nested: the `ledger.jsonl`
+    inside the milestone's own directory, which is where every row written
+    before the migration already is. One function, because a reader that
+    guessed would find the rows in one layout and silently none in the other.
     """
     from agentic_sdlc.repo.pm import model
     if model.is_pooled(cfg):
-        return cfg.roadmap / LEDGERS_POOL / f'{milestone_id}.jsonl'
+        return ledgers_dir(cfg) / f'{milestone_id}.jsonl'
     mdir = model.milestone_dir(cfg, milestone_id)
     return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
 

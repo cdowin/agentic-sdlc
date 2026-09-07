@@ -1013,7 +1013,12 @@ class ConfigValueErrors(unittest.TestCase):
         `pm templates` WRITES there — six files installed outside the
         checkout, on the unfixed tracker, at exit 0.
         """
-        for key in ('roadmap_dir', 'review_dir', 'template_dir'):
+        # The five POOL keys go through the same `relpath`, and one case each
+        # proves the REUSE — inventing a second matrix for them is the finding,
+        # not the coverage (SDLC § 5).
+        for key in ('roadmap_dir', 'review_dir', 'template_dir',
+                    'milestone_dir', 'feature_dir', 'story_dir', 'bug_dir',
+                    'ledger_dir'):
             for value in ('/tmp/elsewhere', '../outside'):
                 with self.subTest(key=key, value=value), tree() as root:
                     # A Python repr is a TOML LITERAL string, so a `\` in a
@@ -1034,6 +1039,56 @@ class ConfigValueErrors(unittest.TestCase):
                 write_config(root, f'[pm]\nroadmap_dir = {value!r}\n')
                 code, out = run_gate(root)
                 self.assertEqual(code, 0, f'{value!r}\n{out}')
+
+    def test_a_declared_pool_is_read_from_where_it_says(self):
+        """`[pm] milestone_dir` and friends, and the equivalence rule 5 asks
+        for: a tree declaring every stock value behaves byte-identically to one
+        declaring none.
+
+        The pools are four keys rather than one `roadmap_dir` because **the
+        shape of the config is the shape of the model** — reading the file
+        tells you there are four kinds and that they are peers, which one root
+        never could.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            silent = run_gate(root)
+            write_config(root, '[pm]\n'
+                               'milestone_dir = "pm/roadmap/milestones"\n'
+                               'feature_dir = "pm/roadmap/features"\n'
+                               'story_dir = "pm/roadmap/stories"\n'
+                               'bug_dir = "pm/roadmap/bugs"\n'
+                               'ledger_dir = "pm/roadmap/ledgers"\n')
+            self.assertEqual(run_gate(root), silent)
+
+        # ...and a pool declared SOMEWHERE ELSE is read from there. Moved, not
+        # copied: if the reader still fell back to `<roadmap>/features`, the
+        # census would count the same feature twice or not at all.
+        with tree(story_statuses=('ready',)) as root:
+            write_config(root, '[pm]\nfeature_dir = "planning/features"\n')
+            moved = root / 'planning/features'
+            moved.mkdir(parents=True)
+            (root / 'pm/roadmap/features/alpha.md').rename(moved / 'alpha.md')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('1 feature(s)', out)
+
+    def test_a_milestones_ledger_follows_the_configured_ledger_dir(self):
+        # D3 put rows in two places — one per milestone, and the tree's own for
+        # the rows naming no grain — and a key that moved only one of them
+        # would split the ledger across two roots with nothing saying so.
+        from agentic_sdlc.repo.pm import ledger
+        with tree(story_statuses=('ready',)) as root:
+            write_config(root, '[pm]\nledger_dir = "pm/logs"\n')
+            cfg = cfg_for(root)
+            rel = lambda p: str(p.relative_to(cfg.root))
+            self.assertEqual(rel(ledger.ledgers_dir(cfg)), 'pm/logs')
+            self.assertEqual(rel(ledger.ledger_for(cfg, '0.1')),
+                             'pm/logs/0.1.jsonl')
+            # An attributed row, through the CLI, landing under the declared
+            # home rather than under the roadmap.
+            self.assertEqual(run_cli(root, 'ledger', 'record', '--grain',
+                                     '0.1/alpha', '--event', 'Stop')[0], 0)
+            self.assertTrue((root / 'pm/logs/0.1.jsonl').is_file())
 
     def test_scaffold_misconfiguration_is_refused_not_ignored(self):
         for bad in ('[pm.scaffold]\nmilestone = "theme,risk"',

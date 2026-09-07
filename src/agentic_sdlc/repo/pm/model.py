@@ -669,13 +669,11 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
 
     A real adoption is wrong in more than one way at once, and one defect per
     run makes the consumer pay a round trip to learn the next. The ORDER is the
-    point: a retired key is cosmetic and a missing flow stops every work-moving
+    point: a retired key is cosmetic, a missing flow stops every work-moving
     verb, and the tree that motivated this was told about the retired key.
 
-    Each reader is asked SEPARATELY and its refusal collected, rather than
-    letting `load()` raise at the first one — that made two defects inside
-    `load()` report as one, and let any `load()` defect hide the whole
-    retired-key sweep behind it (review D2, D3).
+    Each reader is asked SEPARATELY and its refusal collected, so one `load()`
+    defect cannot hide the retired-key sweep behind it (review D2, D3).
     """
     section = config_section('pm') if sect is None else sect
     out: list[str] = []
@@ -965,16 +963,11 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
 def set_list_field(path: Path, key: str, values: list[str]) -> bool:
     """Rewrite the block list under `key`, preserving every other byte.
 
-    The list-aware sibling to `set_field`. `order` is edited constantly — every
-    ship, insertion and re-sequence — so this is the writer that has to be
-    byte-honest: a diff that shows what MOVED is the whole reason the plan is a
-    grain and not TOML.
-
-    The file's own conventions are kept rather than normalised: the indent and
-    the quote character come from the first item already there, so a hand-edited
-    plan is not reformatted underneath its author. An empty `values` leaves the
-    key with no items, which is a plan that declares nothing — never the key's
-    deletion, because a caller that wanted the key gone would say so.
+    The list-aware sibling to `set_field`, and the writer that has to be
+    byte-honest: a diff showing what MOVED is why the plan is a grain and not
+    TOML. The file's own conventions are kept rather than normalised — indent
+    and quote character come from the first item already there. An empty
+    `values` leaves the key with no items, never deletes it.
     """
     try:
         text = read_raw(path)
@@ -1659,10 +1652,8 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
     `pm status`, `pm list` and `retire` read.
 
     The handle is the milestone's own DIRECTORY in a nested tree and its
-    DOCUMENT in a pooled one, because a pooled tree has no per-milestone
-    directory. Callers that only pass it back to a listing or a ledger read do
-    not care which; the two that need a directory ask `milestone_dir`, which
-    answers None once the tree is pooled and says why.
+    DOCUMENT in a pooled one. Callers passing it back to a listing do not care
+    which; one that needs a directory asks `milestone_dir`.
     """
     if is_pooled(cfg):
         return [(g.path, g.gid) for g in milestones(cfg)]

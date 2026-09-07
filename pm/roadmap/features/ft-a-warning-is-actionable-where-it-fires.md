@@ -73,7 +73,9 @@ ungated by design (it has no `[pm] checks` id) and stays that way.
 ## What it measured, on one frozen tree
 
 Two checkouts of this repo differing in `checks/pm.py` alone, pointed at one frozen copy of
-`pm/roadmap/` with the same `.claude/settings.json`, run back to back:
+`pm/roadmap/` with the same `.claude/settings.json`, run back to back. The tree grew by five
+grains while this was built — concurrent milestone work — which is why the totals are 57 and not
+the 52 the opening census counted; the 45 closed-grain gaps are the same 45.
 
 | | before | after |
 |---|---|---|
@@ -127,6 +129,10 @@ shipped behaviour, which is the defect this milestone exists to end.
     empty section on a `building` grain and a `done` grain in one tree and holds both halves of
     the counted line, which is the only assertion that fails if the narrowing quietly drops the
     closed grains instead of counting them.
+  spent: 3 amended, 2 new — one over budget. The second new case
+    (`test_the_ready_census_prints_at_zero`) is rule 4's half: the roll-up line has to print when
+    it graded nothing, or a family that stopped running looks exactly like a tidy tree, and no
+    amendment to a case that plants a gap can assert what happens when there is none.
 
 ## Out of scope
 

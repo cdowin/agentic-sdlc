@@ -7,6 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
+changelog: A source-shaped guard now declares the violations it must catch — `CORPUS` (planted input, must it be caught) and `catches()`, its own classifier over one — and `tests/test_guard_corpus.py` derives the roster of AST-shaped guards under `tests/` from source, replays every declared case, and holds the ones declaring nothing as an exact named roster that can only shrink. The shape is `prepare-commit-msg --self-test` plus `check hooks`, one layer over; nothing in the shipped CLI changed.
 ---
 
 # a guard declares its violation corpus
@@ -40,8 +41,10 @@ The population is AST-shaped guards — a guard whose grading reaches
 `ast.parse`. That is the narrowing this feature makes deliberately, and it is
 the shape in the evidence: a syntax classifier can visit the wrong node type
 and keep reporting a count, while a byte comparison either matches or does not.
-Guards that read shipped text without parsing it are counted and DISCLOSED in
-the same verdict rather than left unsaid.
+Guards that read shipped text without parsing it are OUTSIDE this census, and
+so is a guard reaching a reader in another module, which source in one file
+cannot resolve. Both are stated in the module docstring rather than implied —
+the same disclosure `check hooks` makes about `_*` and `*.local`.
 
 ## Ship criterion
 
@@ -79,3 +82,9 @@ the work queue.
         nine other guards have none, no gate says so, and a new guard is not
         asked for one. `tests/test_check_hooks.py` proves the same shape one
         layer over, for hooks, and is the design this copies.
+  spent: 4 cases in `tests/test_guard_corpus.py`, replaying 155 corpus cases as
+        subtests, and NET ZERO new test items — the four same-module cases in
+        `TheLedgerAppendIsTheOneException` became fourteen `CORPUS` rows with
+        one replayer, which is rule 10's "prove it once". 15 of 30 AST-shaped
+        guards declare a corpus; the other 15 are named in `UNCOVERED`. The
+        unit tier stayed at 8 s.

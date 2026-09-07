@@ -51,7 +51,7 @@ WARN (a line, never the exit code; both grains and both categories named):
          `branch:`, or (a milestone) no `handoff.md` — never auto-minted, so
          `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
-         that was 45 of this repo's 52 warnings
+         that was 45 of this repo's 57 warnings
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
 
 Archived milestones are out of scope; a zero census FAILS.

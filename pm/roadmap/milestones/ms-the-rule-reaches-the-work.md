@@ -23,6 +23,7 @@ order:
   - "bg-a-hand-recorded-dispatch-cannot-carry-a-total"
   - "bg-the-suite-can-flip-the-host-repo-to-bare"
   - "bg-a-proof-row-names-a-case-that-proves-half"
+  - "bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty"
 ---
 
 # 0.6.0 — the rule reaches the work

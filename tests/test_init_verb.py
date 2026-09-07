@@ -45,7 +45,7 @@ from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
-from agentic_sdlc.repo import init, install  # noqa: E402
+from agentic_sdlc.repo import dispatch, init, install  # noqa: E402
 from agentic_sdlc.repo.pm import model  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
@@ -234,7 +234,7 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
 # section ADDED to the template without a line here now fails too, where the
 # old `in` loop would have let one arrive unmentioned.
 CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
-                   'pm', 'emit', 'verify')
+                   'pm', 'emit', 'verify', 'dispatch')
 
 
 # The two sections with NO default behind them, each with the reader that
@@ -244,6 +244,10 @@ CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygie
 DECLARATIONS = {
     '[pm.states.*]': lambda: model.missing_flow_defect({}),
     '[verify]': lambda: _refusal(verify_rules.read, {}),
+    # 0.6.0: the preamble a dispatched agent gets. Its `contracts` are the
+    # project's own authored files and the tool cannot invent them (rule 8),
+    # so there is nothing to stand behind the key.
+    '[dispatch]': lambda: _refusal(dispatch.settings, {}),
 }
 
 

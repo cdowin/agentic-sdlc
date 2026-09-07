@@ -41,7 +41,7 @@ So before writing any line, ask: **does a command already answer this?** If yes,
 | the feature list, states, story counts | `pm status <id>` |
 | what has happened and why | `git log --oneline <base>..HEAD` — the messages carry the arguments |
 | what things cost, what was spent | `pm ledger report` |
-| the dependency graph | `grep -h '^depends_on' <roadmap>/<id>-*/features/*/feature.md` |
+| the dependency graph | `grep -h '^depends_on' <roadmap>/features/*.md` |
 | which gate to run, and how long it takes | `make help`, `verify --plan` |
 | decisions and their rejected alternatives | `decisions.md` — point at it, never summarise it |
 | whether the tree is self-consistent | `pm validate` |

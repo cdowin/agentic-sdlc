@@ -1,8 +1,14 @@
 # agentic-sdlc
 
 **A reader/writer over a PM tree.** The tree is markdown grains with YAML frontmatter under
-`pm/roadmap/` — milestone → feature → story, and bugs — and the tool reads and writes the same
-files, in the same places, over and over. It echoes state back; it does not *do* anything.
+`pm/roadmap/` — one flat pool per kind, `milestones/ features/ stories/ bugs/` — and the tool
+reads and writes the same files, in the same places, over and over. It echoes state back; it does
+not *do* anything.
+
+**The path is where a file lives; the frontmatter is what it is and what it belongs to.** Every
+document declares `id:`, `kind:` and its binding — `milestone:` on a feature, `feature:` on a
+story. Membership is the child's field, sequence is the parent's `order` list, and the filename is
+yours: nothing reads a path as schema, so renaming a document breaks no reader.
 
 - **`pm` writes one status.** `agentic-sdlc pm story building <id>` rewrites one `status:` line,
   preserves every other byte, and appends one timestamped row to the ledger of the milestone that
@@ -76,7 +82,7 @@ agentic-sdlc close story 0.1/the-thing/works           # its checks, then `done`
 A belt's output is one line per check, then one line saying what happened:
 
 ```
-[story] ok: story-exists — pm/roadmap/0.1-first-light/features/the-thing/stories/works.md
+[story] ok: story-exists — pm/roadmap/stories/works.md
 [story] ok: story-verified — `agentic-sdlc verify --story` exited 0 — the story rung [verify] names
 [story] error: committed: 2 uncommitted path(s): src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
@@ -105,7 +111,7 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `verify --story \| --feature \| --milestone \| --plan \| --check` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `close story <id>`, `close feature <id>` | The inner belts: checks, then the grain's status set to the first state of its kind's `done` list, or nothing |
 | `release <version>` | The outer belt: tree clean, on the milestone branch, changelog non-empty, features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Retitle, push, PR, merge and tag are printed as `next:` — never performed |
-| `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone directory is only where a ledger row would land |
+| `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone is only where a ledger row would land |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
 | `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, changelog-writer, doc-hygiene, pm-operator — each with a Project config section that is yours after install |
@@ -132,7 +138,7 @@ children's, and nothing moves a parent on a child's account. A `DRIFT` line is a
 [check:doc] FAIL — 2 unresolved claim(s), across 10 doc(s), 137 fenced line(s) skipped
   README.md:176  dead path: `tools/dev/checks/doctor.sh`
 [check:pm]  FAIL — 1 status-drift violation(s) across 1 milestone(s), 3 feature(s), 9 story/ies; 1 warning(s)
-  DRIFT  feature 0.1/the-thing is done w/o review record  [pm/roadmap/…/feature.md]
+  DRIFT  feature 0.1/the-thing is done w/o review record  [pm/roadmap/features/the-thing.md]
   WARN   feature 0.1/other is todo over 2 story/ies in done: …
 ```
 

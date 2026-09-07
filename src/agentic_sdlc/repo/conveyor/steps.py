@@ -592,8 +592,11 @@ def _belt_written(ctx: Context) -> str:
     from agentic_sdlc.repo.pm import ledger
 
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, ctx.version)
-    return '' if path is None else cfg.rel(ledger.ledger_path(path.parent))
+    if model.milestone_file(cfg, ctx.version) is None:
+        return ''
+    # `ledger_for`, not the document's parent directory: pooled, the ledger
+    # sits in its own table and the milestones pool holds no ledger at all.
+    return cfg.rel(ledger.ledger_for(cfg, ctx.version))
 
 
 def check_tree_clean(ctx: Context) -> Answer:

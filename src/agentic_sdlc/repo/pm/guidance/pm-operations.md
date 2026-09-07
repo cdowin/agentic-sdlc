@@ -45,25 +45,31 @@ in a review record or a decision; `pm ledger report` renders the arithmetic.
 
 ```
 pm/roadmap/
-  ROADMAP.md                     the permanent index — one row per shipped milestone
-  <id>-<slug>/
-    milestone.md                 id, name, status, + your project's own fields
-    handoff.md                   cold-start only — never what `pm status` computes
-    decisions.md                 DURABLE, append-only; survives close
+  releases.md                    the plan — `order`, one version per line
+  milestones/<slug>.md           id, kind, name, status, + your project's own fields
+  milestones/<stem>-handoff.md   cold-start only — never what `pm status` computes
+  milestones/<stem>-decisions.md DURABLE, append-only; survives close
                                  (both optional — they appear on first write)
-    bugs/<slug>.md               lives in the milestone that will FIX it
-    design/                      design notes for this milestone
-    features/<slug>/
-      feature.md                 id: <milestone>/<slug>
-      decisions.md               DURABLE
-      design/
-      stories/<slug>.md          id: <milestone>/<feature-slug>/<story-slug>
+  features/<slug>.md             milestone: <milestone-id>   ← its binding
+  stories/<slug>.md              feature: <feature-id>
+  bugs/<slug>.md                 milestone: the one that will FIX it
+  ledgers/<milestone-id>.jsonl   that milestone's rows
+  ledger.jsonl                   rows naming no grain
 ```
+
+**One flat pool per kind — the tables of the database.** A grain's identity is its
+frontmatter and nothing else: `id:` is what every reader keys on, `kind:` says what it
+is, and the binding field (`milestone:` on a feature or bug, `feature:` on a story) says
+what it belongs to. **The filename is yours.** Nothing reads a path as schema, so moving
+or renaming a document breaks no reader, and re-parenting is one line — `pm set <id>
+feature <fid>` — with the id unchanged. A grain with no binding is UNBOUND, which is a
+normal state while you plan and a census line, not an error; a binding naming a grain
+that is not in the tree is a V7 finding.
 
 **Scaffold, never hand-create** — `pm new milestone|feature|story|bug` renders each
 grain from a template and starts it at its initial status. A hand-made file is how a
-tree grows a field the resolvers do not read, and a hand-made sibling directory is
-how it grows a slot nothing knows about. `new milestone` and `new feature` are
+tree grows a field the resolvers do not read, and a hand-made file with no `id:` is
+a document nothing can key on — reported by name, addressable by nothing. `new milestone` and `new feature` are
 idempotent: re-run one on an existing grain and it fills the missing slots without
 touching an existing byte. It does NOT mint a shared doc — `decisions.md` appears
 when `pm decide` records the first one, `handoff.md` and `review.md` when somebody

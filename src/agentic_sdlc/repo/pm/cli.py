@@ -730,10 +730,13 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
                            model.DONE_CATEGORY):
             notices.append(f'milestone {mid} is {status or "(no status)"}, '
                            f'not done')
+    # By ID, never by the directory the document sits in: under pools that is
+    # the pool, so every unfinished feature reported as `features`.
     open_features = sorted(
         name for name, _ in model.holds(
             cfg, 'feature',
-            ((ff.parent.name, model.field_of(ff, 'status'))
+            ((model.unquote(model.field_of(ff, 'id')) or cfg.rel(ff),
+              model.field_of(ff, 'status'))
              for ff in model.feature_files(cfg, mid)),
             model.DONE_CATEGORY).blockers)
     if open_features:
@@ -2100,9 +2103,12 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
                     else _report_default_dir(cfg))
         # `mdir` is the milestone's DOCUMENT since 0.4.0 — a pooled tree has
         # no per-milestone directory — so the id comes off it directly and
-        # the ledger is addressed by that id.
-        mid = _ledger_id(model.milestone_doc(mdir), mdir.stem, src)
-        path = ledger.ledger_for(cfg, mid)
+        # the ledger is addressed by that id. Both joins are asked of `src`:
+        # which layout the tree is in is a fact about the TREE BEING READ, and
+        # a rev read that asked today's disk would look for a retired
+        # milestone's rows in the layout the retire left behind.
+        mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
+        path = src.ledger_for(cfg, mid)
         # Two files, one report. The milestone's ledger holds every ATTRIBUTED
         # row; the tree's root ledger holds the rows that name no grain (D3),
         # which is where `gate` and `test` rows live by construction. Reading

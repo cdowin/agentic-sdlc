@@ -72,7 +72,9 @@
 # roadmap_dir  = "pm/roadmap"     # the tree, relative to the repo root
 # template_dir = "pm/templates"   # REQUIRED to override a grain template
 # review_dir   = "docs/reviews"   # where review records live
-# story_ordinal_prefix = false    # also resolve stories/NN-<slug>.md
+# story_ordinal_prefix = false    # MINTING ONLY: `pm new story 01-boots` files
+#                                 01-boots.md and stamps the id WITHOUT the
+#                                 ordinal. Sequence lives in the parent's `order`
 # checks = ["D1", "D2", "D3", "D4", "D5", "D6",   # drift rules — the default
 #           "V1", "V4", "V5"]                     # integrity rules
 #                                                 # (V2/V3 retired in 0.4.0:

@@ -65,29 +65,30 @@ GITATTRIBUTES_HEADER = ('# agentic-sdlc: the pm ledger is append-only, so two '
                         'branches\' rows are a union, never a conflict')
 
 
-# `**` and not `*`, and this is the whole of the reason: gitignore-style
-# `a/**/b` matches `a/b` as well as `a/x/b`, and 0.4.0 put a ledger at
-# `<roadmap>/ledger.jsonl` — the rows naming no grain (D3) — which is ONE
-# DIRECTORY LEVEL SHORT of `<roadmap>/*/`. Every branch appends to that
-# file, so a pattern that misses it conflicts on every parallel branch,
-# quietly, as a merge conflict nobody attributes to the change that caused
-# it. One pattern rather than two, because two would be two places to keep
-# the name in.
+# `**/*.jsonl`, both halves load-bearing. `**` because gitignore-style `a/**/b`
+# matches `a/b` too, and the grainless ledger sits at `<roadmap>/ledger.jsonl`
+# (D3) — one level short of `<roadmap>/*/`. `*.jsonl` and not the file NAME
+# because a pooled milestone's ledger is `<roadmap>/ledgers/<id>.jsonl`, which
+# no pattern ending in `ledger.jsonl` reaches — and every branch appends to the
+# ledger of the milestone it is building, so the miss is a merge conflict on
+# every parallel branch. The fact was never a filename: it is *an append-only
+# log under the roadmap*.
 GLOB = '**'
+LEDGER_GLOB = '*.jsonl'
 
 
 def attribute_pattern(cfg: model.PmConfig) -> str:
     """The path glob the merge attribute applies to, from the configured `[pm]
     roadmap_dir` — a literal would go inert for a moved tree.
     """
-    return f'{cfg.roadmap_dir}/{GLOB}/{ledger.LEDGER_FILE_NAME}'
+    return f'{cfg.roadmap_dir}/{GLOB}/{LEDGER_GLOB}'
 
 
 def attribute_line(roadmap_dir: str) -> str:
-    """`pm/roadmap/**/ledger.jsonl merge=union`, spelled in one place —
-    matching BOTH homes: one ledger per milestone, and the tree's own for
-    the rows that name no grain."""
-    return f'{roadmap_dir}/{GLOB}/{ledger.LEDGER_FILE_NAME} {MERGE_UNION}'
+    """`pm/roadmap/**/*.jsonl merge=union`, spelled in one place — matching
+    every home: one ledger per milestone under `ledgers/`, and the tree's own
+    for the rows that name no grain."""
+    return f'{roadmap_dir}/{GLOB}/{LEDGER_GLOB} {MERGE_UNION}'
 
 
 def _declares(text: str, pattern: str, line: str) -> str:
@@ -107,10 +108,11 @@ def _declares(text: str, pattern: str, line: str) -> str:
 
 
 def install_merge_attribute(cfg: model.PmConfig) -> str:
-    """Make `<roadmap>/**/ledger.jsonl merge=union` true; returns what
-    happened. `**` reaches BOTH homes — one ledger per milestone, and the
-    tree's own for rows naming no grain (0.4.0/D3). Appends, like the `.gitignore` write, because the file
-    already holds project opinions; idempotent.
+    """Make `<roadmap>/**/*.jsonl merge=union` true; returns what happened.
+    The glob reaches every home — one ledger per milestone under `ledgers/`,
+    and the tree's own for rows naming no grain (0.4.0/D3). Appends, like the
+    `.gitignore` write, because the file already holds project opinions;
+    idempotent.
     """
     target = cfg.root / GITATTRIBUTES
     line = attribute_line(cfg.roadmap_dir)

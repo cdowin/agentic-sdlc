@@ -1,2 +1,2 @@
 # agentic-sdlc: the pm ledger is append-only, so two branches' rows are a union, never a conflict
-pm/roadmap/**/ledger.jsonl merge=union
+pm/roadmap/**/*.jsonl merge=union

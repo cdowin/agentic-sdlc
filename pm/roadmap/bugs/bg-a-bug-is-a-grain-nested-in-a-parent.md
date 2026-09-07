@@ -18,9 +18,8 @@ at every level. A bug is nested in a milestone and is the only kind that says so
 
 Three fields for one relationship, and the three defects below are all the same defect: **nothing
 keeps them in agreement, because there is nothing to agree with — there is only ever one true
-answer, and it is "which parent is this under".**
-
-Found while scheduling two bugs into 0.6.0 immediately after 0.5.0 shipped.
+answer, and it is "which parent is this under".** Found while scheduling two bugs into 0.6.0
+immediately after 0.5.0 shipped.
 
 ## Symptom 1 — the release gate has been vacuous for four releases
 
@@ -33,20 +32,13 @@ Found while scheduling two bugs into 0.6.0 immediately after 0.5.0 shipped.
 `fix_milestone:` is empty on **every bug in this tree since 0.2.0** — 18 of 24, including all six
 0.5.0 closed. The six that carry it are all `ms-0.2.0`, all closed.
 
-So the census line the belt printed at 0.5.0's release:
-
-    features-done — 15 feature(s), 0 bug(s) naming fix_milestone ms-a-move-is-an-event of 24 read
-
-That `0` does not mean the bugs are done. It means **nothing sets the field**, so the filter matched
-nothing, so the check could not have failed. 0.5.0's own milestone record states the opposite in
-plain words:
-
-> `release` refuses while any open bug names this milestone, so 0.5.0 cannot ship until all five
-> close.
-
-The belt would never have refused. Those six closed because an operator closed them. **This is rule
-4's first cardinal sin — a gate that stopped checking and printed PASS over zero things — and it ran
-green through four releases.**
+So the census line 0.5.0's belt printed — `0 bug(s) naming fix_milestone ms-a-move-is-an-event of 24
+read` — does not mean the bugs were done. It means **nothing sets the field**, so the filter matched
+nothing and the check could not fail. 0.5.0's own record claims the opposite in plain words:
+*"`release` refuses while any open bug names this milestone, so 0.5.0 cannot ship until all five
+close."* It would never have refused; those six closed because an operator closed them. **Rule 4's
+first cardinal sin — a gate that stopped checking and printed PASS over zero things — running green
+through four releases.**
 
 ## Symptom 2 — the scaffold conflates the binding with where the bug was found
 
@@ -86,10 +78,9 @@ names an impossible fix is the mirror of a gate that cannot fail, and
 Bug was modelled as a special kind rather than as a nesting. Every symptom above is a place where
 code had to choose among three fields that mean one thing, and chose differently: the gate reads
 `fix_milestone:`, the scaffold writes `milestone:` and `caught_in:`, and `pm add`'s notice reads the
-binding where it meant to read the parent's `order:`.
-
-This is the shape V6 was retired for in 0.4.0 — two copies of one fact with no way to disagree out
-loud — surviving in the one kind that was never folded in.
+binding where it meant to read the parent's `order:`. This is the shape V6 was retired for in 0.4.0
+— two copies of one fact with no way to disagree out loud — surviving in the one kind that was never
+folded in.
 
 ## Fix
 
@@ -101,25 +92,50 @@ retire. A bug becomes what it already was: a grain nested in a parent.
     every other kind already uses. The check starts being able to fail on the day it lands, on this
     tree, with no backfill.
   * **`pm new bug <milestone> <slug>` is `pm new feature <milestone> <slug>`'s shape** — the
-    argument is the parent, the verb writes the binding, and nothing else is stamped from it. The
-    bug template loses both fields and the comment that explains them, which is the sentence that
-    taught every author the conflation in the first place:
-
-        <!-- A bug lives in the milestone that will FIX it; `caught_in:` keeps where it was found. -->
-
-    Rendered prose describing a field that no longer exists is this milestone's own theme; the
-    template is a shipped file, so it is `install`-side, not a hand edit to a consumer's tree.
+    argument is the parent, the verb writes the binding, nothing else is stamped from it. The bug
+    template (shipped, so `install`-side) loses both fields and the comment that taught every author
+    the conflation: *"A bug lives in the milestone that will FIX it; `caught_in:` keeps where it was
+    found."*
   * **`pm add`'s DANGLING notice reads the parent's `order:`**, not the child's binding; and
     `pm remove <parent> <child>` verifies membership against that same list, so a printed remedy is
     one that runs.
   * **`check pm` names `fix_milestone:` and `caught_in:` at exit 2** where they survive in a
     consumer tree, the way every retired key in this package is named rather than silently ignored.
 
-**A bug still does not have to gate a milestone.** The choice does not disappear with the field; it
-moves to the act that was always expressing it. A bug you intend to fix now is nested under the
-milestone. A bug you are carrying is nested under nothing, sits in the backlog, and gates nothing —
-exactly as an authored-but-unscheduled feature does. Scheduling is the promise, at every level, for
-every kind.
+**Nesting IS the promise, and there is no opt-out.** A grain under a parent must reach `done` before
+that parent closes — every kind, every level. No field exempts a child from the parent holding it,
+because a field saying "under this milestone but not its problem" is the second scoreboard again,
+wearing a smaller word.
+
+**The escape is the binding itself.** A bug you are not committing to now declares no milestone and
+sits in the `bugs` pool, where it gates nothing and is counted. `pm remove <milestone> <bug>` already
+writes exactly that — it clears `milestone:` to empty — so the opt-out is an act with a verb, visible
+in the diff, rather than a field somebody has to remember to read.
+
+  * **`pm` reports the pool count**, because absence is a NAMED line (rule 11): `N bug(s) attached to
+    no milestone` on the read surface, silent at zero. An unattached bug that nobody can see is how
+    a backlog becomes a place things go to be forgotten, and that is the failure this ruling exists
+    to prevent — not the gating.
+
+**So when a milestone is done, everything under it is done.** What the record says it did is what is
+written, committed and durable; anything else found along the way is somewhere else, named and
+counted. There is no third state where a grain is nominally under a shipped milestone and nobody
+owes anything for it.
+
+## Migration
+
+**Seven bugs are unresolved under `ms-0.3.0` and `ms-0.4.0`, both shipped** — six and one. That is
+the third state this ruling forbids, and no gate could say so, because `ready_for_milestone` reads
+`fix_milestone:` and it is empty on all seven.
+
+The list is derivable and is not copied here: it is the bugs outside `done` whose `milestone:` names
+a milestone in a `done` state. **Naming that query is part of the fix** — the counted line the pool
+gets (`N bug(s) attached to no milestone`) has a sibling here, and a grain under a closed parent
+should be a `check pm` finding rather than something a person had to go looking for.
+
+Each is then committed to a milestone or unbound to the pool; leaving one attached to a shipped
+release is the only outcome this ruling does not allow. Three still carry the compound ids
+`bg-the-new-verbs-mint-a-compound-id` retired, so they are `pm rename` candidates in the same pass.
 
 ## Verification
 
@@ -128,16 +144,15 @@ to BLOCK `ready-for milestone`; the same bug bound to no parent, asserted not to
 case passes green, which is the whole defect. `tests/test_pm_gate.py` already holds the `ready-for`
 family.
 
-A second case pins the census line, because `0 bug(s) … of 24 read` is the sentence that made this
+A second pins the census line, because `0 bug(s) … of 24 read` is the sentence that made this
 invisible for four releases: zero-because-none-are-nested has to read differently from
-zero-because-none-matched.
+zero-because-none-matched. A third pins symptom 3 — rebind a bug whose parent's `order:` does not
+list it, and assert the notice stays silent.
 
-A third pins symptom 3 — rebind a bug whose parent's `order:` does not list it, and assert the
-notice stays silent.
-
-**Until this lands, `fix_milestone:` is stamped by hand.** The five bugs in 0.6.0's `order:` carry
-it explicitly, so 0.6.0's own release gates on them under the code that ships today. Landing this
-grain deletes those five lines along with the field.
+**Until this lands, `fix_milestone:` is stamped by hand** on the five bugs under this milestone, so
+0.6.0 gates on them under the code that ships today. Landing the grain deletes those five stamps
+**and the gating gets stronger, not weaker**: the binding gates unconditionally, so the five are
+still held — by `milestone:`, which none of them can be under without being owed.
 
 ## Out of scope
 

@@ -477,7 +477,9 @@ def _milestone_id(cfg, operation: str, subject: str) -> str:
     grain's BINDINGS for a close, and the subject itself for release/adopt.
     Splitting the id on `/` read the nested shape."""
     if operation in ('release', 'adopt'):
-        return subject
+        # A VERSION; the milestone is whichever one CLAIMS it. `release` takes
+        # the version a human says out loud, and the plan lists ids.
+        return model.milestone_of_version(cfg, subject) or subject
     return model.milestone_of(cfg, subject) or subject
 
 

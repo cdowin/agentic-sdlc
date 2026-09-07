@@ -1767,9 +1767,8 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
 
     `path` is the row's grain document, or None when the row names none — a
     `gate` row, or a session nothing could attribute; those land grainless
-    (D3). The caller passes the PATH rather than the row because resolution is
-    also what stamps `grain`, so the id a reader sees and the ledger it sits in
-    cannot disagree.
+    (D3). The caller passes the PATH because resolution also stamps `grain`,
+    so the id a reader sees and the ledger it sits in cannot disagree.
     """
     if path is None:
         if not cfg.roadmap.is_dir():

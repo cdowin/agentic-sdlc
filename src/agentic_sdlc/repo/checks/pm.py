@@ -375,10 +375,10 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
-    Both homes (0.4.0/D3), because the question is whether recording happens at
-    all. Existence is not enough: an empty file is what a courier leaves when it
-    created the file and then refused the row. **An unreadable ledger is
-    neither answer** — reported as unverifiable, and the scan continues.
+    Both homes (0.4.0/D3): the question is whether recording happens at all,
+    and existence is not enough — an empty file is what a courier leaves when
+    it created the file and then refused the row. **An unreadable ledger is
+    neither answer**, so it is reported and the scan continues.
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]

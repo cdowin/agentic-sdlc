@@ -285,7 +285,9 @@ def cmd_init(cfg: model.PmConfig, args: list[str]) -> int:
     print()
     print('       [pm]')
     print('       review_dir = "docs/reviews"   # where review records live')
-    print('       # story_ordinal_prefix = true # if story FILES are NN-slug.md')
+    print('       # milestone_dir = "..."       # else <roadmap_dir>/milestones,')
+    print('                                    # and the same for feature/story/'
+          'bug/ledger')
     print('       # checks = [...]              # add D9/D10 for'
           ' branch-per-milestone,')
     print('                                    # R5 to grade the version file'

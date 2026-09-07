@@ -3,7 +3,7 @@ id: ft-the-unbound-census
 milestone: ms-0.4.0
 name: Every relationship reports both ways it can be unbound
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-the-config-and-the-census.md
 phase:
 depends_on: ["ft-binding-is-a-field"]
 consumed_by: []

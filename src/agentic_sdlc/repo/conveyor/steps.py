@@ -987,13 +987,9 @@ def check_telemetry_live(ctx: Context) -> Answer:
     """Is this tree RECORDING — and if not, which of the three ways.
 
     **A probe, not an inspection.** Reading `.claude/settings.json` proves a
-    string is present. This runs THIS TREE'S vehicle — `make -s pm
-    ARGS="vocabulary"`, the same path a courier takes — because that is the
-    only thing that answers "does the verb get reached here".
-
-    Not `--self-test`: that builds its own `mktemp` repo with its own stub
-    `pm:` target and exits 0 from an empty directory, so it proved the
-    courier's argv and nothing about the caller.
+    string is present; this runs THIS TREE'S vehicle, `make -s pm
+    ARGS="vocabulary"`. Not `--self-test`, which builds its own `mktemp` repo
+    with its own stub `pm:` target and exits 0 from an empty directory.
 
     Three ways a bumping consumer records nothing, each silent, each named:
     the settings entries were never pasted (`install-hooks` PRINTS that block

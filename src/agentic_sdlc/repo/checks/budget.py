@@ -3,14 +3,12 @@
 Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
 current release's ledger; runs nothing. The newest row by timestamp is graded.
 
-The two ways of not knowing are NOT the same finding, and this gate grades them
-apart. A tier whose newest run did not end PASS is NOT GRADED and that IS a
-finding: a run that stopped is cheaper and smaller than one that finished, so its
-duration and census are the cost of a stop, not measurements of the tier. A tier
-with no row at all is UNMEASURED — named in the verdict, never counted as within
-its ceiling, and NOT a finding, because a tier nobody ran has not got slower.
-Ships no ceiling (a number is the project's, not this package's), so with nothing
-declared it reports the measured costs and exits 0.
+The two ways of not knowing are NOT the same finding. A tier whose newest run
+did not end PASS is NOT GRADED and that IS a finding — a run that stopped is
+cheaper and smaller than one that finished, so its numbers measure the stop. A
+tier with no row is UNMEASURED: named, never counted as within its ceiling, and
+NOT a finding, because a tier nobody ran has not got slower. Ships no ceiling (a
+number is the project's), so with nothing declared it reports and exits 0.
 
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier

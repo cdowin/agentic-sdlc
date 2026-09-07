@@ -282,7 +282,10 @@ _KILLERS = (
     '0.1/alpha/../../0.1/bugs/crash',
 )
 
-_PM_VERBS = ('story', 'bug', 'feature', 'milestone', 'set', 'get', 'move',
+# `move` is GONE (0.4.0): re-parenting is `pm set <id> feature <fid>`, which
+# `set` already drives. `rename` takes the slot — it writes across every
+# document holding a ref, so it is the verb with the most to contain.
+_PM_VERBS = ('story', 'bug', 'feature', 'milestone', 'set', 'get', 'rename',
              'decide')
 
 
@@ -339,9 +342,11 @@ def _pm_argv(rng: random.Random, verb: str,
         return ('pm', 'get', gid, 'status'), (gid,)
     if verb == 'decide':
         return ('pm', 'decide', gid, 'fuzz', 'entry'), (gid,)
+    # Both argument positions, because a rename reads one id and WRITES the
+    # other into every document that held it.
     if rng.random() < 0.5:
-        return ('pm', 'move', gid, '0.1/beta'), (gid, '0.1/beta')
-    return ('pm', 'move', '0.1/alpha/s0', gid), ('0.1/alpha/s0', gid)
+        return ('pm', 'rename', gid, 'ft-fuzzed'), (gid, 'ft-fuzzed')
+    return ('pm', 'rename', '0.1/alpha', gid), ('0.1/alpha', gid)
 
 
 def _grain_shaped(path: Path) -> bool:
@@ -355,7 +360,7 @@ _KIND_OK = {
     'feature': lambda p: p.name == 'feature.md',
     'milestone': lambda p: p.name == 'milestone.md',
     'set': _grain_shaped,
-    'move': lambda p: 'stories' in p.parts,
+    'rename': _grain_shaped,
     'decide': lambda p: p.name == 'decisions.md',
 }
 

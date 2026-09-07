@@ -268,6 +268,11 @@ every run; a state the project never declared is refused by name.
 # A verb this package used to route, named so it errors rather than reading as
 # a typo. Each entry names its replacement.
 RETIRED_COMMANDS = {
+    'move': 're-parenting is one line now — `agentic-sdlc pm set <story-id> '
+            'feature <feature-id>` — because membership is a FIELD and the id '
+            'never changes, so there is nothing to rewrite. `pm move` renamed '
+            'the file and did NOT rewrite the refs pointing AT the moved '
+            'story; `pm rename <old> <new>` is the verb that sweeps those',
     'order': 'the plan is `order` on pm/roadmap/releases.md like any other '
              'parent\'s, so `agentic-sdlc pm add <plan-id> <milestone-id> '
              '[--position N | --before <id> | --after <id>]` schedules a '
@@ -1145,6 +1150,27 @@ def cmd_get(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
+def _binding_defect(cfg: model.PmConfig, gid: str, key: str,
+                    value: str) -> None:
+    """Refuse a binding that names no grain, or one of the wrong kind — a fact
+    about the INPUT, so exit 2 and nothing written (rule 9). Empty UNBINDS and
+    is never refused; only the fields `BINDS_TO` names are asked, so `set`
+    writes every other key without an opinion."""
+    want = {field: parent for parent, field in model.BINDS_TO.values()}.get(key)
+    if want is None or not value:
+        return
+    found = model.grain_index(cfg).get(model.unquote(value))
+    if found is None:
+        raise Usage(f'{key}: {value!r} names no grain in {cfg.roadmap_dir} — '
+                    f'a binding that resolves to nothing is drift, not a plan; '
+                    f'leave it empty to say "not bound yet". Nothing was '
+                    f'written')
+    if found.kind != want:
+        raise Usage(f'{key}: {value!r} is a {found.kind}, not a {want} — '
+                    f'a {model.kind_of(cfg, gid) or "grain"} names its '
+                    f'{want} in {key}:. Nothing was written')
+
+
 def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     """Set one frontmatter field through a tool rather than a regex. `status`
     is refused by name: a status is a move, and only the status verbs ask
@@ -1167,6 +1193,7 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     if '\n' in value or '\r' in value:
         raise Refused('a frontmatter scalar is one line')
     path = _grain_file(cfg, gid)
+    _binding_defect(cfg, gid, key, value)
     before = model.field_of(path, key)
     if not model.set_field(path, key, value):
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
@@ -1645,13 +1672,11 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
     asked which milestone was `in_progress` and refused on none and on several,
     so a tree mid-planning lost every row it wrote, silently.
 
-    `path` is the row's grain document, or None when the row names none: a
-    `gate` row, or a session whose grain nothing could supply. Those rows land
-    grainless (D3), so no telemetry write is refused for want of a place.
-
-    The caller passes the PATH rather than the row, because resolution is also
-    what the row's `grain` key is stamped from — one resolution, so the id a
-    reader sees and the ledger it sits in cannot disagree.
+    `path` is the row's grain document, or None when the row names none — a
+    `gate` row, or a session nothing could attribute; those land grainless
+    (D3). The caller passes the PATH rather than the row because resolution is
+    also what stamps `grain`, so the id a reader sees and the ledger it sits in
+    cannot disagree.
     """
     if path is None:
         if not cfg.roadmap.is_dir():
@@ -1949,13 +1974,10 @@ def _grain_from_tree(snap: dict) -> str:
         none                            omit the key
         several                         omit the key, and NAME the candidates
 
-    This is the orchestrator's path: an agent nobody dispatched has no prompt
-    to read a grain out of.
-
-    **Read off the row's OWN `tree` snapshot**, not from a second walk, so the
-    grain a row names and the tree it recorded cannot disagree. **Stories
-    only**: a feature is a container, and billing a container for a session is
-    the same guess at a coarser grain.
+    The orchestrator's path: an agent nobody dispatched has no prompt to read a
+    grain out of. **Read off the row's OWN `tree` snapshot**, so the grain a row
+    names and the tree it recorded cannot disagree, and **stories only** —
+    billing a container for a session is the same guess one level coarser.
 
     **An unresolvable grain is an OMITTED KEY**, never a guess: a row filed
     against the wrong story is uncorrectable, one filed against none is visible

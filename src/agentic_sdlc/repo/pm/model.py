@@ -2256,16 +2256,29 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     """
     out: list[tuple[Path, str]] = []
     scanned = 0
-    for milestone in milestones(cfg):
-        for bfile in bug_files(cfg, milestone.gid):
-            scanned += 1
-            bstat = field_of(bfile, 'status')
-            if category_of(cfg, 'bug', bstat) is None:
-                # The bug line's shape is grepped (rule 6), so it is kept
-                # verbatim.
-                out.append((bfile, f'bug status {bstat!r} is not in '
-                                   f'({" ".join(flow_of(cfg, "bug").order)})'))
+    # The POOL: a bug nobody has bound was counted and asked nothing.
+    for bfile in _every(cfg, 'bug'):
+        scanned += 1
+        bstat = field_of(bfile, 'status')
+        if category_of(cfg, 'bug', bstat) is None:
+            # The bug line's shape is grepped (rule 6), so it is kept verbatim.
+            out.append((bfile, f'bug status {bstat!r} is not in '
+                               f'({" ".join(flow_of(cfg, "bug").order)})'))
     return out, scanned
+
+
+def _every(cfg: PmConfig, kind: str) -> list[Path]:
+    """Every document of one kind, bound or not — the pool when there is one,
+    and the descent's answer for a nested tree, which has no other."""
+    if is_pooled(cfg):
+        return pool_walk(cfg, kind)
+    if kind == 'bug':
+        return [b for m in milestones(cfg) for b in bug_files(cfg, m.gid)]
+    if kind == 'feature':
+        return [f for m in milestones(cfg) for f in feature_files(cfg, m.gid)]
+    return [s for m in milestones(cfg)
+            for f in feature_files(cfg, m.gid)
+            for s in story_files(cfg, unquote(field_of(f, 'id')))]
 
 
 def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
@@ -2288,14 +2301,13 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
         if bucket is not None and status in bucket:
             bucket[status] += 1
 
+    # Bound or not: U1's claim is that a word is held nowhere in the TREE, and
+    # a descent made that sentence false as soon as an unbound grain held it.
     for milestone in milestones(cfg):
         count('milestone', milestone.status)
-        for bf in bug_files(cfg, milestone.gid):
-            count('bug', field_of(bf, 'status'))
-        for ff in feature_files(cfg, milestone.gid):
-            count('feature', field_of(ff, 'status'))
-            for sf in story_files(cfg, unquote(field_of(ff, 'id'))):
-                count('story', field_of(sf, 'status'))
+    for kind in ('feature', 'story', 'bug'):
+        for path in _every(cfg, kind):
+            count(kind, field_of(path, 'status'))
     return used
 
 

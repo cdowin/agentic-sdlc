@@ -1333,6 +1333,67 @@ class StructuralIntegrity(unittest.TestCase):
             # ...and it was COUNTED, so the census is not quietly short one.
             self.assertIn('2 feature(s)', out)
 
+    def test_no_rule_is_answered_over_a_SUBSET_of_the_tree(self):
+        """Five gate rules asked their question inside a walk that descends
+        milestone → feature → story, so each of them answered over the grains
+        that walk could reach while the census counted the whole tree. That is
+        rule 4's first sin five times, and it survived because THIS repo has no
+        unbound grain and so cannot trigger any of them.
+
+        One tree holding every shape at once, because they are one defect: a
+        question about ONE grain is asked of every grain in the pools, and only
+        a question about a grain and its PARENT needs the descent.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            # (a) an unbound BUG with an undeclared status — the bug walk
+            #     descended from the milestones and had no unbound arm at all.
+            write(root / 'pm/roadmap/bugs/loose.md',
+                  {'id': 'bg-loose', 'kind': 'bug', 'milestone': '', 'name': 'B',
+                   'status': 'flurble', 'caught_in': '"0.1"',
+                   'fix_milestone': '', 'caused_by': ''})
+            # (b) an unbound FEATURE with a dangling ref and a dead `reviewed:`
+            #     — V4 and D1 both lived inside the descent.
+            write(root / 'pm/roadmap/features/loose.md',
+                  {'id': 'ft-loose', 'kind': 'feature', 'milestone': '',
+                   'name': 'L', 'status': 'planning',
+                   'reviewed': 'docs/reviews/never-written.md',
+                   'depends_on': '["ft-does-not-exist"]', 'consumed_by': '[]'})
+            # (c) a story bound to that unbound feature. Its binding RESOLVES,
+            #     so "did the descent reach it" could not be inferred from the
+            #     binding — it fell between both passes and answered nothing.
+            write(root / 'pm/roadmap/stories/deep.md',
+                  {'id': 'st-deep', 'kind': 'story', 'feature': 'ft-loose',
+                   'milestone': '', 'name': 'D', 'status': 'flurble',
+                   'owner': ''})
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            # (a) and (c): D4 reaches an unbound bug and a doubly-unreached story.
+            self.assertIn('bg-loose', out)
+            self.assertIn('st-deep', out)
+            self.assertEqual(out.count('flurble') >= 2, True, out)
+            # (b): V4's ref and D1's pointer.
+            self.assertIn('resolves to', out)
+            self.assertIn('never-written.md', out)
+            # ...and the ref CENSUS counts the ref it read, so the number is
+            # not short by exactly the row it dropped.
+            self.assertIn('1 ref(s)', out)
+
+    def test_U1_counts_a_state_held_only_by_an_UNBOUND_grain(self):
+        # U1 says a declared word "has never been held by any grain of that
+        # kind in this tree". Counting by descent made that sentence FALSE the
+        # moment one unbound grain held the word — a gate stating something
+        # untrue about the tree, which is worse than staying quiet.
+        with tree(story_statuses=('ready',)) as root:
+            write(root / 'pm/roadmap/features/loose.md',
+                  {'id': 'ft-loose', 'kind': 'feature', 'milestone': '',
+                   'name': 'L', 'status': 'reviewing', 'reviewed': '',
+                   'depends_on': '[]', 'consumed_by': '[]'})
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            u1 = [ln for ln in out.splitlines() if '(U1)' in ln and 'feature:' in ln]
+            self.assertTrue(u1, out)
+            self.assertNotIn('reviewing', u1[0])
+
     def test_an_UNBOUND_grain_is_asked_every_question_a_bound_one_is(self):
         """`_drift_walk` descends milestone → feature → story by BINDING, so a
         grain nobody has bound was never asked a single READY warning.
@@ -1369,6 +1430,60 @@ class StructuralIntegrity(unittest.TestCase):
             # the other.
             self.assertIn('1 feature(s) name no milestone:', out)
             self.assertIn('1 story(s) name no feature:', out)
+
+    def test_narrowing_pm_contains_never_ungates_the_DANGLING_finding(self):
+        """`[pm.contains]` says what `pm add` may WRITE. The gate read it too,
+        so a project that dropped a level from the mapping stopped being GRADED
+        at that level: a dangling `order` entry went from FAIL to PASS by
+        adding a documented config line. A key introduced to narrow a write
+        decided what the gate could see — cardinal sin 1, reachable from the
+        seed's own example.
+
+        Whether a container's `order` agrees with what it holds is a fact about
+        the TREE, and `BINDS_TO` fixes which kinds are containers.
+        """
+        narrowed = '[pm.contains]\nmilestone = ["feature", "bug"]\n'
+        for label, config in (('stock', ''), ('narrowed', narrowed)):
+            with self.subTest(config=label), \
+                    tree(story_statuses=('ready',)) as root:
+                if config:
+                    write_config(root, config)
+                # A story that EXISTS, is bound to no feature, and is
+                # sequenced by one anyway.
+                write(root / 'pm/roadmap/stories/loose.md',
+                      {'id': 'st-loose', 'kind': 'story', 'feature': '',
+                       'milestone': '"0.1"', 'name': 'L',
+                       'status': 'planning', 'owner': ''})
+                model.set_list_field(root / 'pm/roadmap/features/alpha.md',
+                                     'order', ['st-loose'])
+                code, out = run_gate(root)
+                self.assertEqual(code, 1, out)
+                self.assertIn('DANGLING: 0.1/alpha sequences st-loose', out)
+                # ...and the walk SAYS how many containers it graded, which is
+                # the number whose absence let this hide.
+                self.assertIn('container(s) graded against their `order`', out)
+
+    def test_V5_finds_a_cycle_between_FLAT_ids(self):
+        """V5 built its graph by counting slashes — `ref.count('/') == 1` — to
+        pick out feature refs, which is the nested id shape.
+
+        This repo has 44 features and zero ids with one slash, so 45
+        `depends_on` refs entered a graph of size zero: the gate was enabled,
+        scanning, and structurally incapable of a finding. A real two-feature
+        cycle passed as VALID.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            for slug, dep in (('alpha', 'ft-beta'), ('beta', 'ft-alpha')):
+                write(root / f'pm/roadmap/features/{slug}.md',
+                      {'id': f'ft-{slug}', 'kind': 'feature',
+                       'milestone': '"0.1"', 'name': slug, 'status': 'planning',
+                       'reviewed': '', 'depends_on': f'["{dep}"]',
+                       'consumed_by': '[]'})
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('dependency CYCLE among features', out)
+            self.assertIn('ft-alpha', out)
+            self.assertIn('ft-beta', out)
 
     def test_a_grain_with_an_empty_binding_is_COUNTED_and_never_a_finding(self):
         # The unbound/broken split, and it is the whole rule: *nothing said* is

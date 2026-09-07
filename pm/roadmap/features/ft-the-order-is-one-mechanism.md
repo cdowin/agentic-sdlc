@@ -3,7 +3,7 @@ id: ft-the-order-is-one-mechanism
 milestone: ms-0.4.0
 name: Membership is the child's field, sequence is the parent's list
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-the-order-is-one-mechanism.md
 phase:
 depends_on: ["ft-binding-is-a-field"]
 consumed_by: []

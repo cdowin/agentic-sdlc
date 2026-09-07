@@ -126,10 +126,28 @@ def reidentified(text: str, new: str) -> str:
     return ''
 
 
+def _claimants(cfg: model.PmConfig, gid: str) -> list[str]:
+    """Every document declaring `gid`, by path — usually one."""
+    for claimed, paths in model.duplicate_ids(cfg):
+        if claimed == gid:
+            return [cfg.rel(path) for path in paths]
+    return []
+
+
 def _verdict(cfg: model.PmConfig, out: Sweep, target: model.Grain | None,
              holder: model.Grain | None) -> bool:
-    """The four answers that need no sweep at all, onto `out`; True when one
-    of them applies."""
+    """The answers that need no sweep at all, onto `out`; True when one of them
+    applies."""
+    # BOTH directions of one sentence: refusing a taken `new` and then picking
+    # between two documents claiming `old` is a filename deciding identity.
+    twins = _claimants(cfg, out.old)
+    if len(twins) > 1:
+        out.blockers.append(
+            f'{out.old} is claimed by {len(twins)} documents '
+            f'({", ".join(twins)}) — renaming one leaves the other holding the '
+            f'id and every ref pointing at whichever is read first; this verb '
+            f'never picks. Give one of them its own id first')
+        return True
     if out.old == out.new:
         if target is None:
             out.defect = f'no grain resolves from id {out.old!r}'

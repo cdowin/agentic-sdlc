@@ -19,6 +19,7 @@ import contextlib
 import json
 import os
 import tempfile
+import pathlib
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,7 @@ from support.pm import (
     write_config,
 )
 
-from agentic_sdlc.repo.pm import model, skills
+from agentic_sdlc.repo.pm import cli, model, skills
 
 FFILE = 'pm/roadmap/features/alpha.md'
 MFILE = 'pm/roadmap/milestones/0.1.md'
@@ -757,6 +758,75 @@ class FieldMutation(unittest.TestCase):
             self.assertEqual(len(after), len(lines) + 1)
             self.assertIn('risk: high', after)
             self.assertEqual([ln for ln in after if ln != 'risk: high'], lines)
+
+
+class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):
+    """`pm set <id> <rel> <target>` is how a grain is bound, so it is where a
+    broken binding is caught — at the moment somebody causes it.
+
+    *Unbound* is a plan in progress and the tree counts it. *Bound to something
+    that is not there* is drift, and a fact about the INPUT (rule 9), so it is
+    exit 2 with nothing written rather than a finding a gate reports later.
+    """
+
+    def test_a_binding_naming_no_grain_is_refused_and_writes_nothing(self):
+        with tree(story_statuses=('ready',)) as root:
+            sfile = root / STORY_REL
+            before = sfile.read_bytes()
+            code, out = run_cli(root, 'set', '0.1/alpha/s0', 'feature',
+                                'ft-does-not-exist')
+            self.assertEqual(code, 2, out)
+            self.assertIn('names no grain', out)
+            self.assertIn('Nothing was written', out)
+            self.assertEqual(sfile.read_bytes(), before)
+
+    def test_a_binding_of_the_wrong_KIND_is_refused_naming_both(self):
+        # `feature: 0.1` resolves — to a MILESTONE. A binding landing on a
+        # grain of the wrong kind is a tree that reads as valid and rolls up
+        # into nothing.
+        with tree(story_statuses=('ready',)) as root:
+            sfile = root / STORY_REL
+            before = sfile.read_bytes()
+            code, out = run_cli(root, 'set', '0.1/alpha/s0', 'feature', '0.1')
+            self.assertEqual(code, 2, out)
+            self.assertIn('is a milestone, not a feature', out)
+            self.assertEqual(sfile.read_bytes(), before)
+
+    def test_an_EMPTY_binding_unbinds_and_is_never_refused(self):
+        # The documented way to unbind, and the state 0.4.0 made normal.
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'set', '0.1/alpha/s0', 'feature', '')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(
+                model.field_of(root / STORY_REL, 'feature'), '')
+
+    def test_every_other_key_is_written_without_an_opinion(self):
+        # `set` stays generic: only the fields `BINDS_TO` names are asked.
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'set', '0.1/alpha/s0', 'owner', 'wombat')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(
+                model.field_of(root / STORY_REL, 'owner'), 'wombat')
+
+
+class PmMoveIsRetiredByName(unittest.TestCase):
+    """A deleted verb must say where it WENT. `unknown command 'move'` reads as
+    a typo, and a typo sends the reader looking for their own mistake."""
+
+    def test_it_names_its_replacement_rather_than_reading_as_a_typo(self):
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/beta')
+            self.assertEqual(code, 2, out)
+            self.assertIn('move was retired', out)
+            self.assertIn('pm set <story-id> feature', out)
+            self.assertNotIn('unknown command', out)
+
+    def test_the_router_does_not_carry_it(self):
+        # The half `test_cli_surface` cannot see: its roster reads top-level
+        # verbs, so re-adding a `pm` sub-verb passes there unnoticed.
+        source = pathlib.Path(cli.__file__).read_text(encoding='utf-8')
+        self.assertNotIn("'move': cmd_", source)
+        self.assertIn('move', cli.RETIRED_COMMANDS)
 
 
 class StoryResolution(unittest.TestCase):

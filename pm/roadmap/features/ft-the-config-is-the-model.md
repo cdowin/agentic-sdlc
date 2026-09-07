@@ -3,7 +3,7 @@ id: ft-the-config-is-the-model
 milestone: ms-0.4.0
 name: The config states the model, and every gate default is still real
 status: planning
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-the-config-and-the-census.md
 phase:
 depends_on: ["ft-the-pools-are-the-tables"]
 consumed_by: []

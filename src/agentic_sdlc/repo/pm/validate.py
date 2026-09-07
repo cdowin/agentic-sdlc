@@ -189,45 +189,46 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                 f'the first it reads and the rest are addressable by nothing; '
                 f'give each one its own id: {names}')
 
+    # EVERY grain, bound or not: V1 asks about one document, V4 about one ref,
+    # V5 about the feature graph, so the descent was never what they needed —
+    # and it left a ref on an unbound grain unread while the census counted the
+    # grain (rule 4).
     for milestone in model.milestones(cfg):
-        mdir = milestone.path.parent
-        _mid = milestone.gid
-        mfile = milestone.path
-        mid = model.field_of(mfile, 'id')
         census['grains'] += 1
-        if 'V1' in on and (not mid or not model.field_of(mfile, 'status')):
-            bad(f'{cfg.rel(mfile)}: missing id: or status: in the frontmatter')
+        if 'V1' in on and (not model.field_of(milestone.path, 'id')
+                           or not model.field_of(milestone.path, 'status')):
+            bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
+                f'frontmatter')
+        _check_refs(cfg, milestone.path, 'depends_on', on, bad, census)
 
-        for ffile in model.feature_files(cfg, _mid):
-            census['grains'] += 1
-            fid = model.field_of(ffile, 'id')
-            fstat = model.field_of(ffile, 'status')
-            if 'V1' in on and (not fid or not fstat):
-                bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
-            expect = model.unquote(fid)
-            if fid:
-                graph[fid] = []
+    for ffile in model._every(cfg, 'feature'):
+        census['grains'] += 1
+        expect = model.unquote(model.field_of(ffile, 'id'))
+        if 'V1' in on and (not expect or not model.field_of(ffile, 'status')):
+            bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
+        # The UNQUOTED id, because that is what a ref carries: keying the node
+        # on the raw `id:` meant a quoted one matched none of its own.
+        if expect:
+            graph[expect] = []
+        for key in _REF_KEYS:
+            resolved = _check_refs(cfg, ffile, key, on, bad, census)
+            if key == 'depends_on' and expect:
+                # Which kind a ref names is a question about the GRAIN;
+                # counting slashes left the graph empty on a flat tree.
+                graph[expect].extend(ref for ref in resolved
+                                     if model.kind_of(cfg, ref) == 'feature')
 
-            for sfile in model.story_files(
-                    cfg, model.unquote(model.field_of(ffile, 'id'))):
-                census['grains'] += 1
-                sid = model.field_of(sfile, 'id')
-                if 'V1' in on and (not sid or not model.field_of(sfile, 'status')):
-                    bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
-                _check_refs(cfg, sfile, 'depends_on', on, bad, census)
+    for sfile in model._every(cfg, 'story'):
+        census['grains'] += 1
+        if 'V1' in on and (not model.field_of(sfile, 'id')
+                           or not model.field_of(sfile, 'status')):
+            bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
+        _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
-            for key in _REF_KEYS:
-                resolved = _check_refs(cfg, ffile, key, on, bad, census)
-                if key == 'depends_on' and fid:
-                    graph[fid].extend(ref for ref in resolved
-                                      if ref.count('/') == 1)
-
-        _check_refs(cfg, mfile, 'depends_on', on, bad, census)
-
-        # Bugs are walked for `caused_by:` alone; `census['grains']` still
-        # counts only milestones, features and stories.
-        for bfile in model.bug_files(cfg, _mid):
-            _check_caused_by(cfg, bfile, on, bad, census)
+    # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
+    # only milestones, features and stories.
+    for bfile in model._every(cfg, 'bug'):
+        _check_caused_by(cfg, bfile, on, bad, census)
 
     if 'V7' in on:
         findings.extend(_unbound_findings(cfg))

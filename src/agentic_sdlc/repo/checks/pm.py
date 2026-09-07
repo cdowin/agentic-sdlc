@@ -24,21 +24,17 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
-  V7  a binding (`milestone:`/`feature:`) naming a grain that is not in the tree
-      or one of the wrong kind — and the SEQUENCE half: an `order` entry naming a
-      grain its parent does not hold is DANGLING (FAIL), one naming no grain at
-      all UNVERIFIABLE (WARN). An EMPTY binding is UNBOUND and a child in no
-      parent's `order` UNSEQUENCED — counted lines, never findings
+  V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
+      not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
+      its parent does not hold is DANGLING (FAIL), one naming no grain at all
+      UNVERIFIABLE (WARN). An EMPTY binding is UNBOUND and a bound child in no
+      `order` is UNSEQUENCED — COUNTED lines, never findings, because *nothing
+      said* is a plan and *something wrong said* is drift
   READY  a grain past `todo` with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), a story in progress with no
          `owner:`, no stories, no `branch:`, or (a milestone) no
          `handoff.md` — never auto-minted, so `pm new handoff <id>` is the fix
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
-  UNBOUND  the same family one level down (V7): features naming no `milestone:`,
-      stories naming no `feature:`, bugs naming no `milestone:`. Counted, never a
-      finding — *nothing said* is a plan, *something wrong said* is drift
-  UNSEQUENCED  its sequence half: a bound child in no parent's `order`, which is
-      OPTIONAL per container, so this is counted too
 
 Archived milestones are out of scope; a zero census FAILS.
 """
@@ -114,9 +110,10 @@ def _run() -> int:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
-    n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
+    n_features, n_stories, seen = _drift_walk(cfg, enabled, mfiles, report,
+                                              warn)
 
-    _unreached_self(cfg, enabled, report, warn)
+    _unreached_self(cfg, enabled, seen, report, warn)
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -186,51 +183,51 @@ def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str, warn) -> None:
              f' [{srel}]')
 
 
-def _unreached_self(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """The same READY warnings, for grains the DESCENT never reaches.
+def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
+                    report, warn) -> None:
+    """Every SELF rule, for the grains the descent did not visit.
 
-    `_drift_walk` walks by binding, so a grain nobody has bound was asked
-    nothing — and 0.4.0 made authored-but-unbound the normal state, which is
-    exactly when a grain is least finished. Only the SELF rules: D3 and D5
-    compare a grain to its parent, and a grain with none has no such question.
+    **`seen` is RECORDED, never inferred.** "Does this binding resolve" gets a
+    story under an UNBOUND feature wrong — its binding resolves and the descent
+    still never reaches it, so it fell between both passes and answered nothing
+    at exit 0. Only the SELF rules: D3 and D5 need a parent to compare against.
     """
     if not model.is_pooled(cfg):
         return
-    index = model.grain_index(cfg)
-
-    def reached(grain) -> bool:
-        want, field = model.BINDS_TO[grain.kind]
-        ref = model.unquote(model.field_of(grain.path, field))
-        found = index.get(ref)
-        return found is not None and found.kind == want
-
-    for path in model.pool_walk(cfg, 'feature'):
-        grain = model.read_grain(cfg, path, 'feature')
-        if grain is None or reached(grain):
-            continue
-        view = model.read_feature(cfg, path)
-        if 'D4' in enabled:
-            reason = model.undeclared_status(cfg, 'feature', view.status)
-            if reason:
-                report(f'feature {view.fid}: {reason}  [{cfg.rel(path)}]')
-        _feature_self(cfg, view, warn)
-    for path in model.pool_walk(cfg, 'story'):
-        grain = model.read_grain(cfg, path, 'story')
-        if grain is None or reached(grain):
-            continue
-        sstat = model.field_of(path, 'status')
-        if 'D4' in enabled:
-            reason = model.undeclared_status(cfg, 'story', sstat)
-            if reason:
-                report(f'story {grain.gid}: {reason}  [{cfg.rel(path)}]')
-        _story_self(cfg, path, grain.gid, sstat, warn)
+    for kind in ('feature', 'story'):
+        for path in model.pool_walk(cfg, kind):
+            grain = model.read_grain(cfg, path, kind)
+            if grain is None or grain.gid in seen:
+                continue
+            rel = cfg.rel(path)
+            status = model.field_of(path, 'status')
+            if 'D4' in enabled:
+                reason = model.undeclared_status(cfg, kind, status)
+                if reason:
+                    report(f'{kind} {grain.gid}: {reason}  [{rel}]')
+            if kind == 'feature':
+                if 'D1' in enabled:
+                    # A `reviewed:` pointer naming a file that is not there is
+                    # a fact about ONE document; it was in the descent only.
+                    reason = model.drift_dangling_record(cfg, grain.gid)
+                    if reason:
+                        report(f'feature {grain.gid}: {reason} — point it at a '
+                               f'real file or remove the field  [{rel}]')
+                _feature_self(cfg, model.read_feature(cfg, path), warn)
+            else:
+                _story_self(cfg, path, grain.gid, status, warn)
 
 
 def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
-                report, warn) -> tuple[int, int]:
-    """D1-D6 over every grain plus the READY warnings; returns the (feature, story) census."""
+                report, warn) -> tuple[int, int, set[str]]:
+    """D1-D6 over every grain the descent reaches, plus the READY warnings.
+
+    Returns `(features, stories, the ids it VISITED)` — the third because
+    `_unreached_self` must not have to infer it.
+    """
     n_features = 0
     n_stories = 0
+    seen: set[str] = set()
 
     for mfile in mfiles:
         # The DOCUMENT, not a directory: a pooled tree has no per-milestone
@@ -277,6 +274,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
         unfinished = {fid for fid, _ in finished.blockers}
         for view in views:
             frel = cfg.rel(view.path)
+            seen.add(view.fid)
             n_features += 1
             n_stories += view.total
 
@@ -302,7 +300,8 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             _feature_self(cfg, view, warn)
 
             for sfile in view.stories:
-                sid = model.field_of(sfile, 'id')
+                sid = model.unquote(model.field_of(sfile, 'id'))
+                seen.add(sid)
                 sstat = model.field_of(sfile, 'status')
                 srel = cfg.rel(sfile)
                 if 'D4' in enabled:
@@ -335,7 +334,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                  f'you finished the features and the milestone still calls '
                  f'itself {mstat!r}; {ADVANCE_IT} (D6)  [{cfg.rel(mfile)}]')
 
-    return n_features, n_stories
+    return n_features, n_stories, seen
 
 
 def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
@@ -370,11 +369,8 @@ def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
 
     Both homes (0.4.0/D3), because the question is whether recording happens at
     all. Existence is not enough: an empty file is what a courier leaves when it
-    created the file and then refused the row.
-
-    **An unreadable ledger is neither answer.** Returning `True` silenced this
-    rule for the WHOLE tree on the first path that raised, with no line
-    printed; it is reported as unverifiable and the scan continues.
+    created the file and then refused the row. **An unreadable ledger is
+    neither answer** — reported as unverifiable, and the scan continues.
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]
@@ -396,13 +392,9 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 
     **This rule exists because the telemetry was off for a whole milestone and
     nobody could tell.** A courier fails open by design, so its refusals go to
-    a stderr nobody reads — entries never pasted, a `pm` target that is not
-    `.PHONY`, an undeclared `[pm.states.*]`, no `python3`: every one produces
-    zero rows and zero complaint.
-
-    **A tree that wires nothing is SILENT.** It opted out, and this package
-    does not conscript (0.4.0/D5). A settings file that will not parse is
-    UNVERIFIABLE, not a failure.
+    a stderr nobody reads. **A tree that wires nothing is SILENT** — it opted
+    out, and this package does not conscript (0.4.0/D5); a settings file that
+    will not parse is UNVERIFIABLE, not a failure.
     """
     if 'U2' not in enabled:
         return
@@ -488,8 +480,14 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
     # The ROOT is R1's, not this walk's: the plan has carried its own rule and
     # its own line since 0.3.0, and two lines for one fact is the second
     # scoreboard this milestone is deleting.
+    #
+    # `BINDS_TO` and NOT `[pm.contains]`: that key says what `pm add` may
+    # WRITE, and reading it here let a narrowed mapping ungate the level it
+    # dropped. What an `order` says about what it holds is a fact about the
+    # tree, and no config narrows it.
+    holds = {parent for parent, _field in model.BINDS_TO.values()}
     parents = [g for g in index.values()
-               if cfg.contains.get(g.kind) and g.kind != model.ROOT_KIND]
+               if g.kind in holds and g.kind != model.ROOT_KIND]
     unsequenced: dict[str, int] = {}
     for parent in sorted(parents, key=lambda g: g.gid):
         seq = model.sequence_census(cfg, parent, index)
@@ -508,6 +506,11 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
                  f'was never written, UNVERIFIABLE if it was retired (V7)')
         for gid in seq.unsequenced:
             unsequenced[index[gid].kind] = unsequenced.get(index[gid].kind, 0) + 1
+    # Rule 4: a walk that graded nothing says so, and the count is what made
+    # the narrowing above invisible for as long as it lasted.
+    graded = len(parents)
+    if graded:
+        print(f'  SEQUENCE  {graded} container(s) graded against their `order`')
     for kind, n in sorted(unsequenced.items()):
         # COUNTED: `order` is optional per container, so a child nobody has
         # placed is a decision not taken — never a finding.

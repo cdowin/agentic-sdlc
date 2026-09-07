@@ -3,7 +3,7 @@ id: bg-check-pm-reopens-every-file-per-field
 kind: bug
 milestone: "ms-a-move-is-an-event"
 name: `check pm` reopens every file per field — 2.1M opens, `make check` 8.4s → 87s
-status: fixed
+status: closed
 caught_in: "ms-a-move-is-an-event"
 fix_milestone:
 caused_by:

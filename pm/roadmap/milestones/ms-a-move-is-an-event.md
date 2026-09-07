@@ -12,6 +12,8 @@ order:
   - "bg-the-new-verbs-mint-a-compound-id"
   - "bg-the-shipped-rules-name-retired-behaviour"
   - "bg-retire-drops-the-summary-it-accepts"
+  - "ft-the-close-is-cheap-and-a-check-is-dispositionable"
+  - "ft-the-conveyor-pushes-back"
   - "bg-the-commit-hook-dedupes-on-an-exact-string"
   - "ft-telemetry-proves-the-path-not-the-config"
   - "ft-verify-remembers-its-last-green"

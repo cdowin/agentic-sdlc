@@ -3,7 +3,7 @@ id: bg-the-shipped-rules-name-retired-behaviour
 kind: bug
 milestone: "ms-a-move-is-an-event"
 name: the shipped rule and skill assert behaviour this package retired
-status: fixed
+status: closed
 caught_in: "ms-a-move-is-an-event"
 fix_milestone:
 caused_by:

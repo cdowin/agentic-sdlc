@@ -3,7 +3,7 @@ id: bg-the-commit-hook-dedupes-on-an-exact-string
 kind: bug
 milestone: "ms-a-move-is-an-event"
 name: the commit hook dedupes on an exact string, so agent commits get two trailers
-status: fixed
+status: closed
 caught_in: "ms-a-move-is-an-event"
 fix_milestone:
 caused_by:

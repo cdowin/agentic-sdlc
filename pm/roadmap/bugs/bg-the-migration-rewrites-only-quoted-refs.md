@@ -3,7 +3,7 @@ id: bg-the-migration-rewrites-only-quoted-refs
 kind: bug
 milestone: "ms-a-move-is-an-event"
 name: the migration rewrites only QUOTED refs, and 52 refs went UNVERIFIABLE in silence
-status: fixed
+status: closed
 caught_in: "ms-a-move-is-an-event"
 fix_milestone:
 caused_by:

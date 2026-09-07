@@ -42,6 +42,34 @@ still in a state at read time reports its elapsed time as OPEN and says so — n
 into a total, because a running clock and a finished one are different facts (this is `verify --plan`'s
 `unknown` posture, applied to duration).
 
+## Open time is a CHARGE, and nothing gets credit until it closes
+
+The report must not treat an open grain as a neutral fact with a blank column. **A grain that has been
+`building` for 41 minutes with nothing recorded is accruing cost, and the number should be in front of
+whoever is deciding what to do next.**
+
+At the moment this milestone was measured, every one of its grains was open from the instant it
+started and the report showed dashes — the tree had no way to say "this has cost you 41 minutes and
+returned nothing yet." That blank is the same silence `ft-the-conveyor-pushes-back` exists to end,
+inside the telemetry rather than the CLI.
+
+So:
+
+    OPEN time accrues and is reported as such, distinctly from closed time, and is
+    never folded silently into a total — a running clock and a finished one are
+    different facts.
+
+    A grain reports NO completed time until it closes. There is no partial credit
+    for work that is done but not closed, because "done but not closed" is exactly
+    the state this milestone found thirteen grains sitting in.
+
+    A milestone's open charge is the sum of its open children's, so the pressure
+    line has one number to name.
+
+This is a reporting posture, not a judgement: the tool states elapsed time and which side of the close
+it sits on. It never calls a number bad. Rule 9 — but rule 11 says the number must be VISIBLE where
+someone is standing, and a dash is not a number.
+
 ## Ship criterion
 
 `pm ledger report [<grain-id>]` reports seconds per STATE, per grain, at whatever level the id names —

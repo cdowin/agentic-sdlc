@@ -160,7 +160,9 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # (grain path, its declared id, the id its PATH implies, parentage pairs)
     graph: dict[str, list[str]] = {}
 
-    for mdir in model.milestone_dirs(cfg):
+    for milestone in model.milestones(cfg):
+        mdir = milestone.path.parent
+        _mid = milestone.gid
         mfile = mdir / model.MILESTONE_DOC
         mid = model.field_of(mfile, 'id')
         census['grains'] += 1
@@ -171,7 +173,7 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
             bad(f'{cfg.rel(mfile)}: id {mid!r} does not match its directory '
                 f'{mdir.name!r} (expected {mid}-<slug>/)')
 
-        for ffile in model.feature_files(mdir):
+        for ffile in model.feature_files(cfg, _mid):
             census['grains'] += 1
             fid = model.field_of(ffile, 'id')
             fstat = model.field_of(ffile, 'status')
@@ -189,7 +191,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
             if fid:
                 graph[fid] = []
 
-            for sfile in model.story_files(ffile):
+            for sfile in model.story_files(
+                    cfg, model.unquote(model.field_of(ffile, 'id'))):
                 census['grains'] += 1
                 sid = model.field_of(sfile, 'id')
                 if 'V1' in on and (not sid or not model.field_of(sfile, 'status')):
@@ -221,7 +224,7 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
 
         # Bugs are walked for `caused_by:` alone; `census['grains']` still
         # counts only milestones, features and stories.
-        for bfile in model.bug_files(mdir):
+        for bfile in model.bug_files(cfg, _mid):
             _check_caused_by(cfg, bfile, on, bad, census)
 
     if 'V5' in on:

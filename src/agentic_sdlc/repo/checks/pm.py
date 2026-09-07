@@ -178,7 +178,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                      f'mints one  [{cfg.rel(mfile.parent)}/]')
 
         views = [model.read_feature(cfg, ffile)
-                 for ffile in model.feature_files(mdir)]
+                 for ffile in model.feature_files(cfg, mid)]
         # One `holds` answers both D6's census and D3's per-feature question.
         finished = model.holds(cfg, 'feature',
                                ((v.fid, v.status) for v in views),
@@ -331,7 +331,7 @@ def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]
-    paths += [ledger.ledger_path(mdir) for mdir in model.milestone_dirs(cfg)]
+    paths += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
     found, unreadable = False, []
     for path in paths:
         if not path.is_file():

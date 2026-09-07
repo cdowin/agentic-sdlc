@@ -135,7 +135,7 @@ def plan(cfg: model.PmConfig) -> Planned:
         mid = model.unquote(model.field_of(mfile, 'id')) or mdir.name
         ms_id = take('milestone', mfile, mid, '')
         feature_ids: list[tuple[tuple, str]] = []
-        for ffile in model.feature_files(mdir):
+        for ffile in model._nested_feature_files(mdir):
             fid = model.unquote(model.field_of(ffile, 'id'))
             ft_id = take('feature', ffile, fid or ffile.parent.name, ms_id)
             # `phase:` grouped features within a milestone; it flattens into
@@ -144,13 +144,13 @@ def plan(cfg: model.PmConfig) -> Planned:
             phase = model.phase_key(model.field_of(ffile, 'phase'))
             feature_ids.append(((phase, ft_id), ft_id))
             story_ids: list[tuple[tuple, str]] = []
-            for sfile in model.story_files(ffile):
+            for sfile in model._nested_story_files(ffile):
                 sid = model.unquote(model.field_of(sfile, 'id'))
                 st_id = take('story', sfile, sid or sfile.stem, ft_id)
                 story_ids.append((_ordinal_of(sfile), st_id))
             if story_ids:
                 out.orders[ffile] = [i for _, i in sorted(story_ids)]
-        for bfile in model.bug_files(mdir):
+        for bfile in model._nested_bug_files(mdir):
             bid = model.unquote(model.field_of(bfile, 'id'))
             take('bug', bfile, bid or bfile.stem, ms_id)
         if feature_ids:

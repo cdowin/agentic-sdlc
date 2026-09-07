@@ -43,7 +43,9 @@ def _short(gid: str) -> str:
 
 
 def milestone_rows(cfg: model.PmConfig, mdir: Path) -> list[str]:
-    views = [model.read_feature(cfg, f) for f in model.feature_files(mdir)]
+    mid = model.unquote(model.field_of(mdir / model.MILESTONE_DOC, 'id'))
+    views = [model.read_feature(cfg, f)
+             for f in model.feature_files(cfg, mid)]
     by_id = {v.fid: v for v in views}
     deps: dict[str, list[str]] = {}
     for v in views:
@@ -76,7 +78,8 @@ def milestone_rows(cfg: model.PmConfig, mdir: Path) -> list[str]:
 
 
 def feature_rows(cfg: model.PmConfig, ffile: Path) -> list[str]:
-    stories = model.story_files(ffile)
+    stories = model.story_files(
+        cfg, model.unquote(model.field_of(ffile, 'id')))
     ids = {model.field_of(s, 'id'): s for s in stories}
     deps: dict[str, list[str]] = {}
     for sid, sfile in ids.items():
@@ -126,9 +129,10 @@ def _replace(text: str, block: str, rel: str) -> str:
 
 def targets(cfg: model.PmConfig) -> list[Path]:
     out = []
-    for mdir in model.milestone_dirs(cfg):
+    for milestone in model.milestones(cfg):
+        mdir = milestone.path.parent
         out.append(mdir / model.MILESTONE_DOC)
-        out.extend(model.feature_files(mdir))
+        out.extend(model.feature_files(cfg, milestone.gid))
     return out
 
 

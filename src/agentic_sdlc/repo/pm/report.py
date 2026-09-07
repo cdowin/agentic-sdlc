@@ -285,13 +285,13 @@ class Source:
     def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
         raise NotImplementedError
 
-    def feature_files(self, mdir: Path) -> list[Path]:
+    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
         raise NotImplementedError
 
-    def story_files(self, ffile: Path) -> list[Path]:
+    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
         raise NotImplementedError
 
-    def bug_files(self, mdir: Path) -> list[Path]:
+    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
         raise NotImplementedError
 
     def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
@@ -321,14 +321,14 @@ class DiskSource(Source):
     def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
         return model.feature_file(cfg, fid)
 
-    def feature_files(self, mdir: Path) -> list[Path]:
-        return model.feature_files(mdir)
+    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+        return model.feature_files(cfg, mid)
 
-    def story_files(self, ffile: Path) -> list[Path]:
-        return model.story_files(ffile)
+    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
+        return model.story_files(cfg, fid)
 
-    def bug_files(self, mdir: Path) -> list[Path]:
-        return model.bug_files(mdir)
+    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+        return model.bug_files(cfg, mid)
 
     def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
         return model.review_record_for(cfg, fid)
@@ -497,16 +497,42 @@ class GitSource(Source):
         ffile = mdir / FEATURES_DIR / slug / model.FEATURE_DOC
         return ffile if self.is_file(ffile) else None
 
-    def feature_files(self, mdir: Path) -> list[Path]:
+    def _pool_children(self, cfg: model.PmConfig, kind: str,
+                       parent_id: str) -> list[Path]:
+        """The pooled layout AT THE REV: list the pool and keep the documents
+        whose binding names the parent. Empty when the rev predates the pools,
+        which is what sends every caller below to the nested read."""
+        pool = model.pool_dir(cfg, kind)
+        field = model.BINDS_TO.get(kind, ('', ''))[1]
+        if not field:
+            return []
+        return [path for path in self._grain_docs(pool)
+                if model.unquote(self.field_of(path, field)) == parent_id]
+
+    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+        pooled = self._pool_children(cfg, 'feature', mid)
+        if pooled:
+            return pooled
+        mdir = self.milestone_dir(cfg, mid)
+        if mdir is None:
+            return []
         features = mdir / FEATURES_DIR
         return [d / model.FEATURE_DOC for d in self._dirs(features)
                 if self.is_file(d / model.FEATURE_DOC)]
 
-    def story_files(self, ffile: Path) -> list[Path]:
-        return self._grain_docs(ffile.parent / STORIES_DIR)
+    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
+        pooled = self._pool_children(cfg, 'story', fid)
+        if pooled:
+            return pooled
+        ffile = self.feature_file(cfg, fid)
+        return self._grain_docs(ffile.parent / STORIES_DIR) if ffile else []
 
-    def bug_files(self, mdir: Path) -> list[Path]:
-        return self._grain_docs(mdir / BUGS_DIR)
+    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+        pooled = self._pool_children(cfg, 'bug', mid)
+        if pooled:
+            return pooled
+        mdir = self.milestone_dir(cfg, mid)
+        return self._grain_docs(mdir / BUGS_DIR) if mdir is not None else []
 
     def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
         """`model.review_record_for` at the rev. An absolute pointer resolves
@@ -611,8 +637,13 @@ def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
 
 
 def _bug_slug(mdir: Path, path: Path) -> str:
-    """`bugs/` is walked recursively, so a bug's slug may carry a directory."""
-    return path.relative_to(mdir / BUGS_DIR).with_suffix('').as_posix()
+    """`bugs/` was walked recursively, so a bug's slug could carry a
+    directory. Only reachable for a NESTED tree — a pooled bug declares its
+    id, and `_grain` prefers the declared one."""
+    try:
+        return path.relative_to(mdir / BUGS_DIR).with_suffix('').as_posix()
+    except ValueError:
+        return path.stem
 
 
 def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
@@ -622,17 +653,20 @@ def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
     """
     grains: list[Grain] = []
     owned: dict[str, set[str]] = {}
-    for ffile in src.feature_files(mdir):
+    for ffile in src.feature_files(cfg, mid):
+        # The id the document DECLARES, with the path-derived one as the
+        # fallback for a nested tree that has not migrated. 0.4.0: identity is
+        # frontmatter and the location is convention.
         feature = _grain(src, ffile, KIND_FEATURE, f'{mid}/{ffile.parent.name}')
         grains.append(feature)
         stories = set()
-        for sfile in src.story_files(ffile):
+        for sfile in src.story_files(cfg, feature.gid):
             slug = model.story_slug_of(cfg, sfile.stem)
             story = _grain(src, sfile, KIND_STORY, f'{feature.gid}/{slug}')
             grains.append(story)
             stories.add(story.gid)
         owned[feature.gid] = stories
-    for bfile in src.bug_files(mdir):
+    for bfile in src.bug_files(cfg, mid):
         grains.append(_grain(src, bfile, KIND_BUG,
                              f'{mid}/{BUGS_DIR}/{_bug_slug(mdir, bfile)}'))
     return grains, owned
@@ -1002,7 +1036,7 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
                    mdir: Path) -> list[tuple[str, str, Path]]:
     """(feature id, the path as the report prints it, the path) per record."""
     out: list[tuple[str, str, Path]] = []
-    for ffile in src.feature_files(mdir):
+    for ffile in src.feature_files(cfg, mid):
         fid = (model.unquote(src.field_of(ffile, 'id'))
                or f'{mid}/{ffile.parent.name}')
         rel = src.review_record_for(cfg, fid)
@@ -1216,7 +1250,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     verbatim; `feature_done` is the equality, never a judgement.
     """
     out = []
-    for bfile in src.bug_files(mdir):
+    for bfile in src.bug_files(cfg, mid):
         cause = src.field_of(bfile, CAUSED_BY_FIELD)
         if not cause:
             continue

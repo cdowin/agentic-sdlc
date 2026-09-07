@@ -184,12 +184,15 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
 
 
 # --- feature -> milestone -----------------------------------------------------
-def _features(cfg: model.PmConfig, mdir: Path) -> list[tuple[str, Path]]:
-    """(id, path) per feature under this milestone, in reading order; `bugs/`
-    cannot enter.
+def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
+    """(id, path) per feature BOUND TO this milestone, in its declared order.
+
+    Takes the milestone's DOCUMENT, not its directory: a pooled tree has no
+    per-milestone directory, and membership is the child's field.
     """
+    mid = model.unquote(model.field_of(mfile, 'id'))
     return [(model.unquote(model.field_of(ff, 'id')) or cfg.rel(ff), ff)
-            for ff in model.feature_files(mdir)]
+            for ff in model.feature_files(cfg, mid)]
 
 
 def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
@@ -198,8 +201,8 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     """
     against = []
     scanned = 0
-    for mdir in model.milestone_dirs(cfg):
-        for bfile in model.bug_files(mdir):
+    for milestone in model.milestones(cfg):
+        for bfile in model.bug_files(cfg, milestone.gid):
             scanned += 1
             if model.unquote(model.field_of(bfile, 'fix_milestone')) != mid:
                 continue
@@ -216,7 +219,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     """
     mfile = _grain(cfg, MILESTONE, mid, model.MILESTONE_DOC, MILESTONE,
                    "about a milestone's features")
-    features = _features(cfg, mfile.parent)
+    features = _features(cfg, mfile)
     subject = f'{MILESTONE} {mid}'
     if not features:
         return _answer(subject,
@@ -261,7 +264,7 @@ def _pointers(cfg: model.PmConfig, mid: str,
     sweep.
     """
     owned = [(fid, model.unquote(model.field_of(ffile, 'reviewed')))
-             for fid, ffile in _features(cfg, mfile.parent)]
+             for fid, ffile in _features(cfg, mfile)]
     owned.append((mid, model.unquote(model.field_of(mfile, 'reviewed'))))
     return owned
 

@@ -592,12 +592,22 @@ class IdRefusals(unittest.TestCase):
     file first and refused afterwards.
     """
 
+    # MALFORMED — refused by the id GRAMMAR, which never opens a file. The
+    # security argument for match-by-field is that no id reaches a path, and
+    # that is a different claim: this one is that a hostile string is answered
+    # without reading a single document.
     MATRIX = (
         '', '.', '..', '0.1/', '/0.1/alpha', '0.1//alpha',
         '../../../etc/passwd', '~/x', 'file:///x',
         '0.1/*', '0.1/**', '0.1/?', '0.1\\alpha', 'x' * 300,
-        'a\nb', 'a\tb', 'a\0b', '   ', '0.1/does-not-exist',
+        'a\nb', 'a\tb', 'a\0b', '   ',
     )
+    # WELL-FORMED and absent, or well-formed and the wrong kind. These cannot
+    # be answered without looking: since 0.4.0 an id is matched against the
+    # `id:` every grain declares, so "this names nothing" is a fact about the
+    # TREE and reading it is the answer, not a leak. What still holds is exit 2
+    # and no write.
+    RESOLVED_BY_READING = ('0.1/does-not-exist',)
     WRONG_KIND = (
         ('feature', '0.1'),
         ('feature', '0.1/alpha/s0'),
@@ -606,6 +616,13 @@ class IdRefusals(unittest.TestCase):
         ('tag', '0.1/alpha/s0'),
         ('tag', '0.1/alpha'),
     )
+
+    @staticmethod
+    def _bytes(root):
+        """Every PM file's bytes. `porcelain` would spawn git and move this
+        module into the tier that runs on one interpreter."""
+        return {p.relative_to(root): p.read_bytes()
+                for p in sorted((root / 'pm').rglob('*')) if p.is_file()}
 
     def _no_reads(self):
         def explode(path, *rest):
@@ -625,22 +642,28 @@ class IdRefusals(unittest.TestCase):
             finally:
                 model.read_raw = original
 
-    def test_a_grain_of_the_wrong_kind_exits_2_without_reading_it(self):
-        # `field_of`, not `read_raw`: resolving a STORY id walks its siblings
-        # through `slot_walk`, which reads each candidate to decide whether it
-        # is a grain at all. What must never happen is the wrong QUESTION being
-        # asked of the resolved grain, and `field_of` is how this verb asks.
+    def test_a_grain_of_the_wrong_kind_exits_2_and_names_the_id(self):
+        """AMENDED at 0.4.0. It used to prove the refusal read no file at all,
+        by making `field_of` explode — which was possible while an id was
+        resolved by ARITHMETIC on its shape. An id is now matched against the
+        `id:` every grain declares, so answering "that is a milestone, not a
+        feature" requires reading the grain that says so.
+
+        What survives is the part that was ever load-bearing: exit 2, the id
+        named back, and nothing written."""
         with tree() as root:
-            original, model.field_of = model.field_of, self._no_reads()
-            try:
-                for kind, gid in self.WRONG_KIND:
-                    with self.subTest(kind=kind, gid=gid):
-                        code, out = run_cli(root, 'ready-for', kind, gid)
-                        self.assertEqual(code, 2, out)
-                        self.assertNotIn(UNROUTED, out)
-                        self.assertIn(gid, out)
-            finally:
-                model.field_of = original
+            before = self._bytes(root)
+            for kind, gid in self.WRONG_KIND + self.RESOLVED_BY_READING_PAIRS:
+                with self.subTest(kind=kind, gid=gid):
+                    code, out = run_cli(root, 'ready-for', kind, gid)
+                    self.assertEqual(code, 2, out)
+                    self.assertNotIn(UNROUTED, out)
+                    self.assertIn(gid, out)
+            self.assertEqual(self._bytes(root), before, 'a refusal wrote')
+
+    RESOLVED_BY_READING_PAIRS = (('feature', '0.1/does-not-exist'),
+                                 ('milestone', '0.1/does-not-exist'),
+                                 ('tag', '0.1/does-not-exist'))
 
     def test_a_bug_id_is_the_wrong_kind_for_all_three(self):
         with tree() as root:

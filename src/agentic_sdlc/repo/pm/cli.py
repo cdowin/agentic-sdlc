@@ -689,7 +689,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         name for name, _ in model.holds(
             cfg, 'feature',
             ((ff.parent.name, model.field_of(ff, 'status'))
-             for ff in model.feature_files(mdir)),
+             for ff in model.feature_files(cfg, mid)),
             model.DONE_CATEGORY).blockers)
     if open_features:
         notices.append(f'{len(open_features)} feature(s) not done: '
@@ -699,7 +699,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         name for name, _ in model.holds(
             cfg, 'bug',
             ((bf.stem, model.field_of(bf, 'status'))
-             for bf in model.bug_files(mdir)),
+             for bf in model.bug_files(cfg, mid)),
             model.DONE_CATEGORY).blockers)
     if open_bugs:
         notices.append(f'{len(open_bugs)} bug(s) still open: '
@@ -748,10 +748,10 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
 # --- move -----------------------------------------------------------------
 def _known_feature_ids(cfg: model.PmConfig) -> list[str]:
     out = []
-    for mdir in model.milestone_dirs(cfg):
-        mid = model.unquote(model.field_of(mdir / model.MILESTONE_DOC, 'id')) \
-            or mdir.name
-        out.extend(f'{mid}/{ff.parent.name}' for ff in model.feature_files(mdir))
+    for milestone in model.milestones(cfg):
+        out.extend(model.unquote(model.field_of(ff, 'id'))
+                   or f'{milestone.gid}/{ff.parent.name}'
+                   for ff in model.feature_files(cfg, milestone.gid))
     return sorted(out)
 
 
@@ -891,7 +891,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]'
               + (f'  open {mopen}' if mopen else ''))
         rows = []
-        for ffile in model.feature_files(mdir):
+        for ffile in model.feature_files(cfg, mid):
             view = model.read_feature(cfg, ffile)
             # The markers reuse the gate's predicates, so report and gate
             # cannot describe a tree differently.
@@ -985,7 +985,7 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
     for mdir, mid in known:
         if milestone and milestone != mid:
             continue
-        for ffile in model.feature_files(mdir):
+        for ffile in model.feature_files(cfg, mid):
             view = model.read_feature(cfg, ffile)
             for sfile in view.stories:
                 scanned += 1
@@ -1656,14 +1656,14 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
     def in_progress(kind: str, status: str) -> bool:
         return model.category_of(cfg, kind, status) == model.IN_PROGRESS
 
-    for mdir in model.milestone_dirs(cfg):
-        mfile = mdir / model.MILESTONE_DOC
+    for _milestone in model.milestones(cfg):
+        mfile = _milestone.path
         mstat = model.field_of(mfile, 'status')
         if in_progress('milestone', mstat):
             add(live, 'milestones_in_progress', mfile)
         if mstat == model.BUILDING:
             add(frozen, 'milestones_building', mfile)
-        for ffile in model.feature_files(mdir):
+        for ffile in model.feature_files(cfg, _milestone.gid):
             fstat = model.field_of(ffile, 'status')
             if in_progress('feature', fstat):
                 add(live, 'features_in_progress', ffile)
@@ -1671,7 +1671,8 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
                 add(frozen, 'features_building', ffile)
             elif fstat == model.REVIEWING:
                 add(frozen, 'features_review', ffile)
-            for sfile in model.story_files(ffile):
+            for sfile in model.story_files(
+                    cfg, model.unquote(model.field_of(ffile, 'id'))):
                 sstat = model.field_of(sfile, 'status')
                 if in_progress('story', sstat):
                     add(live, ledger.STORIES_IN_PROGRESS, sfile)

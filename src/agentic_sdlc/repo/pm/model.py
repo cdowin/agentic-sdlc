@@ -1189,11 +1189,11 @@ def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
 
     for mdir in milestone_dirs(cfg):
         mid = take(mdir / MILESTONE_DOC, 'milestone', '')
-        for ffile in feature_files(mdir):
+        for ffile in _nested_feature_files(mdir):
             fid = take(ffile, 'feature', mid)
-            for sfile in story_files(ffile):
+            for sfile in _nested_story_files(ffile):
                 take(sfile, 'story', fid)
-        for bfile in bug_files(mdir):
+        for bfile in _nested_bug_files(mdir):
             take(bfile, 'bug', mid)
     return out
 
@@ -1219,12 +1219,38 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
     return out
 
 
+# The characters an id cannot carry in EITHER layout. The security argument for
+# match-by-field is that no id reaches a path — that stands, and it is not what
+# this guard is for. This is CHEAPNESS and honesty: an id that cannot be a
+# grain's is refused before the tree is walked, so a hostile string is answered
+# without reading a single document, which is a property the resolvers this
+# replaced had and would otherwise be lost.
+_ID_FORBIDDEN = set('*?[]!\\:~\n\t\r\x00')
+ID_MAX = 200
+
+
+def id_defect(gid: str) -> str:
+    """'' when `gid` could name a grain, else why not. Never opens a file."""
+    if not gid or not gid.strip():
+        return 'an id may not be empty'
+    if len(gid) > ID_MAX:
+        return f'an id of {len(gid)} characters is past the {ID_MAX} limit'
+    if _ID_FORBIDDEN & set(gid):
+        return f'{gid!r} carries a character no id may hold'
+    parts = gid.split('/')
+    if any(p in ('', '.', '..') for p in parts):
+        return f'{gid!r} has an empty or dot segment'
+    return ''
+
+
 def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
     """The document for an id, or None. `kind` narrows when a caller knows it.
 
     The six resolvers this replaces each joined an id onto a directory. This
     reads `id:` and matches, so no user input reaches a path.
     """
+    if id_defect(gid):
+        return None
     grain = grain_index(cfg).get(gid)
     if grain is None or (kind and grain.kind != kind):
         return None
@@ -1312,11 +1338,9 @@ def milestone_dir(cfg: PmConfig, mid: str) -> Path | None:
 
 
 def milestone_file(cfg: PmConfig, mid: str) -> Path | None:
-    d = milestone_dir(cfg, mid)
-    if d is None:
-        return None
-    f = d / MILESTONE_DOC
-    return f if f.is_file() else None
+    """The milestone's document, in either layout — `grain_file` reads `id:`
+    and matches, so no id reaches a path."""
+    return grain_file(cfg, mid, 'milestone')
 
 
 def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
@@ -1331,11 +1355,8 @@ def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
 
 
 def feature_file(cfg: PmConfig, fid: str) -> Path | None:
-    d = feature_dir(cfg, fid)
-    if d is None:
-        return None
-    f = d / FEATURE_DOC
-    return f if f.is_file() else None
+    """The feature's document, in either layout."""
+    return grain_file(cfg, fid, 'feature')
 
 
 _ORDINAL_STEM = re.compile(r'^[0-9][0-9]-(?P<slug>.*)$')
@@ -1353,10 +1374,19 @@ def story_slug_of(cfg: PmConfig, stem: str) -> str:
 
 
 def story_file(cfg: PmConfig, sid: str) -> Path | None:
-    """Resolve <milestone>/<feature-slug>/<story-slug> to its .md over
-    `story_files`, the walk the gates use. Exact stem first, then the
-    ordinal-prefixed form; two files at one precedence refuse.
+    """The story's document, in either layout.
+
+    `AmbiguousStory` — *two files claim one story id* — cannot happen against
+    a pooled tree: the index is keyed by id and `check pm` reports a duplicate
+    as a finding. It survives for the nested layout only, where a slug plus an
+    ordinal prefix could resolve two ways.
     """
+    if is_pooled(cfg):
+        return grain_file(cfg, sid, 'story')
+    # The nested layout keeps its own resolution WHOLE rather than falling
+    # back to it: the index answers by id and `setdefault`, so consulting it
+    # first would silently pick one of two files claiming a slug — turning a
+    # refusal this suite proves into a quiet wrong answer.
     mid, _, rest = sid.partition('/')
     fslug, _, sslug = rest.partition('/')
     if not fslug or not segment_is_literal(sslug):
@@ -1390,6 +1420,61 @@ class AmbiguousStory(Exception):
 
 
 # --- children -----------------------------------------------------------------
+def milestones(cfg: PmConfig) -> list[Grain]:
+    """Every milestone, by id. Replaces `milestone_dirs` and
+    `known_milestones` at every call site that wanted the grains rather than
+    the directories."""
+    return sorted((g for g in grain_index(cfg).values()
+                   if g.kind == 'milestone'), key=lambda g: g.gid)
+
+
+def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
+    """The documents of one kind bound to one parent, in the parent's declared
+    `order` where it has one and by id after that.
+
+    **Sequence is the parent's list and membership is the child's field**, so
+    the order comes from the parent and the membership from the children — the
+    two questions the nested layout answered with one directory.
+    """
+    found = {g.gid: g.path for g in children(cfg, kind, parent_id)}
+    parent = grain_index(cfg).get(parent_id)
+    declared = (list_field_of(parent.path, ORDER_KEY)
+                if parent is not None else [])
+    out = [found.pop(gid) for gid in declared if gid in found]
+    return out + [found[gid] for gid in sorted(found)]
+
+
+# A nested tree keeps its SLOT walk, whole. The index is keyed by the `id:` a
+# document declares, so a document with damaged frontmatter has no key and
+# would silently leave the census — and "reported, never dropped" is the
+# contract these walks exist to keep (rule 4). The slot walk sees the file
+# either way, which is why the nested layout is not half-migrated onto the
+# index. A POOLED tree has no slot, so a document with no id is bound to
+# nothing and is reported by `check pm` on its own line instead.
+def feature_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The features bound to one milestone, in its declared order."""
+    if not is_pooled(cfg):
+        mdir = milestone_dir(cfg, mid)
+        return _nested_feature_files(mdir) if mdir is not None else []
+    return _children_paths(cfg, 'feature', mid)
+
+
+def story_files(cfg: PmConfig, fid: str) -> list[Path]:
+    """The stories bound to one feature, in its declared order."""
+    if not is_pooled(cfg):
+        ffile = feature_file(cfg, fid)
+        return _nested_story_files(ffile) if ffile is not None else []
+    return _children_paths(cfg, 'story', fid)
+
+
+def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The bugs bound to one milestone, in its declared order."""
+    if not is_pooled(cfg):
+        mdir = milestone_dir(cfg, mid)
+        return _nested_bug_files(mdir) if mdir is not None else []
+    return _children_paths(cfg, 'bug', mid)
+
+
 def orphan_dirs(cfg: PmConfig) -> list[tuple[Path, str]]:
     """Directories that look like a grain but carry no grain file — reported
     rather than silently dropped, since a dropped directory takes every
@@ -1465,9 +1550,17 @@ def milestone_dir_of(cfg: PmConfig, path: Path) -> Path | None:
 
 
 def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
-    """Every milestone dir with its declared id (unquoted; '' when absent) —
-    the one enumeration `pm status`, `pm list` and retire read.
+    """(a handle, the declared id) per milestone — the one enumeration
+    `pm status`, `pm list` and `retire` read.
+
+    The handle is the milestone's own DIRECTORY in a nested tree and its
+    DOCUMENT in a pooled one, because a pooled tree has no per-milestone
+    directory. Callers that only pass it back to a listing or a ledger read do
+    not care which; the two that need a directory ask `milestone_dir`, which
+    answers None once the tree is pooled and says why.
     """
+    if is_pooled(cfg):
+        return [(g.path, g.gid) for g in milestones(cfg)]
     return [(mdir, unquote(field_of(mdir / MILESTONE_DOC, 'id')))
             for mdir in milestone_dirs(cfg)]
 
@@ -1521,12 +1614,12 @@ def grain_docs(gdir: Path) -> list[Path]:
     return list(slot_walk(gdir).kept)
 
 
-def feature_files(mdir: Path) -> list[Path]:
+def _nested_feature_files(mdir: Path) -> list[Path]:
     return [d / FEATURE_DOC for d in walk.children(mdir / FEATURES_DIR, Kind.DIR)
             .filter(_has_feature_file, SkipReason.NO_GRAIN_FILE).kept]
 
 
-def story_files(ffile: Path) -> list[Path]:
+def _nested_story_files(ffile: Path) -> list[Path]:
     """Every story document under one feature, in reading order."""
     return grain_docs(ffile.parent / STORIES_DIR)
 
@@ -1536,9 +1629,16 @@ def tree_walk(cfg: PmConfig) -> Walk:
     `Walk.census` is the only way to a number here.
     """
     found = Walk(())
+    if is_pooled(cfg):
+        for kind in ('story', 'bug'):
+            base = pool_dir(cfg, kind)
+            if base.is_dir():
+                found = found.merge(walk.descendants(base, Kind.FILE,
+                                                     suffix='.md'))
+        return found
     for mdir in milestone_dirs(cfg):
         found = found.merge(slot_walk(mdir / BUGS_DIR))
-        for ffile in feature_files(mdir):
+        for ffile in _nested_feature_files(mdir):
             found = found.merge(slot_walk(ffile.parent / STORIES_DIR))
     return found
 
@@ -1587,12 +1687,11 @@ def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     one or refuse naming them all.
     """
     out = []
-    for mdir in milestone_dirs(cfg):
-        mfile = mdir / MILESTONE_DOC
-        status = field_of(mfile, 'status')
-        if category_of(cfg, 'milestone', status) != IN_PROGRESS:
+    for milestone in milestones(cfg):
+        if category_of(cfg, 'milestone', milestone.status) != IN_PROGRESS:
             continue
-        out.append((field_of(mfile, 'id'), field_of(mfile, 'branch'), mfile))
+        out.append((field_of(milestone.path, 'id'),
+                    field_of(milestone.path, 'branch'), milestone.path))
     return out
 
 
@@ -1936,7 +2035,7 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
         status=field_of(ffile, 'status'),
         phase=unquote(field_of(ffile, 'phase')),
         path=ffile,
-        stories=story_files(ffile),
+        stories=story_files(cfg, unquote(field_of(ffile, 'id'))),
     )
     finished = holds(cfg, 'story',
                      ((s, field_of(s, 'status')) for s in view.stories),
@@ -1979,7 +2078,7 @@ def header_of(path: Path) -> str:
 # A bug is never moved by this tool; what is checkable is D4's fact, a status
 # outside the vocabulary — and every "is it open" reader tests a name, so a
 # typo would pass in silence.
-def bug_files(mdir: Path) -> list[Path]:
+def _nested_bug_files(mdir: Path) -> list[Path]:
     """Every bug document under one milestone, in reading order."""
     return grain_docs(mdir / BUGS_DIR)
 
@@ -1991,8 +2090,8 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     """
     out: list[tuple[Path, str]] = []
     scanned = 0
-    for mdir in milestone_dirs(cfg):
-        for bfile in bug_files(mdir):
+    for milestone in milestones(cfg):
+        for bfile in bug_files(cfg, milestone.gid):
             scanned += 1
             bstat = field_of(bfile, 'status')
             if category_of(cfg, 'bug', bstat) is None:
@@ -2023,13 +2122,13 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
         if bucket is not None and status in bucket:
             bucket[status] += 1
 
-    for mdir in milestone_dirs(cfg):
-        count('milestone', field_of(mdir / MILESTONE_DOC, 'status'))
-        for bf in bug_files(mdir):
+    for milestone in milestones(cfg):
+        count('milestone', milestone.status)
+        for bf in bug_files(cfg, milestone.gid):
             count('bug', field_of(bf, 'status'))
-        for ff in feature_files(mdir):
+        for ff in feature_files(cfg, milestone.gid):
             count('feature', field_of(ff, 'status'))
-            for sf in story_files(ff):
+            for sf in story_files(cfg, unquote(field_of(ff, 'id'))):
                 count('story', field_of(sf, 'status'))
     return used
 

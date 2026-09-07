@@ -1,1 +1,3 @@
 {"ts":"2026-09-07T13:09:43Z","kind":"decision","grain":"ms-a-move-is-an-event","entry":"D1","title":"The tool emits; a plugin framework is the rejected alternative"}
+{"ts":"2026-09-07T15:25:00Z","kind":"decision","grain":"ms-a-move-is-an-event","entry":"D2","title":"Everything ships in 0.5.0; a 0.4.1 patch is the rejected alternative"}
+{"ts":"2026-09-07T15:25:46Z","kind":"status","grain":"ms-a-move-is-an-event","from":"planning","to":"ready"}

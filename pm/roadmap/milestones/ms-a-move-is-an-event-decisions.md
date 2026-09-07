@@ -62,3 +62,30 @@ at the next move that touches its grain or rule.
 
 **The pressure this decision has to survive is one sentence:** *"just let the config name a command
 to run."* It will sound reasonable, it is one commit, and it is the whole of the above.
+
+## D2 — 2026-09-07 — Everything ships in 0.5.0; a 0.4.1 patch is the rejected alternative
+
+**The five bugs ship here, in 0.5.0, and the consumer-facing two run FIRST.** `order` opens with
+`the-migration-rewrites-only-quoted-refs` (#7) and `check-pm-reopens-every-file-per-field` (#6),
+ahead of every feature — the same shape 0.4.0 used when it put its telemetry pre-work before the
+migration, and for the same reason: the riskiest and most-blocking work should be the best-measured
+and the earliest, not the tail.
+
+**Rejected: a 0.4.1 carrying #6 and #7 alone, ahead of this milestone.** The argument for it was
+real and is recorded here rather than lost: both are open against SHIPPED 0.4.0 and are degrading a
+consumer tree right now — #7 quietly turned 36 refs decorative while `check pm` exited 0, and #6
+made the narrowest rung on the conveyor slower than that consumer's entire unit tier. Carrying them
+in 0.5.0 means that consumer waits for the whole event stream to land before either is fixed,
+because `release` refuses while any open bug names the milestone.
+
+It was rejected on cost, deliberately: a patch release is its own belt run — branch, changelog,
+version-sync, full gate, PR, merge, tag, artifact proof — and 0.5.0 would then have to adopt its own
+patch mid-milestone. Front-loading the two bugs in `order` gets the fix written just as early; what
+it does not get is the fix PUBLISHED early. **If the consumer needs it published before 0.5.0 is
+ready, the answer is to cut 0.4.1 from those two commits at that point** — the work is sequenced so
+that stays possible, and this decision is not a commitment to never do it.
+
+**What this costs, stated plainly:** 0.5.0 is now 7 features, 1 story and 5 bugs, and it cannot ship
+until all five bugs close. The milestone's Risks section already says weight is shed from the
+lessons half and never from the edges; the bugs are not sheddable at all, because they are open
+against released code.

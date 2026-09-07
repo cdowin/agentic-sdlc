@@ -2,11 +2,16 @@
 id: "ms-a-move-is-an-event"
 kind: milestone
 name: a move is an event
-status: planning
+status: ready
 depends_on: ["ms-0.4.0"]
 branch: milestone/0.5.0-a-move-is-an-event
 version: 0.5.0
 order:
+  - "bg-the-migration-rewrites-only-quoted-refs"
+  - "bg-check-pm-reopens-every-file-per-field"
+  - "bg-the-new-verbs-mint-a-compound-id"
+  - "bg-the-shipped-rules-name-retired-behaviour"
+  - "bg-retire-drops-the-summary-it-accepts"
   - "ft-the-tool-emits-and-never-executes"
   - "ft-one-event-shape-serves-three-readers"
   - "ft-a-move-emits-the-breadcrumb-it-prints"
@@ -14,11 +19,6 @@ order:
   - "ft-a-sink-wired-and-silent-is-a-finding"
   - "ft-a-lesson-is-a-row-bound-to-a-grain"
   - "ft-a-lesson-surfaces-where-you-stand"
-  - "bg-the-new-verbs-mint-a-compound-id"
-  - "bg-the-migration-rewrites-only-quoted-refs"
-  - "bg-check-pm-reopens-every-file-per-field"
-  - "bg-retire-drops-the-summary-it-accepts"
-  - "bg-the-shipped-rules-name-retired-behaviour"
 ---
 
 # 0.5.0 — a move is an event
@@ -131,11 +131,11 @@ open against shipped code, not because they belong to the theme.
 `check pm` exited 0 throughout; the scaffold mints a shape the tree does not use and no rule reads
 it. Both are gates that missed drift and printed PASS, on consumer data.
 
-**#6 and #7 are load-bearing on a tree that is bumped RIGHT NOW.** `release`'s `features-done` check
-refuses while any open bug names this milestone, so carrying them here means 0.5.0 cannot ship until
-they close — and a consumer waiting on 0.5.0 for a fix to shipped 0.4.0 waits for the whole event
-stream to land. A 0.4.1 carrying #6 and #7 alone is the alternative, and it is worth deciding
-deliberately rather than by default.
+**#6 and #7 are load-bearing on a tree that is bumped RIGHT NOW**, so they run FIRST — `order`
+opens with them, ahead of every feature, the way 0.4.0 put its telemetry pre-work ahead of its
+migration. `release` refuses while any open bug names this milestone, so 0.5.0 cannot ship until all
+five close. D2 records that, records the rejected 0.4.1, and records that cutting 0.4.1 from those
+two commits stays available if the consumer needs the fix published before this milestone is ready.
 
 ## Ship criterion
 

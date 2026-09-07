@@ -220,20 +220,28 @@ def grainless_path(roadmap_dir: Path) -> Path:
     return ledger_path(grainless_dir(roadmap_dir))
 
 
-def append_row(milestone_dir: Path, row: dict) -> None:
-    """Append one row to `<milestone_dir>/ledger.jsonl`, creating the file
-    (never the directory) if absent. `open('a')` rather than a `core.apply`
-    overwrite, because read-modify-write drops rows under two appenders.
-    One byte is read first — the last — and a newline closes a torn tail
-    before the row lands. Raises `OSError`: the caller has already changed
-    the tree and must say so.
+def append_to(path: Path, row: dict) -> None:
+    """Append one row to a ledger FILE, creating the file — and, since 0.4.0,
+    the POOL it sits in, because `<roadmap>/ledgers/` is a directory the tree
+    may not have yet.
+
+    `open('a')` rather than a `core.apply` overwrite, because read-modify-write
+    drops rows under two appenders. One byte is read first — the last — and a
+    newline closes a torn tail before the row lands. Raises `OSError`: the
+    caller has already changed the tree and must say so.
     """
-    path = ledger_path(milestone_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
         line = '\n' + line
     with path.open('a', encoding='utf-8', newline='\n') as handle:
         handle.write(line)
+
+
+def append_row(milestone_dir: Path, row: dict) -> None:
+    """`append_to`, addressed by DIRECTORY — what a nested tree gave every
+    caller, and what the grainless home still is."""
+    append_to(ledger_path(milestone_dir), row)
 
 
 def _ends_mid_line(path: Path) -> bool:

@@ -73,7 +73,7 @@ MAIN_SESSION = FIXTURES / 'main-session.jsonl'
 
 STORY = '0.1/alpha/s0'
 BUG = '0.1/bugs/b0'
-LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/ledgers/0.1.jsonl'
 # 0.4.0/D3: a row naming no grain lands in the TREE's ledger. A
 # transcript row carries no grain yet and a `gate` row never will, so
 # this is where most of this module's rows arrive.
@@ -153,7 +153,7 @@ def status_line(ts: str, grain: str, frm: str, to: str) -> str:
 
 
 def bug_doc(root, status: str = 'open') -> None:
-    write(root / 'pm/roadmap/0.1-demo/bugs/b0.md',
+    write(root / 'pm/roadmap/bugs/b0.md',
           {'id': BUG, 'milestone': '"0.1"', 'name': 'B0', 'status': status})
 
 
@@ -337,7 +337,7 @@ def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
     grain in `in_progress` — `accepted` included, a word no frozen key can
     spell — and the frozen keys hold exactly what they always held."""
     with tree(story_statuses=('building', 'done', 'accepted')) as root:
-        beta = root / 'pm/roadmap/0.1-demo/features/beta'
+        beta = root / 'pm/roadmap/features/beta'
         write(beta / 'feature.md',
               {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
                'status': 'reviewing', 'reviewed': ''})
@@ -494,7 +494,7 @@ def test_a_tree_with_no_roadmap_is_information_not_a_refusal(
         kwargs, second_milestone):
     with tree(**kwargs) as root:
         if second_milestone:
-            write(root / 'pm/roadmap/0.2-next/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         shutil.rmtree(root / 'pm')
         got, out = record(root, *GATE)
@@ -506,7 +506,7 @@ def test_a_tree_with_no_roadmap_is_information_not_a_refusal(
 # The lookup these replace asked which milestone was `in_progress` and refused
 # on none and on several. Every case below is a write that used to be REFUSED
 # or MISFILED, so each one fails at the commit before this story.
-SECOND = 'pm/roadmap/0.2-next'
+SECOND = 'pm/roadmap/milestones'
 SECOND_LEDGER = f'{SECOND}/ledger.jsonl'
 
 
@@ -531,7 +531,7 @@ def test_a_grain_in_a_planning_milestone_records():
     0.2, so the row that names 0.2's feature had nowhere to go. Design work IS
     the milestone's work, and it is the first thing a milestone does."""
     with tree(milestone_status='planning') as root:
-        write(root / 'pm/roadmap/0.1-demo/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.1.md',
               {'id': '"0.1"', 'name': 'Demo', 'status': 'planning'})
         code, out = record(root, '--grain', '0.1/alpha')
         assert code == 0, out
@@ -571,7 +571,7 @@ def transcript(root, *extra):
 
 
 def second_story(root, status: str = 'building') -> str:
-    write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s9.md',
+    write(root / 'pm/roadmap/stories/s9.md',
           {'id': '0.1/alpha/s9', 'feature': '0.1/alpha', 'milestone': '"0.1"',
            'name': 'S9', 'status': status, 'owner': ''})
     return '0.1/alpha/s9'
@@ -678,7 +678,7 @@ def test_resolution_never_changes_an_exit_code():
     with tree(story_statuses=('ready',),
               config=LEGACY_FLOW + '[pm]\nstory_ordinal_prefix = true\n') as root:
         for stem, status in (('01-twin', 'building'), ('02-twin', 'ready')):
-            write(root / f'pm/roadmap/0.1-demo/features/alpha/stories/{stem}.md',
+            write(root / f'pm/roadmap/stories/{stem}.md',
                   {'id': '0.1/alpha/twin', 'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': 'Twin', 'status': status,
                    'owner': ''})
@@ -721,7 +721,7 @@ def test_the_row_carries_the_id_the_grain_declares_not_the_string_typed():
     two lines for one thing. `_ledger_id` is what every other row already
     uses."""
     with tree() as root:
-        write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
+        write(root / 'pm/roadmap/stories/s0.md',
               {'id': STORY, 'feature': '0.1/alpha', 'milestone': '"0.1"',
                'name': 'S0', 'status': 'building', 'owner': ''})
         assert record(root, '--from-transcript', str(SUBAGENT),
@@ -755,7 +755,7 @@ def test_retire_takes_the_milestones_ledger_and_leaves_the_trees():
         before = (root / ROOT_LEDGER_REL).read_bytes()
         code, out = run_cli(root, 'retire', '0.1')
         assert code == 0, out
-        assert not (root / 'pm/roadmap/0.1-demo').exists()
+        assert not (root / 'pm/roadmap').exists()
         assert (root / ROOT_LEDGER_REL).read_bytes() == before
 
 
@@ -1125,11 +1125,11 @@ def test_such_a_row_does_not_become_this_grains_row():
 ])
 def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
     with tree(**kwargs) as root:
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': kwargs['milestone_status'],
                'version': '"0.2.0"'})
         if plan:
-            _model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+            _model.set_field(root / 'pm/roadmap/milestones/0.1.md',
                              'version', '"0.1.0"')
             (root / 'pm/roadmap/releases.md').write_text(
                 '---\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n\nThe plan.\n',

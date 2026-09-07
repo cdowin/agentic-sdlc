@@ -42,10 +42,9 @@ def _short(gid: str) -> str:
     return gid.rpartition('/')[2] or gid
 
 
-def milestone_rows(cfg: model.PmConfig, mdir: Path) -> list[str]:
-    mid = model.unquote(model.field_of(mdir / model.MILESTONE_DOC, 'id'))
-    views = [model.read_feature(cfg, f)
-             for f in model.feature_files(cfg, mid)]
+def milestone_rows(cfg: model.PmConfig, mfile: Path) -> list[str]:
+    mid = model.unquote(model.field_of(model.milestone_doc(mfile), 'id'))
+    views = [model.read_feature(cfg, f) for f in model.feature_files(cfg, mid)]
     by_id = {v.fid: v for v in views}
     deps: dict[str, list[str]] = {}
     for v in views:
@@ -100,7 +99,12 @@ def feature_rows(cfg: model.PmConfig, ffile: Path) -> list[str]:
 
 
 def block_for(cfg: model.PmConfig, path: Path) -> str:
-    rows = (milestone_rows(cfg, path.parent) if path.name == model.MILESTONE_DOC
+    # The KIND the document declares, not the filename: a pooled tree names
+    # every document by its id, so `milestone.md` is no longer the signal.
+    kind = model.unquote(model.field_of(path, 'kind'))
+    is_milestone = (kind == 'milestone' if kind
+                    else path.name == model.MILESTONE_DOC)
+    rows = (milestone_rows(cfg, path) if is_milestone
             else feature_rows(cfg, path))
     body = '\n'.join(rows) if rows else '_(nothing yet)_'
     return f'{OPEN}\n{NOTE}\n\n{body}\n{CLOSE}'
@@ -130,8 +134,7 @@ def _replace(text: str, block: str, rel: str) -> str:
 def targets(cfg: model.PmConfig) -> list[Path]:
     out = []
     for milestone in model.milestones(cfg):
-        mdir = milestone.path.parent
-        out.append(mdir / model.MILESTONE_DOC)
+        out.append(milestone.path)
         out.extend(model.feature_files(cfg, milestone.gid))
     return out
 

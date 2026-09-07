@@ -99,64 +99,69 @@ def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None
     actions.append(('restored the header line of', path))
 
 
-def scaffold(cfg: model.PmConfig, kind: str, gdir: Path,
-             values: dict[str, str]) -> list[tuple[str, Path]]:
-    """Fill one grain dir's required slots. Idempotent and never clobbers: an
-    existing slot is left byte-identical, a slot under another case is
-    refused, and no shared doc or directory is minted — those appear on
-    first write.
+def slot_paths(kind: str, doc: Path) -> dict[str, Path]:
+    """{slot name: where it sits} for one grain.
+
+    A grain used to be a DIRECTORY with named slots inside it. It is a
+    DOCUMENT in a pool now, and its shared docs sit beside it under its own
+    filename — `ft-x.md`, `ft-x-decisions.md`, `ft-x-review.md`. Same slots,
+    one function deciding where each one lives, so the scaffolder below never
+    joins a name onto a directory itself.
     """
     file_slots = (model.MILESTONE_FILE_SLOTS if kind == 'milestone'
                   else model.FEATURE_FILE_SLOTS)
-    # Renamed and header-repaired when PRESENT, never created when absent.
-    managed = file_slots + (model.MILESTONE_OPTIONAL_SLOTS if kind == 'milestone'
-                            else model.FEATURE_OPTIONAL_SLOTS)
+    optional = (model.MILESTONE_OPTIONAL_SLOTS if kind == 'milestone'
+                else model.FEATURE_OPTIONAL_SLOTS)
+    out = {slot: doc for slot in file_slots}
+    for slot in optional:
+        out[slot] = doc.with_name(f'{doc.stem}-{slot}')
+    return out
+
+
+def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
+             values: dict[str, str]) -> list[tuple[str, Path]]:
+    """Fill one grain's slots. Idempotent and never clobbers: an existing slot
+    is left byte-identical, and no shared doc is minted — those appear on
+    first write, which is why an absent handoff is a signal `check pm` can
+    report (0.4.0/D6).
+    """
+    slots = slot_paths(kind, doc)
+    file_slots = (model.MILESTONE_FILE_SLOTS if kind == 'milestone'
+                  else model.FEATURE_FILE_SLOTS)
     actions: list[tuple[str, Path]] = []
-    # The grain directory is the first byte written, so a name the filesystem
-    # refuses or an unwritable roadmap is a refusal that can truthfully say
-    # nothing was written.
+    # The pool is the first byte written, so an unwritable roadmap is a
+    # refusal that can truthfully say nothing was written.
     try:
-        apply.raise_on_error(apply.make_dir(gdir))
+        apply.raise_on_error(apply.make_dir(doc.parent))
     except OSError as err:
         raise ScaffoldRefused(
-            f'{cfg.rel(gdir)}/ could not be created ({err}) — nothing was '
-            f'written; shorten the id or name, or make {cfg.rel(gdir.parent)}/ '
-            f'writable, and re-run') from err
+            f'{cfg.rel(doc.parent)}/ could not be created ({err}) — nothing '
+            f'was written; make {cfg.rel(doc.parent.parent)}/ writable and '
+            f're-run') from err
 
     # Every refusal for the whole grain is raised before the first slot write
-    # (rule 3). A slot under another case is refused, never renamed or written
-    # past: that would mint a twin or truncate the legacy bytes.
-    entries = model.dir_entries(gdir)
-    for slot in managed:
-        variants = model.case_variants(entries, slot)
-        if variants:
-            raise ScaffoldRefused(
-                f'{cfg.rel(gdir)}/ holds {", ".join(variants)} where this '
-                f'package expects {slot} — nothing was written; rename it '
-                f'yourself (`git mv --force {cfg.rel(gdir / variants[0])} '
-                f'{cfg.rel(gdir / slot)}`), then re-run')
-        if slot not in entries:
+    # (rule 3).
+    for slot, path in slots.items():
+        if not path.exists() and not path.is_symlink():
             continue
         # The link before the kind: `is_dir()` follows a symlink, and a
-        # symlinked slot points outside the grain.
-        if (gdir / slot).is_symlink():
+        # symlinked slot points outside the pool.
+        if path.is_symlink():
             raise ScaffoldRefused(
-                f'{cfg.rel(gdir / slot)} is a SYMLINK to '
-                f'{os.readlink(gdir / slot)} — the scaffolder writes inside '
-                f'the grain it was asked to fill and does not follow a link '
-                f'out of it; nothing was written; replace it with the real '
-                f'file')
-        if entries[slot] == 'dir':
-            # Refused, not crashed: exit 1 is reserved for findings.
+                f'{cfg.rel(path)} is a SYMLINK to {os.readlink(path)} — the '
+                f'scaffolder writes the grain it was asked to fill and does '
+                f'not follow a link out of it; nothing was written; replace '
+                f'it with the real file')
+        if path.is_dir():
             raise ScaffoldRefused(
-                f'{cfg.rel(gdir / slot)} is a DIRECTORY and {slot} is a '
-                f'file slot — nothing was written; move it aside')
+                f'{cfg.rel(path)} is a DIRECTORY and {slot} is a file slot — '
+                f'nothing was written; move it aside')
 
     # The fill phase is decided here too: every template is loaded and decoded,
     # every header prepend proved writable, before a byte moves.
     bodies: dict[str, str] = {}
     for slot in file_slots:
-        if entries.get(slot) == 'file':
+        if slots[slot].is_file():
             continue
         name = model.SLOT_TEMPLATE[slot]
         try:
@@ -167,30 +172,29 @@ def scaffold(cfg: model.PmConfig, kind: str, gdir: Path,
                 f'written' + (f'; fix it under {cfg.template_dir}/, or delete '
                               f'it there to fall back to the packaged one'
                               if cfg.template_dir else '')) from err
-    for slot in managed:
-        now = gdir / slot
-        if slot in bodies or entries.get(slot) != 'file':
+    for slot, path in slots.items():
+        if slot in bodies or not path.is_file():
             continue
-        want = _header_wanted(now, slot)
-        if want and not os.access(now, os.W_OK):
+        want = _header_wanted(path, slot)
+        if want and not os.access(path, os.W_OK):
             raise ScaffoldRefused(
-                f'{cfg.rel(now)} is missing its header line and is not '
+                f'{cfg.rel(path)} is missing its header line and is not '
                 f'writable — nothing was written; make it writable, or prepend '
                 f'the line yourself: {want!r}')
 
     # A real write can still fail on what no listing shows; it becomes a
     # refusal naming what already landed.
     try:
-        for slot in managed:
+        for slot, path in slots.items():
             if slot in bodies:
-                write(gdir / slot, bodies[slot])
-                actions.append(('created', gdir / slot))
-            elif entries.get(slot) == 'file':
-                _fill_header(gdir / slot, slot, actions)
+                write(path, bodies[slot])
+                actions.append(('created', path))
+            elif path.is_file():
+                _fill_header(path, slot, actions)
     except (OSError, UnicodeDecodeError) as err:
         did = '; '.join(f'{what} {cfg.rel(p)}' for what, p in actions)
         raise ScaffoldRefused(
-            f'{cfg.rel(gdir)}/ could not be filled ({err}) — this one could not '
+            f'{cfg.rel(doc)} could not be filled ({err}) — this one could not '
             f'be decided in advance, so the grain is PART-FILLED: '
             + (did or 'nothing had been written yet')
             + '; fix it and re-run, which fills only the gaps') from err

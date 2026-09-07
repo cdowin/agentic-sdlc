@@ -61,7 +61,7 @@ def gate_both_streams(root: Path) -> tuple[int, str]:
 def building_milestone(root: Path, branch: str = '', version: str = '0.1'):
     """The tree D9/D10/R5 read: a `building` milestone, a `branch:` stamp and
     a `pyproject.toml` version."""
-    mfile = root / 'pm/roadmap/0.1-demo/milestone.md'
+    mfile = root / 'pm/roadmap/milestones/0.1.md'
     model.set_field(mfile, 'status', 'building')
     if branch:
         model.set_field(mfile, 'branch', branch)
@@ -255,7 +255,7 @@ class DriftGate(unittest.TestCase):
         # Counting a constant would make the delta this asserts meaningless.
         with tree(feature_status='planning', story_statuses=('done',),
                   config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
-                         '"V1","V2","V3","V4","V5"]\n') as root:
+                         '"V1","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
@@ -334,7 +334,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             with self.subTest(status=status, owner=owner), \
                     tree(feature_status='building', story_statuses=(),
                          config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
-                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
+                                '"D6","V1","V4","V5"]\n') as root:
                 self._settle(root)
                 write(root / STORY_REL,
                       {'id': '0.1/alpha/s0', 'feature': '0.1/alpha',
@@ -362,7 +362,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                     tree(feature_status='building',
                          story_statuses=('ready',),
                          config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
-                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
+                                '"D6","V1","V4","V5"]\n') as root:
                 self._settle(root)
                 self._story(root, status, body)
                 code, out = run_gate(root)
@@ -377,7 +377,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         with tree(milestone_status='building', feature_status='building',
                   story_statuses=(),
                   config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
-                         '"V1","V2","V3","V4","V5"]\n') as root:
+                         '"V1","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             for needle in ("milestone 0.1 is 'building' with no branch:",
@@ -460,8 +460,8 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             model.ACCEPTANCE_HEADING))
 
 
-FFILE_REL = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
-MFILE_REL = 'pm/roadmap/0.1-demo/milestone.md'
+FFILE_REL = 'pm/roadmap/features/alpha.md'
+MFILE_REL = 'pm/roadmap/milestones/0.1.md'
 
 
 # The one ordered vocabulary the SEED writes — and that it is the seed, not a
@@ -612,7 +612,7 @@ class ConfigValidation(unittest.TestCase):
     """
 
     def _drifted(self, root: Path) -> None:
-        write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
+        write(root / 'pm/roadmap/stories/s0.md',
               {'id': '0.1/alpha/s0', 'feature': '0.1/alpha', 'milestone': '"0.1"',
                'name': 'S0', 'status': 'banana'})
 
@@ -808,7 +808,7 @@ class U2ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
         # Either home satisfies it (0.4.0/D3): the question is whether
         # recording is happening at all, and a row in either answers it.
         for rel in ('pm/roadmap/ledger.jsonl',
-                    'pm/roadmap/0.1-demo/ledger.jsonl'):
+                    'pm/roadmap/ledgers/0.1.jsonl'):
             with self.subTest(rel=rel), tree(story_statuses=('ready',)) as root:
                 self._settings(root, self.WIRED)
                 (root / rel).write_text(
@@ -1133,7 +1133,7 @@ class BugStatusVocabulary(unittest.TestCase):
 
     @staticmethod
     def _bug(root: Path, rel: str, status: str) -> Path:
-        p = root / 'pm/roadmap/0.1-demo/bugs' / rel
+        p = root / 'pm/roadmap/bugs' / rel
         write(p, {'id': f'0.1/bugs/{Path(rel).stem}', 'milestone': '"0.1"',
                   'status': status, 'caught_in': '"0.1"'})
         return p
@@ -1179,7 +1179,7 @@ class BugStatusVocabulary(unittest.TestCase):
         # The control comes with it: narrowing the walk to grain documents must
         # not undo the recursion that made nested bugs visible at all.
         with tree(milestone_status='building') as root:
-            bdir = root / 'pm/roadmap/0.1-demo/bugs'
+            bdir = root / 'pm/roadmap/bugs'
             (bdir / 'design').mkdir(parents=True, exist_ok=True)
             (bdir / 'README.md').write_text('# how bugs are filed here\n',
                                             encoding='utf-8')
@@ -1207,7 +1207,7 @@ class StoryWalk(unittest.TestCase):
     a FALSE finding against a feature that had an unfinished story in it.
     """
 
-    FDIR = 'pm/roadmap/0.1-demo/features/alpha'
+    FDIR = 'pm/roadmap/features/alpha'
 
     def test_a_story_the_walk_cannot_see_becomes_a_FALSE_D2_finding(self):
         # Not just an undercount: the stories it COULD see were all done, so
@@ -1287,7 +1287,7 @@ class Validate(unittest.TestCase):
         )
         for rule, rel, field, value, message in rows:
             with self.subTest(rule=rule), tree(story_statuses=('ready',)) as root:
-                model.set_field(root / 'pm/roadmap/0.1-demo' / rel, field, value)
+                model.set_field(root / 'pm/roadmap' / rel, field, value)
                 findings, _ = self._run(root)
                 self.assertTrue(any(message in f for f in findings), findings)
 
@@ -1295,7 +1295,7 @@ class Validate(unittest.TestCase):
         # Git history is the archive: depending on a milestone that has been
         # pruned is expected, so it is censused rather than failed.
         with tree() as root:
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             model.set_field(ff, 'depends_on', '["0.0.9/long-gone"]')
             findings, census = self._run(root)
             self.assertEqual(findings, [])
@@ -1304,7 +1304,7 @@ class Validate(unittest.TestCase):
     def test_v5_detects_a_dependency_cycle(self):
         with tree() as root:
             run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
-            fdir = root / 'pm/roadmap/0.1-demo/features'
+            fdir = root / 'pm/roadmap/features'
             model.set_field(fdir / 'alpha/feature.md', 'depends_on', '["0.1/beta"]')
             model.set_field(fdir / 'beta/feature.md', 'depends_on', '["0.1/alpha"]')
             findings, _ = self._run(root)
@@ -1327,7 +1327,7 @@ class Validate(unittest.TestCase):
     def test_the_gate_runs_the_same_predicates(self):
         # One definition, two readers: a dangling ref must fail `check pm` too.
         with tree(story_statuses=('ready',)) as root:
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             model.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
             code, out = run_gate(root)
             self.assertEqual(code, 1)
@@ -1357,12 +1357,12 @@ class CausedBy(unittest.TestCase):
             bug(root, 'seed-is-zero', caused_by='0.1/no-such-feature')
             findings, census = self._validate(root)
             self.assertEqual(findings, [
-                "pm/roadmap/0.1-demo/bugs/seed-is-zero.md: caused_by "
+                "pm/roadmap/bugs/seed-is-zero.md: caused_by "
                 "'0.1/no-such-feature' resolves to nothing "
                 "(its milestone IS in the tree)"])
             self.assertEqual(census['refs'], 1)
 
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             model.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
             dep = [f for f in self._validate(root)[0] if 'depends_on' in f]
             self.assertEqual(len(dep), 1)
@@ -1445,7 +1445,7 @@ class CausedBy(unittest.TestCase):
             bug(root, 'seed-is-zero', caused_by='0.1/no-such-feature')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
-            self.assertIn("  DRIFT  pm/roadmap/0.1-demo/bugs/seed-is-zero.md: "
+            self.assertIn("  DRIFT  pm/roadmap/bugs/seed-is-zero.md: "
                           "caused_by '0.1/no-such-feature' resolves to nothing "
                           "(its milestone IS in the tree)", out)
             self.assertIn('1 bug(s), 1 ref(s)', out)
@@ -1466,7 +1466,7 @@ class RefParsing(unittest.TestCase):
     """
 
     def _with(self, root: Path, raw: str):
-        ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+        ff = root / 'pm/roadmap/features/alpha.md'
         self.assertTrue(model.set_field(ff, 'depends_on', raw))
         from agentic_sdlc.repo.pm import validate
         return validate.run(model.PmConfig(root=root))
@@ -1487,7 +1487,7 @@ class RefParsing(unittest.TestCase):
 
     def test_the_ref_census_does_not_depend_on_which_rules_ran(self):
         with tree() as root:
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             model.set_field(ff, 'depends_on', '["0.1/alpha"]')
             from agentic_sdlc.repo.pm import validate
             cfg = model.PmConfig(root=root)
@@ -1514,7 +1514,7 @@ class DamagedFrontmatter(unittest.TestCase):
 
     @staticmethod
     def _bug(root: Path, slug: str, status: str) -> Path:
-        p = root / 'pm/roadmap/0.1-demo/bugs' / f'{slug}.md'
+        p = root / 'pm/roadmap/bugs' / f'{slug}.md'
         write(p, {'id': f'0.1/bugs/{slug}', 'milestone': '"0.1"',
                   'status': status, 'caught_in': '"0.1"'})
         return p
@@ -1587,8 +1587,8 @@ class DamagedFrontmatter(unittest.TestCase):
         # frontmatter fence.
         with tree(feature_status='building', story_statuses=('ready',)) as root:
             write_config(root, self.BUG_TOML)
-            sdir = root / 'pm/roadmap/0.1-demo/features/alpha/stories'
-            bdir = root / 'pm/roadmap/0.1-demo/bugs'
+            sdir = root / 'pm/roadmap/stories'
+            bdir = root / 'pm/roadmap/bugs'
             bdir.mkdir(parents=True, exist_ok=True)
             (bdir / 'README.md').write_text('# how bugs are filed here\n',
                                             encoding='utf-8')
@@ -1616,7 +1616,7 @@ class DamagedFrontmatter(unittest.TestCase):
         # rule can report its status. A dot prefix is a deliberate hide; an
         # UNCOUNTED one is a census asserting the opposite of the filesystem.
         with tree(feature_status='building', story_statuses=('ready',)) as root:
-            hold = root / 'pm/roadmap/0.1-demo/bugs/.hold'
+            hold = root / 'pm/roadmap/bugs/.hold'
             hold.mkdir(parents=True, exist_ok=True)
             (hold / 'openbug.md').write_text(
                 '---\nid: 0.1/bugs/openbug\nmilestone: "0.1"\n'
@@ -1631,7 +1631,7 @@ class DamagedFrontmatter(unittest.TestCase):
         # held to D4 was one walk enforcing a rule the structure gate had
         # already declared out of scope. Two walks, one tree, one answer.
         with tree(feature_status='building', story_statuses=('ready',)) as root:
-            sdir = root / 'pm/roadmap/0.1-demo/features/alpha/stories'
+            sdir = root / 'pm/roadmap/stories'
             write(sdir / '.hidden/d.md',
                   {'id': '0.1/alpha/d', 'status': 'NOT-A-REAL-STATUS'})
             write(sdir / '.dotfile.md',
@@ -2049,7 +2049,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         # finding, and letting it into this census would make the two rules
         # argue about the same byte.
         with tree(milestone_status='building') as root:
-            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'status', 'wombat')
             write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)

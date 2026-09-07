@@ -37,7 +37,7 @@ from support.pm import git_tree as tree
 
 STORY, QUIET, FEATURE, BUG = ('0.1/alpha/s0', '0.1/alpha/s1', '0.1/alpha',
                               '0.1/bugs/crash')
-MILESTONE_DIR = 'pm/roadmap/0.1-demo'
+MILESTONE_DIR = 'pm/roadmap'
 RECORD_REL = 'docs/reviews/alpha.md'
 TAG = 'v9.9.9'
 

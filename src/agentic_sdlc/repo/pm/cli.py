@@ -405,20 +405,28 @@ def _ledger_id(path: Path, fallback: str,
     return model.unquote(reader.field_of(path, 'id')) or fallback
 
 
+def _ledger_of(cfg: model.PmConfig, gid: str) -> Path | None:
+    """The ledger file a grain's row belongs in, followed through its
+    bindings — a story to its feature to its milestone (D1). None when the
+    grain names no milestone, which is the row that lands at the root."""
+    mid = model.milestone_of(cfg, gid) if gid else ''
+    return ledger.ledger_for(cfg, mid) if mid else None
+
+
 def _stamp(cfg: model.PmConfig, path: Path, row: dict) -> None:
     """Append one row to the ledger of the milestone that owns `path`. Never
     raises and never changes an exit code; a missing row is said on stderr.
     """
-    mdir = model.milestone_dir_of(cfg, path)
-    if mdir is None:
-        print(f'[pm] WARNING — no milestone directory owns {cfg.rel(path)}, so '
+    target = _ledger_of(cfg, model.unquote(model.field_of(path, 'id')))
+    if target is None:
+        print(f'[pm] WARNING — no milestone owns {cfg.rel(path)}, so '
               f'no {ledger.LEDGER_FILE_NAME} row was appended for it; the '
               f'write itself landed', file=sys.stderr)
         return
     try:
-        ledger.append_row(mdir, row)
+        ledger.append_to(target, row)
     except OSError as err:
-        print(f'[pm] WARNING — {cfg.rel(ledger.ledger_path(mdir))} could not be '
+        print(f'[pm] WARNING — {cfg.rel(target)} could not be '
               f'appended to ({err}); the write itself landed, but this '
               f'transition is NOT in the ledger', file=sys.stderr)
 
@@ -672,7 +680,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         known = _known_milestone_ids(cfg)
         raise Usage(f'{mid!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(known) if known else "none scaffolded"})')
-    mfile = mdir / model.MILESTONE_DOC
+    mfile = model.milestone_doc(mdir)
     notices: list[str] = []
     if not mfile.is_file():
         notices.append(f'{cfg.rel(mfile)} is missing')
@@ -814,7 +822,18 @@ def cmd_move(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 # --- status -------------------------------------------------------------------
-def _open_for(cfg: model.PmConfig, mdir: Path) -> dict[str, str]:
+def _short(mid: str, gid: str) -> str:
+    """A child's id with the parent's prefix taken off, when it has one.
+
+    A nested id was `<milestone>/<slug>` and this column printed the slug; a
+    pooled id is `ft-<slug>` and there is nothing to strip. One function, so
+    the board reads the same in either layout.
+    """
+    head = f'{mid}/'
+    return gid[len(head):] if gid.startswith(head) else gid
+
+
+def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
     """{grain id: how long it has been open}, for the grains in one milestone
     that have not reached a terminal state.
 
@@ -825,7 +844,8 @@ def _open_for(cfg: model.PmConfig, mdir: Path) -> dict[str, str]:
     (rule 4).
     """
     rows: list = []
-    for path in (ledger.ledger_path(mdir), ledger.grainless_path(cfg.roadmap)):
+    for path in (ledger.ledger_for(cfg, mid),
+                 ledger.grainless_path(cfg.roadmap)):
         try:
             rows += ledger.read_rows(path)
         except ledger.LedgerError:
@@ -878,7 +898,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
     # prints whole.
     width = max(len(word) for word in model.flow_of(cfg, 'feature').order)
     for mdir, mid in known:
-        mfile = mdir / model.MILESTONE_DOC
+        mfile = model.milestone_doc(mdir)
         if only and only != mid:
             continue
         # 0.4.0/every-grain-is-on-a-stopwatch: how long each open grain has
@@ -886,7 +906,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # than one somebody reconstructs after the fact. A REPORT — nothing is
         # gated on it, because a ceiling on how long a feature may stay open is
         # this package having an opinion about somebody's week (rule 9).
-        opened = _open_for(cfg, mdir)
+        opened = _open_for(cfg, mid)
         mopen = opened.get(mid, '')
         print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]'
               + (f'  open {mopen}' if mopen else ''))
@@ -902,7 +922,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
             # `model.phase_key` is the one spelling of the board's reading
             # order.
             rows.append((model.phase_key(view.phase), view.phase, view,
-                         f'  feature {view.fid.partition("/")[2]:<40} '
+                         f'  feature {_short(mid, view.fid):<40} '
                          f'[{view.status:<{width}}] stories '
                          f'{view.done_n}/{view.total} done'
                          + (f'  open {opened[view.fid]}'
@@ -1061,7 +1081,7 @@ def _list_milestones(cfg: model.PmConfig, statuses: set[str],
                     f'roadmap_dir, or an empty tree?), not an empty set')
     rows = []
     for mdir, mid in known:
-        mfile = mdir / model.MILESTONE_DOC
+        mfile = model.milestone_doc(mdir)
         status = model.field_of(mfile, 'status')
         cat = model.category_of(cfg, 'milestone', status)
         if statuses and status not in statuses:
@@ -1077,24 +1097,20 @@ def _list_milestones(cfg: model.PmConfig, statuses: set[str],
 
 
 def _grain_file(cfg: model.PmConfig, gid: str) -> Path:
-    """Resolve any grain id — milestone, feature, story or bug — to its file."""
-    if f'/{model.BUGS_DIR}/' in gid:
-        mid, _, rest = gid.partition(f'/{model.BUGS_DIR}/')
-        # The resolution twin of _check_slug: a `..` or empty segment would
-        # hand the write to a sibling grain.
-        parts = rest.replace('\\', '/').split('/')
-        if not rest or any(p in ('', '.', '..') for p in parts):
-            raise Usage(f'no bug resolves from id {gid!r} '
-                        f'(a bug slug holds no dot or empty segments)')
-        mdir = model.milestone_dir(cfg, mid)
-        bf = (mdir / model.BUGS_DIR / f'{rest}.md') if mdir else None
-        if bf and bf.is_file():
-            return bf
-        raise Usage(f'no bug resolves from id {gid!r}')
-    depth = gid.count('/')
-    found = (model.milestone_file(cfg, gid) if depth == 0 else
-             model.feature_file(cfg, gid) if depth == 1 else
-             model.story_file(cfg, gid))
+    """Resolve any grain id — milestone, feature, story or bug — to its file.
+
+    ONE lookup for all four kinds, because a grain declares its `id:` and the
+    index is keyed on it. The four-branch version this replaces existed
+    because an id was arithmetic on a path: it partitioned on `/bugs/`,
+    counted separators to guess a kind, and joined the pieces onto a
+    directory — which is why a `..` or an empty segment had to be caught
+    before the join could hand a write to a sibling grain. Nothing is joined
+    now, and `model.id_defect` answers a malformed id without reading a file.
+    """
+    defect = model.id_defect(gid)
+    if defect:
+        raise Usage(f'no grain resolves from id {gid!r} — {defect}')
+    found = model.grain_file(cfg, gid)
     if found is None:
         raise Usage(f'no grain resolves from id {gid!r}')
     return found
@@ -1356,60 +1372,60 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if not rest:
             raise Usage(USAGE)
         ver, name = _check_slug('milestone version', rest[0]), ' '.join(rest[1:])
-        mdir = model.milestone_dir(cfg, ver)
-        if mdir is None:
-            if not name:
-                raise Usage(f'milestone {ver!r} does not exist yet — a new one '
-                            f'needs a name (the name mints the directory)')
-            mdir = cfg.roadmap / f'{ver}-{_slugify(name)}'
-            if _exists(mdir):
-                raise Refused(f'{cfg.rel(mdir)} already exists')
-        name = name or model.field_of(mdir / model.MILESTONE_DOC, 'name')
-        return _scaffold(cfg, 'milestone', mdir, {'id': ver, 'name': name})
+        found = model.milestone_file(cfg, ver)
+        if found is None and not name:
+            raise Usage(f'milestone {ver!r} does not exist yet — a new one '
+                        f'needs a name')
+        target = found or (model.pool_dir(cfg, 'milestone') / f'{ver}.md')
+        name = name or model.field_of(target, 'name')
+        return _scaffold(cfg, 'milestone', target,
+                         {'id': ver, 'kind': 'milestone', 'name': name})
     if grain == 'feature':
         if len(rest) < 2:
             raise Usage(USAGE)
         mid, slug = rest[0], _check_slug('feature slug', rest[1])
         name = ' '.join(rest[2:])
-        mdir = model.milestone_dir(cfg, mid)
-        if mdir is None:
+        if model.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
-        fdir = mdir / 'features' / slug
-        if not _exists(fdir / model.FEATURE_DOC) and not name:
-            raise Usage(f'feature {mid}/{slug!r} does not exist yet — a new one '
+        fid = f'{mid}/{slug}'
+        found = model.feature_file(cfg, fid)
+        if found is None and not name:
+            raise Usage(f'feature {fid!r} does not exist yet — a new one '
                         f'needs a name')
-        name = name or model.field_of(fdir / model.FEATURE_DOC, 'name')
-        return _scaffold(cfg, 'feature', fdir,
-                         {'id': f'{mid}/{slug}', 'milestone': mid, 'name': name})
+        target = found or (model.pool_dir(cfg, 'feature') / f'{slug}.md')
+        name = name or model.field_of(target, 'name')
+        return _scaffold(cfg, 'feature', target,
+                         {'id': fid, 'kind': 'feature', 'milestone': mid,
+                          'name': name})
     if grain == 'story':
         if len(rest) < 3:
             raise Usage(USAGE)
         fid, slug = rest[0], _check_slug('story slug', rest[1])
         name = ' '.join(rest[2:])
-        fdir = model.feature_dir(cfg, fid)
-        if fdir is None:
+        ffile = model.feature_file(cfg, fid)
+        if ffile is None:
             raise Usage(f'no feature resolves from id {fid!r}')
         # The milestone comes from the feature's own frontmatter, never
         # re-derived from the id.
-        mid = model.field_of(fdir / model.FEATURE_DOC, 'milestone')
-        # The file may carry an ordering prefix (`01-`); the id never does.
+        mid = model.field_of(ffile, 'milestone')
         sid_slug = model.story_slug_of(cfg, slug)
         if not sid_slug:
             raise Refused(f'story slug {slug!r} is an ordering prefix and '
                           f'nothing else — the number sequences the build, the '
                           f'slug after it is the id')
-        sf = fdir / model.STORIES_DIR / f'{slug}.md'
-        if _exists(sf):
-            raise Refused(f'story {fid}/{slug!r} already exists')
         sid = f'{fid}/{sid_slug}'
         claimed = model.story_file(cfg, sid)
         if claimed is not None:
             raise Refused(f'story id {sid!r} is already held by '
                           f'{cfg.rel(claimed)} — two files claiming one id is '
                           f'addressable by neither')
+        sf = model.pool_dir(cfg, 'story') / f'{slug}.md'
+        if _exists(sf):
+            raise Refused(f'{cfg.rel(sf)} already exists')
         body = templates.render(
             templates.load(cfg, 'story'),
-            {'id': sid, 'feature': fid, 'milestone': mid, 'name': name})
+            {'id': sid, 'kind': 'story', 'feature': fid, 'milestone': mid,
+             'name': name})
         _mint(cfg, sf, body)
         _ok(f'created {cfg.rel(sf)}')
         return 0
@@ -1421,18 +1437,19 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         # unresolvable cause is not created.
         cause = _caused_by(cfg, pairs)
         mid, slug = rest[0], _check_slug('bug slug', rest[1])
-        mdir = model.milestone_dir(cfg, mid)
-        if mdir is None:
+        if model.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
-        bf = mdir / model.BUGS_DIR / f'{slug}.md'
         bid = f'{mid}/{model.BUGS_DIR}/{slug}'
-        if _exists(bf):
+        if model.grain_file(cfg, bid) is not None:
             raise Refused(f'bug {bid!r} already exists')
-        # Bugs anchor to where they were caught; the path preserves the catch
-        # history.
+        bf = model.pool_dir(cfg, 'bug') / f'{slug}.md'
+        if _exists(bf):
+            raise Refused(f'{cfg.rel(bf)} already exists')
+        # Bugs anchor to where they were CAUGHT; `caught_in:` carries that now
+        # that the path does not.
         body = templates.render(
             templates.load(cfg, 'bug'),
-            {'id': bid, 'milestone': mid, 'slug': slug})
+            {'id': bid, 'kind': 'bug', 'milestone': mid, 'slug': slug})
         _mint(cfg, bf, body)
         _ok(f'created {cfg.rel(bf)}')
         if cause:
@@ -1441,10 +1458,9 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
             if not model.set_field(bf, CAUSED_BY, cause):
                 raise Refused(
                     f'{cfg.rel(bf)} was created, but {CAUSED_BY}: could not be '
-                    f'written into it (the bug template has no frontmatter '
-                    f'block) — set it with `pm set {bid} '
+                    f'written into it — its frontmatter has no `---` block to '
+                    f'put the field in; add one, or set it with `pm set {bid} '
                     f'{CAUSED_BY} {cause}`')
-            _ok(f'{bid}: {CAUSED_BY} {cause!r}')
         return 0
     if grain == 'handoff':
         # ON DEMAND ONLY. `new milestone` deliberately does NOT mint this doc:
@@ -1457,11 +1473,11 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if len(rest) != 1:
             raise Usage(USAGE)
         mid = rest[0]
-        mdir = model.milestone_dir(cfg, mid)
-        if mdir is None:
+        grain = model.grain_index(cfg).get(mid)
+        if grain is None or grain.kind != 'milestone':
             raise Usage(f'no milestone resolves from {mid!r}')
-        doc = mdir / model.HANDOFF_FILE_NAME
-        if model.dir_entries(mdir).get(model.HANDOFF_FILE_NAME) == 'file':
+        doc = model.shared_doc(cfg, grain, model.HANDOFF_FILE_NAME)
+        if doc.is_file():
             # Never clobbered: the traps section is the one thing in the tree
             # no command can regenerate.
             _ok(f'{cfg.rel(doc)} already exists (no-op) — `pm new milestone '
@@ -1472,7 +1488,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
                 templates.load(cfg,
                                model.SLOT_TEMPLATE[model.HANDOFF_FILE_NAME]),
                 {'id': mid,
-                 'name': model.field_of(mdir / model.MILESTONE_DOC, 'name')})
+                 'name': model.field_of(grain.path, 'name')})
         except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
             raise Usage(f'the handoff template cannot be read ({err}) — '
                         f'{cfg.rel(doc)} was not created') from err
@@ -1488,15 +1504,18 @@ def _decision_log(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
     template if absent). Nothing is written here; the caller writes once.
     """
     depth = gid.count('/')
-    gdir = (model.milestone_dir(cfg, gid) if depth == 0 else
-            model.feature_dir(cfg, gid) if depth == 1 else None)
-    if depth > 1 or f'/{model.BUGS_DIR}/' in gid:
+    grain = model.grain_index(cfg).get(gid)
+    if grain is not None and grain.kind not in ('milestone', 'feature'):
+        raise Refused(f'{gid!r} is a {grain.kind} — those have no decision '
+                      f'log; name the feature or milestone that owns the choice')
+    if grain is None and (depth > 1 or f'/{model.BUGS_DIR}/' in gid):
         raise Refused(f'{gid!r} is a story or a bug — those have no decision '
                       f'log; name the feature or milestone that owns the choice')
-    if gdir is None:
+    if grain is None:
         raise Usage(f'no milestone or feature resolves from id {gid!r}')
-    log = gdir / model.DECISION_FILE_NAME
-    if model.dir_entries(gdir).get(model.DECISION_FILE_NAME) == 'file':
+    log = model.shared_doc(cfg, grain, model.DECISION_FILE_NAME)
+    gdir = log.parent
+    if log.is_file():
         try:
             return log, model.read_raw(log)
         except (OSError, UnicodeDecodeError) as err:
@@ -1550,7 +1569,9 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
     _ok(f'{cfg.rel(log)}: {eid} — {when} — {title}')
     # The ledger is per-milestone (D6), so a feature's decision lands in its
     # milestone's file, named by the grain.
-    _stamp(cfg, log, ledger.decision_row(gid, eid, title))
+    # The GRAIN's document, not the log's: a decisions.md declares no
+    # `id:`, and the row belongs to the grain that made the choice.
+    _stamp(cfg, _grain_file(cfg, gid), ledger.decision_row(gid, eid, title))
     return 0
 
 
@@ -2116,7 +2137,7 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         else:
             mdir = (_report_milestone_dir(cfg, rest[0]) if rest
                     else _report_default_dir(cfg))
-        mid = _ledger_id(mdir / model.MILESTONE_DOC, mdir.name, src)
+        mid = _ledger_id(model.milestone_doc(mdir), mdir.name, src)
         path = ledger.ledger_path(mdir)
         # Two files, one report. The milestone's ledger holds every ATTRIBUTED
         # row; the tree's root ledger holds the rows that name no grain (D3),
@@ -2176,7 +2197,7 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.Source,
                     f'{src.rev} — a milestone is retired at the close AFTER '
                     f'its own, so name the rev it was still in the tree at '
                     f'(usually its release tag)')
-    doc = mdir / model.MILESTONE_DOC
+    doc = model.milestone_doc(mdir)
     if not src.is_file(doc):
         raise Usage(f'{src.spec(doc)} is not there, so {mid!r} is a directory '
                     f'at {src.rev} and not a milestone')

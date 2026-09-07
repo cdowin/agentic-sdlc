@@ -90,17 +90,20 @@ def _run() -> int:
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
           f'excluding {model.ARCHIVE_DIR_NAME}/)')
 
-    mdirs = model.milestone_dirs(cfg)
-    if not mdirs:
+    mfiles = [g.path for g in model.milestones(cfg)]
+    if not mfiles:
         print()
         print(f'[check:pm] FAIL — no milestones found under {cfg.roadmap_dir}/ '
               f'(wrong [pm] roadmap_dir, or an empty tree?)')
         return 1
 
     # Never gated by `checks`: this is the scan saying it could not see part of the tree.
-    for path, why in model.orphan_dirs(cfg):
-        report(f'{cfg.rel(path)}/ is a {why} — every grain under it was SKIPPED '
-               f'by this scan')
+    # 0.4.0: a pooled tree has no grain DIRECTORIES to be malformed, so
+    # what is left of this census is a document in a pool that declares no
+    # `id:` — the flat version of the same question, and the same rule 4
+    # reason for asking it: a document nothing can key on leaves the census.
+    for path, why in model.unkeyed_documents(cfg):
+        report(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
 
     # Always walked for the census; reported only under D4.
     bug_findings, n_bugs = model.bug_status_findings(cfg)
@@ -108,7 +111,7 @@ def _run() -> int:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
-    n_features, n_stories = _drift_walk(cfg, enabled, mdirs, report, warn)
+    n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
 
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -124,7 +127,7 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    return _verdict(cfg, findings, warnings, len(mdirs), n_features,
+    return _verdict(cfg, findings, warnings, len(mfiles), n_features,
                     n_stories, n_bugs, v_on, v_census)
 
 
@@ -137,14 +140,17 @@ def _cat(cfg: model.PmConfig, kind: str, status: str) -> str:
     return model.category_of(cfg, kind, status) or 'undeclared'
 
 
-def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
+def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                 report, warn) -> tuple[int, int]:
     """D1-D6 over every grain plus the READY warnings; returns the (feature, story) census."""
     n_features = 0
     n_stories = 0
 
-    for mdir in mdirs:
-        mfile = mdir / model.MILESTONE_DOC
+    for mfile in mfiles:
+        # The DOCUMENT, not a directory: a pooled tree has no per-milestone
+        # directory, and the two lines below that wanted one now take the
+        # document's own parent, which is the pool.
+        mdir = mfile.parent
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
         m_cat = model.category_of(cfg, 'milestone', mstat)

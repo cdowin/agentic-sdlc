@@ -55,8 +55,8 @@ def tree(**kwargs):
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
 ALPHA_RECORD = 'docs/reviews/alpha.md'
-BETA_RECORD = 'pm/roadmap/0.1-demo/features/beta/review.md'
-DELTA_RECORD = 'pm/roadmap/0.1-demo/features/delta/review.md'
+BETA_RECORD = 'pm/roadmap/features/beta-review.md'
+DELTA_RECORD = 'pm/roadmap/features/delta-review.md'
 
 YIELD, REWORK, ESCAPES, OVERHEAD, GATES = (
     'yield per review pass', 'rework', 'escapes', 'overhead shape',
@@ -101,7 +101,7 @@ verdict: SHIP
 def feature(root, fid: str, status: str, record: str = '',
             stories: tuple = ()) -> None:
     slug = fid.partition('/')[2]
-    fdir = root / 'pm/roadmap/0.1-demo/features' / slug
+    fdir = root / 'pm/roadmap/features' / slug
     write(fdir / 'feature.md', {'id': fid, 'milestone': '"0.1"',
                                 'name': slug, 'status': status,
                                 'reviewed': ''})
@@ -199,8 +199,8 @@ YIELD_TABLE = """\
 -- verdict (3)
 feature    record                                        pass  verdict           findings  landed  rejected  deferred  open
 0.1/alpha  docs/reviews/alpha.md                            1  SHIP-WITH-FIXES          4       2         1         1     0
-0.1/beta   pm/roadmap/0.1-demo/features/beta/review.md      1  HOLD                     3       0         0         2     1
-0.1/delta  pm/roadmap/0.1-demo/features/delta/review.md     -  no verdict block         -       -         -         -     -
+0.1/beta   pm/roadmap/features/beta-review.md      1  HOLD                     3       0         0         2     1
+0.1/delta  pm/roadmap/features/delta-review.md     -  no verdict block         -       -         -         -     -
 
 -- findings by severity (7)
 feature    pass  severity  findings
@@ -814,7 +814,7 @@ def test_the_gate_section_says_it_is_the_trees_and_two_milestones_agree():
     window would be inferred and then quoted as if somebody had stated it.
     """
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         put_ledger(root,
                    gate_line('2026-01-01T00:00:00Z', 'unit'),

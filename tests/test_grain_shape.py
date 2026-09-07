@@ -19,8 +19,8 @@ from agentic_sdlc import cli as devkit_cli                      # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape                # noqa: E402
 from agentic_sdlc.repo.pm import model as pm_model              # noqa: E402
 
-STORY = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
-FEATURE = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+STORY = 'pm/roadmap/stories/s0.md'
+FEATURE = 'pm/roadmap/features/alpha.md'
 MODULE = REPO_ROOT / 'src/agentic_sdlc/repo/checks/grain_shape.py'
 
 
@@ -411,7 +411,7 @@ def test_a_note_parked_beside_a_grain_is_disclosed_not_measured():
     in the disclosure, because "40 documents" and "40 documents and a README
     nobody looked at" are different facts about a tree."""
     with pmfx.tree() as root:
-        (root / 'pm/roadmap/0.1-demo/README.md').write_text(
+        (root / 'pm/roadmap/README.md').write_text(
             '# how bugs are filed\n' + body(400), encoding='utf-8')
         code, out = gate()
     assert code == 0, out
@@ -425,7 +425,7 @@ def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
     fire is worse than one that errors, because its author believes it took
     effect."""
     with pmfx.tree() as root:
-        (root / 'pm/roadmap/0.1-demo/decisions.md').write_text(
+        (root / 'pm/roadmap/milestones/0.1-decisions.md').write_text(
             'Append with `agentic-sdlc pm decide <grain-id>`\n' + body(400),
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { decisions = 10 }\n')
@@ -483,7 +483,7 @@ def test_it_reads_each_document_once_and_spawns_nothing():
         'frontmatter question and the length question share one open')
 
 
-HANDOFF = 'pm/roadmap/0.1-demo/handoff.md'
+HANDOFF = 'pm/roadmap/milestones/0.1-handoff.md'
 
 
 def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():

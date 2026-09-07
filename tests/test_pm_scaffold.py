@@ -35,7 +35,7 @@ class Scaffolding(unittest.TestCase):
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')[0], 0)
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/beta', 'first', 'First')[0], 0)
-            ff = root / 'pm/roadmap/0.1-demo/features/beta/feature.md'
+            ff = root / 'pm/roadmap/features/beta.md'
             self.assertEqual(model.field_of(ff, 'id'), '0.1/beta')
             self.assertEqual(model.field_of(ff, 'milestone'), '0.1')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
@@ -48,7 +48,7 @@ class Scaffolding(unittest.TestCase):
         # features cannot be hand-shaped, so re-running the scaffolder has to
         # fill gaps and leave every existing byte alone.
         with tree(story_statuses=('ready',)) as root:
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             before = ff.read_text(encoding='utf-8')
             code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
             self.assertEqual(code, 0, out)
@@ -75,7 +75,7 @@ class Scaffolding(unittest.TestCase):
         can regenerate.
         """
         with tree(story_statuses=('ready',)) as root:
-            doc = root / 'pm/roadmap/0.1-demo' / model.HANDOFF_FILE_NAME
+            doc = root / 'pm/roadmap' / model.HANDOFF_FILE_NAME
             self.assertFalse(doc.exists())
             code, out = run_cli(root, 'new', 'handoff', '0.1')
             self.assertEqual(code, 0, out)
@@ -105,7 +105,7 @@ class Scaffolding(unittest.TestCase):
         the warning it protects has become noise.
         """
         with tree(story_statuses=('ready',)) as root:
-            doc = root / 'pm/roadmap/0.1-demo' / model.HANDOFF_FILE_NAME
+            doc = root / 'pm/roadmap' / model.HANDOFF_FILE_NAME
             doc.unlink(missing_ok=True)
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
             self.assertFalse(doc.exists(),
@@ -119,7 +119,7 @@ class Scaffolding(unittest.TestCase):
         # `DECISIONS.md` (a twin on a case-sensitive filesystem, a truncation
         # of the legacy bytes on an insensitive one).
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             legacy = mdir / 'DECISIONS.md'
             model.write_raw(legacy, LEGACY_LOG)
             code, out = run_cli(root, 'new', 'milestone', '0.1')
@@ -142,7 +142,7 @@ class Scaffolding(unittest.TestCase):
         # reads to a consumer's hook as "drift found" with a traceback attached.
         # ScaffoldRefused is the shape, and it refuses before anything moves.
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             (mdir / model.DECISION_FILE_NAME).mkdir()
             code, out = run_cli(root, 'new', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
@@ -156,7 +156,7 @@ class Scaffolding(unittest.TestCase):
         # legacy doc raised `PermissionError` — a traceback, exit 1, and the
         # remaining slots never created. Writability is inspectable up front.
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             model.write_raw(mdir / 'handoff.md', 'legacy prose\n')
             model.write_raw(mdir / 'decisions.md', LEGACY_LOG)
             (mdir / 'handoff.md').chmod(0o444)
@@ -182,13 +182,13 @@ class Scaffolding(unittest.TestCase):
                 '[pm]\ntemplate_dir = "pm/templates"\n', encoding='utf-8')
             self.assertEqual(run_cli(root, 'templates')[0], 0)
             (root / 'pm/templates/milestone.md').write_bytes(b'caf\xe9\n')
-            (root / 'pm/roadmap/0.1-demo/milestone.md').unlink()
+            (root / 'pm/roadmap/milestones/0.1.md').unlink()
             code, out = run_cli(root, 'new', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn('template cannot be read', out)
             self.assertIn('nothing was written', out)
             self.assertNotIn('Traceback', out)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo/milestone.md').exists())
+            self.assertFalse((root / 'pm/roadmap/milestones/0.1.md').exists())
 
     def test_new_reports_a_write_that_no_listing_could_have_predicted(self):
         # Not everything is pre-inspectable — a mode changed under us, a disk
@@ -220,7 +220,7 @@ class Scaffolding(unittest.TestCase):
         # `_fill_header` followed it and rewrote a file the verb was never
         # pointed at. A write verb stays inside the grain it was asked to fill.
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             outside = root / 'outside.md'
             model.write_raw(outside, 'OUTSIDE\n')
             (mdir / 'decisions.md').symlink_to(outside)
@@ -238,7 +238,7 @@ class Scaffolding(unittest.TestCase):
         # idempotent: a doc that already carries its header never gets a second
         # one stacked on it.
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
             for slot in model.MILESTONE_OPTIONAL_SLOTS:
                 self.assertFalse((mdir / slot).exists(), slot)
@@ -351,7 +351,7 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
             code, out = run_cli(root, 'new', 'story', '0.1/alpha',
                                 '01-a-world-is-a-named-saved-thing', 'A world')
             self.assertEqual(code, 0, out)
-            sf = (root / 'pm/roadmap/0.1-demo/features/alpha/stories'
+            sf = (root / 'pm/roadmap/stories'
                   / '01-a-world-is-a-named-saved-thing.md')
             self.assertTrue(sf.is_file(), out)
             self.assertEqual(model.field_of(sf, 'id'),
@@ -371,7 +371,7 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
-            sf = root / 'pm/roadmap/0.1-demo/features/alpha/stories/01-boots.md'
+            sf = root / 'pm/roadmap/stories/01-boots.md'
             self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
@@ -380,7 +380,7 @@ class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
             self._enable(root)
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
-            sdir = root / 'pm/roadmap/0.1-demo/features/alpha/stories'
+            sdir = root / 'pm/roadmap/stories'
             before = sorted(p.name for p in sdir.iterdir())
             code, out = run_cli(root, 'new', 'story', '0.1/alpha', '02-boots', 'B')
             self.assertEqual(code, 1, out)
@@ -400,7 +400,7 @@ class BugNamesItsCause(unittest.TestCase):
     reason the field is not a second spelling of the one already there.
     """
 
-    BUGS = 'pm/roadmap/0.1-demo/bugs'
+    BUGS = 'pm/roadmap/bugs'
 
     def _bug_dir(self, root: Path) -> list[str]:
         bugs = root / self.BUGS
@@ -581,7 +581,7 @@ class Templates(unittest.TestCase):
                 encoding='utf-8')
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', 's', 'S')[0], 0)
-            sf = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s.md'
+            sf = root / 'pm/roadmap/stories/s.md'
             self.assertEqual(model.field_of(sf, 'house_field'), 'yes')
             self.assertEqual(model.field_of(sf, 'status'), 'done')
             # feature.md is not in the project's dir: the packaged one is used.
@@ -612,7 +612,7 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # that the gate has no opinion about a directory it does not own, and
         # each one cost a `git init`.
         with tree(story_statuses=('ready',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             for name in ('plans', 'findings', 'design'):
                 (mdir / name).mkdir()
             for name in ('AUDIT-REPORT.md', 'DELETED-SCENARIO-LEDGER.md'):
@@ -628,9 +628,9 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # with the rule and the census is lying about what it scanned.
         with tree(story_statuses=('ready',)) as root:
             (root / 'pm/roadmap/0.2-scaffolded-by-hand').mkdir()
-            (root / 'pm/roadmap/0.1-demo/features/beta').mkdir()
-            (root / 'pm/roadmap/0.1-demo/features/gamma').mkdir()
-            (root / 'pm/roadmap/0.1-demo/features/gamma/feature.md').write_text(
+            (root / 'pm/roadmap/features/beta').mkdir()
+            (root / 'pm/roadmap/features/gamma').mkdir()
+            (root / 'pm/roadmap/features/gamma.md').write_text(
                 '---\nname: Gamma\n---\n\nprose\n', encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)

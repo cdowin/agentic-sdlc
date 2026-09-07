@@ -68,7 +68,7 @@ def seeded(root) -> None:
     """The fixture every shape case reads: one story worked and closed, one
     story nothing ever touched, the feature that owns them, one closed bug, and
     three dispatch rows — two agent types on the story, one naming no grain."""
-    write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s1.md',
+    write(root / 'pm/roadmap/stories/s1.md',
           {'id': QUIET, 'feature': FEATURE, 'milestone': '"0.1"', 'name': 'S1',
            'status': 'ready', 'size': 'm'})
     bug(root, 'crash', 'closed')
@@ -379,7 +379,7 @@ def test_which_milestones_ledger_is_read():
     yet" is a fact about the tree and not an error."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
         named = report(root, '0.1')
         default = report(root)
@@ -453,7 +453,7 @@ def test_a_bare_report_asks_the_plan_and_never_a_status(kwargs, second):
     """
     with tree(**kwargs) as root:
         if second:
-            write(root / 'pm/roadmap/0.2-next/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         code, out = report(root)
         assert code == 2, out
@@ -471,10 +471,10 @@ def test_two_milestones_in_progress_is_answered_from_the_plan():
     plan knows: `order` names the current release and one milestone claims it.
     """
     with tree() as root:
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'building',
                'version': '0.2.0'})
-        write(root / 'pm/roadmap/0.1-demo/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.1.md',
               {'id': '"0.1"', 'name': 'Demo', 'status': 'building',
                'version': '0.1.0'})
         (root / 'pm/roadmap/releases.md').write_text(

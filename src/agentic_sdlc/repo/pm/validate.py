@@ -1,6 +1,6 @@
 """validate.py — structural and referential integrity of the PM tree.
 
-V1 frontmatter well-formed · V2 id matches path · V3 parentage consistent ·
+V1 frontmatter well-formed · V2 and V3 RETIRED (0.4.0) ·
 V4 refs (`depends_on`, `consumed_by`, a bug's `caused_by`) resolve · V5 the
 feature graph is acyclic · V6 (opt-in) an execution list matches the tree.
 """
@@ -163,15 +163,11 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     for milestone in model.milestones(cfg):
         mdir = milestone.path.parent
         _mid = milestone.gid
-        mfile = mdir / model.MILESTONE_DOC
+        mfile = milestone.path
         mid = model.field_of(mfile, 'id')
         census['grains'] += 1
         if 'V1' in on and (not mid or not model.field_of(mfile, 'status')):
             bad(f'{cfg.rel(mfile)}: missing id: or status: in the frontmatter')
-        # The dir carries a human suffix after the version; the id is the prefix.
-        if 'V2' in on and mid and not mdir.name.startswith(f'{mid}-'):
-            bad(f'{cfg.rel(mfile)}: id {mid!r} does not match its directory '
-                f'{mdir.name!r} (expected {mid}-<slug>/)')
 
         for ffile in model.feature_files(cfg, _mid):
             census['grains'] += 1
@@ -179,15 +175,7 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
             fstat = model.field_of(ffile, 'status')
             if 'V1' in on and (not fid or not fstat):
                 bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
-            expect = f'{mid}/{ffile.parent.name}'
-            if 'V2' in on and fid and fid != expect:
-                bad(f'{cfg.rel(ffile)}: id {fid!r} does not match its path '
-                    f'(expected {expect!r})')
-            if 'V3' in on:
-                own = model.field_of(ffile, 'milestone')
-                if own and own != mid:
-                    bad(f'{cfg.rel(ffile)}: milestone: {own!r} but it lives under '
-                        f'milestone {mid!r}')
+            expect = model.unquote(fid)
             if fid:
                 graph[fid] = []
 
@@ -197,21 +185,6 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                 sid = model.field_of(sfile, 'id')
                 if 'V1' in on and (not sid or not model.field_of(sfile, 'status')):
                     bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
-                # The prefix is stripped, never the check skipped: skipping
-                # left every story unchecked under VALID.
-                s_expect = f'{expect}/{model.story_slug_of(cfg, sfile.stem)}'
-                if 'V2' in on and sid and sid != s_expect:
-                    bad(f'{cfg.rel(sfile)}: id {sid!r} does not match its path '
-                        f'(expected {s_expect!r})')
-                if 'V3' in on:
-                    parent = model.field_of(sfile, 'feature')
-                    if parent and parent != expect:
-                        bad(f'{cfg.rel(sfile)}: feature: {parent!r} but it lives '
-                            f'under feature {expect!r}')
-                    own = model.field_of(sfile, 'milestone')
-                    if own and own != mid:
-                        bad(f'{cfg.rel(sfile)}: milestone: {own!r} but it lives '
-                            f'under milestone {mid!r}')
                 _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
             for key in _REF_KEYS:

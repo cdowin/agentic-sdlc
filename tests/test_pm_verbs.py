@@ -39,9 +39,9 @@ from support.pm import (
 
 from agentic_sdlc.repo.pm import model, skills
 
-FFILE = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
-MFILE = 'pm/roadmap/0.1-demo/milestone.md'
-SDIR = 'pm/roadmap/0.1-demo/features/alpha/stories'
+FFILE = 'pm/roadmap/features/alpha.md'
+MFILE = 'pm/roadmap/milestones/0.1.md'
+SDIR = 'pm/roadmap/stories'
 
 
 class ReviewRecord(unittest.TestCase):
@@ -210,7 +210,7 @@ class StatusVerbQuartet(unittest.TestCase):
     GRAINS = (
         ('story', '0.1/alpha/s0', STORY_REL, 'done', '0.1/alpha/nope'),
         ('bug', '0.1/bugs/seed-is-zero',
-         'pm/roadmap/0.1-demo/bugs/seed-is-zero.md', 'open', '0.1/bugs/nope'),
+         'pm/roadmap/bugs/seed-is-zero.md', 'open', '0.1/bugs/nope'),
         ('feature', '0.1/alpha', FFILE, 'building', '0.1/nope'),
         ('milestone', '0.1', MFILE, 'building', '9.9'),
     )
@@ -227,7 +227,7 @@ class StatusVerbQuartet(unittest.TestCase):
     def _grain_tree(kind: str):
         with tree(story_statuses=('done',)) as root:
             if kind == 'bug':
-                write(root / 'pm/roadmap/0.1-demo/bugs/seed-is-zero.md',
+                write(root / 'pm/roadmap/bugs/seed-is-zero.md',
                       {'id': '0.1/bugs/seed-is-zero', 'milestone': '"0.1"',
                        'status': 'open'})
             yield root
@@ -315,7 +315,7 @@ class FeatureClose(unittest.TestCase):
         # says so; the story advisory it used to repeat is gone (story 03).
         with tree(feature_status='reviewing',
                   story_statuses=('reviewing', 'ready')) as root:
-            fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
+            fdir = root / 'pm/roadmap/features/alpha'
             self.assertEqual(run_cli(root, 'feature', 'done', '0.1/alpha')[0], 0)
             settled = {p.name: p.read_bytes()
                        for p in sorted((fdir / 'stories').iterdir())}
@@ -361,13 +361,13 @@ class FeatureClose(unittest.TestCase):
              'docs/reviews/never.md', None),
             ('a dangling symlink', dict(feature_status='reviewing',
                                         story_statuses=('reviewing',)),
-             'pm/roadmap/0.1-demo/features/alpha/gone.md', 'gone.md'),
+             'pm/roadmap/features/gone.md', 'gone.md'),
         )
         for name, kwargs, pointer, symlink in rows:
             with self.subTest(route=name), \
                     tree(with_record=False, **kwargs) as root:
                 if symlink:
-                    (root / 'pm/roadmap/0.1-demo/features/alpha'
+                    (root / 'pm/roadmap/features/alpha'
                      / symlink).symlink_to('nowhere.md')
                 ff, story = root / FFILE, root / STORY_REL
                 before, sbefore = ff.read_text(), story.read_text()
@@ -520,7 +520,7 @@ class ListFindsTheNail(unittest.TestCase):
         with tree(milestone_status='building') as root:
             mfile = root / MFILE
             model.set_field(mfile, 'branch', 'milestone/0.1')
-            write(root / 'pm/roadmap/0.2-later/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Later', 'status': 'planning'})
             code, out = run_cli(root, 'list', '--kind', 'milestone')
             self.assertEqual(code, 0, out)
@@ -549,12 +549,12 @@ class ListFindsTheNail(unittest.TestCase):
         # set gets named exactly the way `--status wombat` already names its
         # set.
         with self._tree() as root:
-            write(root / 'pm/roadmap/0.2-later/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Later', 'status': 'planning'})
-            write(root / 'pm/roadmap/0.2-later/features/beta/feature.md',
+            write(root / 'pm/roadmap/features/beta.md',
                   {'id': '0.2/beta', 'milestone': '"0.2"', 'name': 'Beta',
                    'status': 'planning'})
-            write(root / 'pm/roadmap/0.2-later/features/beta/stories/b0.md',
+            write(root / 'pm/roadmap/stories/b0.md',
                   {'id': '0.2/beta/b0', 'feature': '0.2/beta',
                    'milestone': '"0.2"', 'name': 'B0', 'status': 'ready'})
             code, out = run_cli(root, 'list', '--milestone', '0.2')
@@ -612,7 +612,7 @@ class StatusReport(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             run_cli(root, 'new', 'feature', '0.1', 'c', 'C')
-            fdir = root / 'pm/roadmap/0.1-demo/features'
+            fdir = root / 'pm/roadmap/features'
             model.set_field(fdir / 'alpha' / 'feature.md', 'phase', '2')
             model.set_field(fdir / 'b' / 'feature.md', 'phase', 'seam')
             # 'c' stays unphased on purpose.
@@ -670,7 +670,7 @@ class IdsAreLiterals(unittest.TestCase):
 
 def _phased(root: Path, slug: str, phase: str, deps: list[str]) -> None:
     """One feature under 0.1 with a `phase:` and a `depends_on:` list."""
-    write(root / f'pm/roadmap/0.1-demo/features/{slug}/feature.md',
+    write(root / f'pm/roadmap/features/{slug}/feature.md',
           {'id': f'0.1/{slug}', 'milestone': '"0.1"', 'name': slug.title(),
            'status': 'planning', 'phase': phase,
            'depends_on': '[' + ', '.join(f'"{d}"' for d in deps) + ']'})
@@ -808,7 +808,7 @@ class ExecutionList(unittest.TestCase):
         with tree() as root:
             for slug in ('aaa', 'zzz'):
                 run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
-            fdir = root / 'pm/roadmap/0.1-demo/features'
+            fdir = root / 'pm/roadmap/features'
             # aaa sorts first by name but depends on zzz, so zzz must lead.
             model.set_field(fdir / 'aaa/feature.md', 'depends_on', '["0.1/zzz"]')
             run_cli(root, 'sync')
@@ -991,7 +991,7 @@ class StoryResolution(unittest.TestCase):
     leave the author nothing to do.
     """
 
-    FDIR = 'pm/roadmap/0.1-demo/features/alpha'
+    FDIR = 'pm/roadmap/features/alpha'
 
     def _story(self, root: Path, rel: str, sid: str) -> Path:
         p = root / self.FDIR / 'stories' / rel
@@ -1059,7 +1059,7 @@ class OrdinalPrefix(unittest.TestCase):
 
         def check(sid: str, prefix: bool):
             with tree(story_statuses=()) as root:
-                write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/01-boots.md',
+                write(root / 'pm/roadmap/stories/01-boots.md',
                       {'id': sid, 'feature': '0.1/alpha', 'milestone': '"0.1"',
                        'name': 'B', 'status': 'ready'})
                 return validate.run(model.PmConfig(
@@ -1085,7 +1085,7 @@ class Decide(unittest.TestCase):
     consumer's 158 decision logs.
     """
 
-    MDIR = 'pm/roadmap/0.1-demo'
+    MDIR = 'pm/roadmap'
 
     def _scaffolded(self, root: Path) -> None:
         self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
@@ -1185,7 +1185,7 @@ class Decide(unittest.TestCase):
             self.assertEqual(code, 2, out)
             self.assertIn('--title', out)
             self.assertFalse(
-                (root / 'pm/roadmap/0.1-demo/features/alpha/decisions.md')
+                (root / 'pm/roadmap/features/alpha-decisions.md')
                 .exists())
 
     def test_a_title_left_dangling_on_a_splitter_refuses_without_writing(self):
@@ -1353,7 +1353,7 @@ class ZeroCensusIsLoud(unittest.TestCase):
 
     def _emptied(self, root: Path) -> None:
         import shutil
-        shutil.rmtree(root / 'pm/roadmap/0.1-demo')
+        shutil.rmtree(root / 'pm/roadmap')
 
     def test_status_over_an_empty_roadmap_refuses(self):
         with tree() as root:
@@ -1396,7 +1396,7 @@ class BugStatus(unittest.TestCase):
 
     @staticmethod
     def _bug(root: Path, slug: str, status: str) -> Path:
-        p = root / 'pm/roadmap/0.1-demo/bugs' / f'{slug}.md'
+        p = root / 'pm/roadmap/bugs' / f'{slug}.md'
         write(p, {'id': f'0.1/bugs/{slug}', 'milestone': '"0.1"',
                   'status': status})
         return p
@@ -1429,7 +1429,7 @@ class BugStatus(unittest.TestCase):
 
     def test_a_nested_bug_id_resolves(self):
         with tree() as root:
-            bug = root / 'pm/roadmap/0.1-demo/bugs/spatial/seed-is-zero.md'
+            bug = root / 'pm/roadmap/bugs/spatial/seed-is-zero.md'
             write(bug, {'id': '0.1/bugs/spatial/seed-is-zero',
                         'milestone': '"0.1"', 'status': 'open'})
             code, out = run_cli(root, 'bug', 'fixed',
@@ -1459,7 +1459,7 @@ class Retire(unittest.TestCase):
             self.assertEqual(code, 2, out)
             self.assertIn('is not a milestone', out)
             self.assertIn('0.1', out)
-            self.assertTrue((root / 'pm/roadmap/0.1-demo').is_dir())
+            self.assertTrue((root / 'pm/roadmap').is_dir())
         if hasattr(os, 'geteuid') and os.geteuid() == 0:
             return  # permission bits are not an obstruction as root
         # The obstruction. With ROADMAP.md gone the plan is ONE step, so the
@@ -1469,7 +1469,7 @@ class Retire(unittest.TestCase):
         # that a refused retire leaves the directory whole.
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             before = sorted(p.relative_to(root) for p in mdir.rglob('*'))
             (root / 'pm/roadmap').chmod(0o555)
             try:
@@ -1491,7 +1491,7 @@ class Retire(unittest.TestCase):
             self.assertIn('noticed: milestone 0.1 is building, not done', out)
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            self.assertFalse((root / 'pm/roadmap').exists())
 
     def test_the_plan_is_what_outlives_the_directory(self):
         """0.3.0: the row survives its milestone through `order`, not a file.
@@ -1502,14 +1502,14 @@ class Retire(unittest.TestCase):
         """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'version', '"0.1.0"')
             run_cli(root, 'order', '--append', '0.1.0')
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('releases.md', out)
             self.assertIn('UNVERIFIABLE', out)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            self.assertFalse((root / 'pm/roadmap').exists())
             # The plan kept the version; the record is gone.
             self.assertEqual(
                 model.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
@@ -1531,12 +1531,12 @@ class Retire(unittest.TestCase):
             before = stale.read_bytes()
             self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
             self.assertEqual(stale.read_bytes(), before)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            self.assertFalse((root / 'pm/roadmap').exists())
 
     def test_dry_run_writes_nothing_byte_for_byte(self):
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            mdir = root / 'pm/roadmap/0.1-demo'
+            mdir = root / 'pm/roadmap'
             before_files = sorted(
                 (p.relative_to(root), p.read_bytes())
                 for p in mdir.rglob('*') if p.is_file())
@@ -1552,13 +1552,13 @@ class Retire(unittest.TestCase):
     def test_retire_removes_exactly_the_dir_and_nothing_beside_it(self):
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            write(root / 'pm/roadmap/0.2-two/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Two', 'status': 'planning'})
             sibling = sorted(
                 (p.relative_to(root), p.read_bytes())
                 for p in (root / 'pm/roadmap/0.2-two').rglob('*') if p.is_file())
             self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
-            self.assertFalse((root / 'pm/roadmap/0.1-demo').exists())
+            self.assertFalse((root / 'pm/roadmap').exists())
             self.assertEqual(
                 sorted((p.relative_to(root), p.read_bytes())
                        for p in (root / 'pm/roadmap/0.2-two').rglob('*')
@@ -1575,19 +1575,19 @@ class Move(unittest.TestCase):
     whole-or-nothing verb through the machinery the templates already own.
     """
 
-    NEW_REL = 'pm/roadmap/0.2-next/features/gamma/stories/s0.md'
+    NEW_REL = 'pm/roadmap/stories/g-s0.md'
 
     @staticmethod
     def _second_feature(root: Path) -> None:
-        write(root / 'pm/roadmap/0.1-demo/features/beta/feature.md',
+        write(root / 'pm/roadmap/features/beta.md',
               {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
                'status': 'building', 'reviewed': ''})
 
     @staticmethod
     def _second_milestone(root: Path) -> None:
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
-        write(root / 'pm/roadmap/0.2-next/features/gamma/feature.md',
+        write(root / 'pm/roadmap/features/gamma.md',
               {'id': '0.2/gamma', 'milestone': '"0.2"', 'name': 'Gamma',
                'status': 'building', 'reviewed': ''})
 
@@ -1640,7 +1640,7 @@ class Move(unittest.TestCase):
     def test_an_unwritable_target_directory_moves_nothing(self):
         with tree(story_statuses=('ready',)) as root:
             self._second_feature(root)
-            target_dir = root / 'pm/roadmap/0.1-demo/features/beta'
+            target_dir = root / 'pm/roadmap/features/beta'
             target_dir.chmod(0o555)
             try:
                 before = (root / STORY_REL).read_bytes()

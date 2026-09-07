@@ -320,7 +320,7 @@ class Guidance(unittest.TestCase):
     def test_init_is_non_destructive_on_an_existing_tree(self):
         # It fills gaps but must never disturb grains that are already there.
         with tree(story_statuses=('ready',)) as root:
-            ff = root / 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+            ff = root / 'pm/roadmap/features/alpha.md'
             before = ff.read_bytes()
             index = root / 'pm/roadmap/ROADMAP.md'
             index.write_text('# Ours\n', encoding='utf-8')

@@ -128,7 +128,7 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
-                  'V1', 'V2', 'V3', 'V4', 'V5')
+                  'V1', 'V4', 'V5')
 # The USAGE family: what the tree DOES with the vocabulary it declared, as
 # opposed to whether a word is declared at all (D4). U1 is its first member and
 # it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
@@ -160,7 +160,12 @@ FLOW_CHECKS = ('D9', 'D10')
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
 # generated view going stale is not a defect in the tree.
-VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
+# V2 (id matches path) and V3 (parentage matches the directory) RETIRED in
+# 0.4.0: both existed to keep two copies of one fact in agreement, and 0.4.0
+# deleted the second copy. `id:` is the identity and the binding is the
+# parentage; a document nothing can key on and a binding naming no grain are
+# the two facts that can still be wrong, and they have their own lines.
+VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V6')
 KNOWN_CHECKS = tuple(dict.fromkeys(
     DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
     + VALIDATE_CHECKS))
@@ -169,6 +174,13 @@ KNOWN_CHECKS = tuple(dict.fromkeys(
 # "unknown": a consumer whose config still lists it is told where the rule
 # went, rather than being silently ungated by a typo-shaped message.
 RETIRED_CHECKS = {
+    'V2': 'retired in 0.4.0 — it kept `id:` in agreement with the path, and a '
+          'path is no longer part of a grain\'s identity. `id:` IS the '
+          'identity; a document with none is reported by name',
+    'V3': 'retired in 0.4.0 — it kept `milestone:`/`feature:` in agreement '
+          'with the directory a document sat in, and membership is now the '
+          'field itself. A binding naming a grain that is not in the tree is '
+          'still a finding',
     'D7': 'was retired before 0.3.0 and did not come back. U1 is the '
           'declared-but-unused state rule and it took a NEW letter precisely '
           'so that a config still naming D7 is told it is gone rather than '
@@ -1420,6 +1432,34 @@ class AmbiguousStory(Exception):
 
 
 # --- children -----------------------------------------------------------------
+def shared_doc(cfg: PmConfig, grain: Grain, name: str) -> Path:
+    """Where a grain's shared document lives — `decisions.md`, `handoff.md`,
+    `review.md`.
+
+    Pooled: beside the grain in its pool, prefixed with the grain's id
+    (`features/ft-x-decisions.md`), because a pool is flat and a bare
+    `decisions.md` would be one file for every grain of that kind. Nested:
+    inside the grain's own directory, which is where every existing one is.
+
+    The prefix is the id and never a slug of it: a shared doc that could not be
+    traced back to exactly one grain is a document with no owner.
+    """
+    if grain.path.parent.name in POOL_NAME.values():
+        return grain.path.with_name(f'{grain.path.stem}-{name}')
+    return grain.path.parent / name
+
+
+def milestone_doc(handle: Path) -> Path:
+    """The milestone's DOCUMENT from whatever `known_milestones` handed back.
+
+    A pooled tree hands back the document; a nested one hands back the
+    directory it sits in. One function, so a caller does not have to know
+    which — and so the `handle / MILESTONE_DOC` join, which is the path being
+    schema, exists in one place instead of a dozen.
+    """
+    return handle if handle.is_file() else handle / MILESTONE_DOC
+
+
 def milestones(cfg: PmConfig) -> list[Grain]:
     """Every milestone, by id. Replaces `milestone_dirs` and
     `known_milestones` at every call site that wanted the grains rather than
@@ -1473,6 +1513,30 @@ def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
         mdir = milestone_dir(cfg, mid)
         return _nested_bug_files(mdir) if mdir is not None else []
     return _children_paths(cfg, 'bug', mid)
+
+
+def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
+    """Documents in a pool that the index cannot key on, and why.
+
+    `orphan_dirs`' successor. A pooled tree has no grain DIRECTORIES to be
+    malformed, so what is left is the flat version of the same question: a
+    document with no readable `id:` has no key, is in no index, and would
+    leave the census silently — which is the drop rule 4 exists to forbid.
+    A `kind:` the project never declared is the other half.
+    """
+    out: list[tuple[Path, str]] = []
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            if not unquote(field_of(path, 'id')):
+                out.append((path, 'declares no `id:`, so nothing can key on '
+                                  'it'))
+                continue
+            declared = unquote(field_of(path, 'kind'))
+            if declared and declared not in FLOW_KINDS:
+                out.append((path, f'declares kind {declared!r}, which this '
+                                  f'project does not have '
+                                  f'({" ".join(FLOW_KINDS)})'))
+    return out
 
 
 def orphan_dirs(cfg: PmConfig) -> list[tuple[Path, str]]:
@@ -1790,12 +1854,13 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     same version, and a dict would have eaten the duplicate.
     """
     out = []
-    for mdir, mid in known_milestones(cfg):
+    for handle, mid in known_milestones(cfg):
+        mfile = handle if handle.is_file() else handle / MILESTONE_DOC
         # `.strip()`: a whitespace-only `version:` is not a claim. Reading it as
         # one put the milestone outside R2's backlog census while claiming a
         # version nothing could match, and the R1 failure it produced then
         # prescribed a `pm order --append` the verb refuses at exit 2 (B4).
-        version = field_of(mdir / MILESTONE_DOC, 'version').strip()
+        version = field_of(mfile, 'version').strip()
         if version:
             out.append((version, mid))
     return out
@@ -1938,9 +2003,9 @@ def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
     version = current_release(cfg)
     if version is not None:
         mid = milestone_of_version(cfg, version)
-        mdir = milestone_dir(cfg, mid) if mid else None
-        if mdir is not None:
-            return mdir, ''
+        found = milestone_file(cfg, mid) if mid else None
+        if found is not None:
+            return found, ''
         return None, (f'the current release {version} is claimed by no '
                       f'milestone directory in {cfg.roadmap_dir} — '
                       f'`agentic-sdlc pm roadmap` shows the plan against the '

@@ -74,7 +74,12 @@
 # review_dir   = "docs/reviews"   # where review records live
 # story_ordinal_prefix = false    # also resolve stories/NN-<slug>.md
 # checks = ["D1", "D2", "D3", "D4", "D5", "D6",   # drift rules — the default
-#           "V1", "V2", "V3", "V4", "V5"]         # integrity rules
+#           "V1", "V4", "V5"]                     # integrity rules
+#                                                 # (V2/V3 retired in 0.4.0:
+#                                                 #  they kept `id:` and the
+#                                                 #  bindings in agreement with
+#                                                 #  the PATH, and a path is no
+#                                                 #  longer part of identity)
 #                                   # V6 (execution lists match the tree) and
 #                                   # the FLOW rules are opt-in: D9 (an
 #                                   # in-progress milestone declares `branch:`)

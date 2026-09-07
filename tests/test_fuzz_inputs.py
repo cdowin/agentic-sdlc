@@ -36,7 +36,7 @@ caught) is runnable under this same harness via a PYTHONPATH overlay:
 Run 2026-08-30 against that snapshot: test_grain_containment... FAILED with 4
 violations — ('pm', 'bug', 'fixed', '0.1/bugs/../features/alpha/feature') and
 its nested-slug twin exited 0 and wrote
-pm/roadmap/0.1-demo/features/alpha/feature.md (a bug-kind write landing on a
+pm/roadmap/features/alpha.md (a bug-kind write landing on a
 feature grain), and `pm set` rode the same traversal twice. Same file, same
 seed, green on HEAD. The
 committed floor beneath that one-time run is
@@ -277,7 +277,7 @@ _KILLERS = (
     '0.1/bugs/',
     '0.1/bugs/../../../outside',
     '0.1/../0.1/alpha/s0',
-    '../repo/pm/roadmap/0.1-demo/features/alpha/feature',
+    '../repo/pm/roadmap/features/alpha',
     '/etc/hosts',
     '0.1/alpha/../../0.1/bugs/crash',
 )

@@ -84,8 +84,8 @@ checks = [
     "D9", "D10",
     "U1", "U2",
     "R1", "R2", "R3", "R4", "R5", "R6",
-    "V1", "V2", "V3", "V4", "V5", "V6",
-    "V1", "V2", "V3", "V4", "V5", "V6",
+    "V1", "V4", "V5", "V6",
+    "V1", "V4", "V5", "V6",
 ]
 
 # R5 grades pyproject.toml against a POSITION in pm/roadmap/releases.md `order`,

@@ -27,7 +27,7 @@ from support.pm import bug, declaring, run_cli, tree, write, write_config
 
 from agentic_sdlc.repo.pm import model, ready_for
 
-FEATURE_STORIES = 'pm/roadmap/0.1-demo/features/alpha/stories'
+FEATURE_STORIES = 'pm/roadmap/stories'
 REVIEWS = 'docs/reviews'
 
 
@@ -93,7 +93,7 @@ def put_record(root: Path, name: str, text: str) -> str:
 def feature(root: Path, slug: str, status: str = 'done', reviewed: str = '',
             stories: dict[str, str] | None = None) -> None:
     """One feature under `tree()`'s 0.1 milestone, with its stories."""
-    fdir = root / 'pm/roadmap/0.1-demo/features' / slug
+    fdir = root / 'pm/roadmap/features' / slug
     write(fdir / 'feature.md',
           {'id': f'0.1/{slug}', 'milestone': '"0.1"', 'name': slug.title(),
            'status': status, 'reviewed': reviewed})
@@ -252,7 +252,7 @@ class MilestoneBelt(unittest.TestCase):
 
     def test_a_milestone_with_zero_features_is_LOUD_and_not_vacuously_ready(self):
         with tree() as root:
-            shutil.rmtree(root / 'pm/roadmap/0.1-demo/features')
+            shutil.rmtree(root / 'pm/roadmap/features')
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn('has no features', out)
@@ -307,7 +307,7 @@ class MilestoneBelt(unittest.TestCase):
 
     def test_a_file_under_bugs_shaped_exactly_like_a_feature_is_still_not_one(self):
         with tree(feature_status='done') as root:
-            write(root / 'pm/roadmap/0.1-demo/bugs/feature.md',
+            write(root / 'pm/roadmap/bugs/feature.md',
                   {'id': '0.1/impostor', 'milestone': '"0.1"',
                    'name': 'Impostor', 'status': 'building', 'reviewed': ''})
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
@@ -497,7 +497,7 @@ class TagBelt(unittest.TestCase):
         # files the findings it gates on.
         with tree(feature_status='done', with_record=False) as root:
             pointer = put_record(root, 'cross.md', record(OPEN_BLOCK))
-            model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
+            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'reviewed', pointer)
             code, out = run_cli(root, 'ready-for', 'tag', '0.1')
             self.assertEqual(code, 1, out)

@@ -501,7 +501,7 @@ def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML) -> None:
     (root / 'Makefile').write_text(
         PM_MAKEFILE.format(src=REPO_ROOT / 'src', python=sys.executable),
         encoding='utf-8')
-    milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
+    milestone = root / 'pm/roadmap/milestones/0.1.0.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text(f'---\nid: "0.1.0"\nstatus: {status}\n'
                          f'branch: feat/integration\n---\n', encoding='utf-8')
@@ -543,7 +543,7 @@ def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
     same answer, said the same way, never a silent trunk base."""
     root = corpus_repo(tmp_path)
     assert git(root, 'branch', 'staging').returncode == 0
-    milestone = root / 'pm/roadmap/0.1.0-thing/milestone.md'
+    milestone = root / 'pm/roadmap/milestones/0.1.0.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text('---\nid: "0.1.0"\nstatus: building\n'
                          'branch: feat/integration\n---\n', encoding='utf-8')
@@ -631,7 +631,7 @@ LEDGER_SESSION = 'tools/hooks/cc-ledger-session.sh'
 TRANSCRIPTS = Path(__file__).parent / 'fixtures' / 'transcripts'
 DISPATCH_JSONL = TRANSCRIPTS / 'subagent-dispatch.jsonl'
 SESSION_JSONL = TRANSCRIPTS / 'main-session.jsonl'
-LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/ledgers/0.1.jsonl'
 ROOT_LEDGER_REL = 'pm/roadmap/ledger.jsonl'
 
 # The ids the payloads below carry. Spelled once so a test asserting they were
@@ -649,12 +649,12 @@ PM_MAKEFILE = ('.PHONY: pm\n'
                '\t@PYTHONPATH={src} {python} -m agentic_sdlc.cli pm $(ARGS)\n')
 
 FRONTMATTER = {
-    'pm/roadmap/0.1-demo/milestone.md':
+    'pm/roadmap/milestones/0.1.md':
         {'id': '"0.1"', 'name': 'Demo', 'status': 'building'},
-    'pm/roadmap/0.1-demo/features/alpha/feature.md':
+    'pm/roadmap/features/alpha.md':
         {'id': '0.1/alpha', 'milestone': '"0.1"', 'name': 'Alpha',
          'status': 'building', 'reviewed': ''},
-    'pm/roadmap/0.1-demo/features/alpha/stories/s0.md':
+    'pm/roadmap/stories/s0.md':
         {'id': '0.1/alpha/s0', 'feature': '0.1/alpha', 'milestone': '"0.1"',
          'name': 'S0', 'status': 'building'},
 }
@@ -788,7 +788,7 @@ def test_the_dispatchers_grain_travels_the_whole_vehicle_and_beats_the_lookup(
     the couriers' self-tests assert the argv, and this asserts the row.
     """
     root = ledger_repo(tmp_path)
-    other = root / 'pm/roadmap/0.1-demo/features/alpha/stories/s9.md'
+    other = root / 'pm/roadmap/stories/s9.md'
     other.write_text('---\nid: 0.1/alpha/s9\nfeature: 0.1/alpha\n'
                      'milestone: "0.1"\nname: S9\nstatus: ready\n---\n\nx\n',
                      encoding='utf-8')

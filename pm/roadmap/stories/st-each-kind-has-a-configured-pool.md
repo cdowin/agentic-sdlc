@@ -3,8 +3,8 @@ id: st-each-kind-has-a-configured-pool
 feature: ft-the-pools-are-the-tables
 milestone: "ms-0.4.0"
 name: Each kind is read from its configured pool, relative to the repo root
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["st-the-resolvers-collapse-and-V2-retires"]
 kind: story
 ---

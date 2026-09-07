@@ -3,8 +3,8 @@ id: st-every-edge-reports-both-ways-it-is-unbound
 feature: ft-the-unbound-census
 milestone: "ms-0.4.0"
 name: The unbound family is counted lines, and broken is a finding
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["st-set-binds-and-unbinds-and-pm-move-dies"]
 kind: story
 ---

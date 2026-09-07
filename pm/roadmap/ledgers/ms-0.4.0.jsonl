@@ -134,3 +134,11 @@
 {"ts":"2026-09-07T02:04:09Z","kind":"decision","grain":"ft-identity-lives-in-frontmatter","entry":"D1","title":"An undeclared kind: is a FINDING, not exit 2"}
 {"ts":"2026-09-07T02:04:31Z","kind":"decision","grain":"ft-identity-lives-in-frontmatter","entry":"D2","title":"An id is unique across the whole tree, not per kind"}
 {"ts":"2026-09-07T02:27:24Z","kind":"decision","grain":"ft-identity-lives-in-frontmatter","entry":"D3","title":"The nested compat readers survive the resolver collapse, and go with the layout"}
+{"ts":"2026-09-07T03:20:01Z","kind":"status","grain":"st-set-binds-and-unbinds-and-pm-move-dies","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:01Z","kind":"status","grain":"st-rename-sweeps-every-inbound-ref","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:01Z","kind":"status","grain":"st-the-resolvers-collapse-and-V2-retires","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:01Z","kind":"status","grain":"st-the-seed-is-printable-and-held-to-the-code","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:01Z","kind":"status","grain":"st-the-tree-migrates-in-one-pass-or-not-at-all","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-order-sequences-every-container","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-each-kind-has-a-configured-pool","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-every-edge-reports-both-ways-it-is-unbound","from":"planning","to":"building"}

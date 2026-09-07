@@ -3,8 +3,8 @@ id: st-order-sequences-every-container
 feature: ft-the-order-is-one-mechanism
 milestone: "ms-0.4.0"
 name: Every container sequences its children with order, and add is the verb
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["st-rename-sweeps-every-inbound-ref"]
 kind: story
 ---

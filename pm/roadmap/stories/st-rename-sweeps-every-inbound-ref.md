@@ -3,8 +3,8 @@ id: st-rename-sweeps-every-inbound-ref
 feature: ft-binding-is-a-field
 milestone: "ms-0.4.0"
 name: pm rename rewrites the grain and every ref naming it, whole or not at all
-status: planning
-owner:
+status: building
+owner: claude
 depends_on: ["st-set-binds-and-unbinds-and-pm-move-dies"]
 kind: story
 ---

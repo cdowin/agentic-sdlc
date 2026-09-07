@@ -189,13 +189,10 @@ def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str, warn) -> None:
 def _unreached_self(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
     """The same READY warnings, for grains the DESCENT never reaches.
 
-    `_drift_walk` walks milestone → feature → story by binding, so a grain
-    nobody has bound is asked nothing — and 0.4.0 made authored-but-unbound the
-    normal state, which is exactly when a grain is least finished. The gate
-    counted it and said nothing about it.
-
-    Only the SELF rules: D3 and D5 compare a grain to its parent, and a grain
-    with no parent has no such question to answer.
+    `_drift_walk` walks by binding, so a grain nobody has bound was asked
+    nothing — and 0.4.0 made authored-but-unbound the normal state, which is
+    exactly when a grain is least finished. Only the SELF rules: D3 and D5
+    compare a grain to its parent, and a grain with none has no such question.
     """
     if not model.is_pooled(cfg):
         return
@@ -469,14 +466,11 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
 def _unbound_rows(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
     """The unbound family one level down from R1, in both directions.
 
-    MEMBERSHIP: a feature naming no milestone, a story naming no feature, a bug
-    naming no milestone — counted lines, never findings, because a tree
-    mid-planning legitimately has many and a gate that reddens on planning is
-    a gate people switch off. The BROKEN half is V7's own finding.
-
+    MEMBERSHIP: a feature naming no milestone, a story naming no feature — a
+    counted line, never a finding, because a tree mid-planning legitimately has
+    many and a gate that reddens on planning is a gate people switch off.
     SEQUENCE: the same pair over every container's `order` — UNSEQUENCED
-    counted, DANGLING reported, and an entry naming no grain at all a WARN for
-    the reason R1 has always given.
+    counted, DANGLING reported. The BROKEN halves are V7's own findings.
     """
     if 'V7' not in enabled:
         return

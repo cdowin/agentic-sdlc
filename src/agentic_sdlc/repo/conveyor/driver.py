@@ -368,32 +368,35 @@ def version_defect(value: str) -> str:
 
 
 def subject_defect(operation: str, value: str) -> str:
-    """'' when `value` may be this operation's subject, else why not. The
-    segment count matters: `close story` given a feature id would answer the
-    wrong question about a real file."""
-    segments, noun, shape = SUBJECT.get(operation, SUBJECT['release'])
+    """'' when `value` COULD be this operation's subject, else why not — a fact
+    about the INPUT and nothing more. It counted segments (the nested id shape,
+    the path spelled as an id) and so refused every id a migrated tree holds;
+    story-or-feature is a question about the GRAIN, which `_wrong_kind` asks."""
+    segments, noun, _shape = SUBJECT.get(operation, SUBJECT['release'])
     if segments == 1:
         return version_defect(value)
-    if not value:
-        return f'the {noun} is empty'
+    if any(ch.isspace() for ch in value):
+        return f'{_quote(value)} carries whitespace, which no {noun} has'
     if len(value) > MAX_SUBJECT:
         return (f'the {noun} is too long ({len(value)} characters; the limit '
                 f'is {MAX_SUBJECT})')
-    if any(ch.isspace() for ch in value):
-        return f'{_quote(value)} carries whitespace, which no {noun} has'
-    parts = value.split('/')
-    if len(parts) != segments:
-        return (f'{_quote(value)} is not a {noun} — a {operation} id is '
-                f'{segments} segments, {shape}; this one has {len(parts)}')
-    for part in parts:
-        if len(part) > MAX_VERSION:
-            return (f'{_quote(value)}: one segment is {len(part)} characters; '
-                    f'the limit is {MAX_VERSION}')
-        if not model.segment_is_literal(part):
-            return (f'{_quote(value)} is not a {noun} — globs, path '
-                    f'separators, schemes, absolute paths and the "." / ".." '
-                    f'segments are all refused')
-    return ''
+    defect = model.id_defect(value)
+    return f'{_quote(value)} is not a {noun}: {defect}' if defect else ''
+
+
+def _wrong_kind(cfg, operation: str, subject: str) -> str:
+    """'' when the tree's grain for `subject` is this belt's kind, else why not.
+    The half of the old segment count that was real — `close story` given a
+    FEATURE id answers the wrong question about a real file — asked off
+    `kind:`, so it holds for any id shape."""
+    want = {'story': 'story', 'feature': 'feature'}.get(operation)
+    if want is None:
+        return ''
+    found = model.kind_of(cfg, subject)
+    if not found or found == want:
+        return ''
+    return (f'{_quote(subject)} is a {found}, not a {want} — '
+            f'`close {found} {subject}` is the belt that asks about one')
 
 
 def grain_path(cfg, operation: str, subject: str) -> Path | None:
@@ -468,12 +471,21 @@ def _no_ledger(nowhere: str) -> Recorder:
     return record
 
 
+def _milestone_id(cfg, operation: str, subject: str) -> str:
+    """The milestone this operation's subject belongs to — followed through the
+    grain's BINDINGS for a close, and the subject itself for release/adopt.
+    Splitting the id on `/` read the nested shape."""
+    if operation in ('release', 'adopt'):
+        return subject
+    return model.milestone_of(cfg, subject) or subject
+
+
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
-    mid = subject.split('/')[0]
+    mid = _milestone_id(cfg, operation, subject)
     path = model.milestone_file(cfg, mid)
     branch = (model.field_of(path, 'branch') if path is not None else '') \
         or '<branch>'
@@ -566,6 +578,11 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     defect = plan_defect(known, names)
     if defect:
         return _refuse(f'{spoken}: {defect}')
+    # The KIND needs the TREE, so it sits below the config load; the guard
+    # above it stays a fact about the input.
+    wrong = _wrong_kind(cfg, operation, subject) if subject else ''
+    if wrong:
+        return _refuse(f'{spoken}: {wrong}')
 
     if operation == 'release':
         # The plan already knows which version is current, so the human does
@@ -598,7 +615,7 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'{model.ROOT_ID} <milestone-id> --before <id>` if {subject} '
                 f'really goes first')
 
-    mid = subject.split('/')[0]
+    mid = _milestone_id(cfg, operation, subject)
     # The GRAIN, not a directory: what a belt needs is the milestone's document
     # (whose status it writes) and the ledger its rows land in, and both are
     # addressed by id now.

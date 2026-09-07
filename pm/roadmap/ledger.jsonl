@@ -662,3 +662,9 @@
 {"ts":"2026-09-07T00:34:18Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::D5AStoryAheadOfItsFeature::test_a_story_at_work_under_a_feature_still_being_shaped_IS_drift","duration_ms":266,"rank":5}
 {"ts":"2026-09-07T00:34:18Z","kind":"gate","gate":"unit","verdict":"FAIL","duration_ms":14630,"census":658}
 {"ts":"2026-09-07T00:50:23Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":19010}
+{"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":488,"rank":1}
+{"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::ARenamedVocabularyGetsTheSameAnswers::test_every_read_verb_says_the_same_thing_about_both_trees","duration_ms":461,"rank":2}
+{"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_the_corpus_actually_exercises_both_verdicts","duration_ms":391,"rank":3}
+{"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_no_file_names_a_consuming_project","duration_ms":326,"rank":4}
+{"ts":"2026-09-07T03:21:51Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_gate.py::D5AStoryAheadOfItsFeature::test_a_story_at_work_under_a_feature_still_being_shaped_IS_drift","duration_ms":310,"rank":5}
+{"ts":"2026-09-07T03:21:51Z","kind":"gate","gate":"unit","verdict":"FAIL","duration_ms":17770,"census":844}

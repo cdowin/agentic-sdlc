@@ -3,8 +3,8 @@ id: ft-a-lesson-surfaces-where-you-stand
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: a lesson surfaces where you stand
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-a-lesson-surfaces-where-you-stand.md
 depends_on: []
 consumed_by: []
 ---
@@ -46,8 +46,17 @@ A lesson recorded against a grain or a rule is printed and emitted at the next b
 touches that grain or runs that rule, with its source path, and at no other time. It never changes an
 exit code.
 
-`agentic-sdlc lesson show [--grain <id> | --rule <id>]` reads them directly, columns named in order
-in `--help`, so the shell is the filter (rule 11's read side).
+**Amended at close (B3, 2026-09-07).** The criterion originally required
+`agentic-sdlc lesson show [--grain <id> | --rule <id>]` here. It moves to
+`ft-a-lesson-is-a-row-bound-to-a-grain`, which owns `lesson record` and the row kind itself: one verb
+module, one `--help`, one place a reader learns both halves. Nothing in this package can WRITE a
+lesson row yet, so a read verb landing here would ship a surface with no producer — and splitting the
+two across features is the second-scoreboard shape this package deletes everywhere else.
+
+The amendment is honest about what it costs: **until that feature lands, a lesson is still only
+readable at a belt moment.** A row naming neither a grain nor a rule surfaces nowhere and is
+unreachable for the life of the tree — the reviewer's sharpest case, recorded here rather than closed
+over.
 
 ## Proof budget
 

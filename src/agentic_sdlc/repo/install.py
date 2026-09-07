@@ -308,44 +308,50 @@ SETTINGS_DEFECT = '{rel} {defect} — nothing was written'
 
 
 def _settings_step(root: Path, write: bool) -> bool:
-    """Name the settings file, print its wiring, and write it when asked and free.
+    """Name the settings file, say what became of it, print what to paste.
 
     True when a write was ASKED FOR and withheld, which is exit 1 like any
-    other withheld replacement. The block is printed unless it is already on
-    disk, so the last thing on stdout stays pasteable.
+    other withheld replacement.
     """
     target = root / AGENT_SETTINGS
     body = hook_settings(root) + '\n'
+    line, withheld, paste = _settings_write(target, body, write)
+    _say(line)
+    if paste:
+        # Last on stdout and unprefixed, so the block can be pasted whole.
+        print(f'\n{SETTINGS_NAMES.format(path=target, root=root)}\n\n{body}')
+    return withheld
+
+
+def _settings_write(target: Path, body: str,
+                    write: bool) -> tuple[str, bool, bool]:
+    """(the report line, was a write withheld, is there still a paste to do).
+
+    Without the flag nothing is touched: a package that silently edits a
+    harness config is worse than one that does not. With it, a file with
+    nothing in the way is written whole — and one that EXISTS is refused by
+    path, `--force` included, because it carries permissions, env and MCP
+    entries this package knows nothing about and there is no merge.
+    """
     if not write:
-        _say(SETTINGS_OFFER.format(rel=AGENT_SETTINGS, flag=SETTINGS_FLAG))
-        return _print_settings(target, root, body, withheld=False)
+        return (SETTINGS_OFFER.format(rel=AGENT_SETTINGS, flag=SETTINGS_FLAG),
+                False, True)
     defect = destination_defect(target)
     if defect:
-        _say(SETTINGS_DEFECT.format(rel=AGENT_SETTINGS, defect=defect))
-        return _print_settings(target, root, body, withheld=True)
+        return SETTINGS_DEFECT.format(rel=AGENT_SETTINGS,
+                                      defect=defect), True, True
     if target.is_file():
         existing, _unreadable = read_destination(target)
         if existing == body:
-            _say(SETTINGS_CURRENT.format(rel=AGENT_SETTINGS))
-            return False
-        _say(SETTINGS_WITHHELD.format(rel=AGENT_SETTINGS))
-        return _print_settings(target, root, body, withheld=True)
+            return SETTINGS_CURRENT.format(rel=AGENT_SETTINGS), False, False
+        return SETTINGS_WITHHELD.format(rel=AGENT_SETTINGS), True, True
     result = apply.Plan().overwrite(target, body, newline=None,
                                     label=AGENT_SETTINGS).apply(decide=False)
     if result.failed is not None:
-        _say(SETTINGS_DEFECT.format(rel=AGENT_SETTINGS,
-                                    defect=f'could not be written '
-                                           f'({result.error})'))
-        return _print_settings(target, root, body, withheld=True)
-    _say(SETTINGS_WROTE.format(rel=AGENT_SETTINGS))
-    return False
-
-
-def _print_settings(target: Path, root: Path, body: str,
-                    withheld: bool) -> bool:
-    """The pasteable block, under the line that names where it goes."""
-    print(f'\n{SETTINGS_NAMES.format(path=target, root=root)}\n\n{body}')
-    return withheld
+        return SETTINGS_DEFECT.format(
+            rel=AGENT_SETTINGS,
+            defect=f'could not be written ({result.error})'), True, True
+    return SETTINGS_WROTE.format(rel=AGENT_SETTINGS), False, False
 
 
 HEADER_ONLY_NOTE = '   (project-config header only)'

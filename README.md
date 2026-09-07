@@ -156,6 +156,20 @@ shape, a review record that is not there — at exit 2. It reports facts about t
 carries on; whether an open child should stop you is your question, and `--force` is the answer
 on the record.
 
+A belt prints one more line shape, and it decides nothing:
+
+```
+[feature] lesson: rule findings-landed — the record's ids drift from the tree (source: docs/reviews/alpha.md)
+```
+
+A `lesson` row you recorded surfaces where you are standing — the belt ENTERS on a grain it names,
+a CHECK runs whose name it names, or a check's `pm ready-for` NAMES a blocker it names — with its
+`source`, so you go to the record instead of trusting a paraphrase. It is **never a gate** (no
+verdict and no exit code changes whether it exists or not) and **never a nag**: the scope is the
+grain or the rule named, exactly, with no fuzzy matching and no ranking. Several matches all print,
+in the order they were recorded. Each is also emitted on your `[emit]` sink as a `lesson.enter` or
+`lesson.verdict` row carrying the recorded row verbatim.
+
 ## `devkit.toml`
 
 At the repo root. Every GATE key has a stock default, so a repo with no file runs every gate

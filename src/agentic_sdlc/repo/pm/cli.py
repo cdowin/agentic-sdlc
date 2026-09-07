@@ -102,10 +102,17 @@ every run; a state the project never declared is refused by name.
   want of the `name` field and the conclusion drawn was that the tool could not
   search. The filter flags that predate this rule stay; it governs the next
   one.
-  ready-for feature|milestone|tag <id>    (the belt-entry condition below that
-                                           rung, as an EXIT CODE: 0 ready,
-                                           1 not ready — naming every blocker,
-                                           never a tally — 2 usage. feature:
+  ready-for story|feature|milestone|tag <id>
+                                           (the belt-entry condition below that
+                                           rung, as an EXIT CODE: 0 ready, 1
+                                           not ready — naming every blocker,
+                                           never a tally — 2 usage. story: the
+                                           story belt's own checks that are
+                                           decidable BEFORE the work — its
+                                           `[story] steps` narrowed to what the
+                                           registry declares an entry
+                                           condition, with every check it did
+                                           NOT ask named and why. feature:
                                            every story in the `done` CATEGORY
                                            ([pm.states.story] done — `obe` too,
                                            never the bare word). milestone:
@@ -113,7 +120,9 @@ every run; a state the project never declared is refused by name.
                                            non-empty review record. tag: every
                                            finding in the records the milestone
                                            points at at a disposition other
-                                           than `open`. Writes nothing)
+                                           than `open`. Writes nothing; emits
+                                           `rung.enter` where `[emit]` declares
+                                           a sink)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field — not status)
   rename <old-id> <new-id>                (rewrite the grain's own `id:` AND

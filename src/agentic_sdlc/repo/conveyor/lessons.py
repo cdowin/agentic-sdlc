@@ -1,15 +1,9 @@
-"""lessons.py — a recorded lesson, read back where the belt is standing.
+"""lessons.py — a recorded `lesson` row, read back where the belt is standing.
 
-A `lesson` row (`ft-a-lesson-is-a-row-bound-to-a-grain`) names a grain, a rule
-and the `source` it came from. This module is the READ side, and D1 is why it
-exists: capture with no read-back is decoration.
-
-**Never a gate.** Nothing here blocks, refuses or changes a verdict — an
-unreadable ledger and an unreachable sink are NAMED lines (rule 11), never an
-exit code. **Never a nag.** Scope is exact: the grain named, or the rule named.
-No fuzzy matching, no ranking, no scoring — that is the inference edge this
-package does not have (rule 9), and when several match they are all printed in
-recorded order, because choosing is inference and the caller has the sources.
+D1: capture with no read-back is decoration. **Never a gate**: no verdict and
+no exit code change, and what would not read is a NAMED line (rule 11).
+**Never a nag**: the grain or the rule named, exactly — no fuzzy match, no
+ranking, no scoring (rule 9), and every match prints in recorded order.
 """
 from __future__ import annotations
 
@@ -25,20 +19,16 @@ FIELDS = ('grain', 'rule', 'source', 'text', 'at')
 COLUMNS = FIELDS
 
 # The line this module adds BESIDE a verdict; it never reshapes one (rule 6).
+# A row that points at nothing says so, and a row is unbounded where a line is not.
 WORD = 'lesson'
 SCOPE_GRAIN = 'grain'
 SCOPE_RULE = 'rule'
-# A row that points at nothing is reported as pointing at nothing.
 NO_SOURCE = '(no source recorded)'
 NO_TEXT = '(no text recorded)'
-# A ledger row is unbounded; a printed line is not.
 TEXT_LIMIT = 400
 
-# The emitted event's kind is `<KIND>.<tap>`, so its last segment is the tap
-# `check pm` U3 counts and its first says what the row IS. It is deliberately
-# not `rung.enter` / `check.verdict`: those rows are the belt's own event
-# (`ft-one-event-shape-serves-three-readers`), and one kind with two payloads
-# is the second scoreboard this package deletes everywhere else.
+# `<KIND>.<tap>`: the last segment is the tap `check pm` U3 counts, and it is
+# not `rung.enter`/`check.verdict` — that is the belt's own event's kind.
 EVENT_KINDS = {emit.TAP_ENTER: f'{KIND}.{emit.TAP_ENTER}',
                emit.TAP_VERDICT: f'{KIND}.{emit.TAP_VERDICT}'}
 
@@ -55,9 +45,8 @@ class Lesson(NamedTuple):
 
 
 def lesson_of(row: dict) -> Lesson | None:
-    """The lesson this row IS, or None. Every field is type-checked: rows
-    arrive from other branches and versions, and a field of the wrong shape
-    names nothing rather than crashing a belt."""
+    """The lesson this row IS, or None; typed, since a row from another version
+    with a bad field must name nothing."""
     if row.get('kind') != KIND:
         return None
     values = [row.get(name) for name in FIELDS]
@@ -66,8 +55,8 @@ def lesson_of(row: dict) -> Lesson | None:
 
 
 class Store(NamedTuple):
-    """Every lesson this tree has recorded, and the ledgers that could not be
-    read — an unreadable file is named, never counted as silence (rule 11)."""
+    """Every lesson recorded, and the ledgers that would not read — named,
+    never counted as silence (rule 11)."""
 
     lessons: tuple[Lesson, ...] = ()
     unreadable: tuple[str, ...] = ()
@@ -86,23 +75,16 @@ class Store(NamedTuple):
 
 
 def paths(cfg) -> list[Path]:
-    """Both ledger homes (0.4.0/D3): the tree's own, and one per milestone.
-
-    THE HELPER THAT BELONGS IN `ledger.py` — `checks/pm.py` spells the same two
-    lines privately, and a third reader would be a third answer to "where are
-    the rows".
-    """
+    """Both ledger homes (0.4.0/D3), and THE HELPER THAT BELONGS IN `ledger.py`:
+    `checks/pm.py` spells it privately, and a third is a third answer."""
     found = [ledger.grainless_path(cfg.roadmap)]
     found += [ledger.ledger_for(cfg, grain.gid) for grain in model.milestones(cfg)]
     return list(dict.fromkeys(found))
 
 
 def read(cfg) -> Store:
-    """Every `lesson` row in the tree, oldest first, ledger by ledger.
-
-    This never raises: a lesson may not decide a belt, so what could not be
-    read is carried in `unreadable` and said on the line.
-    """
+    """Every `lesson` row, oldest first. Never raises: a lesson may not decide
+    a belt, so what would not read is carried and said."""
     try:
         found = paths(cfg)
     except Exception as err:  # noqa: BLE001 — a named non-answer, not a crash
@@ -123,11 +105,7 @@ def read(cfg) -> Store:
 
 def blockers_named(said: str) -> tuple[str, ...]:
     """The grains `pm ready-for` NAMED as blockers: the token after each of its
-    own `BLOCKED` markers, and nothing read out of the rest of the sentence.
-
-    The marker is imported rather than copied — the verb owns the line shape,
-    and a second spelling of it here would go stale the day the line moves.
-    """
+    own `BLOCKED` marker, imported and never copied — the verb owns that line."""
     from agentic_sdlc.repo.pm.ready_for import BLOCKED
 
     marker = BLOCKED.strip()
@@ -144,8 +122,8 @@ def _clip(text: str) -> str:
 
 
 def line(operation: str, scope: str, name: str, les: Lesson) -> str:
-    """The one line shape: what matched, the text, and always the source, so
-    the reader goes to the record rather than trusting a paraphrase."""
+    """What matched, the text, and ALWAYS the source: the reader goes to the
+    record rather than trusting a paraphrase."""
     return (f'[{operation}] {WORD}: {scope} {name} — '
             f'{_clip(les.text) or NO_TEXT} '
             f'(source: {les.source or NO_SOURCE})')
@@ -153,8 +131,8 @@ def line(operation: str, scope: str, name: str, les: Lesson) -> str:
 
 def event(tap: str, les: Lesson, *, operation: str, grain: str, scope: str,
           name: str, check: str = '') -> dict:
-    """The row emitted beside the line. The lesson travels VERBATIM under one
-    key: this event says where it surfaced, never what it means."""
+    """The row emitted beside the line; the lesson rides VERBATIM under one key,
+    because this event says where it surfaced, never what it means."""
     row = {'ts': ledger.utc_now(), 'kind': EVENT_KINDS[tap], 'grain': grain,
            'rung': operation, 'scope': scope, 'matched': name}
     if check:
@@ -164,8 +142,8 @@ def event(tap: str, les: Lesson, *, operation: str, grain: str, scope: str,
 
 
 class Surfacer:
-    """What a belt run holds: the tree's lessons, the config the emit seam
-    needs, and the grain this run's events are routed by."""
+    """One run's read-back: the lessons, the config the emit seam needs, and
+    the grain its events are routed by."""
 
     def __init__(self, store: Store, cfg, operation: str, grain: str):
         self.store = store
@@ -182,11 +160,8 @@ class Surfacer:
                                  self.store.against_grain(self.grain))
 
     def at_check(self, check: str, names: tuple[str, ...] = ()) -> list[str]:
-        """The check surface: this check's RULE, then every blocker it named.
-
-        Both are exact, and a lesson matching twice is printed once — under the
-        rule, which is the thing that just ran.
-        """
+        """The check surface: this check's RULE, then every blocker it named —
+        both exact, and a lesson matching twice prints once, under the rule."""
         matched = self.store.against_rule(check)
         lines = self._say(emit.TAP_VERDICT, SCOPE_RULE, check, matched, check)
         said = list(matched)
@@ -208,11 +183,8 @@ class Surfacer:
 
     def _emit(self, tap: str, les: Lesson, scope: str, name: str,
               check: str) -> list[str]:
-        """The emit seam, and the WARNING this run owes once if it could not be
-        reached. A malformed `[emit]` is exit 2 wherever the section is READ
-        for its own sake; here it is a line, because a lesson that changed an
-        exit code would be the gate this feature must never be.
-        """
+        """The emit seam, and the one WARNING a run owes if it could not be
+        reached — even a malformed `[emit]`, which decides nothing here."""
         row = event(tap, les, operation=self.operation, grain=self.grain,
                     scope=scope, name=name, check=check)
         try:

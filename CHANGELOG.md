@@ -196,6 +196,21 @@
   the line no longer says `telemetry is live` over a tree where nothing has ever come through:
   `wired` alone is the tool asserting an outcome it did not observe (rule 4).
 
+- **NEW OUTPUT LINE: a recorded `lesson` surfaces at the belt that touches its grain or runs its
+  rule** (`ft-a-lesson-surfaces-where-you-stand`). A `lesson` row in the ledger is printed beside
+  the verdict it belongs to — `[<op>] lesson: grain|rule <name> — <text> (source: <path>)` — at
+  exactly three moments and no others: the belt ENTERS on a grain a lesson names, a CHECK runs
+  whose name a lesson names, and a check's `pm ready-for` NAMES a blocker a lesson names. Each is
+  also emitted on the `[emit]` sink as a `lesson.enter` / `lesson.verdict` row carrying the
+  recorded row verbatim under one key, so a human reading stdout and an agent reading the stream
+  get the same fact at the same instant. **It is never a gate**: no verdict, no exit code and no
+  existing line changes whether a lesson exists or not, and a sink or a `[emit]` section it cannot
+  reach is one WARNING line beside the lesson rather than a refused belt. **And never a nag**:
+  scope is the grain named or the rule named, EXACTLY — no fuzzy matching, no "related", no
+  ranking or scoring, because anything inferred needs a feedback edge and a reader/writer has
+  nowhere to put one (0.5.0/D1). When several match, all of them print in recorded order; choosing
+  is inference, and the caller has the source paths.
+
 ## v0.4.0 — 2026-09-07 — authoring is separate from binding
 
 > **The northstar: the path is where a file lives; the frontmatter is what it is and what it

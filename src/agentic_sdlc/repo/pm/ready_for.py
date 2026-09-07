@@ -48,6 +48,12 @@ KINDS = (STORY, FEATURE, MILESTONE, TAG)
 # what the row calls itself, in the `<rung>.<edge>` spelling `rung.leave` uses.
 KIND_ENTER = 'rung.enter'
 
+# The payload's boolean key, a CONSTANT because `ready` is also a word the
+# story seed spells and `tests/test_pm_flow.py` holds every state literal to a
+# named assignment. This is a HOMONYM, like `verdict.OPEN`: it is the ANSWER
+# this verb gave, and it says nothing about any grain's status.
+READY_KEY = 'ready'
+
 # The question is a category, asked through `model.holds` so this and `check
 # pm` D2 cannot disagree.
 DONE = model.DONE_CATEGORY
@@ -104,7 +110,7 @@ def _enter_row(rung: str, grain: str, blockers: list[Blocker]) -> dict:
     here decides anything.
     """
     return {'ts': ledger.utc_now(), 'kind': KIND_ENTER, 'grain': grain,
-            'rung': rung, 'ready': not blockers,
+            'rung': rung, READY_KEY: not blockers,
             'blockers': [{'check': b.check, 'why': b.why} for b in blockers]}
 
 

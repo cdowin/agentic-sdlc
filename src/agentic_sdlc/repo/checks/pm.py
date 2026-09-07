@@ -107,11 +107,21 @@ def _run() -> int:
 
     # Always walked for the census; reported only under D4.
     bug_findings, n_bugs = model.bug_status_findings(cfg)
+    if model.is_pooled(cfg):
+        n_bugs = model.pool_census(cfg, 'bug')[0]
     if 'D4' in enabled:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
     n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
+    # The CENSUS is the pool's, not the walk's. A document with damaged
+    # frontmatter declares no `id:`, so it is bound to nothing and no walk
+    # reaches it — and a census that counted only what the walk saw would
+    # quietly drop exactly the document `unkeyed_documents` just reported.
+    # Rule 4: the number says what is THERE.
+    if model.is_pooled(cfg):
+        n_features = model.pool_census(cfg, 'feature')[0]
+        n_stories = model.pool_census(cfg, 'story')[0]
 
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)

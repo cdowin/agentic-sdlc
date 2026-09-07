@@ -811,6 +811,7 @@ class U2ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
                     'pm/roadmap/ledgers/0.1.jsonl'):
             with self.subTest(rel=rel), tree(story_statuses=('ready',)) as root:
                 self._settings(root, self.WIRED)
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(
                     '{"ts":"2026-09-06T00:00:00Z","kind":"gate","gate":"check",'
                     '"verdict":"PASS","duration_ms":1}\n', encoding='utf-8')
@@ -883,9 +884,9 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
 
     @staticmethod
     def _claims(root: Path, mid: str, version: str, status: str) -> None:
-        write(root / f'pm/roadmap/{mid}-m/milestone.md',
-              {'id': f'"{mid}"', 'name': mid, 'status': status,
-               'version': f'"{version}"'})
+        write(root / f'pm/roadmap/milestones/{mid}.md',
+              {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
+               'status': status, 'version': f'"{version}"'})
 
     def _tree(self, version: str, config: str = '[pm]\nchecks = ["R5"]\n'):
         ctx = tree(milestone_status='building', story_statuses=('ready',))
@@ -1527,8 +1528,13 @@ class DamagedFrontmatter(unittest.TestCase):
                     damage(root / STORY_REL, form)
                     code, out = run_gate(root)
                     self.assertEqual(code, 1, out)
-                    self.assertIn("status '' not in", out)
-                    self.assertIn('missing id: or status:', out)
+                    # 0.4.0: a damaged document declares no `id:`, so nothing
+                    # can key on it and no walk reaches it — which is exactly
+                    # the drop this case exists to forbid. It is REPORTED by
+                    # name and COUNTED in the census; the words changed, the
+                    # guarantee did not.
+                    self.assertIn('declares no `id:`', out)
+                    self.assertIn('SKIPPED by this scan', out)
                     self.assertIn('1 story/ies', out)
 
     def test_a_damaged_bug_is_reported_not_dropped(self):
@@ -1539,7 +1545,7 @@ class DamagedFrontmatter(unittest.TestCase):
                     damage(self._bug(root, 'seed-is-zero', 'open'), form)
                     code, out = run_gate(root)
                     self.assertEqual(code, 1, out)
-                    self.assertIn("bug status '' is not in", out)
+                    self.assertIn('declares no `id:`', out)
                     self.assertIn('1 bug(s)', out)
                     self.assertNotIn('no bug files under', out)
 
@@ -1897,10 +1903,11 @@ class TheUnboundFamily(unittest.TestCase):
 
     @staticmethod
     def _claims(root: Path, mid: str, version: str, status: str) -> None:
-        front = {'id': f'"{mid}"', 'name': mid, 'status': status}
+        front = {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
+                 'status': status}
         if version:
             front['version'] = f'"{version}"'
-        write(root / f'pm/roadmap/{mid}-m/milestone.md', front)
+        write(root / f'pm/roadmap/milestones/{mid}.md', front)
 
     def test_off_unless_named(self):
         # Every input the family exists to catch, on the stock roster.

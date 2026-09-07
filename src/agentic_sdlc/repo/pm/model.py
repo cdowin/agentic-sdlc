@@ -1546,6 +1546,10 @@ def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
                 out.append((path, 'declares no `id:`, so nothing can key on '
                                   'it'))
                 continue
+            if not field_of(path, 'status'):
+                out.append((path, 'declares no `status:` — it is in the tree '
+                                  'and no question about it can be answered'))
+                continue
             declared = unquote(field_of(path, 'kind'))
             if declared and declared not in FLOW_KINDS:
                 out.append((path, f'declares kind {declared!r}, which this '

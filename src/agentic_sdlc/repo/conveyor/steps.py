@@ -509,7 +509,7 @@ def validate_config(operation: str, names: tuple[str, ...],
     skippable_for(operation, names, registry)
     _timeout(operation)
     if 'changelog-unreleased-nonempty' in names:
-        _changelog_of(operation)
+        _changelog_retired(operation)
     if 'pin-bumped' in names:
         _pin_file_of(operation)
     if 'runner-targets-resolve' in names:
@@ -527,16 +527,16 @@ def _timeout(operation: str) -> int:
     return value
 
 
-def _changelog_of(operation: str) -> str:
-    raw = _section(operation).get('changelog', 'CHANGELOG.md')
-    if not isinstance(raw, str) or not raw.strip():
+def _changelog_retired(operation: str) -> None:
+    """`[<op>] changelog` named the FILE this step counted bullets in. Named
+    at exit 2, never ignored: a consumer still declaring it would keep a path
+    nothing reads and believe they had pointed it somewhere (0.6.0)."""
+    if 'changelog' in _section(operation):
         raise ConfigError(
-            f'[{operation}] changelog must be a path, got {raw!r}')
-    return raw
-
-
-def _changelog(ctx: Context) -> Path:
-    return ctx.root / _changelog_of(ctx.operation)
+            f'[{operation}] changelog was retired in 0.6.0 — the step grades '
+            f'every grain\'s `changelog:` field instead of counting bullets '
+            f'in a file, so there is no path to name. `agentic-sdlc changelog '
+            f'<id>` renders them. Remove the key')
 
 
 def _pin_file_of(operation: str) -> str:
@@ -792,23 +792,37 @@ def _unreleased_span(text: str) -> tuple[int, int, list[str]] | str:
 
 
 def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
-    path = _changelog(ctx)
-    if not path.is_file():
+    """Every grain closing here answered the changelog question — a sentence,
+    or `none` (0.6.0).
+
+    It counted BULLETS IN A FILE: one bullet passed a release of forty grains,
+    and nothing bound a bullet to the work it described. It names the GRAIN
+    now. The step KEEPS its name — a step id is contract (rule 6).
+    """
+    from agentic_sdlc.repo.pm import changelog as clog
+    cfg = _pm_cfg(ctx)
+    mid = subject_grain(ctx)
+    if mid not in model.grain_index(cfg):
         return Answer.unverifiable(
-            f'{path.name} is not at {path} — this check reads the release '
-            f'notes and never creates the file')
-    span = _unreleased_span(_read(path))
-    if isinstance(span, str):
-        return Answer.no(f'{path.name}: {span}')
-    _, _, body = span
-    bullets = [line for line in body
-               if line.lstrip().startswith(('-', '*', '+'))]
-    if bullets:
-        return Answer.yes(f'{path.name} `## Unreleased` holds '
-                          f'{len(bullets)} bullet(s)')
-    return Answer.no(f'{path.name} `## Unreleased` holds no bullet — the '
-                     f'notes are written as the work lands, one bullet per '
-                     f'consumer-visible change')
+            f'no grain resolves from {mid!r} to read `{clog.FIELD}:` from')
+    entries = clog.collect(cfg, mid)
+    if not entries:
+        return Answer.unverifiable(f'{mid} holds no grains to read')
+    silent = clog.unanswered(cfg, entries)
+    if silent:
+        named = ', '.join(e.gid for e in silent[:5])
+        more = f' (+{len(silent) - 5} more)' if len(silent) > 5 else ''
+        return Answer.no(
+            f'{len(silent)} closed grain(s) answered neither: {named}{more} — '
+            f'`agentic-sdlc pm set <id> {clog.FIELD} "<sentence>"`, or '
+            f'`{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
+    said = clog.rows(entries)
+    # Rule 4: `declined` is what a grain SAID, never the arithmetic remainder —
+    # a grain that is simply not closed yet answered nothing and is neither.
+    declined = sum(1 for e in entries if e.declined)
+    return Answer.yes(f'{len(said)} entry/ies across {len(entries)} grain(s), '
+                      f'{declined} declined with `{clog.NEEDS_NONE}`; every '
+                      f'closed grain answered')
 
 
 def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:

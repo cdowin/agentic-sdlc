@@ -5,6 +5,7 @@ milestone: ms-the-rule-reaches-the-work
 name: a bug carries a private binding vocabulary instead of being nested like every other grain
 status: closed
 caused_by:
+changelog: BREAKING: a bug binds to its parent through `milestone:` alone — `fix_milestone:` and `caught_in:` retire, and `check pm` D11 replaces D3 by refusing to let any parent close over an unresolved child. The release gate had filtered on a field nothing wrote, so it could not refuse on an open bug for four releases.
 ---
 
 # a bug is a grain nested in a parent

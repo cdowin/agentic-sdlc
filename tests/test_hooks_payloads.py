@@ -320,7 +320,12 @@ def test_confine_fails_open_on_garbage_and_non_write_tools(tmp_path):
 # --- pre-push: main blocked, gate scoped, exact branch match ------------------
 def with_origin(root: Path, parent: Path) -> Path:
     origin = parent / 'origin.git'
-    subprocess.run(['git', 'init', '-q', '--bare', str(origin)], check=True)
+    # `cwd=parent`, like every other git spawn in this suite: without it this
+    # one ran in whatever directory pytest was started in — the real checkout —
+    # and `git init --bare` is a verb that WRITES a `.git/config`
+    # (bg-the-suite-can-flip-the-host-repo-to-bare).
+    subprocess.run(['git', 'init', '-q', '--bare', str(origin)], cwd=parent,
+                   check=True)
     assert git(root, 'remote', 'add', 'origin', str(origin)).returncode == 0
     return origin
 

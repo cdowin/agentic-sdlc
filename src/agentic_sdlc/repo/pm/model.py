@@ -176,7 +176,7 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
 # D11 replaced D3, STOCK-ON in its place: containment is the tool's mapping.
-DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'U1',
+DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
 # capabilities (U2) it declared, as opposed to whether a word is declared at

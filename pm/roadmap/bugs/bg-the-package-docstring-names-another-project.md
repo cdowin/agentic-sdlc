@@ -5,6 +5,7 @@ milestone: ms-the-rule-reaches-the-work
 name: the package docstring describes Godot scene introspection
 status: closed
 caused_by:
+changelog: The package docstring named a different project and now names this one, held there by a test against `[project] description`.
 ---
 
 # the package docstring names another project

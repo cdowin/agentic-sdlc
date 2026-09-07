@@ -3,7 +3,7 @@ id: bg-a-proof-row-names-a-case-that-proves-half
 kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: a proof row names a case that exists and proves half of what it claims
-status: open
+status: fixed
 caused_by:
 ---
 

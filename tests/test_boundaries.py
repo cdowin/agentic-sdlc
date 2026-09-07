@@ -1481,3 +1481,332 @@ class TheDocstringAndTheDescriptionNameOneProject(unittest.TestCase):
             'support is the second copy drifting — this one shipped four '
             'releases describing a different project. Say it in the '
             "description's words, or widen the description in this same change")
+
+
+# --- primitive 8: no test points `git` at THIS checkout ------------------------
+# `bg-the-suite-can-flip-the-host-repo-to-bare`. Twice on 2026-09-06 a full-suite
+# run left the real checkout's `.git/config` holding `bare = true`, after which
+# every git command in the worktree failed with *fatal: this operation must be
+# run in a work tree*. No commits were lost and no module reproduced it alone:
+# each git-spawning module was run on its own against this checkout with
+# `.git/config` hashed either side, and all six left it unchanged. All three
+# occurrences happened while subagents ran their own test processes against this
+# same worktree.
+#
+# THIS GATE NAMES NO CAUSE, and the bug is filed unresolved on purpose. It
+# removes the PRECONDITION instead: whatever rewrites `.git/config`, it is a
+# `git` process pointed at this repository, and a suite that never points one
+# here cannot be the writer however the race is shaped. That is assertable from
+# source, which a race is not.
+#
+# A spawn reaches this checkout in four ways and every one of them is visible in
+# the syntax:
+#   * no `cwd=` at all — the call runs wherever pytest was started, which is the
+#     repo root. That was the one real offender: `git init -q --bare <path>`,
+#     a verb whose whole job is writing a `.git/config`, spawned loose;
+#   * a `cwd=` rooted at this file tree;
+#   * `GIT_DIR`/`GIT_WORK_TREE` in `env=`, and `-C`/`--git-dir`/`--work-tree` in
+#     the argv. Both OUTRANK `cwd=`, so neither can be read as a confinement —
+#     they are banned outright rather than checked against a target this file
+#     cannot resolve. `cwd=` already says where a git command runs, and one
+#     mechanism is the point.
+TESTS_DIR = REPO_ROOT / 'tests'
+# Floors in the spirit of MIN_SOURCES: this gate asserts an EMPTY offender list,
+# and an empty list is what a moved `tests/` produces too. Both sit well under
+# what is really there (56 modules and 48 `git` call sites at the time of
+# writing) and well over zero.
+MIN_TEST_MODULES = 30
+MIN_GIT_SPAWNS = 20
+# The one module a spawn crosses, and the constructors that reach it. Spelled
+# the way `tests/conftest.py` derives the `shell` mark — `subprocess.<attr>` —
+# so the tier definition and this boundary police one chokepoint.
+SPAWN_MODULE = 'subprocess'
+SPAWNERS = ('run', 'Popen', 'call', 'check_output', 'check_call')
+GIT = 'git'
+# What `tests/support` calls a path inside this checkout. A `cwd=` naming any of
+# them is the host repository: git discovers upward, so `tests/fixtures` is this
+# repository exactly as the root is.
+SUPPORT_ROOTS = ('REPO_ROOT', 'TESTS', 'FIXTURES', 'SUPPORT')
+SUPPORT_PACKAGES = ('support', 'conftest')
+# The other way a module names itself: anything derived from its own `__file__`
+# is under `tests/`, whatever it is called locally (`REPO`, `ROOT`, …). Derived
+# rather than rostered, because a roster of variable NAMES goes stale silently
+# and the next spelling would walk straight past it.
+FILE_ANCHOR = '__file__'
+GIT_LOCATION_ENV = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR',
+                    'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY')
+GIT_LOCATION_FLAGS = ('-C', '--git-dir', '--work-tree')
+NO_CWD = 'no cwd='
+HOST_CWD = 'cwd= names this checkout'
+
+
+def _test_sources() -> list[tuple[str, Path]]:
+    """(repo-relative posix path, file) for every module under `tests/`.
+
+    Through `core.walk` for the reason `_sources()` is: a gate that hand-rolled
+    an `rglob` to police the suite would be policing itself with the thing it
+    bans one directory over.
+    """
+    from agentic_sdlc.core import walk as walkmod
+    from agentic_sdlc.core.walk import Kind
+    found = walkmod.descendants(TESTS_DIR, Kind.FILE, suffix='.py')
+    out = [(p.relative_to(REPO_ROOT).as_posix(), p) for p in found.kept]
+    assert len(out) >= MIN_TEST_MODULES, (
+        f'{len(out)} test module(s) under {TESTS_DIR} — expected at least '
+        f'{MIN_TEST_MODULES}. The gate below asserts an EMPTY offender list, so '
+        f'a census this small passes it while checking nothing.')
+    return out
+
+
+def _argv0(node: ast.Call) -> str | None:
+    """The program a spawn runs, when the syntax says so.
+
+    `['git', …]` and `('git', …)` are the list forms; a bare `'git status'` is
+    the `shell=True` one. Anything else — `[sys.executable, …]`, `[exe, *argv]`
+    — is not a `git` call this file can identify, and is not counted as one.
+    """
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, (ast.List, ast.Tuple)) and first.elts:
+        head = first.elts[0]
+        if isinstance(head, ast.Constant) and isinstance(head.value, str):
+            return head.value
+        return None
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        words = first.value.split()
+        return words[0] if words else None
+    return None
+
+
+def _own_scope(node: ast.AST):
+    """Every node under `node` that belongs to `node`'s OWN scope.
+
+    Descent stops at a nested `def`/`class`, because its names are its own. A
+    walk that did not stop there put every `other = parent / name` in the module
+    into one namespace, and one function's `source = REPO_ROOT / …` then made
+    `cwd=other` in an unrelated helper read as this checkout — a gate reporting
+    a call that was already correct, which is rule 4's other half.
+    """
+    stack = list(ast.iter_child_nodes(node))
+    while stack:
+        current = stack.pop()
+        yield current
+        if not isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                    ast.ClassDef)):
+            stack.extend(ast.iter_child_nodes(current))
+
+
+def _host_rooted_names(scope: ast.AST, inherited: frozenset[str]) -> set[str]:
+    """`inherited`, plus the names THIS scope roots in the checkout.
+
+    Two seeds and a fixpoint, the shape `support_spawn_names()` uses in
+    `tests/conftest.py`: a `SUPPORT_ROOTS` name imported from `support`, and an
+    assignment whose value mentions `__file__`. Then repeat, so
+    `SRC = REPO_ROOT / 'src'` joins on the pass after `REPO_ROOT` does.
+    """
+    names = set(inherited)
+    assignments: list[ast.Assign | ast.AnnAssign] = []
+    for node in _own_scope(scope):
+        if isinstance(node, ast.ImportFrom) and (
+                (node.module or '').split('.')[0] in SUPPORT_PACKAGES):
+            names.update(alias.asname or alias.name for alias in node.names
+                         if alias.name in SUPPORT_ROOTS)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value:
+            assignments.append(node)
+    changed = True
+    while changed:
+        changed = False
+        for node in assignments:
+            targets = (node.targets if isinstance(node, ast.Assign)
+                       else [node.target])
+            bound = {t.id for t in targets if isinstance(t, ast.Name)}
+            if bound <= names or not _is_host_rooted(node.value, names):
+                continue
+            names |= bound
+            changed = True
+    return names
+
+
+def _is_host_rooted(node: ast.expr, names: set[str]) -> bool:
+    """True when this expression is built from this module's own file or from a
+    name already known to hold a path inside the checkout."""
+    return any(isinstance(inner, ast.Name)
+               and (inner.id == FILE_ANCHOR or inner.id in names)
+               for inner in ast.walk(node))
+
+
+def _leading_literal(node: ast.expr) -> str | None:
+    """The literal an argv element STARTS with, through the two spellings a
+    computed one takes: `'--git-dir=' + d` and `f'--git-dir={d}'`. The flag is
+    what decides, and it is a constant in all three."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _leading_literal(node.left)
+    if isinstance(node, ast.JoinedStr) and node.values:
+        return _leading_literal(node.values[0])
+    return None
+
+
+def _reaches_the_host(node: ast.Call, names: set[str]) -> list[str]:
+    """Why this `git` spawn is pointed at this checkout; empty when it is not.
+
+    All four reasons are collected rather than the first one returned: a call
+    fixed by adding `cwd=` while it still exports `GIT_DIR` has moved the
+    problem, and a reader has to see both lines to know that.
+    """
+    keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+    why: list[str] = []
+    cwd = keywords.get('cwd')
+    if cwd is None:
+        why.append(NO_CWD)
+    elif _is_host_rooted(cwd, names):
+        why.append(HOST_CWD)
+    env = keywords.get('env')
+    if isinstance(env, ast.Dict):
+        why.extend(f'env= sets {key.value}' for key in env.keys
+                   if isinstance(key, ast.Constant)
+                   and key.value in GIT_LOCATION_ENV)
+    argv = node.args[0] if node.args else None
+    if isinstance(argv, (ast.List, ast.Tuple)):
+        for element in argv.elts:
+            literal = _leading_literal(element)
+            flag = literal.split('=')[0] if literal else None
+            if flag in GIT_LOCATION_FLAGS:
+                why.append(f'argv carries {flag}')
+    return why
+
+
+def _is_a_git_spawn(node: ast.Call) -> bool:
+    """`subprocess.<spawner>(['git', …])` — the module spelled the way
+    `tests/conftest.py` derives the `shell` mark from, so the tier and this
+    boundary read one mechanism rather than two."""
+    func = node.func
+    return (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+            and func.value.id == SPAWN_MODULE and func.attr in SPAWNERS
+            and _argv0(node) == GIT)
+
+
+def _git_spawn_sites(tree: ast.Module) -> list[tuple[int, list[str]]]:
+    """(lineno, reasons) for every `git` spawn in one module, scope by scope.
+
+    Both halves matter and both are graded: what this counts as a `git` spawn at
+    all, and which of those it says reach the host. A classifier that stopped
+    seeing `git` would report an empty offender list forever.
+    """
+    out: list[tuple[int, list[str]]] = []
+
+    def visit(scope: ast.AST, inherited: frozenset[str]) -> None:
+        names = _host_rooted_names(scope, inherited)
+        for node in _own_scope(scope):
+            if isinstance(node, ast.Call) and _is_a_git_spawn(node):
+                out.append((node.lineno, _reaches_the_host(node, names)))
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                   ast.ClassDef)):
+                visit(node, frozenset(names))
+
+    visit(tree, frozenset())
+    return sorted(out)
+
+
+# (source, what the classifier must say) — the confined spellings this suite is
+# already written in, the four ways a spawn reaches this checkout, and the
+# spawns that are not `git` at all and must stay uncounted. `[[]]` is one git
+# call with nothing against it; `[]` is no git call found.
+GIT_SPAWN_SPELLINGS = (
+    # Confined: a directory this file can see is not the checkout.
+    ("subprocess.run(['git', 'init', '-q'], cwd=root, check=True)", [[]]),
+    ("subprocess.run(['git', 'status'], cwd=tmp_path / 'x')", [[]]),
+    ("subprocess.check_output(['git', 'log'], cwd=repo.root)", [[]]),
+    ("subprocess.run(('git', 'add', '-A'), cwd=other, check=True)", [[]]),
+    # Loose: the pytest process stands in the repo root, so this IS the host.
+    ("subprocess.run(['git', 'status'])", [[NO_CWD]]),
+    ("subprocess.run(['git', 'init', '-q', '--bare', str(o)], check=True)",
+     [[NO_CWD]]),
+    ("subprocess.Popen(['git', 'gc'])", [[NO_CWD]]),
+    ("subprocess.run('git status', shell=True)", [[NO_CWD]]),
+    # Named, and the name is this checkout — by import or by `__file__`.
+    ("from support import REPO_ROOT\nsubprocess.run(['git', 'gc'],"
+     " cwd=REPO_ROOT)", [[HOST_CWD]]),
+    ("REPO = Path(__file__).resolve().parents[1]\n"
+     "subprocess.run(['git', 'gc'], cwd=REPO)", [[HOST_CWD]]),
+    # One hop further out: a name built from a name built from `__file__`.
+    ("REPO = Path(__file__).parent\nWORK = REPO / 'sub'\n"
+     "subprocess.run(['git', 'gc'], cwd=WORK)", [[HOST_CWD]]),
+    # The overrides, which outrank `cwd=` and so cannot be excused by one.
+    ("subprocess.run(['git', 'gc'], cwd=tmp, env={'GIT_DIR': str(tmp)})",
+     [['env= sets GIT_DIR']]),
+    ("subprocess.run(['git', 'gc'], cwd=tmp,"
+     " env={'GIT_WORK_TREE': str(tmp)})", [['env= sets GIT_WORK_TREE']]),
+    ("subprocess.run(['git', '-C', str(tmp), 'status'], cwd=tmp)",
+     [['argv carries -C']]),
+    ("subprocess.run(['git', '--git-dir=' + d, 'status'], cwd=tmp)",
+     [['argv carries --git-dir']]),
+    ("subprocess.run(['git', f'--work-tree={d}', 'status'], cwd=tmp)",
+     [['argv carries --work-tree']]),
+    # Every reason at once, and every one of them named: a call fixed halfway
+    # is a call still pointed here.
+    ("from support import REPO_ROOT\n"
+     "subprocess.run(['git', '-C', d, 'gc'], cwd=REPO_ROOT,"
+     " env={'GIT_DIR': d})",
+     [[HOST_CWD, 'env= sets GIT_DIR', 'argv carries -C']]),
+    # Not `git`, and this gate does not widen into the rest of the suite:
+    # `make` against REPO_ROOT is what test_makefile_gates.py IS.
+    ("subprocess.run(['make', 'check'], cwd=REPO_ROOT)", []),
+    ("subprocess.run([sys.executable, '-m', 'agentic_sdlc.cli'])", []),
+    ("subprocess.run(['bash', str(hook)], input=event)", []),
+    # An argv this file cannot read is not a `git` call it can name. Stated
+    # rather than implied: it is the honest limit of an AST, the same one
+    # `_replace_is_a_path_replace` runs into.
+    ("subprocess.run([exe, 'status'])", []),
+)
+
+
+class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
+    """PRIMITIVE 8 — every `git` in this suite runs in a scratch tree.
+
+    Not "no test corrupts the repo", which is a hope. The assertion is
+    syntactic and total: a `git` spawn either names a directory that is not this
+    checkout, or it is a finding by `file:line`.
+    """
+
+    def test_the_classifier_can_still_tell_a_confined_spawn_from_a_loose_one(self):
+        for source, expected in GIT_SPAWN_SPELLINGS:
+            with self.subTest(source=source):
+                graded = [reasons for _, reasons in
+                          _git_spawn_sites(ast.parse(source))]
+                self.assertEqual(expected, graded)
+
+    def test_no_test_module_spawns_git_against_this_checkout(self):
+        offenders: list[str] = []
+        for rel, path in _test_sources():
+            offenders.extend(
+                f'{rel}:{lineno}: {reason}'
+                for lineno, reasons in _git_spawn_sites(_tree(path))
+                for reason in reasons)
+        self.assertEqual(
+            [], offenders,
+            'a `git` spawn pointed at THIS checkout. A full-suite run twice '
+            'left `.git/config` holding `bare = true`, and the cause was never '
+            'established — so the precondition goes instead: every `git` in '
+            'this suite names a scratch directory with `cwd=`, and none of them '
+            'inherits this repository, exports GIT_DIR at it, or reaches it '
+            'with `-C`:\n  ' + '\n  '.join(offenders))
+
+    def test_the_git_census_is_the_real_suite(self):
+        """Rule 4's floor. The case above asserts an EMPTY list, and empty is
+        also what a renamed `tests/`, a moved `subprocess` spelling or a
+        classifier that stopped recognising `git` all produce."""
+        modules = _test_sources()
+        spawns = [(rel, lineno) for rel, path in modules
+                  for lineno, _ in _git_spawn_sites(_tree(path))]
+        self.assertGreaterEqual(
+            len(spawns), MIN_GIT_SPAWNS,
+            f'{len(spawns)} `git` spawn(s) across {len(modules)} test '
+            f'module(s) — expected at least {MIN_GIT_SPAWNS}. A boundary over '
+            f'calls nobody makes is a boundary that holds nothing shut.')
+        self.assertGreaterEqual(
+            len({rel for rel, _ in spawns}), 5,
+            f'{len({rel for rel, _ in spawns})} module(s) spawn `git` — the '
+            f'integration tier collapsed, or the census stopped seeing it')

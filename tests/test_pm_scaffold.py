@@ -621,6 +621,7 @@ class BugNamesItsCause(unittest.TestCase):
                 'name:',
                 'status: open',
                 'caused_by:',
+                'changelog:',
             ])
             code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero',
                                 '--caused-by', '0.1/alpha')
@@ -632,6 +633,7 @@ class BugNamesItsCause(unittest.TestCase):
                 'name:',
                 'status: open',
                 'caused_by: 0.1/alpha',
+                'changelog:',
             ])
             self.assertIn("caused_by '0.1/alpha'", out)
             self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'joined',

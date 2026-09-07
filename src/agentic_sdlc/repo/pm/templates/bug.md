@@ -5,6 +5,7 @@ milestone: "{milestone}"
 name:
 status: open
 caused_by:
+changelog:
 ---
 
 # {slug}

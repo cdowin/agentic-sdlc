@@ -147,7 +147,7 @@
 #                                 # ROOT is a container too: `roadmap` is
 #                                 # pm/roadmap/releases.md, whose `order`
 #                                 # sequences the milestones
-# checks = ["D1", "D2", "D4", "D5", "D6", "D11", "U1", "V1", "V4", "V5", "V7"]
+# checks = ["D1", "D2", "D4", "D5", "D6", "D11", "D12", "U1", "V1", "V4", "V5", "V7"]
 #                                 # D-drift, U-usage and V-integrity rules
 #                                                 # (V2/V3 retired in 0.4.0:
 #                                                 #  they kept `id:` and the

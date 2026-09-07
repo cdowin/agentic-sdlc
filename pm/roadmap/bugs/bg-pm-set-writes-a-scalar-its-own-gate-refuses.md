@@ -5,6 +5,7 @@ milestone: "ms-the-rule-reaches-the-work"
 name: `pm set` writes a scalar that `check pm` then refuses
 status: closed
 caused_by:
+changelog: `pm set` now writes list-shaped fields in the shape `check pm` grades, so a write can no longer fail the next gate run; a wrong shape is refused at exit 2 with nothing written, and `order` points at `pm add`/`pm remove`.
 ---
 
 # `pm set` writes a scalar that `check pm` then refuses

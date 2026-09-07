@@ -10,6 +10,8 @@ DRIFT (each FAILs, naming the path):
   D4  a status the project never declared, for any grain kind
   D11 a parent in `done` over a child that is not, every level off `BINDS_TO`,
       and a retired binding field on any grain. `pm remove` is the opt-out
+  D12 (WARN) a grain in `done` carrying no `changelog:` and no `none` — the
+      release belt refuses on it; this names it while there is time to write one
   R1  an `order` entry naming no milestone in the tree (WARN); a milestone on
       no plan is UNSEQUENCED, a counted line
   R3  two milestones claiming one `version:`
@@ -157,6 +159,7 @@ def _run() -> int:
 
     _unreached_self(cfg, enabled, seen, report, warn)
     _containment(cfg, enabled, report)
+    _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -847,6 +850,54 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                 report(f'in-progress milestone {mid} declares branch: {branch!r}, '
                        f'the mainline itself — work must live off '
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
+
+
+def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """D12 — a grain in `done` that answered the changelog question neither way.
+
+    A WARN: the release belt refuses at the rung that ships, and reddening
+    every inner-loop gate over an unwritten sentence is how a surface gets
+    scrolled past. `none` is an ANSWER; this names silence.
+
+    SHIPPED MILESTONES ARE OUT OF SCOPE — not history rewriting. 168 grains
+    closed before the field existed, and asking them all for a sentence nobody
+    will write is 351-of-359 again.
+    """
+    if 'D12' not in enabled:
+        return
+    from agentic_sdlc.repo.pm import changelog as clog
+    graded = silent = 0
+    for gid, grain in sorted(model.grain_index(cfg).items()):
+        if grain.kind not in model.FLOW_KINDS:
+            continue
+        status = model.field_of(grain.path, 'status')
+        if model.category_of(cfg, grain.kind, status) != model.DONE_CATEGORY:
+            continue
+        if _shipped_parent(cfg, grain):
+            continue
+        graded += 1
+        if model.unquote(model.field_of(grain.path, clog.FIELD)).strip():
+            continue
+        silent += 1
+        warn(f'{grain.kind} {gid} is {status!r} ({model.DONE_CATEGORY}) and '
+             f'carries no `{clog.FIELD}:` — `agentic-sdlc pm set {gid} '
+             f'{clog.FIELD} "<sentence>"`, or `{clog.NEEDS_NONE}` to say it '
+             f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
+    print(f'  CHANGELOG  {graded - silent} of {graded} closed grain(s) '
+          f'answered, shipped milestones excluded (D12)')
+
+
+def _shipped_parent(cfg: model.PmConfig, grain) -> bool:
+    """Is this grain's milestone in `done`? Followed through the bindings."""
+    mid = model.milestone_of(cfg, grain.gid)
+    if not mid:
+        return False
+    parent = model.grain_index(cfg).get(mid)
+    if parent is None:
+        return False
+    return model.category_of(cfg, 'milestone',
+                             model.field_of(parent.path, 'status')
+                             ) == model.DONE_CATEGORY
 
 
 def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:

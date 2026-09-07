@@ -264,7 +264,11 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
     # Every other frontmatter key the templates carry, named rather than
     # pattern-matched — adding one is a decision about whether it is a ref.
     NOT_REFS = frozenset({'id', 'kind', 'name', 'status', 'owner', 'phase',
-                          'branch'})
+                          'branch',
+                          # 0.6.0: free prose a human wrote, not an id. A
+                          # sentence naming a renamed grain reads fine after
+                          # the rename; rewriting inside it would edit English.
+                          'changelog'})
 
     def test_every_template_key_is_swept_or_named_as_not_a_reference(self):
         with tree() as root:

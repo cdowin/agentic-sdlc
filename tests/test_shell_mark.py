@@ -83,6 +83,7 @@ UNMARKED_MODULES = (
     'test_grain_shape.py',
     'test_install.py',
     'test_install_sdlc.py',
+    'test_pm_changelog.py',
     'test_pm_flow.py',
     'test_pm_gate.py',
     'test_pm_guidance.py',

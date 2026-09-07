@@ -7,6 +7,7 @@ name: {name}
 status: planning
 owner:
 depends_on: []
+changelog:
 ---
 
 # {name}

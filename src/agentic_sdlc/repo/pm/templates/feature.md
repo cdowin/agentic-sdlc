@@ -7,6 +7,7 @@ status: planning
 reviewed:
 depends_on: []
 consumed_by: []
+changelog:
 ---
 
 # {name}

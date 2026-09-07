@@ -302,7 +302,11 @@ def test_force_overwrites_every_entry(command):
 # "follow-up" — never prose that merely mentions the flag. CHANGELOG.md is
 # scoped to `## Unreleased`: a released section is a RECORD and is never
 # rewritten to satisfy a rule written after it.
-INSTRUCTION_SITES = ('CHANGELOG.md', '.claude/skills/release/SKILL.md')
+# `CHANGELOG.md` left this list at 0.6.0: it is frozen at v0.5.0 and nothing
+# writes to it. The live release notes are `changelog:` on each grain, and
+# `_grain_notes()` reads them so the rule follows its subject rather than the
+# file that used to hold it.
+INSTRUCTION_SITES = ('.claude/skills/release/SKILL.md',)
 INSTRUCTION_MARKER = 'follow-up'
 # The cost, in any of the words somebody would reach for. A closed list, so
 # what the gate accepts is reviewable rather than guessed at.
@@ -314,12 +318,25 @@ COST_FREE_CLAIMS = ('re-applying nothing', 're-applies nothing',
                     'nothing to re-apply')
 
 
-def unreleased(text: str) -> str:
-    """The section that becomes the next release's notes."""
-    at = text.index('## Unreleased')
-    rest = text[at + len('## Unreleased'):]
-    end = rest.find('\n## ')
-    return rest if end < 0 else rest[:end]
+def _grain_notes() -> list[tuple[str, str]]:
+    """[(where, sentence)] — every live `changelog:` in this repo's own tree.
+
+    The release notes moved onto the grains at 0.6.0, so the rule scans the
+    field. Read off the documents rather than through the CLI: this module is
+    in the `not shell` tier and must boot nothing.
+    """
+    out = []
+    for kind in ('milestones', 'features', 'stories', 'bugs'):
+        for path in sorted((REPO_ROOT / 'pm/roadmap' / kind).glob('*.md')):
+            for line in path.read_text(encoding='utf-8').split('\n'):
+                if line.startswith('---') and out:
+                    break
+                if line.startswith('changelog:'):
+                    text = line.split(':', 1)[1].strip()
+                    if text:
+                        out.append((f'{kind}/{path.name}', text))
+                    break
+    return out
 
 
 def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
@@ -331,9 +348,10 @@ def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
                  if len(entries) > 1}
     assert whole_set, 'no verb writes a set — this rule has no subject'
     checked = 0
-    for rel in INSTRUCTION_SITES:
-        text = (REPO_ROOT / rel).read_text(encoding='utf-8')
-        body = unreleased(text) if rel.endswith('CHANGELOG.md') else text
+    sites = [(rel, (REPO_ROOT / rel).read_text(encoding='utf-8'))
+             for rel in INSTRUCTION_SITES]
+    sites += [(where, note) for where, note in _grain_notes()]
+    for rel, body in sites:
         for number, para in enumerate(body.split('\n'), 1):
             named = [verb for verb in whole_set
                      if verb in para or 'install-*' in para]
@@ -352,7 +370,8 @@ def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
                 assert claim not in para, (
                     f'{where}: "{claim}" is false of a whole-set --force')
     assert checked, ('no consumer follow-up instruction was found in '
-                     f'{INSTRUCTION_SITES} — the rule scanned nothing')
+                     f'{INSTRUCTION_SITES} or any grain\'s `changelog:` — '
+                     'the rule scanned nothing')
 
 
 @pytest.mark.parametrize('command', VERBS)
@@ -1667,6 +1686,8 @@ RETIRED_ELSEWHERE = {
     'ROADMAP.md': 'retired in 0.3.0 — `pm roadmap` + releases.md `order`',
     '<!-- pm:execution -->': 'retired in 0.4.0 with V6 — `order:` on the parent',
     '[[verify.narrow]]': 'retired — the story rung is a make target',
+    'CHANGELOG.md': 'retired in 0.6.0 — `changelog:` on the grain, '
+                    '`agentic-sdlc changelog` renders',
 }
 # A migration NOTE is the legitimate way to name a retired thing, and the seed
 # devkit.toml is full of them. So the allowance is exactly that: the line has to

@@ -2,9 +2,10 @@
 id: bg-the-suite-can-flip-the-host-repo-to-bare
 milestone: ms-the-rule-reaches-the-work
 name: something in a full-suite run sets core.bare on the host repo
-status: open
+status: closed
 severity: high
 kind: bug
+changelog: A boundary test now refuses any test that spawns git against the host checkout — no `cwd=`, a `cwd=` rooted here, a GIT_DIR/GIT_WORK_TREE in `env=`, or `-C`/`--git-dir` in the argv. One real offender was running `git init --bare` in whatever directory pytest started in.
 ---
 
 # something in a full-suite run sets core.bare on the host repo
@@ -75,3 +76,40 @@ family as `NoCodePathParsesAVersion`.
 
 A full `make test` run, repeated, leaves `.git/config` byte-identical — asserted by a
 case, not by a person looking.
+
+## Established 2026-09-07 — the precondition is removed, the race is not diagnosed
+
+**A gate now removes the precondition.** `tests/test_boundaries.py::NoTestSpawnsGitAgainstThisCheckout`
+refuses any test that can reach the host repository with git, decided from syntax: no `cwd=`; a
+`cwd=` rooted at `__file__` or a support path constant; `GIT_DIR`/`GIT_WORK_TREE`/`GIT_COMMON_DIR`/
+`GIT_INDEX_FILE`/`GIT_OBJECT_DIRECTORY` in `env=`; or `-C`/`--git-dir`/`--work-tree` in the argv —
+the last two banned outright, because an AST cannot resolve what they point at. Census: 57 test
+modules, 48 git call sites across 13 modules, with floors so the walk cannot go vacuous.
+
+**One real offender.** `tests/test_hooks_payloads.py`'s `with_origin` ran
+`subprocess.run(['git', 'init', '-q', '--bare', str(origin)])` with **no `cwd=`** — in whatever
+directory pytest was started in, which is this checkout, and `git init --bare` is a verb whose job
+is writing a `.git/config`. Fixed with `cwd=parent`. No allowlist was added.
+
+**Reproduced in a sandbox, and it is NOT what happened here.** `GIT_DIR=<repo>/.git` plus
+`git init --bare` with **no path argument** writes `bare = true` into that repo's config — the exact
+symptom. With a path argument it does not, in any combination tried. But this suite's call passes a
+path, and git 2.50.1 does not export `GIT_DIR` to a `pre-commit` hook (checked with a hook that
+echoes it). **So the mechanism reproduced is not the mechanism that fired.**
+
+**The lock/rename race under concurrency is neither confirmed nor refuted.** It was not reproduced.
+Naming it as the cause would be the thing this file said not to do.
+
+## Still open, and named rather than closed over
+
+- **`.git/config` was byte-identical across one full `make test`**, not the repeated concurrent runs
+  the "Verified when" section asks for. That condition is not asserted by any case, and it is not
+  obvious a single case can assert it.
+- **`make` and `bash` spawns against the host are outside the gate**, deliberately:
+  `test_makefile_gates.py` runs `make` with `cwd=REPO_ROOT` because that IS its subject, and several
+  `bash <hook>` spawns pass no `cwd=`. Those hooks read a cwd from their JSON payload rather than
+  the process cwd, but not every script was audited for a git call that falls back to the ambient
+  directory.
+- **No `env=` scrub for an inherited `GIT_DIR`.** One would defeat every `cwd=` in the suite. Nothing
+  in this repo sets it, and building machinery against a condition nobody has shown occurs is the
+  speculative fix this bug warns against.

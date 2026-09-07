@@ -47,6 +47,7 @@ HELP_FLAGS = ('-h', '--help')
 # just learned it — a reviewer, a belt's caller — and never as part of moving a
 # grain, which is what everything under `pm` is.
 LESSON_VERB = 'lesson'
+CHANGELOG_VERB = 'changelog'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -222,6 +223,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'verify':
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
+    if cmd == CHANGELOG_VERB:
+        from agentic_sdlc.repo.pm import changelog
+        return changelog.main(rest)
     if cmd == LESSON_VERB:
         from agentic_sdlc.repo.conveyor import lessons
         return lessons.main(rest)

@@ -376,3 +376,51 @@ not in somebody's memory.
 one of these was *this repo*, and a consumer bumping the pin still reads a nested tree correctly
 through the compat readers. Shipping the mover as `tools/dev/pm_migrate.py` rather than
 `pm migrate` also meant no consumer's gate now depends on a shape that exists for a one-time job.
+
+---
+
+## L: The builder cannot see the gate that lies, and six reviews proved it in one afternoon
+
+*Filed during 0.4.0, after parallelising the milestone across build and review agents.*
+
+Chris asked mid-milestone why the work was serial. It was, and the fix was not speed — it was
+that **a reviewer with a narrow brief finds a class of defect the builder structurally cannot.**
+Six feature reviews, dispatched the moment `ready-for feature` went READY, returned two CRITICALs
+and a BLOCKER **in code the builder had just written and believed green**. All three are one
+shape:
+
+| finding | the lie |
+|---|---|
+| `check_telemetry_live` | ran the courier's `--self-test`, which builds its OWN `mktemp` repo with its OWN stub `pm:` target and exits 0 from an empty directory — then printed *"telemetry is live … their self-test passes against this tree's vehicle"* over a tree recording nothing |
+| `check grain-shape`'s `_slot_named` | decided what a document IS from its filename suffix, so a story slugged `…-decisions` was measured as a decisions log — and **obeying the finding's own printed repair** pushed `---` off line 1, after which `check pm` reported `0 story/ies` |
+| `_in_flight_ages` | discarded every status row naming a renamed grain, then reported `in_flight: []` over eight grains in flight |
+| `_roster_without_rows` | suppressed itself whenever ALL roster gates were unmeasured — which is always, on this tree — so five unmeasured gates printed byte-identically to five measured ones |
+
+**Every one passes its own tests.** That is the point. The builder writes the case that proves the
+feature works and cannot write the case that proves the feature is *looking at the right thing*,
+because if they had seen the wrong thing they would not have written it. What found all four was a
+reviewer running the gate **against this repo's real tree** and asking *is this number true?* —
+the question the fixture can never ask, because a fixture is built to make the answer yes.
+
+**Fix — a review brief instruction, and it is now in every one I write:**
+
+> Check whether any of the "absence is a finding" machinery is silently disabled — a filter that
+> discards the very rows it is meant to count, a census computed over an empty set, a warning
+> whose condition can never be met. Run the gate against THIS repo's tree and say whether each
+> number it prints is true.
+
+That paragraph found three of the four. The fourth (`_slot_named`) came from the same reviewer
+asking what happens if you *follow the tool's own instruction* — worth adding as its own line:
+**a finding that names a repair is a claim; run the repair and check the claim.**
+
+**Second lesson, about scale.** The constraint on parallelism was never CPU — it was that
+`cli.py` and `model.py` are touched by nearly every story, so builders must be serialised on those
+two files while reviewers (read-only, one record each) run freely alongside. The working shape was
+**one writer per file, N reviewers, and the orchestrator holding integration.** Reviews are the
+cheap half and the half that finds things; they should be running almost continuously, not batched
+at a milestone's end.
+
+**What this does NOT say.** The reviews also produced findings that were wrong — one reported a
+`[pm] checks` roster omitting V7 when both the tree's config and the shipped seed carry it.
+A review is evidence, not a verdict: every finding was re-probed before it was acted on, and
+saying which ones did not survive that is part of the record.

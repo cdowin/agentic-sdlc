@@ -18,6 +18,7 @@ order:
   - "bg-the-milestone-scaffold-still-mints-the-version"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
   - "ft-the-vocabulary-is-constants-not-literals"
+  - "ft-the-dependency-rule-states-its-real-reason"
 ---
 
 # 0.6.0 — the rule reaches the work

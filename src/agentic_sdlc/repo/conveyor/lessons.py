@@ -243,6 +243,7 @@ SOURCE_FLAG = '--source'
 RECORD_FLAGS = (GRAIN_FLAG, RULE_FLAG, SOURCE_FLAG)
 SHOW_FLAGS = (GRAIN_FLAG, RULE_FLAG)
 DASH = '-'
+SENTINEL = '--'
 HELP_WORDS = ('-h', '--help', 'help')
 
 USAGE = f"""\
@@ -259,16 +260,25 @@ restates it.
   {RULE_FLAG + ' <id>':<16}the rule or belt check it is about
   {SOURCE_FLAG + ' <path>':<16}the record it was derived from: a review record, a
                   gate transcript, the deviation row that prompted it — a
-                  path resolving to nothing is refused, and nothing lands
+                  path resolving to nothing, or resolving outside this
+                  checkout, is refused and nothing lands
   {'"<text>"':<16}the lesson itself, one line
+  {SENTINEL:<16}end of flags: everything after it is text, so a lesson that
+                  opens with `-` is a lesson and not an unknown flag
 
 `{SHOW}` prints one tab-separated row per lesson in the order they were
 recorded; columns IN ORDER: {' '.join(COLUMNS)}
-With no filter it prints them all. Nothing is ranked, scored or weighed
-(rule 9) — composition is the shell's job.
+With no filter it prints them all. {GRAIN_FLAG} and {RULE_FLAG} match with
+`==` and nothing else — the exactness IS the point, and it is the matching the
+belts read a lesson back with; anything looser is a column and a pipe, never a
+flag this verb grew (rule 11). Nothing is ranked, scored or weighed (rule 9).
 
 The belts read these back where you stand: a lesson against the grain at the
 move, one against a check's name beside that check's verdict.
+
+Two identical `{RECORD}` invocations append TWO rows, deliberately: this is an
+append-only event log, so a row is a moment rather than a state to re-assert,
+and `{RECORD}` has the same shape as `pm decide` and `pm ledger record`.
 
 Exit codes: 0 recorded or printed, 1 the source or the grain names nothing and
 nothing was recorded, 2 usage or config.\
@@ -290,6 +300,12 @@ def flags_given(rest: list[str], known: tuple[str, ...]
     index = 0
     while index < len(rest):
         word = rest[index]
+        if word == SENTINEL:
+            # `"--force is the deviation, recorded"` is a sentence out of this
+            # package's own CLAUDE.md; calling it an unknown flag is the least
+            # useful thing this could say.
+            left.extend(rest[index + 1:])
+            break
         name, split, value = word.partition('=')
         if name in known:
             if not split:

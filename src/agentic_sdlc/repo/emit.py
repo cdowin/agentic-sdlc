@@ -30,9 +30,10 @@ TAP_ENTER, TAP_VERDICT, TAP_LEAVE = TAPS
 
 FINDING_PREFIX = f'[{SECTION}]'
 
-# What a SINK may go wrong with, all of it a finding: the filesystem (routing
-# walk, append) and `dumps` refusing a row. A malformed `[emit]` is exit 2 (9).
-SINK_ERRORS = (OSError, TypeError, ValueError)
+# What a SINK may go wrong with, all of it a finding: the append, `dumps`
+# refusing a row, and the ROUTING walk, which reads the tree. `settings()` is
+# called OUTSIDE the guard, so a malformed `[emit]` is still exit 2 (rule 9).
+SINK_ERRORS = (ConfigError, OSError, TypeError, ValueError)
 
 
 class Settings(NamedTuple):

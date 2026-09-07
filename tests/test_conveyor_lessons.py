@@ -685,6 +685,48 @@ def test_a_recorded_lesson_lands_routed_by_grain_and_reads_back_verbatim():
             FEATURE, RULE, RECORD, TEXT, rows[0]['ts']], shown
 
 
+@pytest.mark.parametrize('text', [
+    '-1 for the reviewer who blocks on a NIT',
+    '--force is the deviation, recorded',
+])
+def test_a_lesson_opening_with_a_dash_is_a_lesson_after_the_sentinel(text):
+    """The second string is a sentence out of this package's own CLAUDE.md.
+    Without `--` the parser called it an unknown flag, which is the least
+    useful thing it could say about prose."""
+    with tree() as root:
+        code, out = run_lesson(root, lessons.RECORD, lessons.GRAIN_FLAG,
+                               FEATURE, lessons.RULE_FLAG, RULE,
+                               lessons.SOURCE_FLAG, RECORD,
+                               lessons.SENTINEL, text)
+        assert code == 0, out
+        assert [r['text'] for r in ledger_rows(root)
+                if r['kind'] == lessons.KIND] == [text]
+        # And WITHOUT the sentinel it is still refused, whole, writing nothing.
+        bare = run_lesson(root, lessons.RECORD, lessons.GRAIN_FLAG, FEATURE,
+                          lessons.RULE_FLAG, RULE, lessons.SOURCE_FLAG,
+                          RECORD, text)
+        assert bare[0] == 2, bare
+
+
+def test_two_identical_records_append_two_rows_because_this_is_an_event_log():
+    """Hard rule 3 says a write is idempotent; an APPEND-ONLY event log is the
+    THIRD contract, beside `pm decide` and `pm ledger record`, and this repo
+    writes its contracts down rather than leaving them to be discovered — see
+    `test_replay_migration.py`'s FILL-GAPS/REFUSE. The second row is a second
+    MOMENT, not a re-assertion of a state, and `append_to` could not edit one
+    out afterwards even if it wanted to. `--help` says so."""
+    argv = (lessons.RECORD, lessons.GRAIN_FLAG, FEATURE, lessons.RULE_FLAG,
+            RULE, lessons.SOURCE_FLAG, RECORD, TEXT)
+    with tree() as root:
+        assert run_lesson(root, *argv)[0] == 0
+        assert run_lesson(root, *argv)[0] == 0
+        rows = [r for r in ledger_rows(root) if r['kind'] == lessons.KIND]
+    assert len(rows) == 2, rows
+    assert 'append TWO rows' in lessons.USAGE, (
+        'the append contract is the one hard rule 3 does not cover; it is '
+        'stated on the surface someone stands in, or it is folklore')
+
+
 @pytest.mark.parametrize('flags,why', [
     ((lessons.SOURCE_FLAG, 'docs/reviews/nowhere.md'),
      'a source resolving to nothing'),

@@ -46,7 +46,7 @@ import pytest
 from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
                         tree, write)
 
-from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import arrive, ledger
 from agentic_sdlc.repo.pm import model
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
@@ -757,22 +757,37 @@ def test_a_row_naming_no_grain_lands_in_the_trees_own_ledger():
         assert 'grain' not in only_row(root)
 
 
-def test_retire_takes_the_milestones_ledger_and_leaves_the_trees():
+def test_retire_takes_the_milestones_ledger_and_appends_to_the_trees():
     """The `check pm` D6 rule is unchanged by D3: an attributed row still dies
-    with its milestone and git is still the archive. The root ledger outlives
-    it, which is correct — those rows were never about it."""
+    with its milestone and git is still the archive.
+
+    The tree's own ledger is APPENDED to and never rewritten — every byte that
+    was there is still there, in order, and the one new line is the `retire`
+    row carrying what the deleted documents held
+    (`bg-retire-drops-the-summary-it-accepts`). Retire removing rows that were
+    never about this milestone would be the same defect from the other side.
+    """
     with tree(milestone_status='done', feature_status='done',
               story_statuses=('done',)) as root:
         put_ledger(root, status_line(TS, STORY, 'building', 'done'))
         assert record(root, *GATE)[0] == 0
         before = (root / ROOT_LEDGER_REL).read_bytes()
-        code, out = run_cli(root, 'retire', '0.1')
+        code, out = run_cli(root, 'retire', '0.1', 'the first cut')
         assert code == 0, out
         # The GRAINS go, not the tree — `pm/roadmap/` is the tree itself and a
         # pooled milestone has no directory of its own to remove.
         assert not (root / LEDGER_REL).exists()
         assert model.milestones(loaded(root)) == []
-        assert (root / ROOT_LEDGER_REL).read_bytes() == before
+        after = (root / ROOT_LEDGER_REL).read_bytes()
+        assert after.startswith(before), after
+        added = [json.loads(line) for line in
+                 after[len(before):].decode('utf-8').splitlines() if line.strip()]
+        assert [r['kind'] for r in added] == [ledger.KIND_RETIRE], added
+        assert added[0]['grain'] == '0.1' and added[0]['name'] == 'Demo'
+        assert added[0]['summary'] == 'the first cut'
+        # No version declared, so no `version` key — an absent fact is an
+        # absent key, never an empty string.
+        assert 'version' not in added[0], added[0]
 
 
 def test_an_id_no_grain_carries_is_still_refused_and_writes_nothing():
@@ -974,12 +989,82 @@ def test_the_human_form_is_one_line_per_row_with_the_gap_after_the_first():
         code, out = run_cli(root, 'ledger', 'show', STORY)
     assert code == 0, out
     assert out.strip().splitlines() == [
-        '2026-09-03T10:00:00Z  status    ready -> building',
-        '2026-09-03T10:13:32Z  status    building -> reviewing  +812s',
-        '2026-09-03T10:20:00Z  status    reviewing -> done  +388s',
+        '2026-09-03T10:00:00Z  status         ready -> building',
+        '2026-09-03T10:13:32Z  status         building -> reviewing  +812s',
+        '2026-09-03T10:20:00Z  status         reviewing -> done  +388s',
         # `done` is terminal for a story, so the run ends with the total.
         'first row → terminal row: 1200s',
     ]
+
+
+def test_a_disposition_prints_its_state_answer_and_every_skipped_check():
+    """Rule 11's read side, and a ship criterion of 0.5.0. The row was on disk
+    from the first arrival this package recorded, and this verb printed its
+    `ts` and `kind` and stopped — so `state`, `answer` and every `skipped`
+    entry were held by the tree and invisible at the surface someone stands in
+    to ask what a grain cost. Bites: a column dropping back off the line, which
+    is indistinguishable from the tree never having recorded it.
+    """
+    one, two = TIMELINE[0], TIMELINE[1]
+    with tree() as root:
+        put_ledger(
+            root,
+            status_line(one, STORY, 'ready', 'building'),
+            ledger.dumps(ledger.disposition_row(
+                STORY, 'building', arrive.Said('--by', 'agent developer'),
+                ts=one)),
+            status_line(two, STORY, 'building', 'done'),
+            ledger.dumps(ledger.disposition_row(
+                STORY, 'done', arrive.NOTHING,
+                [('review-recorded', 'read inline'),
+                 ('story-verified', 'no code changed')], ts=two)))
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+    assert code == 0, out
+    assert out.strip().splitlines()[:4] == [
+        f'{one}  status         ready -> building',
+        f'{one}  disposition    building  --by agent developer',
+        f'{two}  status         building -> done  +812s',
+        f'{two}  disposition    done  none  skipped: review-recorded — '
+        f'"read inline", story-verified — "no code changed"',
+    ], out
+
+
+def test_the_three_taps_print_their_payload_and_not_a_bare_kind():
+    """D5's finding for `disposition`, carried to the kinds this milestone
+    added. A refused run and a passed one rendered as the SAME eight characters
+    here, so "there is no rung.exit_failed, the absence is the signal" held on
+    the JSONL and failed at the verb the ship criterion names. Bites: a cell
+    dropping off, which is indistinguishable from a row that never carried it.
+    """
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.pm import ready_for
+    nxt = arrive.Next('feature', 'close feature', '0.1/alpha',
+                      ('stories-done', 'findings-landed'))
+    minted = [
+        ready_for._enter_row('story', STORY,
+                             [ready_for.Blocker('evidence-written', 'why')]),
+        driver.verdict_row('story', STORY, 'tree-clean',
+                           driver.Answer.no('2 file(s) dirty'),
+                           'git status --porcelain'),
+        ledger.leave_row(STORY, 'done', nxt, (), arrive.NOTHING),
+    ]
+    with tree() as root:
+        put_ledger(root, *[ledger.dumps(dict(row, ts=TIMELINE[0]))
+                           for row in minted])
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+    assert code == 0, out
+    printed = out.strip().splitlines()
+    assert len(printed) == len(minted), out
+    assert printed[0].endswith(
+        f'{ledger.NOT_READY}  blocked: evidence-written'), printed[0]
+    assert printed[1].endswith(
+        'tree-clean  error — 2 file(s) dirty  '
+        '(ran: git status --porcelain)'), printed[1]
+    assert printed[2].endswith(
+        'done  none  next: feature (stories-done, findings-landed)'), printed[2]
+    # The kind column fits the widest kind, or the cells above start ragged.
+    for line, row in zip(printed, minted):
+        assert line.startswith(f'{TIMELINE[0]}  {row["kind"]:<13}  '), line
 
 
 def test_no_total_line_while_the_grain_is_still_in_flight():

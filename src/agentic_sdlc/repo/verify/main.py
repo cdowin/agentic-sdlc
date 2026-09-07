@@ -5,6 +5,7 @@
     agentic-sdlc verify --milestone    # the close, e.g. `make milestone`
     agentic-sdlc verify --plan         # print all three, run NOTHING
     agentic-sdlc verify --check        # hold the three targets to the Makefile
+    agentic-sdlc verify --story --no-cache   # re-run, whatever is recorded
 
 Each rung runs the make target `[verify] <rung>` names — three lines, one
 shape, and the Makefile stays the authority on what a target RUNS (D3). A
@@ -16,6 +17,17 @@ filed a cost row reads exactly like one that passes. `--check` reads the
 Makefile as text and reports a rung naming a target it does not declare. An
 absent `[verify]` section is exit 2 for every flag.
 
+A RUNG RECORDS ITS VERDICT against the tree state it ran on — HEAD plus a
+digest over every file git lists, tracked and untracked — and a later run whose
+tree is byte-identical prints `[verify:cache] REUSED …` with that run's age,
+census and cost and exits with its code, instead of running the target. One
+byte anywhere re-runs it, and so does `--no-cache`, a rung flag refused beside
+`--plan` or `--check`. Ignored files and the ledger rows a run files about
+ITSELF are not in the digest — a state covering what a gate writes while it
+runs could never repeat — so the rows `check budget` grades are DIGESTED into
+the row instead, and a reuse over a ledger whose graded rows moved runs the
+target and says so (`verify/cache.py`).
+
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
 """
@@ -23,6 +35,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -30,7 +43,7 @@ from typing import Callable, Sequence
 from agentic_sdlc.core import makefile
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
-from agentic_sdlc.repo.verify import rules
+from agentic_sdlc.repo.verify import cache, rules
 from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, MILESTONE,
                                             RUNGS, STORY, Ladder, rung_target)
 
@@ -44,17 +57,25 @@ MAKEFILE = makefile.MAKEFILE
 MAKE_PROGRAM = 'make'
 
 USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
+                          [--no-cache]
 
   --story        run the `[verify] story` rung
   --feature      run the `[verify] feature` rung
   --milestone    run the `[verify] milestone` rung
   --plan         print all three rungs and their measured cost; runs nothing
   --check        hold each rung's make target to the Makefile
+  --no-cache     with a rung: run the target even when this exact tree state
+                 already has a recorded verdict
 
-Exactly one mode. Exit: 0 pass | 1 findings or a failed target | 2 usage or
-config."""
+Exactly one mode. A rung reuses a verdict recorded against a byte-identical
+tree, says so, and exits with the recorded code. Exit: 0 pass | 1 findings or
+a failed target | 2 usage or config."""
 
 MODES = ('plan', 'check', *RUNGS)
+
+# A rung flag, not a mode: it changes what a rung does with the record, and
+# `--plan`/`--check` run no rung at all.
+NO_CACHE = '--no-cache'
 
 
 @dataclass(frozen=True)
@@ -83,7 +104,7 @@ def main(argv: Sequence[str], section: SectionReader) -> int:
         print(__doc__.strip())
         return EXIT_OK
     try:
-        mode = _parse(list(argv))
+        mode, no_cache = _parse(list(argv))
     except ValueError as err:
         return _usage_error(str(err))
 
@@ -98,15 +119,18 @@ def main(argv: Sequence[str], section: SectionReader) -> int:
         return _plan(ladder, root)
     if mode == 'check':
         return _check(ladder, root)
-    return _run_rung(ladder, root, mode)
+    return _run_rung(ladder, root, mode, no_cache=no_cache)
 
 
 # --- argv ---------------------------------------------------------------------
-def _parse(argv: list[str]) -> str:
-    """Exactly one mode, and nothing else."""
+def _parse(argv: list[str]) -> tuple[str, bool]:
+    """Exactly one mode, and nothing else but `--no-cache`."""
     modes: list[str] = []
+    no_cache = False
     for token in argv:
-        if token.startswith('--') and token[2:] in MODES:
+        if token == NO_CACHE:
+            no_cache = True
+        elif token.startswith('--') and token[2:] in MODES:
             modes.append(token[2:])
         elif token.startswith('-'):
             raise ValueError(
@@ -126,7 +150,12 @@ def _parse(argv: list[str]) -> str:
             f'{" ".join(sorted(set(f"--{m}" for m in modes)))} — exactly one '
             f'mode, and which one it should have been is not a thing this '
             f'verb may pick')
-    return modes[0]
+    if no_cache and modes[0] not in RUNGS:
+        raise ValueError(
+            f'{NO_CACHE} says what a RUNG does with a recorded verdict, and '
+            f'--{modes[0]} runs no rung — a flag this run parsed and then '
+            f'dropped is a caller who thinks it asked for something')
+    return modes[0], no_cache
 
 
 def _usage_error(why: str) -> int:
@@ -156,7 +185,10 @@ def _run(command: str, root: Path) -> int:
                           check=False).returncode
 
 
-def _run_rung(ladder: Ladder, root: Path, name: str) -> int:
+def _run_rung(ladder: Ladder, root: Path, name: str,
+              no_cache: bool = False) -> int:
+    """One rung: the recorded verdict when the tree has not moved, else the
+    target — and either way this run's verdict is recorded."""
     command = ladder.rung(name)
     if command is None:
         print(f'agentic-sdlc verify: [verify] declares no {name} rung, so '
@@ -166,12 +198,75 @@ def _run_rung(ladder: Ladder, root: Path, name: str) -> int:
               f'`{name} = "make <target>"`', file=sys.stderr)
         return EXIT_CONFIG
     print(f'verify --{name}: {command}')
+    target = rung_target(command)
+    # BEFORE the run: the state a verdict is about is the tree the target read,
+    # not the one it left behind.
+    state, defect = cache.tree_state(root)
+    if state is None:
+        print(f'{cache.CACHE_TAG} no state for this tree ({defect}), so no '
+              f'verdict is read or recorded — `{command}` runs')
+    elif no_cache:
+        print(f'{cache.CACHE_TAG} {NO_CACHE} — `{command}` runs whatever is '
+              f'recorded; this run replaces it')
+    else:
+        found, graded = cache.recorded(root, target, state.digest)
+        if found is not None and graded is not None \
+                and found.graded == graded.digest:
+            return _reuse(found, command, state, graded)
+        if found is not None:
+            # The state matches and the reuse is refused anyway: what moved is
+            # the one input no state can carry, and saying so is the difference
+            # between a guard and a cache that looks broken.
+            print(cache.stale_line(found, graded, command))
+    started = time.monotonic()
+    # Where this run's own rows begin, so the census a reused verdict quotes is
+    # the GATE's rather than one this verb invented (rule 4).
+    mark = cache.ledger_size(root)
     code = _run(command, root)
+    elapsed = int((time.monotonic() - started) * 1000)
+    if state is not None:
+        _record(root, name, target, state, code, elapsed, mark)
     if code != 0:
         print(f'agentic-sdlc verify: FAILED (exit {code}) — {command}',
               file=sys.stderr)
         return EXIT_FINDINGS
     return EXIT_OK
+
+
+def _reuse(found: cache.Verdict, command: str, state: cache.State,
+           graded: cache.Graded) -> int:
+    """The recorded verdict, its provenance and its own exit code. The FAILED
+    line keeps the shape a fresh failure prints — one grep either way — and the
+    cache lines above it say which run this was."""
+    for line in cache.reuse_lines(found, command, state, graded):
+        print(line)
+    if found.verdict == cache.PASS:
+        return EXIT_OK
+    print(f'agentic-sdlc verify: FAILED (exit {found.exit_code}) — {command}',
+          file=sys.stderr)
+    return EXIT_FINDINGS
+
+
+def _record(root: Path, name: str, target: str, state: cache.State, code: int,
+            elapsed: int, mark: int) -> None:
+    """File what this run decided, against a state RE-READ after the target —
+    a tree edited during a 90 s suite was never wholly read by it, and a
+    verdict keyed to a state the target only half saw is rule 4's first sin
+    with a record behind it. Disagreement records NOTHING, and says so; a
+    record that could not be written is SAID and never fails the run."""
+    after, defect = cache.tree_state(root)
+    if after is None or after.digest != state.digest:
+        moved = after.short() if after is not None else f'none ({defect})'
+        print(f'{cache.CACHE_TAG} the tree MOVED while `{target}` ran (state '
+              f'{state.short()} -> {moved}), so this run proved a tree no '
+              f'later run can be keyed on and no verdict is recorded',
+              file=sys.stderr)
+        return
+    verdict = cache.PASS if code == 0 else cache.FAIL
+    defect = cache.record(root, name, target, state, verdict, code, elapsed,
+                          cache.census_since(root, target, mark))
+    if defect:
+        print(f'{cache.CACHE_TAG} {defect}', file=sys.stderr)
 
 
 # --- the ledger, and the ratio ------------------------------------------------

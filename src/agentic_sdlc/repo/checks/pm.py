@@ -2,7 +2,8 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + U1/U2 + V1/V4/V5/V7; D9/D10 and the R family are opt-in).
+(default: D1-D6 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R family are
+opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -24,6 +25,17 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
+  U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
+      declares no `[emit]` opted out and gets no line; declared-and-silent is a
+      contradiction the tree is holding. The rule READS the sink, never probes it
+  U4  the couriers are wired and the LAST hook-written row is named with its age —
+      a WARN when there has never been one, a counted RECORDING line when there
+      has. Status, decision and gate rows are written from inside this checkout
+      and are not evidence a courier ran, which is why U2 passes over a tree that
+      records no dispatch at all
+  U5  a grain whose CURRENT state was arrived at with no disposition, by name. A
+      bare move is allowed and records `answer: none` (D3) — never blocked, and
+      never invisible either
   V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
       not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
       its parent does not hold is DANGLING (FAIL), one naming no grain at all
@@ -40,19 +52,41 @@ Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
 
+import json
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NamedTuple
 
 from agentic_sdlc.repo.pm import model
+
+# One word, so `check pm | grep never` is a consumer's whole reader.
+NEVER = 'never'
+# The pressure census: its criterion's third surface, after `pm` and a belt.
+OPEN_WORK = 'OPEN'
+# The third answer, dropped on the floor by a belt that branched on two of
+# them. A PREFIX: what could not be read is named after it.
+UNVERIFIABLE = 'UNVERIFIABLE'
+# A row whose `ts` will not parse is not a row aged zero (rule 4): a ledger is
+# `merge=union`, and rows arrive from other branches and other versions.
+UNDATEABLE = 'at a timestamp this reader cannot parse'
+# The harness's per-user override. `install-hooks` emits ABSOLUTE paths and a
+# public repo must not commit a machine path, so the block belongs in a
+# gitignored file — a reader of one file calls such a tree unwired.
+AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
+SETTINGS_FILES = (model.AGENT_SETTINGS, AGENT_SETTINGS_LOCAL)
 
 
 def run() -> int:
     try:
-        return _run()
+        # THE one read-only scope: the walk under every rule is shared rather
+        # than repeated per rule per grain, and the scope drops itself on a write.
+        with model.reading_tree():
+            return _run()
     except model.ConfigError as err:
-        # Exit 2 for the whole walk: the flow is read lazily, so a tree that
-        # declared none is refused at the first category question. EVERY
-        # defect, not the first, and the FLOW first among them — a real
-        # adoption is wrong in more than one way at once.
+        # EVERY defect, not the first, and the FLOW first among them: the flow
+        # is read lazily, so a tree that declared none is refused at the first
+        # category question, and a real adoption is wrong in more ways than one.
         try:
             defects = model.all_config_defects()
         except Exception:  # noqa: BLE001 - the collector must never mask the error
@@ -107,10 +141,9 @@ def _run() -> int:
                f'pool, so every reader walks past it — move it into '
                f'{cfg.rel(model.pool_dir(cfg, model.unquote(model.field_of(path, "kind")) or "milestone"))}/')
 
-    # A document with no readable `id:`, and two documents claiming one, are
-    # V1's — "this frontmatter is well-formed" — and they are reported from
-    # `validate.run` below so that `pm validate` and this gate cannot disagree
-    # about a file neither of them can key on.
+    # No readable `id:`, and two documents claiming one, are V1's and are
+    # reported from `validate.run` below, so `pm validate` and this gate cannot
+    # disagree about a file neither of them can key on.
 
     # Always walked for the census; reported only under D4.
     bug_findings, n_bugs = model.bug_status_findings(cfg)
@@ -125,7 +158,14 @@ def _run() -> int:
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
+    # Read ONCE: U5 gates on it and the line below reports it, so this gate
+    # and a `pm` write cannot disagree. `pressure = false` silences both.
+    from agentic_sdlc.repo.pm import arrive as _arrive
+    open_work = _arrive.census(cfg)
+    _unanswered_arrivals(cfg, enabled, warn, open_work)
     _recording_findings(cfg, enabled, warn)
+    _hook_recording_findings(cfg, enabled, warn)
+    _emit_sink_findings(cfg, enabled, warn)
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V7: structural + referential integrity ------------------------
@@ -137,6 +177,8 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
+    if open_work:
+        print(f'  {OPEN_WORK}  {open_work.line}')
     return _verdict(cfg, findings, warnings,
                     _census(cfg, len(mfiles), n_features, n_stories, n_bugs),
                     v_on, v_census)
@@ -163,10 +205,9 @@ def _feature_self(cfg: model.PmConfig, view, warn) -> None:
     if why:
         warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
              f'and nothing says what done means  [{frel}]')
-    # The anti-bloat contract, never verified to exist: the template carries
-    # the section, the milestone's rules call it "where test bloat is stopped,
-    # not at review", and an empty one is how a feature ships twice its budget
-    # with nobody able to say so.
+    # The anti-bloat contract, never verified to exist until here: an empty
+    # proof budget is how a feature ships twice its budget with nobody able to
+    # say so.
     why = model.empty_section(view.path, model.PROOF_HEADING)
     if why:
         warn(f'feature {view.fid} is {view.status!r} and {why} — past todo, '
@@ -183,9 +224,8 @@ def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str, warn) -> None:
                  f'nothing says what must be true  [{srel}]')
     if (_cat(cfg, 'story', sstat) == model.IN_PROGRESS
             and not model.unquote(model.field_of(sfile, 'owner'))):
-        # A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says to set
-        # `owner:` in the same edit as the claim, two modules READ the field,
-        # and nothing asked whether it was there.
+        # A LIVE BUG, not a tidy-up: two modules READ `owner:` and nothing
+        # asked whether the claim had set it (`pm-execution.md` step 1).
         warn(f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and carries no '
              f'owner: — somebody is working on it and the tree cannot say who '
              f' [{srel}]')
@@ -197,8 +237,8 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
 
     **`seen` is RECORDED, never inferred.** "Does this binding resolve" gets a
     story under an UNBOUND feature wrong — its binding resolves and the descent
-    still never reaches it, so it fell between both passes and answered nothing
-    at exit 0. Only the SELF rules: D3 and D5 need a parent to compare against.
+    still never reaches it, so it fell between both passes at exit 0. SELF
+    rules only: D3 and D5 need a parent to compare against.
     """
     if not model.is_pooled(cfg):
         return
@@ -215,8 +255,7 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
                     report(f'{kind} {grain.gid}: {reason}  [{rel}]')
             if kind == 'feature':
                 if 'D1' in enabled:
-                    # A `reviewed:` pointer naming a file that is not there is
-                    # a fact about ONE document; it was in the descent only.
+                    # A fact about ONE document, and it was in the descent only.
                     reason = model.drift_dangling_record(cfg, grain.gid)
                     if reason:
                         report(f'feature {grain.gid}: {reason} — point it at a '
@@ -230,17 +269,16 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                 report, warn) -> tuple[int, int, set[str]]:
     """D1-D6 over every grain the descent reaches, plus the READY warnings.
 
-    Returns `(features, stories, the ids it VISITED)` — the third because
-    `_unreached_self` must not have to infer it.
+    The third return is the ids it VISITED, because `_unreached_self` must not
+    have to infer them.
     """
     n_features = 0
     n_stories = 0
     seen: set[str] = set()
 
     for mfile in mfiles:
-        # The DOCUMENT, not a directory: a pooled tree has no per-milestone
-        # directory, and the two lines below that wanted one now take the
-        # document's own parent, which is the pool.
+        # The DOCUMENT's parent, which in a pooled tree is the pool: there is
+        # no per-milestone directory to take.
         mdir = mfile.parent
         mid = model.field_of(mfile, 'id')
         mstat = model.field_of(mfile, 'status')
@@ -261,11 +299,9 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             if why:
                 warn(f'milestone {mid} is {mstat!r} and {why} — past todo, '
                      f'and nothing says what done means  [{cfg.rel(mfile)}]')
-            # The doc is deliberately never auto-minted, so its ABSENCE is the
-            # signal; the hint names the one verb that fills it. IN_PROGRESS
-            # only, not every started milestone: a handoff is a cold-start aid
-            # and nobody picks up a finished milestone, so warning on `done`
-            # would fire once per historical milestone on every consumer's tree.
+            # Never auto-minted, so its ABSENCE is the signal. IN_PROGRESS only:
+            # a handoff is a cold-start aid, so warning on `done` would fire
+            # once per historical milestone on every consumer's tree.
             handoff = model.shared_doc(cfg, mfile, model.HANDOFF_FILE_NAME)
             if m_cat == model.IN_PROGRESS and not handoff.is_file():
                 warn(f'milestone {mid} is {mstat!r} with no '
@@ -350,9 +386,8 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 
     A WARN with the count, never a finding: a tree mid-adoption legitimately has
     unused states, and a rule that reddens every fresh consumer is undone within
-    a version. What it buys is that the fact stays VISIBLE after the install
-    scrolls away — the tool's most valuable idea, the conveyor, was invisible to
-    the tool.
+    a version. What it buys is the fact staying VISIBLE after the install
+    scrolls away.
     """
     if 'U1' not in enabled:
         return
@@ -362,8 +397,8 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
             continue
         unused = [state for state, n in counts.items() if n == 0]
         if not unused or len(unused) == len(counts):
-            # All of them unused means the tree holds no grain of this kind at
-            # all, which is a different fact and not this rule's to report.
+            # All unused means the tree holds no grain of this kind — a
+            # different fact, and not this rule's to report.
             continue
         warn(f'{kind}: {len(counts) - len(unused)} of {len(counts)} declared '
              f'state(s) are in use; {", ".join(unused)} '
@@ -372,17 +407,217 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'is not running (U1)')
 
 
+def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
+                         census) -> None:
+    """U5 — a grain whose CURRENT state was arrived at with no disposition.
+
+    A bare move still writes the status and records `answer: none` (D3), so
+    "no action" is never blocked — just never invisible, and this is where it
+    stays visible after the move's own line scrolls away. `arrive.census` is
+    the GUARD and is handed IN, so this rule, the line below it and a `pm`
+    write are one derivation; the grains are NAMED, never tallied (rule 11).
+    """
+    if 'U5' not in enabled:
+        return
+    from agentic_sdlc.repo.pm import arrive, ledger
+    if census is None or not census.unanswered:
+        return
+    # The LAST disposition per (grain, state): a grain that bounced back has
+    # arrived again, so the question is asked again (D3).
+    answered: dict[tuple[object, object], object] = {}
+    for _path, row in sorted(_ledger_rows(cfg)[0],
+                             key=lambda pair: str(pair[1].get('ts') or '')):
+        if arrive.disposition_of(row):
+            answered[(row.get('grain'), row.get('state'))] = row.get('answer')
+    quiet = [g.gid for g in sorted(model.grain_index(cfg).values(),
+                                   key=lambda g: g.gid)
+             if g.kind in model.FLOW_KINDS
+             and model.category_of(cfg, g.kind, g.status) == model.IN_PROGRESS
+             and answered.get((g.gid, g.status)) in (None,
+                                                     ledger.NO_DISPOSITION)]
+    if not quiet:
+        return
+    warn(f'{len(quiet)} of {census.open_count} {model.IN_PROGRESS} grain(s) '
+         f'reached the state they are in with no disposition: '
+         f'{", ".join(quiet)} — a bare move is allowed and records '
+         f'`answer: {ledger.NO_DISPOSITION}`; re-running the move with the '
+         f'answer its state declares records one, and `pm vocabulary` prints '
+         f'what each state asks (U5)')
+
+
+# --- the RECORDING family (U2/U3/U4) ------------------------------------------
+# One question — did anything land — asked of three sinks (see the U2/U3/U4
+# entries above). They share the walk below because a rule that opened the same
+# files a second time would answer off a different read than the rule beside it.
+#
+# **Every one of them READS.** None writes a probe row to find out, because a
+# gate that mutates to measure is a gate that lies about what it measured.
+
+
+def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str]]:
+    """An unreadable or unparseable ledger is NEITHER answer — it is named and
+    the scan continues, so one damaged file cannot make the tree look silent.
+    """
+    from agentic_sdlc.repo.pm import ledger
+    rows: list[tuple[Path, dict]] = []
+    unreadable: list[str] = []
+    for path in ledger.ledger_paths(cfg):
+        if not path.is_file():
+            continue
+        try:
+            rows.extend((path, row.data) for row in ledger.read_rows(path))
+        except ledger.LedgerError:
+            unreadable.append(cfg.rel(path))
+    return rows, unreadable
+
+
+class Wiring(NamedTuple):
+    """Which couriers a settings file REGISTERS, and which file said so.
+
+    PUBLIC: `telemetry-live` asks this too, and two readers of one config is
+    how a belt and a gate come to disagree."""
+
+    couriers: tuple[str, ...]   # the couriers a `hooks` entry actually fires
+    where: str                  # the settings file(s) that fire them
+    unread: str                 # why a settings file could not be read
+
+
+def _hook_commands(node: object) -> list[str]:
+    """Every `command` string under a settings file's `hooks` key — never the
+    whole file, where a `permissions.allow` entry naming a courier (which this
+    package's own next-step text tells consumers to add) read as wiring."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        command = node.get('command')
+        if isinstance(command, str):
+            found.append(command)
+        for key, value in node.items():
+            if key != 'command':
+                found.extend(_hook_commands(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_hook_commands(item))
+    return found
+
+
+def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
+    """(the couriers this one file registers, why it could not be read)."""
+    if not path.is_file():
+        return (), ''
+    try:
+        data = json.loads(model.read_raw(path))
+    except (OSError, UnicodeDecodeError) as err:
+        return (), err.__class__.__name__
+    except ValueError as err:
+        return (), f'it is not JSON: {err}'
+    hooks = data.get('hooks') if isinstance(data, dict) else None
+    commands = _hook_commands(hooks)
+    return tuple(sorted(name for name in model.LEDGER_COURIERS
+                        if any(name in command for command in commands))), ''
+
+
+def wired_couriers(root: Path) -> Wiring:
+    """Which ledger couriers this checkout's settings files fire.
+
+    **No settings file at all is an empty tuple, not a defect** — a tree that
+    wires nothing opted out (0.4.0/D5). A ROOT, not a config: the belt asks
+    before it has resolved a PM tree."""
+    found: set[str] = set()
+    where: list[str] = []
+    unread: list[str] = []
+    for rel in SETTINGS_FILES:
+        couriers, why = _settings_couriers(root / rel)
+        if why:
+            unread.append(f'{rel} could not be read ({why})')
+        elif couriers:
+            found.update(couriers)
+            where.append(rel)
+    return Wiring(tuple(sorted(found)), ' and '.join(where),
+                  '; '.join(unread))
+
+
+
+def _age_of(row: dict) -> str:
+    """`3h ago`, or the named non-answer for a row this reader cannot date."""
+    from agentic_sdlc.repo.pm import ledger
+    when = ledger.parse_ts(row.get('ts'))
+    if when is None:
+        return UNDATEABLE
+    # Clamped: a row stamped in the future is a clock disagreement, and
+    # rendering it as a negative age would read as a defect in this line.
+    seconds = max(0, int((datetime.now(timezone.utc) - when).total_seconds()))
+    return f'{ledger.human_duration(seconds)} ago'
+
+
+def _kind_of(row: dict) -> str:
+    """The row's `kind`, or '' — type-checked, see `UNDATEABLE` above."""
+    kind = row.get('kind')
+    return kind if isinstance(kind, str) else ''
+
+
+def _kind_census(rows: list[tuple[Path, dict]]) -> str:
+    """`'2 status, 1 gate'`, most-seen first — what the tree DID record, said
+    beside what it did not. An unreadable kind is counted, never dropped."""
+    counts: dict[str, int] = {}
+    for _path, row in rows:
+        kind = _kind_of(row) or '(no kind)'
+        counts[kind] = counts.get(kind, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ', '.join(f'{n} {kind}' for kind, n in ranked)
+
+
+class Recording(NamedTuple):
+    """What this tree's ledgers say about rows a COURIER wrote.
+
+    PUBLIC, because `adopt`'s `telemetry-live` reports the same fact: two
+    readers of it is how a belt and a gate come to disagree.
+    """
+
+    last: dict                      # the newest hook-written row, or {}
+    where: str                      # the ledger it sits in, repo-relative
+    written: int                    # how many rows a courier wrote
+    total: int                      # how many rows the ledgers hold at all
+    unreadable: tuple[str, ...]     # the ledgers this could not read
+
+
+def hook_recording(cfg: model.PmConfig) -> Recording:
+    """Every ledger in the tree, read for the LAST row a courier wrote.
+
+    Ordered by the row's own `ts`, never the file's mtime or line order: a
+    ledger is merged `union`, so the last line is not the last event in time.
+    """
+    rows, unreadable = _ledger_rows(cfg)
+    written = [(path, row) for path, row in rows if _hook_written(row)]
+    if not written:
+        return Recording({}, '', 0, len(rows), tuple(unreadable))
+    path, last = max(written, key=lambda pair: str(pair[1].get('ts', '')))
+    return Recording(last, cfg.rel(path), len(written), len(rows),
+                     tuple(unreadable))
+
+
+def recording_phrase(rec: Recording) -> str:
+    """`'dispatch, 3h ago'`, `'never'`, or why neither could be answered — the
+    sentence every surface that reports recording prints, spelled once."""
+    if rec.unreadable:
+        return (f'{UNVERIFIABLE} ({", ".join(rec.unreadable)} could not be '
+                f'read)')
+    if not rec.written:
+        return NEVER
+    return f'{_kind_of(rec.last)}, {_age_of(rec.last)}'
+
+
 def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
-    Both homes (0.4.0/D3): the question is whether recording happens at all,
-    and existence is not enough — an empty file is what a courier leaves when
-    it created the file and then refused the row. **An unreadable ledger is
-    neither answer**, so it is reported and the scan continues.
+    Both homes (0.4.0/D3), and existence is not enough — an empty file is what
+    a courier leaves when it created the file and then refused the row. **An
+    unreadable ledger is neither answer**, so it is named and the scan goes on.
+
+    Raw text rather than `_ledger_rows`: a line this package cannot parse is
+    still something a courier wrote, and U2 asks whether anything landed.
     """
     from agentic_sdlc.repo.pm import ledger
-    paths = [ledger.grainless_path(cfg.roadmap)]
-    paths += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    paths = ledger.ledger_paths(cfg)
     found, unreadable = False, []
     for path in paths:
         if not path.is_file():
@@ -400,25 +635,19 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 
     **This rule exists because the telemetry was off for a whole milestone and
     nobody could tell**: a courier fails open by design, so its refusals go to
-    a stderr nobody reads. **A tree that wires nothing is SILENT** — it opted
-    out (0.4.0/D5), and an unparseable settings file is UNVERIFIABLE.
+    a stderr nobody reads. A tree that wires nothing opted out (0.4.0/D5).
     """
     if 'U2' not in enabled:
         return
-    settings = cfg.root / model.AGENT_SETTINGS
-    if not settings.is_file():
-        return
-    try:
-        text = model.read_raw(settings)
-    except (OSError, UnicodeDecodeError) as err:
-        warn(f'{model.AGENT_SETTINGS} could not be read '
-             f'({err.__class__.__name__}), so whether the ledger couriers are '
+    wiring = wired_couriers(cfg.root)
+    if wiring.unread:
+        warn(f'{wiring.unread}, so whether the ledger couriers are '
              f'wired is UNVERIFIABLE — not a finding, and not a pass either '
              f'(U2)')
         return
-    wired = sorted(name for name in model.LEDGER_COURIERS if name in text)
-    if not wired:
+    if not wiring.couriers:
         return
+    wired = list(wiring.couriers)
     found, unreadable = _tree_has_a_row(cfg)
     if unreadable:
         warn(f'{", ".join(unreadable)} could not be read, so whether this tree '
@@ -428,7 +657,7 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     if found:
         return
     warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} wired in '
-         f'{model.AGENT_SETTINGS} and {cfg.roadmap_dir} holds no ledger row at '
+         f'{wiring.where} and {cfg.roadmap_dir} holds no ledger row at '
          f'all — this tree is recording NOTHING, silently, because a courier '
          f'fails open by design. Four causes, in the order they cost people '
          f'time: the `pm` make target is not .PHONY (a PM tree IS a `pm/` '
@@ -436,7 +665,172 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'`[pm.states.*]` is undeclared, so every work-moving verb refuses; '
          f'`python3` or the transcript path does not resolve; the entries name '
          f'a script that is not there. **`bash tools/hooks/'
-         f'cc-ledger-session.sh --self-test` answers all four** (U2)')
+         f'cc-ledger-session.sh --self-test` answers all four**. A fifth is '
+         f'outside this tree: a session rooted elsewhere loads its own '
+         f'settings file and derives its own root, which is what '
+         f'`install-hooks --write-settings` and `GDK_LEDGER_ROOT` are for '
+         f'(U2)')
+
+
+def _hook_written(row: dict) -> bool:
+    """Did a COURIER write this row?
+
+    The kind AND a `session_id`. The kind is off `ledger.EVENT_KINDS`, the
+    writer's own vocabulary — but alone it is not enough: `pm ledger record
+    SubagentStop` mints exactly those kinds by hand from inside the checkout,
+    and this repo counted sixteen of them as evidence a courier ran when none
+    ever had. The session id comes from the hook payload; a hand row has none.
+    A courier row lacking one reads as `never` — noisy, never blind.
+    """
+    from agentic_sdlc.repo.pm import ledger
+    if _kind_of(row) not in set(ledger.EVENT_KINDS.values()):
+        return False
+    session = row.get('session_id')
+    return isinstance(session, str) and bool(session.strip())
+
+
+def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
+                             warn) -> None:
+    """U4 — the couriers are wired, and the last row THEY wrote, with its age.
+
+    **This rule was found by this build recording nothing.** Every wiring
+    answer was green and U2 did not fire, because the ledgers were not empty —
+    they held the rows this checkout writes itself. **No rule counted row
+    KINDS**, so the one fact separating a wired path from a working one went
+    unasked; the trap itself is spelled in the WARN below.
+
+    `wired` alone is the tool asserting an outcome it did not observe (rule 4).
+    A WARN, never a finding, and a tree that wires nothing stays silent
+    (0.4.0/D5).
+    """
+    if 'U4' not in enabled:
+        return
+    from agentic_sdlc.repo.pm import ledger
+    wiring = wired_couriers(cfg.root)
+    if wiring.unread:
+        warn(f'{wiring.unread}, so the last hook-written row cannot be read '
+             f'beside its wiring — UNVERIFIABLE, not a finding and not a pass '
+             f'either (U4)')
+        return
+    rec = hook_recording(cfg)
+    wired = list(wiring.couriers)
+    # THE OPT-OUT, and the whole of it: wires nothing AND records nothing.
+    # Gating on the config alone went silent on a tree holding an hour-old
+    # courier row, wired in a settings file above the repo — the topology this
+    # package now ships. The ledger proves the path wherever the config is.
+    if not wired and not rec.written:
+        return
+    if rec.unreadable:
+        warn(f'{", ".join(rec.unreadable)} could not be read, so the last '
+             f'hook-written row is UNVERIFIABLE — not a finding, and not a '
+             f'pass either (U4)')
+        return
+    events = ' and '.join(sorted(ledger.EVENT_KINDS))
+    kinds = '/'.join(dict.fromkeys(ledger.EVENT_KINDS.values()))
+    if not rec.written:
+        rows, _ = _ledger_rows(cfg)
+        held = _kind_census(rows) or 'no rows at all'
+        warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
+             f'wired in {wiring.where} and no {kinds} row has EVER '
+             f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
+             f'{recording_phrase(rec)}. What the ledgers hold is {held}, '
+             f'which this checkout writes itself and which is not evidence '
+             f'that a courier ran. Wiring is a CONFIG fact: whether a harness '
+             f'loads {wiring.where} depends on the session\'s project '
+             f'root, so a session rooted above this checkout fires no {events} '
+             f'hook here and records nothing while every wiring answer stays '
+             f'green. `install-hooks --write-settings` lands the block, and '
+             f'`GDK_LEDGER_ROOT` points a session rooted elsewhere at this '
+             f'tree (U4)')
+        return
+    # COUNTED, never a finding: the age is what tells live telemetry from
+    # telemetry that stopped.
+    seen = (f'wired in {wiring.where}' if wiring.where else
+            f'wired in no settings file in this checkout, so the config a '
+            f'harness loaded lives above it')
+    print(f'  RECORDING  last hook-written row: {recording_phrase(rec)} — '
+          f'{rec.written} of {rec.total} row(s) in {cfg.roadmap_dir}/ came '
+          f'from a courier; {seen}  [{rec.where}] (U4)')
+
+
+def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """U3 — `[emit]` is declared and its sink has never been written to.
+
+    **The same trap as `recording-is-on-or-the-gate-is-red` (0.4.0) on a fresh
+    surface**: a declared `[emit]` whose sink was never written to looks exactly
+    like a tree that opted out. Opting out stays quiet — a tree with no
+    `[emit]` gets no line at all.
+
+    A malformed `[emit]` value is exit 2 through `emit.settings()`, never a
+    finding — a fact about the input, the way every other config refusal is.
+    """
+    if 'U3' not in enabled:
+        return
+    from agentic_sdlc.repo import emit
+    if not emit.declared():
+        return
+    # A malformed value raises here — including `kinds = []`, refused by name
+    # rather than read as "no tap emits". So every section this rule reaches
+    # emits SOMETHING, and silence is never what the project asked for.
+    conf = emit.settings()
+    taps = ', '.join(conf.kinds)
+    if conf.sink == emit.SINK_STDOUT:
+        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
+             f'{emit.SINK_STDOUT!r} (stdout) and {emit.KINDS_KEY} = {taps}, '
+             f'and stdout leaves nothing in the tree — whether a tap has ever '
+             f'emitted is UNVERIFIABLE here, not a finding and not a pass '
+             f'either. A courier reading the stream is what proves it (U3)')
+        return
+    if conf.sink == emit.SINK_LEDGER:
+        rows, unreadable = _ledger_rows(cfg)
+        if unreadable:
+            warn(f'{", ".join(unreadable)} could not be read, so whether the '
+                 f'[{emit.SECTION}] sink has ever been written to is '
+                 f'UNVERIFIABLE — not a finding, and not a pass either (U3)')
+            return
+        emitted = [row for _path, row in rows if _emitted(row, emit.TAPS)]
+        if emitted:
+            return
+        held = _kind_census(rows) or 'no rows at all'
+        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
+             f'{emit.SINK_LEDGER!r} and {emit.KINDS_KEY} = {taps}, and no '
+             f'event from any of those taps has ever landed in '
+             f'{cfg.roadmap_dir}/ — a sink that is DECLARED and silent is a '
+             f'contradiction this tree is holding. What the ledgers hold is '
+             f'{held}; none of it names a tap. A tree that declares no '
+             f'[{emit.SECTION}] emits nothing and is owed no line — this one '
+             f'declared one (U3)')
+        return
+    target = cfg.root / conf.sink
+    try:
+        written = target.is_file() and bool(
+            target.read_text(encoding='utf-8').strip())
+    except (OSError, UnicodeDecodeError) as err:
+        warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
+             f'read ({err.__class__.__name__}), so whether it has ever been '
+             f'written to is UNVERIFIABLE — not a finding, and not a pass '
+             f'either  [{cfg.rel(target)}] (U3)')
+        return
+    if written:
+        return
+    warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
+         f'{emit.KINDS_KEY} = {taps}, and that sink '
+         f'{"is empty" if target.is_file() else "is not in this checkout"} — '
+         f'a sink that is DECLARED and silent is a contradiction this tree is '
+         f'holding, and it looks exactly like a tree that opted out. A tree '
+         f'that declares no [{emit.SECTION}] emits nothing and is owed no '
+         f'line; this one declared one  [{cfg.rel(target)}] (U3)')
+
+
+def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
+    """Did a TAP write this row?
+
+    A tap's row NAMES its tap in `kind`, bare (`enter`) or dotted
+    (`rung.enter`), so the last dotted segment is the tap. Read off `emit.TAPS`
+    rather than a copy of the row-kind list: a rule keyed on a second spelling
+    of the schema goes blind the day the copy goes stale.
+    """
+    return _kind_of(row).rsplit('.', 1)[-1] in taps
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
@@ -463,13 +857,9 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
 
 
 def _unbound_rows(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """The unbound family one level down from R1, in both directions.
-
-    MEMBERSHIP: a feature naming no milestone, a story naming no feature — a
-    counted line, never a finding, because a tree mid-planning legitimately has
-    many and a gate that reddens on planning is a gate people switch off.
-    SEQUENCE: the same pair over every container's `order` — UNSEQUENCED
-    counted, DANGLING reported. The BROKEN halves are V7's own findings.
+    """The unbound family one level down from R1, in both directions (V7 at the
+    top of this module). COUNTED, never a finding, because a tree mid-planning
+    legitimately has many and a gate that reddens on planning gets switched off.
     """
     if 'V7' not in enabled:
         return
@@ -485,13 +875,12 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
     """Every container's `order` against what it holds — one walk, every level."""
     index = model.grain_index(cfg)
     # The ROOT is R1's, not this walk's: the plan has carried its own rule and
-    # its own line since 0.3.0, and two lines for one fact is the second
-    # scoreboard this milestone is deleting.
+    # its own line since 0.3.0, and two lines for one fact is a second
+    # scoreboard.
     #
     # `BINDS_TO` and NOT `[pm.contains]`: that key says what `pm add` may
     # WRITE, and reading it here let a narrowed mapping ungate the level it
-    # dropped. What an `order` says about what it holds is a fact about the
-    # tree, and no config narrows it.
+    # dropped. No config narrows what an `order` says about what it holds.
     holds = {parent for parent, _field in model.BINDS_TO.values()}
     parents = [g for g in index.values()
                if g.kind in holds and g.kind != model.ROOT_KIND]
@@ -531,13 +920,10 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
     """R1-R4 and R6 — the plan and the tree held to each other.
 
     **This is THE UNBOUND FAMILY, whose first member is the milestone-to-release
-    edge**, not a set of milestone-specific rules. Every level of the tree has
-    the same pair: a binding that names nothing, and a grain that names no
-    binding. When 0.4.0 makes authoring separate from binding everywhere, a
-    feature with no milestone and a story with no feature join this census as
-    further ROWS rather than as new rules — naming the family now costs a
-    sentence, and naming it later costs a rename in every consumer's output
-    that greps these lines.
+    edge**, not a set of milestone-specific rules: every level has the same pair
+    — a binding that names nothing, and a grain that names no binding. Naming
+    the family here costs a sentence; naming it later costs a rename in every
+    consumer's output that greps these lines.
     """
     claims = model.version_claims(cfg)
     scheduled = set(order)
@@ -548,8 +934,7 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
         # is the one container a config can turn off on its own.
         seq = model.sequence_census(cfg, root)
         for mid in seq.unverifiable:
-            # Never a failure: the row survives its milestone on purpose
-            # (ROADMAP.md's only real job, now retired).
+            # Never a failure: the row survives its milestone on purpose.
             warn(f'UNBOUND: {mid} is in '
                  f'{cfg.rel(model.releases_file(cfg))} `order` and no milestone '
                  f'in this tree declares that id — DANGLING if it was never '
@@ -562,8 +947,8 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
                   f'add {root.gid} <milestone-id>` schedules one (R1)')
 
     if 'R2' in enabled:
-        # Backlog: a named, counted line, never a finding. A healthy tree has
-        # many, and a gate that reddens on planning is a gate people switch off.
+        # Backlog: a named, counted line, never a finding — a healthy tree has
+        # many (the same reason as `_unbound_rows`).
         backlog = [mid for _, mid in model.known_milestones(cfg)
                    if mid and mid not in scheduled
                    and not model.milestone_version(cfg, mid)]
@@ -622,18 +1007,15 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
 
 
 def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
-    """The release family: the plan (`order`) and the tree held to each other.
-
-    R1-R4 and R6 are the unbound family, in `_unbound_family`. R5, below, is the
-    version file against the CURRENT release — a POSITION in `order`, never a
-    parse, so it fits bump-at-start and bump-at-close both ([pm] version_at) and
-    has no opinion about what a version string looks like.
+    """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
+    the version file against the CURRENT release — a POSITION in `order`, never
+    a parse, so it fits bump-at-start and bump-at-close both ([pm] version_at)
+    and has no opinion about what a version string looks like.
     """
     if not enabled & set(model.RELEASE_CHECKS):
         return
-    # A plan that is THERE and unreadable is a finding, not the absence of a
-    # plan: saying "declares no `order`" over a BOM-damaged or fence-eaten file
-    # is rule 4's first sin — passing over what was never measured.
+    # A plan that is THERE and unreadable is a finding, not the absence of one:
+    # "declares no `order`" over a BOM-damaged file is rule 4's first sin.
     defect = model.plan_defect(cfg)
     if defect is not None:
         report(f'{cfg.rel(model.releases_file(cfg))} {defect} — R5 cannot read '
@@ -644,8 +1026,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
     if 'R5' not in enabled:
         return
     if not order:
-        # A tree mid-adoption has no plan yet. Reddening it would be milestone
-        # risk 1: a rule that fails every fresh consumer gets switched off.
+        # A tree mid-adoption has no plan yet; a rule that fails every fresh
+        # consumer gets switched off.
         warn(f'R5 is enabled and {cfg.rel(model.releases_file(cfg))} declares '
              f'no `order` — nothing to grade {cfg.version_file} against; '
              f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
@@ -654,9 +1036,8 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
     accepted, why = model.graded_release_accepts(cfg)
     current = accepted[0] if accepted else None
     if current is None:
-        # The reason is READ, never invented: saying "every entry has shipped"
-        # over a tree where none had was a confident wrong answer at exit 0
-        # (review B3).
+        # The reason is READ, never invented: "every entry has shipped" over a
+        # tree where none had was a confident wrong answer at exit 0 (B3).
         warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
              f'(under [pm] version_at = {cfg.version_at!r})')
         return
@@ -684,13 +1065,10 @@ def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
     """`'4 milestone(s), 44 feature(s), 79 story/ies, 11 bug(s)'` — with every
     narrowing each walk made, rendered beside the count it narrowed.
 
-    Pooled: each pool renders its OWN census, because that is the walk that
-    produced the number. The count is the POOL's rather than the drift walk's
-    on purpose: a document with damaged frontmatter declares no `id:`, so no
-    descent reaches it, and a census counting only what the descent saw would
-    quietly drop the document `unkeyed_documents` just reported by name.
-
-    Nested: the drift walk's own counts, with `tree_walk`'s disclosures.
+    Pooled counts are the POOL's rather than the drift walk's on purpose: a
+    document with damaged frontmatter declares no `id:`, so no descent reaches
+    it, and a census counting only what the descent saw would quietly drop the
+    document `unkeyed_documents` just reported by name.
     """
     if model.is_pooled(cfg):
         return ', '.join(model.pool_census(cfg, kind, label) for kind, label in

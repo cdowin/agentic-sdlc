@@ -485,6 +485,12 @@ SEED_ASSIGNMENTS = {
     'pm.model': frozenset({'LIFECYCLE', '_LIFECYCLE_CATEGORIES',
                            'DEFAULT_FLOWS', 'DONE_CATEGORY'}),
     'pm.verdict': frozenset({'OPEN'}),
+    # The `rung.enter` payload's key. `ready` is a FIELD NAME there — "was the
+    # entry condition met" — and shares its spelling with a state word this
+    # project happens to declare. It is spelled ONCE, here: `_enter_row` zips
+    # against `ENTER_KEYS` and `pm ledger show` reads `READY_FIELD`, so neither
+    # keeps a second copy of the word.
+    'pm.ledger': frozenset({'READY_FIELD'}),
 }
 
 # The seed's exported words (`model.LIFECYCLE` / `BUILDING` / `REVIEWING`)

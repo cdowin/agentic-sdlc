@@ -296,7 +296,8 @@ def cfg_for(root: Path) -> model.PmConfig:
     return loaded(root)
 
 
-def run_cli(root: Path, *argv: str, stdout_only: bool = False) -> tuple[int, str]:
+def run_cli(root: Path, *argv: str, stdout_only: bool = False,
+            skipped: tuple[tuple[str, str], ...] = ()) -> tuple[int, str]:
     """Run one `pm` invocation; both streams merged, or stdout alone.
 
     `stdout_only` is for the cases asserting *a write prints what it wrote and
@@ -313,7 +314,7 @@ def run_cli(root: Path, *argv: str, stdout_only: bool = False) -> tuple[int, str
     with contextlib.redirect_stdout(out), \
             contextlib.redirect_stderr(out if not stdout_only else err):
         try:
-            code = cli.main(list(argv))
+            code = cli.main(list(argv), skipped=skipped)
         except SystemExit as exc:  # pragma: no cover - defensive
             code = int(exc.code or 0)
     return code, out.getvalue()

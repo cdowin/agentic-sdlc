@@ -1,7 +1,8 @@
 """conveyor — the belts: every check, then at most one write (D12).
 
 `driver` is the machine and the verb, `steps` the check lists and after-lists,
-`sdlc_doc` the renderer of `docs/sdlc-protocol.md`.
+`lessons` the read-back of recorded lessons beside the verdicts, `sdlc_doc` the
+renderer of `docs/sdlc-protocol.md`.
 """
 from agentic_sdlc.repo.conveyor.driver import (
     Answer,

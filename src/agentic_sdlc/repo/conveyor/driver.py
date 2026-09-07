@@ -9,6 +9,13 @@ any false → no status written, exit 1; `--force` → the write anyway and a
 ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2
 is a declaration this machine could not read (D11). What the caller does next
 is printed as `next:` lines; nothing else is written, moved, pushed or tagged.
+
+A check has THREE answers, not two (0.5.0/D5): `--skip <check> "<why>"` means
+the caller ANSWERED it, so it is not asked and the close is clean, and the
+judgement is a field on the `disposition` row the WRITE mints, because a close
+is an arrival (0.5.0/D6). Only a check named in `[<op>] skippable` may be
+skipped, a skip with no reason is refused, and stock declares nothing
+skippable, so stock behaviour is unchanged.
 """
 from __future__ import annotations
 
@@ -21,7 +28,9 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from agentic_sdlc.core.config import ConfigError
-from agentic_sdlc.repo.pm import ledger, model
+from agentic_sdlc.repo import emit
+from agentic_sdlc.repo.conveyor import lessons
+from agentic_sdlc.repo.pm import ledger, model, verdict
 
 # `story` and `feature` are subcommands of `close`, since `agentic-sdlc story`
 # would be a second spelling of `pm story`.
@@ -53,6 +62,16 @@ QUOTE_LIMIT = 40
 # `ledger.OUTCOMES` does not list it, so the row is minted here with
 # `ledger.deviation_row`'s keys.
 FORCED = 'forced'
+
+# --- the disposition a caller gives a check (0.5.0/D5) ------------------------
+# The flag and how many words it takes: the CHECK and the WHY, in that order,
+# positionally, so a reason opening with a dash is still a reason.
+SKIP_FLAG = '--skip'
+SKIP_ARITY = 2
+
+# A skip mints NO ROW OF ITS OWN. The belt collects what the caller answered
+# and hands it to the WRITE, which is an arrival, and `ledger.disposition_row`
+# carries it as a field on the one row that arrival mints (0.5.0/D6).
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
 # What a checks-only belt says about the record, before its first check: it
@@ -71,6 +90,18 @@ class Truth(Enum):
     UNVERIFIABLE = 'unverifiable'
 
 
+# The word each answer is NAMED by — on the line and in the emitted row, which
+# is one fact and therefore one table. A closed vocabulary: a `check.verdict`
+# row a consumer cannot key on is a row it has to parse prose out of.
+VERDICT_WORDS = {Truth.TRUE: 'ok', Truth.FALSE: 'error',
+                 Truth.UNVERIFIABLE: UNVERIFIABLE_WORD}
+
+# What a check that answered no and gave none reports instead: a defect in the
+# check, and the sentence the row carries as its `detail` (rule 4).
+NO_REASON = ('the check answered no and gave no reason — a defect in the '
+             'check, not a fact about the tree')
+
+
 @dataclass(frozen=True)
 class Answer:
     """A check's return: the truth, and the sentence the line prints after
@@ -78,6 +109,14 @@ class Answer:
 
     truth: Truth
     detail: str = ''
+    names: tuple[str, ...] = ()
+    """The grains this answer NAMED, for the checks that name any — the
+    blockers `pm ready-for` printed. A lesson recorded against one surfaces
+    beside the check that named it, and every other check names none. Read off
+    another verb's sentences (`lessons.blockers_named`), a few of which lead
+    with a record path or a finding id instead; filtering those would mean
+    deciding what an id LOOKS like, and matching is `==` at the reader, so one
+    naming no lesson surfaces nothing."""
 
     @property
     def is_true(self) -> bool:
@@ -116,15 +155,16 @@ class Check:
 
 @dataclass(frozen=True)
 class Result:
-    """What one run did: `false` names every check not true, `written` is
-    the state set or '', `refused` is a mid-run `ConfigError`'s sentence
-    (exit 2, D11)."""
+    """What one run did: `false` names every check not true, `skipped` every
+    check the caller answered instead, `written` is the state set or '',
+    `refused` is a mid-run `ConfigError`'s sentence (exit 2, D11)."""
 
     lines: tuple[str, ...]
     false: tuple[str, ...]
     written: str
     exit_code: int
     refused: str = ''
+    skipped: tuple[str, ...] = ()
 
 
 def ask(check: Check, ctx: Context) -> Answer:
@@ -155,6 +195,14 @@ def registry_for(operation: str) -> dict[str, Check]:
     return known
 
 
+def _skippable(operation: str, names: Sequence[str],
+               registry: Mapping[str, Check]) -> tuple[str, ...]:
+    """The checks `[<operation>] skippable` declares; the import is local
+    because `steps` imports from here."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+    return step_defs.skippable_for(operation, tuple(names), dict(registry))
+
+
 def step_names(operation: str) -> tuple[str, ...]:
     """The ordered check list from `[<operation>] steps`; a misspelled name
     is exit 2, never a quietly shorter belt."""
@@ -183,28 +231,99 @@ def done_state(cfg: 'model.PmConfig', kind: str) -> str:
     return model.flow_of(cfg, kind).by_category[model.DONE_CATEGORY][0]
 
 
+# --- the middle tap: one check resolved ---------------------------------------
+# `rung.enter` is `pm ready-for`'s, `rung.leave` is the arrival's; this is the
+# one between, and what each field DERIVES from is the rendered schema's note.
+#
+# **There is deliberately no `rung.exit_failed`.** A belt that writes nothing
+# emits these rows with false verdicts and no `rung.leave`: the ABSENCE is the
+# signal, and a kind saying "it did not happen" is the tool narrating.
+def verdict_row(rung: str, grain: str, check: str, answer: Answer,
+                ran: str, ts: str = '') -> dict:
+    """One resolved check, as the belt printed it: `detail` is the same
+    sentence the line carries, so the row and the line cannot disagree."""
+    return dict(zip(ledger.VERDICT_KEYS, (
+        ts or ledger.utc_now(), ledger.KIND_VERDICT, rung, grain, check,
+        VERDICT_WORDS[answer.truth], answer.detail, ran)))
+
+
+class Verdicts:
+    """The tap one run emits through: the config the seam needs, the grain the
+    rows are routed by, and what each check runs. A check the caller answered
+    with `--skip` mints NOTHING here — its judgement is a field on the
+    arrival's disposition row (D6), and a verdict for a check nobody asked is
+    the false verdict rule 4 calls a sin."""
+
+    def __init__(self, cfg, operation: str, grain: str, ran: Mapping[str, str]):
+        self.cfg = cfg
+        self.operation = operation
+        self.grain = grain
+        self.ran = ran
+
+    def say(self, check: str, answer: Answer) -> None:
+        """Emit one row and contribute NO line — "never load-bearing" (D1)
+        made structural. An unreachable sink is `emit.emit`'s own finding on
+        stderr; a malformed `[emit]` was refused before the first check."""
+        emit.emit(self.cfg, emit.TAP_VERDICT,
+                  verdict_row(self.operation, self.grain, check, answer,
+                              self.ran.get(check, '')))
+
+
+def ran_for(operation: str, names: Sequence[str],
+            registry: Mapping[str, Check]) -> dict[str, str]:
+    """{check: what it runs} — what `install-sdlc` renders in that column."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+    commands = step_defs.commands_for(operation, tuple(names), dict(registry))
+    return {name: step_defs.ran_of(name, commands) for name in names}
+
+
 # --- the run ------------------------------------------------------------------
-Writer = Callable[[Context, str], tuple[bool, str]]
+Writer = Callable[[Context, str, Sequence[tuple[str, str]]], tuple[bool, str]]
 Recorder = Callable[[Sequence[tuple[str, str]]], str]
 
 
 def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
-        *, force: bool = False, state: str = '',
-        write: Writer | None = None,
-        record: Recorder | None = None) -> Result:
-    """Ask every check, print each, then write once or not at all.
+        *, force: bool = False, skips: Mapping[str, str] | None = None,
+        state: str = '', write: Writer | None = None,
+        record: Recorder | None = None,
+        surfacer: 'lessons.Surfacer | None' = None,
+        verdicts: 'Verdicts | None' = None) -> Result:
+    """Ask every check the caller did not answer, print each, then write once
+    or not at all.
 
     `state` and `write` are handed in so decision and mechanism are two
     functions with one seam; `record` mints a forced write's `deviation` row
     and returns '' or why it could not; `state == ''` writes nothing.
+    `surfacer` contributes lines beside the verdicts and CANNOT change one;
+    `verdicts` emits one `check.verdict` event per check ASKED, and decides
+    nothing either — a run given neither behaves exactly as it did.
+
+    `skips` is check -> why, already graded against `[<op>] skippable` by the
+    caller: a check in it is NOT asked, because the point is that the
+    expensive question goes unasked once someone answered it. What was
+    answered is COLLECTED and handed to `write`, the arrival that records it.
     """
     op = ctx.operation
     defect = plan_defect(registry, names)
     if defect:
         return Result((f'[{op}] error — {defect}',), (), '', 2, defect)
+    answered = dict(skips or {})
     lines: list[str] = []
     false: list[tuple[str, str]] = []
+    dispositioned: list[tuple[str, str]] = []
+    if surfacer is not None:
+        # The MOVE surface: this run is about to touch its subject grain.
+        lines += surfacer.at_entry()
     for name in names:
+        if name in answered:
+            # A FIRST-CLASS answer, not a hole in the list: the check is named
+            # on its own line with the judgement that stood in for it.
+            why = answered[name]
+            lines.append(f'[{op}] {verdict.SKIPPED}: {name} — "{why}"')
+            dispositioned.append((name, why))
+            if surfacer is not None:
+                lines += surfacer.at_check(name)
+            continue
         try:
             answer = ask(registry[name], ctx)
         except ConfigError as err:
@@ -214,36 +333,52 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
             return Result(tuple(lines), tuple(n for n, _ in false), '', 2,
                           refused)
         if answer.is_true:
-            lines.append(f'[{op}] ok: {name}'
+            lines.append(f'[{op}] {VERDICT_WORDS[answer.truth]}: {name}'
                          + (f' — {answer.detail}' if answer.detail else ''))
-            continue
-        # A check that is not true and gave no reason has a defect, and the
-        # defect is what gets reported.
-        reason = answer.detail or (
-            'the check answered no and gave no reason — a defect in the '
-            'check, not a fact about the tree')
-        word = (UNVERIFIABLE_WORD if answer.truth is Truth.UNVERIFIABLE
-                else 'error')
-        lines.append(f'[{op}] {word}: {name}: {reason}')
-        false.append((name, reason))
+        else:
+            # A check that is not true and gave no reason has a defect, and the
+            # defect is what gets reported — and carried, so the emitted row
+            # says what the line said rather than nothing.
+            answer = replace(answer, detail=answer.detail or NO_REASON)
+            lines.append(f'[{op}] {VERDICT_WORDS[answer.truth]}: {name}: '
+                         f'{answer.detail}')
+            false.append((name, answer.detail))
+        if verdicts is not None:
+            verdicts.say(name, answer)
+        if surfacer is not None:
+            # The RULE surface, and the blockers this check named — after the
+            # verdict line, because the verdict is the check's own business.
+            lines += surfacer.at_check(name, answer.names)
     names_false = tuple(n for n, _ in false)
+    names_skipped = tuple(n for n, _ in dispositioned)
     if false and not force:
         lines.append(f'[{op}] error — {len(false)} check(s) false; '
                      f'no status written')
-        return Result(tuple(lines), names_false, '', 1)
+        return Result(tuple(lines), names_false, '', 1,
+                      skipped=names_skipped)
     if not state:
         # adopt: checks only. `--force` was refused before this point.
-        lines.append(f'[{op}] ok — {len(names)} check(s) true; nothing to '
-                     f'write')
-        return Result(tuple(lines), names_false, '', 0)
+        # The census is what was ASKED and came out true; a skipped check
+        # counted as true here would be rule 4's first sin with a number on it.
+        census = f'{len(names) - len(dispositioned)} check(s) true'
+        if dispositioned:
+            census += f', {len(dispositioned)} skipped'
+        lines.append(f'[{op}] ok — {census}; nothing to write')
+        return Result(tuple(lines), names_false, '', 0,
+                      skipped=names_skipped)
     if write is None:
         raise ValueError(f'{op} writes {state!r} and no writer was given')
-    landed, said = write(ctx, state)
+    landed, said = write(ctx, state, tuple(dispositioned))
     if said:
-        lines.append(f'[{op}] write: {said}')
+        # As LINES: a belt that reflowed the fork destroyed the pasteable
+        # commands the arrival exists to offer.
+        head, *rest = said.splitlines()
+        lines.append(f'[{op}] write: {head}')
+        lines.extend(rest)
     if not landed:
         lines.append(f'[{op}] error — the write was refused; no status written')
-        return Result(tuple(lines), names_false, '', 1)
+        return Result(tuple(lines), names_false, '', 1,
+                      skipped=names_skipped)
     if false:
         lines.append(f'[{op}] forced — {ctx.version} → {state} over '
                      f'{len(false)} false check(s)')
@@ -253,25 +388,23 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
                          f'forced checks was not written: {blocked}')
     else:
         lines.append(f'[{op}] ok — {ctx.version} → {state}')
-    return Result(tuple(lines), names_false, state, 0)
+    return Result(tuple(lines), names_false, state, 0, skipped=names_skipped)
 
 
 # --- the verb -----------------------------------------------------------------
 
 USAGE = """\
-agentic-sdlc {op} {subject}
-agentic-sdlc {op} {subject} --force
+{synopsis}
 
 Run every check in the {state} list, print each one, then write ONCE or not
 at all: {writes}
 
   {subject}
               a grain id — the same grammar `pm` uses, segment for segment
-  --force     write anyway; the milestone's ledger.jsonl gets one `deviation`
-              row naming the checks that were false
-
+{flags}
 One line per check — `ok: <check> — <detail>`, `error: <check>: <what is
-false>`, or `unverifiable: <check>: <why>` (counts as false) — then one of:
+false>`, `unverifiable: <check>: <why>` (counts as false), or `skipped:
+<check> — "<why>"` (you answered it) — then one of:
 
     [{state}] ok — <grain> → <state>
     [{state}] error — N check(s) false; no status written
@@ -280,13 +413,18 @@ false>`, or `unverifiable: <check>: <why>` (counts as false) — then one of:
 and, after a write, `next:` lines saying what is yours to do. Nothing else
 is written, moved, bumped, retitled, pushed or tagged.
 
+A `lesson` row recorded against this grain, or against a check's name, is
+printed beside that verdict with its `source` path and emitted on the
+`[emit]` sink. It is a record, never a gate: it changes no verdict and no
+exit code.
+
 Exit codes: 0 written (or nothing to write), 1 a check is false and nothing
 was written, 2 the declaration could not be read.\
 """
 
 CLOSE_USAGE = f"""\
-agentic-sdlc {CLOSE_VERB} story   <story-id>     [--force]
-agentic-sdlc {CLOSE_VERB} feature <feature-id>   [--force]
+agentic-sdlc {CLOSE_VERB} story   <story-id>     [{SKIP_FLAG} <check> "<why>"] [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id>   [{SKIP_FLAG} <check> "<why>"] [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set
@@ -300,9 +438,12 @@ to the first state of its kind's `done` category (`[pm.states.<kind>] done`).
            that parses; no finding in it is `open`.
 
 Any check false → `error:` lines, exit 1, no status written. `--force` writes
-anyway and the ledger row names the false checks. `agentic-sdlc {CLOSE_VERB}
-story --help` prints the full line shapes. The belt above these two is
-`agentic-sdlc release <version>`.\
+anyway and the ledger row names the false checks. `{SKIP_FLAG} <check> "<why>"`
+is the other answer: the caller answered that check, so it is not asked, the
+close is clean, and a `disposition` row carries the reason — for any check the
+project named in `[story] skippable` / `[feature] skippable`, which stock
+leaves empty. `agentic-sdlc {CLOSE_VERB} story --help` prints the full line
+shapes. The belt above these two is `agentic-sdlc release <version>`.\
 """
 
 
@@ -320,25 +461,119 @@ def _writes(operation: str) -> str:
             f'[pm.states.{kind}] done. Any check false → exit 1 and no write.')
 
 
-def parse_flags(rest: Sequence[str]) -> tuple[bool, list[str], str]:
-    """(--force, positionals, '' or the usage defect). `--skip`, `--reason`
-    and `--status` are named because a consumer's script may still carry
-    them."""
+# The two flags a belt that WRITES takes, and what a checks-only belt says
+# about them instead. Both are named either way: a flag refused here and
+# working one belt over is what rule 11 says must not be discovered by trying.
+WRITE_FLAGS = f"""\
+  {SKIP_FLAG} <check> "<why>"
+              you ANSWERED that check: it is not asked, the close is a clean
+              one, and a `disposition` row keeps the reason against the grain.
+              Only a check named in `[{{state}}] skippable` may be skipped
+              (stock declares none), and a skip with no reason is refused —
+              an unexplained skip is a deviation, and `--force` is its verb.
+              Repeatable, once per check
+  --force     write anyway; the milestone's ledger.jsonl gets one `deviation`
+              row naming the checks that were false
+"""
+
+CHECKS_ONLY_FLAGS = f"""\
+  {SKIP_FLAG} / --force
+              neither is accepted here, and both are exit 2: this belt writes
+              nothing, so there is no status to force and a skip would be a
+              judgement with nowhere to be recorded. They are the close belts'
+              flags — `close story`, `close feature`, `release`
+"""
+
+
+def _flags(operation: str) -> str:
+    return WRITE_FLAGS if WRITES[operation] else CHECKS_ONLY_FLAGS
+
+
+def _synopsis(operation: str) -> str:
+    """The invocation lines: a belt that writes carries its two flags, and one
+    that writes nothing is one line, because it takes neither."""
+    spoken, subject = _spoken(operation), SUBJECT[operation][2]
+    head = f'agentic-sdlc {spoken} {subject}'
+    if not WRITES[operation]:
+        return head
+    return '\n'.join((head, f'{head} {SKIP_FLAG} <check> "<why>"',
+                      f'{head} --force'))
+
+
+def parse_flags(rest: Sequence[str]
+                ) -> tuple[bool, dict[str, str], list[str], str]:
+    """(--force, the checks `--skip` answered and why, positionals, '' or the
+    usage defect).
+
+    `--skip <check> "<why>"` takes its two words POSITIONALLY, so a reason
+    opening with a dash is a reason and not a mistyped flag. WHICH checks may
+    be skipped is `[<op>] skippable`, graded by `skip_defect` once the config
+    is loaded. `--reason` and `--status` are named because a consumer's script
+    may still carry them.
+    """
     force = False
+    skips: dict[str, str] = {}
     positional: list[str] = []
-    for arg in rest:
+    args = list(rest)
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
         if arg == '--force':
             force = True
-        elif arg in ('--skip', '--reason', '--status'):
-            return False, [], (
+        elif arg == SKIP_FLAG:
+            values = args[index:index + SKIP_ARITY]
+            index += len(values)
+            if len(values) < SKIP_ARITY:
+                return False, {}, [], (
+                    f'{SKIP_FLAG} takes a check and a reason — '
+                    f'`{SKIP_FLAG} <check> "<why>"`. A skip with no reason is '
+                    f'refused, because an unexplained skip IS a deviation and '
+                    f'`--force` is already the verb for one')
+            name, why = values
+            defect = ledger.reason_defect(why)
+            if defect:
+                return False, {}, [], (
+                    f'{SKIP_FLAG} {name}: {defect}. The reason is the whole '
+                    f'difference between a judgement and a deviation, and the '
+                    f'tree keeps it against the grain forever')
+            if name in skips:
+                return False, {}, [], (
+                    f'{SKIP_FLAG} names {name!r} twice, with two reasons — '
+                    f'one check, one answer')
+            skips[name] = why
+        elif arg in ('--reason', '--status'):
+            return False, {}, [], (
                 f'{arg} was removed in 0.2.0: a belt is its checks and then '
                 f'one write. `--force` writes over false checks and the '
                 f'ledger row names them; `pm ledger report` reads those rows')
         elif arg.startswith('-'):
-            return False, [], f'unknown option {arg!r}'
+            return False, {}, [], f'unknown option {arg!r}'
         else:
             positional.append(arg)
-    return force, positional, ''
+    return force, skips, positional, ''
+
+
+def skip_defect(operation: str, asked: Mapping[str, str],
+                declared: Sequence[str]) -> str:
+    """'' when every `--skip` names a check this project DECLARED skippable,
+    else why not — by name, which is the ship criterion.
+
+    The tool has no opinion about which check is a judgement (rule 9); it has
+    an opinion about whether the project said anything, and says so.
+    """
+    unknown = [name for name in asked if name not in declared]
+    if not unknown:
+        return ''
+    listed = ', '.join(repr(name) for name in unknown)
+    if declared:
+        return (f'{listed} is not skippable — [{operation}] skippable declares '
+                f'{", ".join(repr(name) for name in declared)}')
+    return (f'{listed} is not skippable: this project declared no check '
+            f'skippable, so nothing may be. Which checks are dispositionable '
+            f'is yours to declare — `skippable = [{listed}]` under '
+            f'[{operation}] in devkit.toml — or write anyway with --force, '
+            f'which records a deviation naming every false check')
 
 
 def _refuse(message: str) -> int:
@@ -416,17 +651,23 @@ def _config(root: Path | None) -> 'model.PmConfig':
 
 def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
-    the `status` row and `check pm` reads what it wrote."""
+    the `status` row and `check pm` reads what it wrote. The answered checks
+    ride along: the write IS the arrival that records them, so a close that
+    never happened leaves no row claiming a judgement (0.5.0/D6). The
+    arrival's report comes back as LINES: squashing it joined the fork's two
+    pasteable commands into one 555-character sentence.
+    """
     from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
 
-    def write(ctx: Context, state: str) -> tuple[bool, str]:
+    def write(ctx: Context, state: str,
+              skipped: Sequence[tuple[str, str]] = ()) -> tuple[bool, str]:
         argv = [kind, state, step_defs.subject_grain(ctx)]
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
-            code = pm_cli.main(argv)
-        said = ' '.join(buffer.getvalue().split())
+            code = pm_cli.main(argv, skipped=tuple(skipped))
+        said = buffer.getvalue().strip()
         return code == 0, f'`pm {" ".join(argv)}` exited {code}: {said}'
 
     return write
@@ -461,11 +702,8 @@ def _recorder(mledger: Path, operation: str, subject: str) -> Recorder:
 def _no_ledger(nowhere: str) -> Recorder:
     """The recorder for a run whose milestone is not in the tree: it records
     nothing and says why, so a forced write can never print as though a row
-    landed.
-
-    Only a checks-only belt gets here — a belt that writes is still refused
-    without the grain — but `run` may not assume that, and a silent recorder is
-    rule 4's second sin in miniature.
+    landed. Only a checks-only belt gets here, but `run` may not assume that
+    and a silent recorder is rule 4's second sin in miniature.
     """
     def record(false: Sequence[tuple[str, str]]) -> str:
         return f'{nowhere} to hold a ledger row'
@@ -482,6 +720,16 @@ def _milestone_id(cfg, operation: str, subject: str) -> str:
         # the version a human says out loud, and the plan lists ids.
         return model.milestone_of_version(cfg, subject) or subject
     return model.milestone_of(cfg, subject) or subject
+
+
+def _subject_grain(ctx: Context) -> str:
+    """The grain this run is ABOUT, asked of the check lists so the lesson
+    surface and the write cannot disagree about what is being touched."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+    try:
+        return step_defs.subject_grain(ctx)
+    except Exception:  # noqa: BLE001 — a grain nobody could name is no grain
+        return ctx.version
 
 
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
@@ -539,10 +787,12 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if any(a in ('-h', '--help', 'help') for a in rest):
         print(USAGE.format(op=spoken, state=operation,
                            subject=SUBJECT[operation][2],
-                           writes=_writes(operation)))
+                           writes=_writes(operation),
+                           synopsis=_synopsis(operation),
+                           flags=_flags(operation).format(state=operation)))
         return 0
 
-    force, positional, flag_defect = parse_flags(rest)
+    force, skips, positional, flag_defect = parse_flags(rest)
     segments, noun, shape = SUBJECT[operation]
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
@@ -567,6 +817,13 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if force and not kind:
         return _refuse(f'{spoken} writes nothing, so there is nothing to '
                        f'force — it is checks only')
+    if skips and not kind:
+        # A `skipped:` line with no `disposition` behind it would be the
+        # record this flag exists to make, missing.
+        return _refuse(f'{spoken} writes nothing — not a status and not a row '
+                       f'— so a skip has nowhere to be recorded; it is checks '
+                       f'only. `{SKIP_FLAG}` is a close belt\'s flag: '
+                       f'{CLOSE_VERB} story, {CLOSE_VERB} feature, release')
 
     # Everything above refused without touching the filesystem.
     try:
@@ -577,9 +834,23 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         # Read before the first check, so an undeclared `done` category fails
         # before anything runs.
         state = done_state(cfg, kind) if kind else ''
+        # The DECLARATION `--skip` is graded against; a malformed one is exit 2
+        # here rather than a skip refused for a reason nobody can see.
+        declared = _skippable(operation, names, known) if skips else ()
+        # The `ran` column, resolved once, beside the two reads above: a
+        # malformed `[<op>.commands]` is exit 2 before the first check, not a
+        # field this run then has to leave out of its events.
+        ran = ran_for(operation, names, known)
+        # The sink's own declaration too (rule 9): the SINK is never
+        # load-bearing, the DECLARATION is like every other one.
+        if emit.declared():
+            emit.settings()
     except ConfigError as err:
         return _refuse(f'{spoken}: {err}')
     defect = plan_defect(known, names)
+    if defect:
+        return _refuse(f'{spoken}: {defect}')
+    defect = skip_defect(operation, skips, declared)
     if defect:
         return _refuse(f'{spoken}: {defect}')
     # The KIND needs the TREE, so it sits below the config load; the guard
@@ -627,9 +898,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
     nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
     # A belt that WRITES needs the grain, and is refused BEFORE the first
-    # check — which is also why nothing spawns here. The sentence names what
-    # was looked for: "no milestone 'st-nobody-wrote-this'" about a STORY id
-    # sent the reader hunting for a milestone nobody had named.
+    # check. The sentence names what was looked for: "no milestone
+    # 'st-nobody-wrote-this'" about a STORY id sent the reader hunting.
     if mfile is None and kind:
         missing = (nowhere if operation in ('release', 'adopt')
                    else f'no {operation} {subject!r} in '
@@ -639,21 +909,24 @@ def main(argv: Sequence[str], *, root: Path | None = None,
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:
-        # Checks only (D12): the milestone is the LEDGER's home and nothing
-        # else, so its absence is not an entry condition. WHERE the project
-        # tracks the bump — a milestone, a feature, a story, nowhere at all —
-        # is the project's business, the same way `[pm.states.*]` is. Every
-        # check runs either way, and the run says which it found.
+        # Checks only (D12): the milestone is the LEDGER's home, so its
+        # absence is not an entry condition. WHERE the project tracks the bump
+        # is the project's business, the same way `[pm.states.*]` is.
         print(f'[{operation}] {NOTHING_RECORDED} — '
               + (f'a row would land in {cfg.rel(mledger)}'
                  if mledger is not None
                  else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
-    result = run(known, names, ctx, force=force, state=state,
+    # ONE grain for both taps: the row a lesson surfaces against and the row a
+    # verdict is filed under are the same grain or they are two logs.
+    grain = _subject_grain(ctx)
+    result = run(known, names, ctx, force=force, skips=skips, state=state,
                  write=write if write is not None else _writer(cfg, kind),
                  record=(_recorder(mledger, operation, subject)
-                         if mledger is not None else _no_ledger(nowhere)))
+                         if mledger is not None else _no_ledger(nowhere)),
+                 surfacer=lessons.surfacer_for(cfg, operation, grain),
+                 verdicts=Verdicts(cfg, operation, grain, ran))
     for line in result.lines:
         print(line)
     if result.refused:

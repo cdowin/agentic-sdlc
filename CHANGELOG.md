@@ -2,6 +2,485 @@
 
 ## Unreleased
 
+## v0.5.0 — 2026-09-07 — a move is an event
+
+- **`agentic-sdlc lesson record|show` — a lesson is a ROW bound to a grain.** `lesson record
+  --grain <id> --rule <id> --source <path> "<text>"` appends one append-only ledger row, routed to
+  the milestone that owns the grain like every other row; `lesson show [--grain <id> | --rule
+  <id>]` prints them tab-separated **in the order they were recorded**, columns named in `--help`.
+  The row points at its source and never restates it, so a `--source` naming no file — or naming a
+  path outside the checkout, which resolves on exactly one machine and cannot be edited back out of
+  a committed append-only file — is refused and nothing lands. Nothing is inferred, scored or
+  ranked (D1): the filters are `==`, ordering is by the recorded stamp, and an AST guard holds the
+  writer and the reader to it. The belts surface them where you stand — against the grain at a
+  move, against a check's name beside that check's verdict.
+
+- **A NO-OP MOVE IS NOT AN ARRIVAL, so it can no longer shadow a recorded answer.** Every status
+  verb minted a full arrival on the `(no-op)` branch too, so `pm feature building ft-x` run bare
+  after `pm feature building ft-x --by agent reviewer` appended `answer: none` for the SAME state
+  — and every reader takes the LAST disposition per (grain, state), so `check pm` U5 then named a
+  grain that HAD been dispositioned and the pressure line agreed with it. It also hid a
+  `close --skip`'s `skipped` field the same way. Now: **nothing transitioned, so no `status` row**,
+  and a bare re-run does not replace an ANSWERED state's disposition with `none`. Re-running WITH
+  an answer still records it — that is how a fork somebody skipped gets answered — and a bare move
+  that IS a transition still writes both rows and records `none`.
+
+  Two readings move with it. `report.arrivals` now folds consecutive arrivals at the SAME state
+  rather than at the same stamp, so a `from == to` row already in a ledger — this repo has eight —
+  no longer opens a second stint: the time before it stays part of the OPEN charge instead of
+  being billed as a closed one. **No migration is needed; the reader tolerates them.** And one
+  arrival's two rows are stamped ONCE, so a pair straddling a second boundary cannot read as two
+  events.
+
+- **The pressure line now reaches all three surfaces its criterion names.** A belt's write no
+  longer flattens the arrival's whole report into one line — measured at 555 characters on a
+  `close feature --force`, which is exactly where the fork's two pasteable commands stop being
+  commands — and `check pm` prints the census it already computed as a counted `OPEN` line, from
+  the same `arrive.census` U5 gates on, so the gate and a `pm` write cannot disagree.
+  `[pm] pressure = false` silences all three.
+
+- **`pm ledger report [<grain-id>]` takes the level you name.** A feature or story id was exit 2
+  (*"the ledger is per milestone"*), which is true of where the ROWS are and says nothing about
+  which level a reader asked for. A milestone id still reports everything; a feature or story id
+  reports the `time per state` and `time per actor` blocks rooted at that grain, with its
+  descendants under it and the actors narrowed to match. The ledger read is still the milestone's.
+  `--help` now names both blocks' columns in order, which is what `awk` needs.
+
+- **A dropped ARRIVAL row is disclosed whichever kind carries it.** `pm ledger report`'s discard
+  census counted `status` rows only, so a `disposition` row naming a grain the milestone does not
+  hold vanished with no line saying so — in precisely the disposition-only configuration the clock
+  claims to be complete in. The line now reads `N arrival row(s) name a grain this milestone does
+  not hold`.
+
+- **TIME IS MEASURED PER STATE, AND IT ROLLS UP AT ANY LEVEL**
+  (`ft-time-is-measured-per-state-and-rolls-up`). `pm ledger report` summed seconds per CATEGORY,
+  and `building` and `reviewing` are both `in_progress` — so the tool collapsed exactly the
+  distinction anyone asks about. Section 1 grows two blocks, and the category columns stay,
+  DERIVED from the state totals rather than being the only number:
+
+      -- time per state (5)
+      grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
+      0.1                      600          120       30       750    2400  building
+        0.1/alpha              600          120        -       720    2400  building
+          0.1/alpha/s0         600          120        -       720       -  -
+        0.1/bugs/crash           -            -       30        30       -  -
+
+      -- time per actor (2)
+      actor                 arrivals  grains  seconds
+      --by agent developer         2       2      930
+
+  **Roll-up is the feature, not a view**: membership is already a field (0.4.0), so a milestone's
+  `building_s` is a WALK of its features' and theirs of their stories' — every level the one below
+  plus its own. **OPEN time is a CHARGE**: a grain still in a state at read time has its elapsed
+  time in `open_s` beside the state accruing it, never folded into a closed total, and **no grain
+  gets completed-time credit until it closes** — a running clock and a finished one are different
+  facts. A parent's charge is the sum of its open children's plus its own, so the pressure line
+  has one number to name. **A state a grain never held is an absent key and no column**, never a
+  zero. `--json` carries the same under `clock`, keyed by state name.
+
+  **It reads ARRIVAL rows, so it needs no harness hook** (0.5.0/D3/D6): the `status` row a move has
+  always written names the state in `to`, the `disposition` row the same move mints names it in
+  `state`, and one move at one stamp is folded to one arrival. A tree where no hook has ever fired
+  — this repo's own condition — reports time per state and spend per actor in full.
+
+  **The columns are the filter** (rule 11's read side): *"total review time for this milestone"* is
+  `pm ledger report <id> | awk`, never a new flag.
+
+- **NEW `check pm` U5: a grain whose CURRENT state was arrived at with no disposition, BY NAME.**
+  A WARN in the USAGE family, never a refusal — a bare `pm feature building ft-x` still writes the
+  status and records `answer: none` (D3), because refusing would make the conveyor something
+  people route around. The rule names the grains rather than counting them, keys on the last
+  disposition for the state the grain is in NOW (a grain that bounced back has arrived again), and
+  uses `arrive.census` as its guard so the gate and the move's own pressure line cannot disagree.
+  Opt-in like U2/U3/U4; `pm vocabulary` lists it.
+
+- **A MOVE IS AN EVENT, and the event is ARRIVAL** (`ft-every-edge-carries-a-disposition`,
+  `ft-the-conveyor-pushes-back`, `ft-a-move-names-the-capability-you-are-standing-in`,
+  `ft-a-move-emits-the-breadcrumb-it-prints`; 0.5.0/D3). Every `pm <kind> <status> <id>` write is
+  one arrival, and an arrival does four things — all of them derived, none of them a refusal, and
+  all of them on **STDERR**, so the stream a consumer parses is byte-identical to 0.4.0's.
+
+      $ agentic-sdlc pm feature reviewing 0.1/alpha
+      [pm] feature 0.1/alpha: building -> reviewing
+      [pm] next: `agentic-sdlc close feature <feature-id>` asks stories-done, feature-verified, …
+      [pm]
+      [pm] what happens to it?
+      [pm]   a) agentic-sdlc pm feature reviewing 0.1/alpha --review agent <type>
+      [pm]   b) agentic-sdlc pm feature reviewing 0.1/alpha --skip review "<why>"
+      [pm]
+      [pm] open: 3 in_progress, over the declared [pm] wip of 1, oldest 0.1/alpha 6h 6m — 2 of 3 carry no disposition
+
+  **The new declaration is `[pm.arrive.<kind>.<state>]`** — a WORKFLOW key with nothing behind it,
+  like `[pm.states.*]` itself:
+
+      [pm.arrive.feature.building]
+      ask     = "what is building this?"
+      answers = ["--by me", "--by agent <type>"]
+      have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+  `ask` and `answers` are declared together or not at all — a question with no answers typed is
+  advice, and rule 9 forbids the tool having one. Every answer opens with `--` and **is a flag the
+  move accepts**, so answering costs one paste; a state with no node prints no question. A bare
+  move still writes and mints `disposition: none`, and that grain then shows on the census until
+  somebody answers. `have` is a CENSUS of installed files — a declared file that is **absent** is a
+  named line, never silence (rule 11).
+
+  **There is no transition table and there never will be one.** The unit is the state ARRIVED AT,
+  never the pair `(from, to)`: `building -> planning` is an arrival at `planning`, a second pass
+  through a state asks the same question, and backwards was never a special case. The
+  `{ts, kind: "disposition", grain, state, answer, value?, skipped}` row carries no `from` for
+  that reason, and time in a state is the gap between two arrivals on one grain — telemetry with no
+  harness hook involved at all.
+
+  **`pm ledger show` renders that row.** Its columns, in order, are `ts  kind  <what the kind
+  says>`: a `status` row says `<from> -> <to>  +<n>s`, a `disposition` says `<state>  <answer>
+  [<value>]` and then `skipped: <check> — "<why>"` for every check a belt answered instead of
+  asking. The row was on disk from the first arrival and the renderer printed its kind and stopped
+  (rule 11's read side).
+
+  Two new `[pm]` knobs, both stock-ON and both in `pm config --seed`: **`pressure`** silences the
+  fork, the READY crossing and the census in one line (rule 6), and **`wip`** is the project's own
+  work-in-progress limit — `0` declares none, exceeding it is a REPORTED clause and never a
+  refusal. `breadcrumbs = false` now silences `have:` beside `next:`; the emitted row carries both
+  either way, because it is not on the stream a strict consumer parses.
+
+  Every status move also emits **`rung.leave`** — `{ts, kind, grain, state, answer, rung,
+  next_checks, next_actions, have}` — from the SAME `derive_next` the printed breadcrumb renders,
+  so a change reaching one renderer and not the other fails a test.
+
+- **A check has THREE answers, and `--skip <check> "<why>"` is the third**
+  (`ft-the-close-is-cheap-and-a-check-is-dispositionable`, 0.5.0/D5, which revises 0.2.0/D12).
+  `close story`, `close feature` and `release` accept it: the caller ANSWERED that check, so the
+  check is **not asked**, the line reads `skipped: <check> — "<why>"`, the status is written, and
+  the close is a clean one. **The judgement is a FIELD on the arrival's own `disposition` row**
+  (0.5.0/D6) — `skipped: [{check, why}, …]` — because a close is an arrival and this is how that
+  arrival's question was answered: one event, one row. Repeatable. A refused close leaves no
+  `skipped` behind it, because the row is minted by the write and not during the check run.
+
+      $ agentic-sdlc close feature ft-x --skip review-recorded "one-line fix, read inline"
+      [feature] ok: stories-done — [pm] READY — feature ft-x: 1 story/ies, all done
+      [feature] ok: feature-verified — `make test` exited 0
+      [feature] skipped: review-recorded — "one-line fix, read inline"
+      [feature] ok — ft-x → done
+
+  **Which checks are skippable is a DECLARATION** — `[story] / [feature] / [release] skippable =
+  ["review-recorded"]` — and **stock declares none**, so a repo with no `devkit.toml` runs exactly
+  the belt it ran before. A skip of a check the project did not declare is refused BY NAME at exit
+  2, and so is a `skippable` entry naming a check that belt does not run. **A skip with no reason
+  is refused**, because an unexplained skip IS a deviation and `--force` is already its verb.
+  `--force` is unchanged: it writes anyway, names the false checks, and mints its `deviation` row;
+  the two row kinds are siblings and do not bleed. `adopt` takes neither flag — it writes nothing,
+  so a skip there would have nowhere to be recorded — and its `--help` names both as refused.
+
+- **`agentic-sdlc pm ready-for story <story-id>`** — the inner loop's entry edge, and the fourth
+  rung the verb answers for (`ft-a-rung-has-an-entry-edge`). Exit 0 ready, exit 1 not ready naming
+  every blocker, exit 2 usage; writes nothing, like the three rungs beside it. **The condition is
+  DERIVED at every call, never a list this package holds**: `[story] steps` (your list, narrowed if
+  you narrowed it) × `registry_for("story")` for the check objects × the registry's own
+  `ENTRY_CONDITIONS` for which of them is decidable before the work. A project that declares
+  different steps is answered about ITS list, and a project whose whole list answers only after the
+  work is told `nothing was asked` at exit 1 — a READY over a census of zero is not a pass.
+
+  Every check the belt WILL ask and this rung did not is named in the census with why, so silence
+  never teaches a reader the belt is smaller than it is. On stock defaults:
+
+      [pm] READY — story st-…: 1 of 4 [story] check(s) decidable before the work
+      (story-exists), all true; 3 the registry does not declare an entry condition,
+      asked at the close: story-verified (by `agentic-sdlc verify --story`), committed,
+      evidence-written
+
+  **There is no `ready-for adopt`, and asking for one is refused BY NAME** rather than as an unknown
+  kind. Every check in the adopt belt is either the work the bump does (`pin-bumped`,
+  `installables-current`, `config-updated`) or one that runs a command, which this verb never does —
+  so the derived entry set is empty and the rung could only ever answer NOT READY. The refusal says
+  that and points at `agentic-sdlc adopt <version>`, which runs the checks and writes nothing.
+
+- **Every `ready-for` rung emits a `rung.enter` event** — `{ts, kind, grain, rung, ready, blockers}`
+  — to the sink `[emit]` declares. **A tree with no `[emit]` section emits nothing**, which is how
+  the verb keeps its writes-nothing contract. The blocker list is the payload's work queue, whole
+  and not capped at what the terminal printed, and each blocker's `check` name is read from the
+  belt registry rather than chosen. **Emission is never load-bearing**: a malformed `kinds`, a sink
+  of the wrong type, a sink outside the checkout and a sink that cannot be written are each one
+  `[emit] WARNING` line on stderr, and none of them moves an exit code or a printed byte.
+
+- **`tree-clean` reads what `committed` reads: no modified path OUTSIDE the roadmap directory**
+  (`ft-a-lesson-surfaces-where-you-stand`). `tree-clean` is `release`'s first check and it counted
+  every modified path, while `committed` on the story belt already excluded the roadmap directory
+  — so the same tree could satisfy one belt and never the other, and the belt DIRTIES that
+  directory by design: it writes the milestone's status there, `gate` files its cost rows in the
+  milestone ledger, every `[emit]` tap files an event, and the lesson reader surfaces one before
+  check number one runs. That last one made the refusal permanent — commit the row, run again,
+  another row lands, exit 1 forever — so **a recorded lesson could stop a release for good.** Both
+  checks now come from one reading. Two output shapes moved with it: both name the directory they
+  skip (`... path(s) outside pm/roadmap/: ...`), and neither counts what is inside it any more,
+  because a count that moves with the belt's own writes cannot be a stable line.
+
+- **`install-hooks` emits ABSOLUTE script paths, names the settings file, and offers to write
+  it** (`ft-wiring-is-one-act-and-it-is-portable`, issue #13). The block carried
+  `bash tools/hooks/<hook>.sh`, which resolves only when the harness's cwd IS the repo root, and
+  the run named no destination at all — a fragment pasted by hand, wrong invisibly, with every
+  surface reporting success. This milestone's own build recorded **zero ledger rows across nine
+  dispatches** because of it. The commands are now absolute, so the same block works in whatever
+  settings file the harness actually reads, and the run names `<repo>/.claude/settings.json` as
+  the destination. **New flag: `install-hooks --write-settings`** writes that file when nothing
+  is in the way, and is a no-op on the second run. A settings file that already exists is
+  refused by path and left byte for byte — `--force` included — because it carries permissions,
+  env and MCP entries this package knows nothing about.
+
+  The emitted command is SHELL-QUOTED, because a path with a space in it (`~/my repo`,
+  `~/Google Drive/…`) produced a block the harness could not run while the write reported
+  success — the relative form had no space to break on, so absolutising the path introduced the
+  class. The write reports what it did and not what it cannot observe: *"in force for a session
+  rooted here"*, with the concrete `export GDK_LEDGER_ROOT=<root>` on the same line, because
+  whether a harness LOADS a settings file is not something this package can see. An ABSOLUTE path
+  names one machine, so the run also names `.claude/settings.local.json` — the per-user override a
+  harness writes for itself and a repo gitignores — as the home for the block in a shared
+  checkout; every surface that reads the wiring reads that file too.
+
+  **`agentic-sdlc init` reaches the same step.** It composed the five install verbs with the
+  next-step reporting off, so the brand-new consumer this verb exists for got no destination, no
+  block and no flag — strictly less than the hand-paste it replaced. Its Next list has an eighth
+  entry naming the file and the flag, and the pasteable block is last on stdout.
+
+- **The ledger couriers take their tree from `GDK_LEDGER_ROOT`.** Both couriers derived the repo
+  from the stop event's `cwd`, so a session rooted at a parent directory that is not itself a git
+  repository filed no row — correctly by the courier's own contract, and unfixable from outside
+  it. `GDK_LEDGER_ROOT` in the courier's environment names the tree; unset is normal and the
+  payload's `cwd` is still the fallback, so existing wiring behaves exactly as it did. A value
+  naming no git tree is a note on stderr and exit 0, never a crash and never a guess at another
+  tree. Each courier's `--self-test` corpus — what `agentic-sdlc check hooks` replays — gained
+  three rows for it: the session cwd deriving the WRONG tree, the override filing the row from
+  that other scope, and an unresolvable override noting rather than falling back.
+
+- **`pm new <kind> <slug>` mints `<kind-prefix>-<slug>` and nothing else**
+  (`bg-the-new-verbs-mint-a-compound-id`, issue #8). It minted `<mid>/<slug>` for a feature and
+  `<mid>/bugs/<slug>` for a bug while `tools/dev/pm_migrate.py` minted `<prefix>-<slug>` off
+  `model.KIND_PREFIX` — so a migrated tree grew BOTH vocabularies, one grain at a time, and
+  `check pm` passed either way. There is one minting path now, `model.mint_id`, and the migration
+  calls it too. The id also restated the binding `milestone:`/`feature:` already carried, which
+  made re-parenting a `pm rename` plus a whole-tree ref sweep — the cost 0.4.0 deleted when it
+  retired `pm move`; it is one `pm set` again, and an id is stable for life.
+
+  **The parent argument is unchanged and still positional** — it writes the child's binding field,
+  the same fact `pm add` writes — it simply is not in the id. **Nothing grades an id's shape**: a
+  prefix or a version in an id is the project's own taste (rule 9), and no check was added.
+
+  A grain authored on 0.4.0 is still found by its compound id, so `pm new feature <mid> <slug>` on
+  a tree written before the bump keeps FILLING that document instead of minting a second one
+  beside it (rule 3). New grains land at `<pool>/<id>.md`, the name the migration writes.
+
+  `<name...>` is **marked required** in the `--help` synopsis for `new milestone|feature|story`,
+  and omitting it now refuses by naming the omitted ARGUMENT — the old
+  *"feature 'x' does not exist yet — a new one needs a name"* read as *this grain is missing from
+  your tree*.
+
+- **`pm bug <status> <bug-id>` resolves by `kind:`, not by `/bugs/` in the id.** The verb required
+  that literal in the id, so **no bug on a migrated tree could be moved by it at all** — and
+  `pm new bug` now mints exactly those flat `bg-` ids. The guard was a path test standing in for a
+  kind test; `grain_file(..., 'bug')` is the kind test, and a feature id is still refused.
+
+- **`pm retire <id> [<summary...>]` records what it deletes** (`bg-retire-drops-the-summary-it-
+  accepts`, issue #5). The summary was joined, interpolated into a sentence and **printed**; on the
+  branch actually taken it was not even in the sentence. Only the id survived a retire —
+  `version:`, `name:` and the summary went with the document, and a consumer's shipped-release
+  table was therefore not derivable from the tree, which is the half of a hand-maintained
+  `ROADMAP.md` that was real.
+
+  Retire now appends one **`retire` row** to the tree's own `<roadmap>/ledger.jsonl` — the file it
+  explicitly does not touch, and which already carries rows naming no grain — holding `grain`,
+  `version`, `name` and `summary`. An empty field is an absent key. The summary's whitespace is
+  collapsed at the write so it cannot forge a column downstream. The row is appended AFTER the
+  removal lands; a ledger that cannot be written is a refusal carrying the whole row by value.
+
+- **`pm roadmap` prints a shipped release fully.** Columns IN ORDER are now
+  `version  milestone  state  name  summary`, `-` for an empty cell, and a plan entry whose
+  milestone has been retired prints `retired` with the version, name and summary from its
+  `retire` row. An entry that names no grain and has no row is still `DANGLING` — which is the
+  distinction R1 could previously only report as UNVERIFIABLE.
+
+- **`check pm` reads each document ONCE, and walks each pool once per run**
+  (`bg-check-pm-reopens-every-file-per-field`, issue #6). `field_of` opened and re-split the whole
+  file for every field, so a resolver answering one grain's question by walking every grain made the
+  gate n²: a consumer's ~700-document tree made **2.1M `open()` calls** and took `make check` from
+  8.4 s to **87 s**, past its own 20 s `check budget` ceiling. A document is now parsed once into a
+  frontmatter dict that every reader answers off, and `check pm` — a gate, which reads and prints and
+  writes nothing — asks for the pool walk once for the length of its run. Measured here: a
+  711-document tree **33.3 s -> 0.26 s**, this repo's own tree **10.6 s -> 0.12 s**, with the gate's
+  verdict, census and every finding line **byte-identical** (rule 6).
+  Both caches are per process and neither touches disk. Rule 4 governs the invalidation and it is
+  what the new cases pin: every parse re-`stat`s its file and re-reads when the stamp moved, so a
+  document rewritten by a verb, a test or an editor is never answered from bytes that have moved on;
+  a git blob read by `pm report --rev` has no `stat` and so is never cached; and the walk snapshot is
+  dropped the instant anything in the process mutates a file, which `core.apply` now counts because
+  it is the only place this package moves a byte.
+
+- **`verify` remembers its last green, and what it was green ON.** `[verify] feature = "make test"`
+  is tree-wide by design, so a tree has one state at a time and closing seven features ran one 90 s
+  suite seven times — nine of the ten and a half minutes were repetition of a question whose input
+  had not changed. Each rung now records a `verify` row in the tree's ledger, beside the `gate` cost
+  rows `verify --plan` already reads: which rung, which make target, the verdict, the target's own
+  exit code, what it cost, the census the gate itself filed, and the **tree state** it ran on — git
+  HEAD plus a SHA-256 over every path `git ls-files --cached --others --exclude-standard` names,
+  each file's CONTENT, its executable bit and its symlink target, and, for a **submodule**, that
+  checkout's own state recursively, so a vendored library rolled back one commit is drift and not a
+  constant. A later run whose state is byte-identical prints three `[verify:cache]` lines — the run
+  it came from, its age, its census, its cost, the state's own file count, and **what the read did
+  not re-measure** — and exits with the recorded code **without running the target**. What this
+  buys is a rung asked twice about one tree: a second `verify --feature`, or a `close feature`
+  straight after a green standalone one, is a read. **It is not N closes for one gate run** — a
+  belt's one write is the grain's `status:` line, a tracked byte, so close #1 is exactly what
+  invalidates close #2's state; making that free is a design question about where a belt computes
+  its state, not a cache setting.
+  Hard rule 4 is the whole design: **the state covers untracked files**, so a new module that breaks
+  collection invalidates it; **a reuse is always printed**, because a reused green that reads like a
+  fresh green is the first cardinal sin; **`--no-cache` runs the target anyway** and records what it
+  found; **a malformed, missing or unreadable row re-runs** — a row is refused unless every field
+  reads whole and its verdict and exit code agree; and **the state is re-read after the target**, so
+  a tree edited mid-run records nothing and says the tree moved. Ignored files are not in the state,
+  and a ledger is read ROW BY ROW rather than hashed whole: the rows a run files about ITSELF (the
+  wrapper's `gate` cost row, the tier's `test` rows, this verb's own `verify` row, the couriers'
+  session rows) are out, because a state covering what a gate writes while it runs could never
+  repeat — and every other row is IN, because a status flip or a decision is a fact about the tree.
+  Two of the dropped kinds are graded anyway, by `check budget` inside `make milestone`, so the row
+  carries **a digest of them as that run left them** — not a count, which a row edited in place by a
+  merge or a trim would slip past — and a reuse over a ledger whose graded rows moved runs the target
+  and says which check reads them. `verify` records where a PM tree already is and **never
+  creates one**. `--no-cache` beside `--plan` or `--check` is exit 2 — those run no rung.
+
+- **The two files `pm install-skills` writes stop asserting behaviour this package retired, and
+  a test now holds every installable to that.** `.claude/rules/pm-execution.md` auto-loads into
+  every session and `.claude/skills/pm-operations/SKILL.md` is the manual, and both told an
+  operator to do things that are gone: maintain `ROADMAP.md` (retired in 0.3.0, replaced by
+  `pm roadmap` + `releases.md`), read `pm validate` as holding an id to its path (V2/V3, retired
+  in 0.4.0), read the plan's `order` as a list of versions (0.4.0 made it milestone ids), and
+  remove a retired milestone's DIRECTORY by hand — where `pm retire` deletes that milestone's
+  grains and a pooled tree has no such directory. `pm new`'s entry said it *"scaffolds to the
+  schema"*; it now says what the verb mints, names the open defect
+  (`bg-the-new-verbs-mint-a-compound-id`, issue #8), and tells the reader to check the id it got.
+  **And step 3 of the loop instructed a command the stock vocabulary refuses:**
+  `pm story reviewing <id>` exits 2 naming `[pm.states.story]`, which declares no review word —
+  review is a FEATURE act (`pm feature reviewing <id>`), and the same rule's own drift example
+  used the refused word as its GOOD case. Both corrected.
+  These files are neither code nor a doc in `[doc] scope`, so nothing graded them:
+  `tests/test_install.py` now sweeps every packaged installable for the names in the code's own
+  retirement registries (`RETIRED_COMMANDS`, `RETIRED_KEYS`, `RETIRED_CHECKS`, `[verify]`'s
+  `RETIRED`) plus `ROADMAP.md`, `<!-- pm:execution -->` and `[[verify.narrow]]`, and fails a line
+  that names one without also saying "retired". **Consumers: run
+  `agentic-sdlc pm install-skills --diff`, then `--force`.**
+
+- **`prepare-commit-msg` recognises any Co-Authored-By trailer it should not duplicate, not only
+  the exact string it writes.** The dedupe guard was `grep -qF "$TRAILER"`, which holds only while
+  this hook is the sole writer of a trailer — and it is not: a harness signs its own session off
+  with a MODEL-NAMED line (`Co-Authored-By: Claude Opus 5 <…>`), which the fixed string never
+  matched, so every dispatched-agent commit ended with TWO trailers. `is_agent_context` gates the
+  hook, so it never fired on a trunk commit anyone reads. What the hook WRITES (`TRAILER`) is now
+  separate from what counts as ALREADY WRITTEN (`TRAILER_RE`, an ERE); both live in the
+  `project config` header, so editing either is not a drift. The hook now answers
+  `--self-test` with a five-row message corpus — the model-named input among them — so
+  `check hooks` replays three corpora rather than two. **Re-install with
+  `agentic-sdlc install-hooks --force` and re-read the header.**
+
+- **`tools/dev/pm_migrate.py` rewrites a ref on TOKEN boundaries, not on quote characters, and
+  prints the ref census either side of the move.** The sweep required a quote on both sides of an
+  id, so `depends_on: ["a/b"]` was rewritten and `consumed_by: [a/b,c/d]` — an ordinary YAML
+  inline sequence — was not. A 497-grain consumer tree came out of the migration with **52 refs
+  naming pre-migration ids**, and nothing failed: a ref that names a grain under an id nothing
+  answers to is counted UNVERIFIABLE, the same bucket a retired milestone's refs land in, so the
+  migration reported success and `check pm` exited 0. The id grammar says what a token is, so
+  `0.1/alpha` is still not a ref inside `0.1/alphabet` — by construction rather than by
+  punctuation. The run now prints `refs: N -> N; UNVERIFIABLE: N -> N` and WARNS by name when the
+  second number rose. **If you migrated a tree with an earlier copy of this script, run
+  `agentic-sdlc pm validate` and read the UNVERIFIABLE count.**
+
+- **NEW `[emit]`: the conveyor's events are WRITTEN to a sink you declare, and this package never
+  runs anything to deliver them.** `sink` takes the word `"ledger"` (the same `ledger.jsonl` every
+  other row already lands in, routed by the grain the event names), a path inside the checkout
+  (appended to as JSON lines), or `"-"` (one JSON line per event on stdout, beside the human prose
+  and never inside it — a consumer parsing prose keeps parsing prose). `kinds` narrows which of the
+  three taps — `enter`, `verdict`, `leave` — produce a row. **Declaring the section is what turns
+  emission on**: both keys are stock-defaulted inside it, so a bare `[emit]` is the ledger and all
+  three taps and `pm config --seed` carries both commented at their real values — while **a tree
+  declaring no `[emit]` at all emits nothing and behaves exactly as 0.4.0 did, exit codes and
+  stdout included**, which `emit()` itself holds rather than each call site. A sink this package
+  cannot write to — or a row it cannot serialise — is a `[emit] WARNING — …` line on stderr naming
+  it: never a crash, never a changed exit code and never silence, because emission is not
+  load-bearing for any verdict. **No code path spawns a process, imports a module named in config,
+  or resolves a config string to a callable** — a hook is an event this package writes, never a
+  command it runs (0.5.0/D1), which is what keeps every gate here safe to run from a git hook in
+  parallel. `tests/test_boundaries.py` holds
+  `repo/emit.py` to an import allowlist and to the same no-subprocess derivation the `shell` tier
+  is built on, so a spawn added there is a build break rather than a review.
+
+- **NEW `check pm` U3: a declared `[emit]` sink that has never been written to is a WARN, and a
+  tree declaring no `[emit]` gets no line at all.** `recording-is-on-or-the-gate-is-red` (0.4.0)
+  exists because the ledger couriers were wired, executable, and recorded nothing for the whole of
+  0.3.0 with nobody able to tell; a declared sink that is silent is that trap on a fresh surface,
+  because it looks exactly like a tree that opted out. **Opting out stays quiet** — the finding is
+  *declared AND silent*, a contradiction the tree is holding. The rule READS: it never writes a
+  probe row to find out, because a gate that mutates to measure is a gate that lies about what it
+  measured. The `"-"` sink leaves nothing in the tree, so it is UNVERIFIABLE by name rather than
+  passed over. A malformed `[emit]` value is still exit 2, never a finding.
+
+- **NEW `check pm` U4: the LAST hook-written row is named with its age, beside the wiring.**
+  `adopt`'s `telemetry-live` read `.claude/settings.json`, confirmed both couriers were wired and
+  PASSED — but whether a harness ever LOADS that file depends on the session's project root, so a
+  session rooted above the checkout records nothing while every wiring answer stays green. U2 did
+  not fire, because the ledgers were not empty: they held the `status`, `decision` and `gate` rows
+  this checkout writes itself, and **no rule counted row KINDS**. U4 counts them: `dispatch` and
+  `session` are the kinds a courier files (`ledger.EVENT_KINDS`), everything else is written from
+  inside the repo and is not evidence a hook ever fired. A tree that has recorded one gets a
+  counted `RECORDING  last hook-written row: dispatch, 3h ago` line; a tree that has not gets a
+  WARN naming what the ledgers DO hold. A tree that wires no courier AND has recorded nothing
+  stays silent — telemetry is *clearly available, warned when absent, never mandatory*
+  (0.4.0/D5).
+
+  **The kind alone is not the courier's signature: the row must also carry a `session_id`.**
+  `pm ledger record SubagentStop` mints `dispatch` and `session` rows by hand from inside a
+  checkout, and this repo's own gate counted sixteen of them as *"came from a courier"* when no
+  courier had ever run. The session id comes from the hook payload; a hand row has none. The
+  failure direction is noisy, never blind — a courier row that somehow arrives without one reads
+  as `never`.
+
+  **The wiring is READ, not grepped.** `.claude/settings.json` was searched as raw text for a
+  courier's filename, so an allowlist entry (`Bash(bash tools/hooks/cc-ledger-session.sh
+  --self-test)`, which this package's own next-step text tells consumers to add) fired the full
+  WARN on a tree with no hook registered anywhere, and a registration in `.claude/
+  settings.local.json` was invisible. Both files are parsed, only `command` entries under `hooks`
+  count, and the line names which file was read. **The LEDGER outranks the config**: a tree with
+  no in-checkout settings file and a courier row still gets its `RECORDING` line, because the
+  block works in a settings file above the repo and reading only the config called such a tree
+  dead.
+
+- **`adopt`'s `telemetry-live` reports the row it observed, not only the config it read.** Its
+  verdict line now carries the same phrase U4 prints — `the last hook-written row is dispatch, 3h
+  ago`, or `last hook-written row: never` — off one shared reader, so the belt and the gate cannot
+  disagree about whether a tree is recording. It still never refuses an adoption on its own, and
+  the line no longer says `telemetry is live` over a tree where nothing has ever come through:
+  `wired` alone is the tool asserting an outcome it did not observe (rule 4). Nor over a ledger it
+  could not read — the shared reader has always had a third answer, `UNVERIFIABLE`, and a belt
+  branching on two of the three let it fall through to a pass while `check pm` U4 on the same tree
+  called it *"not a finding, and not a pass either"*. It is `UNVERIFIABLE` on both surfaces now.
+  It reads the wiring through the same reader too, so a registration in
+  `.claude/settings.local.json` no longer reads as unwired and a tree recording through a settings
+  file above the checkout is no longer reported as having no telemetry. Its refusal names
+  `install-hooks --write-settings` and `GDK_LEDGER_ROOT` — it is the only surface a fresh consumer
+  reaches, because `check pm` U2 returns early on a tree that wires nothing.
+
+- **NEW OUTPUT LINE: a recorded `lesson` surfaces at the belt that touches its grain or runs its
+  rule** (`ft-a-lesson-surfaces-where-you-stand`). A `lesson` row in the ledger is printed beside
+  the verdict it belongs to — `[<op>] lesson: grain|rule <name> — <text> (source: <path>)` — at
+  exactly three moments and no others: the belt ENTERS on a grain a lesson names, a CHECK runs
+  whose name a lesson names, and a check's `pm ready-for` NAMES a blocker a lesson names. Each is
+  also emitted on the `[emit]` sink as a `lesson.enter` / `lesson.verdict` row carrying the
+  recorded row verbatim under one key, so a human reading stdout and an agent reading the stream
+  get the same fact at the same instant. **It is never a gate**: no verdict, no exit code and no
+  existing line changes whether a lesson exists or not, and a sink or a `[emit]` section it cannot
+  reach is one WARNING line beside the lesson rather than a refused belt. **And never a nag**:
+  scope is the grain named or the rule named, EXACTLY — no fuzzy matching, no "related", no
+  ranking or scoring, because anything inferred needs a feedback edge and a reader/writer has
+  nowhere to put one (0.5.0/D1). When several match, all of them print in recorded order; choosing
+  is inference, and the caller has the source paths.
+
 ## v0.4.0 — 2026-09-07 — authoring is separate from binding
 
 > **The northstar: the path is where a file lives; the frontmatter is what it is and what it

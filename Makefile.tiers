@@ -33,8 +33,8 @@ CENSUS_PYTEST := grep -aoE '[0-9]+ passed' "$$log" | tail -1 | grep -oE '[0-9]+'
 .PHONY: unit integration test fuzz matrix budget
 
 unit: export GDK_TEST_TIER = unit
-unit: ## the inner loop: no subprocess, one process, seconds
-	$(call gdk_gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) -m "not shell",$(CENSUS_PYTEST))
+unit: ## the inner loop: no subprocess, every core, seconds
+	$(call gdk_gate,unit,UNIT,$(SUM_PYTEST),$(PYTEST) $(PYTEST_N) -m "not shell",$(CENSUS_PYTEST))
 
 integration: export GDK_TEST_TIER = integration
 integration: ## everything that spawns — a real repo, make, a hook corpus

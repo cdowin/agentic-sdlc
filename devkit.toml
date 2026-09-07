@@ -82,7 +82,7 @@ scope = [
 checks = [
     "D1", "D2", "D3", "D4", "D5", "D6",
     "D9", "D10",
-    "U1", "U2",
+    "U1", "U2", "U3", "U4", "U5",
     "R1", "R2", "R3", "R4", "R5", "R6",
     "V1", "V4", "V5", "V7",
 ]
@@ -131,10 +131,10 @@ budget = { unit = 20, integration = 130, test = 150 }
 # Set ~10% above the counts they were written against, because the point is to
 # make GROWTH a decision somebody argues rather than one that happens.
 #
-# RAISED 2026-09-07, at the close of 0.4.0, and this is the argument. The unit
-# tier went 706 -> 845 (+139, +20%) and the gate caught it, which is the gate
-# working. The growth is concentrated in five modules and every case in it pins
-# a defect that HAPPENED or a verb that shipped:
+# RAISED at the close of 0.4.0, and this is that argument. The unit tier went
+# 706 -> 845 (+139, +20%) and the gate caught it, which is the gate working.
+# The growth was concentrated in five modules and every case in it pinned a
+# defect that HAPPENED or a verb that shipped:
 #
 #   test_pm_gate    +17  V7, the unbound census, the five descent holes, the
 #                        stray document, `[pm.contains]` ungating a finding,
@@ -144,11 +144,28 @@ budget = { unit = 20, integration = 130, test = 150 }
 #   test_cli_surface +7  the read-verb surface rules
 #   test_config_seed +5  the seed held to the code, which found seven drifts
 #
-# Two BLOCKERs, four CRITICALs and about twenty MAJORs came out of this
-# milestone's reviews; each landed with a case. That is rule 10 being obeyed,
-# not bloat — so the ceiling moves to fit the suite that exists, once, with the
-# reason written down. It does not move again without one.
-cases = { unit = 930, integration = 430 }
+# RAISED AGAIN 2026-09-07, at the close of 0.5.0, and this is that argument.
+# 845 -> 1028 (+183, +22%), and MORE THAN A THIRD of it is three modules this
+# milestone's new capabilities did not previously have at all:
+#
+#   test_verify_cache      +32  `verify` remembering its last green — a new
+#                               cache with an invalidation rule, which is the
+#                               class of thing that is wrong silently
+#   test_conveyor_lessons  +30  the lesson verb and where a lesson surfaces
+#   test_pm_gate           +22  U5, and the U2/U3/U4 recording family
+#   test_pm_verbs          +17  the arrival: the fork, the disposition, the
+#                               capability census, the derived breadcrumb
+#   test_pm_ledger         +15  the arrival's row grammar and the three taps
+#   test_pm_migrate         +5  a new verb, whole
+#   test_emit               +4  the emit seam, which boots nothing (rule 2)
+#
+# The rest is one or two cases per module, each one a MAJOR from this
+# milestone's four review records: the no-op that shadowed a recorded answer,
+# the belt that reflowed the fork it printed, the arrival row dropped with no
+# disclosure, the level an id names. That is rule 10 being obeyed, not bloat —
+# so the ceiling moves to fit the suite that exists, once, with the reason
+# written down. It does not move again without one.
+cases = { unit = 1130, integration = 430 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and
@@ -180,6 +197,39 @@ cases = { unit = 930, integration = 430 }
 # category and puts delivered-vs-not in a separate `resolution` field, which is
 # the side `docs/design/state-categories.md` §4 takes and why there is no
 # fourth category here.
+
+# WHAT ARRIVING AT A STATE ASKS (0.5.0/D3). There is one event here and it is
+# ARRIVAL: a grain reaches a state. This is NOT a transition table and never
+# becomes one — the unit is the state arrived at, never the pair (from, to), so
+# `building -> planning` is an arrival at `planning`, a second pass through a
+# state asks the same question, and backwards was never a special case.
+#
+# Self-hosted for the reason every rule here is: this tree built thirteen
+# grains and closed none, having written the rule down twice. The move is the
+# surface the operator is already standing in, so the question is asked there —
+# with both answers already typed, because the friction was never the review,
+# it was deciding what to type while something else was running.
+[pm.arrive.feature.building]
+ask     = "what is building this?"
+answers = ["--by me", "--by agent <type>"]
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+[pm.arrive.feature.reviewing]
+ask     = "what happens to it?"
+answers = ["--review agent <type>", "--skip review \"<why>\""]
+
+[pm.arrive.feature.obe]
+ask     = "why is this abandoned?"
+answers = ["--why \"<reason>\""]
+
+[pm.arrive.story.building]
+ask     = "what is building this?"
+answers = ["--by me", "--by agent <type>"]
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain" }
+
+[pm.arrive.story.obe]
+ask     = "why is this abandoned?"
+answers = ["--why \"<reason>\""]
 
 [pm.states.milestone]
 todo        = ["planning", "ready"]
@@ -250,3 +300,12 @@ milestone = "make milestone"
 # `prove-artifact` ships with NO default, because the proof names a git URL and
 # a URL is a project's fact, not this package's (rule 8). Ours:
 prove-artifact = "uvx --from git+https://github.com/cdowin/agentic-sdlc@v{version} agentic-sdlc --version"
+
+[emit]
+# This package's thesis for 0.5.0 is "a move is an event" — and it shipped the
+# seam declaring no sink, so its own ledger held zero `rung.enter` rows while
+# the milestone that built them was in flight. Self-hosting, found by the
+# entry-edge review (m5). `ledger` routes each row to the milestone that owns
+# its grain, exactly as every other row kind does; no path, no stdout, nothing
+# for a consumer to parse differently.
+sink = "ledger"

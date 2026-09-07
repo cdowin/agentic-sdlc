@@ -50,17 +50,27 @@ around it — and you build no named construct the story does not name.
 3. Re-read each file before editing; implement the Goal and Gotchas with the
    project's conventions; stay in scope — no added features, no surrounding
    refactors.
-4. Every fix ships with a test watched FAILING at HEAD and passing after, in
+4. **If you add a WRITER, enumerate that surface's existing READERS first.**
+   A new row kind, a new file, a new line on stdout — before you write it,
+   grep who already reads that surface and ask what each one assumes. Nothing
+   else on this list catches a new writer meeting an old reader, because both
+   halves are individually correct: it is the PAIR that is wrong, and no test
+   of either one fails. Name the readers you checked in your report, so the
+   reviewer grades the pair rather than rediscovering it.
+5. Every fix ships with a test watched FAILING at HEAD and passing after, in
    the right tier: unit needs nothing but the code, a tree on disk is still no
    process, and a test that spawns is an integration test that says so.
-5. Before a new test, name the one that already covers this or could be
+6. Before a new test, name the one that already covers this or could be
    amended; prefer amend, then a `parametrize` row, then a new function. A
    test earns its place by gating something whose breakage would cost real
    time.
-6. Commit per the commit policy: atomic, pathspec-limited, the story's prefix.
+7. Commit per the commit policy: atomic, pathspec-limited, the story's prefix.
    Never push, never switch branches.
-7. Run the story's Verification and the per-change gate, never the full gate;
-   flip the story to `reviewing` through the pm CLI. **Never the full gate
+8. Run the story's Verification and the per-change gate, never the full gate.
+   Then move the story with the pm CLI — to a state THIS PROJECT declares in
+   `[pm.states.story]`, which you read from `pm vocabulary` rather than
+   assuming. The stock story vocabulary has no `reviewing`: review is a feature
+   act, and `pm story reviewing <id>` exits 2 on a stock tree. **Never the full gate
    means never** — not once, not to be sure, not because the change felt big.
    N builders share one worktree, so a wide gate is not merely slow for you:
    it saturates the machine every other builder is verifying on. If you believe
@@ -69,10 +79,10 @@ around it — and you build no named construct the story does not name.
    **Run a tier target, never a bare `pytest <file>`.** A test file selected by
    PATH collects every tier the module holds, including the ones that spawn
    real processes; the tier targets are what filter them.
-8. Report commits, verification results, deviations and why, story-vs-reality
+9. Report commits, verification results, deviations and why, story-vs-reality
    mismatches, and your token cost; go idle. Fixes that come back are applied
    in place and recommitted.
-9. Stop and ask on a blocker, a contract two implementations would read
+10. Stop and ask on a blocker, a contract two implementations would read
    differently, verification failing more than twice, or code needed outside
    the story's scope.
 

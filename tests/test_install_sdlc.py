@@ -261,3 +261,31 @@ def test_the_standard_flags_answer_for_the_new_verb():
         code, out = run('--force')
         assert code == 0, out
         assert (root / DEST).read_text(encoding='utf-8') != 'mine\n'
+
+
+# --- the emitted schema is rendered, not written (0.5.0) ---------------------
+def test_the_protocol_renders_the_event_schema_from_the_minters_own_keys():
+    """A hand-written event table beside a rendered check table is the second
+    scoreboard this package deletes everywhere else — so the payload cells come
+    off `ledger.EVENT_KEYS`, which `tests/test_pm_ledger.py` binds to the three
+    functions that mint the rows. Bites: a tap added, a key added, or a key
+    renamed, with the document still describing last release's stream."""
+    from agentic_sdlc.repo import emit
+    from agentic_sdlc.repo.pm import ledger
+
+    text = sdlc_doc.render()
+    body = text.split('## The events a belt emits')[1].split('\n## ')[0]
+    assert sdlc_doc.EVENTS_MARKER not in text, 'the marker was not replaced'
+    for kind, keys in ledger.EVENT_KEYS.items():
+        row = [ln for ln in body.splitlines() if f'| `{kind}` |' in ln]
+        assert len(row) == 1, body
+        assert row[0].startswith(f'| `{kind.rsplit(".", 1)[-1]}` |'), row[0]
+        for key in keys:
+            assert f'`{key}`' in row[0], (kind, key)
+    for word in driver.VERDICT_WORDS.values():
+        assert f'`{word}`' in body, word
+    assert f'`{steps.READS_THE_TREE}`' in body
+    # The absence IS the signal, and the document says so rather than leaving
+    # a reader to wonder which event tells them a belt stopped.
+    assert 'no fourth kind' in body and 'rung.leave' in body
+    assert len(emit.TAPS) == len(ledger.EVENT_KEYS)

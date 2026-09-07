@@ -226,8 +226,24 @@ def _make_executable(dest: Path) -> None:
     os.chmod(dest, mode | ((mode & 0o444) >> 2))
 
 
+# `_run` is the only place a byte moves, so a counter here is EVERY mutation
+# this package is allowed to make — `tests/test_boundaries.py` forbids the raw
+# mutators elsewhere in `src/`, which is what keeps the count complete. A reader
+# holding a snapshot of a tree compares it and drops the snapshot the moment
+# anything wrote, which is a guarantee no call site can forget to give.
+_MUTATIONS = 0
+
+
+def mutations() -> int:
+    """How many filesystem steps this process has RUN — one that failed
+    part-way counted, because bytes may have moved before it did."""
+    return _MUTATIONS
+
+
 def _run(step: Step) -> None:
     """The only place a byte moves. Every branch is one `Act`."""
+    global _MUTATIONS
+    _MUTATIONS += 1
     if step.act is Act.MKDIR:
         step.dest.mkdir(parents=True, exist_ok=True)
     elif step.act is Act.OVERWRITE:

@@ -59,6 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
+from agentic_sdlc.core import project  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which('make') is None
@@ -237,10 +238,19 @@ def test_the_installed_contracts_do_not_redden_a_consumers_gates():
         subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
         previous = Path.cwd()
         os.chdir(root)
+        # `repo_root` is lru_cached and its docstring says a test that chdirs
+        # clears it. This one did not: it passed only while nothing earlier in
+        # the run had populated the cache, so adding a test module elsewhere
+        # silently redirected the install to the CACHED root and left this
+        # temp tree empty — `check doc` then scanned 0 docs and failed.
+        project.repo_root.cache_clear()
+        project.load_config.cache_clear()
         try:
             assert install.main('install-agents', []) == 0
         finally:
             os.chdir(previous)
+            project.repo_root.cache_clear()
+            project.load_config.cache_clear()
         subprocess.run(['git', 'add', '-A'], cwd=root, check=True)
         # A SUBPROCESS on purpose. `check doc` binds its scope and its repo
         # root at import time, so reloading it in-process to see a temp repo

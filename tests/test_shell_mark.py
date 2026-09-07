@@ -73,6 +73,8 @@ UNMARKED_MODULES = (
     'test_consumer_independence.py',
     'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
+    'test_conveyor_lessons.py',
+    'test_emit.py',
     'test_fuzz_markdown.py',
     'test_gates_extra.py',
     'test_grain_shape.py',
@@ -85,6 +87,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_record.py',
     'test_pm_ledger_report.py',
     'test_pm_ledger_report_sections.py',
+    'test_pm_migrate.py',
     'test_pm_order.py',
     'test_pm_ready_for.py',
     'test_pm_rename.py',
@@ -92,6 +95,10 @@ UNMARKED_MODULES = (
     'test_prose_census.py',
     'test_replay_migration.py',
     'test_verdict.py',
+    # The reuse trust boundary — a row read or refused, a ledger row in the
+    # state or out of it — proven by CALL, so the rung that runs on every edit
+    # exercises the one piece that can report a verdict nobody measured.
+    'test_verify_cache.py',
     'test_verify_rules.py',
     'test_wheel_payload.py',
 )

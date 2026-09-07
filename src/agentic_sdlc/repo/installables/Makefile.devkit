@@ -2,7 +2,7 @@
 # `milestone`. `agentic-sdlc install-gates` writes it; edit the source, not this.
 #
 # Your Makefile is two lines plus your own targets:
-#     DEVKIT_VERSION := v0.2.0
+#     DEVKIT_VERSION := vX.Y.Z
 #     include Makefile.devkit
 # Your gates join `check` via `[gates] extra` in devkit.toml. A language kit's
 # tier file (GDK_TIERS_MK, default Makefile.tiers) defines its targets and their

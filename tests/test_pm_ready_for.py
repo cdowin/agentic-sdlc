@@ -1,4 +1,4 @@
-"""`pm ready-for feature|milestone|tag` — the three belt-entry conditions.
+"""`pm ready-for story|feature|milestone|tag` — the four belt-entry conditions.
 
 Every tree here is BUILT (rule 8): this repo's own `pm/roadmap/` changes under
 the test as the milestone proceeds, so asserting against it would grade one run
@@ -23,9 +23,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import bug, declaring, run_cli, tree, write, write_config
+from support.pm import (bug, declaring, ledger_lines, ledger_rows, run_cli,
+                        tree, write, write_config)
 
-from agentic_sdlc.repo.pm import model, ready_for
+from agentic_sdlc.repo import emit
+from agentic_sdlc.repo.pm import ledger, model, ready_for
 
 FEATURE_STORIES = 'pm/roadmap/stories'
 REVIEWS = 'docs/reviews'
@@ -135,6 +137,189 @@ UNROUTED = 'unknown command'
 def named(out: str) -> list[str]:
     return [line.split(ready_for.BLOCKED, 1)[1]
             for line in out.split('\n') if line.startswith(ready_for.BLOCKED)]
+
+
+# --- the edit -> story --------------------------------------------------------
+# What a project declares when it wants a different story belt. The list is the
+# whole point of the derivation: `ready-for story` asks THIS, not a set of
+# names spelled in `ready_for.py`.
+NARROWED = '[story]\nsteps = ["story-exists", "evidence-written"]\n'
+ALL_AT_THE_CLOSE = '[story]\nsteps = ["evidence-written", "committed"]\n'
+# A tree that declared a sink. Nothing else in this module declares `[emit]`,
+# which is what keeps every other case a read.
+EMITTING = '[emit]\nsink = "ledger"\n'
+
+# A directory inside the fixture, so a sink can name one; `docs/` is what a
+# real tree has and the class this probes is "the path is not a file".
+SINK_DIR = 'docs'
+# The four ways `[emit]` is wrong, one per class the guard has to swallow. The
+# first three raise out of `emit.settings()` before `emit.emit`'s own `try`
+# ever runs, which is exactly the path `_emit_enter`'s `except` is the only
+# thing standing under; the fourth is caught inside `emit`.
+BROKEN_EMIT = (
+    ('[emit]\nkinds = ["nope"]\n', 'a tap this version does not emit'),
+    ('[emit]\nsink = 7\n', 'a sink that is not a string'),
+    ('[emit]\nsink = "../out.jsonl"\n', 'a sink outside the checkout'),
+    (f'[emit]\nsink = "{SINK_DIR}"\n', 'a sink that is a directory'),
+)
+
+
+class StoryBelt(unittest.TestCase):
+    """The inner loop's entry edge: the story belt's own checks, narrowed to
+    the ones the registry declares an entry condition.
+
+    The condition is DERIVED at runtime — `[story] steps` for the list and
+    `steps.ENTRY_CONDITIONS` for which of them is decidable up front — so these
+    cases assert the derivation and its census.
+
+    The one hard-coded name, and why it stays (review N3): the first case pins
+    `asked == ['story-exists']`. That is what would catch a TYPO in
+    `ENTRY_CONDITIONS`, which would otherwise silently empty the entry set and
+    leave every other assertion here true of nothing. Every other case names a
+    list only inside a config it wrote itself.
+    """
+
+    def test_the_condition_comes_from_the_registry_and_the_census_names_the_rest(self):
+        # Rule 11 at the surface: every check the belt will ask at the CLOSE is
+        # named as one this rung did not ask, and why. Silence about a check
+        # would teach a reader the belt has three.
+        with tree() as root:
+            code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/s0')
+            # DERIVED FROM THE SAME TREE the verb just answered about, and
+            # after it: `[<op>] steps` is read from the config, and
+            # `repo_root`/`load_config` are lru_cached, so a derivation taken
+            # outside the fixture answers about whichever tree last primed the
+            # cache — which is a census of one list against another.
+            derived = ready_for._entry_condition('story')
+        asked, names = derived.asked, derived.names
+        self.assertEqual(code, 0, out)
+        self.assertEqual([name for name, _ in asked], ['story-exists'], out)
+        self.assertIn(f'{len(asked)} of {len(names)}', out)
+        self.assertIn('all true', out)
+        for name in names:
+            self.assertIn(name, out)
+        self.assertEqual(len(derived.over), len(names) - len(asked))
+        # m1: the census may not state a reason the derivation did not derive.
+        # `committed` reads `git status --porcelain` and answers before the
+        # work too — it is excluded by ENTRY_CONDITIONS' ruling, not by
+        # decidability — so no bucket here may claim it answers after the work.
+        self.assertNotIn('answers after the work', out)
+
+    def test_a_project_that_declares_its_own_steps_gets_its_own_answer(self):
+        """The derivation, from the other end. A tree that narrows `[story]
+        steps` is answered about ITS list; a tree whose whole list answers only
+        after the work is told that nothing was asked, because a READY over a
+        census of zero is rule 4's first sin (`ready_for.py`, and the
+        milestone rung's zero-feature ruling it matches)."""
+        with tree() as root:
+            write_config(root, NARROWED)
+            code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/s0')
+            self.assertEqual(code, 0, out)
+            self.assertIn('1 of 2', out)
+            self.assertIn('evidence-written', out)
+            # Narrowed away, so it is not asked and not named as skipped.
+            self.assertNotIn('story-verified', out)
+        with tree() as root:
+            write_config(root, ALL_AT_THE_CLOSE)
+            code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/s0')
+            self.assertEqual(code, 1, out)
+            self.assertIn('0 of 2', out)
+            self.assertIn('nothing was asked', out)
+
+    def test_a_story_that_resolves_to_nothing_is_the_belts_own_blocker(self):
+        """Exit 1 naming the check and the sentence `close story` prints for
+        it — not exit 2, because `story-exists` IS the belt's check for this
+        and two rulings over one fact is what this package deletes. The
+        blocker is NAMED: a tally would send the reader back to `pm status`."""
+        with tree() as root:
+            code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/nope')
+            self.assertEqual(code, 1, out)
+            self.assertEqual(len(named(out)), 1, out)
+            self.assertIn('story-exists', named(out)[0])
+            self.assertIn('0.1/alpha/nope', named(out)[0])
+            self.assertNotIn(UNROUTED, out)
+
+    def test_rung_enter_is_emitted_by_every_rung_and_changes_neither_answer(self):
+        """One `rung.enter` per rung, `{rung, grain, ready, blockers}`, routed
+        to the milestone that owns the grain like every other row.
+
+        Two properties, and the second is the load-bearing one: the payload
+        says what was PRINTED (a row disagreeing with the prose is two
+        scoreboards), and a tree that declares no `[emit]` gets today's bytes
+        and today's exit codes — the same run, compared.
+        """
+        rungs = (('story', '0.1/alpha/s0'), ('feature', '0.1/alpha'),
+                 ('milestone', '0.1'), ('tag', '0.1'))
+        quiet = {}
+        with tree() as root:
+            for kind, gid in rungs:
+                quiet[kind] = run_cli(root, 'ready-for', kind, gid)
+            self.assertEqual(ledger_lines(root), [],
+                             'a tree that declared no [emit] was written to')
+        with tree(config=EMITTING) as root:
+            for kind, gid in rungs:
+                self.assertEqual(run_cli(root, 'ready-for', kind, gid),
+                                 quiet[kind], f'{kind} answered differently')
+            rows = ledger_rows(root)
+        self.assertEqual([row['kind'] for row in rows],
+                         [ledger.KIND_ENTER] * len(rungs), rows)
+        by_rung = {row['rung']: row for row in rows}
+        self.assertEqual(sorted(by_rung), sorted(k for k, _ in rungs))
+        self.assertEqual(by_rung['story']['grain'], '0.1/alpha/s0')
+        self.assertIs(by_rung['story']['ready'], True)
+        self.assertEqual(by_rung['story']['blockers'], [])
+        self.assertIs(by_rung['feature']['ready'], False)
+        # The check name is READ from `SHIPPED_ACTION`, which declares
+        # `pm ready-for feature <id>` as what answers `stories-done` — so the
+        # row names the check `close feature` will print, derived and not
+        # chosen. A blocker list is the caller's work queue or it is prose.
+        self.assertEqual([b['check'] for b in by_rung['feature']['blockers']],
+                         ['stories-done'])
+        self.assertIn('0.1/alpha/s0 is ready',
+                      by_rung['feature']['blockers'][0]['why'])
+
+    def test_a_broken_emit_is_a_finding_on_stderr_and_never_the_answer(self):
+        """**Emission is never load-bearing**, which is the claim
+        `_emit_enter`'s bare `except` makes and the one thing about it that a
+        refactor can quietly take away.
+
+        The case the tree above cannot be: it compares a quiet tree against a
+        tree whose `[emit]` is VALID, so the `except` branch never runs under
+        it. Rule 10 puts this one where it bites — a `ConfigError` escaping
+        `_emit_enter` would turn every `ready-for` on a tree with a stale
+        `[emit]` into exit 2, in the verb consumers run as a Makefile
+        predicate, and nothing would go red. The sibling implementation of the
+        identical swallow is already held (`test_conveyor_lessons.py`, *"a
+        malformed [emit] must be one named line here and never a verdict"*);
+        this is the other half of one contract.
+
+        Four failure classes × a READY rung and a NOT-READY one, and what is
+        asserted is `(exit code, stdout)` against the same rung on a tree that
+        declared no sink at all — the finding belongs on STDERR, so a merged
+        read would not have been able to tell the two apart.
+        """
+        rungs = (('story', '0.1/alpha/s0', 0), ('feature', '0.1/alpha', 1))
+        quiet = {}
+        with tree() as root:
+            for kind, gid, expected in rungs:
+                quiet[kind] = run_cli(root, 'ready-for', kind, gid,
+                                      stdout_only=True)
+                self.assertEqual(quiet[kind][0], expected, quiet[kind])
+        for config, why in BROKEN_EMIT:
+            for kind, gid, _ in rungs:
+                with self.subTest(why=why, rung=kind), tree() as root:
+                    (root / SINK_DIR).mkdir(parents=True, exist_ok=True)
+                    write_config(root, config)
+                    self.assertEqual(
+                        run_cli(root, 'ready-for', kind, gid,
+                                stdout_only=True), quiet[kind],
+                        f'{why}: the answer moved')
+                    merged = run_cli(root, 'ready-for', kind, gid)[1]
+                    self.assertIn(emit.FINDING_PREFIX, merged, merged)
+                    self.assertIn('not recorded', merged.lower(), merged)
+                    self.assertEqual(
+                        ledger_lines(root), [],
+                        f'{why}: a broken sink still wrote a row')
 
 
 # --- story -> feature ---------------------------------------------------------
@@ -677,14 +862,21 @@ class IdRefusals(unittest.TestCase):
 
 
 class NothingIsWritten(unittest.TestCase):
-    """All three are read verbs. The tree is byte-identical afterwards."""
+    """All four are read verbs. The tree is byte-identical afterwards.
+
+    AMENDED for the story rung, and it is the case that holds the emission
+    ruling: `rung.enter` goes to the sink `[emit]` declares, and a tree that
+    declares no `[emit]` has opted out (`emit.declared`) — so the row this verb
+    gained cannot turn a read verb into a writer behind a consumer's back.
+    """
 
     def test_a_run_of_each_subcommand_leaves_the_tree_alone(self):
         with tree(feature_status='done') as root:
             feature(root, 'alpha', 'done',
                     put_record(root, 'x.md', record(OPEN_BLOCK)))
             before = bytes_of(root)
-            for kind, gid in (('feature', '0.1/alpha'), ('milestone', '0.1'),
+            for kind, gid in (('story', '0.1/alpha/s0'),
+                              ('feature', '0.1/alpha'), ('milestone', '0.1'),
                               ('tag', '0.1')):
                 code, out = run_cli(root, 'ready-for', kind, gid)
                 # An unrouted verb also writes nothing, so each run has to have

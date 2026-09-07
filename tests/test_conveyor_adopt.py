@@ -25,11 +25,13 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.repo.checks import pm as pm_check  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
@@ -703,8 +706,44 @@ def ledger_couriers():
     return model.LEDGER_COURIERS
 
 
-def _settings(root, text: str) -> None:
-    path = root / '.claude' / 'settings.json'
+def _ledger_line(root, row: dict) -> None:
+    """One row in the tree's OWN ledger — where a row naming no grain lands
+    (0.4.0/D3), which is where a courier files when nothing exported
+    `GDK_LEDGER_GRAIN`. The path comes from `ledger.grainless_path`, never
+    from a second spelling of it here."""
+    path = ledger.grainless_path(model.PmConfig(root=root).roadmap)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as handle:
+        handle.write(ledger.dumps(row) + '\n')
+
+
+# The hook payload's own session id, which the courier passes through
+# `--session-id` and a hand-written `pm ledger record` does not carry. It is
+# what separates a row a COURIER wrote from one this checkout minted itself.
+SESSION = 'sess-0000'
+
+
+def _hook_row(root, hours: int = 1, session_id: str = SESSION) -> None:
+    """One row a COURIER wrote, `hours` back — the evidence the check reports.
+
+    Minted through `ledger.usage_row` with `EVENT_KINDS`' own kind, so the
+    fixture cannot drift from the writer's vocabulary.
+    """
+    when = datetime.now(timezone.utc) - timedelta(hours=hours)
+    fields = {'session_id': session_id} if session_id else {}
+    _ledger_line(root, ledger.usage_row(
+        ledger.EVENT_KINDS['SubagentStop'],
+        ts=when.strftime(ledger.TS_FORMAT), duration_s=1, **fields))
+
+
+def _gate_row(root) -> None:
+    """A row THIS CHECKOUT writes itself: `gdk_gate.sh` files one per gate
+    run, from inside the repo, and it is not evidence a hook ever fired."""
+    _ledger_line(root, ledger.gate_row('check', 'PASS', 1))
+
+
+def _settings(root, text: str, rel: str = '.claude/settings.json') -> None:
+    path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding='utf-8')
 
@@ -749,7 +788,12 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert 'no ledger setup for this tree, no telemetry' in answer.detail
-        assert 'install-hooks' in answer.detail and 'yours' in answer.detail
+        # The remedy this verb GAINED, not the hand-paste it replaced: this is
+        # the only surface a fresh consumer hits, because `check pm` U2 returns
+        # early on a tree that wires nothing.
+        assert 'install-hooks --write-settings' in answer.detail, answer.detail
+        assert 'GDK_LEDGER_ROOT' in answer.detail, answer.detail
+        assert 'never writes that file' not in answer.detail, answer.detail
 
     # Mode 1b — HALF the entries pasted. Named, so the fix is the missing one.
     with tree() as root:
@@ -781,12 +825,128 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         assert answer.truth is driver.Truth.FALSE, answer
         assert '[pm.states.*]' in answer.detail, answer.detail
 
-    # Wired, and the vehicle answers.
+    # Mode 4 — WIRED, the vehicle answers, and nothing has ever come through.
+    # The failure this feature was filed for: whether the harness LOADS
+    # `.claude/settings.json` depends on the session's project root, so a
+    # session rooted above the checkout records nothing while all three checks
+    # above stay green. It stays TRUE — telemetry is never mandatory
+    # (0.4.0/D5) — and the LINE stops claiming an outcome it did not observe.
     with tree() as root:
         _couriers(root)
         (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
         _settings(root, WIRED)
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.TRUE, answer
-        assert 'telemetry is live' in answer.detail
+        assert 'last hook-written row: never' in answer.detail, answer.detail
+        assert 'telemetry is live' not in answer.detail, answer.detail
+
+    # Wired, the vehicle answers, and a COURIER has written: the kind and the
+    # age are the evidence, and only now does the line say "live".
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        _hook_row(root, hours=2)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'telemetry is live' in answer.detail, answer.detail
+        # `2h` and `2h 1s` are the same fact: the stamp is truncated to the
+        # second and the age is measured later, so pinning the rendering
+        # exactly is a race with the wall clock and not a claim about U4.
+        assert 'last hook-written row is dispatch, 2h' in answer.detail, \
+            answer.detail
+
+    # A row this CHECKOUT wrote is not evidence a courier ran: the make
+    # wrapper files `gate` rows from inside the tree, and reading one as
+    # telemetry is the PASS-over-nothing this rule exists to end (rule 4).
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        _gate_row(root)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'last hook-written row: never' in answer.detail, answer.detail
+
+    # Nor is a hand-minted `dispatch`: `pm ledger record SubagentStop` writes
+    # exactly the courier's kinds from inside the checkout, and only the hook
+    # payload's session id tells the two apart.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        _hook_row(root, hours=1, session_id='')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'last hook-written row: never' in answer.detail, answer.detail
+
+
+def test_the_ledger_outranks_the_config_and_an_unreadable_one_is_neither():
+    """The two ways reading the CONFIG answered a question about the PATH.
+
+    `install-hooks` tells a consumer the block works in whatever settings file
+    their harness reads, *"including one above this repo"* — and gating the
+    whole verdict on an in-checkout file returned FALSE on a tree holding an
+    hour-old courier row, with the proof already in hand. The other direction
+    is the third answer: `recording_phrase` has always had `UNVERIFIABLE`, and
+    a belt that branches on two of its three said *"telemetry is live"* over a
+    ledger it could not read, while `check pm` U4 on that same tree said *"not
+    a finding, and not a pass either"*.
+    """
+    # Wired ABOVE the checkout: no settings file here, and a courier row.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _hook_row(root, hours=1)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'telemetry is live' in answer.detail, answer.detail
+        assert 'the settings file the harness loaded is above it' \
+            in answer.detail, answer.detail
+
+    # The per-user override Claude Code writes and a repo gitignores — where
+    # an ABSOLUTE block has to live in a public checkout.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED, rel=pm_check.AGENT_SETTINGS_LOCAL)
+        _hook_row(root, hours=2)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert pm_check.AGENT_SETTINGS_LOCAL in answer.detail, answer.detail
+
+    # An allowlist mention is not wiring. `install-hooks`' own next-step text
+    # tells consumers to allow the couriers' --self-test; a substring search
+    # over the raw file read that as the hooks being registered.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, json.dumps({'permissions': {'allow': [
+            'Bash(bash tools/hooks/cc-ledger-session.sh --self-test)',
+            'Bash(bash tools/hooks/cc-ledger-subagent.sh --self-test)']}}))
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert 'cc-ledger-session.sh' in answer.detail, answer.detail
+
+    # An unreadable ledger: not a finding, and not a pass either.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        path = ledger.grainless_path(model.PmConfig(root=root).roadmap)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('not a row\n', encoding='utf-8')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert 'telemetry is live' not in answer.detail, answer.detail
+        assert pm_check.UNVERIFIABLE in answer.detail, answer.detail
+
+    # A settings file this reader cannot parse is the same non-answer.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, '{"hooks": ')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert '.claude/settings.json' in answer.detail, answer.detail
 

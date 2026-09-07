@@ -48,14 +48,20 @@ def cannot(name: str) -> driver.Check:
 
 
 class Writer:
-    """Records every write it was asked for; answers what it was told to."""
+    """Records every write it was asked for — and every check the caller
+    ANSWERED, because the write is the arrival those answers are recorded on
+    (0.5.0/D6); answers what it was told to."""
 
     def __init__(self, landed: bool = True):
         self.landed = landed
         self.calls: list[str] = []
+        self.skipped: list[tuple[tuple[str, str], ...]] = []
 
-    def __call__(self, ctx: driver.Context, state: str) -> tuple[bool, str]:
+    def __call__(self, ctx: driver.Context, state: str,
+                 skipped: tuple[tuple[str, str], ...] = ()
+                 ) -> tuple[bool, str]:
         self.calls.append(state)
+        self.skipped.append(tuple(skipped))
         return self.landed, f'wrote {state}'
 
 
@@ -249,8 +255,16 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
         want = driver.done_state(model.load(), 'milestone')
         assert model.field_of(root / 'pm/roadmap/milestones/1.0.0.md',
                               'status') == want
-        rows = ledger.read_rows(root / 'pm/roadmap/ledgers/1.0.0.jsonl')
-        assert [r.data['kind'] for r in rows] == [ledger.KIND_STATUS]
+        rows = [r.data for r in
+                ledger.read_rows(root / 'pm/roadmap/ledgers/1.0.0.jsonl')]
+        assert rows[0]['kind'] == ledger.KIND_STATUS, rows
+        # The BELT minted none of its own: no `deviation`, and no `disposition`
+        # carrying a `check`. Everything else in this file is `pm`'s, written
+        # by the status flip — including the ARRIVAL disposition (0.5.0/D3),
+        # which shares the word and is told apart by carrying `state` where a
+        # check's carries `check`.
+        assert not [r for r in rows
+                    if r['kind'] == ledger.KIND_DEVIATION or 'check' in r], rows
     lines = out.strip().split('\n')
     nexts = [line for line in lines if line.startswith('next: ')]
     assert len(nexts) == len(steps.AFTER['release']), out
@@ -295,11 +309,23 @@ def test_the_version_refusal_matrix_is_exit_2(value, capsys):
 
 
 def test_help_exits_zero_for_every_verb(capsys):
+    """Rule 11's read side: `--skip` is a capability, and a capability nobody
+    can find is a capability you do not have. Bites: the flag shipped and
+    named nowhere the operator stands — which is how the thirteenth grain got
+    opened instead of the twelfth close.
+
+    `adopt` names it too, as the thing it REFUSES: a flag that works one belt
+    over and is silent here is the same defect wearing the other face.
+    """
     for argv in (['release', '--help'], ['adopt', '-h'], ['close', 'help'],
                  ['close', 'story', '--help'], ['--help']):
         assert driver.main(argv) == 0, argv
         out = capsys.readouterr().out
-        assert '--skip' not in out and 'stops' not in out, argv
+        assert driver.SKIP_FLAG in out, argv
+        assert 'stops' not in out, argv
+    assert driver.main(['adopt', '-h']) == 0
+    adopt = capsys.readouterr().out
+    assert 'neither is accepted here' in adopt, adopt
 
 
 # --- the plan supplies the version, and refuses one out of order -------------
@@ -382,3 +408,123 @@ def test_every_entry_shipped_and_no_argument_is_refused_rather_than_guessed():
         # order` retired into `pm add` against the root.
         assert 'pm add' in out
         assert 'pm order' not in out
+
+
+# --- the middle tap: one row per check resolved (0.5.0) ----------------------
+# `rung.enter` and `rung.leave` had producers; this one did not, so a consumer
+# reading the stream saw a belt start and finish with nothing between. The
+# claims that would cost real time if they broke: one row per check ASKED and
+# none for a check nobody asked, the row saying what the LINE said, and every
+# field derived from the registry or the invocation rather than written here.
+
+class Taps:
+    """A recording stand-in for `driver.Verdicts` — same one method. The real
+    one is exercised over a tree below; what this proves is WHEN the belt asks
+    for a row, which is a function call away (rule 10)."""
+
+    def __init__(self):
+        self.rows: list[tuple[str, driver.Answer]] = []
+
+    def say(self, check: str, answer: driver.Answer) -> None:
+        self.rows.append((check, answer))
+
+
+def test_one_verdict_row_per_check_asked_and_none_for_one_the_caller_answered():
+    """A skipped check is the caller's judgement recorded on the arrival's
+    disposition row (D6). A verdict for it here would be this package's
+    cardinal sin: a verdict nobody produced, indistinguishable afterwards from
+    one a check really returned."""
+    taps = Taps()
+    result = run([yes('a'), no('b'), cannot('c')], state='done',
+                 write=Writer(), force=True, skips={'a': 'answered already'},
+                 record=Recorder(), verdicts=taps)
+    assert result.skipped == ('a',)
+    assert [name for name, _ in taps.rows] == ['b', 'c']
+    assert [driver.VERDICT_WORDS[a.truth] for _, a in taps.rows] == [
+        'error', 'unverifiable']
+
+
+def test_the_row_carries_the_sentence_the_line_carried_including_the_defect():
+    """A check that answers no and gives no reason has a defect, and the belt
+    prints that in place of the missing reason. The ROW says the same thing:
+    two carriers of one fact that disagree is the drift rule 6 is about."""
+    taps = Taps()
+    silent = driver.Check('b', lambda c: driver.Answer.no())
+    result = run([yes('a'), silent], state='', verdicts=taps)
+    assert [name for name, _ in taps.rows] == ['a', 'b']
+    for name, answer in taps.rows:
+        row = driver.verdict_row('release', '1.0.0', name, answer, 'ran')
+        said = [ln for ln in result.lines if f'{row["verdict"]}: {name}' in ln]
+        assert len(said) == 1, result.lines
+        assert row['detail'] in said[0], said[0]
+    assert dict(taps.rows)['b'].detail == driver.NO_REASON
+
+
+def test_what_a_check_RAN_is_the_command_the_protocol_table_renders():
+    """`ran` is derived, and the derivation is the one `install-sdlc` uses —
+    the project's command, the shipped one, or the literal. A third answer
+    here would be a document describing a run that did not happen."""
+    names = steps.steps_for('feature', driver.registry_for('feature'))
+    ran = driver.ran_for('feature', names, driver.registry_for('feature'))
+    assert set(ran) == set(names)
+    for name, said in ran.items():
+        assert said == steps.SHIPPED_ACTION.get(name, steps.READS_THE_TREE)
+    assert steps.READS_THE_TREE in ran.values(), (
+        'no check in the feature list reads the tree — the literal half of '
+        'the vocabulary is no longer exercised')
+
+
+def test_a_run_given_no_tap_behaves_exactly_as_it_did():
+    """The consumer that declares no sink gets today's lines and today's exit
+    code: this feature adds a carrier, never replaces one."""
+    checks = [yes('a'), no('b')]
+    bare = run(checks, state='done', write=Writer())
+    tapped = run(checks, state='done', write=Writer(), verdicts=Taps())
+    assert (bare.lines, bare.exit_code) == (tapped.lines, tapped.exit_code)
+
+
+# --- the three taps, on a belt, in the tree ----------------------------------
+EMIT = '\n[emit]\nsink = "ledger"\n'
+
+
+def _belt(argv, root, checks):
+    """`driver.main` with scripted checks over `_tree`, and every row the run
+    left anywhere in the roadmap, in file order."""
+    registry = {c.name: c for c in checks}
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = driver.main(argv, registry=registry, steps=tuple(registry))
+    rows = [r.data for path in sorted((root / 'pm/roadmap').rglob('*.jsonl'))
+            for r in ledger.read_rows(path)]
+    return code, buf.getvalue(), rows
+
+
+@pytest.mark.parametrize('operation,checks,code,leaves', [
+    ('release', [yes('a'), yes('b')], 0, True),
+    ('release', [yes('a'), no('b')], 1, False),
+    # `adopt` is checks only (D12): it emits its verdicts and never a
+    # `rung.leave`, because this tap is the BELT's and not the write's.
+    ('adopt', [yes('a'), yes('b')], 0, False),
+])
+def test_a_belt_that_writes_nothing_emits_its_verdicts_and_no_leave_event(
+        operation, checks, code, leaves):
+    """The ship criterion and the decision under it in one case. THERE IS NO
+    `rung.exit_failed`: a belt that writes nothing emits `check.verdict` rows
+    and no `rung.leave`, and the ABSENCE is the signal — inventing a fourth
+    kind to say "the thing did not happen" is the tool narrating rather than
+    recording."""
+    with _tree(FLOW_TOML + EMIT) as root:
+        _claim(root, '1.0.0', '1.0.0', 'building')
+        got, out, rows = _belt([operation, '1.0.0'], root, checks)
+        assert got == code, out
+        verdicts = [r for r in rows if r['kind'] == ledger.KIND_VERDICT]
+        assert [r['check'] for r in verdicts] == [c.name for c in checks]
+        assert [r['verdict'] for r in verdicts].count('error') == code
+        assert all(r['rung'] == operation and r['grain'] == '1.0.0'
+                   for r in verdicts), verdicts
+        assert bool([r for r in rows
+                     if r['kind'] == ledger.KIND_LEAVE]) is leaves, rows
+        # And no fourth kind: every event this run emitted spells one of the
+        # three taps `check pm`'s U3 counts.
+        events = [r['kind'] for r in rows if '.' in r['kind']]
+        assert set(events) <= set(ledger.EVENT_KEYS), events

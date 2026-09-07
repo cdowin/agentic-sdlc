@@ -9,11 +9,13 @@ from __future__ import annotations
 from importlib import resources
 
 from agentic_sdlc.repo.conveyor import driver, steps
+from agentic_sdlc.repo.pm import ledger
 
 PACKAGE = 'agentic_sdlc.repo.installables'
 TEMPLATE = 'sdlc-template.md'
 
 STEPS_MARKER = '<!-- STEPS -->'
+EVENTS_MARKER = '<!-- EVENTS -->'
 GUIDANCE_MARKER = '<!-- GUIDANCE -->'
 
 # The operations a rendered document covers, in the order it covers them.
@@ -78,6 +80,24 @@ def _table(operation: str) -> list[str]:
     return out
 
 
+def _events() -> list[str]:
+    """The emitted schema, off `ledger.EVENT_KEYS` — the tuples the three
+    minters build their rows from. Rendered for the reason the check tables
+    are: a hand-written table beside a rendered one is a second scoreboard."""
+    out = ['| tap | kind | the row it writes |', '|---|---|---|']
+    for kind, keys in ledger.EVENT_KEYS.items():
+        cells = ', '.join(f'`{key}`' for key in keys)
+        out.append(f'| `{kind.rsplit(".", 1)[-1]}` | `{kind}` | {cells} |')
+    words = ', '.join(f'`{word}`' for word in driver.VERDICT_WORDS.values())
+    out.append('')
+    out.append(f'`verdict` is one of {words}. `ran` is the command in the '
+               f'operation\'s table above, or the literal '
+               f'`{steps.READS_THE_TREE}`. Every field is derived: the ids '
+               f'from the invocation, the categories from `[pm.states.*]`, '
+               f'the names from the registry that ran them.')
+    return out
+
+
 def _guidance() -> list[str]:
     out = ['## Not checks, and why',
            '',
@@ -102,5 +122,6 @@ def render() -> str:
         body.extend(_table(operation))
         body.append('')
     out = template.replace(STEPS_MARKER, '\n'.join(body).rstrip('\n'))
+    out = out.replace(EVENTS_MARKER, '\n'.join(_events()))
     out = out.replace(GUIDANCE_MARKER, '\n'.join(_guidance()))
     return out

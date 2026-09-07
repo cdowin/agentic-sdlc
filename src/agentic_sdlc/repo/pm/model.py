@@ -1,23 +1,24 @@
 """model.py — the PM-tree invariants, single-sourced for the CLI and the gate.
 
-`[pm]` in devkit.toml; every gate key has a stock default, the flow
-(`[pm.states.<kind>]`) has none — `pm init` writes it. Every question is
-asked of a status's category (`holds`), every move checked by
-`move_defect`, and no state word is spelled outside the seed
-(`tests/test_pm_flow.py`).
+`[pm]` in devkit.toml, under hard rule 5: every gate key has a stock default,
+the flow (`[pm.states.<kind>]`) has none and `pm init` writes it. Every question
+is asked of a status's category (`holds`), every move checked by `move_defect`,
+and no state word is spelled outside the seed (`tests/test_pm_flow.py`).
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.core.config import (ConfigError, config_section, relpath,
-                                       section_declared, flag, str_tuple,
-                                       str_tuple_table, text)
+from agentic_sdlc.core.config import (ConfigError, config_section, number,
+                                       relpath, section_declared, flag,
+                                       str_tuple, str_tuple_table, table, text)
 
 # --- the flow a project DECLARES ----------------------------------------------
 # The closed set, and the engine's whole opinion about states: three categories
@@ -31,16 +32,15 @@ CATEGORIES = (TODO, IN_PROGRESS, DONE_CATEGORY)
 # Per kind, so a bug's flow is one more declaration rather than a special case.
 FLOW_KINDS = ('milestone', 'feature', 'story', 'bug')
 
-# The ROOT is a container like any other: `releases.md` declares an `id:` and
-# a `kind:` and holds an `order` of milestone ids. Not a FLOW kind — nothing
-# moves it, so it declares no states and has no status.
+# The ROOT is a container like any other: `releases.md` declares `id:`/`kind:`
+# and holds an `order` of milestone ids. Not a FLOW kind — nothing moves it, so
+# it declares no states and has no status.
 ROOT_KIND = 'roadmap'
 ROOT_ID = 'roadmap'
 CONTAINER_KINDS = (ROOT_KIND, *FLOW_KINDS)
 
-# WHICH KINDS MAY HOLD WHICH — one mapping read by `pm add`, instead of a
-# check per level. A GATE key: a repo declaring nothing behaves like one
-# declaring this.
+# WHICH KINDS MAY HOLD WHICH — one mapping read by `pm add`, instead of a check
+# per level. A GATE key (hard rule 5).
 DEFAULT_CONTAINS = {'roadmap': ('milestone',),
                     'milestone': ('feature', 'bug'),
                     'feature': ('story',)}
@@ -90,8 +90,7 @@ def may_hold(cfg: 'PmConfig', parent_kind: str, kind: str) -> str:
 class Flow:
     """One grain kind's declared states and their categories, read from
     `[pm.states.<kind>]` every run with no runtime fallback. `order` is
-    category-major, then the project's own list order; no gate keys on it.
-    """
+    category-major, then the project's own list order; no gate keys on it."""
 
     kind: str
     by_category: dict[str, tuple[str, ...]]
@@ -103,9 +102,7 @@ class Flow:
                      for st in self.by_category.get(cat, ()))
 
     def category(self, status: str) -> str | None:
-        """This state's category, or None when the project never declared it
-        (the D4 drift) — never a guess.
-        """
+        """This state's category, or None when it was never declared (D4)."""
         return self.category_of.get(status)
 
 
@@ -137,9 +134,7 @@ DEFAULT_FLOWS: dict[str, dict[str, tuple[str, ...]]] = {
 
 def render_seed(flows=None) -> str:
     """The seed as the TOML `init` writes — one renderer for the fresh-tree
-    and append paths. Live TOML, not commentary: there is no runtime
-    fallback behind it.
-    """
+    and append paths. Live TOML, not commentary: nothing falls back to it."""
     flows = DEFAULT_FLOWS if flows is None else flows
     out: list[str] = []
     for kind in FLOW_KINDS:
@@ -155,8 +150,7 @@ def render_seed(flows=None) -> str:
 
 def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
     """'' when this declaration is readable, else why it is not — a fact about
-    the input, exit 2, never a finding.
-    """
+    the input, exit 2, never a finding."""
     unknown = [c for c in by_category if c not in CATEGORIES]
     if unknown:
         return (f'[pm.states.{kind}] names categor(ies) '
@@ -185,25 +179,24 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
 # capabilities (U2) it declared, as opposed to whether a word is declared at
-# all (D4). A NEW LETTER on purpose — `D7` RETIRED, and reusing a retired id
-# would silently enable a different rule for a consumer whose config still
-# names it. Both are STOCK-ON: an opt-in rule nobody enables answers "is this
-# flow being used" with silence, which is the failure they were filed to end,
-# and a WARN cannot redden anyone. A tree that wires nothing stays quiet either
-# way, so stock-on costs a non-adopter nothing (0.4.0/D5).
-USAGE_CHECKS = ('U1', 'U2')  # named for the family; already in DEFAULT_CHECKS
+# all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. Both are
+# STOCK-ON: an opt-in rule nobody enables answers "is this flow being used"
+# with silence, which is the failure they were filed to end, and a WARN cannot
+# redden anyone; a tree that wires nothing stays quiet either way (0.4.0/D5).
+# U5 (0.5.0) is the same question asked of the EDGE: a grain whose current
+# state was arrived at with no disposition. A bare move records `answer: none`
+# and is never refused (D3), so the rule names what nobody answered.
+USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4', 'U5')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
-# The release family: the plan and the tree held to each other. Opt-in, because
-# a tree with no plan yet has nothing for them to grade.
+# The release family: the plan and the tree held to each other. Opt-in.
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
-# V1, V4, V5 and V7 are ON: an unsatisfied one is a malformed tree. V2 (id
-# matches path), V3 (parentage matches the directory) and V6 (the generated
-# execution list matches the tree) RETIRED in 0.4.0: each kept two copies of
-# one fact in agreement and 0.4.0 deleted the second copy. What can still be
-# wrong is a document nothing can key on (`unkeyed_documents`) and a binding
-# naming no grain (V7, which walks the POOLS rather than descending).
+# V1, V4, V5 and V7 are ON: an unsatisfied one is a malformed tree. V2, V3 and
+# V6 RETIRED in 0.4.0 — each kept two copies of one fact in agreement, and
+# RETIRED_CHECKS below says which copy went. What can still be wrong is a
+# document nothing can key on (`unkeyed_documents`) and a binding naming no
+# grain (V7, which walks the POOLS rather than descending).
 VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V7')
 KNOWN_CHECKS = tuple(dict.fromkeys(
     DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
@@ -239,10 +232,9 @@ RETIRED_CHECKS = {
 
 ARCHIVE_DIR_NAME = 'zz_archive'
 
-# U2's two halves, both readable without running anything. The settings file
-# is the consumer's own and hand-maintained (`install.py` says why it is
-# printed and never written); these are the script names the printed block
-# wires, so a tree that pasted the block matches.
+# U2's two halves, both readable without running anything. The settings file is
+# the consumer's own and hand-maintained (`install.py` says why it is printed
+# and never written); these are the script names that block wires.
 AGENT_SETTINGS = '.claude/settings.json'
 LEDGER_COURIERS = ('cc-ledger-session.sh', 'cc-ledger-subagent.sh')
 
@@ -253,8 +245,6 @@ LEDGER_COURIERS = ('cc-ledger-session.sh', 'cc-ledger-subagent.sh')
 DECISION_FILE_NAME = 'decisions.md'
 REVIEW_FILE_NAME = 'review.md'
 HANDOFF_FILE_NAME = 'handoff.md'
-# The id<->path convention is this module's, so the names are spelled here
-# once.
 # The plan: `order` is a declared sequence of versions, not a sort. It lives in
 # the roadmap dir beside the milestones it sequences, and it is grain-shaped so
 # the byte-preserving frontmatter writer can edit it (0.3.0).
@@ -274,15 +264,13 @@ FEATURE_DOC = 'feature.md'
 # `order` carries what outlives a retired milestone. The NAME stays so a tree
 # that still has the file is recognised rather than walked as a grain.
 ROADMAP_DOC = 'ROADMAP.md'
-# The slot directories, spelled once: a grain's kind is read from which slot
-# its document sits in.
+# The slot directories: a grain's kind is read from the slot it sits in.
 FEATURES_DIR = 'features'
 STORIES_DIR = 'stories'
 BUGS_DIR = 'bugs'
 
-# Permitted, never required, minted on first write; an absent one means nothing
-# was recorded, which is not a finding.
-# What a grain MUST carry: its own frontmatter file, and nothing else.
+# An optional slot is minted on first write, and an absent one recorded
+# nothing, which is not a finding. A grain MUST carry only its own document.
 MILESTONE_FILE_SLOTS = (MILESTONE_DOC,)
 MILESTONE_OPTIONAL_SLOTS = (HANDOFF_FILE_NAME, DECISION_FILE_NAME,
                             REVIEW_FILE_NAME)
@@ -290,7 +278,6 @@ FEATURE_FILE_SLOTS = (FEATURE_DOC,)
 # No handoff.md: a feature is never picked up cold on its own.
 FEATURE_OPTIONAL_SLOTS = (DECISION_FILE_NAME, REVIEW_FILE_NAME)
 
-# slot -> the template that mints it.
 SLOT_TEMPLATE = {
     MILESTONE_DOC: 'milestone', FEATURE_DOC: 'feature',
     'handoff.md': 'handoff', 'decisions.md': 'decisions',
@@ -308,8 +295,7 @@ SLOT_HEADER = {
 # Wordings that shipped before and still open real documents. RECOGNISED, never
 # written: `_header_wanted` treats any known header as present, so rewording an
 # entry above can neither stack a second line onto an existing doc nor red a
-# consumer's tree on upgrade day. `pm new` still rewrites nothing it did not
-# have to.
+# consumer's tree on upgrade day.
 RETIRED_SLOT_HEADERS = frozenset({
     'Cold-start only. Never restate what `pm status` computes.',
 })
@@ -318,9 +304,7 @@ KNOWN_SLOT_HEADERS = frozenset(SLOT_HEADER.values()) | RETIRED_SLOT_HEADERS
 
 
 def dir_entries(path: Path) -> dict[str, str]:
-    """{exact name: 'file'|'dir'} for one directory — exact names, through
-    `core.walk.entries`.
-    """
+    """{exact name: 'file'|'dir'} for one directory, through `core.walk`."""
     return walk.entries(path)
 
 
@@ -335,47 +319,54 @@ class PmConfig:
     root: Path
     roadmap_dir: str = 'pm/roadmap'
     # THE POOLS — one directory per kind, the tables of the database (0.4.0).
-    # Empty means "derive `<roadmap_dir>/<kind>s`", so a tree that declares
-    # none behaves exactly like one declaring every stock value and adopting
-    # costs zero edits. They are spelled out as four keys rather than folded
-    # into `roadmap_dir` because **the shape of the config is the shape of the
-    # model**: reading this block tells you there are four kinds and that they
-    # are peers, which one root never could.
+    # Empty means "derive `<roadmap_dir>/<kind>s`", so adopting costs zero
+    # edits. Four keys rather than one folded into `roadmap_dir`, because **the
+    # shape of the config is the shape of the model**: this block says there are
+    # four kinds and that they are peers, which one root never could.
     milestone_dir_key: str = ''
     feature_dir_key: str = ''
     story_dir_key: str = ''
     bug_dir_key: str = ''
-    # The ledgers are a table too — machine state rather than grains, but the
-    # same mechanism, so the file shows it the same way.
+    # The ledgers are a table too (`ledger.LEDGERS_POOL`).
     ledger_dir_key: str = ''
     review_dir: str = 'docs/reviews'
-    # Which kinds hold which, for `pm add` — one declaration for every level.
     contains: dict[str, tuple[str, ...]] = field(
         default_factory=lambda: dict(DEFAULT_CONTAINS))
     # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
     # exists to prevent is a move nobody followed up on. Off in one line for a
     # consumer parsing `pm` output strictly (rule 6).
     breadcrumbs: bool = True
+    # Stock ON, and OFF in one line for a consumer parsing `pm` output strictly
+    # (rule 6). It silences the FORK and the CENSUS a write reports — never the
+    # disposition row, which is a fact the tree records about itself whether or
+    # not anybody is reading the stream.
+    pressure: bool = True
+    # THE PROJECT'S OWN NUMBER, never this package's: 0 is "declared nothing",
+    # and there is no stock ceiling on how much work somebody may have open.
+    # Reported when exceeded and NEVER a refusal — `--force` is the deviation,
+    # and this is not even a gate (rule 9).
+    wip: int = 0
     # The declared order per kind, copied out by `load`; empty when the tree
-    # declared nothing, which `flow_of` refuses. Never read from the retired
-    # `[pm] <kind>_states`.
+    # declared nothing, which `flow_of` refuses.
     milestone_states: tuple[str, ...] = ()
     feature_states: tuple[str, ...] = ()
     story_states: tuple[str, ...] = ()
     bug_states: tuple[str, ...] = ()
     checks: tuple[str, ...] = DEFAULT_CHECKS
     # R5 and `version-sync`: where the shipped version lives, and the line
-    # that carries it. Both halves are configurable.
+    # that carries it.
     template_dir: str = ''
     version_file: str = 'pyproject.toml'
     version_pattern: str = r'^version = "(.*)"$'
-    # R5 only: which milestone in the declared `order` the version file is
-    # graded against. Never a parse — a position in a list.
+    # R5 only, and never a parse — a position in `order` (VERSION_AT_*).
     version_at: str = VERSION_AT_START
     # What the project declared, per kind; empty is the absence itself, which
-    # `flow_of` turns into a refusal naming the fix (hard rule 5: a workflow
-    # ships no default).
+    # `flow_of` turns into a refusal naming the fix (hard rule 5).
     flows: dict[str, Flow] = field(default_factory=dict)
+    # `[pm.arrive.<kind>.<state>]`, keyed by the pair it is declared under.
+    # Empty is NOT an absence to refuse: a move with no declared action prints
+    # no question (0.5.0/D3).
+    arrivals: dict[tuple[str, str], 'Arrival'] = field(default_factory=dict)
 
     @property
     def roadmap(self) -> Path:
@@ -447,12 +438,12 @@ def load() -> PmConfig:
         raise ConfigError(defect)
 
     flows = _load_flows(sect)
+    arrivals = _load_arrivals(sect, flows)
 
     return PmConfig(
         root=repo_root(),
-        # The three path keys go through `relpath`, not `text`: an absolute or
-        # `../` value would move the whole PM surface outside the checkout
-        # (hard rule 8).
+        # `relpath`, not `text`: an absolute or `../` value would move the
+        # whole PM surface outside the checkout (hard rule 8).
         roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
         review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
         contains=contains,
@@ -462,6 +453,8 @@ def load() -> PmConfig:
         bug_dir_key=relpath(sect, 'pm', 'bug_dir', ''),
         ledger_dir_key=relpath(sect, 'pm', 'ledger_dir', ''),
         breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
+        pressure=flag(sect, 'pm', 'pressure', True),
+        wip=number(sect, 'pm', 'wip', 0),
         milestone_states=_order_of(flows, 'milestone'),
         feature_states=_order_of(flows, 'feature'),
         story_states=_order_of(flows, 'story'),
@@ -472,17 +465,17 @@ def load() -> PmConfig:
         version_pattern=version_pattern,
         version_at=version_at,
         flows=flows,
+        arrivals=arrivals,
     )
 
 
 def reload() -> PmConfig:
     """`load()` against the file as it is NOW, caches dropped.
 
-    For the one caller that WROTE devkit.toml in this process and then has to
-    read it back: `pm init` appends the flow and then reports what it means
-    against the tree. The cache lives in `core.project`, and this module is the
-    one place in `repo/` that may reach it — every other reader goes through the
-    guards in `core/config.py`.
+    For the one caller that WROTE devkit.toml in this process and then reads
+    it back: `pm init`. The cache lives in `core.project`, and this module is
+    the one place in `repo/` that may reach it — every other reader goes
+    through the guards in `core/config.py`.
     """
     repo_root.cache_clear()
     load_config.cache_clear()
@@ -501,8 +494,7 @@ TRANSITIONS_KEY = 'transitions'
 
 def _load_flows(sect: dict) -> dict[str, Flow]:
     """`[pm.states.<kind>]`, read and validated. Absent is an empty dict,
-    never the seed; malformed is exit 2 before anything else happens.
-    """
+    never the seed; malformed is exit 2 before anything else happens."""
     if TRANSITIONS_KEY in sect:
         kinds = sect[TRANSITIONS_KEY]
         named = (', '.join(f'[pm.{TRANSITIONS_KEY}.{k}]' for k in kinds)
@@ -549,18 +541,193 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
     return out
 
 
+# --- [pm.arrive.<kind>.<state>] — what ARRIVING at a state ASKS (0.5.0/D3) ----
+# THERE IS ONE EVENT IN THIS SYSTEM AND IT IS ARRIVAL: a grain reaches a state.
+# `[pm.states.<kind>]` declares the NODES; this declares the ACTION tied to one.
+#
+# It is NOT a transition table and it can never become one: the unit is the
+# state ARRIVED AT, never the pair `(from, to)`. A second pass through a state
+# asks the same question — which is correct, because it is the question, and
+# the answer genuinely may have changed — and backwards costs nothing to
+# support because it was never a special case. Rule 9 already says the tool has
+# no opinion about which state may follow which; making arrival the unit means
+# it never needs one.
+#
+# A WORKFLOW key (hard rule 5): nothing is behind it, and each half refuses BY
+# NAME when its partner is absent — a question with no answers typed is advice,
+# and rule 9 forbids the tool having one.
+ARRIVE_KEY = 'arrive'
+ASK_KEY = 'ask'
+ANSWERS_KEY = 'answers'
+HAVE_KEY = 'have'
+ARRIVE_NODE_KEYS = (ASK_KEY, ANSWERS_KEY, HAVE_KEY)
+# Every declared answer opens with a FLAG. Refused by name when it does not, so
+# that the word a row uses for "nobody answered" can never collide with an
+# answer somebody declared.
+ANSWER_PREFIX = '--'
+
+
+@dataclass(frozen=True)
+class Arrival:
+    """One `[pm.arrive.<kind>.<state>]` node — the question arriving at this
+    state asks, both answers already typed, and the capabilities that apply.
+
+    `have` is a CENSUS and `ask`/`answers` are a FORK; they are separate keys
+    because they are separate claims. Nothing here is ordered against anything
+    else, because there is no edge.
+    """
+
+    kind: str
+    state: str
+    ask: str = ''
+    answers: tuple[str, ...] = ()
+    have: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def flags(self) -> tuple[str, ...]:
+        """The distinct flag each declared answer opens with, in order."""
+        return tuple(dict.fromkeys(a.split()[0] for a in self.answers))
+
+    def carries_value(self, name: str) -> bool:
+        """Does EVERY answer opening with `name` spell something after it?
+
+        So a bare `--by` refuses when the project declared `--by me`, and a
+        one-word answer stays complete on its own. Asked of the DECLARATION,
+        never of a flag's spelling.
+        """
+        spellings = [a.split() for a in self.answers if a.split()[0] == name]
+        return bool(spellings) and all(len(s) > 1 for s in spellings)
+
+
+def _arrive_node_defect(kind: str, state: str, node: object) -> str:
+    """'' when one `[pm.arrive.<kind>.<state>]` node is readable, else why not
+    — a fact about the input, exit 2, never a finding."""
+    where = f'[pm.{ARRIVE_KEY}.{kind}.{state}]'
+    if not isinstance(node, dict):
+        return f'{where} must be a table, got {node!r}'
+    unknown = sorted(k for k in node if k not in ARRIVE_NODE_KEYS)
+    if unknown:
+        return (f'{where} names {", ".join(unknown)} — the keys an arrival '
+                f'declares are {" ".join(ARRIVE_NODE_KEYS)}')
+    ask = node.get(ASK_KEY)
+    answers = node.get(ANSWERS_KEY)
+    if ask is not None and not isinstance(ask, str):
+        return f'{where} {ASK_KEY} must be a string, got {ask!r}'
+    if ask is not None and not ask.strip():
+        return (f'{where} {ASK_KEY} is empty — remove the key rather than '
+                f'declaring a question with no words in it')
+    if (ask is None) != (answers is None):
+        missing, present = ((ANSWERS_KEY, ASK_KEY) if answers is None
+                            else (ASK_KEY, ANSWERS_KEY))
+        return (f'{where} declares {present} and not {missing} — a question '
+                f'with no answers typed is advice, and both answers spelled '
+                f'with no question is a list nobody asked for. Declare both, '
+                f'or neither.')
+    if answers is not None:
+        if (not isinstance(answers, list) or not answers
+                or not all(isinstance(a, str) for a in answers)):
+            return (f'{where} {ANSWERS_KEY} must be a non-empty list of '
+                    f'strings, got {answers!r}')
+        for answer in answers:
+            if not answer.split() or not answer.startswith(ANSWER_PREFIX):
+                return (f'{where} {ANSWERS_KEY} names {answer!r}, which does '
+                        f'not open with {ANSWER_PREFIX!r} — an answer is a '
+                        f'flag the move accepts, and one that is not is a '
+                        f'sentence nobody can paste')
+    have = node.get(HAVE_KEY)
+    if have is not None:
+        if not isinstance(have, dict) or not have:
+            return (f'{where} {HAVE_KEY} must be a non-empty table of '
+                    f'path = "why", got {have!r}')
+        for path, why in have.items():
+            if not isinstance(why, str) or not why.strip():
+                return (f'{where} {HAVE_KEY}.{path} must say what the '
+                        f'capability is for, got {why!r} — a path with no '
+                        f'sentence beside it is a line nobody can act on')
+            if not path or pointer_escapes(path):
+                return (f'{where} {HAVE_KEY} names {path!r}, which is not a '
+                        f'path inside this checkout — this package reads no '
+                        f'path outside its own tree (hard rule 8)')
+    return ''
+
+
+def _load_arrivals(sect: dict,
+                   flows: dict[str, Flow]) -> dict[tuple[str, str], Arrival]:
+    """`[pm.arrive.<kind>.<state>]`, read and validated against the flow.
+
+    Absent is an empty mapping and NOT a refusal: a tree that declared no
+    arrival action still moves, and a move with no fork prints no question. A
+    node naming a state `[pm.states.<kind>]` never declared IS a refusal, by
+    name — it is the same drift D4 reports one level down, and a question
+    nothing can reach would be silent forever.
+    """
+    raw = sect.get(ARRIVE_KEY)
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f'[pm.{ARRIVE_KEY}] must be a table of grain kinds, '
+                          f'got {raw!r}')
+    unknown = sorted(set(raw) - set(FLOW_KINDS))
+    if unknown:
+        raise ConfigError(
+            f'[pm.{ARRIVE_KEY}] names grain kind(s) {", ".join(unknown)} — '
+            f'this package knows {" ".join(FLOW_KINDS)}, and an arrival at a '
+            f'kind it never walks would never be read')
+    out: dict[tuple[str, str], Arrival] = {}
+    for kind in FLOW_KINDS:
+        if kind not in raw:
+            continue
+        states = raw[kind]
+        if not isinstance(states, dict):
+            raise ConfigError(f'[pm.{ARRIVE_KEY}.{kind}] must be a table of '
+                              f'states, got {states!r}')
+        flow = flows.get(kind)
+        if flow is None:
+            raise ConfigError(
+                f'[pm.{ARRIVE_KEY}.{kind}] declares what arriving asks, and '
+                f'[pm.states.{kind}] declares no states for it to arrive at — '
+                f'run `agentic-sdlc pm init` to write the flow first')
+        for state, node in states.items():
+            if flow.category(state) is None:
+                raise ConfigError(
+                    f'[pm.{ARRIVE_KEY}.{kind}.{state}] names a state '
+                    f'[pm.states.{kind}] does not declare — the words this '
+                    f'project chose are {" ".join(flow.order)}, and a '
+                    f'question nothing can reach is one nobody is ever asked')
+            defect = _arrive_node_defect(kind, state, node)
+            if defect:
+                raise ConfigError(defect)
+            ask = text(node, f'pm.{ARRIVE_KEY}.{kind}.{state}', ASK_KEY, '')
+            answers = (str_tuple(node, f'pm.{ARRIVE_KEY}.{kind}.{state}',
+                                 ANSWERS_KEY, ())
+                       if ANSWERS_KEY in node else ())
+            have = tuple((path, why) for path, why
+                         in table(node, f'pm.{ARRIVE_KEY}.{kind}.{state}',
+                                  HAVE_KEY, {}).items())
+            out[(kind, state)] = Arrival(kind=kind, state=state, ask=ask,
+                                         answers=answers, have=have)
+    return out
+
+
+def arrival_at(cfg: PmConfig, kind: str, state: str) -> Arrival | None:
+    """What this project declared for arriving at one state, or None.
+
+    None is the common answer and it is not a finding: a move with no declared
+    action prints no question, which is the difference between this and a nag.
+    """
+    return cfg.arrivals.get((kind, state))
+
+
 # --- the engine's two verbs ---------------------------------------------------
-# The engine's two verbs: `move` (is the target a declared state?) and `holds`
-# (are they all in the category, and who is not?). They are functions rather
-# than a convention because two call sites of one convention once disagreed
-# about whether an `obe` story was finished (D6).
+# `move` (is the target a declared state?) and `holds` (are they all in the
+# category, and who is not?). Functions rather than a convention because two
+# call sites of one convention once disagreed about whether an `obe` story was
+# finished (D6).
 
 
 @dataclass(frozen=True)
 class Held:
-    """`holds`' answer: whether they are all there, and who is not — the half
-    a caller prints.
-    """
+    """`holds`' answer: are they all there, and who is not."""
 
     category: str
     blockers: tuple[tuple[str, str], ...]
@@ -584,10 +751,9 @@ def category_of(cfg: PmConfig, kind: str, status: str) -> str | None:
 
 def holds(cfg: PmConfig, kind: str, grains, category: str) -> Held:
     """Are all these `(id, status)` grains in `category`, and which are not?
-    The caller supplies the pairs, because scope is the caller's question.
-    An undeclared status is a blocker carrying the word, never a silent
-    pass (rule 4).
-    """
+    The caller supplies the pairs, because scope is the caller's question. An
+    undeclared status is a blocker carrying the word, never a silent pass
+    (rule 4)."""
     if category not in CATEGORIES:
         raise ConfigError(
             f'{category!r} is not a category — the set is closed and is '
@@ -604,10 +770,8 @@ def holds(cfg: PmConfig, kind: str, grains, category: str) -> Held:
 
 def move_defect(cfg: PmConfig, kind: str, to_state: str) -> str:
     """'' when this grain kind may be moved to `to_state`, else why not. The
-    whole opinion is "is the target declared?"; there is no edge graph,
-    since a `sed` reaches any state anyway, and D3/D4/D5 check the end
-    state.
-    """
+    whole opinion is "is the target declared?" — no edge graph, since a `sed`
+    reaches any state anyway and D3/D4/D5 check the end state."""
     flow = flow_of(cfg, kind)
     if to_state in flow.category_of:
         return ''
@@ -619,9 +783,7 @@ def move_defect(cfg: PmConfig, kind: str, to_state: str) -> str:
 # rule 5).
 def flow_of(cfg: PmConfig, kind: str) -> Flow:
     """This grain kind's declared flow, or exit 2 naming the command that
-    writes it — a command copies correctly where forty lines of TOML do
-    not.
-    """
+    writes it — a command copies correctly where forty lines of TOML do not."""
     flow = cfg.flows.get(kind)
     if flow is None:
         raise ConfigError(
@@ -717,9 +879,9 @@ RETIRED_SECTIONS = {
 def missing_flow_defect(sect: dict | None = None) -> str:
     """The one defect that stops every work-moving verb, or ''.
 
-    Read straight off `[pm.states.*]` rather than off a loaded config, because
-    a config that failed to load for some OTHER reason must still be able to
-    report this one — that ordering is the whole feature.
+    Read straight off `[pm.states.*]` rather than off a loaded config: a config
+    that failed to load for some OTHER reason must still report this one, and
+    that ordering is the whole feature.
     """
     section = config_section('pm') if sect is None else sect
     states = section.get('states')
@@ -743,9 +905,8 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     A real adoption is wrong in more than one way at once, and one defect per
     run makes the consumer pay a round trip to learn the next. The ORDER is the
     point: a retired key is cosmetic, a missing flow stops every work-moving
-    verb, and the tree that motivated this was told about the retired key.
-
-    Each reader is asked SEPARATELY and its refusal collected, so one `load()`
+    verb, and the tree that motivated this was told about the retired key. Each
+    reader is asked SEPARATELY and its refusal collected, so one `load()`
     defect cannot hide the retired-key sweep behind it (review D2, D3).
     """
     section = config_section('pm') if sect is None else sect
@@ -764,8 +925,6 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
             add(f'[pm] {key} was retired and is refused — '
                 f'{RETIRED_KEYS[key]}. Remove the key.')
 
-    # Each of `load()`'s own refusals, asked one at a time so that a second one
-    # is never lost behind the first.
     def probe(reader) -> None:
         try:
             reader()
@@ -782,6 +941,12 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
     probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
     probe(contains_probe)
     probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
+    probe(lambda: flag(section, 'pm', 'pressure', True))
+    probe(lambda: number(section, 'pm', 'wip', 0))
+    # Read against the flow this same section declares, so a node naming an
+    # undeclared state is reported beside the flow defect rather than after a
+    # second round trip.
+    probe(lambda: _load_arrivals(section, _load_flows(section)))
     for _kind in FLOW_KINDS:
         probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
@@ -812,9 +977,8 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
             "template_dir and run `pm templates` to copy them out, then edit "
             "the markdown")
 
-    # The retired-key and stale-rule sweep runs WHATEVER `load()` would have
-    # done, reading `checks` off the section rather than off a config that may
-    # not have loaded (review D3).
+    # Read off the section rather than off a config that may not have loaded
+    # (review D3).
     raw_checks = section.get('checks')
     named = tuple(c for c in raw_checks
                   if isinstance(c, str)) if isinstance(raw_checks, list) else DEFAULT_CHECKS
@@ -841,8 +1005,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
 def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     """Everything `[pm]` names that this package does not ship — a stale rule
     id or a retired key — empty when clean. Raised by the gates, not by
-    `load()`, so a pin bump cannot take `pm status` down.
-    """
+    `load()`, so a pin bump cannot take `pm status` down."""
     out: list[str] = []
     for check in cfg.checks:
         if check in RETIRED_CHECKS:
@@ -886,15 +1049,18 @@ def read_raw(path: Path) -> str:
 
 def write_raw(path: Path, text: str) -> None:
     """The grain-file write, through `core.apply` with the same disabled
-    newline translation; a failure comes back as `OSError`.
-    """
-    apply.raise_on_error(apply.write(path, text))
+    newline translation; a failure comes back as `OSError`."""
+    try:
+        apply.raise_on_error(apply.write(path, text))
+    finally:
+        # However the write ended, the parse held here is a claim about
+        # bytes that may be gone.
+        forget_document(path)
 
 
 def _eol(line: str) -> str:
     """The CR half of a CRLF terminator, so a rewritten line keeps the file's
-    convention.
-    """
+    convention."""
     return '\r' if line.endswith('\r') else ''
 
 
@@ -908,9 +1074,8 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
-def field_in(lines: list[str], key: str) -> str:
-    """`field_of` over lines already read — for a caller that opened the file
-    once and is answering several questions off the one read."""
+def field_in(lines: Sequence[str], key: str) -> str:
+    """`field_of` over lines already read."""
     bounds = _fence_bounds(lines)
     if bounds is None:
         return ''
@@ -921,12 +1086,133 @@ def field_in(lines: list[str], key: str) -> str:
     return ''
 
 
+# --- ONE READ PER DOCUMENT ----------------------------------------------------
+# Every field used to be its own `open()` plus a re-split of the whole file —
+# 2.1M opens over a 700-document tree, `make check` at 87s
+# (bg-check-pm-reopens-every-file-per-field).
+#
+# PER PROCESS and nothing else: a module dict, never written anywhere. Every hit
+# re-`stat`s the file and re-parses when the stamp moved, and `write_raw` drops
+# what it rewrote — a gate answering off bytes that have moved on is rule 4's
+# first cardinal sin wearing a speedup.
+
+
+@dataclass(frozen=True)
+class Document:
+    """One document read once. `lines` is a TUPLE because the cache hands one
+    object to every reader, and a reader that could edit it would be editing
+    the next reader's answer.
+    """
+
+    lines: tuple[str, ...]
+    bounds: tuple[int, int] | None
+    fields: dict[str, str]
+
+    @property
+    def text(self) -> str:
+        """The bytes as read — `_split` is `str.split`, so the join is exact."""
+        return '\n'.join(self.lines)
+
+    def field(self, key: str) -> str:
+        """`field_in`'s answer, off the parsed dict. A key carrying a `:`
+        cannot be keyed on — `a:b` matches the line `a:b: v`, whose key is
+        `a` — so the scan itself answers that one."""
+        if ':' in key:
+            return field_in(self.lines, key)
+        return self.fields.get(key, '')
+
+    def list_field(self, key: str) -> list[str]:
+        """`list_field_of`'s answer, off the bounds already found."""
+        return _list_in(self.lines, self.bounds, key)
+
+
+def parse_document(text: str) -> Document:
+    """One document's text, parsed. The scalars are read exactly as `field_in`
+    reads them — first line wins, the key is what precedes the first `:` at
+    column 0 — so the dict answers what a scan would answer."""
+    lines = _split(text)
+    bounds = _fence_bounds(lines)
+    fields: dict[str, str] = {}
+    if bounds is not None:
+        for line in lines[bounds[0] + 1:bounds[1]]:
+            key, sep, value = line.partition(':')
+            if sep:
+                fields.setdefault(key, unquote(value.strip()))
+    return Document(lines=tuple(lines), bounds=bounds, fields=fields)
+
+
+# A cap rather than an unbounded dict: a tree big enough for the cache to
+# matter must not turn a gate into a memory hog. Entries leave oldest-first.
+DOCUMENT_CACHE_MAX_CHARS = 64_000_000
+
+# {str(path): (stamp, characters, the parse)}; `_stamp` says what a stamp is.
+_DOCUMENTS: dict[str, tuple[tuple[int, ...], int, Document]] = {}
+_DOCUMENT_CHARS = 0
+
+
+def _stamp(path) -> tuple[int, ...] | None:
+    """What must be unchanged for a parse to still be this file's, or None when
+    the thing read is not a file on disk. `pm report --rev` reads git BLOBS
+    through these functions and a blob has no `stat`, so those reads are never
+    cached rather than cached under a key nothing could invalidate."""
+    stat = getattr(path, 'stat', None)
+    if stat is None:
+        return None
+    st = stat()
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_dev)
+
+
+def document(path) -> Document:
+    """This file's parse — from the cache when the file has not moved since.
+    Raises what `read_raw` raises, which every caller here already answers."""
+    key = str(path)
+    try:
+        stamp = _stamp(path)
+    except OSError:
+        forget_document(path)
+        raise
+    if stamp is not None:
+        held = _DOCUMENTS.get(key)
+        if held is not None and held[0] == stamp:
+            return held[2]
+    text = read_raw(path)
+    doc = parse_document(text)
+    if stamp is not None:
+        _remember(key, stamp, len(text), doc)
+    return doc
+
+
+def _remember(key: str, stamp: tuple[int, ...], chars: int,
+              doc: Document) -> None:
+    global _DOCUMENT_CHARS
+    replaced = _DOCUMENTS.pop(key, None)
+    if replaced is not None:
+        _DOCUMENT_CHARS -= replaced[1]
+    _DOCUMENTS[key] = (stamp, chars, doc)
+    _DOCUMENT_CHARS += chars
+    while _DOCUMENT_CHARS > DOCUMENT_CACHE_MAX_CHARS and len(_DOCUMENTS) > 1:
+        # Insertion order is eviction order; the entry just added stays.
+        _DOCUMENT_CHARS -= _DOCUMENTS.pop(next(iter(_DOCUMENTS)))[1]
+
+
+def forget_document(path) -> None:
+    """Drop one document's parse. Every write through `write_raw` comes here."""
+    global _DOCUMENT_CHARS
+    dropped = _DOCUMENTS.pop(str(path), None)
+    if dropped is not None:
+        _DOCUMENT_CHARS -= dropped[1]
+
+
+def documents_held() -> int:
+    """How many parses the cache is holding — the only way to ask."""
+    return len(_DOCUMENTS)
+
+
 def field_of(path: Path, key: str) -> str:
     """Scalar value of `key` inside the leading frontmatter block, or '' —
-    never from the prose body.
-    """
+    never from the prose body."""
     try:
-        return field_in(_split(read_raw(path)), key)
+        return document(path).field(key)
     except (OSError, UnicodeDecodeError):
         return ''
 
@@ -939,17 +1225,14 @@ def unquote(value: str) -> str:
 
 
 # A block-style list is the only non-scalar frontmatter this package reads:
-# `order` is edited constantly and reordering is the main edit, so one entry per
-# line keeps a diff showing what MOVED, where an inline `[a, b, c]` rewrites the
-# whole line.
+# reordering is the main edit and a block diff shows what MOVED (0.4.0/D4).
 def _without_trailing_comment(value: str) -> str:
     """`"0.1.0"  # the first` -> `"0.1.0"`.
 
     An inline comment was read INTO the value, which then failed to unquote and
-    left the quotes on — so one annotated entry silently changed the spelling
-    of every version the reader returned (review A3). Only a `#` OUTSIDE the
-    quotes ends the value; a version is a literal, so a `#` inside quotes is
-    part of it.
+    left the quotes on — one annotated entry silently changed the spelling of
+    every version the reader returned (review A3). Only a `#` OUTSIDE the
+    quotes ends the value.
     """
     value = value.strip()
     if value[:1] in ('"', "'"):
@@ -965,16 +1248,20 @@ _LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
 
 
 def list_field_of(path: Path, key: str) -> list[str]:
-    """Block-style list under `key` in the leading frontmatter, or [].
-
-    `key:` must carry nothing but a comment on its own line; a scalar on it is
-    a different shape and reads as no list at all, never as a one-element one.
+    """Block-style list under `key` in the leading frontmatter, or []. `key:`
+    must carry nothing but a comment on its own line; a scalar on it is a
+    different shape and reads as no list at all, never a one-element one.
     """
     try:
-        lines = _split(read_raw(path))
+        doc = document(path)
     except (OSError, UnicodeDecodeError):
         return []
-    bounds = _fence_bounds(lines)
+    return doc.list_field(key)
+
+
+def _list_in(lines: Sequence[str], bounds: tuple[int, int] | None,
+             key: str) -> list[str]:
+    """`list_field_of` over lines and bounds already found."""
     if bounds is None:
         return []
     open_i, close_i = bounds
@@ -988,11 +1275,10 @@ def list_field_of(path: Path, key: str) -> list[str]:
         for line in lines[i + 1:close_i]:
             stripped = line.strip()
             if not stripped or stripped.startswith('#'):
-                # Blank lines SPACE a long plan and comment lines ANNOTATE one,
-                # and both are the obvious things a human does to a file that
-                # is edited on every ship. Truncating at either dropped every
-                # entry below it — silently, and `--append` then wrote a
-                # duplicate and reported a successful append (review A2).
+                # Blank lines SPACE a long plan and comment lines ANNOTATE
+                # one. Truncating at either dropped every entry below it —
+                # silently, and `--append` then wrote a duplicate and reported
+                # a successful append (review A2).
                 continue
             m = _LIST_ITEM.match(line)
             if m is None:
@@ -1005,10 +1291,10 @@ def list_field_of(path: Path, key: str) -> list[str]:
 def sequence_defect(path: Path) -> str:
     """Why `order:` here cannot be rewritten as a block list, or ''."""
     try:
-        lines = _split(read_raw(path))
+        doc = document(path)
     except (OSError, UnicodeDecodeError) as err:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
-    bounds = _fence_bounds(lines)
+    lines, bounds = doc.lines, doc.bounds
     if bounds is None:
         return 'has no frontmatter block to hold `order:`'
     open_i, close_i = bounds
@@ -1024,16 +1310,13 @@ def sequence_defect(path: Path) -> str:
 def set_field(path: Path, key: str, value: str) -> bool:
     """Set-or-insert one frontmatter scalar, preserving every other byte;
     False without writing when there is no frontmatter block or the write
-    fails. One key through `set_fields`.
-    """
+    fails."""
     return set_fields(path, {key: value})
 
 
 def set_fields(path: Path, updates: dict[str, str]) -> bool:
     """Set-or-insert several frontmatter scalars in one read and one write, so
-    a multi-key rewrite (`pm move`'s three) cannot land half (rule 3). Same
-    per-key contract as `set_field`.
-    """
+    a multi-key rewrite (`pm move`'s three) cannot land half (rule 3)."""
     try:
         text = read_raw(path)
     except (OSError, UnicodeDecodeError):
@@ -1061,11 +1344,10 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
 def set_list_field(path: Path, key: str, values: list[str]) -> bool:
     """Rewrite the block list under `key`, preserving every other byte.
 
-    The list-aware sibling to `set_field`, and the writer that has to be
-    byte-honest: a diff showing what MOVED is why the plan is a grain and not
-    TOML. The file's own conventions are kept rather than normalised — indent
-    and quote character come from the first item already there. An empty
-    `values` leaves the key with no items, never deletes it.
+    The writer that has to be byte-honest: a diff showing what MOVED is why the
+    plan is a grain and not TOML. Indent and quote character come from the first
+    item already there. An empty `values` leaves the key with no items, never
+    deletes it.
     """
     try:
         text = read_raw(path)
@@ -1102,12 +1384,9 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         for j in range(key_i + 1, close_i):
             stripped = lines[j].strip()
             if not stripped or stripped.startswith('#'):
-                # The READER spans these, so the writer must too — stopping
-                # here left the entries below the comment in place and wrote
-                # the new list above them, which is a duplicate the verb then
-                # reported as a successful append (review A2). Spanned lines
-                # are kept, ahead of the rewritten items, so the author's
-                # annotations survive the edit.
+                # The READER spans these (`_list_in`, review A2), so the
+                # writer must too: spanned lines are kept ahead of the
+                # rewritten items, so annotations survive the edit.
                 kept.append(lines[j])
                 continue
             m = _LIST_ITEM.match(lines[j])
@@ -1148,30 +1427,42 @@ def id_is_literal(value: str) -> bool:
 
 def segment_is_literal(value: str) -> bool:
     """One id segment the resolvers may join onto a directory — the resolution
-    twin of `_check_slug`: no `.`/`..`/empty segment, no separator, no
-    absolute path, no glob.
-    """
+    twin of `_check_slug`: no `.`/`..`/empty segment, separator or glob."""
     return (id_is_literal(value) and value not in ('.', '..')
             and not any(c in value for c in '/\\'))
 
 
-# =============================================================================
-# THE GRAIN LAYER (0.4.0) — identity is frontmatter, location is convention
-# =============================================================================
+# --- THE GRAIN LAYER (0.4.0): identity is frontmatter, location is convention -
 # `id:` and `kind:` are read from the document; the pools are where documents
 # live; nothing interprets a path. The ~20 functions this replaced each joined
 # an id onto a directory or into a `glob()` pattern — what `segment_is_literal`
 # was written to make safe. Match-by-field builds no path from user input.
 
-# The kind prefix a human reads off a bare id — in a commit message, a
-# dispatch, a review — without its location. `kind:` is what the TOOL reads;
-# this is for the person. NOT a namespace: it does not make ids unique across
+# The kind prefix a human reads off a bare id, without its location; `kind:` is
+# what the TOOL reads. NOT a namespace: it does not make ids unique across
 # repos, and cross-repo disambiguation is a display concern, never a filename.
 KIND_PREFIX = {'milestone': 'ms', 'feature': 'ft', 'story': 'st', 'bug': 'bg'}
 
+# What joins the prefix to the slug. Named because `mint_id` and every reader
+# that asks "does this already carry its prefix" must agree on the byte.
+PREFIX_SEPARATOR = '-'
+
+
+def mint_id(kind: str, slug: str) -> str:
+    """`<prefix>-<slug>` — THE ONE MINTING PATH, for `pm new` and for
+    `tools/dev/pm_migrate.py`, so a migrated tree grows one id vocabulary and
+    not two (`bg-the-new-verbs-mint-a-compound-id`).
+    No parent in it: a binding is the child's own field, and an id restating it
+    made re-parenting a `pm rename` plus a ref sweep. It MINTS and nothing else;
+    no check grades an id against this (rule 9).
+    """
+    prefix = KIND_PREFIX[kind] + PREFIX_SEPARATOR
+    return slug if slug.startswith(prefix) else f'{prefix}{slug}'
+
+
 # The pool directory each kind DERIVES when the config names none. Spelled out
-# rather than `f'{kind}s'`, because English is not a rule the code should be
-# inferring — `storys` is what that inference produces.
+# rather than `f'{kind}s'` — English is not a rule to infer, and `storys` is
+# what that inference produces.
 POOL_NAME = {'milestone': 'milestones', 'feature': 'features',
              'story': 'stories', 'bug': 'bugs'}
 
@@ -1195,12 +1486,10 @@ class Grain:
 
 
 def pool_dir(cfg: PmConfig, kind: str) -> Path:
-    """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`.
-
-    Relative to the repo root the tool already discovers: an absolute root in
-    a committed config is wrong in every worktree, on every other machine and
-    in CI, which is why there is no `project_root_dir` key and asking for one
-    is exit 2.
+    """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`,
+    relative to the repo root the tool already discovers: an absolute root in a
+    committed config is wrong in every worktree, on every other machine and in
+    CI, which is why there is no `project_root_dir` key.
     """
     declared = getattr(cfg, f'{kind}_dir_key', '')
     if declared:
@@ -1209,10 +1498,9 @@ def pool_dir(cfg: PmConfig, kind: str) -> Path:
 
 
 def _is_shared_doc(path: Path) -> bool:
-    """A grain's own decisions/handoff/review doc, rather than a grain.
-
-    BOTH halves: a pooled slug is free-form, so a story named like a shared
-    doc is not one. It says so by opening frontmatter, which the two minted
+    """A grain's own decisions/handoff/review doc, rather than a grain. BOTH
+    halves: a pooled slug is free-form, so a story named like a shared doc is
+    not one, and it says so by opening frontmatter — which the two minted
     shared docs never do.
     """
     if not any(path.name.endswith(f'-{slot}') for slot in SLOT_HEADER):
@@ -1220,13 +1508,59 @@ def _is_shared_doc(path: Path) -> bool:
     return not _is_grain_doc(path)
 
 
+# --- ONE WALK PER SCAN --------------------------------------------------------
+# `document` answers *what does this file say* once; this answers *what is in
+# the tree* once. `check pm` asked that question about 330 times over a
+# 700-document tree, and every ask was four `rglob`s and a sort.
+#
+# SCOPED, never a global memo: a verb that writes must see its own write on the
+# next read, so the snapshot lives only inside `reading_tree()`. Belt and
+# braces, it is dropped the instant anything in this process mutates a file —
+# `core.apply` counts every write this package is allowed to make.
+_SNAPSHOT: dict | None = None
+_MUTATIONS_KEY = 'mutations'
+
+
+@contextmanager
+def reading_tree():
+    """Walk the pools ONCE for the length of this block — for a caller that
+    only reads. Nested scopes share the outer one; leaving drops it.
+    """
+    global _SNAPSHOT
+    outer = _SNAPSHOT
+    if outer is None:
+        _SNAPSHOT = {_MUTATIONS_KEY: apply.mutations()}
+    try:
+        yield
+    finally:
+        _SNAPSHOT = outer
+
+
+def _held(key, produce):
+    """`produce()`, held for the rest of the scope when there is one and
+    nothing has written since it opened."""
+    snap = _SNAPSHOT
+    if snap is None:
+        return produce()
+    mutations = apply.mutations()
+    if snap.get(_MUTATIONS_KEY) != mutations:
+        snap.clear()
+        snap[_MUTATIONS_KEY] = mutations
+    if key not in snap:
+        snap[key] = produce()
+    return snap[key]
+
+
 def pool_scan(cfg: PmConfig, kind: str) -> Walk:
     """One pool as a `Walk` — the kept documents AND what it narrowed away.
-
     `slot_walk` for a table: a dot prefix is a deliberate hide and a `.md` that
     opens no frontmatter is a note, and both are COUNTED (rule 4).
     """
     base = pool_dir(cfg, kind)
+    return _held(('pool', str(base)), lambda: _pool_scan(base))
+
+
+def _pool_scan(base: Path) -> Walk:
     if not base.is_dir():
         return Walk(())
     return (walk.descendants(base, Kind.FILE, suffix='.md')
@@ -1236,25 +1570,20 @@ def pool_scan(cfg: PmConfig, kind: str) -> Walk:
 
 
 def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
-    """Every document in one pool, sorted. Replaces `milestone_walk`,
-    `milestone_dirs` and `known_milestones` — three walks that were one walk
-    with a kind baked in."""
+    """Every document in one pool, sorted."""
     return sorted(pool_scan(cfg, kind).kept)
 
 
 def pool_census(cfg: PmConfig, kind: str, label: str) -> str:
-    """One pool's count WITH its narrowings — `Walk.census`, by kind.
-
-    A bare number is not available on purpose: the count and what the walk left
-    out render together or the count is a claim about the filter rather than
-    about the tree (rule 4).
+    """One pool's count WITH its narrowings. A bare number is not available on
+    purpose: the count and what the walk left out render together, or the count
+    is a claim about the filter rather than about the tree (rule 4).
     """
     return pool_scan(cfg, kind).census(label)
 
 
 def pool_skipped(cfg: PmConfig, kind: str) -> int:
-    """How many candidates a narrowing removed from one pool — for a caller
-    that renders its own sentence about them."""
+    """How many candidates a narrowing removed from one pool."""
     return sum(pool_scan(cfg, kind).counts().values())
 
 
@@ -1262,26 +1591,30 @@ def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     """One document as a `Grain`, or None when it declares no id.
 
     `kind` is the POOL it was found in, and it is only a default: a document
-    that declares `kind:` is that kind, wherever it sits, because the location
-    is convention the tool does not interpret.
+    that declares `kind:` is that kind wherever it sits, because the location
+    is convention the tool does not interpret. A document that cannot be read
+    declares no id.
     """
-    gid = unquote(field_of(path, 'id'))
+    try:
+        doc = document(path)
+    except (OSError, UnicodeDecodeError):
+        return None
+    gid = unquote(doc.field('id'))
     if not gid:
         return None
-    declared = unquote(field_of(path, 'kind')) or kind
+    declared = unquote(doc.field('kind')) or kind
     field = BINDS_TO.get(declared, ('', ''))[1]
     return Grain(gid=gid, kind=declared, path=path,
-                 status=field_of(path, 'status'),
-                 binding=unquote(field_of(path, field)) if field else '')
+                 status=doc.field('status'),
+                 binding=unquote(doc.field(field)) if field else '')
 
 
 def is_pooled(cfg: PmConfig) -> bool:
     """Has this tree been migrated? True when any pool holds a document.
 
-    The one place the two layouts are told apart, and it is a fact about the
-    tree rather than a config key: a key would be a second copy of something
-    the directory already says, and a consumer mid-migration would have to
-    keep the two in agreement.
+    The one place the two layouts are told apart, and a fact about the tree
+    rather than a config key: a key would be a second copy of what the
+    directory already says, to be kept in agreement mid-migration.
     """
     return any(pool_dir(cfg, kind).is_dir() and pool_walk(cfg, kind)
                for kind in FLOW_KINDS)
@@ -1316,11 +1649,9 @@ def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
     slot the document sits in, parent from the directory above.
 
     Kept so a consumer's tree keeps working the day they bump and before it is
-    moved — the alternative is a version that reads nothing until a migration
-    lands, which is a breaking change wearing a minor number. It is the ONLY
-    code left that treats a path as schema, and it goes when no nested tree is
-    left. `tools/dev/pm_migrate.py` is the mover, and it is a script rather
-    than a verb on purpose.
+    moved — the alternative reads nothing until a migration lands, which is a
+    breaking change wearing a minor number. The ONLY code left that treats a
+    path as schema; `tools/dev/pm_migrate.py` is the mover.
     """
     out: dict[str, Grain] = {}
 
@@ -1350,9 +1681,18 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
 
     A duplicate id is NOT resolved here — the first one read wins and V1 names
     every file that shares one. Uniqueness is a gate FINDING and never a
-    runtime lock: an allocator needs a counter and a git repo has none, so two
-    agents on two branches would collide invisibly (0.4.0/D4).
+    runtime lock (0.4.0/D4).
+
+    Held for the length of a `reading_tree()` scope; built afresh outside one.
+    Every caller READS the mapping — inside a scope, editing it would be
+    editing the next reader's answer.
     """
+    return _held(('index', str(cfg.roadmap),
+                  tuple(str(pool_dir(cfg, k)) for k in FLOW_KINDS)),
+                 lambda: _grain_index(cfg))
+
+
+def _grain_index(cfg: PmConfig) -> dict[str, Grain]:
     if is_pooled(cfg):
         out: dict[str, Grain] = {}
         for kind in FLOW_KINDS:
@@ -1370,12 +1710,10 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
     return out
 
 
-# The characters an id cannot carry in EITHER layout. The security argument for
-# match-by-field is that no id reaches a path — that stands, and it is not what
-# this guard is for. This is CHEAPNESS and honesty: an id that cannot be a
-# grain's is refused before the tree is walked, so a hostile string is answered
-# without reading a single document, which is a property the resolvers this
-# replaced had and would otherwise be lost.
+# The characters an id cannot carry in EITHER layout. NOT the security guard —
+# match-by-field is, and no id reaches a path. This is CHEAPNESS: an id that
+# cannot be a grain's is refused before the tree is walked, so a hostile string
+# is answered without reading a document, which the resolvers this replaced did.
 _ID_FORBIDDEN = set('*?[]!\\:~\n\t\r\x00')
 ID_MAX = 200
 
@@ -1396,19 +1734,16 @@ def id_defect(gid: str) -> str:
 
 def kind_of(cfg: PmConfig, gid: str) -> str:
     """The kind a grain declares, or '' when nothing in the tree claims the id.
-
     The id's SHAPE is not consulted: `ft-x` and `0.1/x` are both just ids, and
-    reading a kind out of either is the derivation 0.4.0 deleted. A caller with
-    no grain to ask has no kind, and must say so rather than guess one.
+    reading a kind out of either is the derivation 0.4.0 deleted.
     """
     found = grain_index(cfg).get(gid)
     return found.kind if found is not None else ''
 
 
 def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
-    """The document for an id, or None. `kind` narrows when a caller knows it.
-
-    The six resolvers this replaces each joined an id onto a directory. This
+    """The document for an id, or None; `kind` narrows when a caller knows it.
+    The six resolvers this replaces each joined an id onto a directory — this
     reads `id:` and matches, so no user input reaches a path.
     """
     if id_defect(gid):
@@ -1420,11 +1755,8 @@ def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
 
 
 def children(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
-    """Grains of `kind` whose binding field names `parent_id`.
-
-    Found by their BINDING, not by which directory they sit in — five per-kind
-    child listings become one.
-    """
+    """Grains of `kind` whose binding field names `parent_id` — found by their
+    BINDING, not by which directory they sit in."""
     return [g for g in grain_index(cfg).values()
             if g.kind == kind and g.binding == parent_id]
 
@@ -1438,11 +1770,10 @@ def unbound(cfg: PmConfig, kind: str) -> list[Grain]:
 
 
 def milestone_of(cfg: PmConfig, gid: str) -> str:
-    """Which milestone a grain belongs to, followed through its bindings.
-
-    A feature or bug names its milestone; a story names its feature, so it
-    takes one more hop. `milestone_dir_of(path)` used to answer this by
-    counting path components — the same fact, derived from where a file sat.
+    """Which milestone a grain belongs to, followed through its bindings — a
+    story takes one hop more than a feature. `milestone_dir_of(path)` used to
+    answer this by counting path components: the same fact, derived from where
+    a file sat.
     """
     index = grain_index(cfg)
     seen: set[str] = set()
@@ -1458,11 +1789,9 @@ def milestone_of(cfg: PmConfig, gid: str) -> str:
 
 
 def duplicate_ids(cfg: PmConfig) -> dict[str, list[Path]]:
-    """{id: every document claiming it}, for the ids more than one claims.
-
-    Per KIND is the uniqueness rule, and this is the whole of its
-    implementation: the same slug in two different kinds is fine, because the
-    prefix distinguishes them.
+    """{id: every document claiming it}, for the ids more than one claims. Per
+    KIND is the uniqueness rule: the same slug in two different kinds is fine,
+    because the prefix distinguishes them.
     """
     seen: dict[tuple[str, str], list[Path]] = {}
     for kind in FLOW_KINDS:
@@ -1524,17 +1853,16 @@ def feature_file(cfg: PmConfig, fid: str) -> Path | None:
 def story_file(cfg: PmConfig, sid: str) -> Path | None:
     """The story's document, in either layout.
 
-    `AmbiguousStory` — *two files claim one story id* — cannot happen against
-    a pooled tree: the index is keyed by id and `check pm` reports a duplicate
-    as a finding. It survives for the nested layout only, where a slug plus an
-    ordinal prefix could resolve two ways.
+    `AmbiguousStory` — *two files claim one story id* — cannot happen against a
+    pooled tree: the index is keyed by id and `check pm` reports a duplicate as
+    a finding. It survives for the nested layout, where a slug plus an ordinal
+    prefix could resolve two ways.
     """
     if is_pooled(cfg):
         return grain_file(cfg, sid, 'story')
-    # The nested layout keeps its own resolution WHOLE rather than falling
-    # back to it: the index answers by id and `setdefault`, so consulting it
-    # first would silently pick one of two files claiming a slug — turning a
-    # refusal this suite proves into a quiet wrong answer.
+    # The nested layout keeps its own resolution WHOLE: the index answers by
+    # id and `setdefault`, so consulting it first would silently pick one of
+    # two files claiming a slug — a refusal turned into a wrong answer.
     mid, _, rest = sid.partition('/')
     fslug, _, sslug = rest.partition('/')
     if not fslug or not segment_is_literal(sslug):
@@ -1562,48 +1890,40 @@ class AmbiguousStory(Exception):
 
 # --- children -----------------------------------------------------------------
 def shared_doc(cfg: PmConfig, grain: 'Grain | Path', name: str) -> Path:
-    """Where a grain's shared document lives — `decisions.md`, `handoff.md`,
-    `review.md`.
-
-    Pooled: beside the grain, under the grain's own stem, because a pool is
-    flat and a bare `decisions.md` would be one file for every grain of that
-    kind. Nested: inside the grain's directory.
+    """Where a grain's shared document lives. Pooled: beside the grain, under
+    the grain's own stem, because a pool is flat and a bare `decisions.md`
+    would be one file for every grain of that kind. Nested: inside the grain's
+    directory.
     """
     path = grain if isinstance(grain, Path) else grain.path
     # `is_pooled` and not the parent's NAME: a tree that configured its pools
-    # somewhere else is still a pooled tree, and reading the name would put its
-    # shared docs back inside directories that do not exist.
+    # elsewhere is still pooled, and the name would put its shared docs back
+    # inside directories that do not exist.
     if is_pooled(cfg):
         return path.with_name(f'{path.stem}-{name}')
     return path.parent / name
 
 
 def milestone_doc(handle: Path) -> Path:
-    """The milestone's DOCUMENT from whatever `known_milestones` handed back.
-
-    A pooled tree hands back the document; a nested one hands back the
-    directory it sits in. One function, so a caller does not have to know
-    which — and so the `handle / MILESTONE_DOC` join, which is the path being
-    schema, exists in one place instead of a dozen.
+    """The milestone's DOCUMENT from whatever `known_milestones` handed back —
+    a document when pooled, a directory when nested. One function, so the
+    `handle / MILESTONE_DOC` join, which is the path being schema, exists in
+    one place instead of a dozen.
     """
     return handle if handle.is_file() else handle / MILESTONE_DOC
 
 
 def milestones(cfg: PmConfig) -> list[Grain]:
-    """Every milestone, by id. Replaces `milestone_dirs` and
-    `known_milestones` at every call site that wanted the grains rather than
-    the directories."""
+    """Every milestone, by id — for a caller that wants the grains."""
     return sorted((g for g in grain_index(cfg).values()
                    if g.kind == 'milestone'), key=lambda g: g.gid)
 
 
 def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
     """The documents of one kind bound to one parent, in the parent's declared
-    `order` where it has one and by id after that.
-
-    **Sequence is the parent's list and membership is the child's field**, so
-    the order comes from the parent and the membership from the children — the
-    two questions the nested layout answered with one directory.
+    `order` where it has one and by id after that. **Sequence is the parent's
+    list and membership is the child's field** — the two questions the nested
+    layout answered with one directory.
     """
     found = {g.gid: g.path for g in children(cfg, kind, parent_id)}
     parent = grain_index(cfg).get(parent_id)
@@ -1643,7 +1963,6 @@ def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
 
 def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
     """[(id, every document claiming it)] for each id claimed more than once.
-
     The other half of D4: `grain_index` keeps the first document read, so the
     second is in the tree, is counted, and is addressable by nothing.
     """
@@ -1659,7 +1978,6 @@ def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
 
 def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
     """{'feature': [ids naming no milestone], 'story': [...], 'bug': [...]}.
-
     Only kinds that BIND, and only an EMPTY binding — a binding naming a grain
     that is not in the tree is V7's, because that is drift rather than a
     decision nobody has made yet.
@@ -1675,12 +1993,10 @@ def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
 
 
 def stray_documents(cfg: PmConfig) -> list[Path]:
-    """Grain documents under the roadmap that sit in no pool.
-
-    Every pooled reader walks the pools, so a document outside all four is read
-    by NOTHING while `check grain-shape`, which walks the roadmap whole, counts
-    it. Shared docs and the plan are expected outside a pool and are not
-    strays.
+    """Grain documents under the roadmap that sit in no pool: every pooled
+    reader walks the pools, so a document outside all four is read by NOTHING
+    while `check grain-shape`, which walks the roadmap whole, counts it. Shared
+    docs and the plan are expected outside a pool.
     """
     if not is_pooled(cfg):
         return []
@@ -1698,10 +2014,9 @@ def stray_documents(cfg: PmConfig) -> list[Path]:
 
 
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
-    """Documents in a pool that the index cannot key on, and why.
-
-    `orphan_dirs`' successor: a document with no readable `id:` has no key, is
-    in no index, and would leave the census silently.
+    """Documents in a pool that the index cannot key on, and why. `orphan_dirs`'
+    successor: a document with no readable `id:` has no key, is in no index,
+    and would leave the census silently.
     """
     out: list[tuple[Path, str]] = []
     for kind in FLOW_KINDS:
@@ -1731,9 +2046,7 @@ def _has_feature_file(d: Path) -> bool:
 
 
 def _milestone_candidates(base: Path, exclude_archive: bool) -> Walk:
-    """Directories under one roadmap base that a milestone could be — the one
-    walk `milestone_dirs` and `orphan_dirs` share.
-    """
+    """Directories under one roadmap base that a milestone could be."""
     found = walk.children(base, Kind.DIR)
     if exclude_archive:
         found = found.filter(lambda d: d.name != ARCHIVE_DIR_NAME,
@@ -1743,8 +2056,7 @@ def _milestone_candidates(base: Path, exclude_archive: bool) -> Walk:
 
 def milestone_walk(cfg: PmConfig) -> Walk:
     """Milestone dirs in the active tree, with the scaffold-only dirs the walk
-    dropped beside them.
-    """
+    dropped beside them."""
     return _milestone_candidates(cfg.roadmap, exclude_archive=True).filter(
         _has_milestone_file, SkipReason.NO_GRAIN_FILE)
 
@@ -1759,8 +2071,8 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
     `pm status`, `pm list` and `retire` read.
 
     The handle is the milestone's own DIRECTORY in a nested tree and its
-    DOCUMENT in a pooled one. Callers passing it back to a listing do not care
-    which; one that needs a directory asks `milestone_dir`.
+    DOCUMENT in a pooled one; a caller that needs a directory asks
+    `milestone_dir`.
     """
     if is_pooled(cfg):
         return [(g.path, g.gid) for g in milestones(cfg)]
@@ -1771,10 +2083,10 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
 BOM = '﻿'
 
 
-def _opens_frontmatter(lines: list[str]) -> bool:
+def _opens_frontmatter(lines: Sequence[str]) -> bool:
     """True when this text attempts a leading `---` block — lenient on a BOM,
-    blank lines and fence indent, so a damaged grain is a finding rather
-    than a note, but never past prose.
+    blank lines and fence indent, so a damaged grain is a finding rather than
+    a note, but never past prose.
     """
     for line in lines:
         probe = line.lstrip(BOM)
@@ -1785,21 +2097,19 @@ def _opens_frontmatter(lines: list[str]) -> bool:
 
 
 def _is_grain_doc(path: Path) -> bool:
-    """True when this file is a grain document rather than a note beside one:
-    it opens a frontmatter block, well-formed or not. Detection is lenient
-    and parsing strict, so a damaged grain stays in scope for the rules; so
-    does a file that cannot be read.
+    """True when this file is a grain document rather than a note beside one.
+    Detection is lenient and parsing strict, so a damaged grain stays in scope
+    for the rules; so does a file that cannot be read.
     """
     try:
-        return _opens_frontmatter(_split(read_raw(path)))
+        return _opens_frontmatter(document(path).lines)
     except (OSError, UnicodeDecodeError):
         return True
 
 
 def slot_walk(gdir: Path) -> Walk:
     """The walk of one slot directory (`bugs/`, `stories/`) — the single
-    definition every reader shares. Recursive, `.md` compared
-    case-insensitively, and two disclosed narrowings: dot-prefixed
+    definition every reader shares, with two disclosed narrowings: dot-prefixed
     components, and a `.md` that opens no frontmatter.
     """
     return (walk.descendants(gdir, Kind.FILE, suffix='.md')
@@ -1823,7 +2133,6 @@ def _nested_feature_files(mdir: Path) -> list[Path]:
 
 
 def _nested_story_files(ffile: Path) -> list[Path]:
-    """Every story document under one feature, in reading order."""
     return grain_docs(ffile.parent / STORIES_DIR)
 
 
@@ -1848,16 +2157,19 @@ def tree_walk(cfg: PmConfig) -> Walk:
 # --- THE review-record definition --------------------------------------------
 def record_resolves(path: Path) -> bool:
     """True if the pointer names a file that is there — the whole definition;
-    how much a reviewer wrote is not a fact about anything.
-    """
+    how much a reviewer wrote is not a fact about anything."""
     return path.is_file()
 
 
-def _pointer_escapes(pointer: str) -> bool:
-    """Does a `reviewed:` pointer name somewhere outside the checkout? The
-    shapes `core.config.relpath` refuses, as a predicate: a bad pointer is
-    a finding about one feature, not a config error.
-    """
+def record_path(cfg: PmConfig, pointer: str) -> Path:
+    """The file a record pointer names — `--review-record`'s and `--source`'s
+    ONE resolution, so the escape guard beside it is asked at both."""
+    return Path(pointer) if pointer.startswith('/') else cfg.root / pointer
+
+
+def pointer_escapes(pointer: str) -> bool:
+    """Outside the checkout? The shapes `core.config.relpath` refuses, as a
+    predicate: a bad pointer is a finding, never a config error."""
     return (pointer.startswith(('/', '~', '\\'))
             or ':' in pointer.split('/', 1)[0]
             or '..' in Path(pointer).parts)
@@ -1865,17 +2177,15 @@ def _pointer_escapes(pointer: str) -> bool:
 
 def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     """The feature's resolved review record, or None; the `reviewed:` pointer
-    is the whole mechanism, with no filename fallback.
-    """
+    is the whole mechanism, with no filename fallback."""
     ffile = feature_file(cfg, fid)
     if ffile is None:
         return None
     pointer = unquote(field_of(ffile, 'reviewed'))
     if pointer and pointer != 'null':
-        # Repo-relative, always: an absolute pointer is a record nobody
-        # reviewing this repo can read (hard rule 8), and `ready-for tag`
-        # already refused it by shape.
-        if _pointer_escapes(pointer):
+        # Repo-relative, always (hard rule 8): an absolute pointer is a
+        # record nobody reviewing this repo can read.
+        if pointer_escapes(pointer):
             return None
         if record_resolves(cfg.root / pointer):
             return pointer
@@ -1885,8 +2195,8 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
 # --- flow helpers (D9/D10, and the ledger's home) -----------------------------
 def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     """(id, branch, milestone.md) for every active milestone in `in_progress`.
-    There is no "the building milestone" (D5): readers report over every
-    one or refuse naming them all.
+    There is no "the building milestone" (D5): readers report over every one or
+    refuse naming them all.
     """
     out = []
     for milestone in milestones(cfg):
@@ -1899,8 +2209,7 @@ def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
 
 def mainline_branch() -> str:
     """D10's trunk name — `[repo_hygiene] mainline`, `origin/`-stripped, since
-    a milestone's authored `branch:` is never remote-qualified.
-    """
+    a milestone's authored `branch:` is never remote-qualified."""
     sect = config_section('repo_hygiene')
     value = text(sect, 'repo_hygiene', 'mainline', 'origin/main')
     if value.startswith('origin/'):
@@ -1948,23 +2257,22 @@ def plan_defect(cfg: PmConfig) -> str | None:
     """Why `releases.md` cannot be read as a plan, or None.
 
     An ABSENT plan is not a defect — a tree mid-adoption has none. A plan that
-    is THERE and unreadable is: reporting "declares no `order`" over a
-    BOM-damaged, fence-eaten, misspelled or undecodable file is rule 4's first
-    cardinal sin, a gate passing over what it did not measure.
+    is THERE and unreadable is: reporting "declares no `order`" over a damaged
+    file is rule 4's first cardinal sin, a gate passing over what it did not
+    measure.
     """
     path = releases_file(cfg)
     if not path.is_file():
         return None
     try:
-        text = read_raw(path)
+        doc = document(path)
     except (OSError, UnicodeDecodeError) as err:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
-    lines = _split(text)
-    if _fence_bounds(lines) is None:
+    lines = doc.lines
+    if doc.bounds is None:
         if lines and lines[0].startswith(BOM):
-            # Naming it "no frontmatter" sent the reader looking for a missing
-            # block when the block is there and three invisible bytes precede
-            # it (review B5).
+            # Naming it "no frontmatter" sent the reader looking for a block
+            # that is there behind three invisible bytes (review B5).
             return ('opens with a UTF-8 BOM before its `---`, so the '
                     'frontmatter block is not the first line — strip the BOM')
         opens = bool(lines) and _FENCE.match(lines[0]) is not None
@@ -1987,18 +2295,15 @@ def plan_defect(cfg: PmConfig) -> str | None:
 
 def declared_order(cfg: PmConfig) -> list[str]:
     """The declared sequence of MILESTONE IDS, or [] when there is no plan.
-
-    Ids, not versions (0.4.0): `order` lists child ids at every level, so a
-    milestone that re-versions never touches the plan and `pm rename` sweeps
-    the entry with every other reference.
+    Ids, not versions (0.4.0/D4): a milestone that re-versions never touches
+    the plan, and `pm rename` sweeps the entry with every other reference.
     """
     return list_field_of(releases_file(cfg), ORDER_KEY)
 
 
 def milestone_version(cfg: PmConfig, mid: str) -> str:
     """The version a milestone declares it ships as, or '' — it is optional,
-    and a milestone without one is BACKLOG, never a finding (R2).
-    """
+    and a milestone without one is BACKLOG, never a finding (R2)."""
     mfile = milestone_file(cfg, mid)
     return field_of(mfile, 'version').strip() if mfile is not None else ''
 
@@ -2006,8 +2311,7 @@ def milestone_version(cfg: PmConfig, mid: str) -> str:
 def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     """(version, milestone id) for every milestone that declares one, in tree
     order. A list rather than a dict: R3 asks whether two milestones claim the
-    same version, and a dict would have eaten the duplicate.
-    """
+    same version, and a dict would have eaten the duplicate."""
     out = []
     for handle, mid in known_milestones(cfg):
         mfile = handle if handle.is_file() else handle / MILESTONE_DOC
@@ -2019,11 +2323,9 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
 
 
 def milestones_of_version(cfg: PmConfig, version: str) -> list[str]:
-    """Every milestone claiming `version`, in tree order.
-
-    A list, because two milestones claiming one version is a real tree defect
-    (R3) and answering with the first would make the verdict depend on which
-    document was read first.
+    """Every milestone claiming `version`, in tree order. A list, because two
+    milestones claiming one version is a real tree defect (R3), and answering
+    with the first would make the verdict depend on read order.
     """
     return [mid for claimed, mid in version_claims(cfg) if claimed == version]
 
@@ -2051,7 +2353,6 @@ def entry_is_dangling(cfg: PmConfig, mid: str) -> bool:
 
 def last_shipped_index(cfg: PmConfig) -> int:
     """Position of the last entry in `order` whose milestone is `done`, or -1.
-
     "Behind us" is a POSITION, which is the whole reason order is declared: no
     comparator is asked whether 0.90.10 follows 0.90.4.
     """
@@ -2074,23 +2375,18 @@ def current_milestone(cfg: PmConfig) -> str | None:
 
 
 def current_release(cfg: PmConfig) -> str | None:
-    """The VERSION the current milestone declares, or None.
-
-    Never `[pm] version_at`, which answers *which entry should the version FILE
-    equal* — a project bumping at CLOSE answers that with the last SHIPPED
-    release, so feeding it here re-released a finished milestone.
+    """The VERSION the current milestone declares, or None. Never `[pm]
+    version_at`, which answers *which entry should the version FILE equal* — a
+    project bumping at CLOSE answers that with the last SHIPPED release, so
+    feeding it here re-released a finished milestone.
     """
     mid = current_milestone(cfg)
     return (milestone_version(cfg, mid) or None) if mid is not None else None
 
 
 def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
-    """(the version `[pm] version_file` must equal, or None; why not).
-
-    R5's question, and R5's only. `start` is bump-at-START — the release being
-    worked on, so the file carries it while the work happens. `ship` is
-    bump-at-CLOSE — the last release that shipped, so the file still carries the
-    previous number until the release commit moves it.
+    """(the version `[pm] version_file` must equal, or None; why not) — R5's
+    question, and R5's only.
     """
     order = declared_order(cfg)
     if not order:
@@ -2121,13 +2417,10 @@ def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
     """Every value `[pm] version_file` may hold, and why, for [pm] version_at.
 
     `start` has one answer. **`ship` has two, and that is what bump-at-CLOSE
-    means**: the file carries the last shipped release while the next is being
-    built, and the release COMMIT moves it — so between that commit and the
-    status flip it correctly names a release that has not shipped.
-
-    Found by running the belt: `version-sync` wanted 0.3.0 and R5 wanted 0.2.0
-    at the same instant, and neither was wrong. A file naming NEITHER still
-    fails, which is what R5 is for.
+    means**: the release COMMIT moves the file, so between that commit and the
+    status flip it correctly names a release that has not shipped. Found by
+    running the belt — `version-sync` wanted 0.3.0 and R5 wanted 0.2.0 at the
+    same instant, and neither was wrong. A file naming NEITHER still fails.
     """
     one, why = graded_release(cfg)
     if one is None:
@@ -2139,15 +2432,11 @@ def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
 
 
 def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
-    """(the DOCUMENT of the milestone the current release belongs to, or None,
-    plus why not).
-
-    `order` answers with exactly one BY CONSTRUCTION — a position in a list is
-    one place. It does NOT read `[pm] version_at`, which says which entry the
-    version FILE is graded against; conflating the two filed cost rows into a
-    shipped milestone's ledger. The in-progress fallback covers a consumer who
-    bumped the pin before adopting a plan, and a tree with neither is refused
-    naming `pm add`.
+    """(the DOCUMENT of the milestone the current release belongs to, or None;
+    why not). `order` answers with exactly one BY CONSTRUCTION — a position in
+    a list is one place. It does NOT read `[pm] version_at`: conflating the two
+    filed cost rows into a shipped milestone's ledger. The in-progress fallback
+    covers a consumer who bumped the pin before adopting a plan.
     """
     mid = current_milestone(cfg)
     if mid is not None:
@@ -2165,9 +2454,8 @@ def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
                       f'there is no current release to file against — '
                       f'`agentic-sdlc pm add {root_id(cfg)} <milestone-id>` '
                       f'writes the plan')
-    # The reason is read off the plan rather than asserted (review C4): an
-    # entry naming nothing is stepped over, and saying "everything shipped"
-    # about it would be false.
+    # Read off the plan rather than asserted (review C4): an entry naming
+    # nothing is stepped over, and "everything shipped" would be false.
     dangling = [mid for mid in order if entry_is_dangling(cfg, mid)]
     if dangling:
         return None, (f'{dangling[0]} is in {cfg.rel(releases_file(cfg))} '
@@ -2226,8 +2514,7 @@ def contained(cfg: PmConfig, parent: Grain,
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     """D1 — a `reviewed:` pointer naming a file that is not there. An absent
-    pointer is not a finding; only a dangling one is.
-    """
+    pointer is not a finding; only a dangling one is."""
     ffile = feature_file(cfg, fid)
     if ffile is None:
         return None
@@ -2242,8 +2529,8 @@ def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
 
 def drift_stalled(cfg: PmConfig, view: 'FeatureView') -> str | None:
     """D2 — every story finished but the feature still in `todo` (a forgotten
-    flip). A feature at any `in_progress` state over finished stories is
-    the valid shape of one that has advanced.
+    flip). A feature at any `in_progress` state over finished stories has
+    simply advanced.
     """
     if view.total == 0 or view.done_n != view.total:
         return None
@@ -2254,8 +2541,7 @@ def drift_stalled(cfg: PmConfig, view: 'FeatureView') -> str | None:
 
 def drift_ahead_of_parent(cfg: PmConfig, child: str, parent: str) -> bool:
     """D5 — a story has left `todo` under a feature still in it: work started
-    in one place and not the other. A story `done` under a `reviewing`
-    feature is the normal path. Asked of the categories, so it places in
+    in one place and not the other. Asked of the categories, so it places in
     every vocabulary.
     """
     child_cat = category_of(cfg, 'story', child)
@@ -2268,9 +2554,7 @@ def drift_ahead_of_parent(cfg: PmConfig, child: str, parent: str) -> bool:
 @dataclass
 class FeatureView:
     """One feature plus the tallies every reader needs; `done_n` counts the
-    `done` category through `holds`, the predicate `ready-for feature`
-    uses.
-    """
+    `done` category through `holds`."""
     fid: str
     status: str
     path: Path
@@ -2300,11 +2584,12 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
 def header_of(path: Path) -> str:
     """The file's first non-blank line, stripped — its canonical header slot."""
     try:
-        for line in _split(read_raw(path)):
-            if line.strip():
-                return line.strip()
+        lines = document(path).lines
     except (OSError, UnicodeDecodeError):
         return ''
+    for line in lines:
+        if line.strip():
+            return line.strip()
     return ''
 
 
@@ -2313,14 +2598,13 @@ def header_of(path: Path) -> str:
 # outside the vocabulary — and every "is it open" reader tests a name, so a
 # typo would pass in silence.
 def _nested_bug_files(mdir: Path) -> list[Path]:
-    """Every bug document under one milestone, in reading order."""
     return grain_docs(mdir / BUGS_DIR)
 
 
 def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     """(findings, bugs scanned) — every bug whose status the project never
-    declared. The walk is recursive and case-insensitive on the extension,
-    so the census cannot undercount silently.
+    declared. The walk is recursive and case-insensitive on the extension, so
+    the census cannot undercount silently.
     """
     out: list[tuple[Path, str]] = []
     scanned = 0
@@ -2336,8 +2620,7 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
 
 
 def _every(cfg: PmConfig, kind: str) -> list[Path]:
-    """Every document of one kind, bound or not — the pool when there is one,
-    and the descent's answer for a nested tree, which has no other."""
+    """Every document of one kind, bound or not."""
     if is_pooled(cfg):
         return pool_walk(cfg, kind)
     if kind == 'bug':
@@ -2355,8 +2638,8 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
     D4 asks "is this word declared", never "is this word used", so a tree using
     two of eight states is indistinguishable, to every gate, from one using all
     eight. That is how a project adopted the conveyor as a CONFIG FIX and never
-    noticed: `building`, `reviewing`, `accepted` and `packaging` appeared zero
-    times across 85 grains, and every gate was green the whole time.
+    noticed: four of its states appeared zero times across 85 grains, and every
+    gate was green the whole time.
     """
     used: dict[str, dict[str, int]] = {
         kind: {state: 0 for state in flow.order}
@@ -2380,9 +2663,8 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
 
 
 def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:
-    """D4's one sentence: the word, and the words the project did declare;
-    None when `status` is in some category. One wording for every grain
-    kind.
+    """D4's one sentence: the word, and the words the project did declare; None
+    when `status` is in some category. One wording for every grain kind.
     """
     if category_of(cfg, kind, status) is not None:
         return None
@@ -2414,9 +2696,12 @@ _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 
 def section_lines(text: str, heading: str) -> list[str] | None:
     """The lines under `## <heading>`, up to the next heading; None when the
-    heading is absent, which is a different sentence from "empty".
-    """
-    lines = _split(text)
+    heading is absent, which is a different sentence from "empty"."""
+    return section_lines_in(_split(text), heading)
+
+
+def section_lines_in(lines: Sequence[str], heading: str) -> list[str] | None:
+    """`section_lines` over lines already read — the body of one parse."""
     start = None
     for i, line in enumerate(lines):
         m = _HEADING.match(line)
@@ -2432,8 +2717,7 @@ def section_lines(text: str, heading: str) -> list[str] | None:
 
 def section_is_empty(lines: list[str]) -> bool:
     """True when nothing but blank lines and HTML comments is under it — the
-    template's own prompt is not content.
-    """
+    template's own prompt is not content."""
     in_comment = False
     for line in lines:
         rest = line
@@ -2459,7 +2743,7 @@ def section_is_empty(lines: list[str]) -> bool:
 
 def empty_section(path: Path, heading: str) -> str | None:
     """'' when `## <heading>` is present and written; else why it is not."""
-    lines = section_lines(read_raw(path), heading)
+    lines = section_lines_in(document(path).lines, heading)
     if lines is None:
         return f'has no `## {heading}` section'
     if section_is_empty(lines):
@@ -2476,8 +2760,8 @@ DECISION_PREFIX = 'D'
 
 def next_entry_id(text: str) -> str:
     """The next ordinal for this log, from the ids the log itself holds: the
-    prefix follows the last id-shaped heading, a log with none starts at
-    `D1`, and numbering is per file by design.
+    prefix follows the last id-shaped heading, and numbering is per file by
+    design.
     """
     seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in _split(text)) if m]
     if not seen:
@@ -2489,8 +2773,7 @@ def next_entry_id(text: str) -> str:
 
 def append_heading(text: str, eid: str, when: str, title: str) -> str:
     """`text` with one `## <id> — <date> — <title>` heading appended; the em
-    dash is what `next_entry_id` and every log already use.
-    """
+    dash is what `next_entry_id` and every log already use."""
     eol = '\r\n' if '\r\n' in text else '\n'
     body = text
     if body and not body.endswith(('\n', '\r')):

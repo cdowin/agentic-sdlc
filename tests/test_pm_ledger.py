@@ -46,7 +46,7 @@ from support.pm import (
     write_config,
 )
 
-from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import arrive, ledger
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -77,9 +77,16 @@ STORY = '0.1/alpha/s0'
 GATE_TS = '2026-09-05T14:02:11Z'
 
 
-def only_row(root) -> dict:
-    rows = ledger_rows(root)
-    assert len(rows) == 1, f'expected exactly one row, got {rows}'
+def status_rows(root) -> list[dict]:
+    """The `status` rows alone. Read by KIND, never by count: ONE arrival
+    mints the flip and the `disposition` that answers it (0.5.0/D3, folded by
+    D6), so a length over the whole file counts two things."""
+    return [r for r in ledger_rows(root) if r['kind'] == ledger.KIND_STATUS]
+
+
+def only_row(root, kind: str = ledger.KIND_STATUS) -> dict:
+    rows = [r for r in ledger_rows(root) if r['kind'] == kind]
+    assert len(rows) == 1, f'expected one {kind} row, got {ledger_rows(root)}'
     return rows[0]
 
 
@@ -111,11 +118,18 @@ def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
         assert code == 0, out
         assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
         lines = ledger_lines(root)
-    assert len(lines) == 1, lines
-    row = json.loads(lines[0])
+    # ONE ARRIVAL, TWO ROWS: the flip, and the disposition that answers the
+    # state it reached. The second is D3's, and it is asserted here rather
+    # than counted around, because a flip that stopped minting it would
+    # otherwise look exactly like this case passing.
+    assert len(lines) == 2, lines
+    row, answer = (json.loads(ln) for ln in lines)
     assert list(row) == ['ts', 'kind', 'grain', 'from', 'to']
     assert (row['kind'], row['grain'], row['from'], row['to']) == (
         'status', STORY, 'ready', 'building')
+    assert list(answer) == ['ts', 'kind', 'grain', 'state', 'answer']
+    assert (answer['kind'], answer['grain'], answer['state']) == (
+        ledger.KIND_DISPOSITION, STORY, 'building')
     # A report reads these with `wc -l` and `readline`, so one row is one line
     # and there are no spaces after the separators.
     assert lines[0] == json.dumps(row, separators=(',', ':'))
@@ -132,12 +146,11 @@ def test_rows_land_in_order_and_earlier_bytes_are_never_rewritten():
         assert run_cli(root, 'story', 'reviewing', STORY)[0] == 0
         assert run_cli(root, 'story', 'done', STORY)[0] == 0
         lines = ledger_lines(root)
-    assert len(lines) == 3, lines
+        moves = status_rows(root)
+    assert len(lines) == 6, lines
     assert lines[0] == first, 'an earlier row was rewritten'
-    assert [json.loads(ln)['to'] for ln in lines] == [
-        'building', 'reviewing', 'done']
-    assert [json.loads(ln)['from'] for ln in lines] == [
-        'ready', 'building', 'reviewing']
+    assert [r['to'] for r in moves] == ['building', 'reviewing', 'done']
+    assert [r['from'] for r in moves] == ['ready', 'building', 'reviewing']
 
 
 # One case per VERB rather than per verb-and-state: each of these is a distinct
@@ -176,26 +189,45 @@ def test_the_row_lands_in_the_grains_OWN_milestone_directory():
         write(other / 'milestone.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
         assert run_cli(root, 'story', 'building', STORY)[0] == 0
-        assert len(ledger_rows(root)) == 1
+        assert len(status_rows(root)) == 1
         assert not (other / ledger.LEDGER_FILE_NAME).exists()
 
 
 # `feature done` is its own route with its own early exits, so the no-op rule
-# (D2's cost note, carried by D8) is proven on it as well as on the generic one.
-@pytest.mark.parametrize('kwargs,argv,expected', [
-    (dict(story_statuses=('building',)), ('story', 'building', STORY),
-     ('building', 'building')),
-    (dict(feature_status='done'), ('feature', 'done', '0.1/alpha'),
-     ('done', 'done')),
+# (0.5.0/D3) is proven on it as well as on the generic one.
+@pytest.mark.parametrize('kwargs,argv', [
+    (dict(story_statuses=('building',)), ('story', 'building', STORY)),
+    (dict(feature_status='done'), ('feature', 'done', '0.1/alpha')),
 ])
-def test_a_no_op_flip_still_appends_a_from_equals_to_row(kwargs, argv,
-                                                         expected):
+def test_a_no_op_mints_no_flip_and_never_shadows_an_answer(kwargs, argv):
+    """A no-op is not an arrival. It used to append `from == to`, which every
+    reader of the clock takes for a second arrival at a state the grain never
+    left — so the stint it is still IN got billed as a closed one.
+
+    The disposition half STAYS, because re-running the move is how a fork
+    somebody skipped gets answered; what it may not do is answer `none` over
+    an answer already recorded, since every reader takes the LAST row per
+    (grain, state).
+    """
+    _kind, state, gid = argv
     with tree(**kwargs) as root:
+        # An unanswered state: the bare re-run records `none`, which is what
+        # puts the grain on the census until somebody answers.
+        assert run_cli(root, *argv)[0] == 0
+        assert status_rows(root) == []
+        assert only_row(root, ledger.KIND_DISPOSITION)['answer'] == (
+            ledger.NO_DISPOSITION)
+        put_ledger(root, ledger.dumps(ledger.disposition_row(
+            gid, state, arrive.Said('--by', 'me'),
+            ts='2026-09-07T00:00:00Z')))
         code, out = run_cli(root, *argv)
         assert code == 0, out
         assert '(no-op)' in out
-        row = only_row(root)
-    assert (row['from'], row['to']) == expected
+        assert status_rows(root) == []
+        answers = [r['answer'] for r in ledger_rows(root)
+                   if r['kind'] == ledger.KIND_DISPOSITION]
+    assert answers == ['--by'], (
+        'the answer was shadowed by a re-run that recorded nothing new')
 
 
 # --- a feature close touches one grain, so it writes one row ------------------
@@ -209,7 +241,7 @@ def test_a_feature_close_writes_the_feature_row_and_no_story_row():
               story_statuses=('reviewing', 'reviewing', 'ready')) as root:
         code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
         assert code == 0, out
-        rows = ledger_rows(root)
+        rows = status_rows(root)
     assert [(r['grain'], r['from'], r['to']) for r in rows] == [
         ('0.1/alpha', 'reviewing', 'done')]
 
@@ -308,7 +340,7 @@ def test_a_feature_decision_lands_in_the_MILESTONE_ledger():
         # pooled tree makes the absence structural rather than a convention.
         assert not (root / 'pm/roadmap/features'
                     / ledger.LEDGER_FILE_NAME).exists()
-        row = only_row(root)
+        row = only_row(root, ledger.KIND_DECISION)
     assert (row['grain'], row['entry']) == ('0.1/alpha', 'D1')
 
 
@@ -581,3 +613,126 @@ def test_pm_status_prints_the_age_and_nothing_gates_on_it():
         assert 'open ' in line, out
         # Years old, and still exit 0: the number is a report (rule 9).
         assert 'd ' in line.split('open ')[1], out
+
+
+# --- the lesson row (0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain) -------------
+# CAPTURE, and the whole of it: four fields the caller states and nothing
+# derived from them. The row kind joins the harness above — it routes by grain
+# like every other row, and it is refused rather than half-minted, because a
+# lesson naming no grain surfaces nowhere and one naming no source is the
+# paraphrase D1 says a lesson must never be.
+
+LESSON_TS = '2026-09-07T12:00:00Z'
+LESSON = ('0.1/alpha', 'review-recorded', 'docs/reviews/alpha.md',
+          'the fixture is copied, never edited in place')
+
+
+def test_the_lesson_row_is_the_four_fields_written_and_nothing_derived():
+    """Bites: a `weight`, a `confidence`, a `count` — anything the row holds
+    that nobody typed. The namesake package's `Learner` pins confidence at 0.1
+    forever because `frequency` is incremented nowhere (D1); a field with no
+    feedback edge is the shape of that defect, and the assertion is EQUALITY so
+    a sixth key fails rather than passes."""
+    assert ledger.lesson_row(*LESSON, ts=LESSON_TS) == {
+        'ts': LESSON_TS, 'kind': 'lesson', 'grain': '0.1/alpha',
+        'rule': 'review-recorded', 'source': 'docs/reviews/alpha.md',
+        'text': 'the fixture is copied, never edited in place'}
+
+
+@pytest.mark.parametrize('field,value', [
+    ('grain', ''), ('grain', '   '), ('grain', None),
+    ('rule', ''), ('source', ''),
+    ('text', ''), ('text', '   '), ('text', '...'),
+    ('text', 'one\ntwo'), ('text', 'x' * (ledger.REASON_MAX + 1)),
+])
+def test_a_lesson_missing_a_pointer_or_a_text_is_refused_not_minted(field,
+                                                                   value):
+    """Refused HERE, as `deviation_row` refuses a reason, so no path can mint
+    one: a row carrying `''` where a pointer belongs reads back as a lesson
+    about nothing, and `Store.against_grain('')` answers nothing for it."""
+    fields = dict(zip(('grain_id', 'rule', 'source', 'text'), LESSON))
+    fields[{'grain': 'grain_id'}.get(field, field)] = value
+    with pytest.raises(ValueError, match='lesson'):
+        ledger.lesson_row(**fields)
+
+
+def test_a_lesson_row_lands_in_the_ledger_that_owns_its_grain():
+    """The routing quartet's harness, asked of the new kind: a row about a
+    story files under the milestone that owns it, and `pm ledger show` prints
+    it in the same stream as the status rows — a reader who has to join two
+    logs has two logs."""
+    with tree() as root:
+        target = ledger.ledger_of_grain(cfg_for(root), '0.1/alpha/s0')
+        ledger.append_to(target, ledger.lesson_row(
+            '0.1/alpha/s0', 'evidence-written', 'docs/reviews/alpha.md',
+            'a story with no done: line is not closed', ts=LESSON_TS))
+        assert target.resolve() == (root / LEDGER_REL).resolve()
+        code, out = run_cli(root, 'ledger', 'show', '0.1/alpha/s0')
+        assert code == 0, out
+        said = [ln for ln in out.splitlines() if 'lesson' in ln]
+        assert len(said) == 1, out
+        # Rule 11's read side: the row PRINTS what it holds. A bare `ts kind`
+        # teaches a reader the tool does not have the answer.
+        for cell in ('evidence-written', 'a story with no done: line',
+                     'source: docs/reviews/alpha.md'):
+            assert cell in said[0], said[0]
+
+
+# --- the event schema is the schema the minters mint (0.5.0) -----------------
+# `install-sdlc` renders `ledger.EVENT_KEYS` into the protocol document, so the
+# tuples there are a CLAIM about three functions in three modules. Bound here
+# by minting one row of each kind and comparing: a field added to a payload and
+# not to the schema renders a document that is quietly wrong, which is the
+# second-scoreboard defect the feature exists to delete.
+
+def test_every_tap_kind_spells_the_tap_check_pm_counts():
+    """U3 keys on the last dotted segment (`emit.TAPS`), so a kind that does
+    not spell its tap makes the gate noisy rather than blind."""
+    from agentic_sdlc.repo import emit
+    taps = [kind.rsplit('.', 1)[-1] for kind in ledger.EVENT_KEYS]
+    assert taps == list(emit.TAPS), taps
+    assert len(ledger.EVENT_KEYS) == len(emit.TAPS)
+
+
+# The keys a minted row may legitimately LACK, by kind and by name. Everything
+# else declared must be minted: `zip` drops a key the value tuple has no
+# element for, so a phantom appended to a `*_KEYS` tuple used to publish a
+# column into `docs/sdlc-protocol.md` that no row ever carries — the document
+# describing a stream that is not emitted, which is what rendering it exists to
+# prevent.
+OPTIONAL_KEYS = {ledger.KIND_LEAVE: {'value'}}
+
+
+def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.pm import arrive, ready_for
+    minted = {
+        ledger.KIND_ENTER: ready_for._enter_row('feature', '0.1/alpha', []),
+        ledger.KIND_VERDICT: driver.verdict_row(
+            'feature', '0.1/alpha', 'stories-done', driver.Answer.yes('ok'),
+            'agentic-sdlc pm ready-for feature <id>'),
+        ledger.KIND_LEAVE: ledger.leave_row(
+            '0.1/alpha', 'done', None, (), arrive.NOTHING),
+    }
+    assert set(minted) == set(ledger.EVENT_KEYS), 'a kind mints nothing here'
+    for kind, row in minted.items():
+        assert row['kind'] == kind
+        declared = ledger.EVENT_KEYS[kind]
+        assert list(row) == [k for k in declared if k in row], row
+        assert set(row) <= set(declared), sorted(set(row) - set(declared))
+        phantom = set(declared) - set(row) - OPTIONAL_KEYS.get(kind, set())
+        assert not phantom, (
+            f'{kind} declares {sorted(phantom)} and mints them nowhere — the '
+            f'rendered table would publish a column no consumer will ever '
+            f'receive. Mint it, or name it in OPTIONAL_KEYS')
+
+
+def test_an_answer_that_carried_a_value_fills_the_last_leave_key():
+    """`value` is the one optional key, and it is last so nine values zip
+    against ten keys. The negative control for the row above: an absent answer
+    value must be an absent KEY, never a `''`."""
+    from agentic_sdlc.repo.pm import arrive
+    said = arrive.Said(answer='--by agent', value='builder')
+    row = ledger.leave_row('0.1/alpha', 'building', None, (), said)
+    assert row['value'] == 'builder'
+    assert list(row) == list(ledger.LEAVE_KEYS)

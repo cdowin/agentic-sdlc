@@ -26,12 +26,39 @@ Write it down, commit, move on. The tree is a record, not a deliverable.
 
 The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
 
+    may I start?            pm ready-for story <id>     the belt's entry edge, no gate at all
     a PM-tree or doc edit   make check                  the static gates alone
     an edit, inner loop     verify --story              what [verify] story names
     before a commit         make precommit              check + your narrow tier
     closing a story         close story <id>            its checks, then `done`
     closing a feature       close feature <id>          runs what [verify] feature names
     closing a milestone     release <version>           its `gate` check is the full gate
+
+**Every rung has an ENTRY edge as well as an exit one, and it is
+`agentic-sdlc pm ready-for story|feature|milestone|tag <id>`.** Exit 0 ready,
+exit 1 not ready naming every blocker (never a tally), exit 2 usage. It writes
+nothing, runs nothing and boots nothing, so it is safe to ask as often as you
+like — including as a predicate in a Makefile. **Ask it instead of guessing
+whether the work below you is finished**; guessing is how a close gets started
+over a story still in motion.
+
+    ready-for story <id>       what the story belt asks that is decidable
+                               BEFORE the work — your `[story] steps` narrowed
+                               to what the registry declares an entry
+                               condition, with every check it did NOT ask
+                               named and why
+    ready-for feature <id>     every story in the `done` category?
+    ready-for milestone <id>   every feature done with a review record, no open bug?
+    ready-for tag <id>         every finding at a disposition other than `open`?
+
+There is no `ready-for adopt`: every check in the adopt belt is either the work
+the bump does or one that runs a command, so there is nothing decidable up
+front and the rung would only ever say NOT READY. Run `agentic-sdlc adopt
+<version>` — it is checks only and writes nothing.
+
+Where `[emit]` declares a sink, each rung files a `rung.enter` event carrying
+the answer and the blocker list, which is the same work queue the exit code
+summarises. A tree that declares no `[emit]` emits nothing.
 
 `make check`, `precommit` and `milestone` are the compositions `install-gates`
 ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What
@@ -73,7 +100,12 @@ it becomes true, rather than batching flips at the end.
    `planning` milestone records too — and a tree whose couriers are wired and whose
    ledgers are empty is `check pm`'s U2, not something a status flip fixes.
 2. **Commit atomically.** One logical unit per commit.
-3. **Ready for review.** `pm story reviewing <id>`.
+3. **Ready for review — a FEATURE act in the shipped vocabulary.** `pm feature
+   reviewing <id>` while the record is written. The seed declares no review word for a
+   STORY (`planning` `ready` | `building` | `done` `obe`), so `pm story reviewing <id>`
+   is refused at exit 2 naming `[pm.states.story]` unless your project declared one —
+   `pm vocabulary` is the authority, and a story that is finished goes to `done`
+   through `close story`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
    the `done` category is the close — sets the feature's status and **touches nothing
    else**, and prints only what it wrote; a story left behind is `check pm`'s WARN, and each is closed by name through the
@@ -81,7 +113,12 @@ it becomes true, rather than batching flips at the end.
    feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves
    every other byte, including the file's line endings. Creation too: `pm new
-   milestone|feature|story|bug` scaffolds to the schema.
+   milestone|feature|story|bug` renders the grain from its template and starts it at
+   its initial status. The id it mints is **`<kind-prefix>-<slug>`** — `ms-`, `ft-`,
+   `st-`, `bg-` — and nothing else: the parent argument is the BINDING it writes to
+   `milestone:`/`feature:`, never a piece of the id, so re-parenting is one `pm set`
+   and the id is stable for life. `<name...>` is required to create; give an id
+   already in the tree and omit the name to fill missing slots instead.
 6. **Leave evidence at close.** One terse block at the grain that closed — below.
 
 **WHO performs steps 3 and 4 is your project's call, and your own rules must say.**
@@ -95,8 +132,8 @@ asked:
 
 - **The status you ASK for is checked; the one in the file is not.** `butterfly` is not
   a state this project declared — that is an error naming `[pm.states.story]`.
-  `wombat` sitting in the file is simply what it says now, so `pm story reviewing <id>`
-  prints `wombat -> reviewing` and repairs it. That is the same drift `check pm` D4
+  `wombat` sitting in the file is simply what it says now, so `pm story building <id>`
+  prints `wombat -> building` and repairs it. That is the same drift `check pm` D4
   reports.
 - **`--review-record <path>` naming no file is refused**, whole: no stamp, no story
   touched. A pointer resolving to nothing is what `check pm` D1 reports. There is no
@@ -141,9 +178,11 @@ a list of ids and nothing else — never a rendered roster.
 - `pm list [--status …] [--owner …] [--milestone …]` — one tab-separated row per story,
   filtered. `pm list --status building,reviewing` is "what is open right now" where
   `pm status` is "what is everything doing".
-- `pm validate` — ids match paths, parentage is consistent, `depends_on`/`consumed_by`
-  resolve, the feature graph is acyclic. A ref into a milestone no longer in the tree
-  is UNVERIFIABLE, not a failure.
+- `pm validate` — frontmatter is well-formed, every binding names a grain of the right
+  kind that is in the tree, `depends_on`/`consumed_by` resolve, the feature graph is
+  acyclic. Nothing holds an id to its path: the path is where the file lives, not what
+  the grain is. A ref into a milestone no longer in the tree is UNVERIFIABLE, not a
+  failure.
 - `check pm` — status drift and those same integrity rules, as a gate.
 - `pm vocabulary [--json]` — the closed CATEGORY set, each kind's states with
   the category each sits in, and the rule ids `[pm] checks` may name — nothing
@@ -160,13 +199,26 @@ a list of ids and nothing else — never a rendered roster.
   a fact rather than deriving one. Unset is normal: the verb then uses the one
   story in progress, and omits the key when there is none or several — never a
   guess.
-- `pm ledger report [<milestone-id>]` — the same rows added up per grain:
+- `pm ledger report [<grain-id>]` — the same rows added up per grain:
   dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
   each category. This is the answer to *how long did this take*, *what did it
   spend* and *what did the gates cost* — do not hand-write a table of them.
   A row is filed against the milestone that owns its grain, at any status; a
   row naming none lands in `<roadmap>/ledger.jsonl` and is reported in the
   `rows naming no grain` bucket.
+  **`time per state` is the block that answers "how long has this been
+  building"**: `grain`, one `<state>_s` column per state the rows actually
+  hold, then `closed_s`, `open_s` and `open_state`, one row per grain in tree
+  order and **rolled up** — a milestone's `building_s` is the sum of its
+  features', which is the sum of its stories'. Time still RUNNING is `open_s`
+  and is never folded into a closed total, because a running clock and a
+  finished one are different facts; a state a grain never held has no column
+  rather than a zero. `time per actor` is the same rows read by who was named
+  at each arrival. **The shell is the filter** — `pm ledger report <id> | awk`
+  over those columns — never a new flag.
+  The id names the LEVEL: a milestone id reports all of it, a feature or story
+  id reports the clock rooted at that grain and its descendants. The ledger is
+  still the milestone's, because that is where the rows are.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

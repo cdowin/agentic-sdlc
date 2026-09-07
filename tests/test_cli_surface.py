@@ -56,6 +56,22 @@ from agentic_sdlc import cli
 _INVOCATION = re.compile(r'^\s*agentic-sdlc ([a-z][a-z0-9-]*)', re.M)
 
 
+# Rule 11's read side, package-wide. The floor is what the tree holds today:
+# `pm cli` (6) plus `lesson show` (1). It is a FLOOR, so a verb that stops
+# naming its columns reddens wherever it lives.
+NAMES_COLUMNS = 'columns IN ORDER:'
+READ_VERBS_NAMING_COLUMNS = 7
+
+
+def _package_sources() -> list[tuple[str, str]]:
+    """(relative path, source text) for every module the verbs live in."""
+    root = Path(__file__).resolve().parents[1] / 'src/agentic_sdlc/repo'
+    found = [(path.name, path.read_text(encoding='utf-8'))
+             for path in sorted(root.rglob('*.py'))]
+    assert len(found) > 10, 'the census lost the package'
+    return found
+
+
 def documented_verbs() -> set[str]:
     return set(_INVOCATION.findall(cli.__doc__ or ''))
 
@@ -81,6 +97,7 @@ def routed_verbs() -> set[str]:
     finding's own point read backwards.
     """
     return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
+            cli.LESSON_VERB,
             *cli.install_commands(), *cli.conveyor_verbs()}
 
 
@@ -388,23 +405,60 @@ class TestTheSurfaceSaysTelemetry:
 
     ROUTED_AT_0_4_0 = 14
 
+    # Every verb routed SINCE that criterion was met, one line per decision.
+    # The number stays 14 because it is a claim about a milestone that shipped;
+    # what a later verb has to do is name itself here, which is the argument it
+    # would otherwise never have to make.
+    ROUTED_SINCE = {
+        # 0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain: a lesson is written by
+        # whoever just learned it, not as part of moving a grain, so it is not
+        # a `pm` subcommand.
+        'lesson',
+    }
+
     def test_this_feature_added_no_verb(self):
         """The ship criterion, asserted. Review M2: `documented == routed` is
         the conjunction of the two cases above and would pass a verb that was
         added AND documented — it proved the wrong thing. The COUNT is what the
         criterion actually claims."""
-        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0, sorted(routed_verbs())
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 + len(
+            self.ROUTED_SINCE), sorted(routed_verbs())
+        assert self.ROUTED_SINCE <= routed_verbs(), (
+            f'{sorted(self.ROUTED_SINCE - routed_verbs())} is written down as '
+            f'a verb this package added and the router does not dispatch it')
 
     def test_every_read_verb_names_its_columns(self):
         """Review M1: the criterion says EVERY read verb, and `next` and
         `roadmap` both emit tab-separated rows. Asserted as a count against the
         verbs that emit them, so a fifth such verb has to name its columns too.
         Bare `order` was one of them until 0.4.0 retired the verb into
-        `pm add`; reading the plan is `pm roadmap`."""
+        `pm add`; reading the plan is `pm roadmap`.
+
+        The census read `pm_cli.USAGE` alone, so a read verb outside the `pm`
+        family — `lesson show` was the first — sat outside it entirely (N3).
+        It is the package's SOURCE now, so wherever the next one lands it is
+        counted, and a verb that drops its columns line goes red anywhere."""
         from agentic_sdlc.repo.pm import cli as pm_cli
         said = pm_cli.USAGE or ''
-        assert said.count('columns IN ORDER:') >= 4, said.count(
-            'columns IN ORDER:')
+        assert said.count(NAMES_COLUMNS) >= 4, said.count(NAMES_COLUMNS)
+        found = {rel: text.count(NAMES_COLUMNS)
+                 for rel, text in _package_sources()
+                 if NAMES_COLUMNS in text}
+        assert sum(found.values()) >= READ_VERBS_NAMING_COLUMNS, found
+        assert len(found) > 1, (
+            f'{sorted(found)} — every declaration is in one module again, so '
+            f'this is `pm_cli.USAGE` with extra steps')
+
+    def test_the_clock_help_names_its_columns_in_the_order_it_prints_them(self):
+        """Rule 11's read side for `ledger report`'s clock: the two column
+        tuples the block renders from, in order, in `--help`, so a total is
+        `… | awk` and never a flag this verb grew. `CLOCK_COLUMNS` shipped
+        carrying that claim in a comment and referenced by nothing."""
+        from agentic_sdlc.repo.pm import cli as pm_cli, report
+        entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
+        flat = ' '.join(entry.split())
+        for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
+            assert ' '.join(columns) in flat, (columns, flat)
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 

@@ -22,6 +22,7 @@ import os
 import re
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from support.pm import (
@@ -31,8 +32,11 @@ from support.pm import (
     cfg_for,
     damage,
     declaring,
+    dispatch_line,
+    put_ledger,
     run_cli,
     run_gate,
+    status_line,
     tree,
     write,
     write_config,
@@ -98,6 +102,123 @@ class Frontmatter(unittest.TestCase):
             p.write_text('no fence here\n', encoding='utf-8')
             self.assertFalse(model.set_field(p, 'status', 'done'))
             self.assertEqual(p.read_text(), 'no fence here\n')
+
+
+class OneReadPerDocument(unittest.TestCase):
+    """`bg-check-pm-reopens-every-file-per-field`: `field_of` opened and
+    re-split the whole file for EVERY field, so a resolver answering one
+    grain's question by walking every grain made it n² — 2.1M opens and 87s of
+    `make check` over a 700-document tree.
+
+    The fix is a cache under a gate, so the pair that BITES is *one read per
+    document* and *never a stale one*: a gate answering off bytes that have
+    moved on is rule 4's first cardinal sin, and it would be invisible.
+    """
+
+    @contextlib.contextmanager
+    def counting(self):
+        """`model.read_raw`, wrapped to count the opens per path."""
+        counts: dict[str, int] = {}
+        original = model.read_raw
+
+        def counted(path, *rest):
+            counts[str(path)] = counts.get(str(path), 0) + 1
+            return original(path, *rest)
+
+        model.read_raw = counted
+        try:
+            yield counts
+        finally:
+            model.read_raw = original
+
+    def test_the_gate_opens_every_document_exactly_once(self):
+        with tree(story_statuses=('ready', 'building', 'done')) as root:
+            with self.counting() as counts:
+                code, out = run_gate(root)
+            tree_reads = {path: n for path, n in counts.items()
+                          if str(root / 'pm' / 'roadmap') in path}
+            # A zero census would pass this vacuously (rule 4).
+            self.assertGreater(len(tree_reads), 3, out)
+            self.assertEqual([p for p, n in tree_reads.items() if n != 1], [],
+                             f'reopened during one gate: {tree_reads}')
+            self.assertIn('[check:pm]', out)
+            self.assertIn(code, (0, 1))
+
+    def test_a_rewritten_document_is_never_answered_from_the_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / 'g.md'
+            write(p, {'id': 'a', 'status': 'ready'})
+            self.assertEqual(model.field_of(p, 'status'), 'ready')
+            # Past every writer this module knows about, the way an editor or
+            # another process writes.
+            write(p, {'id': 'a', 'status': 'building'})
+            self.assertEqual(model.field_of(p, 'status'), 'building')
+            self.assertTrue(model.set_field(p, 'status', 'done'))
+            self.assertEqual(model.field_of(p, 'status'), 'done')
+            self.assertEqual(model.list_field_of(p, 'order'), [])
+            p.unlink()
+            self.assertEqual(model.field_of(p, 'status'), '')
+
+    def test_a_rev_blob_is_read_every_time_because_it_has_no_stat(self):
+        """`pm report --rev` reads git BLOBS through `field_of`, and a blob is
+        not a file: it answers `open()` and nothing else. Cached under a key
+        nothing could invalidate it would be a rev read answering off the
+        working tree, so it is never cached at all."""
+        class Blob:
+            def __init__(self, text):
+                self.text, self.reads = text, 0
+
+            def open(self, *args, **kwargs):
+                self.reads += 1
+                return io.StringIO(self.text, newline='')
+
+            def __str__(self):
+                return '<rev>:g.md'
+
+        held = model.documents_held()
+        blob = Blob('---\nid: a\nstatus: ready\norder:\n  - "x"\n---\n\nbody\n')
+        self.assertEqual(model.field_of(blob, 'status'), 'ready')
+        self.assertEqual(model.list_field_of(blob, 'order'), ['x'])
+        self.assertEqual(blob.reads, 2)
+        self.assertEqual(model.documents_held(), held)
+
+    def test_a_read_scope_walks_once_and_still_sees_a_write_inside_it(self):
+        with tree() as root:
+            cfg = cfg_for(root)
+            story = root / STORY_REL
+            sid = model.unquote(model.field_of(story, 'id'))
+            with model.reading_tree():
+                first = model.grain_index(cfg)
+                with self.counting() as counts:
+                    again = model.grain_index(cfg)
+                self.assertEqual(sorted(first), sorted(again))
+                self.assertEqual(counts, {}, 'the second walk re-read the tree')
+                # A write INSIDE a read scope is still seen: the snapshot is
+                # dropped by the mutation rather than held to the end of the
+                # block, so no verb can be answered off its own stale tree.
+                model.set_field(story, 'status', 'building')
+                self.assertEqual(model.grain_index(cfg)[sid].status, 'building')
+
+    def test_the_scope_does_not_outlive_its_block(self):
+        with tree() as root:
+            cfg = cfg_for(root)
+            with model.reading_tree():
+                inside = set(model.grain_index(cfg))
+            new = root / 'pm/roadmap/stories/s9.md'
+            write(new, {'id': '0.1/alpha/s9', 'kind': 'story',
+                        'status': 'ready', 'feature': '0.1/alpha'})
+            self.assertNotIn('0.1/alpha/s9', inside)
+            self.assertIn('0.1/alpha/s9', model.grain_index(cfg))
+
+    def test_two_gate_runs_in_one_process_read_the_tree_twice(self):
+        with tree() as root:
+            first_code, first_out = run_gate(root)
+            model.set_field(root / STORY_REL, 'status', 'wombat')
+            second_code, second_out = run_gate(root)
+            self.assertNotIn('wombat', first_out)
+            self.assertIn('wombat', second_out)
+            self.assertEqual((first_code, second_code), (0, 1),
+                             f'{first_out}\n---\n{second_out}')
 
 
 class DriftGate(unittest.TestCase):
@@ -864,6 +985,249 @@ class U2ATreeThatIsNotRecordingSaysSo(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('recording NOTHING', out)
+
+
+def hours_ago(hours: int) -> str:
+    """A ledger timestamp `hours` back, in the ledger's own format — so an age
+    assertion reads what the renderer computed rather than a frozen string."""
+    from agentic_sdlc.repo.pm import ledger
+    when = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return when.strftime(ledger.TS_FORMAT)
+
+
+# What separates a courier row from a hand-minted one: the hook payload's own
+# session id, passed through `--session-id` (`cc-ledger-*.sh`, `ledger.ROW_KEYS`).
+SESSION = 'sess-0000'
+
+
+class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
+    """U4 — the couriers are wired, and the last row THEY wrote, with its age.
+
+    **Found by this build recording nothing.** Six agent dispatches against
+    this repo produced zero `SubagentStop` rows while `adopt`'s
+    `telemetry-live` passed and U2 stayed silent — because the ledgers were not
+    EMPTY. They held the status, decision and gate rows this checkout writes
+    itself, and **no rule counted row KINDS**, so the one fact separating a
+    wired path from a working one went unasked.
+
+    The first case is that exact tree, and it is the one U2 cannot see.
+    """
+
+    SETTINGS = U2ATreeThatIsNotRecordingSaysSo.SETTINGS
+    WIRED = ('{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": '
+             '"bash tools/hooks/cc-ledger-session.sh"}, {"type": "command", '
+             '"command": "bash tools/hooks/cc-ledger-subagent.sh"}]}]}}')
+
+    def _settings(self, root, text: str) -> None:
+        path = root / self.SETTINGS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
+
+    def _gate(self, root, checks: str = '["U2", "U4"]'):
+        write_config(root, f'[pm]\nchecks = {checks}\n')
+        return run_gate(root)
+
+    def test_rows_this_checkout_wrote_itself_are_not_evidence_a_courier_ran(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            put_ledger(root, status_line(hours_ago(3), '0.1/alpha/s0',
+                                         'planning', 'ready'))
+            code, out = self._gate(root)
+            # A WARN, never the exit code: recording is a posture (0.4.0/D5).
+            self.assertEqual(code, 0, out)
+            self.assertIn('last hook-written row: never', out)
+            self.assertIn('(U4)', out)
+            # The status row is NAMED, so the line says what the tree does
+            # hold rather than only what it lacks.
+            self.assertIn('1 status', out)
+            # AND U2 is silent on this very tree — which is the gap.
+            self.assertNotIn('recording NOTHING', out)
+
+    def test_a_courier_row_is_named_with_its_kind_and_age(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            put_ledger(root,
+                       status_line(hours_ago(3), '0.1/alpha/s0', 'planning',
+                                   'ready'),
+                       dispatch_line(hours_ago(2), grain='0.1/alpha/s0',
+                                     session_id=SESSION))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('RECORDING', out)
+            # The KIND and the magnitude, not the exact rendering: the stamp
+            # is truncated to the second and the age is measured later, so
+            # `2h` and `2h 1s` are the same fact and one of them is a race.
+            self.assertIn('last hook-written row: dispatch, 2h', out)
+            self.assertIn('1 of 2 row(s)', out)
+            self.assertNotIn('never', out)
+
+    def test_a_hand_minted_dispatch_row_is_not_evidence_a_courier_ran(self):
+        """The KIND alone is not the courier's signature.
+
+        `pm ledger record SubagentStop` mints `dispatch` and `session` rows by
+        hand, from inside the checkout, and the sibling feature extends that
+        verb for exactly that use. This repo's own `check pm` counted sixteen
+        of them as *"came from a courier"* while no courier had ever run — the
+        feature's premise failing in the one line built to end it. The courier
+        carries the hook payload's `session_id`; a hand row does not.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            put_ledger(root, dispatch_line(hours_ago(2), grain='0.1/alpha/s0'))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('last hook-written row: never', out)
+            # NAMED, so the reader sees what the tree does hold.
+            self.assertIn('1 dispatch', out)
+            self.assertNotIn('came from a courier', out)
+
+    def test_a_courier_row_counts_wherever_the_wiring_lives(self):
+        """The tree the config-only predicate went silent on.
+
+        `install-hooks` tells a consumer, verbatim, that the block works in
+        whatever settings file their harness reads, *"including one above this
+        repo"*. Gating the whole rule on an in-checkout settings file printed
+        NOTHING on a tree holding an hour-old courier row — the proof already
+        in hand, thrown away by an early return keyed on the config.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            put_ledger(root, dispatch_line(hours_ago(1), grain='0.1/alpha/s0',
+                                           session_id=SESSION))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('RECORDING', out)
+            self.assertIn('last hook-written row: dispatch, 1h ago', out)
+            self.assertIn('no settings file in this checkout', out)
+
+    def test_the_per_user_override_is_wiring_and_an_allowlist_is_not(self):
+        """Two directions of the same read, both probed on real shapes.
+
+        `.claude/settings.local.json` is the file Claude Code writes itself and
+        a repo gitignores — and it is where absolute wiring has to live in a
+        public checkout, because a machine path must not be committed. An
+        allowlist entry is the opposite: `install-hooks`' own next-step text
+        tells consumers to add `Bash(bash tools/hooks/cc-ledger-session.sh
+        --self-test)` to `permissions.allow`, and a substring search over the
+        raw text read that as the couriers being WIRED.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            path = root / pm_check.AGENT_SETTINGS_LOCAL
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(self.WIRED, encoding='utf-8')
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('(U4)', out)
+            self.assertIn(pm_check.AGENT_SETTINGS_LOCAL, out)
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, json.dumps({'permissions': {'allow': [
+                'Bash(bash tools/hooks/cc-ledger-session.sh --self-test)',
+                'Bash(bash tools/hooks/cc-ledger-subagent.sh --self-test)']}}))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U4)', out)
+            self.assertNotIn('(U2)', out)
+
+    def test_a_tree_that_wires_nothing_stays_silent_and_so_does_the_rule_off(self):
+        """The opt-out, and the switch. A tree that wires no courier is not
+        broken (0.4.0/D5), and a rule nobody named does not run."""
+        with tree(story_statuses=('ready',)) as root:
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U4)', out)
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            code, out = self._gate(root, checks='["D1"]')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U4)', out)
+
+
+class U3ADeclaredSinkThatIsSilentIsAFinding(unittest.TestCase):
+    """U3 — `[emit]` is declared and its sink has never been written to.
+
+    `recording-is-on-or-the-gate-is-red` (0.4.0) exists because the couriers
+    were wired and recorded nothing for a whole release with nobody able to
+    tell. **The emit sink is the same trap on a fresh surface**, and the third
+    case below is the one a rule written from its own bug gets wrong: a tree
+    that declares no `[emit]` opted out, and opting out stays quiet.
+
+    U2's "wired and empty" fixture is the shape; these are rows on it.
+    """
+
+    CHECKS = '[pm]\nchecks = ["U3"]\n'
+    SINK_FILE = 'events.jsonl'
+
+    def _gate(self, root, section: str):
+        write_config(root, f'{self.CHECKS}{section}')
+        return run_gate(root)
+
+    def _tap_line(self, ts: str) -> str:
+        """One emitted event, spelled off the SHIPPED tap names.
+
+        The minter for these rows lands with
+        `ft-one-event-shape-serves-three-readers`; what U3 keys on is the tap
+        the row names, which is `emit.TAPS` and is already shipped — so the
+        fixture derives the kind from that constant rather than freezing a
+        row shape this package does not write yet.
+        """
+        from agentic_sdlc.repo import emit
+        from agentic_sdlc.repo.pm import ledger
+        return ledger.dumps({'ts': ts, 'kind': f'rung.{emit.TAP_LEAVE}',
+                             'grain': '0.1/alpha/s0'})
+
+    def test_a_declared_sink_nothing_ever_wrote_to_is_named(self):
+        # Three sinks, one contradiction: DECLARED, and silent. The `-` case
+        # is the sink that leaves nothing in the tree, so it is UNVERIFIABLE
+        # by name rather than passed over.
+        rows = (
+            ('[emit]\nsink = "ledger"\n', 'has ever landed'),
+            (f'[emit]\nsink = "{self.SINK_FILE}"\n', self.SINK_FILE),
+            ('[emit]\nsink = "-"\n', 'UNVERIFIABLE'),
+        )
+        for section, message in rows:
+            with self.subTest(section=section), \
+                    tree(story_statuses=('ready',)) as root:
+                # A ledger row THIS CHECKOUT wrote: the ledger sink must not
+                # read a status row as an emitted event.
+                put_ledger(root, status_line(hours_ago(1), '0.1/alpha/s0',
+                                             'planning', 'ready'))
+                code, out = self._gate(root, section)
+                # A WARN, never the exit code: emission is never mandatory.
+                self.assertEqual(code, 0, out)
+                self.assertIn('(U3)', out)
+                if message:
+                    self.assertIn(message, out)
+
+    def test_a_sink_that_was_written_to_is_silent(self):
+        with tree(story_statuses=('ready',)) as root:
+            put_ledger(root, self._tap_line(hours_ago(1)))
+            code, out = self._gate(root, '[emit]\nsink = "ledger"\n')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U3)', out)
+        with tree(story_statuses=('ready',)) as root:
+            (root / self.SINK_FILE).write_text(self._tap_line(hours_ago(1))
+                                               + '\n', encoding='utf-8')
+            code, out = self._gate(root, f'[emit]\nsink = "{self.SINK_FILE}"\n')
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('(U3)', out)
+
+    def test_a_tree_that_declares_no_emit_gets_no_line_at_all(self):
+        """THE OPT-OUT, and the case a rule written from its own bug gets
+        wrong. A tree with no `[emit]` is not broken; it emits nothing because
+        it asked to, and this package does not conscript.
+
+        Both halves, because the silence must come from the DECLARATION and
+        not from whatever the ledgers happen to hold: a tree recording rows of
+        its own is owed no emit line either."""
+        for rows in (False, True):
+            with self.subTest(rows=rows), \
+                    tree(story_statuses=('ready',)) as root:
+                if rows:
+                    put_ledger(root, status_line(hours_ago(1),
+                                                 '0.1/alpha/s0', 'planning',
+                                                 'ready'))
+                code, out = self._gate(root, '')
+                self.assertEqual(code, 0, out)
+                self.assertNotIn('(U3)', out)
 
 
 class R5GradesTheCurrentRelease(unittest.TestCase):
@@ -1644,8 +2008,8 @@ class Validate(unittest.TestCase):
         with tree() as root:
             run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
             fdir = root / 'pm/roadmap/features'
-            model.set_field(fdir / 'alpha.md', 'depends_on', '["0.1/beta"]')
-            model.set_field(fdir / 'beta.md', 'depends_on', '["0.1/alpha"]')
+            model.set_field(fdir / 'alpha.md', 'depends_on', '["ft-beta"]')
+            model.set_field(fdir / 'ft-beta.md', 'depends_on', '["0.1/alpha"]')
             findings, _ = self._run(root)
             self.assertTrue(any('CYCLE' in f for f in findings), findings)
 
@@ -2563,3 +2927,111 @@ class AConfigErrorIsComplete(unittest.TestCase):
             self.assertIn('declares no flow', said)
         finally:
             ctx.cleanup()
+
+
+class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
+    """U5 — a grain whose CURRENT state was arrived at with no disposition.
+
+    **The line between asking and refusing.** A bare `pm feature building
+    ft-x` still works and still writes the status — refusing would make the
+    conveyor something people route around — but the move records
+    `answer: none`, and this is where that stays visible after the move's own
+    line has scrolled away. A WARN, never a refusal, and never a tally: the
+    grains are NAMED, because a count tells nobody which move to answer.
+
+    The last case is the one a rule written from its own bug gets wrong: an
+    answer given at a state the grain has since LEFT does not answer the state
+    it is in now. Arrival is the unit (D3), so a grain that bounced back has
+    arrived again and the question is asked again.
+    """
+
+    CHECKS = '[pm]\nchecks = ["U5"]\n'
+    STORY = '0.1/alpha/s0'
+    LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
+
+    def _gate(self, root):
+        write_config(root, self.CHECKS)
+        return run_gate(root)
+
+    def _only_the_story_moves(self, **kwargs):
+        """A tree whose milestone and feature are still in `todo`, so the one
+        `in_progress` grain is the story the case is about."""
+        return tree(milestone_status='planning', feature_status='planning',
+                    story_statuses=('building',), **kwargs)
+
+    def _answer(self, root, state: str, answer: str = '--by',
+                value: str = 'me', ts: str = '2026-09-03T10:00:00Z') -> None:
+        """One arrival's disposition, minted through the writer's own builder
+        so a fixture cannot drift from the row `pm` actually writes."""
+        from agentic_sdlc.repo.pm import arrive, ledger
+        path = root / self.LEDGER
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a', encoding='utf-8') as handle:
+            handle.write(ledger.dumps(ledger.disposition_row(
+                self.STORY, state, arrive.Said(answer, value), ts=ts)) + '\n')
+
+    def test_a_bare_move_is_allowed_and_NAMED(self):
+        with self._only_the_story_moves() as root:
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+        self.assertIn(self.STORY, out)
+        self.assertIn('1 of 1', out)
+
+    def test_a_row_that_answered_none_is_still_unanswered(self):
+        # The row `pm` writes for a bare move. Present and empty is the same
+        # fact as absent here, and a rule that read "a row exists" would call
+        # this answered — reporting a plausible number over the wrong rows.
+        from agentic_sdlc.repo.pm import ledger
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'building', ledger.NO_DISPOSITION, '')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+
+    def test_an_answered_arrival_is_silent(self):
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'building')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('(U5)', out)
+
+    def test_an_answer_at_a_state_the_grain_has_left_answers_nothing(self):
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'ready')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+        self.assertIn(self.STORY, out)
+
+    def test_every_run_reports_the_open_work_whatever_checks_are_on(self):
+        """The THIRD surface the pressure line's criterion names, beside a
+        `pm` write and a belt write. The gate read `arrive.census` as U5's
+        guard and never printed it, so the tree's open work was missing from
+        the surface somebody is standing in when they gate. Not a rule: it is
+        a counted line, and `[pm] pressure = false` is what silences it.
+        """
+        from agentic_sdlc.repo.pm import arrive
+        for checks in (self.CHECKS, '[pm]\nchecks = ["D1"]\n'):
+            with self.subTest(checks=checks), \
+                    self._only_the_story_moves() as root:
+                write_config(root, checks)
+                code, out = run_gate(root)
+                line = arrive.census(cfg_for(root)).line
+            self.assertEqual(code, 0, out)
+            self.assertIn(f'{pm_check.OPEN_WORK}  {line}', out)
+        with self._only_the_story_moves() as root:
+            write_config(root, '[pm]\npressure = false\n')
+            code, out = run_gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(pm_check.OPEN_WORK, out)
+
+    def test_a_tree_with_nothing_in_progress_says_nothing(self):
+        # `arrive.census` is the guard, so a tree the pressure line calls
+        # quiet gets no line here either — the gate and the move cannot
+        # disagree about whether there is anything to answer.
+        with tree(milestone_status='planning', feature_status='planning',
+                  story_statuses=('ready',)) as root:
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('(U5)', out)

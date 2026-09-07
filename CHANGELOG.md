@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- **A shared doc is scaffolded on demand, its ABSENCE is a warning, and a missing instruction
+  line is a finding.** Three changes to the same document class — `decisions.md`, `handoff.md`,
+  `review.md` — which sit beside their grain in a pool, under the grain's own stem
+  (`milestones/0.1-handoff.md`).
+
+  **`agentic-sdlc pm new handoff <milestone-id>`** mints `handoff.md` from the shipped template
+  with the id and name filled. It had a template and a `SLOT_TEMPLATE` entry and NO code path
+  wrote it, so an absent handoff was an empty canvas rather than an unfilled slot. It never
+  clobbers: section 3, *"Traps this milestone has already sprung"*, is the one thing in the tree
+  no command can regenerate.
+
+  **`check pm` WARNS when a milestone in an `in_progress` state has no handoff** — the doc is
+  deliberately never auto-minted, which is exactly why its absence can mean something. A WARN,
+  never the exit code, and only `in_progress`: warning on `done` would fire once per historical
+  milestone on every consumer's tree.
+
+  **`check grain-shape` gains `NO HEADER`**, a FINDING, on a shared doc that does not open with
+  its slot instruction line — the one channel that reaches a dispatched subagent, so a doc that
+  lost it is silently unguided. **This can flip an unchanged tree from PASS to exit 1**: a
+  hand-authored or hand-trimmed `decisions.md` was never asked for that line before. The finding
+  names the literal line and the verb that restores it, derived per grain — `pm new feature
+  0.1/alpha` for a feature's log, not a generic `pm new milestone`. Any KNOWN header passes,
+  including retired spellings, so rewording one never reddens a doc written under the old words.
+
+  `pm install-skills` writes a third file with them: `.claude/skills/handoff/SKILL.md`.
+
 - **THE PM TREE IS FOUR POOLS, AND A GRAIN'S IDENTITY IS ITS FRONTMATTER.** The largest change
   this package has made to a consumer's tree. Before: a grain's kind came from which slot its
   document sat in, its parent came from the directory above, and `id:`/`milestone:`/`feature:`

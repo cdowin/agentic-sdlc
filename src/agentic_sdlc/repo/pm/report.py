@@ -14,10 +14,11 @@ import fnmatch
 import io
 import subprocess
 from collections.abc import Callable, Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from agentic_sdlc.repo.pm import ledger, model, verdict
+from agentic_sdlc.repo.pm import arrive, ledger, model, verdict
 
 # The two line shapes a consumer greps (rule 6); both carry the milestone id.
 HEADING_PREFIX = '[ledger:report]'
@@ -840,21 +841,218 @@ def in_time_order(rows: list) -> list:
         (stamp := ledger.parse_ts(row.data.get('ts'))) is None, stamp))
 
 
-def state_seconds(rows: list) -> dict[str, int]:
-    """Seconds in each state by subtraction over consecutive status rows; the
-    interval belongs to the state the earlier row moved to. Nothing before the
-    first row or after the last is measured, and an unparseable `ts` nothing.
+def arrival_state(row: dict) -> str:
+    """The state this row says a grain ARRIVED at, or '' when it says none.
+
+    Two rows carry the one event (D3) — `to` on the `status` row, `state` on
+    the `disposition` row the same move mints — and reading BOTH is what makes
+    the clock hook-free."""
+    if arrive.disposition_of(row):
+        state = row.get('state')
+    elif row.get('kind') == ledger.KIND_STATUS:
+        state = row.get('to')
+    else:
+        return ''
+    return state if isinstance(state, str) else ''
+
+
+def arrivals(rows: list) -> list[tuple[datetime, str]]:
+    """Every arrival on one grain, oldest first, each instant counted ONCE.
+
+    One move writes two rows at one stamp and they are one event, so the
+    repeat is folded. An unparseable `ts` is no arrival at all — `build` has
+    sorted it past every stamped row, so it can neither open nor close a stint.
     """
-    seconds: dict[str, int] = {}
-    for earlier, later in zip(rows, rows[1:]):
-        state = earlier.data.get('to')
-        start = ledger.parse_ts(earlier.data.get('ts'))
-        end = ledger.parse_ts(later.data.get('ts'))
-        if not isinstance(state, str) or not state or None in (start, end):
+    marks: list[tuple[datetime, str]] = []
+    for row in rows:
+        state = arrival_state(row.data)
+        stamp = ledger.parse_ts(row.data.get('ts'))
+        if not state or stamp is None or marks[-1:] == [(stamp, state)]:
             continue
+        marks.append((stamp, state))
+    return marks
+
+
+def state_seconds(rows: list) -> dict[str, int]:
+    """Seconds in each state, by subtraction over consecutive ARRIVALS; the
+    interval belongs to the state the earlier arrival reached. The time after
+    the last is the OPEN charge below and never a completed number, and a
+    state nobody held gets no key rather than a zero."""
+    seconds: dict[str, int] = {}
+    marks = arrivals(rows)
+    for (start, state), (end, _unused) in zip(marks, marks[1:]):
         seconds[state] = seconds.get(state, 0) + int(
             (end - start).total_seconds())
     return seconds
+
+
+def _now() -> datetime:
+    """Read time, asked ONCE so every open charge shares one instant."""
+    return datetime.now(timezone.utc)
+
+
+def open_charge(cfg: model.PmConfig, kind: str, rows: list,
+                now: datetime | None = None) -> tuple[str, int | None]:
+    """(the state this grain is sitting in now, seconds since it got there),
+    or `('', None)` — a closed grain accrues nothing, and one nobody ever
+    moved is UNMEASURED rather than zero (rule 4)."""
+    marks = arrivals(rows)
+    if not marks:
+        return '', None
+    stamp, state = marks[-1]
+    if ledger.ends_grain(cfg, kind, state):
+        return '', None
+    return state, max(0, int(((now or _now()) - stamp).total_seconds()))
+
+
+# --- the roll-up --------------------------------------------------------------
+# Roll-up is the FEATURE, not a view: membership is a field (0.4.0), so a
+# milestone's building time is a WALK of its features' and theirs of their
+# stories' — every level the one below plus its own, open charge included.
+CLOCK_TITLE = 'time per state'
+ACTOR_TITLE = 'time per actor'
+STATE_SUFFIX = '_s'
+CLOSED_COLUMN = 'closed_s'
+OPEN_COLUMN = 'open_s'
+OPEN_STATE_COLUMN = 'open_state'
+ACTOR_COLUMN = 'actor'
+ARRIVALS_COLUMN = 'arrivals'
+GRAINS_COLUMN = 'grains'
+SECONDS_COLUMN = 'seconds'
+KIND_MILESTONE = 'milestone'
+# What `--help` names, in order (rule 11's read side): "total review time for
+# this milestone" is `… | awk` over these, never a flag this verb grew.
+CLOCK_COLUMNS = (GRAIN_COLUMN, f'<state>{STATE_SUFFIX}', CLOSED_COLUMN,
+                 OPEN_COLUMN, OPEN_STATE_COLUMN)
+ACTOR_COLUMNS = (ACTOR_COLUMN, ARRIVALS_COLUMN, GRAINS_COLUMN, SECONDS_COLUMN)
+
+
+def _sum_into(into: dict[str, int], more: dict[str, int]) -> None:
+    """One grain's seconds folded into its parent's; absent stays absent."""
+    for state, spent in more.items():
+        into[state] = into.get(state, 0) + spent
+
+
+def _actor_of(row: dict) -> str:
+    """The actor an arrival named, AS TYPED — `--by agent developer`. Nothing
+    here goes looking for that agent (rule 9), and `none` is an answer."""
+    answer = row.get('answer')
+    answer = answer if isinstance(answer, str) and answer else (
+        ledger.NO_DISPOSITION)
+    value = row.get('value')
+    return (f'{answer} {value}'.strip()
+            if isinstance(value, str) and value else answer)
+
+
+def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
+               rows: list, now: datetime | None = None) -> dict:
+    """The milestone, its features, their stories and its bugs, each with the
+    seconds ITS OWN SUBTREE spent in each state and the charge it is accruing,
+    plus who was named at each arrival. `grains` arrives in tree order from
+    `walk_grains`, so `depth` is the shape and the walk is the sum."""
+    when = now or _now()
+    kinds = {g.gid: g.kind for g in grains}
+    kinds[mid] = KIND_MILESTONE
+    mine: dict[str, list] = {}
+    for row in rows:
+        gid = row.data.get('grain')
+        if isinstance(gid, str) and gid in kinds:
+            mine.setdefault(gid, []).append(row)
+    own = {gid: state_seconds(mine.get(gid, [])) for gid in kinds}
+    charge = {gid: open_charge(cfg, kind, mine.get(gid, []), when)
+              for gid, kind in kinds.items()}
+    rolled = {gid: dict(spent) for gid, spent in own.items()}
+    open_s = {gid: seconds for gid, (_state, seconds) in charge.items()}
+    stories = {sid for owns in owned.values() for sid in owns}
+    for feature, owns in owned.items():
+        for sid in owns:
+            _sum_into(rolled[feature], own[sid])
+            open_s[feature] = _plus(open_s[feature], open_s[sid])
+    for grain in grains:
+        if grain.gid in stories:
+            continue
+        _sum_into(rolled[mid], rolled[grain.gid])
+        open_s[mid] = _plus(open_s[mid], open_s[grain.gid])
+    out = [_clock_row(mid, KIND_MILESTONE, 0, rolled, open_s, charge)]
+    out.extend(_clock_row(g.gid, g.kind, 2 if g.gid in stories else 1,
+                          rolled, open_s, charge) for g in grains)
+    return {'rows': out, 'actors': actor_rows(kinds, mine)}
+
+
+def _clock_row(gid: str, kind: str, depth: int, rolled: dict, open_s: dict,
+               charge: dict) -> dict:
+    """One row of the roll-up: `state_s` is what the table prints (own plus
+    every descendant's), `open_state` this grain's OWN state."""
+    spent = rolled[gid]
+    return {'grain': gid, 'kind': kind, 'depth': depth,
+            'state_s': dict(spent),
+            CLOSED_COLUMN: sum(spent.values()) if spent else None,
+            OPEN_COLUMN: open_s[gid],
+            OPEN_STATE_COLUMN: charge[gid][0] or None}
+
+
+def actor_rows(kinds: dict[str, str], mine: dict[str, list]) -> list[dict]:
+    """Spend per actor, from disposition rows ALONE: how many arrivals each
+    answer opened, on how many grains, and how long those stints ran. A stint
+    still RUNNING contributes no seconds, because crediting a running clock to
+    whoever last spoke is the partial credit this feature refuses."""
+    tally: dict[str, dict] = {}
+    for gid in sorted(kinds):
+        grain_rows = mine.get(gid, [])
+        marks = arrivals(grain_rows)
+        ends = {start: end for (start, _s), (end, _e) in zip(marks, marks[1:])}
+        for row in grain_rows:
+            if not arrive.disposition_of(row.data):
+                continue
+            stamp = ledger.parse_ts(row.data.get('ts'))
+            entry = tally.setdefault(_actor_of(row.data),
+                                     {ACTOR_COLUMN: _actor_of(row.data),
+                                      ARRIVALS_COLUMN: 0, GRAINS_COLUMN: [],
+                                      SECONDS_COLUMN: None})
+            entry[ARRIVALS_COLUMN] += 1
+            if gid not in entry[GRAINS_COLUMN]:
+                entry[GRAINS_COLUMN].append(gid)
+            end = ends.get(stamp)
+            if end is not None:
+                entry[SECONDS_COLUMN] = _plus(
+                    entry[SECONDS_COLUMN], int((end - stamp).total_seconds()))
+    return [dict(entry, **{GRAINS_COLUMN: len(entry[GRAINS_COLUMN])})
+            for _actor, entry in sorted(tally.items())]
+
+
+def clock_columns(cfg: model.PmConfig, rows: list) -> tuple[str, ...]:
+    """Which state WORDS this milestone's rows hold, in the order the project
+    declared them and any word `[pm.states.*]` does not name appended. A state
+    nobody held is no column: a zero nobody measured is the one number this
+    report must never print (rule 4)."""
+    held = {state for row in rows for state in row['state_s']}
+    declared = list(dict.fromkeys(state for kind in model.FLOW_KINDS
+                                  for state in model.flow_of(cfg, kind).order))
+    named = [state for state in declared if state in held]
+    return tuple(named + sorted(held - set(named)))
+
+
+def clock_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+    """The two blocks the clock adds to section 1: one row per grain in tree
+    order, indented by depth, then one row per actor."""
+    rows = data['rows']
+    states = clock_columns(cfg, rows)
+    headers = (GRAIN_COLUMN, *(f'{s}{STATE_SUFFIX}' for s in states),
+               CLOSED_COLUMN, OPEN_COLUMN, OPEN_STATE_COLUMN)
+    aligns = (LEFT,) + (RIGHT,) * (len(headers) - 2) + (LEFT,)
+    body = [(f'{SUB_ROW_INDENT * entry["depth"]}{entry["grain"]}',
+             *(_cell(entry['state_s'].get(state)) for state in states),
+             _cell(entry[CLOSED_COLUMN]), _cell(entry[OPEN_COLUMN]),
+             entry[OPEN_STATE_COLUMN] or DASH) for entry in rows]
+    out = _table(f'{CLOCK_TITLE} ({len(rows)})', headers, aligns, body)
+    actors = data['actors']
+    out.append('')
+    out.extend(_table(f'{ACTOR_TITLE} ({len(actors)})', ACTOR_COLUMNS,
+                      (LEFT, RIGHT, RIGHT, RIGHT),
+                      [(entry[ACTOR_COLUMN], str(entry[ARRIVALS_COLUMN]),
+                        str(entry[GRAINS_COLUMN]),
+                        _cell(entry[SECONDS_COLUMN])) for entry in actors]))
+    return out
 
 
 # --- section 1: spend per grain -----------------------------------------------
@@ -865,6 +1063,8 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     kinds = {g.gid: g.kind for g in grains}
     dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
     status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
+    # The clock reads ARRIVALS, of which `status` is only half (D3/D6).
+    arrived = [r for r in rows if arrival_state(r.data)]
     per_grain = {g.gid: _blank() for g in grains}
     per_type: dict[str, dict[str | None, dict]] = {g.gid: {} for g in grains}
     unattributed, totals = _blank(), _blank()
@@ -902,8 +1102,13 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                                                g.gid)):
         names = {grain.gid}
         my_status = [r for r in status if r.data.get('grain') in names]
+        # The category columns are now DERIVED from the state totals rather
+        # than the only number: `building` and `reviewing` are both
+        # `in_progress`, the distinction the clock block below stopped losing.
         placed, unplaced = category_seconds(
-            cfg, grain.kind, state_seconds(my_status))
+            cfg, grain.kind,
+            state_seconds([r for r in arrived
+                           if r.data.get('grain') in names]))
         out.append({
             'grain': grain.gid, 'kind': grain.kind,
             'size': grain.size or None,
@@ -920,6 +1125,7 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         })
     in_flight, unplaceable = _in_flight_ages(cfg, kinds, status)
     return {'section': SECTION_SPEND, 'grains': out,
+            'clock': clock_data(cfg, mid, grains, owned, arrived),
             'in_flight': in_flight,
             'in_flight_unplaceable': unplaceable,
             'unattributed': unattributed,
@@ -1018,6 +1224,8 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     if data.get('in_flight_unplaceable'):
         out.append(f'   {data["in_flight_unplaceable"]} status row(s) '
                    f'{IN_FLIGHT_UNPLACEABLE}')
+    out.append('')
+    out.extend(clock_lines(cfg, data['clock']))
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',

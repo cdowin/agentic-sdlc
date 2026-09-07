@@ -331,8 +331,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
 
     @staticmethod
     def _dispositions(root: Path) -> list[dict]:
-        return [r for r in ledger_rows(root)
-                if r['kind'] == arrive.KIND_DISPOSITION]
+        return [r for r in ledger_rows(root) if arrive.disposition_of(r)]
 
     @staticmethod
     def _stderr(out: str, word: str) -> list[str]:
@@ -356,28 +355,69 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                 self.assertEqual(model.field_of(root / rel, 'status'), state)
                 rows = self._dispositions(root)
                 self.assertEqual(len(rows), 1, rows)
-                self.assertEqual(rows[0]['answer'], arrive.NO_DISPOSITION)
+                self.assertEqual(rows[0]['answer'],
+                                 ledger.NO_DISPOSITION)
                 self.assertEqual(rows[0]['state'], state)
                 self.assertEqual(rows[0]['grain'], gid)
                 self.assertNotIn('from', rows[0],
                                  'direction is NOT modelled (D3) — a `from` '
                                  'field is a transition table growing back')
 
-    def test_a_CHECKS_disposition_never_answers_an_ARRIVALS_question(self):
-        """Two row shapes carry the word `disposition` and a reader must
-        branch: an arrival's carries `state`, a skipped check's carries `check`
-        (0.5.0/D5). Reading one as the other would report a grain as answered
-        because somebody skipped a check on it, which is a different claim."""
-        with tree(feature_status='ready') as root:
-            put_ledger(root, ledger.dumps(
-                {'ts': '2026-09-07T00:00:00Z',
-                 'kind': arrive.KIND_DISPOSITION, 'grain': '0.1/alpha',
-                 'operation': 'feature', 'check': 'review-recorded',
-                 'why': 'read inline'}))
-            self.assertFalse(arrive.disposition_of(ledger_rows(root)[0]))
-            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            census = self._stderr(out, 'open:')[0]
-            self.assertIn('carry no disposition', census)
+    def test_a_SKIP_is_a_field_on_the_arrival_and_never_a_row_of_its_own(self):
+        """ONE word, ONE shape (0.5.0/D6). A `close --skip` is one thing
+        happening — the grain arrived, and this is how its question was
+        answered — so the skip is a field on that arrival's row.
+
+        Bites the fold coming undone: a second row under the same `kind` with
+        `check`/`why` at the top level, which `disposition_of` would now read
+        as an arrival answering a state it never names, and the per-state
+        walk `ledger report` does would count as an arrival that never
+        happened (rule 4's first sin, with a plausible number on it).
+        """
+        with tree(feature_status='building',
+                  story_statuses=('building',)) as root:
+            put_ledger(root, ledger.dumps(ledger.disposition_row(
+                '0.1/alpha', 'building', arrive.Said('--by', 'me'),
+                [('review-recorded', 'read inline')],
+                ts='2026-09-07T00:00:00Z')))
+            row = ledger_rows(root)[0]
+            self.assertTrue(arrive.disposition_of(row))
+            self.assertEqual(row['state'], 'building')
+            self.assertEqual(row['skipped'],
+                             [{'check': 'review-recorded',
+                               'why': 'read inline'}])
+            self.assertNotIn('check', row, 'the skip grew a row of its own')
+            self.assertEqual(set(row) - {'value'},
+                             set(ledger.DISPOSITION_KEYS) - {'value'})
+            # The arrival it is a field on ANSWERED the state it names, so
+            # of the three grains in flight the feature is the one the census
+            # does not count as unanswered.
+            _, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
+            self.assertIn('2 of 3 carry no disposition',
+                          self._stderr(out, 'open:')[0])
+
+    def test_a_skip_handed_to_a_verb_that_arrives_nowhere_is_refused(self):
+        """`skipped=` is the belt's seam into the arrival, and a verb that
+        does not arrive has no disposition row for the judgement to be a field
+        on. Bites: the skips silently dropped — the record `--skip` exists to
+        make, missing, which is the failure rule 11 names."""
+        with tree() as root:
+            code, out = run_cli(root, 'status', skipped=(('a-check', 'why'),))
+            self.assertEqual(code, 2, out)
+            self.assertIn('arrives nowhere', out)
+            self.assertIn('a-check', out)
+            self.assertEqual(ledger_rows(root), [])
+
+    def test_a_skip_with_no_reason_cannot_be_minted_by_any_path(self):
+        """`ledger.reason_defect`, the same grammar `deviation_row` uses, so
+        there is one definition of what a reason is. Bites: a caller reaching
+        past `--skip`'s own grading to file an unexplained skip, which IS a
+        deviation and already has a verb."""
+        for why in ('', '   ', '...'):
+            with self.subTest(why=why), self.assertRaises(ValueError) as caught:
+                ledger.disposition_row('0.1/alpha', 'done', arrive.NOTHING,
+                                       [('review-recorded', why)])
+            self.assertIn('review-recorded', str(caught.exception))
 
     def test_a_declared_answer_is_recorded_as_it_was_typed(self):
         """`--by agent developer` records a CLAIM; the tool does not go looking
@@ -579,7 +619,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                 code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
                 self.assertEqual(code, 0, out)
                 rows = [r for r in ledger_rows(root)
-                        if r['kind'] == arrive.KIND_LEAVE]
+                        if r['kind'] == ledger.KIND_LEAVE]
                 self.assertEqual(len(rows), 1, rows)
                 row = rows[0]
                 cfg = loaded(root)

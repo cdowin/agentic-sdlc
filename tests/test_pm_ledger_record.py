@@ -46,7 +46,7 @@ import pytest
 from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
                         tree, write)
 
-from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import arrive, ledger
 from agentic_sdlc.repo.pm import model
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
@@ -995,6 +995,38 @@ def test_the_human_form_is_one_line_per_row_with_the_gap_after_the_first():
         # `done` is terminal for a story, so the run ends with the total.
         'first row → terminal row: 1200s',
     ]
+
+
+def test_a_disposition_prints_its_state_answer_and_every_skipped_check():
+    """Rule 11's read side, and a ship criterion of 0.5.0. The row was on disk
+    from the first arrival this package recorded, and this verb printed its
+    `ts` and `kind` and stopped — so `state`, `answer` and every `skipped`
+    entry were held by the tree and invisible at the surface someone stands in
+    to ask what a grain cost. Bites: a column dropping back off the line, which
+    is indistinguishable from the tree never having recorded it.
+    """
+    one, two = TIMELINE[0], TIMELINE[1]
+    with tree() as root:
+        put_ledger(
+            root,
+            status_line(one, STORY, 'ready', 'building'),
+            ledger.dumps(ledger.disposition_row(
+                STORY, 'building', arrive.Said('--by', 'agent developer'),
+                ts=one)),
+            status_line(two, STORY, 'building', 'done'),
+            ledger.dumps(ledger.disposition_row(
+                STORY, 'done', arrive.NOTHING,
+                [('review-recorded', 'read inline'),
+                 ('story-verified', 'no code changed')], ts=two)))
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+    assert code == 0, out
+    assert out.strip().splitlines()[:4] == [
+        f'{one}  status    ready -> building',
+        f'{one}  disposition  building  --by agent developer',
+        f'{two}  status    building -> done  +812s',
+        f'{two}  disposition  done  none  skipped: review-recorded — '
+        f'"read inline", story-verified — "no code changed"',
+    ], out
 
 
 def test_no_total_line_while_the_grain_is_still_in_flight():

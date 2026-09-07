@@ -26,13 +26,16 @@ What is pinned here, and why each of these would COST something if it broke:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from support.pm import (bug, decision_line, dispatch_line, put_ledger, run_cli,
-                        section_of, snapshot, status_line, tree, write)
+from support.pm import (bug, decision_line, dispatch_line, ledger_lines,
+                        put_ledger, run_cli, section_of, snapshot,
+                        status_line, tree, write)
 
-from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import arrive, ledger
+from agentic_sdlc.repo.pm import report as pm_report
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -116,6 +119,16 @@ grain        size  dispatches    in    out  cache_create  cache_read  tool_calls
 grain           size  dispatches  in  out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
 0.1/bugs/crash                 0   -    -             -           -           -           -     -           30     -       30
 
+-- time per state (5)
+grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
+0.1                      600          120       30       750       -  -
+  0.1/alpha              600          120        -       720       -  -
+    0.1/alpha/s0         600          120        -       720       -  -
+    0.1/alpha/s1           -            -        -         -       -  -
+  0.1/bugs/crash           -            -       30        30       -  -
+
+-- time per actor (0)
+
 -- rows naming no grain (1)
 dispatches  in  out  cache_create  cache_read  tool_calls  duration_s
          1   5    -             -           -           2           -
@@ -127,6 +140,10 @@ SPEND_TITLE = 'spend per grain'
 # `legacy` landed with the category keys (decision D7): how many dispatch rows
 # predate them, and how many of those named nothing.
 SPEND_KEYS = ('milestone', 'section', 'grains',
+              # 0.5.0/time-is-measured-per-state-and-rolls-up: the same rows
+              # again, per STATE rather than per category, rolled up the
+              # membership tree, with the OPEN charge beside the closed time.
+              'clock',
               # 0.4.0/every-grain-is-on-a-stopwatch: per kind, how many
               # grains have not reached a terminal state and how long
               # they have been in flight. A report; nothing gates on it.
@@ -347,6 +364,28 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
              'states': {'todo': None, 'in_progress': 30, 'done': None},
              'unplaced_s': None, 'frozen_only': None, 'total_s': 30},
         ],
+        # The clock, keyed by STATE NAME (the ship criterion's `--json`
+        # clause) and rolled up: the milestone's `building` is its features',
+        # which is its stories'. A state a grain never held is an ABSENT KEY
+        # and never a zero, which is why `0.1/alpha/s1` carries `{}`.
+        'clock': {
+            'rows': [
+                {'grain': '0.1', 'kind': 'milestone', 'depth': 0,
+                 'state_s': {'building': 600, 'reviewing': 120, 'fixed': 30},
+                 'closed_s': 750, 'open_s': None, 'open_state': None},
+                {'grain': FEATURE, 'kind': 'feature', 'depth': 1,
+                 'state_s': {'building': 600, 'reviewing': 120},
+                 'closed_s': 720, 'open_s': None, 'open_state': None},
+                {'grain': STORY, 'kind': 'story', 'depth': 2,
+                 'state_s': {'building': 600, 'reviewing': 120},
+                 'closed_s': 720, 'open_s': None, 'open_state': None},
+                {'grain': QUIET, 'kind': 'story', 'depth': 2, 'state_s': {},
+                 'closed_s': None, 'open_s': None, 'open_state': None},
+                {'grain': BUG, 'kind': 'bug', 'depth': 1,
+                 'state_s': {'fixed': 30}, 'closed_s': 30, 'open_s': None,
+                 'open_state': None},
+            ],
+            'actors': []},
         'unattributed': {'dispatches': 1,
                          'usage': dict(blank_usage(), input=5),
                          'tool_calls': 2, 'duration_s': None},
@@ -585,3 +624,176 @@ def test_a_current_shape_ledger_discloses_no_boundary():
     feature = next(e for e in data['grains'] if e['grain'] == FEATURE)
     assert feature['dispatches'] == 1 and feature['frozen_only'] is None
     assert data['legacy'] == {'rows': 0, 'unattributed': 0}
+
+
+# --- the clock, per STATE and rolled up ---------------------------------------
+# `pm ledger report` summed seconds per CATEGORY, and `building` and `reviewing`
+# are both `in_progress` — so the tool collapsed exactly the distinction anyone
+# asks about. What is pinned below is the four claims the feature makes that the
+# category columns above cannot make:
+#
+#   * the sum is a WALK. A milestone's building time is its features', which is
+#     its stories', and each level is the level below PLUS its own;
+#   * OPEN time is a CHARGE. A running clock and a finished one are different
+#     facts, so no grain gets completed-time credit until it closes, and the
+#     charge rolls up so the pressure line has one number to name;
+#   * a state a grain never held contributes NO KEY, never a zero;
+#   * and all of it comes off ARRIVAL rows alone — the one event (D3) — on a
+#     tree where no harness hook has ever fired, which is this repo's own
+#     condition and the claim the ship criterion actually makes.
+NOW = datetime(2026, 9, 3, 11, 0, 0, tzinfo=timezone.utc)
+DASH = pm_report.DASH
+
+
+def disposition_line(ts: str, grain: str, state: str,
+                     answer: str = ledger.NO_DISPOSITION,
+                     value: str = '') -> str:
+    """The row an ARRIVAL mints (D3/D6) — the half of a move no hook is
+    involved in. Built through `ledger.disposition_row`, like every other
+    fixture line here, so a shape that drifted from the writer would fail."""
+    return ledger.dumps(ledger.disposition_row(
+        grain, state, arrive.Said(answer, value), ts=ts))
+
+
+@pytest.fixture
+def frozen(monkeypatch):
+    """Read time held still. An open charge is measured against NOW, and a
+    case whose expectation moved every second would prove nothing."""
+    monkeypatch.setattr(pm_report, '_now', lambda: NOW)
+    return NOW
+
+
+def clock_line(out: str, gid: str) -> str:
+    """One grain's row out of the printed clock block. Sliced from the
+    block heading, because the spend tables above name the same grains."""
+    block = section_of(out, SPEND_TITLE).split(f'-- {pm_report.CLOCK_TITLE}')
+    return next(ln for ln in block[1].splitlines()
+                if ln.strip().startswith(gid))
+
+
+def clock_of(root, mid: str = '0.1') -> dict:
+    """`{grain id: its clock row}` out of `--json`."""
+    code, out = report(root, mid, '--json')
+    assert code == 0, out
+    return {row['grain']: row for row in json.loads(out)['clock']['rows']}
+
+
+def test_each_levels_time_in_a_state_is_the_level_below_plus_its_own(frozen):
+    """Roll-up is the FEATURE, not a view.
+
+    Membership is already a field (0.4.0), so the sum is a walk and not a
+    join — and the number a milestone reports for `building` is the one
+    somebody actually asks for, rather than its own four minutes of it.
+    """
+    with tree(story_statuses=('done', 'done')) as root:
+        put_ledger(
+            root,
+            # The milestone's OWN minute, before anything under it moved.
+            status_line('2026-09-03T09:59:00Z', '0.1', 'planning', 'building'),
+            status_line('2026-09-03T10:00:00Z', '0.1', 'building', 'done'),
+            # The feature's own twenty, which no story spent.
+            status_line('2026-09-03T10:00:00Z', FEATURE, 'ready', 'building'),
+            status_line('2026-09-03T10:20:00Z', FEATURE, 'building', 'done'),
+            status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
+            status_line('2026-09-03T10:10:00Z', STORY, 'building', 'done'),
+            status_line('2026-09-03T10:00:00Z', QUIET, 'ready', 'building'),
+            status_line('2026-09-03T10:05:00Z', QUIET, 'building', 'done'),
+        )
+        rows = clock_of(root)
+    assert rows[STORY]['state_s'] == {'building': 600}
+    assert rows[QUIET]['state_s'] == {'building': 300}
+    # 1200 of its own, plus 600 and 300 from the two stories it owns.
+    assert rows[FEATURE]['state_s'] == {'building': 2100}
+    assert rows[FEATURE]['closed_s'] == 2100
+    # 60 of its own, plus the feature's rolled 2100.
+    assert rows['0.1']['state_s'] == {'building': 2160}
+    # Nothing here ever held `reviewing`, and an absent key is what says so:
+    # a `0` would be a measurement nobody made in the column a reader
+    # compares grains by.
+    assert 'reviewing' not in rows['0.1']['state_s']
+
+
+def test_open_time_is_a_charge_and_nothing_gets_credit_until_it_closes(frozen):
+    """A grain that has been `building` for an hour with nothing recorded is
+    accruing cost, and the number belongs in front of whoever decides next.
+
+    The report used to show a dash there. A dash is not a number (rule 11),
+    and folding the hour into `building_s` would say the work is finished
+    (rule 4) — so it is a column of its own, named with the state it is
+    accruing in, and it rolls up so the pressure line has one number.
+    """
+    with tree(story_statuses=('building', 'ready')) as root:
+        put_ledger(root, status_line('2026-09-03T10:00:00Z', STORY,
+                                     'ready', 'building'))
+        rows = clock_of(root)
+        out = report(root, '0.1')[1]
+    assert rows[STORY]['state_s'] == {}
+    assert rows[STORY]['closed_s'] is None
+    assert rows[STORY]['open_s'] == 3600
+    assert rows[STORY]['open_state'] == 'building'
+    # The milestone's charge is the sum of its open children's; the milestone
+    # itself was never moved, so it sits in no state of its own.
+    assert rows['0.1']['open_s'] == 3600
+    assert rows['0.1']['open_state'] is None
+    # A grain nobody has ever moved is UNMEASURED, never zero.
+    assert rows[QUIET]['open_s'] is None
+    assert clock_line(out, STORY).split()[-3:] == [DASH, '3600',
+                                                   'building']
+
+
+def test_the_clock_is_complete_on_a_tree_no_hook_has_ever_touched(frozen):
+    """The ship criterion's real claim, and this milestone's own condition.
+
+    Time per state and spend per actor, off ARRIVAL rows alone: not one
+    dispatch, session or gate row in the ledger, because the tree records
+    itself. If this needed a hook-written row to be right, the feature has
+    failed — telemetry that depends on something outside the tree is the hole
+    the disposition row exists to close.
+    """
+    with tree(story_statuses=('done', 'ready')) as root:
+        put_ledger(
+            root,
+            status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
+            disposition_line('2026-09-03T10:00:00Z', STORY, 'building',
+                             '--by', 'agent developer'),
+            status_line('2026-09-03T10:10:00Z', STORY, 'building', 'reviewing'),
+            disposition_line('2026-09-03T10:10:00Z', STORY, 'reviewing',
+                             '--review', 'agent reviewer'),
+            status_line('2026-09-03T10:12:00Z', STORY, 'reviewing', 'done'),
+            disposition_line('2026-09-03T10:12:00Z', STORY, 'done'),
+        )
+        raw = ' '.join(ledger_lines(root))
+        rows = clock_of(root)
+        data = json.loads(report(root, '0.1', '--json')[1])
+    assert ledger.KIND_DISPATCH not in raw and ledger.KIND_GATE not in raw
+    assert rows[STORY]['state_s'] == {'building': 600, 'reviewing': 120}
+    assert rows[FEATURE]['state_s'] == {'building': 600, 'reviewing': 120}
+    # Spend per actor, from the same rows: the answer AS TYPED, the arrivals
+    # it opened, and the seconds those stints ran. A move nobody answered is
+    # `none` — named, because that is what `check pm`'s U5 counts — and it
+    # opened no stint, so it is charged no seconds rather than a zero.
+    assert data['clock']['actors'] == [
+        {'actor': '--by agent developer', 'arrivals': 1, 'grains': 1,
+         'seconds': 600},
+        {'actor': '--review agent reviewer', 'arrivals': 1, 'grains': 1,
+         'seconds': 120},
+        {'actor': 'none', 'arrivals': 1, 'grains': 1, 'seconds': None},
+    ]
+
+
+def test_one_move_is_one_arrival_however_many_rows_carry_it(frozen):
+    """A move writes a `status` row AND a `disposition` row at one instant,
+    and they are ONE event (D3). Walking both would bill the same stint twice
+    — so the repeat is folded, and a ledger holding either half alone measures
+    the same seconds.
+    """
+    pair = (status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
+            disposition_line('2026-09-03T10:00:00Z', STORY, 'building'),
+            status_line('2026-09-03T10:10:00Z', STORY, 'building', 'done'),
+            disposition_line('2026-09-03T10:10:00Z', STORY, 'done'))
+    measured = []
+    for lines in (pair, pair[1::2], pair[0::2]):
+        with tree(story_statuses=('done', 'ready')) as root:
+            put_ledger(root, *lines)
+            measured.append(clock_of(root)[STORY]['state_s'])
+    assert measured == [{'building': 600}] * 3

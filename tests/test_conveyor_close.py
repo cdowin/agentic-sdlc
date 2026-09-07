@@ -150,6 +150,23 @@ def rows(root: Path) -> list[dict]:
     return [r.data for r in ledger.read_rows(path)] if path.exists() else []
 
 
+# ONE WRITE IS ONE ARRIVAL, and an arrival mints two rows: the `status` flip
+# and the `disposition` that answers the state it reached (0.5.0/D3, folded by
+# D6). What these cases claim is that ONE GRAIN moved — so they name the
+# shape, never the length of the file.
+ARRIVAL_KINDS = [ledger.KIND_STATUS, ledger.KIND_DISPOSITION]
+
+
+def arrival(root: Path, grain: str, to: str) -> None:
+    """Assert the ledger holds exactly one arrival, and that it is this
+    grain reaching this state."""
+    written = rows(root)
+    assert [r['kind'] for r in written] == ARRIVAL_KINDS, written
+    flip, answer = written
+    assert (flip['grain'], flip['to']) == (grain, to), written
+    assert (answer['grain'], answer['state']) == (grain, to), written
+
+
 # The TREE's ledger — where a row naming no grain lands (0.4.0/D3) — is not a
 # belt write, so it is not graded as one. A check the belt RUNS may file
 # telemetry about its own run: the gate wrapper records what a target COST on
@@ -283,9 +300,7 @@ def test_all_true_writes_exactly_the_first_done_state_and_nothing_else(capsys):
         assert after[SFILE].replace(f'status: {want}\n'.encode(),
                                     b'status: building\n') == before[SFILE], (
             'the belt rewrote something other than the status line')
-        written = rows(root)
-        assert [r['kind'] for r in written] == [ledger.KIND_STATUS], written
-        assert written[0]['to'] == want
+        arrival(root, STORY_ID, want)
     lines = out.strip().split('\n')
     assert f'[story] ok — {STORY_ID} → {want}' in lines, out
     assert any(line.startswith('next: ') for line in lines), out
@@ -362,9 +377,7 @@ def test_close_feature_all_true_writes_the_feature_status_once(capsys):
         assert code == 0, out
         assert status_of(root, FFILE) == want
         assert (root / SFILE).read_bytes() == before, 'the belt moved another grain'
-        written = rows(root)
-        assert len(written) == 1 and written[0]['kind'] == ledger.KIND_STATUS
-        assert written[0]['to'] == want
+        arrival(root, FEATURE_ID, want)
         assert f'[feature] ok — {FEATURE_ID} → {want}' in out
 
 
@@ -389,7 +402,10 @@ def test_an_open_finding_is_false_and_a_record_that_does_not_parse_is_unverifiab
 
 # --- the refusal matrix -------------------------------------------------------
 @pytest.mark.parametrize('args,why', [
-    (['story', STORY_ID, '--skip', 'committed'], 'removed'),
+    # `--skip` SHIPS since 0.5.0/D5 — bare, it is refused for want of the
+    # reason, because an unexplained skip IS a deviation and `--force` is its
+    # verb. What this row claims is that the refusal writes nothing.
+    (['story', STORY_ID, '--skip', 'committed'], 'a check and a reason'),
     (['story', STORY_ID, '--status'], 'removed'),
     (['story', STORY_ID, FEATURE_ID], 'exactly one'),
     # NOT a segment count: an id has no shape in 0.4.0. The belt asks the

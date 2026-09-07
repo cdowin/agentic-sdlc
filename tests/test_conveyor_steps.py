@@ -185,7 +185,8 @@ def release_over_tree_clean(root: Path) -> tuple[int, list[str], list[str]]:
     (exit code, stdout lines, the states the write seam was handed)."""
     writes: list[str] = []
 
-    def write(_ctx: driver.Context, state: str) -> tuple[bool, str]:
+    def write(_ctx: driver.Context, state: str,
+              skipped: tuple = ()) -> tuple[bool, str]:
         writes.append(state)
         return True, f'wrote {state}'
 

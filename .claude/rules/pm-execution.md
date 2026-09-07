@@ -206,6 +206,16 @@ a list of ids and nothing else — never a rendered roster.
   A row is filed against the milestone that owns its grain, at any status; a
   row naming none lands in `<roadmap>/ledger.jsonl` and is reported in the
   `rows naming no grain` bucket.
+  **`time per state` is the block that answers "how long has this been
+  building"**: `grain`, one `<state>_s` column per state the rows actually
+  hold, then `closed_s`, `open_s` and `open_state`, one row per grain in tree
+  order and **rolled up** — a milestone's `building_s` is the sum of its
+  features', which is the sum of its stories'. Time still RUNNING is `open_s`
+  and is never folded into a closed total, because a running clock and a
+  finished one are different facts; a state a grain never held has no column
+  rather than a zero. `time per actor` is the same rows read by who was named
+  at each arrival. **The shell is the filter** — `pm ledger report <id> | awk`
+  over those columns — never a new flag.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

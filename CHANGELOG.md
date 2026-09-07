@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+- **TIME IS MEASURED PER STATE, AND IT ROLLS UP AT ANY LEVEL**
+  (`ft-time-is-measured-per-state-and-rolls-up`). `pm ledger report` summed seconds per CATEGORY,
+  and `building` and `reviewing` are both `in_progress` — so the tool collapsed exactly the
+  distinction anyone asks about. Section 1 grows two blocks, and the category columns stay,
+  DERIVED from the state totals rather than being the only number:
+
+      -- time per state (5)
+      grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
+      0.1                      600          120       30       750    2400  building
+        0.1/alpha              600          120        -       720    2400  building
+          0.1/alpha/s0         600          120        -       720       -  -
+        0.1/bugs/crash           -            -       30        30       -  -
+
+      -- time per actor (2)
+      actor                 arrivals  grains  seconds
+      --by agent developer         2       2      930
+
+  **Roll-up is the feature, not a view**: membership is already a field (0.4.0), so a milestone's
+  `building_s` is a WALK of its features' and theirs of their stories' — every level the one below
+  plus its own. **OPEN time is a CHARGE**: a grain still in a state at read time has its elapsed
+  time in `open_s` beside the state accruing it, never folded into a closed total, and **no grain
+  gets completed-time credit until it closes** — a running clock and a finished one are different
+  facts. A parent's charge is the sum of its open children's plus its own, so the pressure line
+  has one number to name. **A state a grain never held is an absent key and no column**, never a
+  zero. `--json` carries the same under `clock`, keyed by state name.
+
+  **It reads ARRIVAL rows, so it needs no harness hook** (0.5.0/D3/D6): the `status` row a move has
+  always written names the state in `to`, the `disposition` row the same move mints names it in
+  `state`, and one move at one stamp is folded to one arrival. A tree where no hook has ever fired
+  — this repo's own condition — reports time per state and spend per actor in full.
+
+  **The columns are the filter** (rule 11's read side): *"total review time for this milestone"* is
+  `pm ledger report <id> | awk`, never a new flag.
+
+- **NEW `check pm` U5: a grain whose CURRENT state was arrived at with no disposition, BY NAME.**
+  A WARN in the USAGE family, never a refusal — a bare `pm feature building ft-x` still writes the
+  status and records `answer: none` (D3), because refusing would make the conveyor something
+  people route around. The rule names the grains rather than counting them, keys on the last
+  disposition for the state the grain is in NOW (a grain that bounced back has arrived again), and
+  uses `arrive.census` as its guard so the gate and the move's own pressure line cannot disagree.
+  Opt-in like U2/U3/U4; `pm vocabulary` lists it.
+
 - **A MOVE IS AN EVENT, and the event is ARRIVAL** (`ft-every-edge-carries-a-disposition`,
   `ft-the-conveyor-pushes-back`, `ft-a-move-names-the-capability-you-are-standing-in`,
   `ft-a-move-emits-the-breadcrumb-it-prints`; 0.5.0/D3). Every `pm <kind> <status> <id>` write is
@@ -36,9 +78,15 @@
   **There is no transition table and there never will be one.** The unit is the state ARRIVED AT,
   never the pair `(from, to)`: `building -> planning` is an arrival at `planning`, a second pass
   through a state asks the same question, and backwards was never a special case. The
-  `{ts, kind: "disposition", grain, state, answer, value}` row carries no `from` for that reason,
-  and time in a state is the gap between two arrivals on one grain — telemetry with no harness
-  hook involved at all.
+  `{ts, kind: "disposition", grain, state, answer, value?, skipped}` row carries no `from` for
+  that reason, and time in a state is the gap between two arrivals on one grain — telemetry with no
+  harness hook involved at all.
+
+  **`pm ledger show` renders that row.** Its columns, in order, are `ts  kind  <what the kind
+  says>`: a `status` row says `<from> -> <to>  +<n>s`, a `disposition` says `<state>  <answer>
+  [<value>]` and then `skipped: <check> — "<why>"` for every check a belt answered instead of
+  asking. The row was on disk from the first arrival and the renderer printed its kind and stopped
+  (rule 11's read side).
 
   Two new `[pm]` knobs, both stock-ON and both in `pm config --seed`: **`pressure`** silences the
   fork, the READY crossing and the census in one line (rule 6), and **`wip`** is the project's own
@@ -53,9 +101,11 @@
 - **A check has THREE answers, and `--skip <check> "<why>"` is the third**
   (`ft-the-close-is-cheap-and-a-check-is-dispositionable`, 0.5.0/D5, which revises 0.2.0/D12).
   `close story`, `close feature` and `release` accept it: the caller ANSWERED that check, so the
-  check is **not asked**, the line reads `skipped: <check> — "<why>"`, the status is written, the
-  close is a clean one, and the milestone's `ledger.jsonl` gets one
-  `{ts, kind: "disposition", grain, operation, check, why}` row per skipped check. Repeatable.
+  check is **not asked**, the line reads `skipped: <check> — "<why>"`, the status is written, and
+  the close is a clean one. **The judgement is a FIELD on the arrival's own `disposition` row**
+  (0.5.0/D6) — `skipped: [{check, why}, …]` — because a close is an arrival and this is how that
+  arrival's question was answered: one event, one row. Repeatable. A refused close leaves no
+  `skipped` behind it, because the row is minted by the write and not during the check run.
 
       $ agentic-sdlc close feature ft-x --skip review-recorded "one-line fix, read inline"
       [feature] ok: stories-done — [pm] READY — feature ft-x: 1 story/ies, all done

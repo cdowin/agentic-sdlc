@@ -48,14 +48,20 @@ def cannot(name: str) -> driver.Check:
 
 
 class Writer:
-    """Records every write it was asked for; answers what it was told to."""
+    """Records every write it was asked for — and every check the caller
+    ANSWERED, because the write is the arrival those answers are recorded on
+    (0.5.0/D6); answers what it was told to."""
 
     def __init__(self, landed: bool = True):
         self.landed = landed
         self.calls: list[str] = []
+        self.skipped: list[tuple[tuple[str, str], ...]] = []
 
-    def __call__(self, ctx: driver.Context, state: str) -> tuple[bool, str]:
+    def __call__(self, ctx: driver.Context, state: str,
+                 skipped: tuple[tuple[str, str], ...] = ()
+                 ) -> tuple[bool, str]:
         self.calls.append(state)
+        self.skipped.append(tuple(skipped))
         return self.landed, f'wrote {state}'
 
 

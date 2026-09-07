@@ -183,10 +183,15 @@ class StoryBelt(unittest.TestCase):
         # Rule 11 at the surface: every check the belt will ask at the CLOSE is
         # named as one this rung did not ask, and why. Silence about a check
         # would teach a reader the belt has three.
-        derived = ready_for._entry_condition('story')
-        asked, names = derived.asked, derived.names
         with tree() as root:
             code, out = run_cli(root, 'ready-for', 'story', '0.1/alpha/s0')
+            # DERIVED FROM THE SAME TREE the verb just answered about, and
+            # after it: `[<op>] steps` is read from the config, and
+            # `repo_root`/`load_config` are lru_cached, so a derivation taken
+            # outside the fixture answers about whichever tree last primed the
+            # cache — which is a census of one list against another.
+            derived = ready_for._entry_condition('story')
+        asked, names = derived.asked, derived.names
         self.assertEqual(code, 0, out)
         self.assertEqual([name for name, _ in asked], ['story-exists'], out)
         self.assertIn(f'{len(asked)} of {len(names)}', out)

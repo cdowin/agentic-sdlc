@@ -10,13 +10,12 @@ ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2
 is a declaration this machine could not read (D11). What the caller does next
 is printed as `next:` lines; nothing else is written, moved, pushed or tagged.
 
-A check has THREE answers, not two (0.5.0/D5). `--skip <check> "<why>"` is the
-third: the caller ANSWERED the question, so the check is not asked, the line
-reads `skipped: <check> — "<why>"`, the close is a clean one, and a
-`disposition` row records the judgement against the grain forever. Only a
-check named in `[<op>] skippable` may be skipped, a skip with no reason is
-refused — an unexplained skip is a deviation and `--force` is already its
-verb — and stock declares nothing skippable, so stock behaviour is unchanged.
+A check has THREE answers, not two (0.5.0/D5): `--skip <check> "<why>"` means
+the caller ANSWERED it, so it is not asked and the close is clean, and the
+judgement is a field on the `disposition` row the WRITE mints, because a close
+is an arrival (0.5.0/D6). Only a check named in `[<op>] skippable` may be
+skipped, a skip with no reason is refused, and stock declares nothing
+skippable, so stock behaviour is unchanged.
 """
 from __future__ import annotations
 
@@ -69,22 +68,10 @@ FORCED = 'forced'
 SKIP_FLAG = '--skip'
 SKIP_ARITY = 2
 
-# The row a skip mints. `pm/ledger.py` owns every other row grammar and these
-# two belong beside `KIND_DEVIATION`; they are minted here because that module
-# is another grain's to edit, and a row is read by its `kind`, so the move
-# changes no byte on disk. `ts`, not the grain's `at`: every reader in this
-# package — `ledger.read_rows`, `parse_ts`, `pm ledger show`'s sort — keys the
-# stamp as `ts`, and a second spelling of the timestamp would file every
-# disposition at the beginning of time.
+# A skip mints NO ROW OF ITS OWN. The belt collects what the caller answered
+# and hands it to the WRITE, which is an arrival, and `ledger.disposition_row`
+# carries it as a field on the one row that arrival mints (0.5.0/D6).
 #
-# TWO ROW SHAPES CARRY THIS WORD, and a reader must branch. An ARRIVAL's
-# disposition (0.5.0/D3) answers "what happened AT this state" and always
-# carries `state`; a CHECK's disposition answers "what happened to this
-# question" and always carries `check`. `check` is the discriminator, and
-# whether the two should be one row is the milestone's to settle — not
-# something either half may decide alone.
-KIND_DISPOSITION = 'disposition'
-DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'operation', 'check', 'why')
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
 # What a checks-only belt says about the record, before its first check: it
@@ -233,7 +220,7 @@ def done_state(cfg: 'model.PmConfig', kind: str) -> str:
 
 
 # --- the run ------------------------------------------------------------------
-Writer = Callable[[Context, str], tuple[bool, str]]
+Writer = Callable[[Context, str, Sequence[tuple[str, str]]], tuple[bool, str]]
 Recorder = Callable[[Sequence[tuple[str, str]]], str]
 
 
@@ -241,21 +228,19 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         *, force: bool = False, skips: Mapping[str, str] | None = None,
         state: str = '', write: Writer | None = None,
         record: Recorder | None = None,
-        dispose: Recorder | None = None,
         surfacer: 'lessons.Surfacer | None' = None) -> Result:
     """Ask every check the caller did not answer, print each, then write once
     or not at all.
 
     `state` and `write` are handed in so decision and mechanism are two
     functions with one seam; `record` mints a forced write's `deviation` row
-    and returns '' or why it could not; `dispose` mints one `disposition` row
-    per skipped check the same way; `state == ''` writes nothing. `surfacer`
-    reads recorded lessons back beside the verdicts and CANNOT change one — it
-    contributes lines and nothing else.
+    and returns '' or why it could not; `state == ''` writes nothing.
+    `surfacer` contributes lines beside the verdicts and CANNOT change one.
 
     `skips` is check -> why, already graded against `[<op>] skippable` by the
-    caller: a check in it is NOT asked, because the whole point is that the
-    expensive question goes unasked once someone has answered it.
+    caller: a check in it is NOT asked, because the point is that the
+    expensive question goes unasked once someone answered it. What was
+    answered is COLLECTED and handed to `write`, the arrival that records it.
     """
     op = ctx.operation
     defect = plan_defect(registry, names)
@@ -322,7 +307,7 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
                       skipped=names_skipped)
     if write is None:
         raise ValueError(f'{op} writes {state!r} and no writer was given')
-    landed, said = write(ctx, state)
+    landed, said = write(ctx, state, tuple(dispositioned))
     if said:
         lines.append(f'[{op}] write: {said}')
     if not landed:
@@ -338,13 +323,6 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
                          f'forced checks was not written: {blocked}')
     else:
         lines.append(f'[{op}] ok — {ctx.version} → {state}')
-    if dispositioned:
-        # After the write, for the same reason the deviation row is: a row for
-        # a close that did not happen is rule 4's second sin with a timestamp.
-        blocked = dispose(dispositioned) if dispose is not None else ''
-        if blocked:
-            lines.append(f'[{op}] WARNING — the disposition row(s) naming the '
-                         f'skipped check(s) were not written: {blocked}')
     return Result(tuple(lines), names_false, state, 0, skipped=names_skipped)
 
 
@@ -419,9 +397,8 @@ def _writes(operation: str) -> str:
 
 
 # The two flags a belt that WRITES takes, and what a checks-only belt says
-# about them instead. Both are named either way, because a flag that is
-# refused here and works one belt over is exactly the thing rule 11 says must
-# not be left to be discovered by trying it.
+# about them instead. Both are named either way: a flag refused here and
+# working one belt over is what rule 11 says must not be discovered by trying.
 WRITE_FLAGS = f"""\
   {SKIP_FLAG} <check> "<why>"
               you ANSWERED that check: it is not asked, the close is a clean
@@ -465,9 +442,9 @@ def parse_flags(rest: Sequence[str]
 
     `--skip <check> "<why>"` takes its two words POSITIONALLY, so a reason
     opening with a dash is a reason and not a mistyped flag. WHICH checks may
-    be skipped is not a question about argv — it is `[<op>] skippable`, graded
-    by `skip_defect` once the config is loaded. `--reason` and `--status` are
-    named because a consumer's script may still carry them.
+    be skipped is `[<op>] skippable`, graded by `skip_defect` once the config
+    is loaded. `--reason` and `--status` are named because a consumer's script
+    may still carry them.
     """
     force = False
     skips: dict[str, str] = {}
@@ -609,16 +586,20 @@ def _config(root: Path | None) -> 'model.PmConfig':
 
 def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
-    the `status` row and `check pm` reads what it wrote."""
+    the `status` row and `check pm` reads what it wrote. The answered checks
+    ride along: the write IS the arrival that records them, so a close that
+    never happened leaves no row claiming a judgement (0.5.0/D6).
+    """
     from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
 
-    def write(ctx: Context, state: str) -> tuple[bool, str]:
+    def write(ctx: Context, state: str,
+              skipped: Sequence[tuple[str, str]] = ()) -> tuple[bool, str]:
         argv = [kind, state, step_defs.subject_grain(ctx)]
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
-            code = pm_cli.main(argv)
+            code = pm_cli.main(argv, skipped=tuple(skipped))
         said = ' '.join(buffer.getvalue().split())
         return code == 0, f'`pm {" ".join(argv)}` exited {code}: {said}'
 
@@ -651,42 +632,11 @@ def _recorder(mledger: Path, operation: str, subject: str) -> Recorder:
     return record
 
 
-def _disposer(mledger: Path, operation: str, subject: str) -> Recorder:
-    """The `disposition` rows a skipped check leaves — ONE PER CHECK, so
-    "which closes skipped a review, and why" is a question the tree answers a
-    row at a time and a milestone review can sweep. The deviation row lists
-    every false check in one row because a forced write is one act; a
-    disposition is one judgement about one question.
-    """
-    def dispose(skipped: Sequence[tuple[str, str]]) -> str:
-        rows = []
-        for check, why in skipped:
-            # Graded at the flag too; a row minted by any other caller must
-            # not be able to carry a reason that is not one.
-            defect = ledger.reason_defect(why)
-            if defect:
-                return f'{check}: {defect}'
-            rows.append({'ts': ledger.utc_now(), 'kind': KIND_DISPOSITION,
-                         'grain': subject, 'operation': operation,
-                         'check': check, 'why': why})
-        for row in rows:
-            try:
-                ledger.append_to(mledger, row)
-            except (ledger.LedgerError, OSError) as err:
-                return str(err)
-        return ''
-
-    return dispose
-
-
 def _no_ledger(nowhere: str) -> Recorder:
     """The recorder for a run whose milestone is not in the tree: it records
-    nothing and says why, so neither a forced write nor a skipped check can
-    ever print as though a row landed.
-
-    Only a checks-only belt gets here — a belt that writes is still refused
-    without the grain — but `run` may not assume that, and a silent recorder is
-    rule 4's second sin in miniature.
+    nothing and says why, so a forced write can never print as though a row
+    landed. Only a checks-only belt gets here, but `run` may not assume that
+    and a silent recorder is rule 4's second sin in miniature.
     """
     def record(false: Sequence[tuple[str, str]]) -> str:
         return f'{nowhere} to hold a ledger row'
@@ -801,10 +751,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         return _refuse(f'{spoken} writes nothing, so there is nothing to '
                        f'force — it is checks only')
     if skips and not kind:
-        # A skip is a judgement the tree KEEPS, and this belt writes nothing —
-        # not a status and not a row; it says so before its first check. A
-        # `skipped:` line with no `disposition` behind it would be the record
-        # this flag exists to make, missing.
+        # A `skipped:` line with no `disposition` behind it would be the
+        # record this flag exists to make, missing.
         return _refuse(f'{spoken} writes nothing — not a status and not a row '
                        f'— so a skip has nowhere to be recorded; it is checks '
                        f'only. `{SKIP_FLAG}` is a close belt\'s flag: '
@@ -875,9 +823,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
     nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
     # A belt that WRITES needs the grain, and is refused BEFORE the first
-    # check — which is also why nothing spawns here. The sentence names what
-    # was looked for: "no milestone 'st-nobody-wrote-this'" about a STORY id
-    # sent the reader hunting for a milestone nobody had named.
+    # check. The sentence names what was looked for: "no milestone
+    # 'st-nobody-wrote-this'" about a STORY id sent the reader hunting.
     if mfile is None and kind:
         missing = (nowhere if operation in ('release', 'adopt')
                    else f'no {operation} {subject!r} in '
@@ -887,11 +834,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:
-        # Checks only (D12): the milestone is the LEDGER's home and nothing
-        # else, so its absence is not an entry condition. WHERE the project
-        # tracks the bump — a milestone, a feature, a story, nowhere at all —
-        # is the project's business, the same way `[pm.states.*]` is. Every
-        # check runs either way, and the run says which it found.
+        # Checks only (D12): the milestone is the LEDGER's home, so its
+        # absence is not an entry condition. WHERE the project tracks the bump
+        # is the project's business, the same way `[pm.states.*]` is.
         print(f'[{operation}] {NOTHING_RECORDED} — '
               + (f'a row would land in {cfg.rel(mledger)}'
                  if mledger is not None
@@ -902,8 +847,6 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                  write=write if write is not None else _writer(cfg, kind),
                  record=(_recorder(mledger, operation, subject)
                          if mledger is not None else _no_ledger(nowhere)),
-                 dispose=(_disposer(mledger, operation, subject)
-                          if mledger is not None else _no_ledger(nowhere)),
                  surfacer=lessons.surfacer_for(cfg, operation,
                                                _subject_grain(ctx)))
     for line in result.lines:

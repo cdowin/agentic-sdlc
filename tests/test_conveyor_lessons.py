@@ -102,7 +102,8 @@ def belt(root: Path, checks, *argv: str) -> Run:
     writes: list[str] = []
     out = io.StringIO()
 
-    def write(ctx: driver.Context, state: str) -> tuple[bool, str]:
+    def write(ctx: driver.Context, state: str,
+              skipped: tuple = ()) -> tuple[bool, str]:
         writes.append(state)
         return True, f'wrote {state}'
 

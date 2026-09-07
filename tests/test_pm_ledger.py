@@ -77,9 +77,16 @@ STORY = '0.1/alpha/s0'
 GATE_TS = '2026-09-05T14:02:11Z'
 
 
-def only_row(root) -> dict:
-    rows = ledger_rows(root)
-    assert len(rows) == 1, f'expected exactly one row, got {rows}'
+def status_rows(root) -> list[dict]:
+    """The `status` rows alone. Read by KIND, never by count: ONE arrival
+    mints the flip and the `disposition` that answers it (0.5.0/D3, folded by
+    D6), so a length over the whole file counts two things."""
+    return [r for r in ledger_rows(root) if r['kind'] == ledger.KIND_STATUS]
+
+
+def only_row(root, kind: str = ledger.KIND_STATUS) -> dict:
+    rows = [r for r in ledger_rows(root) if r['kind'] == kind]
+    assert len(rows) == 1, f'expected one {kind} row, got {ledger_rows(root)}'
     return rows[0]
 
 
@@ -111,11 +118,18 @@ def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
         assert code == 0, out
         assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
         lines = ledger_lines(root)
-    assert len(lines) == 1, lines
-    row = json.loads(lines[0])
+    # ONE ARRIVAL, TWO ROWS: the flip, and the disposition that answers the
+    # state it reached. The second is D3's, and it is asserted here rather
+    # than counted around, because a flip that stopped minting it would
+    # otherwise look exactly like this case passing.
+    assert len(lines) == 2, lines
+    row, answer = (json.loads(ln) for ln in lines)
     assert list(row) == ['ts', 'kind', 'grain', 'from', 'to']
     assert (row['kind'], row['grain'], row['from'], row['to']) == (
         'status', STORY, 'ready', 'building')
+    assert list(answer) == ['ts', 'kind', 'grain', 'state', 'answer']
+    assert (answer['kind'], answer['grain'], answer['state']) == (
+        ledger.KIND_DISPOSITION, STORY, 'building')
     # A report reads these with `wc -l` and `readline`, so one row is one line
     # and there are no spaces after the separators.
     assert lines[0] == json.dumps(row, separators=(',', ':'))
@@ -132,12 +146,11 @@ def test_rows_land_in_order_and_earlier_bytes_are_never_rewritten():
         assert run_cli(root, 'story', 'reviewing', STORY)[0] == 0
         assert run_cli(root, 'story', 'done', STORY)[0] == 0
         lines = ledger_lines(root)
-    assert len(lines) == 3, lines
+        moves = status_rows(root)
+    assert len(lines) == 6, lines
     assert lines[0] == first, 'an earlier row was rewritten'
-    assert [json.loads(ln)['to'] for ln in lines] == [
-        'building', 'reviewing', 'done']
-    assert [json.loads(ln)['from'] for ln in lines] == [
-        'ready', 'building', 'reviewing']
+    assert [r['to'] for r in moves] == ['building', 'reviewing', 'done']
+    assert [r['from'] for r in moves] == ['ready', 'building', 'reviewing']
 
 
 # One case per VERB rather than per verb-and-state: each of these is a distinct
@@ -176,7 +189,7 @@ def test_the_row_lands_in_the_grains_OWN_milestone_directory():
         write(other / 'milestone.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
         assert run_cli(root, 'story', 'building', STORY)[0] == 0
-        assert len(ledger_rows(root)) == 1
+        assert len(status_rows(root)) == 1
         assert not (other / ledger.LEDGER_FILE_NAME).exists()
 
 
@@ -209,7 +222,7 @@ def test_a_feature_close_writes_the_feature_row_and_no_story_row():
               story_statuses=('reviewing', 'reviewing', 'ready')) as root:
         code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
         assert code == 0, out
-        rows = ledger_rows(root)
+        rows = status_rows(root)
     assert [(r['grain'], r['from'], r['to']) for r in rows] == [
         ('0.1/alpha', 'reviewing', 'done')]
 
@@ -308,7 +321,7 @@ def test_a_feature_decision_lands_in_the_MILESTONE_ledger():
         # pooled tree makes the absence structural rather than a convention.
         assert not (root / 'pm/roadmap/features'
                     / ledger.LEDGER_FILE_NAME).exists()
-        row = only_row(root)
+        row = only_row(root, ledger.KIND_DECISION)
     assert (row['grain'], row['entry']) == ('0.1/alpha', 'D1')
 
 

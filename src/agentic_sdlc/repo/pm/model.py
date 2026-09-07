@@ -183,7 +183,10 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
 # STOCK-ON: an opt-in rule nobody enables answers "is this flow being used"
 # with silence, which is the failure they were filed to end, and a WARN cannot
 # redden anyone; a tree that wires nothing stays quiet either way (0.4.0/D5).
-USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4')  # named for the family
+# U5 (0.5.0) is the same question asked of the EDGE: a grain whose current
+# state was arrived at with no disposition. A bare move records `answer: none`
+# and is never refused (D3), so the rule names what nobody answered.
+USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4', 'U5')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')

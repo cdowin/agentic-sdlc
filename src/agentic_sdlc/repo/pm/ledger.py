@@ -7,13 +7,16 @@ timestamp is full UTC ISO-8601 at second resolution, `Z`-suffixed (D8).
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
+
+if TYPE_CHECKING:  # the arrival's own vocabulary; nothing is imported at run
+    from agentic_sdlc.repo.pm.arrive import Capability, Next, Said
 
 # Inside the milestone directory, so `retire` removes it with the directory and
 # git is the archive (D6).
@@ -62,15 +65,76 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
             'entry': entry, 'title': title}
 
 
+# --- the arrival: its disposition, and the row it leaves (0.5.0/D3, D6) -------
+# ONE row per arrival, and a skipped check is a FIELD on it, because a
+# `close feature --skip review-recorded "…"` is one thing happening: the grain
+# arrived at `done`, and this is how its question was answered (0.5.0/D6).
+KIND_DISPOSITION = 'disposition'
+DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'value',
+                    'skipped')
+SKIPPED_KEYS = ('check', 'why')
+
+# `<rung>.<edge>`, the spelling `ready_for.KIND_ENTER` uses; the last dotted
+# segment is the tap `check pm` reads off `emit.TAPS`.
+KIND_LEAVE = 'rung.leave'
+
+# What the row says when nobody answered. It cannot collide with a declared
+# answer, because `model._arrive_node_defect` refuses one that does not open
+# with `--`. A bare move still writes, and is never invisible.
+NO_DISPOSITION = 'none'
+
+
+def disposition_row(grain_id: str, state: str, said: Said,
+                    skipped: Sequence[tuple[str, str]] = (),
+                    ts: str = '') -> dict:
+    """One arrival: the STATE reached, the answer given, and every check the
+    caller answered with `--skip` instead of the belt asking it. No `from` —
+    direction is not modelled (D3), and time in a state is the gap between two
+    arrivals. `answer` is always present, `none` included, so "nobody
+    answered" and "a row written before this shipped" stay two facts; `why` is
+    validated HERE, as `deviation_row` validates its reason, so no path can
+    mint a skip without one.
+    """
+    row = {'ts': ts or utc_now(), 'kind': KIND_DISPOSITION,
+           'grain': grain_id, 'state': state, 'answer': said.answer}
+    if said.value:
+        row['value'] = said.value
+    answered = []
+    for check, why in skipped:
+        defect = reason_defect(why)
+        if defect:
+            raise ValueError(f'refusing to mint a {KIND_DISPOSITION} row for '
+                             f'{check!r}: {defect}')
+        answered.append(dict(zip(SKIPPED_KEYS, (check, why))))
+    if answered:
+        row['skipped'] = answered
+    return row
+
+
+def leave_row(grain_id: str, state: str, nxt: Next | None,
+              have: Sequence[Capability], said: Said,
+              ts: str = '') -> dict:
+    """The `rung.leave` payload: the same next-step facts the printed
+    breadcrumb states, from `arrive.derive_next` — the one derivation. A fact
+    this row wants and the printed line lacks belongs there, not here."""
+    row = {'ts': ts or utc_now(), 'kind': KIND_LEAVE,
+           'grain': grain_id, 'state': state, 'answer': said.answer,
+           'rung': nxt.belt if nxt else '',
+           'next_checks': list(nxt.checks) if nxt else [],
+           'next_actions': [nxt.action] if nxt else [],
+           'have': [{'path': c.path, 'why': c.why, 'installed': c.installed}
+                    for c in have]}
+    if said.value:
+        row['value'] = said.value
+    return row
+
+
 # --- the retire row -----------------------------------------------------------
 # WHAT OUTLIVES THE DOCUMENTS. `pm retire` removes a milestone's whole grain
-# family and `order` keeps its id and nothing else, so its version, its name and
-# the one sentence the operator typed died with the file
-# (`bg-retire-drops-the-summary-it-accepts` weighs the alternatives).
-#
-# Here rather than in `order` because turning one `order` entry into a mapping
-# is a schema change at all three levels of the tree; a retire is an EVENT and
-# this is the event log, the one file `retire` does not touch (0.4.0/D3).
+# family and `order` keeps its id and nothing else. Here rather than in `order`
+# because a retire is an EVENT and this is the event log, the one file `retire`
+# does not touch (0.4.0/D3; `bg-retire-drops-the-summary-it-accepts` weighs the
+# alternatives).
 KIND_RETIRE = 'retire'
 
 # The three fields the tree has no other copy of once the documents are gone.
@@ -80,8 +144,7 @@ RETIRE_FIELDS = ('version', 'name', 'summary')
 def retire_row(grain_id: str, version: str = '', name: str = '',
                summary: str = '', ts: str = '') -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
-    reader can tell "never recorded" from "recorded empty".
-    """
+    reader can tell "never recorded" from "recorded empty"."""
     row = {'ts': ts or utc_now(), 'kind': KIND_RETIRE, 'grain': grain_id}
     for key, value in zip(RETIRE_FIELDS, (version, name, summary)):
         if value:
@@ -91,7 +154,6 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
 
 def retired_releases(cfg) -> dict[str, dict]:
     """{milestone id: its last retire row} from the tree's grainless ledger.
-
     LAST wins: a milestone retired twice has two rows and the newer is what
     the plan should print. A ledger that will not parse raises `LedgerError` —
     answering "nothing was retired" over a damaged file is rule 4's first sin.
@@ -106,7 +168,7 @@ def retired_releases(cfg) -> dict[str, dict]:
 
 # --- the gate row -------------------------------------------------------------
 # A gate run is not work somebody was dispatched to do, so it is neither a
-# grain row nor a usage row. The name grammar is imported from `[gates] extra`,
+# grain row nor a usage row. The name grammar comes from `[gates] extra`
 # because the report and the story belt join on this string.
 GATE_NAME = gates_extra.TARGET
 GATE_NAME_MAX = gates_extra.MAX_LENGTH
@@ -119,8 +181,7 @@ GATE_VERDICTS = ('PASS', 'FAIL', 'HANG', 'SKIP')
 def gate_row(gate: str, verdict: str, duration_ms: int | None,
              census: int | None = None, ts: str = '') -> dict:
     """One gate run, costed in whole milliseconds — most gates finish inside a
-    second. An absent `census` is an absent key; nothing here judges.
-    """
+    second. An absent `census` is an absent key; nothing here judges."""
     row = {'ts': ts or utc_now(), 'kind': KIND_GATE, 'gate': gate,
            'verdict': verdict}
     for key, value in (('duration_ms', duration_ms), ('census', census)):
@@ -132,10 +193,9 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 # --- the verify row -----------------------------------------------------------
 # A `gate` row says what a TARGET cost; this says what a RUNG decided and the
 # TREE STATE it decided over, so a run over a byte-identical tree can report the
-# verdict instead of paying for it again. Its own kind, BESIDE the cost and not
-# on top of it: every reader of `gate` rows takes the LAST row per gate name, so
-# a second row per run would move the cost and census they report — and `check
-# budget` grades a tier on exactly that row.
+# verdict instead of paying for it again. Its own kind, BESIDE the cost: every
+# reader of `gate` rows takes the LAST row per gate name, and `check budget`
+# grades a tier on exactly that row.
 KIND_VERIFY = 'verify'
 
 # Narrower than `GATE_VERDICTS`: a rung either ran its target to an exit code or
@@ -150,11 +210,9 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
     """One rung's verdict against the tree state it ran on; `state` is the
     digest that makes the row reusable or not. Every field is refused rather
     than defaulted: a half-built row is one its reader must then distrust.
-
     `graded` digests the rows `check budget` grades as the ledger held them
     when this verdict was recorded — the one input a tree state CANNOT carry,
-    because the run being graded is the run that writes them. Its reader reuses
-    this row only while that digest still holds.
+    because the run being graded is the run that writes them.
     """
     if verdict not in VERIFY_VERDICTS:
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
@@ -186,11 +244,10 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
 
 
 # --- the deviation row --------------------------------------------------------
-# Minted here because this module owns the serialisation contract. Only
-# DEVIATIONS are rows: the ledger is tracked, so a row per completed step would
-# dirty the tree after `tree-clean`. `test` is the same economy one level down
-# — the `gate` row says what a tier cost, this says which case did, and only
-# the slowest few are filed.
+# Only DEVIATIONS are rows: the ledger is tracked, so a row per completed step
+# would dirty the tree after `tree-clean`. `test` is that economy one level
+# down — the `gate` row says what a tier cost, this says which case did, and
+# only the slowest few are filed.
 KIND_TEST = 'test'
 
 KIND_DEVIATION = 'deviation'
@@ -242,9 +299,8 @@ def test_row(tier: str, nodeid: str, duration_ms: int, rank: int,
 
 def deviation_row(grain_id: str, operation: str, step: str, reason: str,
                   ts: str = '', outcome: str = 'not-true') -> dict:
-    """One step of a conveyor run that did not come out true, and why.
-    `reason` is validated HERE, so a row without one cannot be minted by any
-    path."""
+    """One step of a conveyor run that did not come out true, and why; `reason`
+    is validated HERE, so no path can mint a row without one."""
     defect = reason_defect(reason)
     if defect:
         raise ValueError(f'refusing to mint a {KIND_DEVIATION} row for '
@@ -276,11 +332,10 @@ def ledgers_dir(cfg) -> Path:
 
 
 def ledger_for(cfg, milestone_id: str) -> Path:
-    """The ledger of one milestone, in EITHER layout.
-
-    Pooled: `<ledger_dir>/<milestone-id>.jsonl`. Nested: the `ledger.jsonl`
-    inside the milestone's own directory. One function, because a reader that
-    guessed would find the rows in one layout and silently none in the other.
+    """The ledger of one milestone, in EITHER layout — pooled
+    (`<ledger_dir>/<milestone-id>.jsonl`) or nested (inside the milestone's
+    own directory). One function, because a reader that guessed would find the
+    rows in one layout and silently none in the other.
     """
     from agentic_sdlc.repo.pm import model
     if model.is_pooled(cfg):
@@ -292,12 +347,9 @@ def ledger_for(cfg, milestone_id: str) -> Path:
 def ledger_of_grain(cfg, gid: str) -> Path | None:
     """The ledger a row naming `gid` belongs in, followed through the grain's
     BINDINGS — a story to its feature to its milestone (D1). None when the
-    grain names no milestone, or when the caller named no grain.
-
-    The ONE answer to "where does this row go": the lookup 0.4.0 retired asked
-    which milestone was `in_progress` and lost every row a planning tree wrote.
-    `pm/cli.py` and `repo/emit.py` both route through here;
-    `tests/test_boundaries.py` names the retired one.
+    grain names no milestone, or when the caller named no grain. The ONE
+    answer to "where does this row go": the lookup 0.4.0 retired asked which
+    milestone was `in_progress` and lost every row a planning tree wrote.
     """
     from agentic_sdlc.repo.pm import model
     mid = model.milestone_of(cfg, gid) if gid else ''
@@ -306,11 +358,9 @@ def ledger_of_grain(cfg, gid: str) -> Path | None:
 
 def grainless_dir(roadmap_dir: Path) -> Path:
     """The DIRECTORY whose ledger holds every row that names no grain
-    (0.4.0/D3) — the roadmap root, so the file sits beside the milestones
-    rather than inside one. It returns its argument, and that is the point:
-    WHICH directory is the grainless home is a decision, and it was restated
-    at five call sites.
-    """
+    (0.4.0/D3) — the roadmap root. It returns its argument, and that is the
+    point: WHICH directory is the grainless home is a decision, and it was
+    restated at five call sites."""
     return roadmap_dir
 
 
@@ -323,10 +373,8 @@ def grainless_path(roadmap_dir: Path) -> Path:
 def append_to(path: Path, row: dict) -> None:
     """Append one row to a ledger FILE, creating the file and the pool it sits
     in. `open('a')` rather than a `core.apply` overwrite, because
-    read-modify-write drops rows under two appenders. One byte is read first —
-    the last — and a newline closes a torn tail before the row lands. Raises
-    `OSError`: the caller has already changed the tree and must say so.
-    """
+    read-modify-write drops rows under two appenders; a newline closes a torn
+    tail first. Raises `OSError`: the caller has already changed the tree."""
     apply.raise_on_error(apply.make_dir(path.parent))
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
@@ -357,9 +405,9 @@ def _ends_mid_line(path: Path) -> bool:
 
 # --- the usage rows (D3/D4/D5) ------------------------------------------------
 # A `dispatch` row is one subagent's whole life; a `session` row is the
-# orchestrator's totals at one stop. One rule: copy what the transcript holds,
-# omit what it lacks, invent nothing — and refuse a transcript this module
-# cannot read, because a row of zeros reads like a cheap dispatch.
+# orchestrator's totals at one stop. Copy what the transcript holds, omit what
+# it lacks, invent nothing — and refuse a transcript this module cannot read,
+# because a row of zeros reads like a cheap dispatch.
 KIND_DISPATCH = 'dispatch'
 KIND_SESSION = 'session'
 
@@ -380,9 +428,9 @@ USAGE_FIELDS = (('input', 'input_tokens'),
 TYPE_ASSISTANT = 'assistant'
 TYPE_TOOL_USE = 'tool_use'
 
-# Not a model: Claude Code writes this as the `model` of an API-error notice it
-# generated itself, with all-zero usage. The exact token, not the `<…>` shape,
-# so an unknown pseudo-name comes through raw and gets decided.
+# Not a model: an API-error notice the harness generated itself, with all-zero
+# usage. The exact token, not the `<…>` shape, so an unknown pseudo-name comes
+# through raw and gets decided.
 SYNTHETIC_MODEL = '<synthetic>'
 
 # Every key a usage row may carry, in order.
@@ -411,8 +459,7 @@ class Row(NamedTuple):
 def normalise_ts(raw: object, where: str) -> str:
     """A transcript timestamp as this ledger spells one. Fractions are
     truncated, not rounded, so `ended_at` cannot land after the stop that
-    recorded it; an unparseable one raises.
-    """
+    recorded it; an unparseable one raises."""
     if not isinstance(raw, str) or not raw:
         raise TranscriptError(f'{where} has no timestamp ({raw!r})')
     try:
@@ -451,8 +498,7 @@ def _number(value: object, where: str) -> int:
 def records_of(path: Path) -> Iterator[tuple[int, dict]]:
     """(line number, record) for every line of a transcript, in file order.
     Read through the handle rather than `splitlines()`, so U+2028 cannot tear a
-    row; a line that is not a JSON object raises `TranscriptError`.
-    """
+    row; a line that is not a JSON object raises `TranscriptError`."""
     try:
         handle = path.open(encoding='utf-8')
     except OSError as err:
@@ -476,8 +522,7 @@ def transcript_summary(records: Iterable[tuple[int, dict]]) -> dict:
     """Sum one transcript into the fields a usage row carries, in one pass.
     `tool_calls_before_first_write` is the TOTAL when it never wrote; `model`
     is first-seen order, a list when it switched, `SYNTHETIC_MODEL` dropped as
-    a spelling. A file with no assistant record raises.
-    """
+    a spelling. A file with no assistant record raises."""
     usage = {name: 0 for name, _ in USAGE_FIELDS}
     tools: dict[str, int] = {}
     models: list[str] = []
@@ -550,8 +595,7 @@ def id_from_records(records: Iterable[tuple[int, dict]], key: str) -> str:
 def usage_row(kind: str, **fields: object) -> dict:
     """One `dispatch`/`session` row. `None` and `''` mean "the source did not
     say" and are omitted; `0`, `{}` and `[]` mean "the source said none" and
-    are kept. `tree` carries the category keys and the frozen ones (D7).
-    """
+    are kept. `tree` carries the category keys and the frozen ones (D7)."""
     fields['kind'] = kind
     fields.setdefault('ts', utc_now())
     unknown = set(fields) - set(ROW_KEYS)
@@ -563,8 +607,8 @@ def usage_row(kind: str, **fields: object) -> dict:
 
 # --- where a grain ENDS (D8) --------------------------------------------------
 # Finished is the `done` category of the grain's own kind, asked of
-# `model.category_of` — the same question the drift rules ask, so `show`,
-# `report` and the gate agree on where a grain ended.
+# `model.category_of` — the question the drift rules ask, so `show`, `report`
+# and the gate agree on where a grain ended.
 GRAIN_BUG = 'bug'
 
 
@@ -580,8 +624,7 @@ def ends_grain(cfg, grain_kind: str, to_state) -> bool:
 def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
     """First status row -> terminal status row, or None while in flight or
     with fewer than two rows. Only status rows bound it — a decision row names
-    a grain but does not move it.
-    """
+    a grain but does not move it."""
     if not status or not ends_grain(cfg, grain_kind, status[-1].data.get('to')):
         return None
     first, last = status[0], status[-1]
@@ -595,13 +638,10 @@ def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
 def open_seconds(cfg, grain_kind: str, status: list,
                  now: datetime | None = None) -> int | None:
     """First status row -> NOW, for a grain that has NOT reached a terminal
-    state; `None` for one that has, and `None` for one nobody has moved.
-
-    `total_seconds` above answers only the CLOSED question, which left the
-    number that creates pressure — time in flight — unmeasured.
-
-    **A grain with no status row is UNMEASURED, never zero** (rule 4): not
-    having been moved is a different fact from having been moved a moment ago.
+    state — the number that creates pressure, which `total_seconds` above
+    cannot answer because it answers only the CLOSED question. **A grain with
+    no status row is UNMEASURED, never zero** (rule 4): not having been moved
+    is a different fact from having been moved a moment ago.
     """
     if not status or ends_grain(cfg, grain_kind, status[-1].data.get('to')):
         return None

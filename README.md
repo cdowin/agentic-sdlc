@@ -219,12 +219,15 @@ contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = 
                                               # NARROWS the stock mapping — drop "bug" and
                                               # `pm add <ms> <bug>` refuses by name
 checks = ["D1", "D2", "D3", "D4", "D5", "D6", # + D9 D10 R5, opt-in.
-          "U1", "U2", "U3", "U4",             # U2: the ledger couriers are wired and the
+          "U1", "U2", "U3", "U4", "U5",       # U2: the ledger couriers are wired and the
           "V1", "V4", "V5", "V7"]             # tree holds no row at all. U3: [emit] is
                                               # declared and its sink has never been
                                               # written to. U4: the LAST hook-written row,
                                               # named with its age — recording that goes
-                                              # nowhere is silent otherwise
+                                              # nowhere is silent otherwise. U5: a grain
+                                              # whose CURRENT state was arrived at with no
+                                              # disposition, BY NAME — a bare move records
+                                              # `answer: none` and is never refused
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
 version_pattern = '^version = "(.*)"$'
 version_at      = "start"                     # R5: which entry in `order` the version file

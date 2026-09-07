@@ -2,7 +2,8 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + U1/U2/U3/U4 + V1/V4/V5/V7; D9/D10 and the R family are opt-in).
+(default: D1-D6 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R family are
+opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -32,6 +33,9 @@ WARN (a line, never the exit code; both grains and both categories named):
       has. Status, decision and gate rows are written from inside this checkout
       and are not evidence a courier ran, which is why U2 passes over a tree that
       records no dispatch at all
+  U5  a grain whose CURRENT state was arrived at with no disposition, by name. A
+      bare move is allowed and records `answer: none` (D3) — never blocked, and
+      never invisible either
   V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
       not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
       its parent does not hold is DANGLING (FAIL), one naming no grain at all
@@ -152,6 +156,7 @@ def _run() -> int:
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
+    _unanswered_arrivals(cfg, enabled, warn)
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
     _emit_sink_findings(cfg, enabled, warn)
@@ -392,6 +397,44 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'{"has" if len(unused) == 1 else "have"} never been held by any '
              f'{kind} in this tree — declared and unused is a flow the project '
              f'is not running (U1)')
+
+
+def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """U5 — a grain whose CURRENT state was arrived at with no disposition.
+
+    A bare move still writes the status and records `answer: none` (D3), so
+    "no action" is never blocked — just never invisible, and this is where it
+    stays visible after the move's own line scrolls away. `arrive.census` is
+    the GUARD, so the gate and the pressure line cannot disagree about whether
+    there is anything to say; the grains are NAMED, never tallied (rule 11).
+    """
+    if 'U5' not in enabled:
+        return
+    from agentic_sdlc.repo.pm import arrive, ledger
+    census = arrive.census(cfg)
+    if census is None or not census.unanswered:
+        return
+    # The LAST disposition per (grain, state): a grain that bounced back has
+    # arrived again, so the question is asked again (D3).
+    answered: dict[tuple[object, object], object] = {}
+    for _path, row in sorted(_ledger_rows(cfg)[0],
+                             key=lambda pair: str(pair[1].get('ts') or '')):
+        if arrive.disposition_of(row):
+            answered[(row.get('grain'), row.get('state'))] = row.get('answer')
+    quiet = [g.gid for g in sorted(model.grain_index(cfg).values(),
+                                   key=lambda g: g.gid)
+             if g.kind in model.FLOW_KINDS
+             and model.category_of(cfg, g.kind, g.status) == model.IN_PROGRESS
+             and answered.get((g.gid, g.status)) in (None,
+                                                     ledger.NO_DISPOSITION)]
+    if not quiet:
+        return
+    warn(f'{len(quiet)} of {census.open_count} {model.IN_PROGRESS} grain(s) '
+         f'reached the state they are in with no disposition: '
+         f'{", ".join(quiet)} — a bare move is allowed and records '
+         f'`answer: {ledger.NO_DISPOSITION}`; re-running the move with the '
+         f'answer its state declares records one, and `pm vocabulary` prints '
+         f'what each state asks (U5)')
 
 
 # --- the RECORDING family (U2/U3/U4) ------------------------------------------

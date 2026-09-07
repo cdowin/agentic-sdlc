@@ -2924,3 +2924,89 @@ class AConfigErrorIsComplete(unittest.TestCase):
             self.assertIn('declares no flow', said)
         finally:
             ctx.cleanup()
+
+
+class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
+    """U5 — a grain whose CURRENT state was arrived at with no disposition.
+
+    **The line between asking and refusing.** A bare `pm feature building
+    ft-x` still works and still writes the status — refusing would make the
+    conveyor something people route around — but the move records
+    `answer: none`, and this is where that stays visible after the move's own
+    line has scrolled away. A WARN, never a refusal, and never a tally: the
+    grains are NAMED, because a count tells nobody which move to answer.
+
+    The last case is the one a rule written from its own bug gets wrong: an
+    answer given at a state the grain has since LEFT does not answer the state
+    it is in now. Arrival is the unit (D3), so a grain that bounced back has
+    arrived again and the question is asked again.
+    """
+
+    CHECKS = '[pm]\nchecks = ["U5"]\n'
+    STORY = '0.1/alpha/s0'
+    LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
+
+    def _gate(self, root):
+        write_config(root, self.CHECKS)
+        return run_gate(root)
+
+    def _only_the_story_moves(self, **kwargs):
+        """A tree whose milestone and feature are still in `todo`, so the one
+        `in_progress` grain is the story the case is about."""
+        return tree(milestone_status='planning', feature_status='planning',
+                    story_statuses=('building',), **kwargs)
+
+    def _answer(self, root, state: str, answer: str = '--by',
+                value: str = 'me', ts: str = '2026-09-03T10:00:00Z') -> None:
+        """One arrival's disposition, minted through the writer's own builder
+        so a fixture cannot drift from the row `pm` actually writes."""
+        from agentic_sdlc.repo.pm import arrive, ledger
+        path = root / self.LEDGER
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a', encoding='utf-8') as handle:
+            handle.write(ledger.dumps(ledger.disposition_row(
+                self.STORY, state, arrive.Said(answer, value), ts=ts)) + '\n')
+
+    def test_a_bare_move_is_allowed_and_NAMED(self):
+        with self._only_the_story_moves() as root:
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+        self.assertIn(self.STORY, out)
+        self.assertIn('1 of 1', out)
+
+    def test_a_row_that_answered_none_is_still_unanswered(self):
+        # The row `pm` writes for a bare move. Present and empty is the same
+        # fact as absent here, and a rule that read "a row exists" would call
+        # this answered — reporting a plausible number over the wrong rows.
+        from agentic_sdlc.repo.pm import ledger
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'building', ledger.NO_DISPOSITION, '')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+
+    def test_an_answered_arrival_is_silent(self):
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'building')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('(U5)', out)
+
+    def test_an_answer_at_a_state_the_grain_has_left_answers_nothing(self):
+        with self._only_the_story_moves() as root:
+            self._answer(root, 'ready')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertIn('(U5)', out)
+        self.assertIn(self.STORY, out)
+
+    def test_a_tree_with_nothing_in_progress_says_nothing(self):
+        # `arrive.census` is the guard, so a tree the pressure line calls
+        # quiet gets no line here either — the gate and the move cannot
+        # disagree about whether there is anything to answer.
+        with tree(milestone_status='planning', feature_status='planning',
+                  story_statuses=('ready',)) as root:
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('(U5)', out)

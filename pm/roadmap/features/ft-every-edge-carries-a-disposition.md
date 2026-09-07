@@ -56,12 +56,13 @@ exact failure this milestone hit, nine dispatches and zero rows — there is no 
 
 A disposition row does not need a hook. **The move writes it, so the tree records itself:**
 
-    {kind: "disposition", grain, from, to, actor, ref, why, at}
+    {ts, kind: "disposition", grain, state, answer, value?, skipped: [{check, why}, …]}
 
-which gives, with no harness involvement whatsoever:
+No `from` and no `to`: the unit is ARRIVAL, never the pair (0.5.0/D3), and `ts` is the stamp every
+reader in the package already keys on. With no harness involvement whatsoever that gives:
 
-    time per state      the gap between two edge rows on one grain
-    who did the work    actor, per grain, per milestone
+    time per state      the gap between two arrival rows on one grain
+    who did the work    the answer, per grain, per milestone
     what was skipped    every skip with its reason, sweepable at the milestone review
     what was abandoned  every obe with its why
 
@@ -71,9 +72,9 @@ a far smaller hole. **The tree stops depending on something outside itself to kn
 
 ## Ship criterion
 
-Every `pm <kind> <status> <id>` accepts the disposition flags its target edge declares, prints the
-fork with both answers typed when none is given, and mints one `disposition` row carrying the edge and
-the answer. A bare move still writes the status and records `none`.
+Every `pm <kind> <status> <id>` accepts the disposition flags its target state declares, prints the
+fork with both answers typed when none is given, and mints ONE `disposition` row carrying the state
+and the answer. A bare move still writes the status and records `none`.
 
 `pm ledger report` reports time per state and spend per actor from disposition rows ALONE, on a tree
 where no harness hook has ever fired. That is the test that matters, and it is exactly this

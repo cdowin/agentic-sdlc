@@ -43,11 +43,11 @@ DEFAULT_ADOPT_STEPS = (
     'installables-current',
     'config-updated',
     'hooks-self-test',
-    # After `hooks-self-test`, which proves the corpus replays, and before the
-    # gates: this one asks whether the couriers are WIRED and whether the
-    # vehicle they call answers. A consumer that bumps the pin gets the scripts
-    # and pastes the settings block by hand, and nothing verified the paste —
-    # so the failure is files present, hooks unarmed, no rows, no complaint.
+    # After `hooks-self-test`, which proves the corpus replays, and before
+    # the gates: this asks whether the couriers are WIRED and the vehicle they
+    # call answers. A consumer bumping the pin pastes the settings block by
+    # hand and nothing verified the paste — so the failure is files present,
+    # hooks unarmed, no rows, no complaint.
     'telemetry-live',
     'runner-targets-resolve',
     'checks-pass',
@@ -78,10 +78,9 @@ DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
 
 # WHICH CHECKS ARE DISPOSITIONABLE IS A DECLARATION, and the stock declaration
 # is nothing (0.5.0/D5). `--skip <check> "<why>"` is refused BY NAME for any
-# check not named in `[<op>] skippable`, so a project that declares nothing gets
-# today's belt, byte for byte — which is what keeps this key inside rule 9. A
-# project that lists `tree-clean` is making a mistake the tool will let it make,
-# because "the tool reads what the project declared" has no other meaning.
+# check `[<op>] skippable` does not name, so a project declaring nothing gets
+# today's belt byte for byte — which keeps this key inside rule 9. A project
+# that lists `tree-clean` is making a mistake the tool will let it make.
 DEFAULT_SKIPPABLE: tuple[str, ...] = ()
 
 # The one shipped default: the target `install-gates` writes.
@@ -94,39 +93,34 @@ COMMANDABLE = frozenset((
     'pm-validates', 'story-verified', 'feature-verified'))
 
 # THE ENTRY EDGE. A belt's list above is what it asks at the CLOSE; this names
-# the subset of it that is decidable BEFORE the work, which is what
-# `pm ready-for <rung>` asks and READS from here — never a list of its own,
-# so a project declaring different `[<op>] steps` gets its own answer back.
+# the subset decidable BEFORE the work, which `pm ready-for <rung>` READS from
+# here — never a list of its own, so a project declaring different
+# `[<op>] steps` gets its own answer back.
 #
-# Why the story belt contributes exactly one: `story-verified` runs a command
-# over the edit, and `ready-for` boots nothing (hard rule 2); `evidence-written`
-# is the author's `done:` line, which cannot be true before the story is built.
+# The story belt contributes exactly one: `story-verified` runs a command and
+# `ready-for` boots nothing (hard rule 2); `evidence-written` is the author's
+# `done:` line, which cannot be true before the story is built.
 #
-# `committed` is the one whose exclusion is a RULING rather than a fact, and one
-# word here reverses it, so the argument lives in full. It is NOT that reading
-# git is forbidden — hard rule 2 says every verb reads git, markdown and shell
-# as text, and `check_committed` below does exactly that, as does `tree-clean`.
+# `committed`'s exclusion is a RULING rather than a fact, and one word here
+# reverses it, so the argument lives in full. It is NOT that reading git is
+# forbidden — `check_committed` below reads it as text, as does `tree-clean`.
 # Two legs:
 #
-#   (i)  as an entry condition it asks a DIFFERENT QUESTION from the one it asks
-#        at the close. At the close: "this story's work is committed." Up front
-#        it could only mean "start from a clean tree" — one check meaning two
-#        things at two edges is the tool deciding what a check MEANS, which is
-#        rule 9's edge, and the two would drift the first time either moved.
-#   (ii) `SDLC.md` states this project's own execution model: N builders share
-#        one worktree and builders never commit. During any real inner-loop
-#        invocation `git status --porcelain` is dirty with other builders'
-#        in-flight edits, so `ready-for story` would answer NOT READY on nearly
-#        every real call. A rung that cries wolf is one an agent learns to
-#        ignore, and the ignoring generalises to the rungs that do work.
-#
-# The git call is a COST, not a rule — it is a subprocess in the verb an agent
-# runs dozens of times a milestone — and it is not what decides this.
+#   (i)  up front it asks a DIFFERENT QUESTION. At the close: "this story's
+#        work is committed." Up front it could only mean "start from a clean
+#        tree" — one check meaning two things at two edges is the tool
+#        deciding what a check MEANS (rule 9's edge), and they would drift.
+#   (ii) `SDLC.md` states this project's execution model: N builders share one
+#        worktree and builders never commit, so `git status --porcelain` is
+#        dirty with other builders' edits during any real inner-loop call and
+#        `ready-for story` would answer NOT READY on nearly every one. A rung
+#        that cries wolf is one an agent learns to ignore, and the ignoring
+#        generalises to the rungs that do work. (The git call is a COST, not a
+#        rule, and is not what decides this.)
 #
 # `stories-done`, `features-done` and `findings-resolved` are absent because
-# each IS a rung — `SHIPPED_ACTION` declares `pm ready-for feature|milestone|
-# tag` as what answers it — and a check that is a rung cannot also be that
-# rung's entry condition.
+# each IS a rung (`SHIPPED_ACTION` names `pm ready-for feature|milestone|tag`),
+# and a check that is a rung cannot also be that rung's entry condition.
 #
 # A check named in no set is not an entry condition, and `ready-for` NAMES it
 # as one it did not ask, rather than passing over it in silence (rule 11).
@@ -414,13 +408,11 @@ def skippable_for(operation: str, names: tuple[str, ...] | None = None,
 
     Read through `str_tuple`, the same door every other list key uses, so a
     bare string is refused rather than iterated into four one-letter check
-    names. An entry that is not a check of this belt, or is a check this
-    belt's `steps` does not run, is exit 2 by name: a declaration this machine
-    cannot act on is a reading failure (rule 9), and the alternative is
-    `--skip review-recrded` refused for a reason the caller cannot see.
-
-    What a listed check MEANS is the project's business and nothing here
-    grades it. `tree-clean` is a fact about the world rather than a judgement,
+    names. An entry that is not a check of this belt, or one its `steps` does
+    not run, is exit 2 by name: a declaration this machine cannot act on is a
+    reading failure (rule 9), and the alternative is `--skip review-recrded`
+    refused for a reason the caller cannot see. What a listed check MEANS is
+    the project's business — `tree-clean` is a fact rather than a judgement,
     and a project that lists it gets exactly what it declared.
     """
     known = registry_for(operation) if registry is None else registry
@@ -562,15 +554,14 @@ def _ours_of(operation: str) -> tuple[str, ...]:
     Read through `relpath_tuple`, the SAME path grammar every other path key
     in this package uses (`core/config.py`), so a bare string, an empty list,
     a traversal, a URL or an absolute path is exit 2 — a claim this machine
-    cannot read is a reading failure (rule 9), never a silent claim. What a
-    claimed file MEANS is one thing only: `installables-current` does not
-    grade it, and names it on every run.
+    cannot read is a reading failure (rule 9), never a silent claim.
+    `installables-current` does not grade a claimed file; it names it.
     """
     claims = relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
-    # `relpath_tuple` guards what LEAVES the checkout; these two stay inside it
-    # and still name no file (review O3). An empty string claims nothing and a
-    # `.` claims the repo root, and both would sit in the config reading like a
-    # claim while matching no installed path — a claim nobody can act on.
+    # `relpath_tuple` guards what LEAVES the checkout; these two stay inside
+    # it and still name no file (review O3): an empty string claims nothing, a
+    # `.` claims the repo root, and both read like a claim while matching no
+    # installed path.
     for claim in claims:
         if not claim.strip() or claim.strip() in ('.', './'):
             raise ConfigError(
@@ -690,7 +681,7 @@ def ready_for(ctx: Context, target: str) -> Answer:
     surfaces beside this check — read off the verb's own marker, never guessed
     from the sentence around it. Blockers off the WHOLE output, detail off the
     clipped one: `_clip` drops every line that does not look like a failure,
-    and a blocker dropped that way takes its lesson with it, silently.
+    and a blocker dropped that way takes its lesson with it.
     """
     code, printed = _pm_run(ctx, 'ready-for', target, subject_grain(ctx),
                             clip=False)
@@ -716,14 +707,11 @@ def _uncommitted(ctx: Context) -> tuple[list[str], str]:
 
     ONE reading for `tree-clean` and `committed`. They asked the same question
     and answered it differently — only `committed` excluded the roadmap
-    directory — so a tree could satisfy the story belt and never `release`, and
-    a belt writes in that directory BY DESIGN: the status it lands, `gate`'s
-    cost rows, every `[emit]` event, a lesson surfaced before check one. Held
-    against the belt, that is a refusal no re-run reaches.
-
-    Nothing INSIDE is counted, deliberately: a tally would move with the belt's
-    own writes, and rule 6's line shapes may not depend on what a run happened
-    to record. The directory is named in every sentence instead.
+    directory — so a tree could satisfy the story belt and never `release`,
+    and a belt writes in that directory BY DESIGN (the status, `gate` cost
+    rows, `[emit]` events, a surfaced lesson). Nothing INSIDE is counted,
+    deliberately: a tally would move with the belt's own writes, and rule 6's
+    line shapes may not depend on what a run happened to record.
     """
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
@@ -947,9 +935,8 @@ def _claim_clause(operation: str,
     A claim that is never printed is a hiding place: eleven files could leave
     the belt's attention and the line would still read like a clean pass
     (rule 4). A claim naming a path this version does not install is reported
-    rather than refused, because the install plans change between versions and
-    a consumer's belt must not become exit 2 for a file that simply retired.
-    Empty when nothing is claimed, so a repo declaring no `ours` prints
+    rather than refused, because install plans change between versions. Empty
+    when nothing is claimed, so a repo declaring no `ours` prints
     byte-identically to one with no devkit.toml at all (rule 5).
     """
     claimed = [rel for _, rel, verdict in drift if verdict == CLAIMED]
@@ -986,12 +973,11 @@ def check_installables_current(ctx: Context) -> Answer:
                               f'--diff`)' for verb, rel, verdict in stale))
             + claims)
     if not counted:
-        # Review O1, and milestone risk 2 arriving exactly as written: "a
-        # project can silence the check by claiming every file." Claiming all of
-        # them leaves NOTHING graded, and answering `ok — 0 installed file(s)
-        # are current` is rule 4's zero census wearing a pass. Naming the
-        # claims is what makes the list a statement; refusing to grade nothing
-        # is what stops it being a hiding place.
+        # Review O1, and milestone risk 2 as written: "a project can silence
+        # the check by claiming every file." Claiming all leaves NOTHING
+        # graded, and `ok — 0 installed file(s) are current` is rule 4's zero
+        # census wearing a pass. Naming the claims makes the list a statement;
+        # refusing to grade nothing stops it being a hiding place.
         return Answer.no(
             f'every installed file this belt would grade is claimed in '
             f'[{ctx.operation}] ours, so NOTHING was graded — a verdict over an '
@@ -1123,10 +1109,9 @@ def _recorded_phrase(ctx: Context) -> str:
     """`'dispatch, 3h ago'`, `'never'`, or why neither could be answered.
 
     Read through `check pm`'s U4 reader rather than spelled a second time here:
-    the belt line and the gate line report ONE fact, and two readers of one
-    fact is how a belt and a gate come to disagree about whether a tree is
-    recording. A tree this process cannot read as a PM tree is a named
-    non-answer, never a silent 'never'.
+    two readers of one fact is how a belt and a gate come to disagree about
+    whether a tree is recording. A tree this process cannot read as a PM tree
+    is a named non-answer, never a silent 'never'.
     """
     from agentic_sdlc.repo.checks import pm as pm_check
     try:
@@ -1155,22 +1140,19 @@ def check_telemetry_live(ctx: Context) -> Answer:
     verdict line now carries the last hook-written ROW. Every check above reads
     CONFIG; whether the harness ever LOADS `.claude/settings.json` depends on
     the session's project root, so a session rooted above the checkout records
-    nothing while all three answers stay green. Six agent dispatches against
-    this tree produced zero `SubagentStop` rows and no surface said so. The
-    ledgers were not empty — they held status, decision and gate rows this
-    checkout writes itself — so nothing counted the KINDS. `couriers wired;
-    last hook-written row: never` is a sentence a consumer can act on; `wired`
-    alone is the tool asserting an outcome it did not observe (rule 4).
+    nothing while all three answers stay green — six dispatches here produced
+    zero `SubagentStop` rows and no surface said so, because the ledgers held
+    status, decision and gate rows this checkout writes itself and nothing
+    counted the KINDS. `wired` alone is the tool asserting an outcome it did
+    not observe (rule 4).
 
     **It never refuses an adoption on its own.** The posture is *clearly
-    available, warned when absent, never mandatory* (0.4.0/D5). What it must
-    never be is SILENTLY opted out — so a tree that has recorded nothing is
-    reported in the line rather than in the verdict, and `check pm` U4 says the
-    same thing on every run.
-
-    The wiring answer is `check pm`'s reader, and the LEDGER outranks it: a
-    tree registered in a settings file above this checkout is recording, and
-    reading only the config called it dead.
+    available, warned when absent, never mandatory* (0.4.0/D5); what it must
+    never be is SILENTLY opted out, so a tree that has recorded nothing is
+    reported in the line rather than in the verdict. The wiring answer is
+    `check pm`'s reader and the LEDGER outranks it: a tree registered in a
+    settings file above this checkout is recording, and reading only the
+    config called it dead.
     """
     command = _configured(ctx, 'telemetry-live')
     if command:
@@ -1481,10 +1463,10 @@ def check_findings_landed(ctx: Context) -> Answer:
     minor = [f.id for f in opened
              if f.severity not in verdict.BLOCKING_SEVERITIES]
     total = sum(len(p.findings) for p in passes)
-    # SEVERITY gates the hold. An open NIT used to block a close exactly as
-    # hard as a shipping bug, so a review that did its job — writing down the
-    # cheap observations too — cost more to clear than it was worth, and the
-    # next reviewer learns to stop writing them.
+    # SEVERITY gates the hold. An open NIT used to block a close as hard as a
+    # shipping bug, so a review that did its job — writing down the cheap
+    # observations too — cost more to clear than it was worth, and the next
+    # reviewer learns to stop writing them.
     if blocking:
         return Answer.no(
             f'{len(blocking)} blocking finding(s) open in {cfg.rel(path)}: '

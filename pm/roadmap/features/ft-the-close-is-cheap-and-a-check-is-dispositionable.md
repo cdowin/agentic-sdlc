@@ -58,19 +58,24 @@ lists them is making a mistake the tool will let it make — because that is wha
 
 ## The disposition is the record
 
-A skip mints a ledger row — `{kind: "disposition", grain, check, why, at}` — and the grain's close
-evidence names it. `pm ledger show <grain>` reports it beside the status flips. So "which closes
+A skip is a FIELD on the arrival the close makes — `skipped: [{check, why}, …]` on that arrival's
+one `{ts, kind: "disposition", grain, state, answer, value?}` row (0.5.0/D6) — and the grain's close
+evidence names it. `pm ledger show <grain>` prints it beside the status flips. So "which closes
 skipped a review, and why" is a question the tree answers, and a milestone review can sweep them: the
 review that did not happen per-feature happens once, at the milestone, over a list the tool produced.
+
+**`ts`, never `at`.** Every reader in the package — `ledger.read_rows`, `parse_ts`, `pm ledger
+show`'s sort — keys the stamp as `ts`, and a second spelling files a row at the beginning of time.
 
 That is the honest version of what an operator does anyway.
 
 ## Ship criterion
 
 `close story|feature` and `release` accept `--skip <check> "<reason>"` for any check the project
-declared skippable, print `skipped: <check> — "<reason>"` in the check list, write the status, and mint
-a `disposition` row. A skip with no reason, or of a check the project did not declare skippable, is
-refused by name.
+declared skippable, print `skipped: <check> — "<reason>"` in the check list, write the status, and
+carry the judgement in the `skipped` field of the arrival's own `disposition` row. A skip with no
+reason, or of a check the project did not declare skippable, is refused by name. A close that is
+REFUSED leaves no `skipped` behind it: the row is minted by the write, not during the check run.
 
 `--force` is unchanged and still mints a `deviation`. A close is never blocked by a check the caller
 has answered.

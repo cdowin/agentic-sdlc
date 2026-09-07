@@ -1,5 +1,5 @@
 """test_conveyor_deviation.py — the rows a write leaves: FORCED (D12) and
-DISPOSITIONED (0.5.0/D5).
+DISPOSITIONED (0.5.0/D5, folded by D6).
 
 Story 04's proof table, criterion 3: `--force` writes and the ledger row names
 the checks that were false. The BELT mints one `deviation` row with
@@ -7,16 +7,16 @@ the checks that were false. The BELT mints one `deviation` row with
 carries each one's own sentence — and nothing else of its own. Without
 `--force` a false check writes NO row: a row for a refused write is rule 4's
 cardinal sin with a timestamp. (`pm` mints its own rows on the same write —
-the `status` flip and, since 0.5.0/D3, an arrival `disposition` — so every
-case here reads the belt's rows by SHAPE through `belt_rows`, never by
-position.)
+the `status` flip and the arrival's `disposition` — so every case here reads
+the belt's `deviation` rows by KIND through `belt_rows`, never by position.)
 
-The `disposition` row a `--skip <check> "<why>"` mints is a SIBLING of that
-row kind and lands on the same harness, which is why the 0.5.0/D5 cases are
-here rather than in a family of their own (rule 10, "prove it once"). The two
-must not bleed: a skip counted as a false check would brand a judgement a
-breach, which is the failure 0.5.0/D5 exists to end, and a forced check
-swallowed into a disposition would be the reverse.
+A `--skip <check> "<why>"` mints NO row of its own: the close is an arrival,
+and the judgement is a field on that arrival's one `disposition` row
+(0.5.0/D6). The 0.5.0/D5 cases live here because they share this harness
+(rule 10, "prove it once") and because the two records must not bleed: a skip
+counted as a false check would brand a judgement a breach, which is the
+failure D5 exists to end, and a forced check swallowed into a disposition
+would be the reverse.
 
 A stub registry keeps the checks scripted; the WRITE is the real one, through
 `pm milestone <state> <id>`, on a scratch tree that declares its flow.
@@ -109,18 +109,16 @@ def rows(root: Path) -> list[dict]:
 
 
 def belt_rows(root: Path) -> list[dict]:
-    """The rows the BELT minted, in order — its `deviation` and its check
-    `disposition`s, and nothing `pm` wrote on the same write.
+    """The `deviation` rows the BELT minted, in order — read by KIND, never by
+    position, because `pm` writes the `status` and `disposition` rows of the
+    same arrival into this file too."""
+    return [r for r in rows(root) if r['kind'] == ledger.KIND_DEVIATION]
 
-    `pm` mints the `status` row and, since 0.5.0/D3, an ARRIVAL disposition
-    beside it. That row and this belt's share one `kind` and have disjoint
-    keys: an arrival's always carries `state`, a check's always carries
-    `check`. Reading by SHAPE rather than by position says which collision
-    this module is living with, and survives whichever way it is settled.
-    """
-    return [r for r in rows(root)
-            if r['kind'] == ledger.KIND_DEVIATION
-            or (r['kind'] == driver.KIND_DISPOSITION and 'check' in r)]
+
+def dispositions(root: Path) -> list[dict]:
+    """The arrival dispositions on this ledger. ONE shape carries the word
+    (0.5.0/D6), so this is the kind and nothing else."""
+    return [r for r in rows(root) if r['kind'] == ledger.KIND_DISPOSITION]
 
 
 def status(root: Path) -> str:
@@ -225,12 +223,14 @@ def test_a_ledger_that_is_a_directory_warns_and_the_forced_write_still_lands():
 
 
 # --- 0.5.0/D5: the third answer — a check the caller DISPOSITIONED -----------
-def test_a_declared_skip_is_never_asked_writes_the_status_and_mints_one_row():
-    """The ship criterion, end to end. Bites the three ways this can go wrong
+def test_a_declared_skip_is_never_asked_and_rides_the_arrivals_one_row():
+    """The ship criterion, end to end. Bites the four ways this can go wrong
     at once: the expensive check running anyway (the skip saved nothing), the
     close being refused over a question the caller already answered (the
-    batching this feature exists to end), and the judgement leaving no record
-    (a skip nobody can sweep at the milestone is a skip that never happened).
+    batching this feature exists to end), the judgement leaving no record (a
+    skip nobody can sweep at the milestone is a skip that never happened), and
+    the skip filed as a SECOND row — one event described as two, which is what
+    0.5.0/D6 folded and what a per-state walk would then miscount.
     """
     ASKED.clear()
     with tree(config=SKIPPABLE) as root:
@@ -240,19 +240,35 @@ def test_a_declared_skip_is_never_asked_writes_the_status_and_mints_one_row():
         assert code == 0, out
         assert ASKED == [], f'the skipped check was asked anyway: {ASKED}'
         assert status(root) == want
-        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
-        written = belt_rows(root)
-        assert [r['kind'] for r in written] == [driver.KIND_DISPOSITION], \
-            written
-        row = written[0]
-        assert row['check'] == EXPENSIVE.name and row['why'] == WHY
-        assert row['grain'] == VERSION and row['operation'] == 'release'
-        assert set(row) == set(driver.DISPOSITION_KEYS), 'the row keys moved'
+        assert [r['kind'] for r in rows(root)] == [
+            ledger.KIND_STATUS, ledger.KIND_DISPOSITION], rows(root)
+        assert belt_rows(root) == [], 'a clean skip minted a deviation'
+        row = dispositions(root)[0]
+        assert row['grain'] == VERSION and row['state'] == want
+        assert row['skipped'] == [{'check': EXPENSIVE.name, 'why': WHY}]
+        assert set(row) <= set(ledger.DISPOSITION_KEYS), 'the row keys moved'
         # `ts`, not `at`: every reader in this package sorts on `ts`, and a
         # disposition spelled otherwise files at the beginning of time.
         assert ledger.parse_ts(row['ts']) is not None, row
     assert f'[release] skipped: {EXPENSIVE.name} — "{WHY}"' in out, out
     assert f'[release] ok — {VERSION} → {want}' in out, out
+
+
+def test_a_refused_close_leaves_no_skip_behind_it():
+    """The ORDERING the fold bought. The belt used to mint its skip rows
+    DURING the check run; a run that then refused left a judgement on the
+    record for a close that never happened — rule 4's second sin with a
+    timestamp. Collected and emitted once, at the arrival, there is nothing
+    to leave behind."""
+    ASKED.clear()
+    with tree(config=SKIPPABLE) as root:
+        code, out = run(driver.SKIP_FLAG, EXPENSIVE.name, WHY,
+                        steps=(FALSE.name, EXPENSIVE.name))
+        assert code == 1, out
+        assert status(root) == 'building'
+        assert rows(root) == [], 'a refused close recorded a judgement'
+        assert ASKED == []
+    assert f'[release] skipped: {EXPENSIVE.name} — "{WHY}"' in out, out
 
 
 def test_a_skip_with_no_reason_or_no_reason_in_it_is_refused_and_writes_nothing():
@@ -297,12 +313,14 @@ def test_a_skip_the_project_did_not_declare_is_refused_by_name():
         assert rows(root) == [] and status(root) == 'building'
 
 
-def test_a_skip_and_a_force_in_one_run_leave_two_rows_that_do_not_bleed():
+def test_a_skip_and_a_force_in_one_run_leave_two_records_that_do_not_bleed():
     """`--force` is UNCHANGED and keeps its meaning. Bites: the skipped check
     counted among the false ones — a judgement filed as a breach, which is the
     exact reading that made an operator open another grain instead of closing
     this one — or the false check absorbed into a disposition, which is that
-    lie the other way round.
+    lie the other way round. Two ACTS, two words, and the fold did not merge
+    them: a `deviation` row for the breach, a `skipped` field for the
+    judgement.
     """
     ASKED.clear()
     with tree(config=SKIPPABLE) as root:
@@ -311,15 +329,17 @@ def test_a_skip_and_a_force_in_one_run_leave_two_rows_that_do_not_bleed():
                         steps=(TRUE.name, EXPENSIVE.name, FALSE.name))
         assert code == 0, out
         assert status(root) == want
-        assert rows(root)[0]['kind'] == ledger.KIND_STATUS, rows(root)
-        written = belt_rows(root)
-        assert [r['kind'] for r in written] == [
-            ledger.KIND_DEVIATION, driver.KIND_DISPOSITION], written
-        deviation, disposition = written
+        assert [r['kind'] for r in rows(root)] == [
+            ledger.KIND_STATUS, ledger.KIND_DISPOSITION,
+            ledger.KIND_DEVIATION], rows(root)
+        deviation = belt_rows(root)[0]
+        disposition = dispositions(root)[0]
         assert deviation['step'] == FALSE.name, 'the skip landed in the row'
         assert deviation['outcome'] == driver.FORCED
         assert EXPENSIVE.name not in deviation['reason'], deviation
-        assert disposition['check'] == EXPENSIVE.name
+        assert disposition['skipped'] == [{'check': EXPENSIVE.name,
+                                           'why': WHY}]
+        assert FALSE.name not in ledger.dumps(disposition), disposition
     assert f'[release] forced — {VERSION} → {want} over 1 false check(s)' \
         in out, out
     assert f'[release] skipped: {EXPENSIVE.name} — "{WHY}"' in out, out

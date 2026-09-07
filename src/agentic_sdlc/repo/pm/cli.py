@@ -73,6 +73,18 @@ every run; a state the project never declared is refused by name.
                                            What a script asks instead of
                                            grepping a status word out of
                                            milestone.md)
+  list --kind feature|bug [--status <s>[,<s>…]] [--category <c>]
+       [--milestone <id>] [--json]
+                                          (one line per feature or bug,
+                                           columns IN ORDER:
+                                             id  status  milestone  <2nd>  name
+                                           where <2nd> is `reviewed` for a
+                                           feature and `caught_in` for a bug.
+                                           The BINDING is a column, so "what
+                                           have I written and not scheduled"
+                                           is a pipe:
+                                             pm list --kind feature |
+                                               awk -F'\t' '$3 == "-"')
 
   READ VERBS EMIT LINES; COMPOSITION IS THE SHELL'S JOB. If you want a filter
   this package does not have, pipe it — the columns above are named so a
@@ -919,6 +931,17 @@ def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
     return out
 
 
+def _age_cell(cfg: model.PmConfig, kind: str, gid: str, status: str,
+              opened: dict[str, str]) -> str:
+    """`  open 3d 4h`, `  open -`, or nothing — nothing only for a grain that
+    has REACHED a done state. An OPEN grain nobody has moved is `-`: unmeasured
+    is a different fact from young, and omitting the cell made it
+    indistinguishable from finished (rule 4)."""
+    if model.category_of(cfg, kind, status) == model.DONE_CATEGORY:
+        return ''
+    return f'  open {opened.get(gid) or ledger.human_duration(None)}'
+
+
 def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
     only = args[0] if args else ''
     # Rule 4: a scan that saw nothing says so instead of an empty print at exit
@@ -945,9 +968,9 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # gated on it, because a ceiling on how long a feature may stay open is
         # this package having an opinion about somebody's week (rule 9).
         opened = _open_for(cfg, mid)
-        mopen = opened.get(mid, '')
-        print(f'milestone {mid:<10} [{model.field_of(mfile, "status")}]'
-              + (f'  open {mopen}' if mopen else ''))
+        mstat = model.field_of(mfile, 'status')
+        print(f'milestone {mid:<10} [{mstat}]'
+              + _age_cell(cfg, 'milestone', mid, mstat, opened))
         rows = []
         for ffile in model.feature_files(cfg, mid):
             view = model.read_feature(cfg, ffile)
@@ -961,8 +984,8 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
                          f'  feature {_short(mid, view.fid):<40} '
                          f'[{view.status:<{width}}] stories '
                          f'{view.done_n}/{view.total} done'
-                         + (f'  open {opened[view.fid]}'
-                            if view.fid in opened else '') + drift))
+                         + _age_cell(cfg, 'feature', view.fid, view.status,
+                                     opened) + drift))
         if not rows:
             continue
         # IN THE MILESTONE'S DECLARED ORDER — `feature_files` reads the
@@ -1019,6 +1042,10 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
             raise Usage('--owner and --milestone filter stories; '
                         '--kind milestone takes --status and --category')
         return _list_milestones(cfg, statuses, category, as_json)
+    if kind in ('feature', 'bug'):
+        if owner:
+            raise Usage(f'--owner filters stories; a {kind} carries no owner:')
+        return _list_bound(cfg, kind, statuses, category, milestone, as_json)
 
     # Enumerated once, to refuse a typo'd `--milestone` as well as to filter.
     known = model.known_milestones(cfg)
@@ -1085,7 +1112,9 @@ def _emit_rows(kind: str, rows: list[tuple[str, ...]], as_json: bool) -> None:
 
 # `milestone` is here so a script can ask the CLI instead of grepping a status
 # word.
-LIST_KINDS = ('story', 'milestone')
+# Every kind is listable. It was story and milestone, so "show me what is
+# unbound" looked like it needed a flag: there was nothing to pipe (rule 11).
+LIST_KINDS = ('story', 'milestone', 'feature', 'bug')
 
 # The columns each `--kind` emits, IN ORDER, spelled once. Three things read
 # this — the rows, `--json`'s keys and the `--help` line — and a column list
@@ -1094,7 +1123,39 @@ LIST_KINDS = ('story', 'milestone')
 LIST_COLUMNS = {
     'story': ('id', 'status', 'owner', 'feature', 'name'),
     'milestone': ('id', 'status', 'category', 'branch', 'name'),
+    # A grain that BINDS emits its binding, so `$4 == "-"` is "unbound" and
+    # every other question about the edge is a pipe away.
+    'feature': ('id', 'status', 'milestone', 'reviewed', 'name'),
+    'bug': ('id', 'status', 'milestone', 'caught_in', 'name'),
 }
+
+
+def _list_bound(cfg: model.PmConfig, kind: str, statuses: set[str],
+                category: str, milestone: str, as_json: bool) -> int:
+    """Features or bugs, one line each, with the binding as a COLUMN — `-`
+    there is "written and not yet scheduled", answered by a pipe rather than a
+    flag, which composes with every other filter (rule 11)."""
+    scanned = 0
+    rows = []
+    for gid, grain in sorted(model.grain_index(cfg).items()):
+        if grain.kind != kind:
+            continue
+        scanned += 1
+        status = model.field_of(grain.path, 'status')
+        bound = model.unquote(model.field_of(grain.path, 'milestone'))
+        if statuses and status not in statuses:
+            continue
+        if category and model.category_of(cfg, kind, status) != category:
+            continue
+        if milestone and bound != milestone:
+            continue
+        second = 'reviewed' if kind == 'feature' else 'caught_in'
+        rows.append((gid, status or DASH, bound or DASH,
+                     model.unquote(model.field_of(grain.path, second)) or DASH,
+                     model.unquote(model.field_of(grain.path, 'name')) or DASH))
+    _emit_rows(kind, rows, as_json)
+    print(f'[pm] {len(rows)} of {scanned} {kind}(s)', file=sys.stderr)
+    return 0
 
 
 def _list_milestones(cfg: model.PmConfig, statuses: set[str],

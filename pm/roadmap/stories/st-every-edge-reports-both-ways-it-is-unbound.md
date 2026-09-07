@@ -28,8 +28,10 @@ kind: story
 2. **Broken IS a finding.** A binding naming a grain not in the tree is a fact about the file, not
    a decision nobody has made yet — the same thing V4 already reports for refs. The unbound/broken
    split is the whole rule: *nothing said* is a plan; *something wrong said* is drift.
-3. `pm list --unbound` answers per kind and across all kinds, emitting the same columns the verb
-   already emits (`0.4.0/the-read-verbs-compose` — no withheld field).
+3. **Every kind is LISTABLE and each one that binds emits its binding as a column**, so
+   "what have I written and not scheduled" is `pm list --kind feature | awk -F'\t' '$3 == "-"'`.
+   Not a `--unbound` flag: hard rule 11 says a missing filter is a column, never a verb, and
+   `pm list` knowing only story and milestone is what made a flag look necessary — see D1.
 4. The line shapes are 0.3.0's R1/R2, **extended by rows rather than renamed**. Consumers grep
    these.
 5. No config makes an unbound grain an error. A project that wants that can ask later, with a
@@ -41,7 +43,7 @@ kind: story
 |---|---|---|---|
 | 1, 4 | unit | `test_pm_gate.py`'s R1/R2 cases are the family's first members | amend — these are further rows through the same code |
 | 2 | unit | the unbound-vs-broken split, one case each way | new |
-| 3 | unit | `test_pm_verbs.py`'s list cases | amend |
+| 3 | unit | `test_pm_verbs.py::test_every_kind_is_listable_and_a_binding_is_a_COLUMN` | new, beside the list cases |
 | 5 | unit | the exit code over a tree that is entirely unbound | new — it is the claim people will doubt |
 
 ## Out of scope

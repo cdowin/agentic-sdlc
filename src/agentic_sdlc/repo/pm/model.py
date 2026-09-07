@@ -1288,9 +1288,9 @@ def is_pooled(cfg: PmConfig) -> bool:
 
 
 def is_nested(cfg: PmConfig) -> bool:
-    """Does this tree still hold grain DIRECTORIES? A fact about the tree, like
-    `is_pooled`, and the one a WRITE asks: a reader can tell the layouts apart
-    by what it finds, a writer has to choose before anything exists."""
+    """Does this tree still hold grain DIRECTORIES? The question a WRITE asks:
+    a reader tells the layouts apart by what it finds, a writer has to choose
+    before anything exists."""
     return bool(milestone_dirs(cfg))
 
 

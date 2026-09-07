@@ -535,14 +535,50 @@ class ListFindsTheNail(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual([r[0] for r in self._rows(out)], ['0.1'])
             self.assertIn('1 of 2 milestone(s)', out)
-            # The story filters do not apply, and a kind this verb does not
-            # list names the two it does.
+            # The story filters do not apply here.
             code, out = run_cli(root, 'list', '--kind', 'milestone',
                                 '--owner', 'ada')
             self.assertEqual(code, 2, out)
-            code, out = run_cli(root, 'list', '--kind', 'bug')
+
+    def test_every_kind_is_listable_and_a_binding_is_a_COLUMN(self):
+        """A FEATURE and a BUG could not be listed at all, which is why "show
+        me what is unbound" looked like it needed a `--unbound` flag: there was
+        nothing to pipe. Rule 11's read side says the missing thing is a
+        COLUMN, never a verb — so every kind lists, and each one that BINDS
+        emits its binding.
+
+        `-` in that column is "written and not yet scheduled", which composes
+        with every other filter the caller has, as a flag never would.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            write(root / 'pm/roadmap/features/loose.md',
+                  {'id': 'ft-loose', 'kind': 'feature', 'milestone': '',
+                   'name': 'Loose', 'status': 'planning', 'reviewed': '',
+                   'depends_on': '[]', 'consumed_by': '[]'})
+            code, out = run_cli(root, 'list', '--kind', 'feature')
+            self.assertEqual(code, 0, out)
+            rows = self._rows(out)
+            self.assertEqual([r[0] for r in rows], ['0.1/alpha', 'ft-loose'])
+            # id  status  milestone  reviewed  name — five cells always.
+            self.assertTrue(all(len(r) == 5 for r in rows), rows)
+            unbound = [r[0] for r in rows if r[2] == '-']
+            self.assertEqual(unbound, ['ft-loose'])
+            self.assertIn('2 of 2 feature(s)', out)
+            # A bug lists too, and `--owner` still belongs to stories alone.
+            write(root / 'pm/roadmap/bugs/crash.md',
+                  {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
+                   'name': 'C', 'status': 'open', 'caught_in': '"0.1"',
+                   'fix_milestone': '', 'caused_by': ''})
+            self.assertEqual(run_cli(root, 'list', '--kind', 'bug')[0], 0)
+            code, out = run_cli(root, 'list', '--kind', 'bug', '--owner', 'ada')
             self.assertEqual(code, 2, out)
-            self.assertIn('story or milestone', out)
+
+    def test_a_kind_that_is_not_a_grain_names_the_ones_that_are(self):
+        with tree() as root:
+            code, out = run_cli(root, 'list', '--kind', 'epic')
+            self.assertEqual(code, 2, out)
+            for kind in ('story', 'milestone', 'feature', 'bug'):
+                self.assertIn(kind, out)
 
     def test_the_milestone_filter_selects_and_names_its_set(self):
         # `--milestone 0.2` on a tree holding only 0.1 printed `0 of 0` at exit

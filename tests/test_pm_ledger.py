@@ -574,6 +574,10 @@ def test_pm_status_prints_the_age_and_nothing_gates_on_it():
             '0.1/alpha', 'ready', 'building', ts='2020-01-01T00:00:00Z')))
         code, out = run_cli(root, 'status')
         assert code == 0, out
-        assert 'open ' in out, out
+        # The FEATURE's line: the milestone's own cell now reads `open -`,
+        # because it is open and nobody has moved it (rule 4 — unmeasured is
+        # not young).
+        line = next(ln for ln in out.splitlines() if 'feature alpha' in ln)
+        assert 'open ' in line, out
         # Years old, and still exit 0: the number is a report (rule 9).
-        assert 'd ' in out.split('open ')[1], out
+        assert 'd ' in line.split('open ')[1], out

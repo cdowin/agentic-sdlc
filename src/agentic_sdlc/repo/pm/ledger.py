@@ -213,11 +213,8 @@ def grainless_dir(roadmap_dir: Path) -> Path:
     (0.4.0/D3) — the roadmap root, so the file sits beside the milestones
     rather than inside one.
 
-    It returns its argument, and that is the point: *which* directory is the
-    grainless home is a decision, and it was being restated at five call sites
-    in a milestone whose thesis is one name per fact. `ledger_path` is the join
-    it reuses; this is the rule. `append_row` takes a directory, so writers
-    call this and readers call `grainless_path`.
+    It returns its argument, and that is the point: WHICH directory is the
+    grainless home is a decision, and it was restated at five call sites.
     """
     return roadmap_dir
 
@@ -521,12 +518,10 @@ def open_seconds(cfg, grain_kind: str, status: list,
     """First status row -> NOW, for a grain that has NOT reached a terminal
     state; `None` for one that has, and `None` for one nobody has moved.
 
-    `total_seconds` above answers the closed question and deliberately returns
-    None while a grain is in flight — which left the number that actually
-    creates pressure unmeasured. 0.3.0 built eleven features in 64 minutes and
-    spent 93 more reviewing them because nine reviews were batched to the end,
-    and every one of those features sat `building` the whole time with nothing
-    anywhere saying so.
+    `total_seconds` above answers the closed question and returns None while a
+    grain is in flight, which left the number that creates pressure unmeasured:
+    a milestone spent more time reviewing than building, with every feature
+    sitting `building` and nothing anywhere saying so.
 
     **A grain with no status row is UNMEASURED, never zero** (rule 4): it has
     not been moved, which is a different fact from having been moved a moment

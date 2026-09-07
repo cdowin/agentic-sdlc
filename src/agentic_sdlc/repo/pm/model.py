@@ -1674,6 +1674,29 @@ def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
     return out
 
 
+def stray_documents(cfg: PmConfig) -> list[Path]:
+    """Grain documents under the roadmap that sit in no pool.
+
+    Every pooled reader walks the pools, so a document outside all four is read
+    by NOTHING while `check grain-shape`, which walks the roadmap whole, counts
+    it. Shared docs and the plan are expected outside a pool and are not
+    strays.
+    """
+    if not is_pooled(cfg):
+        return []
+    pools = {pool_dir(cfg, kind) for kind in FLOW_KINDS}
+    known = {releases_file(cfg)}
+    out: list[Path] = []
+    for path in walk.descendants(cfg.roadmap, Kind.FILE, suffix='.md').kept:
+        if path in known or _is_hidden(cfg.roadmap, path):
+            continue
+        if any(pool == path.parent or pool in path.parents for pool in pools):
+            continue
+        if _is_grain_doc(path) and unquote(field_of(path, 'id')):
+            out.append(path)
+    return sorted(out)
+
+
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     """Documents in a pool that the index cannot key on, and why.
 

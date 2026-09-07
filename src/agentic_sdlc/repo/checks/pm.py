@@ -99,6 +99,14 @@ def _run() -> int:
               f'(wrong [pm] roadmap_dir, or an empty tree?)')
         return 1
 
+    # Never gated by `checks`: this is the scan saying it found something it
+    # cannot place.
+    for path in model.stray_documents(cfg):
+        report(f'{cfg.rel(path)} declares `id: '
+               f'{model.unquote(model.field_of(path, "id"))}` and sits in no '
+               f'pool, so every reader walks past it — move it into '
+               f'{cfg.rel(model.pool_dir(cfg, model.unquote(model.field_of(path, "kind")) or "milestone"))}/')
+
     # A document with no readable `id:`, and two documents claiming one, are
     # V1's — "this frontmatter is well-formed" — and they are reported from
     # `validate.run` below so that `pm validate` and this gate cannot disagree

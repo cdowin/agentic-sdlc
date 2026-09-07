@@ -1333,6 +1333,37 @@ class StructuralIntegrity(unittest.TestCase):
             # ...and it was COUNTED, so the census is not quietly short one.
             self.assertIn('2 feature(s)', out)
 
+    def test_a_grain_document_in_NO_pool_is_named_rather_than_ignored(self):
+        """Every pooled reader walks the POOLS, so a grain document under the
+        roadmap and outside all four is read by nothing: `check pm`,
+        `pm validate` and `pm status` stay silent while `check grain-shape`,
+        which walks the roadmap whole, counts it. Two gates disagreeing about
+        what is in the tree, with the quieter one winning.
+
+        `orphan_dirs` existed to stop exactly that, and its successor has to
+        keep doing the job.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            write(root / 'pm/roadmap/0.9-stray/milestone.md',
+                  {'id': 'ms-stray', 'kind': 'milestone', 'name': 'S',
+                   'status': 'planning', 'depends_on': '[]', 'branch': ''})
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('0.9-stray/milestone.md', out)
+            self.assertIn('sits in no pool', out)
+            # The line says WHERE it belongs, off the kind it declares.
+            self.assertIn('pm/roadmap/milestones/', out)
+
+    def test_a_shared_doc_outside_a_pool_is_not_a_stray(self):
+        # The control: `releases.md` and a grain's own shared docs live outside
+        # the pools by design, and a rule that named them would fire on every
+        # tree forever.
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(run_cli(root, 'decide', '0.1', 'a choice')[0], 0)
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('sits in no pool', out)
+
     def test_no_rule_is_answered_over_a_SUBSET_of_the_tree(self):
         """Five gate rules asked their question inside a walk that descends
         milestone → feature → story, so each of them answered over the grains

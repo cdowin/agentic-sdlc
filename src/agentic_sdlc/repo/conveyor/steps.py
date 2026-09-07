@@ -986,8 +986,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
     **A probe, not an inspection.** Reading `.claude/settings.json` proves a
     string is present; the courier's own `--self-test` drives the consumer's
     real vehicle end to end, which is the only thing that answers "does `make
-    -s pm ARGS=…` reach the verb here". Every courier ships that corpus and
-    nothing called it from the belt.
+    -s pm ARGS=…` reach the verb here".
 
     Three ways a bumping consumer records nothing, each silent, each named:
 
@@ -1002,10 +1001,8 @@ def check_telemetry_live(ctx: Context) -> Answer:
          declared no flow has every work-moving verb refuse by name.
 
     **It never refuses an adoption on its own.** The posture is *clearly
-    available, warned when absent, never mandatory* (0.4.0/D5): a consumer that
-    has not wired the couriers opted out, and this package does not conscript.
-    What it must never be is SILENTLY opted out, which is the state the
-    package's own tree was in for a whole milestone.
+    available, warned when absent, never mandatory* (0.4.0/D5). What it must
+    never be is SILENTLY opted out.
     """
     command = _configured(ctx, 'telemetry-live')
     if command:

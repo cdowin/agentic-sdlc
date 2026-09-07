@@ -90,15 +90,11 @@ def _unverifiable(index: dict, ref: str) -> bool:
     A retired milestone takes its grains with it, and reddening every ref that
     pointed into it would make `pm retire` unusable — so a ref whose leading
     segment names no milestone in the tree is not graded. That segment is a
-    HEURISTIC for exactly this question and nothing else: it is not how a ref
-    is RESOLVED (the index is, by `id:`), which is the whole of 0.4.0.
+    HEURISTIC for this question alone; refs are RESOLVED through the index.
 
-    A FLAT id carries no such segment, so there is nothing to excuse it with
-    and an unresolvable ref is a finding. That asymmetry is the honest one: the
-    escape hatch exists because a hierarchical id happens to name its milestone,
-    and reading `ref not in index` as "its milestone is gone" would excuse
-    EVERY dangling ref in a flat tree — rule 4's first sin, wearing the word
-    UNVERIFIABLE.
+    A FLAT id carries no such segment, so an unresolvable one is a finding:
+    reading `ref not in index` as "its milestone is gone" would excuse every
+    dangling ref in a flat tree, wearing the word UNVERIFIABLE.
     """
     prefix = ref.partition('/')[0]
     return prefix != ref and prefix not in index
@@ -180,6 +176,19 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # (grain path, its declared id, the id its PATH implies, parentage pairs)
     graph: dict[str, list[str]] = {}
 
+    # V1 over the POOLS, before the descent — because these are precisely the
+    # documents the descent cannot reach. A document with no readable `id:` is
+    # in no index, so nothing below would ever visit it; two documents claiming
+    # one id means the descent visits the first and walks past the second.
+    if 'V1' in on:
+        for path, why in model.unkeyed_documents(cfg):
+            bad(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
+        for gid, paths in model.duplicate_ids(cfg):
+            names = ' '.join(cfg.rel(path) for path in paths)
+            bad(f'{len(paths)} documents claim id {gid!r} — a resolver keeps '
+                f'the first it reads and the rest are addressable by nothing; '
+                f'give each one its own id: {names}')
+
     for milestone in model.milestones(cfg):
         mdir = milestone.path.parent
         _mid = milestone.gid
@@ -245,13 +254,9 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
 def _unbound_findings(cfg: model.PmConfig) -> list[str]:
     """V7 — every grain's binding names a grain of the right kind, in the tree.
 
-    The walk above starts at milestones and descends, so a grain whose binding
-    resolves to nothing is never REACHED by it: it is not reported, it is not
-    counted, and the census that says "2 feature(s)" is the only trace it left.
-    That is rule 4's first sin with the drift hidden one level up. This is the
-    walk that starts at the POOLS instead, so every grain is graded exactly
-    once whether or not anything claims it.
-
+    The walk above descends from the milestones, so a grain whose binding
+    resolves to nothing is never REACHED by it. This one starts at the POOLS,
+    so every grain is graded exactly once whether or not anything claims it.
     A milestone binds to nothing and is never asked.
     """
     out: list[str] = []

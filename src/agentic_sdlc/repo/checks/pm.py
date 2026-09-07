@@ -23,11 +23,12 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
+  V7  a binding (`milestone:`/`feature:`) that is empty, names no grain in the
+      tree, or names one of the wrong kind
   READY  a grain past `todo` with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), a story in progress with no
-         `owner:`, no stories, no `phase:`,
-         no `branch:`, or (a milestone) no `handoff.md` — the doc is never auto-minted,
-         so its absence is the signal and `pm new handoff <id>` is the fix
+         `owner:`, no stories, no `phase:`, no `branch:`, or (a milestone) no
+         `handoff.md` — never auto-minted, so `pm new handoff <id>` is the fix
   R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
 
 Archived milestones are out of scope; a zero census FAILS.
@@ -97,22 +98,10 @@ def _run() -> int:
               f'(wrong [pm] roadmap_dir, or an empty tree?)')
         return 1
 
-    # Never gated by `checks`: this is the scan saying it could not see part of the tree.
-    # 0.4.0: a pooled tree has no grain DIRECTORIES to be malformed, so
-    # what is left of this census is a document in a pool that declares no
-    # `id:` — the flat version of the same question, and the same rule 4
-    # reason for asking it: a document nothing can key on leaves the census.
-    for path, why in model.unkeyed_documents(cfg):
-        report(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
-
-    # The other half of the same question: not a document with no key, but two
-    # documents fighting over one. The resolver keeps the first it reads and
-    # every other one is addressable by nothing (0.4.0/D4).
-    for gid, paths in model.duplicate_ids(cfg):
-        names = ' '.join(cfg.rel(path) for path in paths)
-        report(f'{len(paths)} documents claim id {gid!r} — a resolver keeps '
-               f'the first it reads and the rest are addressable by nothing; '
-               f'give each one its own id: {names}')
+    # A document with no readable `id:`, and two documents claiming one, are
+    # V1's — "this frontmatter is well-formed" — and they are reported from
+    # `validate.run` below so that `pm validate` and this gate cannot disagree
+    # about a file neither of them can key on.
 
     # Always walked for the census; reported only under D4.
     bug_findings, n_bugs = model.bug_status_findings(cfg)
@@ -331,18 +320,14 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
-    Both homes — one per milestone for attributed rows, and the tree's own for
-    the rest (0.4.0/D3) — because the question is whether recording is
-    happening at all and a row in either answers it. Existence is not enough:
-    an empty file is exactly what a courier leaves when it created the file and
-    then refused the row.
+    Both homes — one per milestone for attributed rows, the tree's own for the
+    rest (0.4.0/D3) — because the question is whether recording is happening at
+    all. Existence is not enough: an empty file is what a courier leaves when
+    it created the file and then refused the row.
 
-    **An unreadable ledger is neither answer**, and getting that backwards was
-    the review's M1. Returning `True` for it silenced this rule for the WHOLE
-    tree, on the first path that raised, with no line printed — over precisely
-    the artifact the paragraph above names. That IS rule 4's first sin: missing
-    drift and printing PASS. It is now reported as unverifiable and the scan
-    continues, so a readable ledger elsewhere still answers.
+    **An unreadable ledger is neither answer.** Returning `True` for it
+    silenced this rule for the WHOLE tree on the first path that raised, with
+    no line printed. It is reported as unverifiable and the scan continues.
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]
@@ -363,23 +348,15 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """U2 — the ledger couriers are wired and the tree holds no row.
 
     **This rule exists because the telemetry was off for a whole milestone and
-    nobody could tell.** The hooks were installed, executable, self-testing and
-    firing; the verb they called refused every row for a reason that was true
-    at the time; and a courier fails open by design — it must never block a
-    stop — so the refusal went to a stderr nobody reads. `pm/roadmap/` held one
-    `ledger.jsonl`, from two milestones earlier.
-
-    `0.4.0/one-rule-routes-a-row` deleted THAT cause. It closed none of the
-    class: entries never pasted, a `pm` target that is not `.PHONY` so `make`
-    exits 0 without reaching the verb, an undeclared `[pm.states.*]` that makes
-    the CLI inert, `python3` missing. Every one produces zero rows and zero
-    visible complaint, and the shape is a fail-open courier with no fail-loud
-    counterpart anywhere.
+    nobody could tell.** A courier fails open by design — it must never block a
+    stop — so its refusals go to a stderr nobody reads. The causes are many
+    (entries never pasted, a `pm` target that is not `.PHONY`, an undeclared
+    `[pm.states.*]`, no `python3`) and every one produces zero rows and zero
+    visible complaint: a fail-open courier with no fail-loud counterpart.
 
     **A tree that wires nothing is SILENT.** It opted out, and this package
     does not conscript (0.4.0/D5). A settings file that will not parse is
-    UNVERIFIABLE, not a failure — the standing convention for a pointer this
-    gate cannot follow.
+    UNVERIFIABLE, not a failure.
     """
     if 'U2' not in enabled:
         return
@@ -596,15 +573,12 @@ def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
     narrowing each walk made, rendered beside the count it narrowed.
 
     Pooled: each pool renders its OWN census, because that is the walk that
-    produced the number and `Walk.census` is the only way to a count that
-    carries what it left out. The count is the POOL's rather than the drift
-    walk's on purpose: a document with damaged frontmatter declares no `id:`,
-    so it is bound to nothing and no descent reaches it — and a census counting
-    only what the descent saw would quietly drop exactly the document
-    `unkeyed_documents` just reported by name (rule 4).
+    produced the number. The count is the POOL's rather than the drift walk's
+    on purpose: a document with damaged frontmatter declares no `id:`, so no
+    descent reaches it, and a census counting only what the descent saw would
+    quietly drop the document `unkeyed_documents` just reported by name.
 
-    Nested: the drift walk's own counts, with `tree_walk`'s disclosures, which
-    is what every consumer on the old layout still reads.
+    Nested: the drift walk's own counts, with `tree_walk`'s disclosures.
     """
     if model.is_pooled(cfg):
         return ', '.join(model.pool_census(cfg, kind, label) for kind, label in

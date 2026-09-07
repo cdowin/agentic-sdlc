@@ -222,9 +222,8 @@ def grainless_path(roadmap_dir: Path) -> Path:
 
 
 def append_to(path: Path, row: dict) -> None:
-    """Append one row to a ledger FILE, creating the file — and, since 0.4.0,
-    the POOL it sits in, because `<roadmap>/ledgers/` is a directory the tree
-    may not have yet.
+    """Append one row to a ledger FILE, creating the file and the pool it sits
+    in.
 
     `open('a')` rather than a `core.apply` overwrite, because read-modify-write
     drops rows under two appenders. One byte is read first — the last — and a

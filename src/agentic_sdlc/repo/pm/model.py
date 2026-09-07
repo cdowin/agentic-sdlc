@@ -129,28 +129,14 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
                   'V1', 'V4', 'V5', 'V7')
-# The USAGE family: what the tree DOES with the vocabulary it declared, as
-# opposed to whether a word is declared at all (D4). U1 is its first member and
-# it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
-# reusing a retired id would silently enable a different rule for any consumer
-# whose config still names it, which is worse than the exit 2 they get today.
-#
-# U1 is STOCK-ON, and that was reversed on the milestone review's M2. It was
-# opt-in for one release-day: it adds warning lines to every consumer's
-# `check pm`, and those shapes are grepped (rule 6). But the milestone's
-# northstar is that a project can SEE whether it is using the flow it declared,
-# and an opt-in rule nobody enables answers that question with silence — which
-# is the exact failure the milestone was filed to end. A WARN cannot redden
-# anyone; the output change is the point, not a side effect.
-#
-# U2 (the ledger couriers are wired and the tree holds no row) is the same
-# question one layer out: not `is this word used` but `is this CAPABILITY
-# doing anything`. It takes a U rather than the next free D for the reason
-# above and one more — the D family is status drift, and this is not drift.
-# Stock-ON, and for U1's argument verbatim: a tree that wires the couriers
-# and records nothing cannot find that out from an opt-in rule, because an
-# opt-in warning about silence IS silence. A tree that wires nothing stays
-# quiet either way, so stock-on costs a non-adopter nothing (0.4.0/D5).
+# The USAGE family: what the tree DOES with the vocabulary (U1) and the
+# capabilities (U2) it declared, as opposed to whether a word is declared at
+# all (D4). A NEW LETTER on purpose — `D7` RETIRED, and reusing a retired id
+# would silently enable a different rule for a consumer whose config still
+# names it. Both are STOCK-ON: an opt-in rule nobody enables answers "is this
+# flow being used" with silence, which is the failure they were filed to end,
+# and a WARN cannot redden anyone. A tree that wires nothing stays quiet either
+# way, so stock-on costs a non-adopter nothing (0.4.0/D5).
 USAGE_CHECKS = ('U1', 'U2')  # named for the family; already in DEFAULT_CHECKS
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
@@ -158,16 +144,12 @@ FLOW_CHECKS = ('D9', 'D10')
 # The release family: the plan and the tree held to each other. Opt-in, because
 # a tree with no plan yet has nothing for them to grade.
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
-# V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
-# generated view going stale is not a defect in the tree.
-# V2 (id matches path) and V3 (parentage matches the directory) RETIRED in
-# 0.4.0: both existed to keep two copies of one fact in agreement, and 0.4.0
-# deleted the second copy. `id:` is the identity and the binding is the
-# parentage; a document nothing can key on and a binding naming no grain are
-# the two facts that can still be wrong, and they have their own lines —
-# `unkeyed_documents` and V7, which walks the POOLS rather than descending from
-# the milestones, because a grain nothing claims is exactly what a descent
-# cannot see.
+# V1-V5 and V7 are ON: an unsatisfied one is a malformed tree. V6 is opt-in — a
+# generated view going stale is not a defect in the tree. V2 (id matches path)
+# and V3 (parentage matches the directory) RETIRED in 0.4.0: both kept two
+# copies of one fact in agreement and 0.4.0 deleted the second copy. What can
+# still be wrong is a document nothing can key on (`unkeyed_documents`) and a
+# binding naming no grain (V7, which walks the POOLS rather than descending).
 VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V6', 'V7')
 KNOWN_CHECKS = tuple(dict.fromkeys(
     DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
@@ -1081,24 +1063,12 @@ def segment_is_literal(value: str) -> bool:
 # =============================================================================
 # THE GRAIN LAYER (0.4.0) — identity is frontmatter, location is convention
 # =============================================================================
-# `model.py` used to say it plainly: *a grain's kind is read from which slot
-# its document sits in*. So a grain's kind, its id and its parent were all
-# functions of where the file sat, and `id:`/`milestone:`/`feature:` were
-# copies that V2 existed to police. That is one fact stored twice, which is
-# the defect this package forbids everywhere else.
-#
-# Now: `id:` and `kind:` are read from the document, the pools are where
-# documents live, and nothing interprets a path. What this deletes is an
-# addressing layer of ~20 functions that were one function with a kind baked
-# in — and the count going down is not the point. `milestone_dir` worked for
-# milestones and nothing else; `story_file` knew one three-segment shape;
-# a fifth kind meant four more functions. These take `kind` as an argument.
-#
-# **And the sharpest part is a security note.** An id used to be interpolated
-# into a `glob()` pattern and joined onto a directory, which is why
-# `segment_is_literal` had to reject `.`, `..`, `/`, `\` and every glob
-# character. Match-by-field never builds a path from user input, so the guard
-# has nothing left to guard.
+# `id:` and `kind:` are read from the document; the pools are where documents
+# live; nothing interprets a path. The addressing layer this replaced was ~20
+# functions that were one function with a kind baked in, and each one joined an
+# id onto a directory or into a `glob()` pattern — which is what
+# `segment_is_literal` was written to make safe. Match-by-field builds no path
+# from user input, so that guard has nothing left to guard.
 
 # The kind prefix a human reads off a bare id — in a commit message, a
 # dispatch, a review — without its location. `kind:` is what the TOOL reads;
@@ -1148,11 +1118,8 @@ def pool_dir(cfg: PmConfig, kind: str) -> Path:
 def pool_scan(cfg: PmConfig, kind: str) -> Walk:
     """One pool as a `Walk` — the kept documents AND what it narrowed away.
 
-    This is `slot_walk` for a table: the same two disclosed narrowings, because
-    the hazards did not move when the slot became a pool. A dot prefix is a
-    deliberate hide and stays out of scope, and a `.md` that opens no
-    frontmatter is a note rather than a grain — and both are COUNTED, so a
-    census can never assert the opposite of the filesystem (rule 4).
+    `slot_walk` for a table: a dot prefix is a deliberate hide and a `.md` that
+    opens no frontmatter is a note, and both are COUNTED (rule 4).
     """
     base = pool_dir(cfg, kind)
     if not base.is_dir():
@@ -1218,11 +1185,12 @@ def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
     """The pre-0.4.0 layout, read the way it was always read: kind from the
     slot the document sits in, parent from the directory above.
 
-    Kept so a consumer's tree keeps working the day they bump and before they
-    run `pm migrate` — the alternative is a version that reads nothing until a
-    migration lands, which is a breaking change wearing a minor number. It is
-    the ONLY code left that treats a path as schema, and it goes when the
-    migration is behind every consumer.
+    Kept so a consumer's tree keeps working the day they bump and before it is
+    moved — the alternative is a version that reads nothing until a migration
+    lands, which is a breaking change wearing a minor number. It is the ONLY
+    code left that treats a path as schema, and it goes when no nested tree is
+    left. `tools/dev/pm_migrate.py` is the mover, and it is a script rather
+    than a verb on purpose.
     """
     out: dict[str, Grain] = {}
 
@@ -1250,11 +1218,10 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
     """Every grain in the tree, by id. The one walk every resolver goes
     through.
 
-    A duplicate id is NOT resolved here — the first one read wins for lookup
-    and `check pm` names every file that shares a slug. Uniqueness is a gate
-    FINDING and never a runtime lock: a counter needs an allocator and a git
-    repo has none, so two agents on two branches would collide invisibly
-    (0.4.0/D4). Do what you are asked; report contradictions.
+    A duplicate id is NOT resolved here — the first one read wins and V1 names
+    every file that shares one. Uniqueness is a gate FINDING and never a
+    runtime lock: an allocator needs a counter and a git repo has none, so two
+    agents on two branches would collide invisibly (0.4.0/D4).
     """
     if not is_pooled(cfg):
         return _nested_index(cfg)
@@ -1472,13 +1439,9 @@ def shared_doc(cfg: PmConfig, grain: 'Grain | Path', name: str) -> Path:
     """Where a grain's shared document lives — `decisions.md`, `handoff.md`,
     `review.md`.
 
-    Pooled: beside the grain in its pool, prefixed with the grain's id
-    (`features/ft-x-decisions.md`), because a pool is flat and a bare
-    `decisions.md` would be one file for every grain of that kind. Nested:
-    inside the grain's own directory, which is where every existing one is.
-
-    The prefix is the id and never a slug of it: a shared doc that could not be
-    traced back to exactly one grain is a document with no owner.
+    Pooled: beside the grain, under the grain's own stem, because a pool is
+    flat and a bare `decisions.md` would be one file for every grain of that
+    kind. Nested: inside the grain's directory.
     """
     path = grain if isinstance(grain, Path) else grain.path
     # `is_pooled` and not the parent's NAME: a tree that configured its pools
@@ -1558,11 +1521,8 @@ def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
 def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
     """[(id, every document claiming it)] for each id claimed more than once.
 
-    The other half of D4. `grain_index` resolves a duplicate by keeping the
-    first document read, which is the only thing a resolver CAN do without an
-    allocator — and it means the second document is in the tree, is counted,
-    and can be addressed by nothing. That is rule 4's first sin unless somebody
-    says so, so this is where it gets said.
+    The other half of D4: `grain_index` keeps the first document read, so the
+    second is in the tree, is counted, and is addressable by nothing.
     """
     seen: dict[str, list[Path]] = {}
     for kind in FLOW_KINDS:
@@ -1577,11 +1537,8 @@ def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     """Documents in a pool that the index cannot key on, and why.
 
-    `orphan_dirs`' successor. A pooled tree has no grain DIRECTORIES to be
-    malformed, so what is left is the flat version of the same question: a
-    document with no readable `id:` has no key, is in no index, and would
-    leave the census silently — which is the drop rule 4 exists to forbid.
-    A `kind:` the project never declared is the other half.
+    `orphan_dirs`' successor: a document with no readable `id:` has no key, is
+    in no index, and would leave the census silently.
     """
     out: list[tuple[Path, str]] = []
     for kind in FLOW_KINDS:
@@ -1984,35 +1941,23 @@ def last_shipped_index(cfg: PmConfig) -> int:
 def current_release(cfg: PmConfig) -> str | None:
     """The release being WORKED ON: the first entry in `order` not yet shipped.
 
-    **This does not read `[pm] version_at`, and that separation is the point.**
-    `version_at` answers a DIFFERENT question — *which entry should the version
-    FILE equal* — and a project that bumps at CLOSE answers it with the last
-    SHIPPED release while working on the next one. Feeding that answer to "which
-    release am I working on" made `release` re-release a finished milestone and
-    filed gate cost rows into its closed ledger (review A1, B2, C1). One key,
-    one question; `graded_release` below is the other one.
+    Never `[pm] version_at`, which answers *which entry should the version FILE
+    equal* — a project bumping at CLOSE answers that with the last SHIPPED
+    release while working on the next one, so feeding it here re-released a
+    finished milestone. `graded_release` below is that other question.
 
-    An entry whose state cannot be established — no milestone claims it, or
-    several do — STOPS the walk rather than being stepped over. Skipping it
-    would answer with a release further down the plan than the tree can
-    support: a confident wrong answer where "I cannot tell" is the true one
-    (review B1).
+    An entry whose state cannot be established STOPS the walk rather than being
+    stepped over: skipping it answers with a release further down the plan than
+    the tree can support.
     """
     for version in declared_order(cfg):
         if release_is_shipped(cfg, version):
             continue
         if release_is_unverifiable(cfg, version):
-            # SKIPPED, and reported: `pm retire` deletes a finished milestone's
-            # record while its row survives in the plan on purpose, so after a
-            # retirement an entry that shipped is indistinguishable from one
-            # never written. Blocking on it would make `retire` break the
-            # ledger and the belt for every tree that prunes.
-            #
-            # The ambiguity is not resolved here because it CANNOT be — it is
-            # REPORTED, by R1, as UNVERIFIABLE, on every run. Two reviews of
-            # this milestone pulled opposite ways on it; decision D2 on
-            # `the-plan-and-the-tree-agree` records why the gate carries it
-            # rather than the resolver guessing.
+            # SKIPPED here, REPORTED by R1 as UNVERIFIABLE on every run. After
+            # a `pm retire` an entry that shipped is indistinguishable from one
+            # never written, and blocking on it would break the belt for every
+            # tree that prunes. Decision D2 on `the-plan-and-the-tree-agree`.
             continue
         return version
     return None
@@ -2044,25 +1989,14 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
 
 def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
     """(the DOCUMENT of the milestone the current release belongs to, or None,
-    plus why not). Renamed from `release_ledger_dir` in 0.4.0: it never routed
-    a write after D7, and a pooled tree has no per-milestone directory for it
-    to name.
-
-    **Gate cost is a fact about a RUN**, and the run happened whether or not
-    anybody had flipped a status. Binding the ledger to "the one milestone in
-    `in_progress`" refused on none and on several, and this tree spent a week
-    planning two milestones with every cost row silently dropped.
+    plus why not).
 
     `order` answers with exactly one BY CONSTRUCTION — a position in a list is
-    one place. It does NOT read `[pm] version_at`: that key says which entry
-    the version FILE is graded against, which is a different question, and
-    conflating the two filed cost rows into a shipped milestone's ledger.
-
-    The in-progress fallback is deliberate and is recorded as a decision: a
-    consumer bumping the pin has a building milestone and no plan yet, and
-    refusing every cost row on the bump would be a breaking change wearing a
-    minor version. A tree with neither is refused naming `pm order`, which is
-    then the one honest reason left.
+    one place. It does NOT read `[pm] version_at`, which says which entry the
+    version FILE is graded against; conflating the two filed cost rows into a
+    shipped milestone's ledger. The in-progress fallback covers a consumer who
+    bumped the pin before adopting a plan, and a tree with neither is refused
+    naming `pm order`.
     """
     version = current_release(cfg)
     if version is not None:

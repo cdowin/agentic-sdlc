@@ -29,9 +29,10 @@ def plan_of(root: Path) -> list[str]:
 
 
 def claims(root: Path, mid: str, version: str, status: str) -> None:
-    write(root / f'pm/roadmap/{mid}-m/milestone.md',
-          {'id': f'"{mid}"', 'name': mid, 'status': status,
-           'version': f'"{version}"'})
+    """A milestone in the pool that declares `version:`."""
+    write(root / f'pm/roadmap/milestones/{mid}.md',
+          {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
+           'status': status, 'version': f'"{version}"'})
 
 
 class TheVerbWritesThePlan(unittest.TestCase):

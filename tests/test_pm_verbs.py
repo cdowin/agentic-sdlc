@@ -991,6 +991,10 @@ class StoryResolution(unittest.TestCase):
     reported by `check pm` and then refused by `pm story building <id>` as a
     story that does not exist. Each answer is defensible alone; together they
     leave the author nothing to do.
+
+    One walk answers both now — `grain_index` — so the agreement is structural
+    rather than maintained. What is left to prove is that the walk reaches
+    everything the pool holds and nothing it does not.
     """
 
     FDIR = 'pm/roadmap/stories'
@@ -1010,8 +1014,8 @@ class StoryResolution(unittest.TestCase):
             code, out = run_cli(root, 'story', 'building', '0.1/alpha/s2')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / self.FDIR / 'stories/parked/s2.md',
-                               'status'), 'building')
+                model.field_of(root / self.FDIR / 'parked/s2.md', 'status'),
+                'building')
 
     @unittest.skipUnless(CASE_SENSITIVE_TMP, 'case-insensitive filesystem')
     def test_an_uppercase_extension_resolves(self):
@@ -1020,62 +1024,80 @@ class StoryResolution(unittest.TestCase):
             self.assertEqual(model.story_file(cfg_for(root), '0.1/alpha/S3').name,
                              'S3.MD')
 
-    def test_the_ordinal_prefix_never_makes_a_story_ambiguous(self):
-        # `story_ordinal_prefix` trees carry `07-s9.md` beside `s9.md`; an
-        # exact stem wins, and a prefixed file one directory down still
-        # resolves. Two files that genuinely claim ONE id refuse rather than
-        # pick — a resolver that picked would write into whichever the glob
-        # happened to yield first.
+    def test_the_filename_never_decides_which_story_an_id_reaches(self):
+        # The ordinal prefix was a resolver RULE: `07-s9.md` had to be matched
+        # by a stripped stem, and an id was ambiguous when two filenames could
+        # spell it. Neither is true now — the id is read out of the file, so
+        # the prefix is decoration and a story parked one directory down is
+        # the same story wherever it sits.
         with tree() as root:
             cfg = model.PmConfig(root=root, story_ordinal_prefix=True)
-            self._story(root, 's9.md', '0.1/alpha/s9')
             self._story(root, '07-s9.md', '0.1/alpha/s9')
-            self.assertEqual(model.story_file(cfg, '0.1/alpha/s9').name, 's9.md')
+            self.assertEqual(model.story_file(cfg, '0.1/alpha/s9').name,
+                             '07-s9.md')
             self._story(root, 'parked/03-s4.md', '0.1/alpha/s4')
             self.assertEqual(model.story_file(cfg, '0.1/alpha/s4').name,
                              '03-s4.md')
+            # ...and the filename is not the id, so a file whose STEM spells
+            # one id while its frontmatter spells another answers to the
+            # frontmatter.
+            self._story(root, 's5.md', '0.1/alpha/actually-s6')
+            self.assertIsNone(model.story_file(cfg, '0.1/alpha/s5'))
+            self.assertEqual(
+                model.story_file(cfg, '0.1/alpha/actually-s6').name, 's5.md')
+
+    def test_two_files_claiming_one_id_resolve_and_are_REPORTED(self):
+        # The old resolver refused rather than picked, which turned a tree
+        # defect into an unusable verb — every command touching that id, and
+        # every command that merely LOOKED it up on the caller's behalf, went
+        # to exit 2. Uniqueness cannot be a runtime lock without an allocator
+        # and a git repo has none (0.4.0/D4), so the first document read wins
+        # and the collision is graded by `check pm`, by name.
         with tree() as root:
             self._story(root, 'dup.md', '0.1/alpha/dup')
             self._story(root, 'parked/dup.md', '0.1/alpha/dup')
-            with self.assertRaises(model.AmbiguousStory):
-                model.story_file(cfg_for(root), '0.1/alpha/dup')
+            self.assertIsNotNone(model.story_file(cfg_for(root), '0.1/alpha/dup'))
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn("2 documents claim id '0.1/alpha/dup'", out)
 
     def test_a_note_beside_the_stories_is_not_addressable_as_one(self):
         # The same definition the walk uses: a grain IS its frontmatter, so a
         # README parked in `stories/` is not a story with an empty status.
         with tree() as root:
-            (root / self.FDIR / 'stories/README.md').write_text(
+            (root / self.FDIR / 'README.md').write_text(
                 '# how stories are written here\n', encoding='utf-8')
             self.assertIsNone(model.story_file(cfg_for(root), '0.1/alpha/README'))
 
 
 class OrdinalPrefix(unittest.TestCase):
-    """`story_ordinal_prefix` must TEACH V2 the prefix, never switch V2 off.
+    """`story_ordinal_prefix` is a MINTING rule and nothing else now.
 
-    Skipping instead of stripping left every story in such a tree unchecked
-    while the gate printed VALID — under the configuration the docs mandate.
+    It used to be a resolver rule too, and V2 had to be taught the prefix or
+    every story in such a tree went unchecked while the gate printed VALID.
+    V2 retired with the path-is-the-id model, so what is left is the half that
+    was always the point: `pm new story 01-boots` files `01-boots.md` and
+    stamps the id WITHOUT the ordinal, because the number sequences the build
+    and the slug after it is the identity.
+
+    The prefix's real successor is a milestone's `order:` list — a sequence
+    that lives in the parent rather than in 40 filenames — and that is proven
+    where `order` is.
     """
 
-    def test_the_prefix_is_stripped_for_V2_and_V2_still_runs(self):
-        from agentic_sdlc.repo.pm import validate
-
-        def check(sid: str, prefix: bool):
-            with tree(story_statuses=()) as root:
-                write(root / 'pm/roadmap/stories/01-boots.md',
-                      {'id': sid, 'feature': '0.1/alpha', 'milestone': '"0.1"',
-                       'name': 'B', 'status': 'ready'})
-                return validate.run(model.PmConfig(
-                    root=root, story_ordinal_prefix=prefix))[0]
-
-        self.assertEqual(check('0.1/alpha/boots', True), [])
-        # The regression: this used to pass because the whole arm was skipped.
-        for sid, prefix in (('TOTAL/GARBAGE/nonsense', True),
-                            ('0.1/alpha/boots', False)):
-            with self.subTest(id=sid, prefix=prefix):
-                findings = check(sid, prefix)
-                self.assertTrue(
-                    any('does not match its path' in f for f in findings),
-                    findings)
+    def test_the_ordinal_is_in_the_filename_and_never_in_the_id(self):
+        with tree(story_statuses=()) as root:
+            write_config(root, '[pm]\nstory_ordinal_prefix = true\n')
+            code, out = run_cli(root, 'new', 'story', '0.1/alpha', '01-boots',
+                                'Boots')
+            self.assertEqual(code, 0, out)
+            sf = root / 'pm/roadmap/stories/01-boots.md'
+            self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/boots')
+            # And the tree it just wrote validates — the id it stamped is the
+            # id every reader keys on, whatever the file is called.
+            self.assertEqual(run_cli(root, 'validate')[0], 0)
+            self.assertIsNotNone(
+                model.story_file(cfg_for(root), '0.1/alpha/boots'))
 
 
 class Decide(unittest.TestCase):
@@ -1254,7 +1276,7 @@ class ExeclistRefusals(unittest.TestCase):
                     code, out = run_cli(root, *argv)
                     self.assertEqual(code, 1, out)
                     self.assertIn('REFUSED', out)
-                    self.assertIn('feature.md', out)
+                    self.assertIn('alpha.md', out)
                     self.assertIn('not UTF-8', out)
 
     def test_v6_reports_a_non_utf8_grain_and_keeps_earlier_findings(self):
@@ -1266,7 +1288,10 @@ class ExeclistRefusals(unittest.TestCase):
             self.assertTrue(any('not UTF-8' in f for f in findings), findings)
             # V1's finding about the same grain survives — the crash used to
             # abort run() and take every finding gathered before V6 with it.
-            self.assertTrue(any('missing id' in f for f in findings), findings)
+            # Its 0.4.0 wording: the document declares no `id:`, so nothing
+            # can key on it.
+            self.assertTrue(any('declares no `id:`' in f for f in findings),
+                            findings)
 
     def test_a_damaged_marker_pair_refuses_instead_of_growing_the_file(self):
         # The audit's growth reproduction: 25 -> 33 -> 41 lines over three
@@ -1287,7 +1312,7 @@ class ExeclistRefusals(unittest.TestCase):
                 before = mfile.read_bytes()
                 code, out = run_cli(root, 'sync')
                 self.assertEqual(code, 1, out)
-                self.assertIn('milestone.md', out)
+                self.assertIn('0.1.md', out)
                 self.assertEqual(mfile.read_bytes(), before)
                 # Refusing twice is still refusing — and still not writing.
                 code, _ = run_cli(root, 'sync')

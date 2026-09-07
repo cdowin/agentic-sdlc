@@ -189,11 +189,12 @@ def test_an_empty_list_or_an_unknown_name_is_exit_2_not_ok():
 def _tree(devkit: str):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
-        mdir = root / 'pm/roadmap/1.0.0-one'
-        mdir.mkdir(parents=True)
-        (mdir / 'milestone.md').write_text(
-            '---\nid: "1.0.0"\nname: one\nstatus: building\n'
-            'branch: milestone/1.0.0\n---\n\n# one\n', encoding='utf-8')
+        pool = root / 'pm/roadmap/milestones'
+        pool.mkdir(parents=True)
+        (pool / '1.0.0.md').write_text(
+            '---\nid: "1.0.0"\nkind: milestone\nname: one\n'
+            'status: building\nbranch: milestone/1.0.0\n---\n\n# one\n',
+            encoding='utf-8')
         (root / 'devkit.toml').write_text(devkit, encoding='utf-8')
         (root / '.git').mkdir()  # a MARKER: `repo_root` walks for it
         previous = Path.cwd()
@@ -309,11 +310,10 @@ def _plan(root: Path, *versions: str) -> None:
 
 
 def _claim(root: Path, mid: str, version: str, status: str) -> None:
-    mdir = root / f'pm/roadmap/{mid}-m'
-    mdir.mkdir(parents=True, exist_ok=True)
-    (mdir / 'milestone.md').write_text(
-        f'---\nid: "{mid}"\nname: {mid}\nstatus: {status}\n'
-        f'version: "{version}"\n---\n\n# {mid}\n', encoding='utf-8')
+    (root / 'pm/roadmap/milestones' / f'{mid}.md').write_text(
+        f'---\nid: "{mid}"\nkind: milestone\nname: {mid}\n'
+        f'status: {status}\nversion: "{version}"\n---\n\n# {mid}\n',
+        encoding='utf-8')
 
 
 def _release(argv, root):

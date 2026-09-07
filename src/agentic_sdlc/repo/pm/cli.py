@@ -95,22 +95,6 @@ every run; a state the project never declared is refused by name.
                                            than `open`. Writes nothing)
   get <grain-id> <key>                    (read one frontmatter field)
   set <grain-id> <key> <value>            (write one frontmatter field — not status)
-  migrate [--suggest]                     (a NESTED tree becomes pooled — one
-                                           pass or none. Mints `<kind-prefix>-
-                                           <slug>` ids, writes `kind:` and the
-                                           binding the path used to carry,
-                                           builds each parent's `order` from
-                                           the NN- prefixes and `phase:` it is
-                                           retiring, moves every file into its
-                                           pool, and rewrites every inbound
-                                           ref. A slug collision REFUSES and
-                                           names the grains that share one —
-                                           an auto-picked id is a name nobody
-                                           chose (D4); resolve with `pm rename`
-                                           and re-run. --suggest prints
-                                           parent-qualified candidates and
-                                           applies none. Idempotent: a second
-                                           run says so. Git is the undo)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
   vocabulary [--json]                     (this version's declared surface:
@@ -295,12 +279,9 @@ def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
     sentence cannot be traced to config or to the registry, it is not a
     breadcrumb.**
 
-    Why at the move at all: 0.3.0 built eleven features in 64 minutes and spent
-    93 more reviewing them, because nine reviews were batched to the end. The
-    doctrine went into SDLC.md and the shipped reviewer contract, and prose in
-    three documents had already failed once to stop a builder running wide
-    gates for 21 minutes. What holds is what the tool SAYS at the moment of the
-    act.
+    Why at the move at all: prose in three documents had already failed to stop
+    a builder batching nine reviews to the end of a milestone. What holds is
+    what the tool SAYS at the moment of the act.
     """
     if not cfg.breadcrumbs:
         return
@@ -321,11 +302,9 @@ def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
 def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
     """The refusal for an id that resolves to nothing, carrying the damage.
 
-    A grain is found by its `id:` now, so a document whose frontmatter cannot
-    be read has no key and is in no index — and "no story resolves from id" is
-    then true and useless. The documents in that state are listed by path, so
-    the fix is the next thing the operator reads rather than the next thing
-    they have to go looking for.
+    A grain is found by `id:`, so a document whose frontmatter cannot be read
+    is in no index and "no story resolves from id" is true and useless. Those
+    documents are listed by path, so the fix is the next thing read.
     """
     parts = [f'no {kind} resolves from id {gid!r}']
     if hint:
@@ -506,8 +485,12 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
         raise Usage(USAGE)
     to, bid = args
     _movable(cfg, 'bug', to)
-    if f'/{model.BUGS_DIR}/' not in bid:
-        raise _unresolved(cfg, 'bug', bid,
+    # The shape guard and the id grammar in one refusal, so a bug verb's
+    # answer is always about a BUG — `_grain_file`'s own defect message names
+    # no kind, and this is the verb that knows which one it was addressing.
+    defect = model.id_defect(bid)
+    if f'/{model.BUGS_DIR}/' not in bid or defect:
+        raise _unresolved(cfg, 'bug', bid, defect or
                           f'expected <milestone>/{model.BUGS_DIR}/<slug>')
     bf = _grain_file(cfg, bid)
     cur = _was(bf)
@@ -680,10 +663,8 @@ def _retired_files(cfg: model.PmConfig, milestone) -> list[Path]:
     """Every file `retire` removes for one milestone, in delete order.
 
     The milestone, everything bound to it, everything bound to THOSE, each
-    grain's shared documents, and the milestone's ledger — the `check pm` D6
-    model is unchanged: an attributed row dies with its milestone and git is
-    the archive. The tree's own ledger is not touched, because those rows were
-    never about this milestone (0.4.0/D3).
+    grain's shared documents, and the milestone's ledger. The tree's own ledger
+    is not touched: those rows were never about this milestone (0.4.0/D3).
     """
     grains = [milestone]
     for kind in ('feature', 'bug'):
@@ -874,18 +855,6 @@ def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
         if seconds is not None:
             out[gid] = ledger.human_duration(seconds)
     return out
-
-
-def cmd_migrate(cfg: model.PmConfig, args: list[str]) -> int:
-    """A nested tree becomes pooled, whole or not at all — see `migrate.py`."""
-    rest = [a for a in args if a != '--suggest']
-    if rest:
-        raise Usage(f'pm migrate takes --suggest only, not {" ".join(rest)!r}')
-    from agentic_sdlc.repo.pm import migrate
-    code, lines = migrate.run(cfg, suggest='--suggest' in args)
-    for line in lines:
-        print(line)
-    return code
 
 
 def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
@@ -1629,24 +1598,18 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
     read from the grain's own document and from nothing else (D1).
 
     **No status is consulted on any write path.** The lookup this replaced
-    asked which milestone was `in_progress` and refused on none and on several
-    — so a tree mid-planning lost every row it wrote, silently, and two
-    milestones in flight (the workflow this package exists for) lost all of
-    them. `_stamp` had routed by grain since the ledger shipped; the telemetry
-    half did not, which is two mechanisms for one fact.
+    asked which milestone was `in_progress` and refused on none and on several,
+    so a tree mid-planning lost every row it wrote, silently.
 
     `path` is the row's grain document, or None when the row names none: a
-    `gate` row (a gate run is not work on a grain), or a session whose grain
-    neither the dispatch nor the tree could supply. **Not** a hand entry
-    without `--grain` — that form is refused before it reaches here, and a
-    docstring listing an unreachable case is the gate lying about its own
-    reach. Those rows land in `ledger.grainless_dir` (D3), so no telemetry
-    write is ever refused for want of a place to put it.
+    `gate` row, or a session whose grain neither the dispatch nor the tree
+    could supply. **Not** a hand entry without `--grain`, which is refused
+    before it reaches here. Those rows land grainless (D3), so no telemetry
+    write is refused for want of a place to put it.
 
-    The caller resolves the grain and passes the PATH rather than the row,
-    because resolution is also what the row's `grain` key is stamped from —
-    one resolution, so the id a reader sees and the ledger it sits in cannot
-    disagree. Taking the row here would resolve it a second time.
+    The caller passes the PATH rather than the row, because resolution is also
+    what the row's `grain` key is stamped from — one resolution, so the id a
+    reader sees and the ledger it sits in cannot disagree.
     """
     if path is None:
         if not cfg.roadmap.is_dir():
@@ -1945,28 +1908,18 @@ def _grain_from_tree(snap: dict) -> str:
         several                         omit the key, and NAME the candidates
 
     This is the orchestrator's path: an agent nobody dispatched has no prompt
-    to read a grain out of, and that is the session type most of a milestone's
-    work happens in.
+    to read a grain out of.
 
-    **Read off the row's OWN `tree` snapshot**, not from a second walk. The
-    snapshot is the live tree at the instant of the row and it is already
-    computed, so the grain a row names and the tree it recorded cannot
-    disagree — and this milestone is deleting twenty resolvers, so adding one
-    back the same week would need an argument nobody has.
+    **Read off the row's OWN `tree` snapshot**, not from a second walk, so the
+    grain a row names and the tree it recorded cannot disagree.
 
-    **Stories only, deliberately.** A milestone with one live FEATURE and no
-    live story has exactly one answer one level up and still gets an omitted
-    key: a feature is a container, and billing a container for a session is
-    the same guess at a coarser grain. Story 02's precedence table says
-    stories, and widening it is a decision, not an improvement.
+    **Stories only, deliberately.** A feature is a container, and billing a
+    container for a session is the same guess at a coarser grain.
 
-    Several is the workflow this package exists for, not an edge, and it is
-    where a lookup would misfile. **An unresolvable grain is an OMITTED KEY**,
-    never a guess: a row filed against the wrong story is uncorrectable, and
-    one filed against none is visible in a bucket that already exists. The
-    candidates go to stderr — which the couriers pass through verbatim — so
-    "revisit if ambiguity turns out to be common" (D2) is a countable claim
-    rather than a hope.
+    **An unresolvable grain is an OMITTED KEY**, never a guess: a row filed
+    against the wrong story is uncorrectable, one filed against none is visible
+    in a bucket that already exists. The candidates go to stderr, which the
+    couriers pass through verbatim.
     """
     live = snap.get(ledger.STORIES_IN_PROGRESS) or []
     if len(live) == 1:
@@ -2487,7 +2440,6 @@ def main(argv: list[str]) -> int:
         'story': cmd_story, 'bug': cmd_bug, 'feature': cmd_feature,
         'milestone': cmd_milestone, 'retire': cmd_retire,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
-        'migrate': cmd_migrate,
         'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
         'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
         'templates': skills.cmd_templates, 'sync': cmd_sync,

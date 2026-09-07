@@ -427,7 +427,7 @@ def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     return write
 
 
-def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
+def _recorder(mledger: Path, operation: str, subject: str) -> Recorder:
     """The `deviation` row a forced write leaves, with `ledger.deviation_row`'s
     keys: `step` names every false check, `reason` carries each sentence."""
     def record(false: Sequence[tuple[str, str]]) -> str:
@@ -445,7 +445,7 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
                'step': ', '.join(name for name, _ in false),
                'outcome': FORCED, 'reason': reason}
         try:
-            ledger.append_row(mdir, row)
+            ledger.append_to(mledger, row)
         except (ledger.LedgerError, OSError) as err:
             return str(err)
         return ''
@@ -454,12 +454,13 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
 
 
 def _no_ledger(nowhere: str) -> Recorder:
-    """The recorder for a run with NO milestone directory: it records nothing
-    and says why, so a forced write can never print as though a row landed.
+    """The recorder for a run whose milestone is not in the tree: it records
+    nothing and says why, so a forced write can never print as though a row
+    landed.
 
     Only a checks-only belt gets here — a belt that writes is still refused
-    without the directory — but `run` may not assume that, and a silent
-    recorder is rule 4's second sin in miniature.
+    without the grain — but `run` may not assume that, and a silent recorder is
+    rule 4's second sin in miniature.
     """
     def record(false: Sequence[tuple[str, str]]) -> str:
         return f'{nowhere} to hold a ledger row'
@@ -596,30 +597,34 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'order` if {subject} really goes first')
 
     mid = subject.split('/')[0]
-    mdir = model.milestone_dir(cfg, mid)
-    nowhere = f'no milestone directory {cfg.rel(cfg.roadmap)}/{mid}-*'
-    if mdir is None and kind:
-        # A belt that WRITES needs the grain's directory: the status it sets
-        # lives there, and so does the ledger row a forced write leaves.
+    # The GRAIN, not a directory: what a belt needs is the milestone's document
+    # (whose status it writes) and the ledger its rows land in, and both are
+    # addressed by id now.
+    mfile = model.milestone_file(cfg, mid)
+    mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
+    nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
+    if mfile is None and kind:
+        # A belt that WRITES needs the grain: the status it sets lives in that
+        # document, and so does the ledger row a forced write leaves.
         print(f'agentic-sdlc: {spoken} {subject}: {nowhere} — refused, and '
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:
-        # Checks only (D12): the milestone directory is the LEDGER's home and
-        # nothing else, so its absence is not an entry condition. WHERE the
-        # project tracks the bump — a milestone, a feature, a story, nowhere
-        # at all — is the project's business, the same way `[pm.states.*]` is.
-        # Every check runs either way, and the run says which it found.
+        # Checks only (D12): the milestone is the LEDGER's home and nothing
+        # else, so its absence is not an entry condition. WHERE the project
+        # tracks the bump — a milestone, a feature, a story, nowhere at all —
+        # is the project's business, the same way `[pm.states.*]` is. Every
+        # check runs either way, and the run says which it found.
         print(f'[{operation}] {NOTHING_RECORDED} — '
-              + (f'a row would land in {cfg.rel(ledger.ledger_path(mdir))}'
-                 if mdir is not None
+              + (f'a row would land in {cfg.rel(mledger)}'
+                 if mledger is not None
                  else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
     result = run(known, names, ctx, force=force, state=state,
                  write=write if write is not None else _writer(cfg, kind),
-                 record=(_recorder(mdir, operation, subject)
-                         if mdir is not None else _no_ledger(nowhere)))
+                 record=(_recorder(mledger, operation, subject)
+                         if mledger is not None else _no_ledger(nowhere)))
     for line in result.lines:
         print(line)
     if result.refused:

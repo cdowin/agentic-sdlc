@@ -132,6 +132,16 @@ def _replace(text: str, block: str, rel: str) -> str:
 
 
 def targets(cfg: model.PmConfig) -> list[Path]:
+    """Every document this renderer would REWRITE — the milestone and feature
+    pools whole, not the grains an index could key.
+
+    A file the renderer cannot read is what it has to refuse on, and the index
+    would drop exactly that file, letting `pm sync` report success over a tree
+    it could not fully see.
+    """
+    if model.is_pooled(cfg):
+        return (model.pool_walk(cfg, 'milestone')
+                + model.pool_walk(cfg, 'feature'))
     out = []
     for milestone in model.milestones(cfg):
         out.append(milestone.path)

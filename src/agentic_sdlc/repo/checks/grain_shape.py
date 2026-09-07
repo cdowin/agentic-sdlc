@@ -97,11 +97,8 @@ _DECLARED = {MILESTONE: MILESTONE, FEATURE: FEATURE, STORY: STORY, BUG: BUG}
 def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     """Which kind a document is: what it SAYS first, where it sits second.
 
-    0.4.0 put the answer in the frontmatter — `kind:` — and this gate had been
-    reading it off the filename, which is why every pooled feature measured as
-    a 250-line `note`. A path is still the fallback, because the two shared
-    docs open no frontmatter to declare anything and a nested tree has no
-    `kind:` in it at all.
+    The path is still the fallback: the two shared docs open no frontmatter to
+    declare anything, and a nested tree has no `kind:` in it at all.
     """
     name = rel.name
     # The shared docs first: `0.1-decisions.md` sits in the milestone pool

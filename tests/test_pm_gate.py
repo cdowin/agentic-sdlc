@@ -1646,9 +1646,11 @@ class DamagedFrontmatter(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('README.md', out)
-            self.assertIn('0 bug(s)', out)
-            self.assertIn('1 story/ies', out)
-            self.assertIn('3 note(s) skipped', out)
+            # Each POOL discloses its own, beside its own count: two notes in
+            # `stories/` and one in `bugs/`. An aggregate would say three and
+            # not say where, which is half a disclosure.
+            self.assertIn('1 story/ies, 2 note(s) skipped', out)
+            self.assertIn('0 bug(s), 1 note(s) skipped', out)
 
     def test_a_clean_tree_discloses_nothing_because_it_skipped_nothing(self):
         with tree(feature_status='building', story_statuses=('ready',)) as root:

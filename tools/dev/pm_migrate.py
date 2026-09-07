@@ -1,8 +1,19 @@
-"""migrate.py — `pm migrate`: a nested PM tree becomes pooled, whole or not.
+#!/usr/bin/env python3
+"""pm_migrate.py — a nested PM tree becomes pooled, whole or not. NOT A VERB.
+
+Run it from a checkout that has this package importable:
+
+    python3 tools/dev/pm_migrate.py [--suggest]      # from the repo root
+
+It is deliberately NOT `agentic-sdlc pm migrate`. The CLI is a published API
+(rule 6) and this is a one-time move per tree: codifying it would make a verb
+every consumer\'s gate depends on forever, for a job that runs once, from a
+checkout, with somebody watching. It lives here so the next tree can take it,
+and it is expected to rot the moment no nested tree is left.
 
 **The only verb in 0.4.0 that touches an existing tree**, and the riskiest work
 in the milestone. Every other feature describes the destination; this one moves
-a consumer there.
+a tree there.
 
 A consumer cannot half-adopt this. Identity, pools, bindings and order change
 together, so the migration is one commit or none: a tree that stopped halfway
@@ -286,3 +297,18 @@ def _with_order(text: str, ids: list[str]) -> str:
     _open_i, close_i = bounds
     block = ['order:'] + [f'  - "{i}"' for i in ids]
     return '\n'.join(lines[:close_i] + block + lines[close_i:])
+
+
+if __name__ == '__main__':
+    import sys
+
+    args = sys.argv[1:]
+    unknown = [a for a in args if a != '--suggest']
+    if unknown:
+        print(f'usage: python3 tools/dev/pm_migrate.py [--suggest] — not '
+              f'{" ".join(unknown)!r}', file=sys.stderr)
+        raise SystemExit(2)
+    code, lines = run(model.load(), suggest='--suggest' in args)
+    for line in lines:
+        print(line)
+    raise SystemExit(code)

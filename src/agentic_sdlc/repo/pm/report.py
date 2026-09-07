@@ -679,29 +679,20 @@ def named_grains(row: dict, kinds: dict[str, str],
     Two ways, and the FIRST outranks the second because it is a STATEMENT
     rather than an inference:
 
-      `grain`  what the dispatch was told it was working on (0.4.0/D2). The
-               couriers pass it from `GDK_LEDGER_GRAIN`; a hand entry passes
-               `--grain`. It says what the work was ON.
+      `grain`  what the dispatch was told it was working on (0.4.0/D2)
       `tree`   the snapshot: a story by being in progress, a feature by being
-               in progress or owning a named story. An inference from what was
-               live at the instant of the row, and the only thing that existed
-               before 0.4.0.
+               in progress or owning a named story
 
     **A row that states a grain is attributed by it and by nothing else, even
-    when this milestone cannot place it.** Falling through to the snapshot was
-    a real defect: a row stating a story that has since been renamed away got
-    billed to whichever OTHER story happened to be live, and `frozen_only`
-    disclosed nothing, so it was the read-side of rule 4 under a docstring
-    promising the opposite. `stated_elsewhere` counts those instead.
+    when this milestone cannot place it.** Falling through to the snapshot
+    billed a row stating a since-renamed story to whichever OTHER story was
+    live, and disclosed nothing. `stated_elsewhere` counts those instead.
 
-    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8). Two
-    stories live at one instant is the workflow this package exists for, and
-    `pm ledger record` already omits the `grain` key rather than pick one — so
-    a reader that then billed BOTH from the same snapshot un-did the decision
-    on the way out, and printed `rows naming no grain (0)` over the one case
-    the feature exists to handle. Ambiguity is judged at the finest kind the
-    snapshot names, because a feature named alongside its own story is a
-    roll-up, not a second candidate.
+    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8). `pm
+    ledger record` already omits the `grain` key rather than pick one, so a
+    reader billing BOTH un-did the decision on the way out. Ambiguity is judged
+    at the finest kind the snapshot names, because a feature named alongside
+    its own story is a roll-up, not a second candidate.
 
     Category keys when present; frozen keys only for an old-shape row.
     """

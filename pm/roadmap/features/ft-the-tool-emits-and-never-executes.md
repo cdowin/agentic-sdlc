@@ -3,7 +3,7 @@ id: ft-the-tool-emits-and-never-executes
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: the tool emits and never executes
-status: planning
+status: done
 reviewed: docs/reviews/2026-09-07-0.5.0-the-tool-emits-and-never-executes.md
 depends_on: []
 consumed_by: []

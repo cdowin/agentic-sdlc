@@ -3,7 +3,7 @@ id: ft-every-move-breadcrumbs-the-next-step
 milestone: ms-0.4.0
 name: every move breadcrumbs the next step, derived from the declared flow
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-every-move-breadcrumbs-the-next-step.md
 phase:
 depends_on: []
 consumed_by: []

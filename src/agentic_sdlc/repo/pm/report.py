@@ -2,13 +2,11 @@
 
 The ledger never judges; this is the caller judgement is left to. It may
 **sum, count, subtract and group, never weight, price or label** — no `size:`
-as a divisor, no dollar figure, no score. Stated here rather than cited: the
-`(D5)` this used to carry named no decision in the tree (0.2.0's D5 is about
-D8/D9/D10 reporting over every in_progress milestone) and a dangling id reads
-as settled while stopping an argument that was never had. Absent
-is `-`, not zero; the tree is walked, so every grain gets a row; nothing is
-dropped. It fails only on a document that will not parse, never on a
-number.
+as a divisor, no dollar figure, no score. Stated here rather than cited,
+because a dangling decision id reads as settled while stopping an argument
+that was never had. Absent is `-`, not zero; the tree is walked, so every grain
+gets a row; nothing is dropped. It fails only on a document that will not
+parse, never on a number.
 """
 from __future__ import annotations
 
@@ -761,23 +759,20 @@ def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
     """The grains under this milestone that one dispatch row names.
 
-    Two ways, and the FIRST outranks the second because it is a STATEMENT
-    rather than an inference:
+    Two ways, and `grain` — what the dispatch was TOLD it was working on
+    (0.4.0/D2) — outranks the `tree` snapshot, because it is a statement rather
+    than an inference.
 
-      `grain`  what the dispatch was told it was working on (0.4.0/D2)
-      `tree`   the snapshot: a story by being in progress, a feature by being
-               in progress or owning a named story
+    **A row that states a grain is attributed by it and by nothing else.**
+    Falling through to the snapshot billed a row stating a since-renamed story
+    to whichever OTHER story was live, and disclosed nothing;
+    `stated_elsewhere` counts those instead.
 
-    **A row that states a grain is attributed by it and by nothing else, even
-    when this milestone cannot place it.** Falling through to the snapshot
-    billed a row stating a since-renamed story to whichever OTHER story was
-    live, and disclosed nothing. `stated_elsewhere` counts those instead.
-
-    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8). `pm
-    ledger record` already omits the `grain` key rather than pick one, so a
-    reader billing BOTH un-did the decision on the way out. Ambiguity is judged
-    at the finest kind the snapshot names, because a feature named alongside
-    its own story is a roll-up, not a second candidate.
+    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8): `pm
+    ledger record` omits the `grain` key rather than pick one, so a reader
+    billing BOTH un-did the decision on the way out. Ambiguity is judged at the
+    finest kind the snapshot names — a feature named alongside its own story is
+    a roll-up, not a second candidate.
 
     Category keys when present; frozen keys only for an old-shape row.
     """
@@ -979,8 +974,10 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             'frozen_only': frozen_only[grain.gid] or None,
             'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
         })
+    in_flight, unplaceable = _in_flight_ages(cfg, kinds, status)
     return {'section': SECTION_SPEND, 'grains': out,
-            'in_flight': _in_flight_ages(cfg, kinds, status),
+            'in_flight': in_flight,
+            'in_flight_unplaceable': unplaceable,
             'unattributed': unattributed,
             'stated_elsewhere': elsewhere,
             'legacy': {'rows': legacy_rows,
@@ -1076,6 +1073,11 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
         out.append(f'   {entry["in_flight"]} {entry["kind"]}(s) in flight — '
                    f'median {ledger.human_duration(entry["median_s"])}, worst '
                    f'{ledger.human_duration(entry["worst_s"])}')
+    # Rule 4: a distribution computed over nothing says so, rather than reading
+    # as "nothing is in flight".
+    if data.get('in_flight_unplaceable'):
+        out.append(f'   {data["in_flight_unplaceable"]} status row(s) '
+                   f'{IN_FLIGHT_UNPLACEABLE}')
     stray = data['unattributed']
     out.append('')
     out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',
@@ -1179,10 +1181,16 @@ def _section(mid: str, title: str, census: str,
     return out
 
 
+# The disclosure that keeps an empty distribution from reading as a calm zero.
+IN_FLIGHT_UNPLACEABLE = ('name a grain this milestone does not hold, so no age '
+                         'was measured from them — `pm rename` moves a row\'s '
+                         'grain, or the ids were replaced under it')
+
+
 def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
-                    status: list) -> list[dict]:
-    """Per kind: how many grains have not reached a terminal state, their
-    median age and the worst.
+                    status: list) -> tuple[list[dict], int]:
+    """`(per kind: in-flight count, median age, worst), rows this could not
+    place`.
 
     The distribution behind `pm status`' per-grain column, and the number that
     would have made nine batched reviews visible while they were happening
@@ -1190,15 +1198,25 @@ def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
     dwell columns use; a grain nobody has moved contributes nothing, because it
     is UNMEASURED rather than young.
 
+    **The second number is what this shipped without.** A status row naming a
+    grain the milestone does not hold was DISCARDED, so a tree whose ledger
+    names renamed ids reported `[]` — no distribution, and nothing saying one
+    had been attempted (rule 4).
+
     A report and nothing else: no threshold, no colour, no exit code. A ceiling
     on how long a grain may stay in flight is this package having an opinion
     about somebody's week (rule 9).
     """
     by_grain: dict[str, list] = {}
+    unplaceable = 0
     for row in status:
         gid = row.data.get('grain')
-        if isinstance(gid, str) and gid in kinds:
+        if not isinstance(gid, str) or not gid:
+            continue
+        if gid in kinds:
             by_grain.setdefault(gid, []).append(row)
+        else:
+            unplaceable += 1
     ages: dict[str, list[int]] = {}
     for gid, rows in by_grain.items():
         rows.sort(key=lambda r: str(r.data.get('ts') or ''))
@@ -1212,7 +1230,7 @@ def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
             out.append({'kind': kind, 'in_flight': len(found),
                         'median_s': found[len(found) // 2],
                         'worst_s': found[-1]})
-    return out
+    return out, unplaceable
 
 
 # --- section 2: yield per review pass -----------------------------------------

@@ -3,7 +3,7 @@ id: ft-a-document-points-at-what-it-cannot-hold
 milestone: ms-0.4.0
 name: A shared doc is scaffolded, and its absence is visible
 status: done
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-a-document-points-at-what-it-cannot-hold.md
 phase:
 depends_on: []
 consumed_by: []

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.core import apply
-from agentic_sdlc.repo.pm import ledger, model, report, templates
+from agentic_sdlc.repo.pm import ledger, model, rename, report, templates
 
 PROG = 'agentic-sdlc pm'
 
@@ -116,6 +116,10 @@ every run; a state the project never declared is refused by name.
                                            tree is read; one another grain
                                            already holds is refused naming that
                                            grain, never auto-resolved)
+  config --seed                           (the seed devkit.toml this pinned
+                                           tool ships — every gate key
+                                           commented at its real default.
+                                           Writes nothing)
   templates [--force]                     (copy the templates into the project to edit)
   sync [--check]                          (re-render the execution lists)
   vocabulary [--json]                     (this version's declared surface:
@@ -289,16 +293,17 @@ def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
 
     Hard rule 9 says the tool never decides what a move MEANS or what should
     happen next, and a breadcrumb survives that rule only by being read rather
-    than written. Two sources, both at runtime: the project's own
-    `[pm.states.<kind>]` for which category the new state is in, and
-    `steps.registry_for(<belt>)` for the checks that belt will actually ask.
+    than written. Three sources, all at runtime: the project's own
+    `[pm.states.<kind>]` for the category, `driver.step_names(<belt>)` for the
+    checks that belt will actually ask, and `driver.SUBJECT` for its argument.
 
         `close feature` asks stories-done, feature-verified, review-recorded
 
-    is the engine reading its own registry back. *"You should run a review
-    now"* is the engine having an opinion, and it does not ship. **If a
-    sentence cannot be traced to config or to the registry, it is not a
-    breadcrumb.**
+    is the engine reading back what it will RUN; *"you should run a review
+    now"* is the engine having an opinion, and it does not ship. `step_names`
+    and not `registry_for`, because the registry is what SHIPS and the belt
+    runs `[<belt>] steps` — reading the registry told a consumer who had
+    narrowed that list four checks it had said it did not want.
 
     Why at the move at all: prose in three documents had already failed to stop
     a builder batching nine reviews to the end of a milestone. What holds is
@@ -311,13 +316,23 @@ def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
             else ABOVE.get(kind) if category == model.DONE_CATEGORY else None)
     if belt is None:
         return
-    from agentic_sdlc.repo.conveyor import steps
-    checks = list(steps.registry_for(belt))
+    from agentic_sdlc.repo.conveyor import driver
+    try:
+        checks = list(driver.step_names(belt))
+    except Exception:
+        # A breadcrumb is a courtesy on top of a write that already happened.
+        # A `[<belt>] steps` the belt itself would refuse is that belt's
+        # finding to report when it runs, not this line's to raise after the
+        # status is on disk.
+        return
     if not checks:
         return
     verb = 'release' if belt == 'release' else f'close {belt}'
-    print(f'[pm] next: `agentic-sdlc {verb} <id>` asks {", ".join(checks)}',
-          file=sys.stderr)
+    # The belt's own subject, so the sentence can be copied: `release` takes a
+    # VERSION and would refuse a grain id.
+    subject = driver.SUBJECT.get(belt, (0, '', '<id>'))[2]
+    print(f'[pm] next: `agentic-sdlc {verb} {subject}` asks '
+          f'{", ".join(checks)}', file=sys.stderr)
 
 
 def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
@@ -708,15 +723,12 @@ def _retired_files(cfg: model.PmConfig, milestone) -> list[Path]:
 
 
 def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
-    """Retire a finished milestone: remove its directory.
+    """Retire a finished milestone: remove its grains.
 
-    **`ROADMAP.md` retired in 0.3.0 and this verb no longer appends to it.** It
-    was two things wearing one name — a hand-maintained index of milestones
-    still in the tree, which is the second scoreboard the tool forbids one grain
-    down, and the only surviving record of milestones this verb deleted.
-    `pm roadmap` derives the first. The second needs no file: `order` keeps the
-    version, and R1 reports it UNVERIFIABLE once the directory is gone, so the
-    row survives its milestone without anyone maintaining it.
+    **`ROADMAP.md` retired in 0.3.0 and this verb no longer appends to it.**
+    `pm roadmap` derives the index it was half of; the other half needs no
+    file, because `order` keeps the version and R1 reports it UNVERIFIABLE once
+    the grains are gone — so the row survives its milestone unmaintained.
 
     Refuses only on an unresolvable id; an unfinished milestone is reported, not
     refused. `--dry-run` decides everything and writes nothing.
@@ -875,7 +887,12 @@ def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
     out = {}
     for gid, status in by_grain.items():
         status.sort(key=lambda r: str(r.data.get('ts') or ''))
-        seconds = ledger.open_seconds(cfg, _grain_kind(gid), status)
+        kind = _grain_kind(cfg, gid)
+        if not kind:
+            # A row naming a grain the tree does not hold: there is no
+            # vocabulary to ask, so it is UNMEASURED rather than open.
+            continue
+        seconds = ledger.open_seconds(cfg, kind, status)
         if seconds is not None:
             out[gid] = ledger.human_duration(seconds)
     return out
@@ -1135,7 +1152,10 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     if not key or not key.replace('_', '').isalnum():
         raise Usage(f'{key!r} is not a frontmatter key')
     if key == 'status':
-        kind = _grain_kind(gid)
+        # The grain's own kind when the tree holds it; the hint names a verb,
+        # and a verb for a kind nobody declared would be a worse hint than a
+        # generic one.
+        kind = _grain_kind(cfg, gid) or 'story'
         raise Usage(f'status is a move, not a field: run `{PROG} {kind} '
                     f'{value} {gid}` — the {kind} verb checks {value!r} '
                     f'against [pm.states.{kind}] and stamps the ledger; '
@@ -1148,6 +1168,39 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)')
     _ok(f'{gid}: {key} {before!r} -> {value!r}')
+    return 0
+
+
+def cmd_rename(cfg: model.PmConfig, args: list[str]) -> int:
+    """Rewrite one grain's `id:` and every reference naming it, whole or not
+    at all. `rename.sweep` decides against the tree; this maps its verdict onto
+    the exit codes and prints what moved.
+    """
+    if len(args) != 2:
+        raise Usage(USAGE)
+    swept = rename.sweep(cfg, args[0], args[1])
+    if swept.defect:
+        raise Usage(swept.defect)
+    if swept.blockers:
+        raise Refused('; '.join(swept.blockers) + ' — nothing was written')
+    if swept.noop:
+        _ok(swept.noop)
+        return 0
+    applied = swept.plan.apply(decide=False)
+    if applied.failed is not None:
+        raise Refused(
+            f'{applied.failed.label} could not be written ({applied.error}) — '
+            + ('nothing was written' if not applied.landed else
+               'ALREADY LANDED: ' + ', '.join(s.label for s in applied.landed))
+            + '. Fix the obstruction and re-run.')
+    _ok(f'renamed {swept.old} -> {swept.new} in {len(swept.edits)} file(s)')
+    for edit in swept.edits:
+        _ok(f'  {cfg.rel(edit.path)}\t{" ".join(edit.fields)}')
+    # Rule 11: what a rename does NOT touch, said where somebody is standing.
+    _ok(f'  noticed: the ledger keeps its rows under {swept.old} — telemetry '
+        f'is history, and history is not rewritten')
+    _ok(f'  noticed: prose naming {swept.old} is yours; only frontmatter was '
+        f'swept, and the document keeps its filename')
     return 0
 
 
@@ -1626,10 +1679,8 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
     so a tree mid-planning lost every row it wrote, silently.
 
     `path` is the row's grain document, or None when the row names none: a
-    `gate` row, or a session whose grain neither the dispatch nor the tree
-    could supply. **Not** a hand entry without `--grain`, which is refused
-    before it reaches here. Those rows land grainless (D3), so no telemetry
-    write is refused for want of a place to put it.
+    `gate` row, or a session whose grain nothing could supply. Those rows land
+    grainless (D3), so no telemetry write is refused for want of a place.
 
     The caller passes the PATH rather than the row, because resolution is also
     what the row's `grain` key is stamped from — one resolution, so the id a
@@ -1935,15 +1986,13 @@ def _grain_from_tree(snap: dict) -> str:
     to read a grain out of.
 
     **Read off the row's OWN `tree` snapshot**, not from a second walk, so the
-    grain a row names and the tree it recorded cannot disagree.
-
-    **Stories only, deliberately.** A feature is a container, and billing a
-    container for a session is the same guess at a coarser grain.
+    grain a row names and the tree it recorded cannot disagree. **Stories
+    only**: a feature is a container, and billing a container for a session is
+    the same guess at a coarser grain.
 
     **An unresolvable grain is an OMITTED KEY**, never a guess: a row filed
     against the wrong story is uncorrectable, one filed against none is visible
-    in a bucket that already exists. The candidates go to stderr, which the
-    couriers pass through verbatim.
+    in a bucket that already exists.
     """
     live = snap.get(ledger.STORIES_IN_PROGRESS) or []
     if len(live) == 1:
@@ -1979,14 +2028,15 @@ def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:
     return fields
 
 
-def _grain_kind(gid: str) -> str:
-    """Which vocabulary an id answers to, by the shape `_grain_file` resolves
-    by; `ledger.ends_grain` owns which states end it.
+def _grain_kind(cfg: model.PmConfig, gid: str) -> str:
+    """Which vocabulary an id answers to — the kind the GRAIN declares.
+
+    It used to count slashes, which is the nested id shape: every pooled id
+    read as a milestone, so `open_seconds` asked the milestone vocabulary
+    whether a feature had finished. Harmless while two flows share a `done`
+    word, and a growing age beside `[shipped]` when they do not.
     """
-    if f'/{model.BUGS_DIR}/' in gid:
-        return ledger.GRAIN_BUG
-    depth = gid.count('/')
-    return 'milestone' if depth == 0 else 'feature' if depth == 1 else 'story'
+    return model.kind_of(cfg, gid)
 
 
 def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
@@ -2046,7 +2096,7 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
             previous = row
         print(line.rstrip())
     status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
-    total = ledger.total_seconds(cfg, _grain_kind(gid), status)
+    total = ledger.total_seconds(cfg, _grain_kind(cfg, gid), status)
     if total is not None:
         print(f'first row → terminal row: {total}s')
     return 0
@@ -2477,8 +2527,10 @@ def main(argv: list[str]) -> int:
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
         'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
         'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
+        'rename': cmd_rename,
         'templates': skills.cmd_templates, 'sync': cmd_sync,
         'vocabulary': cmd_vocabulary, 'decide': cmd_decide,
+        'config': skills.cmd_config,
         'ledger': cmd_ledger, 'order': cmd_order, 'next': cmd_next,
         'roadmap': cmd_roadmap,
     }

@@ -1061,11 +1061,9 @@ def segment_is_literal(value: str) -> bool:
 # THE GRAIN LAYER (0.4.0) — identity is frontmatter, location is convention
 # =============================================================================
 # `id:` and `kind:` are read from the document; the pools are where documents
-# live; nothing interprets a path. The addressing layer this replaced was ~20
-# functions that were one function with a kind baked in, and each one joined an
-# id onto a directory or into a `glob()` pattern — which is what
-# `segment_is_literal` was written to make safe. Match-by-field builds no path
-# from user input, so that guard has nothing left to guard.
+# live; nothing interprets a path. The ~20 functions this replaced each joined
+# an id onto a directory or into a `glob()` pattern — what `segment_is_literal`
+# was written to make safe. Match-by-field builds no path from user input.
 
 # The kind prefix a human reads off a bare id — in a commit message, a
 # dispatch, a review — without its location. `kind:` is what the TOOL reads;
@@ -1112,12 +1110,16 @@ def pool_dir(cfg: PmConfig, kind: str) -> Path:
     return cfg.roadmap / POOL_NAME[kind]
 
 
-def _slot_of(name: str) -> str:
-    """The shared-doc slot a filename is (`<stem>-decisions.md`), or ''."""
-    for slot in SLOT_HEADER:
-        if name.endswith(f'-{slot}'):
-            return slot
-    return ''
+def _is_shared_doc(path: Path) -> bool:
+    """A grain's own decisions/handoff/review doc, rather than a grain.
+
+    BOTH halves: a pooled slug is free-form, so a story named like a shared
+    doc is not one. It says so by opening frontmatter, which the two minted
+    shared docs never do.
+    """
+    if not any(path.name.endswith(f'-{slot}') for slot in SLOT_HEADER):
+        return False
+    return not _is_grain_doc(path)
 
 
 def pool_scan(cfg: PmConfig, kind: str) -> Walk:
@@ -1131,7 +1133,7 @@ def pool_scan(cfg: PmConfig, kind: str) -> Walk:
         return Walk(())
     return (walk.descendants(base, Kind.FILE, suffix='.md')
             .filter(lambda p: not _is_hidden(base, p), SkipReason.DOTTED_NAME)
-            .filter(lambda p: _slot_of(p.name) == '', SkipReason.SHARED_DOC)
+            .filter(lambda p: not _is_shared_doc(p), SkipReason.SHARED_DOC)
             .filter(_is_grain_doc, SkipReason.NO_FRONTMATTER))
 
 
@@ -1262,6 +1264,17 @@ def id_defect(gid: str) -> str:
     if any(p in ('', '.', '..') for p in parts):
         return f'{gid!r} has an empty or dot segment'
     return ''
+
+
+def kind_of(cfg: PmConfig, gid: str) -> str:
+    """The kind a grain declares, or '' when nothing in the tree claims the id.
+
+    The id's SHAPE is not consulted: `ft-x` and `0.1/x` are both just ids, and
+    reading a kind out of either is the derivation 0.4.0 deleted. A caller with
+    no grain to ask has no kind, and must say so rather than guess one.
+    """
+    found = grain_index(cfg).get(gid)
+    return found.kind if found is not None else ''
 
 
 def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
@@ -1493,13 +1506,10 @@ def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
     return out + [found[gid] for gid in sorted(found)]
 
 
-# A nested tree keeps its SLOT walk, whole. The index is keyed by the `id:` a
-# document declares, so a document with damaged frontmatter has no key and
-# would silently leave the census — and "reported, never dropped" is the
-# contract these walks exist to keep (rule 4). The slot walk sees the file
-# either way, which is why the nested layout is not half-migrated onto the
-# index. A POOLED tree has no slot, so a document with no id is bound to
-# nothing and is reported by `check pm` on its own line instead.
+# A nested tree keeps its SLOT walk, whole: the index is keyed by `id:`, so a
+# damaged document has no key and would silently leave the census, and the slot
+# walk sees it either way (rule 4). A POOLED tree has no slot, so a document
+# with no id is reported by `check pm` on its own line instead.
 def feature_files(cfg: PmConfig, mid: str) -> list[Path]:
     """The features bound to one milestone, in its declared order."""
     if not is_pooled(cfg):

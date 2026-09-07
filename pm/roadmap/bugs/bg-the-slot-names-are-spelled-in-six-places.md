@@ -3,8 +3,8 @@ id: bg-the-slot-names-are-spelled-in-six-places
 milestone: ms-0.2.0
 name:
 status: closed
-caught_in: "0.2.0"
-fix_milestone: 0.2.0
+caught_in: ms-0.2.0
+fix_milestone: ms-0.2.0
 caused_by: ft-the-kit-owns-the-gates-that-scan-its-own-artifacts
 kind: bug
 ---

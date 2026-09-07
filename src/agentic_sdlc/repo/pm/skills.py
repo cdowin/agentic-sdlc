@@ -7,6 +7,7 @@ in `repo/install.py`.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from agentic_sdlc.core import apply
@@ -428,4 +429,29 @@ def cmd_templates(cfg: model.PmConfig, args: list[str]) -> int:
             f'{cfg.template_dir}/{slot}`, then re-run')
     if not written:
         _ok(f'{cfg.template_dir}/ already populated (--force to overwrite)')
+    return 0
+
+
+CONFIG_SEED_FLAG = '--seed'
+CONFIG_USAGE = """usage: agentic-sdlc pm config --seed
+
+Prints the seed devkit.toml THIS PINNED TOOL ships — every gate key commented
+at the default the code actually holds, and the two declarations spelled out
+with their arguments. Emits the file, not columns, and writes nothing.
+
+`init` serves a new repo once; this serves every bump after it, which is where
+a consumer spends the rest of the tool's life. Diff it against your own
+devkit.toml to see what a version added, renamed or retired."""
+
+
+def cmd_config(cfg: model.PmConfig, args: list[str]) -> int:
+    """`pm config --seed` — the shipped seed on stdout, byte for byte."""
+    if args and args[0] in ('-h', '--help'):
+        print(CONFIG_USAGE)
+        return 0
+    if args != [CONFIG_SEED_FLAG]:
+        raise Usage(CONFIG_USAGE)
+    # Deferred: `repo.init` reaches back into this module for the PM tree.
+    from agentic_sdlc.repo import init
+    sys.stdout.write(init.seed_body(init.SEED_CONFIG[0]))
     return 0

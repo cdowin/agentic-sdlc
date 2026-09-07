@@ -36,6 +36,7 @@ import pytest
 from support.pm import LEDGER_REL, cfg_for, put_ledger  # noqa: F401
 from support.pm import (
     damage,
+    declaring,
     ledger_lines,
     ledger_rows,
     run_cli,
@@ -519,6 +520,46 @@ def test_an_in_flight_grain_is_measured_and_an_unmoved_one_is_not():
 def test_a_duration_is_two_units_at_most(seconds, said):
     """A number a human reads at a glance is the point; `271431s` is not one."""
     assert ledger.human_duration(seconds) == said
+
+
+def test_the_age_prints_over_a_POOL_SHAPED_id_too():
+    """M4. `support.pm.tree()` keeps slash-shaped ids (`0.1/alpha`), which are
+    valid — an id is opaque in 0.4.0 — but they are not the shape the migration
+    or a prefixed project mints. Every case for this feature ran on the slash
+    shape, so a resolver deciding a grain's KIND by counting slashes worked in
+    all of them and could not work on a real pooled tree: `ft-…`, `st-…` and
+    `bg-…` all read as milestones, and the milestone vocabulary was then asked
+    whether a bug had closed.
+
+    The case has to make the misclassification VISIBLE, and an open feature
+    does not: this repo's feature and milestone flows share `done`, so asking
+    the wrong vocabulary gives the right answer. So the tree declares a feature
+    flow whose done word the MILESTONE flow does not have. A grain that has
+    reached it is finished and must carry no age — and a resolver that decided
+    `ft-…` was a milestone asks the milestone vocabulary, does not find
+    `shipped` in it, and prints a growing age beside `[shipped]`. That is a
+    number that looks legitimate and is not (rule 4), in a read verb.
+    """
+    flow = declaring(feature={'todo': ('planning',), 'in_progress': ('building',),
+                              'done': ('shipped',)})
+    with tree(story_statuses=('building',), config=flow) as root:
+        for slug, status in (('beta', 'building'), ('gamma', 'shipped')):
+            write(root / f'pm/roadmap/features/{slug}.md',
+                  {'id': f'ft-{slug}', 'kind': 'feature', 'milestone': '"0.1"',
+                   'name': slug, 'status': status, 'reviewed': '', 'phase': ''})
+        # ONE call: `put_ledger` writes the file rather than appending to it.
+        put_ledger(root, *(ledger.dumps(ledger.status_row(
+            f'ft-{slug}', 'planning', status, ts='2020-01-01T00:00:00Z'))
+            for slug, status in (('beta', 'building'), ('gamma', 'shipped'))))
+        code, out = run_cli(root, 'status')
+        assert code == 0, out
+        by_slug = {slug: next(ln for ln in out.splitlines() if f'ft-{slug}' in ln)
+                   for slug in ('beta', 'gamma')}
+        # Open: an age, in days, because the row is from 2020.
+        assert 'open ' in by_slug['beta'], out
+        assert 'd ' in by_slug['beta'].split('open ')[1], out
+        # Finished IN ITS OWN VOCABULARY: no age at all.
+        assert 'open ' not in by_slug['gamma'], out
 
 
 def test_pm_status_prints_the_age_and_nothing_gates_on_it():

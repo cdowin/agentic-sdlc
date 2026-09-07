@@ -64,8 +64,13 @@ from agentic_sdlc.repo.pm import model
 # The fields that can name another grain, and every one is rewritten when an id
 # changes. `pm move` rewrote three of them and skipped the refs pointing AT the
 # grain it moved, which is the defect this verb exists not to repeat.
+# Every frontmatter key whose VALUE is a grain id. `caught_in` and
+# `fix_milestone` were missed on the first run, so eleven bugs kept
+# pre-migration milestone ids and the milestone belt counted zero of the six
+# that named it — a read that looked right and was not. The list is held to the
+# tree's own declarations by `tests/test_pm_rename.py`; keep the two in sync.
 REF_FIELDS = ('depends_on', 'consumed_by', 'reviewed', 'caused_by',
-              'milestone', 'feature')
+              'milestone', 'feature', 'caught_in', 'fix_milestone', 'order')
 
 
 @dataclass

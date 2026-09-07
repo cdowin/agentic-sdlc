@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentic_sdlc.repo.pm import model, verdict
-from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _grain_kind, _ok
+from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
 
 # The closed set of questions. Three, and an unknown one names all three.
 FEATURE, MILESTONE, TAG = 'feature', 'milestone', 'tag'
@@ -75,8 +75,11 @@ def _grain(cfg: model.PmConfig, kind: str, gid: str, want: str, noun: str,
     path = _grain_file(cfg, gid)
     found = model.unquote(model.field_of(path, 'kind'))
     if not found:
+        # A nested tree's documents declare no `kind:`; there the slot name IS
+        # the kind, which is the derivation 0.4.0 deletes and this is the last
+        # place it survives.
         found = {model.MILESTONE_DOC: 'milestone',
-                 model.FEATURE_DOC: 'feature'}.get(path.name, _grain_kind(gid))
+                 model.FEATURE_DOC: 'feature'}.get(path.name, 'story')
     if found != want:
         raise Usage(f'{gid!r} is a {found}, not a {noun} — '
                     f'`ready-for {kind}` asks {asks}')

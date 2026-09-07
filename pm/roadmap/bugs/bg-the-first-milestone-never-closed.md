@@ -4,7 +4,7 @@ milestone: ms-0.3.0
 name: 0.1.0 is still planning, and nothing in the package can tell
 status: closed
 severity: medium
-caught_in: "0.3.0"
+caught_in: ms-0.3.0
 kind: bug
 ---
 

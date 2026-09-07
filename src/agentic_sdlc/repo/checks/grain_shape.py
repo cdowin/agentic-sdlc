@@ -101,16 +101,18 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     declare anything, and a nested tree has no `kind:` in it at all.
     """
     name = rel.name
-    # The shared docs first: `0.1-decisions.md` sits in the milestone pool
-    # beside its grain, and it is not a milestone.
-    for slot, kind in ((model.DECISION_FILE_NAME, DECISIONS),
-                       (model.HANDOFF_FILE_NAME, HANDOFF)):
-        if name == slot or name.endswith(f'-{slot}'):
-            return kind
+    # What it SAYS, first. A grain that happens to be named `…-decisions.md` is
+    # a grain; the two shared docs open no frontmatter, so they cannot say
+    # anything and fall through to the name.
     if lines is not None:
         declared = model.unquote(model.field_in(lines, 'kind'))
         if declared in _DECLARED:
             return _DECLARED[declared]
+    slot = _slot_named(name, lines)
+    for named, kind in ((model.DECISION_FILE_NAME, DECISIONS),
+                        (model.HANDOFF_FILE_NAME, HANDOFF)):
+        if slot == named:
+            return kind
     if name == model.MILESTONE_DOC:
         return MILESTONE
     if name == model.FEATURE_DOC:
@@ -127,8 +129,15 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     return NOTE
 
 
-def _slot_named(name: str) -> str:
-    """The shared-doc slot a filename is, in either layout, or the name itself."""
+def _slot_named(name: str, lines: list[str] | None = None) -> str:
+    """The shared-doc slot this document is, or the name itself.
+
+    The name is only half the test: a pooled slug is free-form, so a story
+    called `the-tradeoffs-decisions` is named like a shared doc and is not one.
+    It says so by opening frontmatter, which the two shared docs never do.
+    """
+    if lines is not None and model._opens_frontmatter(lines):
+        return name
     for slot in model.SLOT_HEADER:
         if name == slot or name.endswith(f'-{slot}'):
             return slot
@@ -176,7 +185,7 @@ def _walk(roadmap: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
         lines = _read(path, lines_of)
         # By SLOT, not by filename: a pooled shared doc is `0.1-decisions.md`
         # and it opens no frontmatter either.
-        if _slot_named(path.name) in FRONTMATTERLESS_SLOTS:
+        if _slot_named(path.name, lines) in FRONTMATTERLESS_SLOTS:
             return True
         return True if lines is None else model._opens_frontmatter(lines)
 
@@ -258,7 +267,7 @@ def run() -> int:
         # stricter than the writer would red a doc `pm new` calls correct.
         # The slot's own name, whether it is `decisions.md` in a grain
         # directory or `0.1-decisions.md` beside its grain in a pool.
-        want = model.SLOT_HEADER.get(_slot_named(path.name))
+        want = model.SLOT_HEADER.get(_slot_named(path.name, lines))
         if want is not None and _header_line(lines) not in model.KNOWN_SLOT_HEADERS:
             findings.append((
                 'NO HEADER',

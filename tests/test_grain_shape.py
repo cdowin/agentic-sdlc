@@ -434,6 +434,38 @@ def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
     assert 'decisions.md' in out and 'decisions cap 10' in out, out
 
 
+def test_a_grain_NAMED_like_a_shared_doc_is_still_a_grain():
+    """A pooled slug is free-form, so `pm new story <fid> the-tradeoffs-decisions`
+    files a real story whose filename ends in `-decisions.md`.
+
+    Reading the NAME alone made the gate call it a decisions log: measured
+    against the 300-line decisions cap instead of the story cap, and given a
+    false `NO HEADER` finding whose printed repair — prepend the decisions
+    header — pushes `---` off line 1 and stops the file opening frontmatter at
+    all. `check pm` then reported `0 story/ies`. Rule 4's first sin, reached by
+    obeying the tool.
+
+    A document that declares frontmatter is a GRAIN, whatever it is called.
+    """
+    with pmfx.tree() as root:
+        story = root / 'pm/roadmap/stories/the-tradeoffs-decisions.md'
+        pmfx.write(story, {'id': '0.1/alpha/tradeoffs', 'kind': 'story',
+                           'feature': '0.1/alpha', 'milestone': '"0.1"',
+                           'name': 'Tradeoffs', 'status': 'planning'},
+                   body(40))
+        code, out = gate()
+        assert code == 0, out
+        # Measured as a STORY — 40 lines is under the 60 story cap and would
+        # have been well under the 300 a decisions log gets, so the CAP is what
+        # separates the two answers.
+        assert 'story 2/' in out, out
+        assert 'NO HEADER' not in out, out
+        # ...and `check pm` still counts it, which is the half that made the
+        # false repair permanent.
+        assert pmfx.run_gate(root)[0] == 0
+        assert '2 story/ies' in pmfx.run_gate(root)[1]
+
+
 def test_a_review_record_over_its_cap_reddens_and_the_census_counts_it():
     """A review record is not a grain, so it is its own walk over `[pm] review_dir`;
     the probe is what keeps the `review` cap from being a knob that never fires."""

@@ -3,8 +3,8 @@ id: bg-a-collapsed-milestone-has-no-verb
 milestone: ms-0.2.0
 name:
 status: closed
-caught_in: "0.2.0"
-fix_milestone: 0.2.0
+caught_in: ms-0.2.0
+fix_milestone: ms-0.2.0
 caused_by:
 kind: bug
 ---

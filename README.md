@@ -99,7 +99,8 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | Verb | Reads / writes |
 |---|---|
 | `pm <kind> <status> <id>` | Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — and one ledger row. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
-| `pm new`, `pm init`, `pm retire`, `pm set` | The other writes: scaffold a grain, stand up a tree, retire a milestone (the version stays on the plan), set one frontmatter field. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes |
+| `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone (the version stays on the plan), set one frontmatter field. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
+| `pm config --seed` | Prints the seed `devkit.toml` this pinned version ships — every gate key commented at the default the code actually holds, and the two declarations spelled out with their arguments. Writes nothing. `init` serves a new repo once; this serves every bump after it |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker |
 | `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — `gate` and `test` rows, and a session nobody could attribute. `show` and `report` both read both. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else from the one story in progress, else not at all |
 | `pm decide <id> <title…>` | Appends one dated heading to that grain's `decisions.md` |
@@ -149,9 +150,12 @@ on the record.
 
 ## `devkit.toml`
 
-At the repo root. Every gate has stock defaults, so a repo with no file runs byte-identically to
-one declaring them; the flow (`[pm.states.<kind>]`) has none, because it is yours — `pm init`
-writes it and a tree without it is refused by name. These are the keys the tool reads:
+At the repo root. Every GATE key has a stock default, so a repo with no file runs every gate
+byte-identically to one declaring them. The two declarations have none, because they are yours:
+`[pm.states.<kind>]`, which `pm init` writes and without which every work-moving verb is refused
+by name, and `[verify]`, whose rungs name make targets only your Makefile has. `agentic-sdlc pm
+config --seed` prints the whole seed as your pinned version ships it — every gate key commented at
+its real default — which is what to read on a bump. These are the keys the tool reads:
 
 ```toml
 [checks]

@@ -46,6 +46,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.repo import init, install  # noqa: E402
 from agentic_sdlc.repo.pm import model  # noqa: E402
+from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/name="Fresh"\nconfig/version="0.1.0"\n')
@@ -207,18 +208,41 @@ CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygie
                    'pm', 'verify')
 
 
+# The two sections with NO default behind them, each with the reader that
+# refuses when it is absent. Hard rule 5's workflow half, as an assertion
+# rather than as prose: the byte-identical guarantee is GATES-ONLY, and these
+# are what it is not about.
+DECLARATIONS = {
+    '[pm.states.*]': lambda: model.missing_flow_defect({}),
+    '[verify]': lambda: _refusal(verify_rules.read, {}),
+}
+
+
+def _refusal(reader, section) -> str:
+    """Why this reader refuses an absent section, or '' if it does not."""
+    try:
+        reader(section)
+    except model.ConfigError as err:
+        return str(err)
+    return ''
+
+
 def test_the_config_template_carries_every_section_the_gates_read():
     """Commented out, at the stock default — a repo with no devkit.toml must
     behave byte-identically to one declaring the defaults, so the GATE half of
     the template is a menu rather than an opinion.
 
-    THE FLOW IS THE EXCEPTION AND IT IS THE ONE LINE-ITEM HERE. Hard rule 5 as
-    it now reads: a GATE ships stock defaults, a WORKFLOW does not. There is no
-    runtime fallback behind `[pm.states.*]`, so a commented copy would leave a
-    freshly-initialised tree refused on its first `pm` call (plan review
-    finding P1). Every live line therefore has to belong to that one section —
-    asserted as an equality against `render_seed()`, which is also what
-    `test_pm_flow.py` pins the template's bytes to.
+    **THE GUARANTEE IS GATES-ONLY, and that is what this case asserts.** Every
+    gate key has a real default and the commented line IS that default
+    (`tests/test_config_seed.py` compares the two, key by key). The FILE is not
+    optional, though, and the two sections below are why: nothing sits behind
+    `[pm.states.*]` or `[verify]`, so their readers REFUSE BY NAME instead of
+    falling back, and a tree without the first has no working `pm` at all.
+    `[pm.states.*]` is therefore the one section written LIVE — every live line
+    has to belong to it, asserted as an equality against `render_seed()`, which
+    is also what `test_pm_flow.py` pins the template's bytes to. `[verify]`
+    stays commented because its argument is make targets this seed cannot know,
+    and it says so where it sits.
     """
     body = init.seed_body(init.SEED_CONFIG[0])
     offered = re.findall(r'^# \[([a-z_]+)\]$', body, re.MULTILINE)
@@ -231,6 +255,11 @@ def test_the_config_template_carries_every_section_the_gates_read():
     assert live == seeded, (
         f'the template declares something outside the flow: '
         f'{[ln for ln in live if ln not in seeded]}')
+    for name, refuses in DECLARATIONS.items():
+        assert refuses(), (
+            f'{name} now has a default behind it — then it is a GATE key, the '
+            f'byte-identical guarantee covers it, and it belongs commented at '
+            f'that value like every other knob in the seed')
 
 
 # Each `IGNORED` entry, pinned to the constant in the file that WRITES it.

@@ -131,6 +131,9 @@ SPEND_KEYS = ('milestone', 'section', 'grains',
               # grains have not reached a terminal state and how long
               # they have been in flight. A report; nothing gates on it.
               'in_flight',
+              # ...and how many status rows it could NOT place, so an empty
+              # distribution can never read as a calm zero (0.4.0/C1).
+              'in_flight_unplaceable',
               'unattributed',
               # 0.4.0/D8: a row STATING a grain this milestone does not
               # hold, counted apart from the ones naming none — the
@@ -351,8 +354,11 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
         'stated_elsewhere': 0,
         # Everything the seeded fixture touches is closed, so nothing is in
         # flight — and an EMPTY list rather than an absent key, because "none
-        # in flight" is an answer and a missing key is not.
+        # in flight" is an answer and a missing key is not. It is only an
+        # answer BESIDE the second number: zero rows this could not place, so
+        # the emptiness is measured rather than merely reported.
         'in_flight': [],
+        'in_flight_unplaceable': 0,
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
                    'usage': dict(full, input=1205), 'tool_calls': 39,
                    'duration_s': 812},

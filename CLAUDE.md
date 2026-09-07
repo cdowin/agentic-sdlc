@@ -24,10 +24,16 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 4. **Two cardinal sins, one shape.** A gate that misses drift and prints PASS; a write that looks
    legitimate and is not. Both are worse than a crash. Prove the census matches intent — a gate
    scanning 0 files FAILS and says so. An LLM recovers from an error and cannot recover from a lie.
-5. **Config over forks.** Per-project variation is the consumer's `devkit.toml`, never an edit to
-   the tool. A GATE ships stock defaults: a repo with no `devkit.toml` runs byte-identically to one
-   declaring them. A WORKFLOW does not: states and flow are the project's declaration — `init`
-   writes them, every run reads them, and a tree without them is refused by name.
+5. **Config over forks, and the byte-identical guarantee is GATES-ONLY.** Per-project variation
+   is the consumer's `devkit.toml`, never an edit to the tool. A GATE key has a stock default
+   behind it, so a repo with no `devkit.toml` runs every gate byte-identically to one declaring
+   them — and the seed carries that key COMMENTED at exactly the value the code holds, which
+   `tests/test_config_seed.py` compares key by key and fails on by name. A WORKFLOW key has
+   nothing behind it: `[pm.states.*]` and `[verify]` are the project's own declaration, spelled
+   out with their argument, and each reader refuses BY NAME when its section is absent. So the
+   FILE is not optional even though every gate key in it is — a tree with no `[pm.states.*]` has
+   no working `pm` at all. `pm config --seed` prints the seed the pinned tool ships, which is what
+   a BUMP reads; `init` serves a new repo once.
 6. **Exit codes are contract:** 0 pass, 1 findings, 2 usage or config error. Output line shapes
    are grepped by consumers; changing one is a **minor** bump at least.
 7. **Semver, enforced by habit:** patch = same interface; minor = a new verb, flag, config key or

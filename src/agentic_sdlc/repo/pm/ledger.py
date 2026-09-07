@@ -97,12 +97,10 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 
 # --- the deviation row --------------------------------------------------------
 # Minted here because this module owns the serialisation contract. Only
-# deviations are rows: the ledger is tracked, so a row per completed step would
-# dirty the tree after `tree-clean`; the driver writes one for every step that
-# is not true, carrying the step's own reason.
-# One slow test, named: the `gate` row says what a tier cost, this says which
-# case did. Only the slowest few are filed, because a row per test would double
-# a committed file every afternoon.
+# DEVIATIONS are rows: the ledger is tracked, so a row per completed step would
+# dirty the tree after `tree-clean`. `test` is the same economy one level down
+# — the `gate` row says what a tier cost, this says which case did, and only
+# the slowest few are filed.
 KIND_TEST = 'test'
 
 KIND_DEVIATION = 'deviation'

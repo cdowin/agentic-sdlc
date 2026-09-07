@@ -49,13 +49,9 @@ def run() -> int:
         return _run()
     except model.ConfigError as err:
         # Exit 2 for the whole walk: the flow is read lazily, so a tree that
-        # declared none is refused at the first category question.
-        #
-        # EVERY defect, not the first, and the FLOW first among them. A real
-        # adoption is wrong in more than one way at once, and reporting them
-        # one per run makes the consumer pay a round trip to learn the next —
-        # the tree that motivated this had a retired key and no flow, and was
-        # told about the retired key, which is the cosmetic one.
+        # declared none is refused at the first category question. EVERY
+        # defect, not the first, and the FLOW first among them — a real
+        # adoption is wrong in more than one way at once.
         try:
             defects = model.all_config_defects()
         except Exception:  # noqa: BLE001 - the collector must never mask the error
@@ -325,14 +321,13 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
 def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
-    Both homes — one per milestone for attributed rows, the tree's own for the
-    rest (0.4.0/D3) — because the question is whether recording is happening at
-    all. Existence is not enough: an empty file is what a courier leaves when
-    it created the file and then refused the row.
+    Both homes (0.4.0/D3), because the question is whether recording happens at
+    all. Existence is not enough: an empty file is what a courier leaves when it
+    created the file and then refused the row.
 
-    **An unreadable ledger is neither answer.** Returning `True` for it
-    silenced this rule for the WHOLE tree on the first path that raised, with
-    no line printed. It is reported as unverifiable and the scan continues.
+    **An unreadable ledger is neither answer.** Returning `True` silenced this
+    rule for the WHOLE tree on the first path that raised, with no line
+    printed; it is reported as unverifiable and the scan continues.
     """
     from agentic_sdlc.repo.pm import ledger
     paths = [ledger.grainless_path(cfg.roadmap)]
@@ -353,11 +348,10 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """U2 — the ledger couriers are wired and the tree holds no row.
 
     **This rule exists because the telemetry was off for a whole milestone and
-    nobody could tell.** A courier fails open by design — it must never block a
-    stop — so its refusals go to a stderr nobody reads. The causes are many
-    (entries never pasted, a `pm` target that is not `.PHONY`, an undeclared
-    `[pm.states.*]`, no `python3`) and every one produces zero rows and zero
-    visible complaint: a fail-open courier with no fail-loud counterpart.
+    nobody could tell.** A courier fails open by design, so its refusals go to
+    a stderr nobody reads — entries never pasted, a `pm` target that is not
+    `.PHONY`, an undeclared `[pm.states.*]`, no `python3`: every one produces
+    zero rows and zero complaint.
 
     **A tree that wires nothing is SILENT.** It opted out, and this package
     does not conscript (0.4.0/D5). A settings file that will not parse is
@@ -428,8 +422,7 @@ def _unbound_rows(cfg: model.PmConfig, enabled: set[str]) -> None:
 
     Counted lines, never findings and never in the exit code — a tree
     mid-planning legitimately has many, and a gate that reddens on planning is
-    a gate people switch off. The BROKEN half (a binding naming a grain that is
-    not in the tree) is V7's own finding, out of `validate.run`.
+    a gate people switch off. The BROKEN half is V7's own finding.
 
     Called from the run rather than from `_unbound_family`, which only executes
     when an R rule is enabled and none is by default.

@@ -4,7 +4,7 @@ milestone: ms-0.4.0
 name: a ledger-reading test is racy under xdist
 status: open
 severity: low
-caught_in: "0.3.0"
+caught_in: ms-0.3.0
 kind: bug
 ---
 

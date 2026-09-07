@@ -58,6 +58,19 @@
   rewrite. `pm move` also renamed the file and did NOT rewrite the refs pointing at the moved
   story, so every `depends_on` naming it went stale, silently, at the moment of the move.
 
+- **NEW VERB: `pm rename <old-id> <new-id>`** — the one ref-rewriting path that still has to
+  exist, which is the defect `pm move` had, done once in the verb that needs it. It rewrites the
+  grain's own `id:` and **every inbound reference in the tree** — `depends_on`, `consumed_by`,
+  `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings (`milestone:` / `feature:`)
+  and every `order` entry — in one pass, **whole or not at all**: one reference it cannot rewrite
+  and nothing at all is written, named. References are matched WHOLE-TOKEN, so `0.1/alphabet` and
+  `0.1/alpha/s0` are not references to `0.1/alpha`. A `<new-id>` failing the id grammar is refused
+  before the tree is read (exit 2); one another grain already holds is refused naming that grain
+  (exit 1) and never auto-resolved, which is what `tools/dev/pm_migrate.py` tells you to run when
+  it reports a slug collision. Frontmatter only: prose naming the id is yours, the ledger keeps
+  its rows under the old id because history is not rewritten, and the document keeps its
+  FILENAME — nothing reads a path as schema.
+
 - **`pm retire` removes a milestone's GRAINS, not a directory.** The same set of bytes the
   directory used to hold — the milestone, every feature and bug bound to it, every story bound to
   those, each grain's shared docs, and its ledger — addressed by binding instead of by location.
@@ -404,6 +417,30 @@
   broke; and a removed `--cascade` flag survived a bump inside a consumer's own written rules, green,
   because no gate anywhere can read a sentence about a flag. The tool saying it is the only way
   anyone finds out.
+
+- **`pm config --seed` prints the seed, and a test holds it to the code.** `init` serves a repo
+  once; a consumer spends the rest of the tool's life BUMPING, and nothing served that — the seed
+  `devkit.toml` is the surface that actually teaches an adopting agent what this conveyor is, and
+  it was only ever reachable by reading the package. The verb prints it as your pinned version
+  ships it, exit 0, writing nothing.
+
+  **And the seed can no longer drift from the defaults.** `tests/test_config_seed.py` censuses
+  every `(section, key)` this package reads through `core/config.py` — the one door every value
+  goes through — and compares it, in BOTH directions, to the value the seed carries commented. It
+  found seven: `[checks] all` shipped `["doc", "shell"]` while `check all` had run `grain-shape`
+  too; `[grain_shape] caps` showed one kind of eight; `[pm] template_dir` was seeded at
+  `"pm/templates"` when the default is empty; `[pm] checks` was missing `U1` and `V7`; and `[pm]`
+  gained `milestone_dir`, `feature_dir`, `story_dir`, `bug_dir`, `ledger_dir` and `breadcrumbs`
+  in this release with the seed never learning any of them. Every one is now in the file at its
+  real value.
+
+- **The byte-identical guarantee is restated as GATES-ONLY** (CLAUDE.md hard rule 5), and the seed
+  states the split that decides the next key: a KNOB has a default behind it and stays COMMENTED at
+  exactly that value; a DECLARATION has none, its reader refuses BY NAME when it is absent, and it
+  is spelled out WITH ITS ARGUMENT. Two sections are declarations — `[pm.states.*]`, written live
+  because `pm` refuses on its first call without it, and `[verify]`, whose rungs name make targets
+  only your Makefile can have. So **the FILE is not optional even though every gate key in it is**,
+  which is the part that was never written down. Nothing became required, and no default moved.
 
 ## v0.2.0 — 2026-09-06
 

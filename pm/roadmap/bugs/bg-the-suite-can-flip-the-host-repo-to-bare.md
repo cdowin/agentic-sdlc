@@ -4,7 +4,7 @@ milestone: ms-0.3.0
 name: something in a full-suite run sets core.bare on the host repo
 status: open
 severity: high
-caught_in: "0.3.0"
+caught_in: ms-0.3.0
 kind: bug
 ---
 

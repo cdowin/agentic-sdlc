@@ -55,22 +55,14 @@ fields with different meanings guarantees one of them is wrong the moment they d
 
 ## Symptom 3 — `pm add` warns about an order it did not read
 
-Reproduced while authoring this grain. `pm add ms-the-rule-reaches-the-work
-bg-a-hand-recorded-dispatch-cannot-carry-a-total` rebound a bug from 0.5.0 and printed:
-
-    noticed: ms-a-move-is-an-event still lists bg-a-hand-recorded-dispatch-cannot-carry-a-total
-             in its `order` — that entry is now DANGLING;
-             `agentic-sdlc pm remove ms-a-move-is-an-event bg-…` takes it out
-
-**0.5.0's `order:` has never contained that id.** The notice inferred order-membership from the
-child's old binding instead of reading the parent's list. Then the remedy it named was refused:
-
-    [pm] REFUSED — bg-… names ms-the-rule-reaches-the-work as its milestone,
-         not ms-a-move-is-an-event — nothing was written
-
-`pm remove` verifies membership by the binding the rebind just changed, so the command the tool
-prints cannot succeed at the moment it prints it. A warning that fires on a false condition and
-names an impossible fix is the mirror of a gate that cannot fail, and
+Reproduced while authoring this grain. Rebinding a bug off 0.5.0 printed `noticed:
+ms-a-move-is-an-event still lists <bug> in its order — that entry is now DANGLING`, naming `pm remove
+ms-a-move-is-an-event <bug>` as the fix. **0.5.0's `order:` has never contained that id** — the notice
+inferred order-membership from the child's old binding instead of reading the parent's list. The
+named remedy then refused (`<bug> names ms-the-rule-reaches-the-work as its milestone`), because `pm
+remove` verifies membership by the binding the rebind had just changed: **the command the tool
+printed could not succeed at the moment it printed it.** A warning that fires on a false condition
+and names an impossible fix is the mirror of a gate that cannot fail;
 `ft-a-warning-is-actionable-where-it-fires` is in this milestone for the general case.
 
 ## Root cause
@@ -124,18 +116,26 @@ owes anything for it.
 
 ## Migration
 
-**Seven bugs are unresolved under `ms-0.3.0` and `ms-0.4.0`, both shipped** — six and one. That is
-the third state this ruling forbids, and no gate could say so, because `ready_for_milestone` reads
-`fix_milestone:` and it is empty on all seven.
+**Seven bugs were unresolved under `ms-0.3.0` and `ms-0.4.0`, both shipped** — the third state this
+ruling forbids, and no gate could say so, because `ready_for_milestone` reads `fix_milestone:` and it
+was empty on all seven.
 
-The list is derivable and is not copied here: it is the bugs outside `done` whose `milestone:` names
-a milestone in a `done` state. **Naming that query is part of the fix** — the counted line the pool
-gets (`N bug(s) attached to no milestone`) has a sibling here, and a grain under a closed parent
-should be a `check pm` finding rather than something a person had to go looking for.
+The list is derivable and is not copied here: it is the grains outside their kind's `done` category
+whose parent is in one. **Naming that query is part of the fix** — a grain under a closed parent is a
+`check pm` finding with a rule id, and the pool gets its counted sibling, `N bug(s) attached to no
+milestone`, silent at zero.
 
-Each is then committed to a milestone or unbound to the pool; leaving one attached to a shipped
-release is the only outcome this ruling does not allow. Three still carry the compound ids
-`bg-the-new-verbs-mint-a-compound-id` retired, so they are `pm rename` candidates in the same pass.
+**The evidence that it must be a verb is how this section got written.** No surface answers "what is
+unresolved under a closed parent", so the agent doing this cleanup hand-rolled the walk three times
+in Python. Two of the three used a frontmatter regex whose `\s*` after the colon crossed the
+newline, read the FOLLOWING field as the binding, and so reported a clean tree while four bugs sat
+unbound — **an ad-hoc check that printed zero and could not fail, written to look for a real check
+that printed zero and could not fail.** It was caught by a `grep -c` that disagreed, not by the
+script. That is rule 11's test answered out loud: someone hand-rolled a thing this package already
+half-knows, nothing stopped them, and the wrong answer was the confident one.
+
+All seven now have an answer — one closed, two into this milestone, four unbound to the pool — and
+four retired compound ids were renamed in the same pass.
 
 ## Verification
 

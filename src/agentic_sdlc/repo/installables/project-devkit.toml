@@ -118,9 +118,18 @@
 #                                 # naming the rung that follows. STDOUT is
 #                                 # byte-identical either way; turn it off in
 #                                 # one line if you parse `pm` strictly
-# story_ordinal_prefix = false    # MINTING ONLY: `pm new story 01-boots` files
-#                                 01-boots.md and stamps the id WITHOUT the
-#                                 ordinal. Sequence lives in the parent's `order`
+# contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
+#                                 # WHICH KINDS HOLD WHICH — what `pm add
+#                                 # <parent-id> <child-id>` allows, read off
+#                                 # the two ids rather than from the command.
+#                                 # It NARROWS: which field a child names its
+#                                 # parent with is fixed (a feature has
+#                                 # `milestone:`, a story `feature:`), so a
+#                                 # project that files no bugs drops "bug" and
+#                                 # `pm add` then refuses one by name. The
+#                                 # ROOT is a container too: `roadmap` is
+#                                 # pm/roadmap/releases.md, whose `order`
+#                                 # sequences the milestones
 # checks = ["D1", "D2", "D3", "D4", "D5", "D6", "U1", "V1", "V4", "V5", "V7"]
 #                                 # D-drift, U-usage and V-integrity rules
 #                                                 # (V2/V3 retired in 0.4.0:
@@ -128,8 +137,7 @@
 #                                                 #  bindings in agreement with
 #                                                 #  the PATH, and a path is no
 #                                                 #  longer part of identity)
-#                                   # V6 (execution lists match the tree) and
-#                                   # the FLOW rules are opt-in: D9 (an
+#                                   # The FLOW rules are opt-in: D9 (an
 #                                   # in-progress milestone declares `branch:`)
 #                                   # and D10 (that branch is neither empty nor
 #                                   # the mainline). Both report over EVERY
@@ -137,9 +145,10 @@
 #                                   # below.
 #                                   # The RELEASE family holds the plan
 #                                   # (pm/roadmap/releases.md `order`) and the
-#                                   # tree to each other: R1 an entry no
-#                                   # milestone claims, or a `version:` on no
-#                                   # plan; R2 the backlog census; R3 two
+#                                   # tree to each other: R1 an entry naming
+#                                   # no milestone in the tree (a milestone on
+#                                   # no plan is a counted line); R2 the
+#                                   # backlog census; R3 two
 #                                   # milestones claiming one version; R4
 #                                   # history is a prefix; R5 the version file
 #                                   # equals the CURRENT entry (`version_at`

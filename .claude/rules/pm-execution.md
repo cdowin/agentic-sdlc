@@ -124,15 +124,20 @@ Every command is idempotent. Exit codes: `0` ok, `1` refused, `2` usage or confi
 `this file` → stays in the story · `next story here` → the feature's own banner ·
 `next feature` → the milestone · `nobody` → it's the commit message, already written.
 
-**Never write what is already derivable.** `pm status <milestone>` gives phase/status/
+**Never write what is already derivable.** `pm status <milestone>` gives status and
 story tallies; `git log` gives history. **Do not hand-maintain a story list in a
 feature file, or a feature list in a milestone file** — that is a second scoreboard
-and it will lie.
+and it will lie. Sequence is `order:` on the parent, written by `pm add`, and it is
+a list of ids and nothing else — never a rendered roster.
 
 ## Keeping the tree honest
 
-- `pm status [<milestone>]` — the whole tree, grouped by `phase:`. Never hand-copy a
-  tally out of it.
+- `pm status [<milestone>]` — the whole tree, each milestone's features in its own
+  declared `order:`. Never hand-copy a tally out of it.
+- `pm add <parent-id> <child-id> [--position N | --before <id> | --after <id>]` —
+  BIND and SEQUENCE in one act: membership is the child's field, sequence is the
+  parent's `order:` list. Neither argument names a kind. `pm remove` is the pair.
+  `order` is optional: an unsequenced child is counted, never a finding.
 - `pm list [--status …] [--owner …] [--milestone …]` — one tab-separated row per story,
   filtered. `pm list --status building,reviewing` is "what is open right now" where
   `pm status` is "what is everything doing".

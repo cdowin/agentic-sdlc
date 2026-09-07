@@ -2,6 +2,83 @@
 
 ## Unreleased
 
+- **`pm add` binds AND sequences, at every level, and it is exactly `set` plus a list insert.**
+
+  ```
+  agentic-sdlc pm add <parent-id> <child-id> [--position N | --before <id> | --after <id>]
+  agentic-sdlc pm remove <parent-id> <child-id>
+  ```
+
+  Membership is the child's field; SEQUENCE is the parent's `order:` block list. One shape at
+  every level — root → milestones, milestone → features and bugs, feature → stories — and
+  **neither argument names a kind**: each id resolves to the grain that declares one, so the pair
+  is read off the ids rather than from a check written per level. Bare `add` appends. `remove`
+  unbinds and unsequences together; `pm set <id> <field> ""` still unbinds alone.
+
+  `add` does two writes and nothing else: the child's binding field, and the parent's list. It
+  never reaches into a grain it was not given — re-binding a child says which old parent is now
+  left with a DANGLING entry and names the `pm remove` that clears it.
+
+- **`[pm.contains]` declares which kinds may hold which**, and `pm add` refuses off it at exit 1
+  naming BOTH kinds. Stock (hard rule 5 — a repo declaring nothing behaves byte-identically):
+
+  ```toml
+  [pm.contains]
+  roadmap   = ["milestone"]
+  milestone = ["feature", "bug"]
+  feature   = ["story"]
+  ```
+
+  It NARROWS: which field a child names its parent with is fixed, so a project that files no bugs
+  drops `"bug"` and `pm add <milestone> <bug>` is then refused by name. A pairing no field could
+  carry (`milestone = ["story"]`) is a malformed declaration at exit 2, naming the field.
+
+- **`order` is OPTIONAL per container, and `check pm` counts both directions.** A bound child in
+  no parent's `order` is `UNSEQUENCED` — a counted line, never a finding, because authoring and
+  sequencing are separate acts. An entry naming a grain its parent does not hold is `DANGLING`
+  and FAILS (V7). One naming no grain at all is `UNVERIFIABLE` and WARNS, for the reason R1 has
+  always given: a retired grain and one never written look identical from here.
+
+- **The plan lists MILESTONE IDS, and `pm order` retires into `pm add` against the root.**
+  `pm/roadmap/releases.md` is a container like any other: it declares its own `id:` (`roadmap`
+  when it declares none, so an existing plan needs no edit) and `kind: roadmap`, and its `order`
+  sequences milestone ids rather than version strings. **A milestone that re-versions no longer
+  touches the plan**, and `pm rename` sweeps the entry with every other inbound reference.
+
+  **CONSUMER ACTION:** rewrite `order` in `pm/roadmap/releases.md` from versions to the ids of the
+  milestones claiming them, and replace `pm order --append <version>` in any script with
+  `agentic-sdlc pm add <plan-id> <milestone-id>`. `pm order` is refused at exit 2 naming its
+  replacement, never as an unknown command. Reading the plan is still `pm roadmap`; `pm next`
+  still prints `version  milestone  status`, taking the version from the milestone.
+
+  R1's second half changes with it: *a `version:` on no plan* was a FAIL and is now the
+  `UNSEQUENCED` counted line above. R4 and R6 name the milestone id where they named a version.
+
+  **Line shapes that moved** (rule 6, all of them grep-visible): `pm roadmap` prints
+  `(no version)` for a scheduled milestone that declares none and `-	<id>	DANGLING` for an entry
+  naming no milestone, where it printed `(unclaimed)`/`unverifiable`; its backlog header says
+  *"on no plan — not scheduled as a release"*. `pm status` prints one
+  `-- <n>/<m> feature(s) done` line per milestone instead of one per phase bucket.
+
+- **RETIRED: `<!-- pm:execution -->`, `pm sync` and V6.** A rendered roster of a parent's children
+  was a second scoreboard, and keeping it in agreement with the tree was V2's defect one level
+  down. **Replacement:** `order:` on the parent — written by `pm add`, read by `pm status`,
+  `pm roadmap` and `pm ledger report`, and graded by the UNSEQUENCED/DANGLING pair above. `pm sync`
+  and `V6` in `[pm] checks` are both refused at exit 2 naming that replacement. The block itself
+  is inert markdown; delete it when convenient.
+
+- **RETIRED: `[pm] story_ordinal_prefix`.** A story's FILE name is not its identity — `id:` is,
+  and the file may be called anything. **Replacement:** the feature's own `order:` list, one
+  sequence in the parent instead of `NN-` in forty filenames. `pm new story <fid> 01-boots` now
+  keeps `01-boots` as the id segment rather than stripping the ordinal out of it. The key is
+  refused at exit 2 by name, with that replacement.
+
+- **RETIRED: `phase:` as a grouping.** `pm status` grouped a milestone's features into phase
+  buckets with a per-bucket tally; it now prints them in the milestone's declared `order:` with
+  one `-- N/M feature(s) done` line, and `check pm`'s *"carries no phase:"* READY warning is
+  gone. **Replacement:** `order:` on the milestone. The field is inert where it is still written;
+  nothing reads it.
+
 - **A shared doc is scaffolded on demand, its ABSENCE is a warning, and a missing instruction
   line is a finding.** Three changes to the same document class — `decisions.md`, `handoff.md`,
   `review.md` — which sit beside their grain in a pool, under the grain's own stem

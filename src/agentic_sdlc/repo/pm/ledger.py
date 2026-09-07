@@ -20,11 +20,9 @@ from agentic_sdlc.repo import gates_extra
 LEDGER_FILE_NAME = 'ledger.jsonl'
 
 # The row kinds minted here; `dispatch`/`session` rows come from `pm ledger
-# record`.
-# The snapshot bucket a row's live stories sit in. Named here because THREE
-# modules reach for it — `cli._tree_snapshot` writes it, `cli._grain_from_tree`
-# resolves off it, `report.CATEGORY_BUCKETS` attributes by it — and a bare
-# string in three places is the defect 0.4.0 exists to delete.
+# record`. `STORIES_IN_PROGRESS` is the snapshot bucket a row's live stories sit
+# in, named here because THREE modules reach for it — one writes it, one
+# resolves off it, one attributes by it.
 STORIES_IN_PROGRESS = 'stories_in_progress'
 
 KIND_STATUS = 'status'
@@ -265,9 +263,8 @@ def _ends_mid_line(path: Path) -> bool:
 # --- the usage rows (D3/D4/D5) ------------------------------------------------
 # A `dispatch` row is one subagent's whole life; a `session` row is the
 # orchestrator's totals at one stop. One rule: copy what the transcript holds,
-# omit what it lacks, invent nothing. The only refusal is a transcript this
-# module cannot read (exit 2), because a row of zeros reads like a cheap
-# dispatch.
+# omit what it lacks, invent nothing — and refuse a transcript this module
+# cannot read, because a row of zeros reads like a cheap dispatch.
 KIND_DISPATCH = 'dispatch'
 KIND_SESSION = 'session'
 

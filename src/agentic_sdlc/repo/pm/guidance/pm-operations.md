@@ -16,7 +16,7 @@ greppable and every resolver trivial.
 
 ## The tree records what it cost, and `pm ledger` reads it back
 
-**Before hand-writing a table of timings, token counts or phase durations: the
+**Before hand-writing a table of timings, token counts or grain durations: the
 tree already has them.** Every status flip, decision and `--force` files a row;
 a `Stop`/`SubagentStop` hook sums each session's transcript into one; and every
 gate run files what it cost. Seven row kinds, all in `ledger.jsonl`.
@@ -134,15 +134,17 @@ auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
 - **Dependencies go in frontmatter**, never buried in prose: `depends_on`, `consumed_by`.
   `pm validate` checks they resolve, so a typo is caught instead of inherited.
 
-## Phases — optional execution buckets
+## Sequence — `order:` on the parent, written by `pm add`
 
-A milestone big enough to need ordering stamps `phase:` on each feature (`0`, `1`, …,
-or any name you choose — `seam`, say, for work that neither blocks nor is blocked).
-`pm status` then groups by bucket with a per-phase tally: numbered phases first, then
-named ones, then the unphased. The tool knows no phase word.
-Small milestones omit the field and report as before. The phase is the bucket, never
-the status — it groups the board, and the dependency graph orders the work; nothing
-requires the two readings to agree.
+A milestone big enough to need ordering lists its features in its own `order:` block,
+and a feature lists its stories the same way: `agentic-sdlc pm add <parent-id>
+<child-id> [--position N | --before <id> | --after <id>]` binds the child and places
+it in one act. `pm status` reads that order; anything unsequenced prints after it.
+The list is OPTIONAL — a small milestone declares none and reports as before, and a
+bound child nobody has placed is a counted line, never a finding. Sequence is a
+DECISION somebody made; the dependency graph (`depends_on`) is a different reading of
+the same tree, and nothing requires the two to agree. (`phase:` grouped this board
+until 0.4.0 and retired with the generated execution list.)
 
 ## Reading the tools
 
@@ -165,7 +167,7 @@ requires the two readings to agree.
   is not a failure and moves nothing: it names a grain that has left `todo` (its status
   is in `in_progress` or `done`) whose scaffolded section is still empty
   (`## Acceptance criteria`, `## Ship criterion`), such a feature with no stories, such a
-  milestone with no `branch:` or an unphased feature — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
+  milestone with no `branch:` — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
   a `todo` feature, a `todo` feature over finished stories, a `done` milestone over an
   unfinished feature), both grains and both categories named. Counted on the verdict
   line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the

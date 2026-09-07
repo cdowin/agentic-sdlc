@@ -2,7 +2,7 @@
 
 V1 frontmatter well-formed · V2 and V3 RETIRED (0.4.0) ·
 V4 refs (`depends_on`, `consumed_by`, a bug's `caused_by`) resolve · V5 the
-feature graph is acyclic · V6 (opt-in) an execution list matches the tree ·
+feature graph is acyclic · V6 RETIRED (0.4.0, with the execution list) ·
 V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
@@ -233,21 +233,6 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
         findings.extend(_unbound_findings(cfg))
     if 'V5' in on:
         findings.extend(_graph_findings(graph))
-    if 'V6' in on:
-        # A generated list is only safe because this fails when it drifts.
-        from agentic_sdlc.repo.pm import execlist
-        try:
-            stale = execlist.sync(cfg, write=False, existing_only=True)
-        except execlist.Refusal as err:
-            # A refused grain is a finding here, never a crash that takes V1-V5
-            # down with it.
-            findings.extend(str(err).split('\n'))
-        else:
-            for path, changed in stale:
-                if changed:
-                    findings.append(
-                        f'{cfg.rel(path)}: the execution list is stale — the tree '
-                        f'has moved since it was rendered; run `pm sync`')
     return findings, census
 
 

@@ -368,67 +368,39 @@ class NoDeleter(unittest.TestCase):
                       'own fixture has gone stale')
 
 
-class OrdinalPrefixedStoriesScaffoldValid(unittest.TestCase):
-    """`pm new story` under `story_ordinal_prefix` must mint a VALIDATING file.
+class TheScaffolderNeverMintsATwiceClaimedId(unittest.TestCase):
+    """`pm new story` refuses rather than overwriting, and writes nothing.
 
-    It stamped the ordering prefix into `id:` as well as the filename, so V2 —
-    which compares the id to the STRIPPED stem — rejected every story the
-    scaffolder wrote. A consumer hand-fixed each one, which is the tool minting
-    exactly the drift its own gate reports.
+    This class was `OrdinalPrefixedStoriesScaffoldValid`: `story_ordinal_prefix`
+    made the scaffolder stamp a STRIPPED id, and V2 — which compared the id to
+    the stripped stem — then rejected every story it wrote. The key and the rule
+    both retired in 0.4.0 (identity is `id:`, and sequence is the parent's
+    `order:`), so what is left is the guard that was never about ordinals: two
+    files claiming one id is addressable by neither.
     """
 
-    ORDINAL_ON = '[pm]\nstory_ordinal_prefix = true\n'
-
-    def _enable(self, root: Path) -> None:
-        # Through `write_config`, so the flow declaration rides along: a
-        # status verb asks `move_defect`, which reads `[pm.states.story]`.
-        write_config(root, self.ORDINAL_ON)
-
-    def test_the_id_drops_the_prefix_and_validate_passes(self):
+    def test_a_second_file_claiming_one_id_refuses_without_writing(self):
         with tree(story_statuses=('ready',)) as root:
-            self._enable(root)
-            code, out = run_cli(root, 'new', 'story', '0.1/alpha',
-                                '01-a-world-is-a-named-saved-thing', 'A world')
-            self.assertEqual(code, 0, out)
-            sf = (root / 'pm/roadmap/stories'
-                  / '01-a-world-is-a-named-saved-thing.md')
-            self.assertTrue(sf.is_file(), out)
-            self.assertEqual(model.field_of(sf, 'id'),
-                             '0.1/alpha/a-world-is-a-named-saved-thing')
-            code, out = run_cli(root, 'validate')
-            self.assertEqual(code, 0, out)
-            # And the id the file now carries is the one the CLI addresses it by.
             self.assertEqual(
-                run_cli(root, 'story', 'building',
-                        '0.1/alpha/a-world-is-a-named-saved-thing')[0], 0)
+                run_cli(root, 'new', 'story', '0.1/alpha', 'boots', 'B')[0], 0)
+            sdir = root / 'pm/roadmap/stories'
+            before = sorted(p.name for p in sdir.iterdir())
+            code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'boots', 'B')
+            self.assertEqual(code, 1, out)
+            self.assertIn('already', out)
+            self.assertEqual(sorted(p.name for p in sdir.iterdir()), before)
 
-    def test_the_prefix_stays_in_the_id_when_the_flag_is_off(self):
-        # No devkit.toml: a file really named `01-boots.md` owns that id, and
-        # validate agrees. Defaults-vs-declared equivalence — a strip that ran
-        # unconditionally would hand every consumer NOT using the flag an id
-        # that does not match its own file.
+    def test_a_leading_ordinal_is_part_of_the_slug_and_validates(self):
+        # No stripping anywhere: the file is `01-boots.md`, the id ends in
+        # `01-boots`, and every reader keys on the id it actually carries.
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
             sf = root / 'pm/roadmap/stories/01-boots.md'
             self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
-
-    def test_a_second_file_claiming_one_id_refuses_without_writing(self):
-        with tree(story_statuses=('ready',)) as root:
-            self._enable(root)
             self.assertEqual(
-                run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
-            sdir = root / 'pm/roadmap/stories'
-            before = sorted(p.name for p in sdir.iterdir())
-            code, out = run_cli(root, 'new', 'story', '0.1/alpha', '02-boots', 'B')
-            self.assertEqual(code, 1, out)
-            self.assertIn('already held by', out)
-            self.assertEqual(sorted(p.name for p in sdir.iterdir()), before)
-            # ...and a slug that is ONLY a prefix has no id to claim at all.
-            code, out = run_cli(root, 'new', 'story', '0.1/alpha', '01-', 'B')
-            self.assertEqual(code, 1, out)
-            self.assertEqual(sorted(p.name for p in sdir.iterdir()), before)
+                run_cli(root, 'story', 'building', '0.1/alpha/01-boots')[0], 0)
 
 
 class BugNamesItsCause(unittest.TestCase):
@@ -689,18 +661,21 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # A retired id must not linger in KNOWN_CHECKS: a name that parses but
         # runs nothing is a gate a consumer believes is on — and naming one in
         # `[pm] checks` is a config error, not a quiet no-op.
-        # D13/D14 never shipped as ids a consumer could name; V2 and V3 DID,
-        # for three releases, so a config still listing one has to be told
-        # where the rule went rather than that it does not exist. "Unknown
-        # rule" reads as a typo and silently ungates.
+        # D13/D14 never shipped as ids a consumer could name; V2, V3 and V6 DID,
+        # so a config still listing one has to be told where the rule went
+        # rather than that it does not exist. "Unknown rule" reads as a typo
+        # and silently ungates.
         for retired in ('D13', 'D14'):
             self.assertNotIn(retired, model.KNOWN_CHECKS)
-        for retired in ('V2', 'V3', 'D7', 'D8'):
+        for retired in ('V2', 'V3', 'V6', 'D7', 'D8'):
             self.assertNotIn(retired, model.KNOWN_CHECKS, retired)
             self.assertIn(retired, model.RETIRED_CHECKS, retired)
         with tree(story_statuses=('ready',)) as root:
             for named, says in (('D13', ''), ('V2', 'identity'),
-                                ('V3', 'membership is now the field')):
+                                ('V3', 'membership is now the field'),
+                                # V6 graded the generated execution list; its
+                                # replacement is the parent's own `order:`.
+                                ('V6', '`order:` on the parent')):
                 with self.subTest(named=named):
                     (root / 'devkit.toml').write_text(
                         f'[pm]\nchecks = ["{named}"]\n', encoding='utf-8')

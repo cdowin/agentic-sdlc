@@ -5,7 +5,6 @@ milestone: "{milestone}"
 name: {name}
 status: planning
 reviewed:
-phase:
 depends_on: []
 consumed_by: []
 ---

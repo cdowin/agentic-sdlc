@@ -74,7 +74,8 @@ agentic-sdlc pm new milestone 0.1 first-light
 agentic-sdlc pm new feature 0.1 the-thing
 agentic-sdlc pm new story 0.1/the-thing works "the thing works"
 agentic-sdlc pm story building 0.1/the-thing/works     # one line written, one ledger row
-agentic-sdlc pm status                                 # the tree, grouped by phase
+agentic-sdlc pm add 0.1/the-thing 0.1/the-thing/works  # bind it, and sequence it there
+agentic-sdlc pm status                                 # the tree, in its declared order
 make check                                             # check all: doc + shell + pm + …
 agentic-sdlc close story 0.1/the-thing/works           # its checks, then `done` — or an error
 ```
@@ -105,8 +106,9 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — `gate` and `test` rows, and a session nobody could attribute. `show` and `report` both read both. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else from the one story in progress, else not at all |
 | `pm decide <id> <title…>` | Appends one dated heading to that grain's decisions log, which sits beside it as `<stem>-decisions.md` |
 | `pm new handoff <milestone-id>` | Mints the milestone's `handoff.md` from the template. Never auto-minted by `pm new milestone`, so an absent one is a signal `check pm` warns on; never clobbers what is there |
-| `pm order [--append\|--insert\|--remove <v>]` | The release plan — `order` in `pm/roadmap/releases.md`. Bare, it prints each entry with the milestone claiming it and whether it shipped. Order is a DECISION, not a sort: nothing parses or compares a version string. It does not interrogate the tree — a duplicate, an empty string and an insert before an absent entry are all it refuses |
-| `pm next` | The first entry in `order` that has not shipped, and the milestone that claims it |
+| `pm add <parent-id> <child-id> [--position N\|--before <id>\|--after <id>]` | **Binds AND sequences**, in one pair of writes: the child's own field names the parent, the parent's `order:` list says where. Exactly `set` plus a list insert, and nothing else. Neither argument names a kind — each id resolves to the grain that declares one, and `[pm.contains]` says whether that pair is allowed, so ONE verb serves root → milestones, milestone → features and bugs, feature → stories. Bare, it appends. Off the mapping it refuses naming both kinds and writes nothing. `order` is OPTIONAL per container: a bound child nobody sequenced is a counted line, never a finding |
+| `pm remove <parent-id> <child-id>` | Unbinds and unsequences together. `pm set <id> <field> ""` still unbinds alone — which leaves the parent sequencing a child it no longer holds, the DANGLING entry `check pm` reports |
+| `pm next` | The first entry in `order` that has not shipped, with the version its milestone declares |
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md`, `.claude/skills/pm-operations/SKILL.md` and `.claude/skills/handoff/SKILL.md` |
 | `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`). `check <gate> --help` is that gate's contract |
 | `gates-extra` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
@@ -182,9 +184,12 @@ extra = ["my-scan"]                           # MAKE TARGETS your own makefile d
 roadmap_dir  = "pm/roadmap"
 template_dir = "pm/templates"                 # `pm templates` copies the stock ones here
 review_dir   = "docs/reviews"
-story_ordinal_prefix = false                  # stories/NN-<slug>.md keeps NN in the file, not the id
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", "U1", "U2",   # + D9 D10 R5 V6, opt-in.
-          "V1", "V2", "V3", "V4", "V5"]       # U2: the ledger couriers are wired and the
+contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
+                                              # which kinds `pm add` lets hold which. It
+                                              # NARROWS the stock mapping — drop "bug" and
+                                              # `pm add <ms> <bug>` refuses by name
+checks = ["D1", "D2", "D3", "D4", "D5", "D6", "U1", "U2",   # + D9 D10 R5, opt-in.
+          "V1", "V4", "V5", "V7"]             # U2: the ledger couriers are wired and the
                                               # tree holds no row — recording that goes
                                               # nowhere, which is silent otherwise
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
@@ -236,16 +241,18 @@ version: "0.91.0"
 **The id is a slug and the version is a fact.** A milestone with no `version:` is backlog — it has
 not been proposed as a release at all, and that is never a finding.
 
-The order those versions ship in is a DECISION, so it is declared rather than sorted —
+The order they ship in is a DECISION, so it is declared rather than sorted —
 `pm/roadmap/releases.md`, block-style frontmatter, one entry per line so a re-sequence diffs as a
-move:
+move. **The entries are MILESTONE IDS**, like every other `order` in the tree, so re-versioning a
+milestone never touches the plan and `pm rename` sweeps the entry with every other reference:
 
 ```yaml
 ---
+id: roadmap
+kind: roadmap
 order:
-  - "0.90.3"
-  - "0.90.3.2"
-  - "0.91.0"
+  - "ms-stationary-enemies-spawn"
+  - "ms-the-hud-lands"
 ---
 ```
 
@@ -254,9 +261,11 @@ valid, and `0.90.3.2` — not semver, and the shape real trees reach for when wo
 two planned releases — orders fine, because "did it increase" is a POSITION in that list. A
 comparator could not sort it, and sorting would re-couple the two facts `version:` just separated.
 
-Authoring and scheduling are separate acts: `pm order --append <version>` puts a milestone on the
-plan, `pm next` says what is next, and `pm roadmap` prints the whole sequence. `release` with no
-argument takes the current version from the plan, and refuses one that is out of order naming both.
+Authoring and scheduling are separate acts: `pm add <plan-id> <milestone-id>` puts a milestone on
+the plan — the same verb that sequences a story under a feature, because the plan is a container
+like any other — `pm next` says what is next, and `pm roadmap` prints the whole sequence. `release`
+with no argument takes the current version from the plan, and refuses one that is out of order
+naming both.
 
 `R5` (opt-in) grades `[pm] version_file` against the current entry; `[pm] version_at` picks which
 one — `"start"`, the first not yet shipped, or `"ship"`, the last that has, for a project that

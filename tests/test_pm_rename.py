@@ -60,6 +60,43 @@ class TheSweepIsOnePass(unittest.TestCase):
     """Story criteria 1 and 5: one case per ref kind, because each field is a
     different reader, and the verb reports every file it touched."""
 
+    def test_the_PLAN_is_swept_because_the_root_is_a_container_too(self):
+        """`order` on `releases.md` held VERSIONS until the root became a
+        container like any other; it holds milestone IDS now.
+
+        The sweep walked the four grain POOLS, and the plan is in none of them
+        — so a rename left `order: ["ms-a"]` pointing at an id no grain
+        carries, silently, at exit 0, from the verb whose whole promise is
+        that no ref is left behind. It is the same dangling-entry class R1
+        reports, written by the tool itself.
+        """
+        with tree() as root:
+            plan = root / 'pm/roadmap/releases.md'
+            self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
+            self.assertIn('"0.1"', plan.read_text(encoding='utf-8'))
+            code, out = run_cli(root, 'rename', '0.1', 'ms-first')
+            self.assertEqual(code, 0, out)
+            body = plan.read_text(encoding='utf-8')
+            self.assertIn('"ms-first"', body)
+            self.assertNotIn('"0.1"', body)
+            # The plan is NAMED in the report, so the caller sees it moved.
+            self.assertIn('releases.md', out)
+            # ...and the tree still validates: no dangling `order` entry.
+            self.assertEqual(run_cli(root, 'validate')[0], 0)
+
+    def test_the_root_grain_can_itself_be_renamed(self):
+        # It answers to `roadmap` by default and declares its own `id:` once
+        # written, so it is addressable like any other grain — and a sweep
+        # that could not see the file could not rename it either.
+        with tree() as root:
+            self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
+            code, out = run_cli(root, 'rename', 'roadmap', 'the-plan')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(
+                model.field_of(root / 'pm/roadmap/releases.md', 'id'),
+                'the-plan')
+            self.assertEqual(run_cli(root, 'add', 'the-plan', '0.1')[0], 0)
+
     def test_every_ref_kind_moves_and_nothing_else_does(self):
         with tree() as root:
             referencing(root)

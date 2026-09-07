@@ -36,7 +36,7 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
    document, and the tree's README for the schemas.
 2. The CLI: `pm new` scaffolds; `story|bug|feature|milestone <status>` flips;
    `pm status`, `pm list`, `pm get` inspect; `pm set` edits a scalar;
-   `pm retire`, `pm decide`, `pm sync`, `pm validate`, `pm vocabulary`;
+   `pm retire`, `pm decide`, `pm add`, `pm remove`, `pm validate`, `pm vocabulary`;
    `pm --help` is the roster. Re-parenting is `pm set <id> feature <fid>` —
    one line, and the id never changes. Never hand-edit a `status:`, and never
    hand-create a grain.

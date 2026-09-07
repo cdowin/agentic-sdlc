@@ -396,13 +396,14 @@ class TestTheSurfaceSaysTelemetry:
         assert len(routed_verbs()) == self.ROUTED_AT_0_4_0, sorted(routed_verbs())
 
     def test_every_read_verb_names_its_columns(self):
-        """Review M1: the criterion says EVERY read verb, and `next`,
-        `roadmap` and bare `order` all emit tab-separated rows. Asserted as a
-        count against the verbs that emit them, so a sixth such verb has to
-        name its columns too."""
+        """Review M1: the criterion says EVERY read verb, and `next` and
+        `roadmap` both emit tab-separated rows. Asserted as a count against the
+        verbs that emit them, so a fifth such verb has to name its columns too.
+        Bare `order` was one of them until 0.4.0 retired the verb into
+        `pm add`; reading the plan is `pm roadmap`."""
         from agentic_sdlc.repo.pm import cli as pm_cli
         said = pm_cli.USAGE or ''
-        assert said.count('columns IN ORDER:') >= 5, said.count(
+        assert said.count('columns IN ORDER:') >= 4, said.count(
             'columns IN ORDER:')
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""

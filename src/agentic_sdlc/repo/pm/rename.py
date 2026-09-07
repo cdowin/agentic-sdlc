@@ -152,13 +152,19 @@ def _verdict(cfg: model.PmConfig, out: Sweep, target: model.Grain | None,
 
 def documents(cfg: model.PmConfig, index: dict[str, model.Grain]) -> list[Path]:
     """Every document the sweep must read, in whichever layout the tree is in.
+
     The POOL, not the index, because a document the index cannot key on still
     holds refs — and the INDEX when there is no pool, because `pm_migrate`
     sends a collision here before the move and a pool-only walk would report a
-    rename over nothing (rule 4)."""
+    rename over nothing (rule 4). **The ROOT is one of them**: `releases.md` is
+    a container now and its `order` holds milestone IDS, so a pools-only sweep
+    left `order: ["ms-a"]` naming a renamed grain, at exit 0.
+    """
     if model.is_pooled(cfg):
-        return [p for kind in model.FLOW_KINDS
-                for p in model.pool_walk(cfg, kind)]
+        pooled = [p for kind in model.FLOW_KINDS
+                  for p in model.pool_walk(cfg, kind)]
+        root = model.root_grain(cfg)
+        return pooled + ([root.path] if root is not None else [])
     return sorted({g.path for g in index.values()})
 
 

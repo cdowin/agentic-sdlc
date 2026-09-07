@@ -76,7 +76,6 @@ SEQUENCE: tuple[tuple[tuple[str, ...], int], ...] = (
     (('pm', 'new', 'story', '0.1/thing', '01-slug', 'Do', 'It'), 1),
     (('pm', 'new', 'bug', '0.1', 'a-bug'), 1),
     (('pm', 'templates'), 0),
-    (('pm', 'sync'), 0),
     (('pm', 'install-skills'), 0),
     (('install-ci',), 0),
     (('install-agents',), 0),

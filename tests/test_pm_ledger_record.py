@@ -686,8 +686,7 @@ def test_resolution_never_changes_an_exit_code():
     # Two files, ONE id, and only one of them live — so the lookup has exactly
     # one candidate and that candidate will not resolve. The resolver's own
     # refusal, reached from a path the caller never asked to travel.
-    with tree(story_statuses=('ready',),
-              config=LEGACY_FLOW + '[pm]\nstory_ordinal_prefix = true\n') as root:
+    with tree(story_statuses=('ready',), config=LEGACY_FLOW) as root:
         for stem, status in (('01-twin', 'building'), ('02-twin', 'ready')):
             write(root / f'pm/roadmap/stories/{stem}.md',
                   {'id': '0.1/alpha/twin', 'kind': 'story',

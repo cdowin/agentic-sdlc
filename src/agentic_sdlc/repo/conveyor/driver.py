@@ -577,7 +577,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                     f'{spoken} needs a version, and the plan cannot supply one: '
                     f'{cfg.rel(model.releases_file(cfg))} declares no `order` '
                     f'(or every entry in it has shipped). Name the version, or '
-                    f'run `agentic-sdlc pm order --append <version>`')
+                    f'schedule the milestone that carries it: `agentic-sdlc pm '
+                    f'add {model.ROOT_ID} <milestone-id>`')
             subject = current
             defect = subject_defect(operation, subject)
             if defect:
@@ -593,8 +594,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'{spoken} {subject}: the current release is {current!r} — '
                 f'shipping out of the order declared in '
                 f'{cfg.rel(model.releases_file(cfg))} is refused, and nothing '
-                f'was written. Re-sequence the plan with `agentic-sdlc pm '
-                f'order` if {subject} really goes first')
+                f'was written. Re-sequence the plan with `agentic-sdlc pm add '
+                f'{model.ROOT_ID} <milestone-id> --before <id>` if {subject} '
+                f'really goes first')
 
     mid = subject.split('/')[0]
     # The GRAIN, not a directory: what a belt needs is the milestone's document

@@ -1,214 +1,437 @@
-"""`pm order` and `pm next` — the release plan as a declared sequence.
+"""`pm add` / `pm remove` — one container sequences its children with `order`.
 
-Order is a DECISION, not a sort: nothing here compares two version strings, and
-the cases below are what hold that line. `--append` deliberately does not
-interrogate the tree — a version is a fact about the INPUT, valid whether or not
-a milestone claims it yet — so what this module proves is the split the package
-states: a VERB refuses facts about its input, and the R rules in `check pm`
-report the contradiction between the plan and the tree.
+Membership is the child's field; SEQUENCE is the parent's list. One shape at
+every level — root → milestones, milestone → features and bugs, feature →
+stories — so the cases below are PARAMETERISED over the levels rather than
+written per level, which is the claim the story makes: `add` is `set` plus a
+list insert, and the level is read off the two ids.
 
-**Selection criterion (hard rule 10):** `pm order` WRITES, so what stays here is
-the write-side cardinal sin — a plan edit that looks legitimate and is not —
-plus every refusal and idempotence case. Byte fidelity of the underlying writer
-is proven once in tests/test_pm_verbs.py `TheListWriterKeepsEveryOtherByte`.
+**Selection criterion (hard rule 10):** these verbs WRITE, so what stays here
+is the write-side cardinal sin — a bind or a sequence edit that looks
+legitimate and is not — plus every refusal and every idempotence case. Byte
+fidelity of the underlying writer is proven once in tests/test_pm_verbs.py
+`TheListWriterKeepsEveryOtherByte`; the plan's own resolvers in the same file's
+`ThePlanIsADeclaredOrder`.
 """
 from __future__ import annotations
 
 import unittest
 from pathlib import Path
 
-from support.pm import cfg_for, run_cli, tree, write
+from support.pm import cfg_for, run_cli, run_gate, tree, write, write_config
 
 from agentic_sdlc.repo.pm import model
 
 PLAN_REL = 'pm/roadmap/releases.md'
 
+# One row per LEVEL: (parent id, its document, child id, the child's document,
+# the field the child names its parent with). The root's is '' — a milestone
+# names no parent, so at that level `add` is the sequence half alone.
+LEVELS = (
+    ('roadmap', PLAN_REL, '0.1', 'pm/roadmap/milestones/0.1.md', ''),
+    ('0.1', 'pm/roadmap/milestones/0.1.md',
+     '0.1/alpha', 'pm/roadmap/features/alpha.md', 'milestone'),
+    ('0.1/alpha', 'pm/roadmap/features/alpha.md',
+     '0.1/alpha/s0', 'pm/roadmap/stories/s0.md', 'feature'),
+)
 
-def plan_of(root: Path) -> list[str]:
-    return model.list_field_of(root / PLAN_REL, 'order')
+
+def order_of(root: Path, rel: str) -> list[str]:
+    return model.list_field_of(root / rel, 'order')
 
 
-def claims(root: Path, mid: str, version: str, status: str) -> None:
-    """A milestone in the pool that declares `version:`."""
-    write(root / f'pm/roadmap/milestones/{mid}.md',
-          {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
-           'status': status, 'version': f'"{version}"'})
+def unbound(root: Path) -> None:
+    """The fixture's feature and story, authored and bound to nothing."""
+    model.set_field(root / 'pm/roadmap/features/alpha.md', 'milestone', '')
+    model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
 
 
-class TheVerbWritesThePlan(unittest.TestCase):
-    def test_append_mints_the_plan_then_extends_it_in_order(self):
-        with tree() as root:
-            self.assertFalse((root / PLAN_REL).exists())
-            for version in ('0.1.0', '0.2.0', '0.3.0'):
-                code, out = run_cli(root, 'order', '--append', version)
+class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
+    def test_one_verb_binds_and_sequences_at_each_level(self):
+        for parent, prel, child, crel, field in LEVELS:
+            with self.subTest(parent=parent), tree(story_statuses=('ready',)) as root:
+                unbound(root)
+                code, out = run_cli(root, 'add', parent, child)
                 self.assertEqual(code, 0, out)
-            self.assertEqual(plan_of(root), ['0.1.0', '0.2.0', '0.3.0'])
-            # The minted file is a GRAIN: frontmatter plus a body a human owns.
-            text = (root / PLAN_REL).read_text(encoding='utf-8')
-            self.assertTrue(text.startswith('---\n'))
-            self.assertIn('# The release plan', text)
+                self.assertEqual(order_of(root, prel), [child])
+                if field:
+                    self.assertEqual(
+                        model.unquote(model.field_of(root / crel, field)),
+                        parent)
 
-    def test_a_duplicate_append_is_a_no_op_that_says_so(self):
-        # Rule 3: the same command twice is a no-op the second time.
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
-            before = (root / PLAN_REL).read_bytes()
-            code, out = run_cli(root, 'order', '--append', '0.1.0')
-            self.assertEqual(code, 0, out)
-            self.assertIn('already in', out)
-            self.assertIn('nothing was written', out)
-            self.assertEqual((root / PLAN_REL).read_bytes(), before)
+    def test_the_same_add_twice_writes_nothing_the_second_time(self):
+        # Hard rule 3, at every level.
+        for parent, prel, child, _crel, _field in LEVELS:
+            with self.subTest(parent=parent), tree(story_statuses=('ready',)) as root:
+                unbound(root)
+                self.assertEqual(run_cli(root, 'add', parent, child)[0], 0)
+                before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                code, out = run_cli(root, 'add', parent, child)
+                self.assertEqual(code, 0, out)
+                self.assertIn('nothing was written', out)
+                after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                self.assertEqual(before, after)
 
-    def test_insert_places_one_entry_and_remove_takes_it_back_out(self):
-        with tree() as root:
-            for version in ('0.1.0', '0.3.0'):
-                run_cli(root, 'order', '--append', version)
-            code, out = run_cli(root, 'order', '--insert', '0.2.0',
-                                '--before', '0.3.0')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(plan_of(root), ['0.1.0', '0.2.0', '0.3.0'])
-            code, out = run_cli(root, 'order', '--remove', '0.2.0')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(plan_of(root), ['0.1.0', '0.3.0'])
+    def test_remove_unbinds_and_unsequences_together(self):
+        for parent, prel, child, crel, field in LEVELS:
+            with self.subTest(parent=parent), tree(story_statuses=('ready',)) as root:
+                unbound(root)
+                run_cli(root, 'add', parent, child)
+                code, out = run_cli(root, 'remove', parent, child)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(order_of(root, prel), [])
+                if field:
+                    self.assertEqual(
+                        model.unquote(model.field_of(root / crel, field)), '')
+                # ...and twice is a no-op that says so.
+                code, out = run_cli(root, 'remove', parent, child)
+                self.assertEqual(code, 0, out)
+                self.assertIn('nothing was written', out)
 
-    def test_removing_what_is_not_there_writes_nothing(self):
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
-            before = (root / PLAN_REL).read_bytes()
-            code, out = run_cli(root, 'order', '--remove', '9.9.9')
-            self.assertEqual(code, 0, out)
-            self.assertIn('nothing was written', out)
-            self.assertEqual((root / PLAN_REL).read_bytes(), before)
+    def test_set_still_unbinds_alone_and_leaves_the_entry_dangling(self):
+        # Criterion 2: `remove` is the pair, and `pm set <id> <rel> ""` is
+        # still the way to unbind WITHOUT unsequencing — which is exactly the
+        # DANGLING entry the gate reports.
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+            self.assertEqual(run_cli(root, 'set', '0.1/alpha/s0',
+                                     'feature', '')[0], 0)
+            self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
+                             ['0.1/alpha/s0'])
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('DANGLING', out)
+            self.assertIn('0.1/alpha/s0', out)
+
+
+class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
+    """Bare `add` appends; a placement flag says where, and one that cannot be
+    honoured refuses rather than picking a position."""
+
+    def _three(self, root: Path) -> None:
+        for slug in ('b', 'c'):
+            run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
+        for fid in ('0.1/alpha', '0.1/b', '0.1/c'):
+            run_cli(root, 'add', '0.1', fid)
+
+    def test_bare_add_appends(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._three(root)
+            self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'),
+                             ['0.1/alpha', '0.1/b', '0.1/c'])
+
+    def test_each_placement_flag_puts_it_where_it_says(self):
+        for flag, value, expect in (
+                ('--position', '1', ['0.1/c', '0.1/alpha', '0.1/b']),
+                ('--position', '2', ['0.1/alpha', '0.1/c', '0.1/b']),
+                ('--before', '0.1/b', ['0.1/alpha', '0.1/c', '0.1/b']),
+                ('--after', '0.1/alpha', ['0.1/alpha', '0.1/c', '0.1/b'])):
+            with self.subTest(flag=flag, value=value), \
+                    tree(story_statuses=('ready',)) as root:
+                self._three(root)
+                code, out = run_cli(root, 'add', '0.1', '0.1/c', flag, value)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'),
+                                 expect)
+
+    def test_a_place_that_cannot_be_honoured_refuses_and_writes_nothing(self):
+        for flag, value in (('--position', '9'), ('--position', '0'),
+                            ('--before', '0.1/nope'), ('--after', '0.1/nope')):
+            with self.subTest(flag=flag, value=value), \
+                    tree(story_statuses=('ready',)) as root:
+                self._three(root)
+                before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                code, out = run_cli(root, 'add', '0.1', '0.1/c', flag, value)
+                self.assertIn(code, (1, 2), out)
+                after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                self.assertEqual(before, after)
+
+    def test_two_places_in_one_invocation_are_usage(self):
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'add', '0.1', '0.1/alpha',
+                                '--position', '1', '--before', '0.1/alpha')
+            self.assertEqual(code, 2, out)
+            self.assertIn('one per invocation', out)
+
+
+class ContainsDecidesWhatMayHoldWhat(unittest.TestCase):
+    """`[pm.contains]` — one declaration for every level, so `add` carries no
+    per-level check. The pair is read off the two IDS: neither argument names a
+    kind, and the refusal names BOTH."""
+
+    OFF_MAPPING = (('0.1', '0.1/alpha/s0', 'milestone', 'story'),
+                   ('0.1/alpha', '0.1', 'feature', 'milestone'),
+                   ('roadmap', '0.1/alpha', 'roadmap', 'feature'),
+                   ('0.1/alpha/s0', '0.1/alpha', 'story', 'feature'))
+
+    def test_a_pair_off_the_mapping_refuses_naming_both_kinds(self):
+        for parent, child, pkind, ckind in self.OFF_MAPPING:
+            with self.subTest(parent=parent, child=child), \
+                    tree(story_statuses=('ready',)) as root:
+                run_cli(root, 'add', 'roadmap', '0.1')
+                before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                code, out = run_cli(root, 'add', parent, child)
+                self.assertEqual(code, 1, out)
+                self.assertIn(pkind, out)
+                self.assertIn(ckind, out)
+                self.assertIn('[pm.contains]', out)
+                after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                self.assertEqual(before, after)
+
+    def test_a_project_that_files_no_bugs_narrows_the_mapping(self):
+        # The knob's whole job: DECLARE which kinds hold which, and `add`
+        # refuses off it. Nothing else in the tree changes.
+        with tree(story_statuses=('ready',)) as root:
+            from support.pm import bug
+            bug(root, 'crash')
+            self.assertEqual(run_cli(root, 'add', '0.1', '0.1/bugs/crash')[0], 0)
+            write_config(root, '[pm.contains]\nmilestone = ["feature"]\n')
+            code, out = run_cli(root, 'add', '0.1', '0.1/bugs/crash')
+            self.assertEqual(code, 1, out)
+            self.assertIn('a milestone does not hold a bug', out)
+
+    def test_a_mapping_nothing_could_write_is_exit_2_by_name(self):
+        # Hard rule 9: a malformed DECLARATION is refused at exit 2, naming
+        # the field that would have to carry it. It narrows; it cannot
+        # re-parent a kind.
+        for toml, needle in (
+                ('[pm.contains]\nmilestone = ["story"]\n', '`feature:`'),
+                ('[pm.contains]\nfeature = ["milestone"]\n', 'the roadmap'),
+                ('[pm.contains]\nstory = ["wombat"]\n', 'wombat'),
+                ('[pm.contains]\nwombat = ["story"]\n', 'wombat')):
+            with self.subTest(toml=toml), tree(story_statuses=('ready',)) as root:
+                write_config(root, toml)
+                code, out = run_cli(root, 'add', '0.1', '0.1/alpha')
+                self.assertEqual(code, 2, out)
+                self.assertIn('[pm.contains]', out)
+                self.assertIn(needle, out)
+
+    def test_a_tree_that_declares_nothing_runs_the_stock_mapping(self):
+        # Hard rule 5: the byte-identical guarantee. The declared mapping and
+        # no mapping at all behave the same.
+        stock = ('[pm.contains]\nroadmap = ["milestone"]\n'
+                 'milestone = ["feature", "bug"]\nfeature = ["story"]\n')
+        outputs = []
+        for config in ('', stock):
+            with tree(story_statuses=('ready',)) as root:
+                write_config(root, config)
+                unbound(root)
+                outputs.append([run_cli(root, 'add', p, c)
+                                for p, _, c, _, _ in LEVELS])
+        self.assertEqual(outputs[0], outputs[1])
+        self.assertEqual(model.DEFAULT_CONTAINS['milestone'],
+                         ('feature', 'bug'))
 
 
 class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
-    """The package's own split: a verb refuses its INPUT and reports nothing
-    about the tree. `--append 9.9.9` on a tree where no milestone claims it is
-    VALID — that contradiction is R1's to report, not this verb's to prevent.
-    """
+    def test_an_id_that_resolves_to_nothing_is_exit_2_naming_which_one(self):
+        with tree(story_statuses=('ready',)) as root:
+            for argv, role in ((('add', 'nope', '0.1/alpha'), 'parent'),
+                               (('add', '0.1', 'nope'), 'child'),
+                               (('remove', 'nope', '0.1/alpha'), 'parent'),
+                               (('remove', '0.1', 'nope'), 'child')):
+                with self.subTest(argv=argv):
+                    code, out = run_cli(root, *argv)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(role, out)
 
-    def test_append_does_not_interrogate_the_tree(self):
-        with tree() as root:
-            code, out = run_cli(root, 'order', '--append', '9.9.9')
+    def test_remove_clears_a_dangling_entry_and_leaves_the_binding_alone(self):
+        # The pair `add` names when it re-binds: the old parent still
+        # sequences a child it no longer holds, and this is what clears it.
+        # The binding is NOT touched — it names a parent this command was not
+        # given.
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
+            run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+            code, out = run_cli(root, 'add', '0.1/b', '0.1/alpha/s0')
             self.assertEqual(code, 0, out)
-            self.assertEqual(plan_of(root), ['9.9.9'])
+            self.assertIn('DANGLING', out)
+            self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
+                             ['0.1/alpha/s0'])
+            code, out = run_cli(root, 'remove', '0.1/alpha', '0.1/alpha/s0')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'), [])
+            self.assertEqual(
+                model.unquote(model.field_of(
+                    root / 'pm/roadmap/stories/s0.md', 'feature')), '0.1/b')
 
-    def test_an_empty_or_non_literal_version_is_exit_2(self):
-        # Reuse of `model.segment_is_literal` (SDLC §5 — the matrix belongs to
-        # the grammar). One case per class proves the REUSE; the grammar's own
-        # 	matrix is not re-spelled here.
-        for bad in ('', '   ', '../etc', 'a/b', '0.*', '.', '..'):
-            with self.subTest(bad=bad), tree() as root:
-                code, out = run_cli(root, 'order', '--append', bad)
-                self.assertEqual(code, 2, out)
-                self.assertFalse((root / PLAN_REL).exists())
-
-    def test_insert_before_an_entry_that_is_not_there_is_refused(self):
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
-            before = (root / PLAN_REL).read_bytes()
-            code, out = run_cli(root, 'order', '--insert', '0.2.0',
-                                '--before', '9.9.9')
+    def test_removing_a_child_bound_elsewhere_refuses(self):
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
+            before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            code, out = run_cli(root, 'remove', '0.1/b', '0.1/alpha/s0')
             self.assertEqual(code, 1, out)
             self.assertIn('nothing was written', out)
-            self.assertEqual((root / PLAN_REL).read_bytes(), before)
+            after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            self.assertEqual(before, after)
 
-    def test_insert_without_before_is_usage_because_where_is_the_decision(self):
-        with tree() as root:
-            code, out = run_cli(root, 'order', '--insert', '0.2.0')
-            self.assertEqual(code, 2, out)
-            self.assertIn('--before', out)
+    def test_a_parent_cannot_hold_itself(self):
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_cli(root, 'add', '0.1', '0.1')
+            self.assertEqual(code, 1, out)
 
-    def test_two_edits_in_one_invocation_are_refused(self):
-        with tree() as root:
-            code, out = run_cli(root, 'order', '--append', '0.1.0',
-                                '--remove', '0.2.0')
-            self.assertEqual(code, 2, out)
+    def test_an_order_that_is_a_scalar_refuses_rather_than_being_rewritten(self):
+        # The writer will not decide that a file meant something else.
+        with tree(story_statuses=('ready',)) as root:
+            path = root / 'pm/roadmap/features/alpha.md'
+            path.write_text('---\nid: 0.1/alpha\nkind: feature\n'
+                            'milestone: "0.1"\nstatus: building\n'
+                            'order: s0\n---\n\nbody\n', encoding='utf-8')
+            before = path.read_bytes()
+            code, out = run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+            self.assertEqual(code, 1, out)
+            self.assertIn('scalar', out)
+            self.assertEqual(path.read_bytes(), before)
+
+
+class TheRootIsAParentLikeAnyOther(unittest.TestCase):
+    """Criterion 7 — `order` lists child ids at every level, INCLUDING the
+    root, and `pm order` retired into this verb."""
+
+    def test_scheduling_a_release_mints_the_plan_as_a_grain(self):
+        with tree(story_statuses=('ready',)) as root:
             self.assertFalse((root / PLAN_REL).exists())
+            code, out = run_cli(root, 'add', 'roadmap', '0.1')
+            self.assertEqual(code, 0, out)
+            text = (root / PLAN_REL).read_text(encoding='utf-8')
+            self.assertTrue(text.startswith('---\n'))
+            self.assertIn('# The release plan', text)
+            self.assertEqual(model.root_id(cfg_for(root)), 'roadmap')
+            self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
+
+    def test_the_plan_answers_to_the_id_it_declares(self):
+        with tree(story_statuses=('ready',)) as root:
+            (root / PLAN_REL).write_text(
+                '---\nid: the-plan\nkind: roadmap\norder:\n---\n\nPlan.\n',
+                encoding='utf-8')
+            self.assertEqual(model.root_id(cfg_for(root)), 'the-plan')
+            self.assertEqual(run_cli(root, 'add', 'the-plan', '0.1')[0], 0)
+            self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
+            # ...and `roadmap` is then no id at all, rather than a second name
+            # for the same file.
+            self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 2)
+
+    def test_the_retired_verb_names_its_replacement_at_exit_2(self):
+        # A retired verb read as "unknown command" reads as a typo and sends
+        # the reader hunting for a misspelling instead of for the replacement.
+        with tree(story_statuses=('ready',)) as root:
+            for argv, needle in ((('order', '--append', '0.1.0'), 'pm add'),
+                                 (('sync',), 'order:')):
+                with self.subTest(argv=argv):
+                    code, out = run_cli(root, *argv)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn('was retired', out)
+                    self.assertIn(needle, out)
+                    self.assertNotIn('unknown command', out)
 
 
 class ThePlanIsRead(unittest.TestCase):
-    def test_bare_order_prints_each_entry_with_its_milestone_and_state(self):
-        with tree() as root:
-            for version in ('0.1.0', '0.2.0'):
-                run_cli(root, 'order', '--append', version)
-            claims(root, 'a', '0.1.0', 'done')
-            code, out = run_cli(root, 'order')
+    def test_roadmap_prints_each_entry_with_its_version_and_state(self):
+        with tree(story_statuses=('ready',)) as root:
+            write(root / 'pm/roadmap/milestones/b.md',
+                  {'id': '"b"', 'kind': 'milestone', 'name': 'B',
+                   'status': 'building'})
+            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+                            'version', '0.1.0')
+            run_cli(root, 'add', 'roadmap', '0.1')
+            run_cli(root, 'add', 'roadmap', 'b')
+            code, out = run_cli(root, 'roadmap')
             self.assertEqual(code, 0, out)
-            self.assertIn('0.1.0\ta\tshipped', out)
-            self.assertIn('0.2.0\t(unclaimed)\t-', out)
+            self.assertIn('0.1.0\t0.1\tbuilding', out)
+            self.assertIn('(no version)\tb\tbuilding', out)
 
-    def test_next_is_the_first_unshipped_entry_and_who_claims_it(self):
-        with tree() as root:
-            for version in ('0.1.0', '0.2.0'):
-                run_cli(root, 'order', '--append', version)
-            claims(root, 'a', '0.1.0', 'done')
-            claims(root, 'b', '0.2.0', 'building')
+    def test_roadmap_names_a_dangling_entry_rather_than_calling_it_unshipped(self):
+        with tree(story_statuses=('ready',)) as root:
+            (root / PLAN_REL).write_text(
+                '---\nid: roadmap\norder:\n  - "gone"\n---\n\nPlan.\n',
+                encoding='utf-8')
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('DANGLING', out)
+
+    def test_next_is_the_first_unshipped_entry(self):
+        with tree(story_statuses=('ready',)) as root:
+            for mid, status in (('a', 'done'), ('b', 'building')):
+                write(root / f'pm/roadmap/milestones/{mid}.md',
+                      {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
+                       'status': status, 'version': f'"0.{mid}.0"'})
+                run_cli(root, 'add', 'roadmap', mid)
             code, out = run_cli(root, 'next')
             self.assertEqual(code, 0, out)
-            self.assertIn('0.2.0\tb\tbuilding', out)
-            self.assertNotIn('0.1.0', out)
+            self.assertIn('0.b.0\tb\tbuilding', out)
+            self.assertNotIn('0.a.0', out)
 
     def test_a_tree_with_no_plan_is_told_how_to_start_one(self):
-        with tree() as root:
-            for argv in (('order',), ('next',)):
+        with tree(story_statuses=('ready',)) as root:
+            for argv in (('roadmap',), ('next',)):
                 code, out = run_cli(root, *argv)
                 self.assertEqual(code, 0, out)
-                self.assertIn('pm order --append', out)
+                self.assertIn('pm add roadmap <milestone-id>', out)
 
     def test_every_release_shipped_is_said_rather_than_guessed_at(self):
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
-            claims(root, 'a', '0.1.0', 'done')
+        with tree(milestone_status='done', story_statuses=('ready',)) as root:
+            run_cli(root, 'add', 'roadmap', '0.1')
             code, out = run_cli(root, 'next')
             self.assertEqual(code, 0, out)
             self.assertIn('has shipped', out)
-            self.assertIsNone(model.current_release(cfg_for(root)))
+            self.assertIsNone(model.current_milestone(cfg_for(root)))
 
-
-class TheRoadmapVerbReplacesTheFile(unittest.TestCase):
-    """`pm roadmap` — the plan, derived. It is what `ROADMAP.md` was pretending
-    to be: a live index of milestones, which a hand-maintained table cannot stay.
-    """
-
-    def test_it_prints_every_scheduled_release_then_the_backlog(self):
-        with tree() as root:
-            for version in ('0.1.0', '0.2.0'):
-                run_cli(root, 'order', '--append', version)
-            claims(root, 'a', '0.1.0', 'done')
-            claims(root, 'b', '0.2.0', 'building')
-            code, out = run_cli(root, 'roadmap')
-            self.assertEqual(code, 0, out)
-            self.assertIn('2 scheduled release(s)', out)
-            self.assertIn('0.1.0\ta\tshipped', out)
-            self.assertIn('0.2.0\tb\tbuilding', out)
-            # The fixture's own milestone declares no version — backlog.
-            self.assertIn('backlog', out)
-            self.assertIn('0.1', out)
-
-    def test_it_writes_nothing(self):
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
+    def test_the_roadmap_verb_writes_nothing(self):
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'add', 'roadmap', '0.1')
             before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
             self.assertEqual(run_cli(root, 'roadmap')[0], 0)
             after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
             self.assertEqual(before, after)
 
-    def test_a_version_two_milestones_claim_is_named_rather_than_picked(self):
-        with tree() as root:
-            run_cli(root, 'order', '--append', '0.1.0')
-            claims(root, 'a', '0.1.0', 'done')
-            claims(root, 'b', '0.1.0', 'building')
-            code, out = run_cli(root, 'roadmap')
-            self.assertEqual(code, 0, out)
-            self.assertIn('CLAIMED TWICE', out)
-
     def test_an_unreadable_plan_is_refused_rather_than_printed_as_empty(self):
         # The same rule-4 shape R5 was fixed for: never report "no plan" over a
         # plan that is there and broken.
         with tree() as root:
-            (root / 'pm/roadmap/releases.md').write_text(
-                '---\norder: 0.1.0\n---\n', encoding='utf-8')
+            (root / PLAN_REL).write_text(
+                '---\norder: 0.1\n---\n', encoding='utf-8')
             code, out = run_cli(root, 'roadmap')
             self.assertEqual(code, 1, out)
             self.assertIn('scalar', out)
+
+
+class OrderIsOptionalPerContainer(unittest.TestCase):
+    """Criterion 5 — a bound child that nobody has sequenced is a CENSUS line,
+    never a finding, and both numbers are printed or the census lies."""
+
+    def test_an_unsequenced_child_is_counted_and_never_reddens(self):
+        with tree(story_statuses=('ready',)) as root:
+            # The fixture binds its feature and story and sequences neither.
+            self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'), [])
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('UNSEQUENCED', out)
+            self.assertIn('1 story(s)', out)
+            self.assertIn('1 feature(s)', out)
+            self.assertNotIn('DRIFT', out)
+
+    def test_the_census_carries_both_numbers(self):
+        cases = ((False, False, 0), (True, False, 0), (False, True, 1))
+        for sequence_it, dangle_it, findings in cases:
+            with self.subTest(sequenced=sequence_it, dangling=dangle_it), \
+                    tree(story_statuses=('ready',)) as root:
+                if sequence_it:
+                    run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+                if dangle_it:
+                    run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+                    run_cli(root, 'set', '0.1/alpha/s0', 'feature', '')
+                code, out = run_gate(root)
+                self.assertEqual(code, min(findings, 1), out)
+                self.assertEqual('DANGLING' in out, bool(dangle_it), out)
+
+    def test_an_entry_naming_no_grain_at_all_is_a_warn_not_a_finding(self):
+        # The retired-grain case, one level down from R1's: an entry that
+        # names nothing may never be read as drift, because a grain that was
+        # deleted and one never written look identical from here.
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
+            (root / 'pm/roadmap/stories/s0.md').unlink()
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('UNVERIFIABLE', out)
+            self.assertIn('0.1/alpha/s0', out)

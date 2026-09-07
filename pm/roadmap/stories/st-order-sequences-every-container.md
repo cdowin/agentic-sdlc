@@ -44,10 +44,14 @@ reported by the same family.
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1, 2, 5, 7 | unit | `test_pm_order.py` (0.3.0's), parameterised over levels | amend — this is the same code over a declared mapping |
-| 3 | — | review, not a case: it is a claim about what the code does NOT do | — |
-| 4 | unit | the `[pm.contains]` refusal, both directions | new |
-| 6 | unit | `test_pm_gate.py`'s retired roster, and `RETIRED_KEYS` | amend |
+| 1, 2 | unit | `test_pm_order.py` `AddBindsAndSequencesAtEveryLevel` — bind+sequence, idempotence and `remove` PARAMETERISED over `LEVELS` (root, milestone, feature), plus `set` still unbinding alone | amended — 0.3.0's module, rewritten around the verbs that replaced `pm order` |
+| 1 | unit | `test_pm_order.py` `ThePlaceIsTheDecisionAndNeverAGuess` — bare append, each placement flag, a place that cannot be honoured refusing with no write, two places at once | amended |
+| 3 | — | review, not a case: it is a claim about what the code does NOT do. `cmd_add` is one `set_field` + one `set_list_field`, and the rebind path PRINTS the old parent's now-dangling entry rather than reaching into it | — |
+| 4 | unit | `test_pm_order.py` `ContainsDecidesWhatMayHoldWhat` — four off-mapping pairs refused naming both kinds with nothing written, a narrowed mapping refusing a bug, a mapping nothing could write at exit 2, and declared-vs-default equivalence (hard rule 5) | new |
+| 5 | unit | `test_pm_order.py` `OrderIsOptionalPerContainer` — unsequenced COUNTED at exit 0, dangling REPORTED at exit 1, an entry naming no grain a WARN; and `test_pm_gate.py` `TheUnboundFamily::test_r1_names_both_directions…` for the root's half | new + amended |
+| 6 | unit | `test_pm_scaffold.py::…test_a_retired_rule_is_not_a_silently_accepted_name` (V6 by name, with `order:` on the parent as its replacement); `test_pm_verbs.py` `TheOrdinalPrefixRetiredByName` (`RETIRED_KEYS`, exit 2, and the id it now mints); `test_pm_order.py::…test_the_retired_verb_names_its_replacement_at_exit_2` (`pm order`, `pm sync`) | amended |
+| 6 | unit | `test_pm_verbs.py` `StatusReport::test_the_board_reads_the_milestones_own_order` — `phase:`'s grouping replaced by the parent's `order` | amended |
+| 7 | unit | `test_pm_order.py` `TheRootIsAParentLikeAnyOther` and `ThePlanIsRead`; `test_pm_verbs.py` `ThePlanIsADeclaredOrder::test_a_version_change_never_touches_the_plan` | amended |
 
 ## Out of scope
 

@@ -604,24 +604,23 @@ class ListFindsTheNail(unittest.TestCase):
 
 
 class StatusReport(unittest.TestCase):
-    def test_phases_group_numeric_then_named_then_unphased(self):
-        # `seam` is a NAME the project chose, not a word the engine knows: it
-        # sorts where any named phase does, after the numbered ones. The
-        # engine used to spell `seam` in two places (here and the execution
-        # list) and sort it specially — an opinion about a project's phase
-        # vocabulary, struck by the inference census.
+    def test_the_board_reads_the_milestones_own_order(self):
+        # `phase:` grouped this board until 0.4.0 and retired with the
+        # execution list it also ordered. SEQUENCE is the parent's `order:`
+        # now, so the board prints what somebody wrote down — and an
+        # unsequenced feature still prints, after the sequenced ones, because
+        # `order` is optional per container.
         with tree(story_statuses=('ready',)) as root:
-            run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
-            run_cli(root, 'new', 'feature', '0.1', 'c', 'C')
-            fdir = root / 'pm/roadmap/features'
-            model.set_field(fdir / 'alpha.md', 'phase', '2')
-            model.set_field(fdir / 'b.md', 'phase', 'seam')
-            # 'c' stays unphased on purpose.
+            for slug in ('b', 'c'):
+                run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
+            self.assertEqual(run_cli(root, 'add', '0.1', '0.1/c')[0], 0)
+            self.assertEqual(run_cli(root, 'add', '0.1', '0.1/alpha')[0], 0)
             _, out = run_cli(root, 'status')
-            order = [ln for ln in out.splitlines() if ln.startswith('  --')]
-            self.assertEqual(
-                order, ['  -- phase 2 (0/1 done)', '  -- seam (0/1 done)',
-                        '  -- unphased (0/1 done)'])
+            rows = [ln for ln in out.splitlines() if ln.startswith('  feature')]
+            # `_short` strips the parent prefix from the id column.
+            self.assertEqual([r.split()[1] for r in rows],
+                             ['c', 'alpha', 'b'])
+            self.assertIn('  -- 0/3 feature(s) done', out)
 
 
 class WriteFidelity(unittest.TestCase):
@@ -760,229 +759,6 @@ class FieldMutation(unittest.TestCase):
             self.assertEqual([ln for ln in after if ln != 'risk: high'], lines)
 
 
-class ExecutionList(unittest.TestCase):
-    def _validate(self, root):
-        from agentic_sdlc.repo.pm import validate
-        # V6 renders the list, and a rendered row counts stories in `done` —
-        # a category question, so the config has to carry the flow.
-        return validate.run(cfg_for(root))
-
-    def test_sync_writes_a_block_and_validate_then_passes(self):
-        with tree(story_statuses=('ready',)) as root:
-            self.assertEqual(run_cli(root, 'sync')[0], 0)
-            mfile = root / MFILE
-            self.assertIn('pm:execution', mfile.read_text())
-            self.assertEqual(self._validate(root)[0], [])
-
-    def test_a_tree_with_no_block_is_not_stale(self):
-        # The list is opt-in per file; absence is not staleness, or the gate
-        # would go red on every tree that never asked for the feature.
-        with tree(story_statuses=('ready',)) as root:
-            self.assertEqual(self._validate(root)[0], [])
-            self.assertEqual(run_cli(root, 'sync', '--check')[0], 0)
-
-    def test_v6_is_demoted_from_the_gate_but_still_answers_when_asked(self):
-        # Demoted, not deleted. A generated VIEW going stale while ordinary
-        # work moves the tree is not a defect in the tree, and reddening a
-        # commit gate over it makes the ordinary case the exceptional one.
-        with tree(story_statuses=('ready',)) as root:
-            run_cli(root, 'sync')
-            run_cli(root, 'new', 'feature', '0.1', 'newcomer', 'Newcomer')
-            self.assertTrue(any('stale' in f for f in self._validate(root)[0]))
-            code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
-            self.assertNotIn('stale', out)
-            # ...but `pm sync --check` answers, and naming V6 puts it back on
-            # the gate.
-            self.assertEqual(run_cli(root, 'sync', '--check')[0], 1)
-            write_config(root, '[pm]\nchecks = ["V6"]\n')
-            code, out = run_gate(root)
-            self.assertEqual(code, 1, out)
-            self.assertIn('execution list is stale', out)
-            # ...and a re-sync settles it.
-            write_config(root)
-            run_cli(root, 'sync')
-            self.assertEqual(run_cli(root, 'sync', '--check')[0], 0)
-        self.assertNotIn('V6', model.DEFAULT_CHECKS)
-        self.assertIn('V6', model.KNOWN_CHECKS)
-
-    def test_order_follows_dependencies_then_name(self):
-        with tree() as root:
-            for slug in ('aaa', 'zzz'):
-                run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
-            fdir = root / 'pm/roadmap/features'
-            # aaa sorts first by name but depends on zzz, so zzz must lead.
-            model.set_field(fdir / 'aaa.md', 'depends_on', '["0.1/zzz"]')
-            run_cli(root, 'sync')
-            block = (root / MFILE).read_text()
-            self.assertLess(block.index('`zzz`'), block.index('`aaa`'))
-            self.assertIn('after zzz', block)
-
-    def test_sync_is_idempotent_and_preserves_the_rest_of_the_file(self):
-        with tree(story_statuses=('ready',)) as root:
-            mfile = root / MFILE
-            mfile.write_text(mfile.read_text() + '\n## Notes\n\nkeep me\n',
-                             encoding='utf-8')
-            run_cli(root, 'sync')
-            once = mfile.read_bytes()
-            run_cli(root, 'sync')
-            self.assertEqual(mfile.read_bytes(), once)
-            self.assertIn('keep me', mfile.read_text())
-
-
-class AStatusVerbIsTheREPAIRForWhatD4Reports(unittest.TestCase):
-    """The verb validates the state it was ASKED for. Never the one it found.
-
-    Reproduced on a hand-edited tree: `check pm` reported
-    `milestone 0.1: status 'wombat' not in (planning ready building done)`,
-    and `pm milestone done 0.1` answered
-    `ERROR — milestone '0.1' has an unknown current status 'wombat'` and wrote
-    nothing. The gate diagnosed the breakage and the verb declined to repair
-    it, leaving the editor as the only way out — which is the one thing this
-    tool exists to spare a person.
-
-    The current value is read FOR THE MESSAGE. `wombat -> done`. (That the
-    REQUESTED state is still closed is `StatusVerbQuartet`'s row.)
-    """
-
-    NONSENSE = {'milestone': (MFILE, '0.1', 'wombat'),
-                'feature': (FFILE, '0.1/alpha', 'hedgehog'),
-                'story': (STORY_REL, '0.1/alpha/s0', 'butterfly')}
-
-    def _mangle(self, root: Path, rel: str, value: str) -> Path:
-        path = root / rel
-        text = path.read_text(encoding='utf-8')
-        line = next(l for l in text.split('\n') if l.startswith('status:'))
-        path.write_text(text.replace(line, f'status: {value}'), encoding='utf-8')
-        return path
-
-    def test_every_grain_kind_is_repairable_from_nonsense(self):
-        for grain, (rel, gid, junk) in self.NONSENSE.items():
-            # A milestone close still asks its features to be done (that
-            # precondition is a separate question); the fixture satisfies it so
-            # this case isolates the one being asked here.
-            kw = ({'feature_status': 'done', 'story_statuses': ('done',)}
-                  if grain == 'milestone' else {'story_statuses': ('ready',)})
-            with self.subTest(grain=grain), tree(**kw) as root:
-                path = self._mangle(root, rel, junk)
-                # The gate reports it...
-                code, out = run_gate(root)
-                self.assertEqual(code, 1, out)
-                self.assertIn(junk, out)
-                # ...and the verb fixes it, naming what it found.
-                code, out = run_cli(root, grain, 'done', gid)
-                self.assertEqual(code, 0, out)
-                self.assertIn(f'{junk} -> done', out)
-                self.assertEqual(model.field_of(path, 'status'), 'done')
-
-    def test_an_absent_status_key_reads_as_none_and_is_still_settable(self):
-        with tree(story_statuses=('ready',)) as root:
-            path = root / STORY_REL
-            path.write_text(
-                '\n'.join(l for l in path.read_text(encoding='utf-8').split('\n')
-                          if not l.startswith('status:')), encoding='utf-8')
-            code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
-            self.assertEqual(code, 0, out)
-            self.assertIn('(none) -> building', out)
-            self.assertEqual(model.field_of(path, 'status'), 'building')
-
-
-class TheShortestPathFromNothingToAClosedMilestone(unittest.TestCase):
-    """Six commands, and every one of them writes something.
-
-    Measured on the graph this replaced: an empty repo to one closed milestone
-    was 14 commands, six of them pure ceremony — `milestone ready`,
-    `milestone building`, `feature ready`, `feature building`, `feature review`
-    and a `story wip` nobody wanted — each existing only because an edge
-    demanded it, and each reachable by `sed` anyway.
-    """
-
-    def test_it_is_six_commands_and_they_all_land(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / 'repo'
-            root.mkdir()
-            (root / 'docs' / 'reviews').mkdir(parents=True)
-            (root / 'docs' / 'reviews' / 'alpha.md').write_text(
-                'Reviewed, and it holds up under the cases that matter.\n',
-                encoding='utf-8')
-            # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
-            # (model.py:718), so this ad-hoc tree needs it for the same
-            # reason `support.pm.tree` does.
-            write_config(root)
-            (root / '.git').mkdir(exist_ok=True)  # a MARKER: `repo_root` walks for it
-            previous = Path.cwd()
-            os.chdir(root)
-            try:
-                sequence = (
-                    ('new', 'milestone', '0.1', 'Demo'),
-                    ('new', 'feature', '0.1', 'alpha', 'Alpha'),
-                    ('new', 'story', '0.1/alpha', 's0', 'S0'),
-                    ('story', 'done', '0.1/alpha/s0'),
-                    ('feature', 'done', '0.1/alpha',
-                     '--review-record', 'docs/reviews/alpha.md'),
-                    ('milestone', 'done', '0.1'),
-                )
-                for argv in sequence:
-                    code, out = run_cli(root, *argv)
-                    self.assertEqual(code, 0, f'{argv}\n{out}')
-                self.assertEqual(len(sequence), 6)
-                code, out = run_gate(root)
-            finally:
-                os.chdir(previous)
-            self.assertEqual(code, 0, out)
-
-
-class Vocabulary(unittest.TestCase):
-    """`pm vocabulary --json` prints the CLOSED SETS, and no longer prints edges.
-
-    Its audience is the pin bump: this toolkit ships a shape, a project bumps
-    its pin, and then has to see what changed. The set of states a grain may
-    hold and the set of rule ids `[pm] checks` may name are what changed, so
-    they have to be readable from the tool rather than scraped from a
-    changelog — which is also why this verb keeps running when `[pm] checks`
-    names an id the release retired.
-
-    What has NOT come back is an edge table, and the step-to-state table one
-    build carried is refused by name now. The flow half is proven in
-    tests/test_pm_flow.py; this keeps the pin-bump surface.
-    """
-
-    def test_json_states_the_closed_sets_the_project_declared_and_no_edges(self):
-        import json
-        with tree() as root:
-            code, out = run_cli(root, 'vocabulary', '--json')
-            self.assertEqual(code, 0, out)
-            data = json.loads(out)
-            self.assertEqual(data['grains']['story']['states'],
-                             ['planning', 'ready', 'building', 'done', 'obe'])
-            self.assertEqual(data['grains']['milestone']['states'],
-                             list(model.LIFECYCLE) + ['obe'])
-            self.assertEqual(data['grains']['bug']['states'],
-                             ['open', 'fixed', 'closed'])
-            self.assertEqual(data['checks'], list(model.KNOWN_CHECKS))
-            # A grain carries its closed SET and its declared FLOW, and nothing
-            # else. `deprecated` may not come back: it was the 0.24.0 rename
-            # map, and that window closed in 0.2.0.
-            for grain in data['grains'].values():
-                self.assertEqual(sorted(grain), ['flow', 'states'])
-            # This tree DECLARES its flow (tests/support/pm.py `FLOW_TOML`),
-            # so the payload carries it. The ABSENCE half — `flow_declared:
-            # false` and a null `flow` — is proven in tests/test_pm_flow.py.
-            self.assertIs(data['flow_declared'], True)
-            self.assertEqual(data['grains']['milestone']['flow']['order'],
-                             list(model.LIFECYCLE) + ['obe'])
-            self.assertNotIn('->', out)
-            self.assertNotIn('transitions', out)
-
-            # ...and it is the PROJECT's vocabulary, never the stock one.
-            write_config(root, declaring(story={
-                'todo': ('todo',), 'in_progress': ('wip', 'review', 'parked'),
-                'done': ('done',)}))
-            code, out = run_cli(root, 'vocabulary', '--json')
-            self.assertEqual(code, 0, out)
-            self.assertIn('parked', json.loads(out)['grains']['story']['states'])
-
-
 class StoryResolution(unittest.TestCase):
     """`story_file` and `story_files` must agree about what a story IS.
 
@@ -1028,10 +804,11 @@ class StoryResolution(unittest.TestCase):
         # The ordinal prefix was a resolver RULE: `07-s9.md` had to be matched
         # by a stripped stem, and an id was ambiguous when two filenames could
         # spell it. Neither is true now — the id is read out of the file, so
-        # the prefix is decoration and a story parked one directory down is
-        # the same story wherever it sits.
+        # the prefix is decoration, the KEY that turned it on is retired
+        # (0.4.0), and a story parked one directory down is the same story
+        # wherever it sits.
         with tree() as root:
-            cfg = model.PmConfig(root=root, story_ordinal_prefix=True)
+            cfg = cfg_for(root)
             self._story(root, '07-s9.md', '0.1/alpha/s9')
             self.assertEqual(model.story_file(cfg, '0.1/alpha/s9').name,
                              '07-s9.md')
@@ -1070,34 +847,39 @@ class StoryResolution(unittest.TestCase):
             self.assertIsNone(model.story_file(cfg_for(root), '0.1/alpha/README'))
 
 
-class OrdinalPrefix(unittest.TestCase):
-    """`story_ordinal_prefix` is a MINTING rule and nothing else now.
+class TheOrdinalPrefixRetiredByName(unittest.TestCase):
+    """`story_ordinal_prefix` is gone, and a config still naming it is TOLD.
 
-    It used to be a resolver rule too, and V2 had to be taught the prefix or
-    every story in such a tree went unchecked while the gate printed VALID.
-    V2 retired with the path-is-the-id model, so what is left is the half that
-    was always the point: `pm new story 01-boots` files `01-boots.md` and
-    stamps the id WITHOUT the ordinal, because the number sequences the build
-    and the slug after it is the identity.
+    It was a resolver rule (V2 had to be taught the prefix or every story in
+    such a tree went unchecked while the gate printed VALID), then a minting
+    rule that stripped `NN-` out of the id it stamped. Both were the FILENAME
+    deciding identity, which 0.4.0 deleted: `id:` is the identity, and the
+    sequence the number carried is the parent's `order:` list — one sequence in
+    the parent instead of forty filenames.
 
-    The prefix's real successor is a milestone's `order:` list — a sequence
-    that lives in the parent rather than in 40 filenames — and that is proven
-    where `order` is.
+    A retired key must never read as unknown: "unknown key" reads as a typo and
+    silently ungates, so this asserts the roster entry AND that it arrives.
     """
 
-    def test_the_ordinal_is_in_the_filename_and_never_in_the_id(self):
+    def test_the_key_is_refused_by_name_with_its_replacement(self):
+        self.assertIn('story_ordinal_prefix', model.RETIRED_KEYS)
+        self.assertIn('pm add', model.RETIRED_KEYS['story_ordinal_prefix'])
         with tree(story_statuses=()) as root:
             write_config(root, '[pm]\nstory_ordinal_prefix = true\n')
+            code, out = run_cli(root, 'validate')
+            self.assertEqual(code, 2, out)
+            self.assertIn('story_ordinal_prefix', out)
+            self.assertIn('was retired', out)
+            self.assertIn('pm add', out)
+
+    def test_a_leading_ordinal_is_now_just_part_of_the_slug(self):
+        with tree(story_statuses=()) as root:
             code, out = run_cli(root, 'new', 'story', '0.1/alpha', '01-boots',
                                 'Boots')
             self.assertEqual(code, 0, out)
             sf = root / 'pm/roadmap/stories/01-boots.md'
-            self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/boots')
-            # And the tree it just wrote validates — the id it stamped is the
-            # id every reader keys on, whatever the file is called.
+            self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
-            self.assertIsNotNone(
-                model.story_file(cfg_for(root), '0.1/alpha/boots'))
 
 
 class Decide(unittest.TestCase):
@@ -1260,126 +1042,11 @@ class Decide(unittest.TestCase):
                           self._log(root, self.FLOG))
 
 
-class ExeclistRefusals(unittest.TestCase):
-    """A grain the renderer cannot rewrite CORRECTLY is a refusal — the file
-    and the problem named, nothing written — never a traceback, and never a
-    file that quietly grows by one fresh block per run."""
-
-    def test_a_non_utf8_grain_refuses_instead_of_crashing(self):
-        # The audit's \xff-grain reproduction: UnicodeDecodeError traceback
-        # out of the inline read in execlist.sync, scan aborted mid-tree.
-        with tree() as root:
-            (root / FFILE).write_bytes(
-                b'---\nid: 0.1/alpha\nstatus: building\n---\n\xff\n')
-            for argv in (('sync',), ('sync', '--check')):
-                with self.subTest(argv=argv):
-                    code, out = run_cli(root, *argv)
-                    self.assertEqual(code, 1, out)
-                    self.assertIn('REFUSED', out)
-                    self.assertIn('alpha.md', out)
-                    self.assertIn('not UTF-8', out)
-
-    def test_v6_reports_a_non_utf8_grain_and_keeps_earlier_findings(self):
-        from agentic_sdlc.repo.pm import validate
-        with tree() as root:
-            run_cli(root, 'sync')
-            (root / FFILE).write_bytes(b'\xff\xfe broken')
-            findings, _ = validate.run(cfg_for(root))
-            self.assertTrue(any('not UTF-8' in f for f in findings), findings)
-            # V1's finding about the same grain survives — the crash used to
-            # abort run() and take every finding gathered before V6 with it.
-            # Its 0.4.0 wording: the document declares no `id:`, so nothing
-            # can key on it.
-            self.assertTrue(any('declares no `id:`' in f for f in findings),
-                            findings)
-
-    def test_a_damaged_marker_pair_refuses_instead_of_growing_the_file(self):
-        # The audit's growth reproduction: 25 -> 33 -> 41 lines over three
-        # `pm sync` runs, each exit 0 — the append branch fired every time.
-        # Half a pair is not "no block" either; it took the same branch.
-        from agentic_sdlc.repo.pm import execlist
-        for name, damage in (
-                ('reversed markers',
-                 lambda t: t.replace(execlist.OPEN, '@@TMP@@')
-                            .replace(execlist.CLOSE, execlist.OPEN)
-                            .replace('@@TMP@@', execlist.CLOSE)),
-                ('a lone marker', lambda t: t.replace(execlist.CLOSE, ''))):
-            with self.subTest(damage=name), tree() as root:
-                run_cli(root, 'sync')
-                mfile = root / MFILE
-                mfile.write_text(damage(mfile.read_text(encoding='utf-8')),
-                                 encoding='utf-8')
-                before = mfile.read_bytes()
-                code, out = run_cli(root, 'sync')
-                self.assertEqual(code, 1, out)
-                self.assertIn('0.1.md', out)
-                self.assertEqual(mfile.read_bytes(), before)
-                # Refusing twice is still refusing — and still not writing.
-                code, _ = run_cli(root, 'sync')
-                self.assertEqual(code, 1)
-                self.assertEqual(mfile.read_bytes(), before)
-
-
-class StatusVerbHonoursACustomVocabulary(unittest.TestCase):
-    """A move into `done` dispatches to the close, but the TARGET state still
-    has to be one the project declared. Pre-fix `done` and `reviewing`
-    dispatched before the membership check, so with a custom vocabulary the
-    sanctioned tool wrote the exact undeclared status D4 reports. The CURRENT
-    state stays ungated — repair-from-wombat is pinned elsewhere and
-    unchanged."""
-
-    RENAMED = {'todo': ('todo',), 'in_progress': ('building',),
-               'done': ('shipped',)}
-
-    def test_the_target_state_must_be_in_the_projects_own_set(self):
-        # (argv, the declaration the refusal must name, story statuses)
-        rows = (
-            (('feature', 'done', '0.1/alpha'), 'todo, building, shipped',
-             ('ready',)),
-            (('feature', 'reviewing', '0.1/alpha'), 'todo, building, shipped',
-             ('ready',)),
-        )
-        for argv, named, stories in rows:
-            with self.subTest(argv=argv), tree(story_statuses=stories) as root:
-                write_config(root, declaring(feature=self.RENAMED))
-                sfile, ffile = root / STORY_REL, root / FFILE
-                s_before, f_before = sfile.read_bytes(), ffile.read_bytes()
-                code, out = run_cli(root, *argv)
-                self.assertEqual(code, 2, out)
-                self.assertIn(named, out)
-                self.assertIn('[pm.states.feature]', out)
-                # Nothing was touched — neither the story nor the feature.
-                self.assertEqual(sfile.read_bytes(), s_before)
-                self.assertEqual(ffile.read_bytes(), f_before)
-
-    def test_a_custom_vocabulary_closes_through_its_own_done_word(self):
-        # The close is the CATEGORY: `shipped` stamps the record and reports
-        # the stories exactly as `done` does in the seed.
-        with tree(story_statuses=('ready',)) as root:
-            write_config(root, declaring(feature=self.RENAMED))
-            code, out = run_cli(root, 'feature', 'shipped', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'shipped')
-            self.assertIn('review record: docs/reviews/alpha.md', out)
-
-    def test_review_record_with_an_empty_value_refuses_in_either_spelling(self):
-        # Pre-fix: `--review-record=` stored '' and silently skipped the
-        # stamp at exit 0 — flag consumed, nothing done. The space spelling's
-        # missing-arg case was already a Usage refusal; they now agree.
-        for extra in (('--review-record=',), ('--review-record', '')):
-            with self.subTest(extra=extra), tree() as root:
-                ffile = root / FFILE
-                before = ffile.read_bytes()
-                code, out = run_cli(root, 'feature', 'done', '0.1/alpha', *extra)
-                self.assertEqual(code, 2, out)
-                self.assertIn('needs a path', out)
-                self.assertEqual(ffile.read_bytes(), before)
-
-
 class ZeroCensusIsLoud(unittest.TestCase):
     """An empty print at exit 0 over a tree that holds nothing is a scan of
     zero files, passing — rule 4's read-side sin. `pm list` got the loud arm
-    first; `pm status` and `pm sync --check` mirror it."""
+    first and `pm status` mirrors it. (`pm sync --check` was the third and
+    retired with the execution list in 0.4.0.)"""
 
     def _emptied(self, root: Path) -> None:
         import shutil
@@ -1401,17 +1068,6 @@ class ZeroCensusIsLoud(unittest.TestCase):
             code, out = run_cli(root, 'status', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('milestone 0.1', out)
-
-    def test_sync_over_zero_grains_refuses_in_both_modes(self):
-        # Pre-fix: `all 0 execution list(s) current`, exit 0 — only the write
-        # mode refused.
-        with tree() as root:
-            self._emptied(root)
-            for argv in (('sync', '--check'), ('sync',)):
-                with self.subTest(argv=argv):
-                    code, out = run_cli(root, *argv)
-                    self.assertEqual(code, 2, out)
-                    self.assertIn('no grains', out)
 
 
 class BugStatus(unittest.TestCase):
@@ -1536,30 +1192,32 @@ class Retire(unittest.TestCase):
     def test_the_plan_is_what_outlives_the_directory(self):
         """0.3.0: the row survives its milestone through `order`, not a file.
 
-        A retired milestone whose version is on the plan leaves a row R1 reports
-        as UNVERIFIABLE. One that was never scheduled leaves nothing, and the
-        verb SAYS so rather than letting the record vanish quietly.
+        A retired milestone that is ON the plan leaves an entry R1 reports;
+        one that was never scheduled leaves nothing, and the verb SAYS so
+        rather than letting the record vanish quietly. 0.4.0: the entry is the
+        milestone's own ID, so what outlives the documents is the name every
+        other reference already used.
         """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
             model.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'version', '"0.1.0"')
-            run_cli(root, 'order', '--append', '0.1.0')
+            self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('releases.md', out)
-            self.assertIn('UNVERIFIABLE', out)
+            self.assertIn('DANGLING', out)
             self.assertFalse((root / MFILE).exists())
-            # The plan kept the version; the record is gone.
+            # The plan kept the entry; the record is gone.
             self.assertEqual(
                 model.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
-                ['0.1.0'])
+                ['0.1'])
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('on no plan', out)
-            self.assertIn('pm order --append', out)
+            self.assertIn('pm add roadmap 0.1', out)
 
     def test_retire_writes_no_roadmap_file_and_needs_none(self):
         """The whole point of the retirement: a tree with no ROADMAP.md retires
@@ -1607,18 +1265,23 @@ class Retire(unittest.TestCase):
 
 
 class ThePlanIsADeclaredOrder(unittest.TestCase):
-    """`order` is read as a block list, and the current release is a POSITION.
+    """`order` is read as a block list of MILESTONE IDS, and the current
+    release is a POSITION.
 
-    The sin guarded here is the resolver quietly answering with the wrong entry:
-    every rule downstream (R5, the ledger's home, `pm next`) grades against
-    whatever this returns, so a silent off-by-one mis-grades the whole tree.
+    The sin guarded here is the resolver quietly answering with the wrong
+    entry: every rule downstream (R5, the ledger's home, `pm next`) grades
+    against whatever this returns, so a silent off-by-one mis-grades the whole
+    tree. 0.4.0 changed what an entry SAYS — a milestone id rather than a
+    version string, so that re-versioning a milestone never touches the plan —
+    and changed none of that.
     """
 
     @staticmethod
-    def _plan(root: Path, *versions: str) -> None:
-        body = '\n'.join(f'  - "{v}"' for v in versions)
+    def _plan(root: Path, *mids: str) -> None:
+        body = '\n'.join(f'  - "{m}"' for m in mids)
         (root / 'pm' / 'roadmap' / 'releases.md').write_text(
-            f'---\norder:\n{body}\n---\n\nThe plan.\n', encoding='utf-8')
+            f'---\nid: roadmap\nkind: roadmap\norder:\n{body}\n---\n\n'
+            f'The plan.\n', encoding='utf-8')
 
     @staticmethod
     def _milestone(root: Path, mid: str, version: str, status: str) -> None:
@@ -1630,14 +1293,13 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
 
     def test_block_list_reads_in_order_and_a_scalar_is_not_a_list(self):
         with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            self._plan(root, 'a', 'b', 'c')
             cfg = cfg_for(root)
-            self.assertEqual(model.declared_order(cfg),
-                             ['0.1.0', '0.2.0', '0.3.0'])
+            self.assertEqual(model.declared_order(cfg), ['a', 'b', 'c'])
             # A scalar on the key line is a DIFFERENT shape, and reading it as
-            # a one-element list would make `order: 0.1.0` silently a plan.
+            # a one-element list would make `order: a` silently a plan.
             (root / 'pm' / 'roadmap' / 'releases.md').write_text(
-                '---\norder: 0.1.0\n---\n', encoding='utf-8')
+                '---\norder: a\n---\n', encoding='utf-8')
             self.assertEqual(model.declared_order(cfg), [])
 
     def test_no_plan_at_all_is_no_current_release(self):
@@ -1653,14 +1315,16 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
         filed gate cost rows into its closed ledger.
         """
         with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            self._plan(root, 'a', 'b', 'c')
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.2.0', 'done')
             self._milestone(root, 'c', '0.3.0', 'building')
 
             # Worked on: the same answer under BOTH flows, because it is not
-            # version_at's question.
+            # version_at's question. The entry is the ID; the VERSION comes
+            # from the milestone it names.
             self.assertEqual(loaded(root).version_at, model.VERSION_AT_START)
+            self.assertEqual(model.current_milestone(loaded(root)), 'c')
             self.assertEqual(model.current_release(loaded(root)), '0.3.0')
             self.assertEqual(model.graded_release(loaded(root))[0], '0.3.0')
 
@@ -1668,92 +1332,90 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self.assertEqual(model.current_release(loaded(root)), '0.3.0')
             self.assertEqual(model.graded_release(loaded(root))[0], '0.2.0')
 
+    def test_a_version_change_never_touches_the_plan(self):
+        # Criterion 7, measured: the entry is the milestone's id, so the plan
+        # is byte-identical across a re-version and the current release moves
+        # with the milestone's own declaration.
+        with tree() as root:
+            self._plan(root, 'a')
+            self._milestone(root, 'a', '0.1.0', 'building')
+            before = (root / 'pm/roadmap/releases.md').read_bytes()
+            self.assertEqual(model.current_release(loaded(root)), '0.1.0')
+            self.assertEqual(run_cli(root, 'set', 'a', 'version', '0.2.0')[0], 0)
+            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            self.assertEqual((root / 'pm/roadmap/releases.md').read_bytes(),
+                             before)
+
     def test_graded_release_says_why_when_there_is_nothing_to_grade(self):
         # Review B3: "every entry in `order` has shipped" was reported at exit 0
         # over a tree where NONE had.
         with tree() as root:
-            self._plan(root, '0.1.0')
+            self._plan(root, 'a')
             self._milestone(root, 'a', '0.1.0', 'building')
             write_config(root, '[pm]\nversion_at = "ship"\n')
             version, why = model.graded_release(loaded(root))
             self.assertIsNone(version)
             self.assertIn('no entry in `order` has shipped yet', why)
 
-    def test_an_unverifiable_entry_is_skipped_and_reported_never_guessed_at(self):
+    def test_an_entry_naming_no_milestone_is_skipped_and_reported(self):
         """The ambiguity the tree cannot resolve, carried by the GATE.
 
-        `pm retire` deletes a finished milestone's record while its row survives
-        in the plan on purpose, so after a retirement an entry that shipped is
-        indistinguishable from one never written. Blocking on it breaks the
-        ledger and the belt for every tree that prunes; guessing it is history
-        answers with a release the tree cannot support. So the resolver walks
-        past it and R1 REPORTS it, every run. Decision D2 records why.
+        `pm retire` deletes a finished milestone's record while its entry
+        survives in the plan on purpose, so after a retirement an entry that
+        shipped is indistinguishable from one never written. Blocking on it
+        breaks the ledger and the belt for every tree that prunes; guessing it
+        is history answers with a release the tree cannot support. So the
+        resolver walks past it and R1 REPORTS it, every run. Decision D2
+        records why.
         """
         with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0', '0.3.0')
+            self._plan(root, 'a', 'gone', 'c')
             self._milestone(root, 'a', '0.1.0', 'done')
-            # 0.2.0 claimed by nobody; 0.3.0 claimed and building.
+            # `gone` is named by no document; c is written and building.
             self._milestone(root, 'c', '0.3.0', 'building')
             cfg = loaded(root)
-            self.assertTrue(model.release_is_unverifiable(cfg_for(root), '0.2.0'))
+            self.assertTrue(model.entry_is_dangling(cfg_for(root), 'gone'))
+            self.assertEqual(model.current_milestone(cfg), 'c')
             self.assertEqual(model.current_release(cfg), '0.3.0')
             # ...and R1 names it on the same tree, so the skip is never
-            # silent. A WARN, not a finding: a dangling entry and a retired
-            # milestone's surviving row are indistinguishable, and reddening on
-            # a planned-but-unwritten release is what R1's own criterion 1
-            # refuses to do.
+            # silent. A WARN, not a finding: an entry never written and a
+            # retired milestone's surviving row are indistinguishable, and
+            # reddening on a planned-but-unwritten release is what R1's own
+            # criterion 1 refuses to do.
             write_config(root, '[pm]\nchecks = ["R1"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('UNBOUND', out)
-            self.assertIn('0.2.0', out)
-
-    def test_an_entry_no_milestone_claims_is_unverifiable_not_unshipped(self):
-        """Review F1: a RETIRED milestone and an unwritten one look identical
-        from here, so neither may be read as "not shipped".
-
-        Reading them as unshipped is what made `pm retire` roll the current
-        release BACKWARD, so R5 demanded a version regression — two shipped
-        verbs contradicting each other.
-        """
-        with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0')
-            self._milestone(root, 'a', '0.1.0', 'done')
-            cfg = cfg_for(root)
-            self.assertTrue(model.release_is_unverifiable(cfg, '0.2.0'))
-            self.assertIsNone(model.milestone_of_version(cfg, '0.2.0'))
-            # Skipped, not answered: nothing after 0.1.0 can be established.
-            self.assertIsNone(model.current_release(loaded(root)))
+            self.assertIn('gone', out)
 
     def test_retiring_a_shipped_milestone_never_moves_the_release_backward(self):
         # Review F1, measured end to end: the plan keeps the entry, the record
         # is gone, and the current release must not become the retired one.
         with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0')
+            self._plan(root, 'a', 'b')
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.2.0', 'building')
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
-            import shutil
             (root / 'pm' / 'roadmap' / 'milestones' / 'a.md').unlink()
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
 
-    def test_two_milestones_claiming_one_version_never_decide_by_directory_name(self):
+    def test_two_milestones_claiming_one_version_are_named_never_picked(self):
         """Review F2: the same facts gave opposite verdicts depending on which
-        directory sorted first. R3 reports the duplicate; the resolver refuses
+        document was read first. R3 reports the duplicate; the resolver refuses
         to guess which claimant is authoritative."""
         with tree() as root:
-            self._plan(root, '0.1.0', '0.2.0')
+            self._plan(root, 'a', 'b')
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.1.0', 'building')
             cfg = cfg_for(root)
             self.assertEqual(sorted(model.milestones_of_version(cfg, '0.1.0')),
                              ['a', 'b'])
-            self.assertTrue(model.release_is_unverifiable(cfg, '0.1.0'))
-            self.assertFalse(model.release_is_shipped(cfg, '0.1.0'))
-            # Flipping which one is `done` must not change the answer.
-            self._milestone(root, 'a', '0.1.0', 'building')
-            self._milestone(root, 'b', '0.1.0', 'done')
-            self.assertTrue(model.release_is_unverifiable(cfg_for(root), '0.1.0'))
+            self.assertIsNone(model.milestone_of_version(cfg, '0.1.0'))
+            # The plan is unambiguous either way — an entry is one grain — so
+            # the CURRENT release is `b`'s, and R3 is what reports the clash.
+            self.assertEqual(model.current_milestone(cfg), 'b')
+            write_config(root, '[pm]\nchecks = ["R3"]\n')
+            self.assertEqual(run_gate(root)[0], 1)
 
     def test_version_at_refuses_a_value_it_does_not_know(self):
         with tree() as root:

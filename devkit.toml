@@ -84,8 +84,7 @@ checks = [
     "D9", "D10",
     "U1", "U2",
     "R1", "R2", "R3", "R4", "R5", "R6",
-    "V1", "V4", "V5", "V6",
-    "V1", "V4", "V5", "V6",
+    "V1", "V4", "V5", "V7",
 ]
 
 # R5 grades pyproject.toml against a POSITION in pm/roadmap/releases.md `order`,
@@ -134,10 +133,6 @@ budget = { unit = 20, integration = 130, test = 150 }
 # happens. Today's counts sit well under them; lowering the ceilings toward
 # today's is a decision to take on purpose, not a drift to correct in passing.
 cases = { unit = 780, integration = 430 }
-# V6 is named on purpose, and it is the one rule here that is NOT stock. This
-# tree keeps generated execution lists and is small enough for `pm sync` to be
-# cheap, so the gate holds the view to the tree. A project whose lists go stale
-# on ordinary work should leave it off and reach for `pm sync --check`.
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

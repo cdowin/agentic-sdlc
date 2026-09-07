@@ -923,8 +923,9 @@ class NoCodePathParsesAVersion(unittest.TestCase):
         surface = {
             'repo/pm/model.py': ('releases_file', 'declared_order',
                                  'milestone_version', 'version_claims',
-                                 'milestone_of_version', 'release_is_shipped',
-                                 'release_is_unverifiable', 'current_release',
+                                 'milestone_of_version', 'entry_is_shipped',
+                                 'entry_is_dangling', 'current_release',
+                                 'current_milestone',
                                  # Review F4: the two likeliest regrowth sites.
                                  # Both READ a version out of a file, which is
                                  # one step from taking one apart.

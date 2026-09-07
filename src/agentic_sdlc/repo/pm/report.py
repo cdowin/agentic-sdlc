@@ -744,8 +744,8 @@ def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
         grains.append(feature)
         stories = set()
         for sfile in src.story_files(cfg, feature.gid):
-            slug = model.story_slug_of(cfg, sfile.stem)
-            story = _grain(src, sfile, KIND_STORY, f'{feature.gid}/{slug}')
+            story = _grain(src, sfile, KIND_STORY,
+                           f'{feature.gid}/{sfile.stem}')
             grains.append(story)
             stories.add(story.gid)
         owned[feature.gid] = stories

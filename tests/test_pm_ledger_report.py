@@ -483,8 +483,10 @@ def test_two_milestones_in_progress_is_answered_from_the_plan():
         write(root / 'pm/roadmap/milestones/0.1.md',
               {'id': '"0.1"', 'name': 'Demo', 'status': 'building',
                'version': '0.1.0'})
+        # The plan lists MILESTONE IDS (0.4.0); each milestone's own
+        # `version:` says which release it is.
         (root / 'pm/roadmap/releases.md').write_text(
-            '---\nid: releases\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n\n'
+            '---\nid: releases\norder:\n  - "0.1"\n  - "0.2"\n---\n\n'
             '# Releases\n', encoding='utf-8')
         code, out = report(root)
         assert code == 0, out

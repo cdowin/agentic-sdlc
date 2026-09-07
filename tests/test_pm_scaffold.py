@@ -625,15 +625,16 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
     project's own notes in a project's own tree, and a tracker with an opinion
     about them is a tracker deciding what you may write down.
 
-    D13a — a grain dir with no grain file — was already reported twice over:
-    `orphan_dirs` says it (always on, never gated by `[pm] checks`) because a
-    dropped directory takes every descendant out of the scan, and V1 says a
-    grain file with no `id:`/`status:` is malformed. This pins BOTH so the
+    D13a — a grain dir with no grain file — was reported twice over, by
+    `orphan_dirs` and by V1. **0.4.0 deleted the subject**: a pool has no grain
+    directories, so `orphan_dirs` went with them and V1 answers the flat
+    version of the same question — a document with no readable `id:` is
+    reported by name and counted as skipped. This pins the successor, so the
     coverage cannot quietly leave with the rule.
 
-    And `pm new` no longer mints `features/ bugs/ design/ stories/`. Git does
-    not store an empty directory: across one consumer's tree that produced 158
-    `design/` dirs, 11 of which hold anything.
+    And `pm new` mints no directory at all beyond the pool. Git does not store
+    an empty directory: across one consumer's tree the old behaviour produced
+    158 `design/` dirs, 11 of which hold anything.
     """
 
     def test_your_own_files_in_your_own_milestone_dir_are_not_findings(self):

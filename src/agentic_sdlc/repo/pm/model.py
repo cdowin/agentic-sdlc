@@ -1573,26 +1573,6 @@ def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     return out
 
 
-def orphan_dirs(cfg: PmConfig) -> list[tuple[Path, str]]:
-    """Directories that look like a grain but carry no grain file — reported
-    rather than silently dropped, since a dropped directory takes every
-    descendant with it (rule 4).
-    """
-    out: list[tuple[Path, str]] = []
-    candidates = _milestone_candidates(cfg.roadmap, exclude_archive=True)
-    _, orphan_milestones = candidates.partition(_has_milestone_file,
-                                                SkipReason.NO_GRAIN_FILE)
-    orphaned = set(orphan_milestones)
-    for d in candidates.kept:
-        if d in orphaned:
-            out.append((d, 'milestone dir with no milestone.md'))
-            continue
-        _, orphan_features = walk.children(d / FEATURES_DIR, Kind.DIR).partition(
-            _has_feature_file, SkipReason.NO_GRAIN_FILE)
-        out += [(f, 'feature dir with no feature.md') for f in orphan_features]
-    return out
-
-
 def _has_milestone_file(d: Path) -> bool:
     return (d / MILESTONE_DOC).is_file()
 
@@ -1623,28 +1603,6 @@ def milestone_walk(cfg: PmConfig) -> Walk:
 def milestone_dirs(cfg: PmConfig) -> list[Path]:
     """Milestone dirs in the ACTIVE tree (archived ones predate the schema)."""
     return list(milestone_walk(cfg).kept)
-
-
-def milestone_dir_of(cfg: PmConfig, path: Path) -> Path | None:
-    """The milestone directory that contains this grain document, or None —
-    the twin of `milestone_dir`, asked of a resolved path. Structural: the
-    first component under `roadmap/` (or `roadmap/zz_archive/`), whether or
-    not it still holds a `milestone.md`.
-    """
-    base = cfg.roadmap
-    try:
-        here = path.resolve()
-        base = base.resolve()
-    except OSError:
-        return None
-    if not here.is_relative_to(base):
-        return None
-    parts = here.relative_to(base).parts
-    if parts[:1] == (ARCHIVE_DIR_NAME,):
-        base, parts = base / ARCHIVE_DIR_NAME, parts[1:]
-    if len(parts) < 2:
-        return None
-    return base / parts[0]
 
 
 def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:

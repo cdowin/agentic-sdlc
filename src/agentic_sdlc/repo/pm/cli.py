@@ -56,10 +56,6 @@ every run; a state the project never declared is refused by name.
                                            children rather than refusing on
                                            their account — refuses only when
                                            the id is missing)
-  move <story-id> <feature-id>            (re-parents a story: renames its
-                                           file under the target feature and
-                                           rewrites id/feature/milestone —
-                                           whole, or not at all)
   status [<milestone>]
   list [--status <s>[,<s>…]] [--owner <name>] [--milestone <id>]
        [--category todo|in_progress|done] [--json]
@@ -649,6 +645,35 @@ def _known_milestone_ids(cfg: model.PmConfig) -> list[str]:
                   for mdir, mid in model.known_milestones(cfg))
 
 
+def _retired_files(cfg: model.PmConfig, milestone) -> list[Path]:
+    """Every file `retire` removes for one milestone, in delete order.
+
+    The milestone, everything bound to it, everything bound to THOSE, each
+    grain's shared documents, and the milestone's ledger — the `check pm` D6
+    model is unchanged: an attributed row dies with its milestone and git is
+    the archive. The tree's own ledger is not touched, because those rows were
+    never about this milestone (0.4.0/D3).
+    """
+    grains = [milestone]
+    for kind in ('feature', 'bug'):
+        for child in model.children(cfg, kind, milestone.gid):
+            grains.append(child)
+            if kind == 'feature':
+                grains.extend(model.children(cfg, 'story', child.gid))
+    out: list[Path] = []
+    for grain in grains:
+        out.append(grain.path)
+        for slot in (model.DECISION_FILE_NAME, model.REVIEW_FILE_NAME,
+                     model.HANDOFF_FILE_NAME):
+            shared = model.shared_doc(cfg, grain, slot)
+            if shared != grain.path and shared.is_file():
+                out.append(shared)
+    ledger_path = ledger.ledger_for(cfg, milestone.gid)
+    if ledger_path.is_file():
+        out.append(ledger_path)
+    return [p for p in out if p.is_file()]
+
+
 def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     """Retire a finished milestone: remove its directory.
 
@@ -675,12 +700,12 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
             summary_words.append(a)
     if not mid:
         raise Usage(USAGE)
-    mdir = model.milestone_dir(cfg, mid)
-    if mdir is None:
+    grain = model.grain_index(cfg).get(mid)
+    if grain is None or grain.kind != 'milestone':
         known = _known_milestone_ids(cfg)
         raise Usage(f'{mid!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(known) if known else "none scaffolded"})')
-    mfile = model.milestone_doc(mdir)
+    mfile = grain.path
     notices: list[str] = []
     if not mfile.is_file():
         notices.append(f'{cfg.rel(mfile)} is missing')
@@ -728,14 +753,23 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
                  f'before retiring keeps a row')
 
     if dry_run:
-        _ok(f'[dry-run] would remove {cfg.rel(mdir)}')
+        _ok(f'[dry-run] would remove '
+            f'{len(_retired_files(cfg, grain))} file(s), '
+            f'starting {cfg.rel(mfile)}')
         _ok(f'[dry-run] {kept}')
         for n in notices:
             _ok(f'  noticed: {n}')
         return 0
 
+    # The GRAINS this milestone owns, and its ledger — not a directory, which
+    # a pooled tree has none of. The same set either way: every feature and bug
+    # bound to it, every story bound to those, its own document, and the shared
+    # docs sitting beside each. `pm retire` deletes N files instead of one
+    # directory, and that is the tool's work rather than a human's.
+    doomed = _retired_files(cfg, grain)
     plan = apply.Plan()
-    plan.delete_tree(mdir, label=cfg.rel(mdir))
+    for path in doomed:
+        plan.delete_file(path, label=cfg.rel(path))
     blocked = plan.decide()
     if blocked:
         raise Refused('; '.join(b.describe() for b in blocked)
@@ -747,7 +781,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
             + ('nothing was written' if not applied.landed else
                'ALREADY LANDED: ' + ', '.join(s.label for s in applied.landed))
             + '. Fix the obstruction and re-run.')
-    _ok(f'milestone {mid}: retired — {cfg.rel(mdir)} removed; {kept}')
+    _ok(f'milestone {mid}: retired — {len(doomed)} file(s) removed; {kept}')
     for n in notices:
         _ok(f'  noticed: {n}')
     return 0
@@ -761,64 +795,6 @@ def _known_feature_ids(cfg: model.PmConfig) -> list[str]:
                    or f'{milestone.gid}/{ff.parent.name}'
                    for ff in model.feature_files(cfg, milestone.gid))
     return sorted(out)
-
-
-def cmd_move(cfg: model.PmConfig, args: list[str]) -> int:
-    """Re-parent a story to a different feature, whole or not at all: every
-    obstruction is decided before a byte moves, the frontmatter is
-    rewritten at the old path, and the rename is last, so an OS failure
-    between the two writes is reported by name.
-    """
-    if len(args) != 2:
-        raise Usage(USAGE)
-    sid, target_fid = args
-    sf = model.story_file(cfg, sid)
-    if sf is None:
-        raise Usage(f'no story resolves from id {sid!r} '
-                    f'(expected <milestone>/<feature-slug>/<story-slug>)')
-    target_ff = model.feature_file(cfg, target_fid)
-    if target_ff is None:
-        known = _known_feature_ids(cfg)
-        raise Usage(f'no feature resolves from id {target_fid!r} '
-                    f'({" ".join(known) if known else "none scaffolded"})')
-    target_mid = model.unquote(model.field_of(target_ff, 'milestone')) \
-        or target_fid.partition('/')[0]
-    target_fslug = target_ff.parent.name
-    canonical_fid = f'{target_mid}/{target_fslug}'
-    if sf.parent.parent == target_ff.parent:
-        _ok(f'story {sid} already under feature {canonical_fid} (no-op)')
-        return 0
-
-    dest = target_ff.parent / model.STORIES_DIR / sf.name
-    # `stories/` is minted on first write and `Plan.move` does not create a
-    # missing parent, so that is its own decided step.
-    plan = apply.Plan()
-    plan.make_dir(dest.parent, label=f'{cfg.rel(dest.parent)}/')
-    plan.move(sf, dest, label=f'{cfg.rel(sf)} -> {cfg.rel(dest)}')
-    blocked = plan.decide()
-    if blocked:
-        raise Refused('; '.join(b.describe() for b in blocked)
-                      + ' — nothing was moved')
-
-    orig_id = model.field_of(sf, 'id')
-    story_slug = orig_id.rpartition('/')[2] or sf.stem
-    updates = {'id': f'{canonical_fid}/{story_slug}', 'feature': canonical_fid,
-               'milestone': f'"{target_mid}"'}
-    if not model.set_fields(sf, updates):
-        raise Usage(f'could not rewrite id/feature/milestone in {cfg.rel(sf)} '
-                    f'(malformed frontmatter, or the file is not writable) — '
-                    f'nothing was moved')
-
-    applied = plan.apply(decide=False)
-    if applied.failed is not None:
-        raise Refused(
-            f'{applied.failed.label} could not be written ({applied.error}) — '
-            f'the frontmatter at {cfg.rel(sf)} was ALREADY rewritten to '
-            f'{canonical_fid}; move the file to {cfg.rel(dest)} by hand, or '
-            f'clear the obstruction and re-run (the rewrite is idempotent).')
-    _ok(f'story {sid}: moved to {canonical_fid} '
-        f'({cfg.rel(sf)} -> {cfg.rel(dest)})')
-    return 0
 
 
 # --- status -------------------------------------------------------------------
@@ -2475,7 +2451,7 @@ def main(argv: list[str]) -> int:
     table = {
         'ready-for': ready_for.cmd_ready_for,
         'story': cmd_story, 'bug': cmd_bug, 'feature': cmd_feature,
-        'milestone': cmd_milestone, 'retire': cmd_retire, 'move': cmd_move,
+        'milestone': cmd_milestone, 'retire': cmd_retire,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
         'migrate': cmd_migrate,
         'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,

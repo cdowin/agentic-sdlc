@@ -315,19 +315,20 @@ class FeatureClose(unittest.TestCase):
         # says so; the story advisory it used to repeat is gone (story 03).
         with tree(feature_status='reviewing',
                   story_statuses=('reviewing', 'ready')) as root:
-            fdir = root / 'pm/roadmap/features/alpha'
+            pools = root / 'pm/roadmap'
             self.assertEqual(run_cli(root, 'feature', 'done', '0.1/alpha')[0], 0)
             settled = {p.name: p.read_bytes()
-                       for p in sorted((fdir / 'stories').iterdir())}
-            feature_settled = (fdir / 'feature.md').read_bytes()
+                       for p in sorted((pools / 'stories').iterdir())}
+            feature_settled = (pools / 'features/alpha.md').read_bytes()
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('already done (no-op)', out)
             self.assertNotIn('s1.md', out)
             self.assertEqual({p.name: p.read_bytes()
-                              for p in sorted((fdir / 'stories').iterdir())},
+                              for p in sorted((pools / 'stories').iterdir())},
                              settled)
-            self.assertEqual((fdir / 'feature.md').read_bytes(), feature_settled)
+            self.assertEqual((pools / 'features/alpha.md').read_bytes(),
+                             feature_settled)
 
     def test_any_word_in_the_done_category_is_the_close(self):
         # `obe` is in the seed's `done` list, so `pm feature obe <id>` is a
@@ -367,7 +368,7 @@ class FeatureClose(unittest.TestCase):
             with self.subTest(route=name), \
                     tree(with_record=False, **kwargs) as root:
                 if symlink:
-                    (root / 'pm/roadmap/features/alpha'
+                    (root / 'pm/roadmap/features'
                      / symlink).symlink_to('nowhere.md')
                 ff, story = root / FFILE, root / STORY_REL
                 before, sbefore = ff.read_text(), story.read_text()
@@ -613,8 +614,8 @@ class StatusReport(unittest.TestCase):
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             run_cli(root, 'new', 'feature', '0.1', 'c', 'C')
             fdir = root / 'pm/roadmap/features'
-            model.set_field(fdir / 'alpha' / 'feature.md', 'phase', '2')
-            model.set_field(fdir / 'b' / 'feature.md', 'phase', 'seam')
+            model.set_field(fdir / 'alpha.md', 'phase', '2')
+            model.set_field(fdir / 'b.md', 'phase', 'seam')
             # 'c' stays unphased on purpose.
             _, out = run_cli(root, 'status')
             order = [ln for ln in out.splitlines() if ln.startswith('  --')]
@@ -670,8 +671,9 @@ class IdsAreLiterals(unittest.TestCase):
 
 def _phased(root: Path, slug: str, phase: str, deps: list[str]) -> None:
     """One feature under 0.1 with a `phase:` and a `depends_on:` list."""
-    write(root / f'pm/roadmap/features/{slug}/feature.md',
-          {'id': f'0.1/{slug}', 'milestone': '"0.1"', 'name': slug.title(),
+    write(root / f'pm/roadmap/features/{slug}.md',
+          {'id': f'0.1/{slug}', 'kind': 'feature', 'milestone': '"0.1"',
+           'name': slug.title(),
            'status': 'planning', 'phase': phase,
            'depends_on': '[' + ', '.join(f'"{d}"' for d in deps) + ']'})
 
@@ -810,7 +812,7 @@ class ExecutionList(unittest.TestCase):
                 run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
             fdir = root / 'pm/roadmap/features'
             # aaa sorts first by name but depends on zzz, so zzz must lead.
-            model.set_field(fdir / 'aaa/feature.md', 'depends_on', '["0.1/zzz"]')
+            model.set_field(fdir / 'aaa.md', 'depends_on', '["0.1/zzz"]')
             run_cli(root, 'sync')
             block = (root / MFILE).read_text()
             self.assertLess(block.index('`zzz`'), block.index('`aaa`'))
@@ -991,12 +993,12 @@ class StoryResolution(unittest.TestCase):
     leave the author nothing to do.
     """
 
-    FDIR = 'pm/roadmap/features/alpha'
+    FDIR = 'pm/roadmap/stories'
 
     def _story(self, root: Path, rel: str, sid: str) -> Path:
-        p = root / self.FDIR / 'stories' / rel
-        write(p, {'id': sid, 'feature': '0.1/alpha', 'milestone': '"0.1"',
-                  'name': 'S', 'status': 'ready'})
+        p = root / self.FDIR / rel
+        write(p, {'id': sid, 'kind': 'story', 'feature': '0.1/alpha',
+                  'milestone': '"0.1"', 'name': 'S', 'status': 'ready'})
         return p
 
     def test_a_story_the_gate_can_see_is_a_story_the_verb_can_address(self):
@@ -1085,15 +1087,18 @@ class Decide(unittest.TestCase):
     consumer's 158 decision logs.
     """
 
-    MDIR = 'pm/roadmap'
+    # The milestone's decisions log sits beside its document in the pool,
+    # under the document's own name: a pool is flat, so a bare
+    # `decisions.md` would be one file for every milestone.
+    MLOG = 'pm/roadmap/milestones/0.1-decisions.md'
+    FLOG = 'pm/roadmap/features/alpha-decisions.md'
 
     def _scaffolded(self, root: Path) -> None:
         self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
         self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'alpha')[0], 0)
 
     def _log(self, root: Path, rel: str = '') -> str:
-        return (root / self.MDIR / (rel or 'decisions.md')).read_text(
-            encoding='utf-8')
+        return (root / (rel or self.MLOG)).read_text(encoding='utf-8')
 
     def test_the_log_is_minted_on_the_FIRST_decision_and_not_before(self):
         # The whole cut. `pm new` scaffolded an empty decisions.md into every
@@ -1102,7 +1107,7 @@ class Decide(unittest.TestCase):
         # is something in it, stamped with today's date and the first ordinal.
         with tree() as root:
             self._scaffolded(root)
-            log = root / self.MDIR / 'decisions.md'
+            log = root / self.MLOG
             self.assertFalse(log.exists())
             code, out = run_cli(root, 'decide', '0.1', 'the sweep verb moves')
             self.assertEqual(code, 0, out)
@@ -1122,7 +1127,7 @@ class Decide(unittest.TestCase):
             self._scaffolded(root)
             code, out = run_cli(root, 'decide', '0.1')
             self.assertEqual(code, 2, out)
-            self.assertFalse((root / self.MDIR / 'decisions.md').exists())
+            self.assertFalse((root / self.MLOG).exists())
             self.assertEqual(run_cli(root, 'decide', '0.1', 'a choice')[0], 0)
             before = self._log(root)
             code, out = run_cli(root, 'decide', '0.1')
@@ -1141,7 +1146,7 @@ class Decide(unittest.TestCase):
             body = self._log(root)
             for eid in ('## D1 ', '## D2 ', '## D3 '):
                 self.assertIn(eid, body)
-            log = root / self.MDIR / 'decisions.md'
+            log = root / self.MLOG
             model.write_raw(log, f'{model.SLOT_HEADER["decisions.md"]}\n\n'
                                  f'## M27 — 2026-01-01 — an older choice\n')
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
@@ -1160,7 +1165,7 @@ class Decide(unittest.TestCase):
         """
         with tree() as root:
             self._scaffolded(root)
-            log = root / self.MDIR / 'decisions.md'
+            log = root / self.MLOG
             hand = ('## D9 — 2026-01-01 — a hand-written entry\n'
                     'Free prose, no fields, several  \nlines of it.\n')
             before = (f'{model.SLOT_HEADER["decisions.md"]}\n\n{hand}'
@@ -1196,7 +1201,7 @@ class Decide(unittest.TestCase):
         the log either."""
         with tree() as root:
             self._scaffolded(root)
-            log = root / self.MDIR / 'decisions.md'
+            log = root / self.MLOG
             for title in ('half a heading;', 'a thing &', '|'):
                 with self.subTest(title=title):
                     code, out = run_cli(root, 'decide', '0.1', title)
@@ -1230,7 +1235,7 @@ class Decide(unittest.TestCase):
             code, out = run_cli(root, 'decide', '0.1/alpha', 'a feature choice')
             self.assertEqual(code, 0, out)
             self.assertIn('## D1 — ',
-                          self._log(root, 'features/alpha/decisions.md'))
+                          self._log(root, self.FLOG))
 
 
 class ExeclistRefusals(unittest.TestCase):
@@ -1439,7 +1444,13 @@ class BugStatus(unittest.TestCase):
 
 
 class Retire(unittest.TestCase):
-    """`pm retire <milestone-id>` — one write that removes the directory.
+    """`pm retire <milestone-id>` — one write that removes the GRAINS.
+
+    0.4.0: a milestone has no directory, so this deletes its document, every
+    grain bound to it, each of their shared docs and its ledger. The same set
+    the directory used to hold, addressed by binding instead of by location —
+    and N files instead of one tree, which is the tool's work rather than a
+    human's.
 
     **`ROADMAP.md` retired in 0.3.0** and this verb no longer appends to it. It
     was two things wearing one name: a hand-maintained index of milestones still
@@ -1471,11 +1482,12 @@ class Retire(unittest.TestCase):
                   story_statuses=('done',)) as root:
             mdir = root / 'pm/roadmap'
             before = sorted(p.relative_to(root) for p in mdir.rglob('*'))
-            (root / 'pm/roadmap').chmod(0o555)
+            # The POOL, since that is the directory a delete needs write on.
+            (root / 'pm/roadmap/milestones').chmod(0o555)
             try:
                 code, out = run_cli(root, 'retire', '0.1')
             finally:
-                (root / 'pm/roadmap').chmod(0o755)
+                (root / 'pm/roadmap/milestones').chmod(0o755)
             self.assertEqual(code, 1, out)
             self.assertIn('nothing was retired', out)
             self.assertTrue(mdir.is_dir())
@@ -1491,7 +1503,10 @@ class Retire(unittest.TestCase):
             self.assertIn('noticed: milestone 0.1 is building, not done', out)
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
-            self.assertFalse((root / 'pm/roadmap').exists())
+            # The GRAINS are gone; `pm/roadmap` is the tree itself and stays.
+            self.assertEqual(model.milestones(cfg_for(root)), [])
+            self.assertFalse((root / MFILE).exists())
+            self.assertFalse((root / FFILE).exists())
 
     def test_the_plan_is_what_outlives_the_directory(self):
         """0.3.0: the row survives its milestone through `order`, not a file.
@@ -1509,7 +1524,7 @@ class Retire(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('releases.md', out)
             self.assertIn('UNVERIFIABLE', out)
-            self.assertFalse((root / 'pm/roadmap').exists())
+            self.assertFalse((root / MFILE).exists())
             # The plan kept the version; the record is gone.
             self.assertEqual(
                 model.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
@@ -1531,7 +1546,7 @@ class Retire(unittest.TestCase):
             before = stale.read_bytes()
             self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
             self.assertEqual(stale.read_bytes(), before)
-            self.assertFalse((root / 'pm/roadmap').exists())
+            self.assertFalse((root / MFILE).exists())
 
     def test_dry_run_writes_nothing_byte_for_byte(self):
         with tree(milestone_status='done', feature_status='done',
@@ -1558,100 +1573,12 @@ class Retire(unittest.TestCase):
                 (p.relative_to(root), p.read_bytes())
                 for p in (root / 'pm/roadmap/0.2-two').rglob('*') if p.is_file())
             self.assertEqual(run_cli(root, 'retire', '0.1')[0], 0)
-            self.assertFalse((root / 'pm/roadmap').exists())
+            self.assertFalse((root / MFILE).exists())
             self.assertEqual(
                 sorted((p.relative_to(root), p.read_bytes())
                        for p in (root / 'pm/roadmap/0.2-two').rglob('*')
                        if p.is_file()),
                 sibling)
-
-
-class Move(unittest.TestCase):
-    """`pm move <story-id> <feature-id>` — re-parents a story whole, or not
-    at all.
-
-    Before this, re-parenting was a rename plus three hand-edited
-    frontmatter fields, policed afterwards (if at all) by V2/V3 — one
-    whole-or-nothing verb through the machinery the templates already own.
-    """
-
-    NEW_REL = 'pm/roadmap/stories/g-s0.md'
-
-    @staticmethod
-    def _second_feature(root: Path) -> None:
-        write(root / 'pm/roadmap/features/beta.md',
-              {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
-               'status': 'building', 'reviewed': ''})
-
-    @staticmethod
-    def _second_milestone(root: Path) -> None:
-        write(root / 'pm/roadmap/milestones/0.2.md',
-              {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
-        write(root / 'pm/roadmap/features/gamma.md',
-              {'id': '0.2/gamma', 'milestone': '"0.2"', 'name': 'Gamma',
-               'status': 'building', 'reviewed': ''})
-
-    def test_a_story_moves_whole_and_every_other_byte_survives(self):
-        """Across milestones, so all THREE rewritten keys have to change.
-
-        Probed 2026-09-06 (0.2.0/the-proof-is-named-in-the-criterion): this
-        case used to move `0.1/alpha/s0` to `0.1/beta`, where the milestone
-        key already held the right value — so a `move` that stopped
-        rewriting `milestone` passed, and would have shipped stories whose
-        `milestone:` named the tree they left. The target is now a feature
-        under a second milestone, and the byte-exact expectation carries the
-        third replacement.
-        """
-        with tree(story_statuses=('ready',)) as root:
-            self._second_milestone(root)
-            before = (root / STORY_REL).read_text(encoding='utf-8')
-            code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.2/gamma')
-            self.assertEqual(code, 0, out)
-            new = root / self.NEW_REL
-            self.assertFalse((root / STORY_REL).exists())
-            self.assertTrue(new.is_file())
-            expected = (before.replace('feature: 0.1/alpha', 'feature: 0.2/gamma')
-                              .replace('id: 0.1/alpha/s0', 'id: 0.2/gamma/s0')
-                              .replace('milestone: "0.1"', 'milestone: "0.2"'))
-            self.assertNotEqual(expected, before)
-            self.assertEqual(expected, new.read_text(encoding='utf-8'))
-
-    def test_an_unresolvable_end_is_a_usage_error_that_moves_nothing(self):
-        for argv in (('0.1/alpha/s0', '0.1/nope'), ('0.1/alpha/nope', '0.1/beta')):
-            with self.subTest(argv=argv), tree(story_statuses=('ready',)) as root:
-                self._second_feature(root)
-                code, out = run_cli(root, 'move', *argv)
-                self.assertEqual(code, 2, out)
-                self.assertTrue((root / STORY_REL).is_file())
-                if argv[1] == '0.1/nope':
-                    self.assertIn('no feature resolves', out)
-                    self.assertIn('0.1/alpha', out)
-                    self.assertIn('0.1/beta', out)
-
-    def test_already_under_the_target_is_a_noop(self):
-        with tree(story_statuses=('ready',)) as root:
-            code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/alpha')
-            self.assertEqual(code, 0, out)
-            self.assertIn('no-op', out)
-            self.assertTrue((root / STORY_REL).is_file())
-
-    @unittest.skipIf(hasattr(os, 'geteuid') and os.geteuid() == 0,
-                     'permission bits are not the obstruction as root')
-    def test_an_unwritable_target_directory_moves_nothing(self):
-        with tree(story_statuses=('ready',)) as root:
-            self._second_feature(root)
-            target_dir = root / 'pm/roadmap/features/beta'
-            target_dir.chmod(0o555)
-            try:
-                before = (root / STORY_REL).read_bytes()
-                code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/beta')
-                self.assertEqual(code, 1, out)
-                self.assertIn('nothing was moved', out)
-                self.assertTrue((root / STORY_REL).is_file())
-                self.assertEqual((root / STORY_REL).read_bytes(), before)
-                self.assertFalse((target_dir / 'stories' / 's0.md').exists())
-            finally:
-                target_dir.chmod(0o755)
 
 
 class ThePlanIsADeclaredOrder(unittest.TestCase):
@@ -1670,10 +1597,11 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
 
     @staticmethod
     def _milestone(root: Path, mid: str, version: str, status: str) -> None:
-        front = {'id': f'"{mid}"', 'name': mid, 'status': status}
+        front = {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
+                 'status': status}
         if version:
             front['version'] = f'"{version}"'
-        write(root / 'pm' / 'roadmap' / f'{mid}-m' / 'milestone.md', front)
+        write(root / 'pm' / 'roadmap' / 'milestones' / f'{mid}.md', front)
 
     def test_block_list_reads_in_order_and_a_scalar_is_not_a_list(self):
         with tree() as root:
@@ -1781,7 +1709,7 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self._milestone(root, 'b', '0.2.0', 'building')
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
             import shutil
-            shutil.rmtree(root / 'pm' / 'roadmap' / 'a-m')
+            (root / 'pm' / 'roadmap' / 'milestones' / 'a.md').unlink()
             self.assertEqual(model.current_release(loaded(root)), '0.2.0')
 
     def test_two_milestones_claiming_one_version_never_decide_by_directory_name(self):

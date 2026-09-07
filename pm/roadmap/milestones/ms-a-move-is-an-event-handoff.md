@@ -57,3 +57,28 @@ checkout.
 distribution name, the import package `agentic_sdlc`, AND the console script. That package is D1's
 worked example of the rejected plugin path — worth reading once, before anyone re-proposes "let the
 config name a command to run." Packaging is not scoped to this milestone.
+
+**Eleven agents ran against ONE shared checkout, and that was the orchestrator's error.**
+246 minutes of agent work compressed into 53 minutes wall clock (4.6x) — but the concurrency cost
+real work, twice: `checks/pm.py` was overwritten mid-task by a second agent and silently lost half
+its edits (restored from a scratch backup), and a hand-written grain body was reverted to its
+scaffold. Three agents could not get a verdict on their own work and rebuilt isolated trees with
+`git archive HEAD` first. `pm new` crashed mid-call because `cli.py` was being rewritten underneath
+it. `test_prose_census` went red CUMULATIVELY — no single agent broke it and no single agent could
+fix it. Use `isolation: "worktree"` per agent, or `tools/dev/agent-worktree.sh`, which ships in the
+box and which nothing named at the moment it was needed (that is
+`ft-a-move-names-the-capability-you-are-standing-in`, filed from this).
+
+**The review rung was budgeted at zero and it is ~40% of a milestone.** Thirteen of eighteen grains
+were BUILT and none closed, because `close feature` wants a `reviewed:` record with a parsed verdict
+block and nothing had one. This is 0.3.0's lesson (dispatch a feature's review the moment
+`ready-for feature` goes READY) repeated by the orchestrator that had just written it down.
+
+**Scope grew 12 -> 18 grains while the clock ran.** Every addition was a real defect found by doing
+the work. Healthy, but a target that moves is a target you miss: a finding should default to a GitHub
+issue and become a grain only when it blocks.
+
+**Statuses were flipped at the end, not when they became true.** So the ledger reports one unbroken
+`in_progress` span per grain with no internal structure — which is exactly what
+`ft-time-is-measured-per-state-and-rolls-up` exists to fix, demonstrated by this build failing to
+follow the execution loop it ships.

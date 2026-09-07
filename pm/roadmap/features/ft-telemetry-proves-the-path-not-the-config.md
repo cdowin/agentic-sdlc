@@ -3,8 +3,8 @@ id: ft-telemetry-proves-the-path-not-the-config
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: telemetry proves the path not the config
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-the-recording-rules.md
 depends_on: []
 consumed_by: []
 ---

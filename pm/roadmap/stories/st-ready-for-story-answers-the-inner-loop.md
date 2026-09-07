@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-rung-has-an-entry-edge
 milestone: "ms-a-move-is-an-event"
 name: ready-for story answers the inner loop
-status: planning
+status: building
 owner:
 depends_on: []
 ---

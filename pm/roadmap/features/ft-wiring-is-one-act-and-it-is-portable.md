@@ -3,8 +3,8 @@ id: ft-wiring-is-one-act-and-it-is-portable
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: wiring is one act, and it is portable
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-wiring-is-one-act-and-it-is-portable.md
 depends_on: []
 consumed_by: []
 ---

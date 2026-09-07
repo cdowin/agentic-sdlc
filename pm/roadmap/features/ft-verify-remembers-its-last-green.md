@@ -3,8 +3,8 @@ id: ft-verify-remembers-its-last-green
 kind: feature
 milestone: "ms-a-move-is-an-event"
 name: verify remembers its last green
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.5.0-verify-remembers-its-last-green.md
 depends_on: []
 consumed_by: []
 ---

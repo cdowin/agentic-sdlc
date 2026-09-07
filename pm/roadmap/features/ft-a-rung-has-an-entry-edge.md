@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-move-is-an-event"
 name: a rung has an entry edge, and it is ready-for
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-07-0.5.0-a-rung-has-an-entry-edge.md
 depends_on: []
 consumed_by: []
 order:

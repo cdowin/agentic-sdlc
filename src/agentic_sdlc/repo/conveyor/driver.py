@@ -38,8 +38,9 @@ WRITES = {'release': 'milestone', 'story': 'story', 'feature': 'feature',
 SUBJECT = {
     'release': (1, 'version', '<version>'),
     'adopt': (1, 'version', '<version>'),
-    'story': (3, 'story id', '<milestone>/<feature>/<story>'),
-    'feature': (2, 'feature id', '<milestone>/<feature>'),
+    # The count only separates a version subject from a grain one.
+    'story': (2, 'story id', '<story-id>'),
+    'feature': (2, 'feature id', '<feature-id>'),
 }
 
 # A milestone id is one path segment; `model.segment_is_literal` owns the
@@ -284,8 +285,8 @@ was written, 2 the declaration could not be read.\
 """
 
 CLOSE_USAGE = f"""\
-agentic-sdlc {CLOSE_VERB} story   <milestone>/<feature>/<story>   [--force]
-agentic-sdlc {CLOSE_VERB} feature <milestone>/<feature>           [--force]
+agentic-sdlc {CLOSE_VERB} story   <story-id>     [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id>   [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set

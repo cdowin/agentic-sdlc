@@ -7,6 +7,7 @@ order:
   - "ms-0.3.0"
   - "ms-0.4.0"
   - "ms-a-move-is-an-event"
+  - "ms-the-rule-reaches-the-work"
 ---
 
 # The release plan

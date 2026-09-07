@@ -2,7 +2,7 @@
 id: bg-a-second-gate-in-one-checkout-loses-a-cost-row
 milestone: ms-0.4.0
 name: A second gate run in one checkout loses a cost row
-status: fixed
+status: closed
 caught_in: ms-0.4.0
 fix_milestone:
 caused_by:

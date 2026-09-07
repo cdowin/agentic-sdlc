@@ -1,8 +1,8 @@
 ---
-id: ms-0.4.0/bugs/the-seed-census-drops-a-kwargs-call
+id: bg-the-seed-census-drops-a-kwargs-call
 kind: bug
-milestone: "ms-0.4.0"
-name:
+milestone: 
+name: the seed census skips a coercer invoked with kwargs
 status: open
 caught_in: "ms-0.4.0"
 fix_milestone:

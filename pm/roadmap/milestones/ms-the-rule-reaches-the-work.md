@@ -21,6 +21,8 @@ order:
   - "ft-a-warning-is-actionable-where-it-fires"
   - "ft-the-vocabulary-is-constants-not-literals"
   - "bg-a-hand-recorded-dispatch-cannot-carry-a-total"
+  - "bg-the-suite-can-flip-the-host-repo-to-bare"
+  - "bg-a-proof-row-names-a-case-that-proves-half"
 ---
 
 # 0.6.0 — the rule reaches the work
@@ -107,15 +109,16 @@ a tidy-up's clothes.
 **Do not grow the always-loaded file to fix this.** `CLAUDE.md` is 163 lines against a documented 200
 target, and over-long files are followed LESS well. The answer is placement, not volume.
 
-## Four bugs open the order, and one of them is the model
+## Bugs open the order, and the first one is the model
 
 `order` opens with bugs rather than a feature, the way 0.5.0 put #6 and #7 ahead of its own theme.
-Two were found scaffolding this milestone; two were found closing 0.5.0.
+Six are bound to this milestone; `pm status` lists them and this file does not, because a roster
+copied into prose is the second scoreboard 0.3.0 retired `ROADMAP.md` for.
 
-    bg-a-bug-is-a-grain-nested-in-a-parent           the release gate has been vacuous since 0.2.0
-    bg-pm-set-writes-a-scalar-its-own-gate-refuses   `pm set` writes a shape `check pm` then refuses
-    bg-the-milestone-scaffold-still-mints-the-version  the unlanded half of #8
-    bg-the-package-docstring-names-another-project   four releases of prose about another project
+Two were found scaffolding this milestone, two closing 0.5.0, and two are inherited — carried off
+`ms-0.3.0` and `ms-0.4.0` under D1, which does not let a shipped milestone keep unresolved children.
+The rest of that inheritance went the other way: four bugs now declare no milestone at all and sit
+in the pool, gating nothing and counted there.
 
 **The first one runs first because it is the model, not a defect in it.** A bug is a grain nested in
 a parent — the same relationship a story has to a feature and a feature to a milestone — and it is
@@ -124,8 +127,8 @@ the only kind that states that relationship three times, in `milestone:`, `caugh
 refused on an open bug for four releases**, and 0.5.0's own record claims in plain words that it
 would have. That is rule 4's first cardinal sin, running green, on the tree that ships the rule.
 
-It leads the order because the other three sit inside the model it corrects: the field they are
-hand-stamped with today is the field it deletes.
+It leads the order because every other bug here sits inside the model it corrects: the field they
+are hand-stamped with today is the field it deletes, and D1 is the ruling it lands.
 
 **The fourth is the same defect as the changelog, one layer down.** `src/agentic_sdlc/__init__.py`
 has described Godot scene introspection since the extraction — a second copy of `pyproject.toml`'s

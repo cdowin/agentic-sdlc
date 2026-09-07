@@ -1,11 +1,11 @@
 ---
-id: ms-0.4.0/bugs/a-proof-row-names-a-case-that-proves-half
+id: bg-a-proof-row-names-a-case-that-proves-half
 kind: bug
-milestone: "ms-0.4.0"
-name:
+milestone: ms-the-rule-reaches-the-work
+name: a proof row names a case that exists and proves half of what it claims
 status: open
 caught_in: "ms-0.4.0"
-fix_milestone:
+fix_milestone: ms-the-rule-reaches-the-work
 caused_by:
 ---
 

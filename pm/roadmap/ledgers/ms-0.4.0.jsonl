@@ -164,3 +164,6 @@
 {"ts":"2026-09-07T04:55:39Z","kind":"status","grain":"ft-telemetry-arrives-with-the-bump","from":"building","to":"done"}
 {"ts":"2026-09-07T04:57:10Z","kind":"status","grain":"ft-the-tree-names-what-it-lacks","from":"building","to":"done"}
 {"ts":"2026-09-07T05:32:10Z","kind":"status","grain":"ms-0.4.0","from":"building","to":"done"}
+{"ts":"2026-09-07T22:07:06Z","kind":"status","grain":"bg-a-second-gate-in-one-checkout-loses-a-cost-row","from":"fixed","to":"closed"}
+{"ts":"2026-09-07T22:07:06Z","kind":"disposition","grain":"bg-a-second-gate-in-one-checkout-loses-a-cost-row","state":"closed","answer":"none"}
+{"ts":"2026-09-07T22:07:06Z","kind":"rung.leave","grain":"bg-a-second-gate-in-one-checkout-loses-a-cost-row","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}

@@ -2,7 +2,7 @@
 id: bg-the-milestone-scaffold-still-mints-the-version
 kind: bug
 milestone: "ms-the-rule-reaches-the-work"
-name:
+name: pm new milestone still mints the version as the id
 status: open
 caught_in: "ms-the-rule-reaches-the-work"
 fix_milestone: ms-the-rule-reaches-the-work

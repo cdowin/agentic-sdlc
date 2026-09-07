@@ -1,8 +1,8 @@
 ---
-id: ms-0.4.0/bugs/two-names-for-one-shared-doc-location
+id: bg-two-names-for-one-shared-doc-location
 kind: bug
-milestone: "ms-0.4.0"
-name:
+milestone: 
+name: slot_paths and shared_doc both answer where a shared doc lives
 status: open
 caught_in: "ms-0.4.0"
 fix_milestone:

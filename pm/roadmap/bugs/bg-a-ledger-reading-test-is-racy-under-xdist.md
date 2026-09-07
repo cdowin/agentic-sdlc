@@ -1,6 +1,6 @@
 ---
 id: bg-a-ledger-reading-test-is-racy-under-xdist
-milestone: ms-0.4.0
+milestone: 
 name: a ledger-reading test is racy under xdist
 status: open
 severity: low

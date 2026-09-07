@@ -1,8 +1,8 @@
 ---
-id: ms-0.4.0/bugs/a-belt-merges-stderr-into-stdout
+id: bg-a-belt-merges-stderr-into-stdout
 kind: bug
-milestone: "ms-0.4.0"
-name:
+milestone: 
+name: driver._writer merges stdout and stderr, so a stderr-only message is invisible
 status: open
 caught_in: "ms-0.4.0"
 fix_milestone:

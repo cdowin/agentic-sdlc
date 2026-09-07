@@ -10,9 +10,11 @@ Each rung runs the make target `[verify] <rung>` names — three lines, one
 shape, and the Makefile stays the authority on what a target RUNS (D3). A
 rung the section does not declare is exit 2 naming the key, never a pass and
 never the rung above. `--plan` prints each rung's measured cost from the
-ledger's `gate` rows, or the word `unknown` — never a guess. `--check` reads
-the Makefile as text and reports a rung naming a target it does not declare.
-An absent `[verify]` section is exit 2 for every flag.
+ledger's `gate` rows, or the word `unknown` — never a guess, and an `unrun`
+line joining `[checks] all` to those rows: a gate named in the roster that has
+never filed a cost row reads exactly like one that passes. `--check` reads the
+Makefile as text and reports a rung naming a target it does not declare. An
+absent `[verify]` section is exit 2 for every flag.
 
 Exit: 0 pass | 1 the target failed or `--check` found drift | 2 usage or
 config. A target's own exit 2 is reported as 1, with its code beside it.
@@ -253,7 +255,7 @@ def _roster_without_rows(root: Path, costs: dict) -> list[str]:
     The other direction of `verify --plan`'s own rule. It prints `unknown`
     rather than guessing a cost; this says which gates have never given it one.
     A REPORT — no exit code moves (rule 9), and a fresh checkout legitimately
-    has none of them.
+    has none of them, which it SAYS rather than passing over in silence.
     """
     try:
         # `core.config` and not `cli.all_roster`: this package's layers point
@@ -262,19 +264,28 @@ def _roster_without_rows(root: Path, costs: dict) -> list[str]:
         # value; validating the NAMES is the router's job and not this line's.
         from agentic_sdlc.core.config import config_section, str_tuple
         roster = str_tuple(config_section('checks'), 'checks', 'all', ())
-    except Exception:  # noqa: BLE001 - a config this cannot read says nothing
+    except Exception as err:  # noqa: BLE001 - reported, never swallowed
+        # A roster `check all` refuses at exit 2 read here as a clean plan.
+        return [f'unrun     [checks] all could not be read ({err}), so no '
+                f'gate was joined to a cost row — `agentic-sdlc check all` '
+                f'is the verb that refuses this by name']
+    if not roster:
         return []
     missing = [name for name in roster if name not in costs]
-    # SILENT when NONE of them has a row, and that is the whole precision of
-    # this line. `[checks] all` names GATES and a `gate` row names a MAKE
-    # TARGET — two namespaces (`gates_extra.py` says so) — so a tree that runs
-    # its gates inside a composed `check` target has cost rows for the
-    # composition and none per gate. Reporting all of them there would be a
-    # nag on every consumer. When SOME roster gates have rows and others never
-    # have, the join means something: that gate is named and nothing is
-    # measuring it.
-    if not missing or len(missing) == len(roster):
+    if not missing:
         return []
+    # `[checks] all` names GATES and a `gate` row names a MAKE TARGET — two
+    # namespaces (`gates_extra.py` says so) — so a tree running its gates
+    # inside a composed `check` target has rows for the composition and none
+    # per gate. Reporting each of them THERE would be a nag; reporting nothing
+    # is worse, because it reads exactly like a roster fully measured. So the
+    # all-missing case says which it is, in one line, and the partial case
+    # names the gates: that join is the one that means something.
+    if len(missing) == len(roster):
+        return [f'unrun     no gate in [checks] all has filed a cost row here '
+                f'({" ".join(roster)}) — a gate name and a `gate` row\'s make '
+                f'target are two namespaces, so this tree most likely measures '
+                f'composed targets; the join says nothing either way']
     return [f'unrun     {len(missing)} of {len(roster)} gate(s) in [checks] '
             f'all have filed no cost row here while the others have: '
             f'{" ".join(missing)} — a roster entry that never runs reads '

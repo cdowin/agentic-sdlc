@@ -1,15 +1,20 @@
 ---
+id: roadmap
+kind: roadmap
 order:
-  - "0.1.0"
-  - "0.2.0"
-  - "0.3.0"
-  - "0.4.0"
+  - "ms-0.1.0"
+  - "ms-0.2.0"
+  - "ms-0.3.0"
+  - "ms-0.4.0"
 ---
 
 # The release plan
 
-The order releases ship in. It is a DECISION, not a sort: versions are strings
-this package never parses, and `agentic-sdlc pm order` is what edits this list.
+The order releases ship in. It is a DECISION, not a sort: `order` lists the
+MILESTONE IDS, in sequence, and each milestone's own `version:` says which
+release it is — so a milestone that re-versions never touches this file.
 
-A milestone joins the plan by declaring `version:` and being appended here; the
-two are separate acts, so a draft milestone is not accidentally on the roadmap.
+`agentic-sdlc pm add roadmap <milestone-id>` schedules one, exactly as it
+sequences a feature under a milestone or a story under a feature. Authoring and
+scheduling stay separate acts: a milestone declares `version:` without joining
+the plan.

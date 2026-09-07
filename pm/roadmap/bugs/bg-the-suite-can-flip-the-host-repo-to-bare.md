@@ -4,9 +4,7 @@ milestone: ms-the-rule-reaches-the-work
 name: something in a full-suite run sets core.bare on the host repo
 status: open
 severity: high
-caught_in: ms-0.3.0
 kind: bug
-fix_milestone: ms-the-rule-reaches-the-work
 ---
 
 # something in a full-suite run sets core.bare on the host repo

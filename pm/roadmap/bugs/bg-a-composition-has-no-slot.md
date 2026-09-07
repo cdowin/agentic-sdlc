@@ -3,8 +3,6 @@ id: bg-a-composition-has-no-slot
 milestone: ms-0.2.0
 name: A composition target opens no gate slot, so its cost is unknowable
 status: closed
-caught_in: ms-0.2.0
-fix_milestone: ms-0.2.0
 caused_by: ft-every-gate-reports-its-cost
 kind: bug
 ---

@@ -462,44 +462,82 @@ class MilestoneBelt(unittest.TestCase):
             self.assertEqual(code, 1, out)
             self.assertIn('0.1/alpha is wombat', out)
 
-    def test_an_open_bug_against_the_milestone_blocks_and_is_named(self):
-        """Amended from `test_bugs_do_not_block_a_milestone`, which asserted
-        the ruling story 05 reversed. An open bug whose `fix_milestone:` is
-        this milestone is a BLOCKED line by name; a closed one is not; a bug
-        promised to ANOTHER milestone is ignored and COUNTED, so the census
-        line cannot read "no bug blocks" over a bug nobody asked about."""
+    def test_an_open_bug_nested_in_the_milestone_blocks_and_is_named(self):
+        """THE REGRESSION FOR 0.6.0/D11, and the one that would have caught it.
+
+        This case read `fix_milestone:` for four releases, which is a field
+        `pm new bug` never wrote — so on any real tree the filter matched
+        nothing, the check printed PASS over zero bugs, and it could not fail.
+        The fixture passed only because it hand-stamped the field the tool did
+        not. Membership is `milestone:` now, the same walk every other kind
+        uses, so the fixture and the tree agree.
+
+        A bug bound to ANOTHER milestone is ignored; a POOLED one — the opt-out
+        `pm remove` writes — gates nothing and is COUNTED, so the census cannot
+        read "no bug blocks" over bugs nobody asked about.
+        """
         with tree(feature_status='done') as root:
-            bug(root, 'crash', status='open', fix_milestone='0.1')
-            bug(root, 'fixed-later', status='fixed', fix_milestone='"0.1"')
-            bug(root, 'shut', status='closed', fix_milestone='0.1')
-            bug(root, 'theirs', status='open', fix_milestone='0.2')
-            bug(root, 'unpromised', status='open')
+            bug(root, 'crash', status='open')
+            bug(root, 'fixed-later', status='fixed')
+            bug(root, 'shut', status='closed')
+            bug(root, 'theirs', status='open', milestone='"0.2"')
+            bug(root, 'pooled', status='open', milestone='')
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertEqual(named(out), [
-                '0.1/bugs/crash is open — a bug whose fix_milestone is 0.1',
-                '0.1/bugs/fixed-later is fixed — a bug whose fix_milestone '
-                'is 0.1'])
-            self.assertIn('3 bug(s) naming fix_milestone 0.1 of 5 read', out)
+                '0.1/bugs/crash is open — a bug nested in 0.1',
+                '0.1/bugs/fixed-later is fixed — a bug nested in 0.1'])
+            self.assertIn('3 bug(s) nested in 0.1', out)
             self.assertNotIn('theirs', out)
-            self.assertNotIn('unpromised', out)
+            # Rule 11: the pool is NAMED, so nobody reads "none here" as
+            # "none anywhere".
+            self.assertIn('1 bug(s) attached to no milestone', out)
+            self.assertNotIn('0.1/bugs/pooled is open', out)
             # Close the two and the milestone is ready, the census intact.
             run_cli(root, 'bug', 'closed', '0.1/bugs/crash')
             run_cli(root, 'bug', 'closed', '0.1/bugs/fixed-later')
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
             self.assertEqual(code, 0, out)
-            self.assertIn('1 feature(s), 3 bug(s) naming fix_milestone 0.1 '
-                          'of 5 read, all done with a record', out)
+            self.assertIn('1 feature(s), 3 bug(s) nested in 0.1', out)
+
+    def test_the_census_separates_no_bugs_nested_from_none_matched(self):
+        """`0 bug(s) … of 24 read` is the sentence that hid the defect for four
+        releases: it was printed over a tree holding 24 bugs, and read as
+        "checked, none blocking". A tree with NO bug nested and five in the
+        pool must not produce a line that can be read that way.
+        """
+        with tree(feature_status='done') as root:
+            for slug in ('a', 'b', 'c', 'd', 'e'):
+                bug(root, slug, status='open', milestone='')
+            code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
+            self.assertEqual(code, 0, out)
+            self.assertIn('0 bug(s) nested in 0.1', out)
+            self.assertIn('5 bug(s) attached to no milestone', out)
+            # The old sentence claimed a scan total it never filtered on.
+            self.assertNotIn('of 5 read', out)
+            self.assertNotIn('fix_milestone', out)
 
     def test_a_file_under_bugs_shaped_exactly_like_a_feature_is_still_not_one(self):
+        """It is graded as a BUG — its pool decides its kind, not its fields.
+
+        Amended at 0.6.0/D11. The document is bound to the milestone, so it is
+        now a blocker; before, the walk filtered on `fix_milestone:` and this
+        one was silently skipped, which is the vacuous gate the ruling closes.
+        What the case still pins is that it is not read as a FEATURE: the
+        feature census stays at 1 and its blank `reviewed:` is never graded,
+        which is the confusion the shape was built to provoke.
+        """
         with tree(feature_status='done') as root:
             write(root / 'pm/roadmap/bugs/feature.md',
                   {'id': '0.1/impostor', 'milestone': '"0.1"',
                    'name': 'Impostor', 'status': 'building', 'reviewed': ''})
             code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
-            self.assertEqual(code, 0, out)
+            self.assertEqual(code, 1, out)
             self.assertIn('1 feature(s)', out)
-            self.assertNotIn('impostor', out)
+            self.assertEqual(named(out),
+                             ['0.1/impostor is building — a bug nested in 0.1'])
+            # Graded as a bug, so the feature belt's `reviewed:` never runs.
+            self.assertNotIn('reviewed', out)
 
 
 # --- the `reviewed:` payload --------------------------------------------------

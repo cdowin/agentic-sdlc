@@ -4,8 +4,6 @@ kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: the package docstring describes Godot scene introspection
 status: open
-caught_in: "ms-a-move-is-an-event"
-fix_milestone: "ms-the-rule-reaches-the-work"
 caused_by:
 ---
 

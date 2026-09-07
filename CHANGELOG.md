@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **A BUG IS A GRAIN NESTED IN A PARENT — `fix_milestone:` and `caught_in:` retire (breaking).**
+  `milestone:` is the parent binding and the only one, so the bug walk is the feature walk. Both
+  retired fields are named where they survive, never silently ignored. **`ready-for milestone`
+  filtered on `fix_milestone:`, a field `pm new bug` never wrote** — 18 of 24 bugs in this tree
+  carried it empty — so the filter matched nothing and `release` could not have refused on an open
+  bug for four releases, printing PASS over zero rows the whole time (rule 4's first cardinal sin).
+  Its census now reads `N bug(s) nested in <id>` plus `N bug(s) attached to no milestone`, so
+  zero-because-none-nested cannot be read as zero-because-none-matched. `pm new bug <milestone>
+  <slug>` writes the binding and nothing else — it stamped its argument into `caught_in:` as well,
+  one value in two fields with different meanings. `pm list --kind bug`'s second column is
+  `caused_by`, and `pm rename` no longer sweeps the two retired keys.
+
+- **`check pm` D11 — a parent in `done` does not hold a child that is not.** One walk off
+  `BINDS_TO`, so milestone/feature, milestone/bug and feature/story are one question, and a FINDING
+  rather than a warning. **D3 RETIRES INTO IT** and is named at exit 2 in a config that still lists
+  it: D3 warned about a single pair and could not redden a gate, which is how seven bugs sat
+  unresolved under two shipped milestones with nothing able to say so. There is no per-grain
+  opt-out and there will not be one — `fix_milestone:` was exactly that field and defaulted to
+  opted-out silently. **The opt-out is the binding**: `pm remove <parent> <child>` returns the
+  child to its pool, where it gates nothing and is counted by V7's UNBOUND line. D11 also names a
+  retired binding field found on any grain, by PRESENCE rather than value, because an empty
+  `fix_milestone:` is the exact shape that gated nothing.
+
+- **`pm add`'s DANGLING notice reads the parent's `order:`, not the child's binding.** Rebinding a
+  child inferred order-membership from where it used to be bound, so the notice fired on parents
+  whose `order:` had never held the id — and the `pm remove` it named then refused, because
+  `remove` verifies membership against the binding the rebind had just changed. **The command the
+  tool printed could not succeed at the moment it printed it.**
+
 ## v0.5.0 — 2026-09-07 — a move is an event
 
 - **`agentic-sdlc lesson record|show` — a lesson is a ROW bound to a grain.** `lesson record

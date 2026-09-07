@@ -2,12 +2,14 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R family are
-opt-in).
+(default: D1/D2/D4/D5/D6/D11 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R
+family are opt-in). D3 retired INTO D11 — `pm vocabulary` names where it went.
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
   D4  a status the project never declared, for any grain kind
+  D11 a parent in `done` over a child that is not, every level off `BINDS_TO`,
+      and a retired binding field on any grain. `pm remove` is the opt-out
   R1  an `order` entry naming no milestone in the tree (WARN); a milestone on
       no plan is UNSEQUENCED, a counted line
   R3  two milestones claiming one `version:`
@@ -19,7 +21,6 @@ DRIFT (each FAILs, naming the path):
       mainline (`[repo_hygiene] mainline`, `origin/`-stripped)
 WARN (a line, never the exit code; both grains and both categories named):
   D2  a feature in `todo` while all its stories are `done`
-  D3  a milestone in `done` with a feature that is not
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
@@ -155,6 +156,7 @@ def _run() -> int:
                                               warn)
 
     _unreached_self(cfg, enabled, seen, report, warn)
+    _containment(cfg, enabled, report)
     _unbound_rows(cfg, enabled, report, warn)
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -238,7 +240,7 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
     **`seen` is RECORDED, never inferred.** "Does this binding resolve" gets a
     story under an UNBOUND feature wrong — its binding resolves and the descent
     still never reaches it, so it fell between both passes at exit 0. SELF
-    rules only: D3 and D5 need a parent to compare against.
+    rules only: D5 and D11 need a parent to compare against.
     """
     if not model.is_pooled(cfg):
         return
@@ -311,11 +313,10 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(cfg, mid)]
-        # One `holds` answers both D6's census and D3's per-feature question.
+        # D6's census. The per-feature half went to D11 with D3.
         finished = model.holds(cfg, 'feature',
                                ((v.fid, v.status) for v in views),
                                model.DONE_CATEGORY)
-        unfinished = {fid for fid, _ in finished.blockers}
         for view in views:
             frel = cfg.rel(view.path)
             seen.add(view.fid)
@@ -326,14 +327,6 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                 reason = model.undeclared_status(cfg, 'feature', view.status)
                 if reason:
                     report(f'feature {view.fid}: {reason}  [{frel}]')
-
-            if ('D3' in enabled and m_cat == model.DONE_CATEGORY
-                    and view.fid in unfinished):
-                warn(f'milestone {mid} is {mstat!r} ({m_cat}) but feature '
-                     f'{view.fid} is {view.status!r} '
-                     f'({_cat(cfg, "feature", view.status)}) — the milestone '
-                     f'says everything inside it is finished and this '
-                     f'feature says otherwise (D3)  [{frel}]')
 
             if 'D1' in enabled:
                 reason = model.drift_dangling_record(cfg, view.fid)
@@ -854,6 +847,50 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                 report(f'in-progress milestone {mid} declares branch: {branch!r}, '
                        f'the mainline itself — work must live off '
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
+
+
+def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
+    """D11 — a parent in `done` over a child that is not, at every level.
+
+    ONE walk off `BINDS_TO`; a FINDING unconditionally, because a parent
+    closing over an open child makes its own census a lie (rule 4). No opt-out
+    FIELD — `fix_milestone:` was one and defaulted to opted-out, silently. The
+    opt-out is the BINDING, and V7 counts what it returns to the pool.
+    """
+    if 'D11' not in enabled:
+        return
+    index = model.grain_index(cfg)
+    graded = 0
+    for child in sorted(index.values(), key=lambda g: g.gid):
+        bind = model.BINDS_TO.get(child.kind)
+        if bind is None or not child.binding:
+            continue
+        parent = index.get(child.binding)
+        if parent is None:
+            continue
+        graded += 1
+        p_status = model.field_of(parent.path, 'status')
+        if model.category_of(cfg, parent.kind, p_status) != model.DONE_CATEGORY:
+            continue
+        c_status = model.field_of(child.path, 'status')
+        if model.category_of(cfg, child.kind, c_status) == model.DONE_CATEGORY:
+            continue
+        report(f'{parent.kind} {parent.gid} is {p_status!r} '
+               f'({model.DONE_CATEGORY}) but {child.kind} {child.gid} is '
+               f'{c_status!r} ({_cat(cfg, child.kind, c_status)}) — a parent '
+               f'does not close over an unresolved child; finish it, or '
+               f'`agentic-sdlc pm remove {parent.gid} {child.gid}` returns it '
+               f'to the pool (D11)  [{cfg.rel(child.path)}]')
+    print(f'  CONTAINMENT  {graded} bound child/ren graded against their '
+          f'parent (D11)')
+    for gid, grain in sorted(index.items()):
+        # PRESENCE, not value: an empty one is the shape that gated nothing.
+        present = model.document(grain.path).fields
+        for field, why in sorted(model.RETIRED_FIELDS.items()):
+            if field not in present:
+                continue
+            report(f'{grain.kind} {gid} carries `{field}:` — {why} (D11)  '
+                   f'[{cfg.rel(grain.path)}]')
 
 
 def _unbound_rows(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:

@@ -4,16 +4,10 @@ kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: a proof row names a case that exists and proves half of what it claims
 status: open
-caught_in: "ms-0.4.0"
-fix_milestone: ms-the-rule-reaches-the-work
 caused_by:
 ---
 
 # a-proof-row-names-a-case-that-proves-half
-
-<!-- A bug lives in the milestone that will FIX it; `caught_in:` keeps where it
-     was found. `caused_by:` (optional) names the one feature whose change made
-     it — set with `--caused-by`, or leave it empty rather than invent one. -->
 
 ## Symptom
 

@@ -4,8 +4,6 @@ kind: bug
 milestone: "ms-the-rule-reaches-the-work"
 name: `pm set` writes a scalar that `check pm` then refuses
 status: open
-caught_in: "ms-the-rule-reaches-the-work"
-fix_milestone: ms-the-rule-reaches-the-work
 caused_by:
 ---
 

@@ -4,8 +4,6 @@ kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: pm ledger record takes a token split it cannot honestly fill
 status: open
-caught_in: "ms-a-move-is-an-event"
-fix_milestone: ms-the-rule-reaches-the-work
 caused_by:
 ---
 

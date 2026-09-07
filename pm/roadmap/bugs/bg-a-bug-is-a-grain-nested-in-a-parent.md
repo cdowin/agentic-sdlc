@@ -3,9 +3,7 @@ id: bg-a-bug-is-a-grain-nested-in-a-parent
 kind: bug
 milestone: ms-the-rule-reaches-the-work
 name: a bug carries a private binding vocabulary instead of being nested like every other grain
-status: open
-caught_in: "ms-a-move-is-an-event"
-fix_milestone: "ms-the-rule-reaches-the-work"
+status: closed
 caused_by:
 ---
 

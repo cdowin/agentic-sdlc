@@ -588,9 +588,14 @@ class TheScaffolderNeverMintsATwiceClaimedId(unittest.TestCase):
 class BugNamesItsCause(unittest.TestCase):
     """`caused_by:` — the feature whose change produced the bug.
 
-    `caught_in:` says which milestone FOUND it; `caused_by:` says which feature
-    MADE it. Different facts, and an escape needs both — which is the whole
-    reason the field is not a second spelling of the one already there.
+    `milestone:` says which parent HOLDS it; `caused_by:` says which feature
+    MADE it. Different facts — the first is the binding every kind has, the
+    second is a relation between two grains like `depends_on:` — which is the
+    whole reason the field is not a second spelling of the one already there.
+
+    The frontmatter assertions below are the scaffold's contract, and at
+    0.6.0/D11 they lost `caught_in:` and `fix_milestone:`: the argument is the
+    PARENT and is written to `milestone:` alone.
     """
 
     BUGS = 'pm/roadmap/bugs'
@@ -615,8 +620,6 @@ class BugNamesItsCause(unittest.TestCase):
                 'milestone: "0.1"',
                 'name:',
                 'status: open',
-                'caught_in: "0.1"',
-                'fix_milestone:',
                 'caused_by:',
             ])
             code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero',
@@ -628,8 +631,6 @@ class BugNamesItsCause(unittest.TestCase):
                 'milestone: "0.1"',
                 'name:',
                 'status: open',
-                'caught_in: "0.1"',
-                'fix_milestone:',
                 'caused_by: 0.1/alpha',
             ])
             self.assertIn("caused_by '0.1/alpha'", out)

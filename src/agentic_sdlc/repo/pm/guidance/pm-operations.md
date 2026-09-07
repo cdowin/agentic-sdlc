@@ -179,9 +179,9 @@ until 0.4.0 and retired with the generated execution list.)
   is not a failure and moves nothing: it names a grain that has left `todo` (its status
   is in `in_progress` or `done`) whose scaffolded section is still empty
   (`## Acceptance criteria`, `## Ship criterion`), such a feature with no stories, such a
-  milestone with no `branch:` — or a parent and child that disagree (D2, D3, D5, D6: a story at work under
-  a `todo` feature, a `todo` feature over finished stories, a `done` milestone over an
-  unfinished feature), both grains and both categories named. Counted on the verdict
+  milestone with no `branch:` — or a parent and child that disagree (D2, D5, D6: a story at work under
+  a `todo` feature, a `todo` feature over finished stories), both grains and both categories named.
+  A parent in `done` over a child that is not is D11, and it FAILS rather than warning. Counted on the verdict
   line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the
   only stamp; write the section, then stamp.
 

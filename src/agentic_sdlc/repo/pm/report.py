@@ -132,7 +132,7 @@ STORY_COLUMN = 'story'
 PASSES_COLUMN = 'passes'
 DISTRIBUTION_TITLE = 'verdict distribution'
 
-# Section 4's. `caught_in:` is a different fact and is not read here.
+# Section 4's. The BINDING is `milestone:` and is not read here.
 CAUSED_BY_FIELD = 'caused_by'
 CAUSE_COLUMN = 'caused_by'
 BUG_COLUMN = 'bug'

@@ -13,8 +13,7 @@ from agentic_sdlc.repo.pm import model
 
 _REF_KEYS = ('depends_on', 'consumed_by')
 
-# A scalar, not a list: one bug has one cause; `caught_in:` holds the other
-# half.
+# A scalar, not a list: one bug has one cause, and it is not the binding.
 CAUSED_BY = 'caused_by'
 
 

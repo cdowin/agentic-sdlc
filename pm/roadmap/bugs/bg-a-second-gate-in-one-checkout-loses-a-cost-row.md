@@ -3,17 +3,11 @@ id: bg-a-second-gate-in-one-checkout-loses-a-cost-row
 milestone: ms-0.4.0
 name: A second gate run in one checkout loses a cost row
 status: closed
-caught_in: ms-0.4.0
-fix_milestone:
 caused_by:
 kind: bug
 ---
 
 # a-second-gate-in-one-checkout-loses-a-cost-row
-
-<!-- A bug lives in the milestone that will FIX it; `caught_in:` keeps where it
-     was found. `caused_by:` (optional) names the one feature whose change made
-     it — set with `--caused-by`, or leave it empty rather than invent one. -->
 
 ## Symptom
 

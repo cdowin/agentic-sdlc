@@ -141,7 +141,7 @@ asked:
 - **A feature move into `in_progress` and a milestone move into `done` REPORT, never
   refuse.** Stories not in `done`, features not in `done` — the verb names them with
   the word each file holds and does what it was asked. What the tree is then left
-  holding is D3/D5's question, asked of the tree.
+  holding is D5/D11's question, asked of the tree.
 - **Malformed frontmatter is refused**, because a file with no `---` block has nowhere
   to put the field.
 

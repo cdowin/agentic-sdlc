@@ -4,16 +4,10 @@ kind: bug
 milestone: 
 name: the seed census skips a coercer invoked with kwargs
 status: open
-caught_in: "ms-0.4.0"
-fix_milestone:
 caused_by:
 ---
 
 # the-seed-census-drops-a-kwargs-call
-
-<!-- A bug lives in the milestone that will FIX it; `caught_in:` keeps where it
-     was found. `caused_by:` (optional) names the one feature whose change made
-     it — set with `--caused-by`, or leave it empty rather than invent one. -->
 
 ## Symptom
 

@@ -3,8 +3,6 @@ id: bg-the-repo-forks-the-framework-it-ships
 milestone: ms-0.2.0
 name: This repo hand-writes the gate framework it installs, instead of including it
 status: closed
-caught_in: ms-0.2.0
-fix_milestone: ms-0.2.0
 caused_by: ft-the-middle-tier-splits
 kind: bug
 ---

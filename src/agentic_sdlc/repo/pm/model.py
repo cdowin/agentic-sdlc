@@ -175,7 +175,8 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # D9/D10 encode branch-per-milestone and are OFF by default; a trunk-shipping
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
-DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
+# D11 replaced D3, STOCK-ON in its place: containment is the tool's mapping.
+DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
 # capabilities (U2) it declared, as opposed to whether a word is declared at
@@ -224,10 +225,29 @@ RETIRED_CHECKS = {
           'declared-but-unused state rule and it took a NEW letter precisely '
           'so that a config still naming D7 is told it is gone rather than '
           'silently given a different rule',
+    'D3': 'became D11 in 0.6.0, which asks the same question at EVERY level '
+          'off `BINDS_TO` — milestone/feature, milestone/bug and '
+          'feature/story — and FAILS rather than warning. D3 warned about one '
+          'pair, so a milestone could close over an open bug and print PASS. '
+          'Containment is unconditional: the opt-out is `pm remove <parent> '
+          '<child>`, which returns the child to its pool',
     'D8': 'became R5 — the version file is graded against the CURRENT entry in '
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
           'D8 welded the version to the id; `version:` separates them',
+}
+
+# RETIRED_CHECKS' frontmatter sibling, named where it survives.
+RETIRED_FIELDS = {
+    'fix_milestone': 'retired in 0.6.0. It was a second binding that nothing '
+                     'wrote, so the release gate filtered on it and matched '
+                     'nothing for four releases. `milestone:` is the parent '
+                     'and the only one; `pm remove <milestone> <bug>` is the '
+                     'opt-out',
+    'caught_in': 'retired in 0.6.0. `pm new bug` stamped its argument into '
+                 'this AND `milestone:`, one value in two fields with '
+                 'different meanings. Where a bug was found is history, and '
+                 '`git log` holds it',
 }
 
 ARCHIVE_DIR_NAME = 'zz_archive'

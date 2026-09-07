@@ -2,7 +2,7 @@
 id: "ms-the-rule-reaches-the-work"
 kind: milestone
 name: the rule reaches the work
-status: planning
+status: building
 depends_on: ["ms-a-move-is-an-event"]
 branch: milestone/0.6.0-the-rule-reaches-the-work
 version: 0.6.0

@@ -80,7 +80,7 @@ scope = [
 # self-testing and firing. A courier fails open by design, so the only thing
 # that can say so is a gate somebody reads.
 checks = [
-    "D1", "D2", "D3", "D4", "D5", "D6",
+    "D1", "D2", "D4", "D5", "D6", "D11",
     "D9", "D10",
     "U1", "U2", "U3", "U4", "U5",
     "R1", "R2", "R3", "R4", "R5", "R6",

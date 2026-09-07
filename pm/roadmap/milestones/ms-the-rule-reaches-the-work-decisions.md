@@ -42,3 +42,27 @@ read, not a field somebody has to remember to check.
 The cost is a backfill: seven bugs are unresolved under `ms-0.3.0` and `ms-0.4.0`, both shipped. That
 is the evidence the gap was real, and it is recorded on
 `bg-a-bug-is-a-grain-nested-in-a-parent`.
+
+## D2 — 2026-09-07 — a retired FIELD is drift, not a config error
+
+`bg-a-bug-is-a-grain-nested-in-a-parent` specified `check pm` naming surviving `fix_milestone:` and
+`caught_in:` **at exit 2** — "the way every retired key in this package is named". It ships as a D11
+DRIFT finding at exit 1 instead.
+
+Every retired thing named at exit 2 today is a CONFIG key in `[pm] checks`. Rule 9 draws the line
+there and not by analogy: *a malformed declaration is refused at exit 2 — reading; a fact about the
+tree is reported and the caller decides.* A retired field sitting in a bug document is a fact about
+the tree, the same shape as D4's undeclared status, which is exit 1. Exit 2 would also make a
+consumer's whole `check pm` unrunnable — no drift report at all, on any rule — until they had
+hand-edited every legacy bug, and a gate that refuses to grade the other 364 things is worse than one
+that names this among them.
+
+**Rejected: both, on a flag.** A rule whose severity is configurable is a rule whose census cannot be
+compared between two trees, and D9/D10's opt-IN is a different thing — those encode a flow a project
+may not run. Every project runs containment.
+
+**Also decided here: D3 RETIRES into D11 rather than sitting beside it.** D3 warned on one pair
+(milestone over feature) and could not redden a gate; D11 asks the same question at every level and
+fails. Keeping both would put two rules on one byte, which is the second scoreboard this milestone is
+named for. `RETIRED_CHECKS['D3']` names where it went, so a consumer config still listing it is told
+rather than silently ungated — the same treatment D8 got when it became R5.

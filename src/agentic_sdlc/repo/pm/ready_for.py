@@ -438,19 +438,17 @@ def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
 
 
 def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
-    """((id, status) for every bug whose `fix_milestone:` is `mid`), scanned
-    across the whole active tree — a bug is filed where it was caught."""
-    against = []
-    scanned = 0
-    for milestone in model.milestones(cfg):
-        for bfile in model.bug_files(cfg, milestone.gid):
-            scanned += 1
-            if model.unquote(model.field_of(bfile, 'fix_milestone')) != mid:
-                continue
-            bid = model.unquote(model.field_of(bfile, 'id')) or cfg.rel(bfile)
-            against.append((bid, model.field_of(bfile, 'status')
-                            or '(no status:)'))
-    return against, scanned
+    """((id, status) for every bug NESTED IN `mid`), and the pool count.
+
+    The bug walk IS the feature walk; it scanned for `fix_milestone:`, a field
+    nothing wrote, so this could not fail for four releases (0.6.0/D11). The
+    POOL is the second number, not a scan total — it separates
+    zero-because-none-nested from zero-because-none-matched.
+    """
+    against = [(model.unquote(model.field_of(bfile, 'id')) or cfg.rel(bfile),
+                model.field_of(bfile, 'status') or '(no status:)')
+               for bfile in model.bug_files(cfg, mid)]
+    return against, len(model.unbound(cfg, 'bug'))
 
 
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
@@ -485,13 +483,15 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
         _, defect = _record(cfg, model.unquote(model.field_of(ffile, 'reviewed')))
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
-    bugs, scanned = _bugs_against(cfg, mid)
+    bugs, pooled = _bugs_against(cfg, mid)
     open_bugs = model.holds(cfg, 'bug', bugs, DONE).blockers
     for bid, status in open_bugs:
-        blockers.append(Blocker(check, f'{bid} is {status} — a bug whose '
-                                       f'fix_milestone is {mid}'))
-    census = (f'{len(features)} feature(s), {len(bugs)} bug(s) naming '
-              f'fix_milestone {mid} of {scanned} read')
+        blockers.append(Blocker(check, f'{bid} is {status} — a bug nested in '
+                                       f'{mid}'))
+    census = (f'{len(features)} feature(s), {len(bugs)} bug(s) nested in {mid}'
+              # Rule 11: so "none here" is not read as "none at all".
+              + (f', {pooled} bug(s) attached to no milestone' if pooled
+                 else ''))
     if not blockers:
         census += f', all {DONE}' + (' with a record' if features else '')
     return _answer(cfg, MILESTONE, mid, subject, blockers, census)

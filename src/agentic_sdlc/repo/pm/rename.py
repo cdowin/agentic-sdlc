@@ -16,9 +16,9 @@ from agentic_sdlc.repo.pm import model
 # Every frontmatter key whose value can be a grain id. `tests/test_pm_rename.py`
 # holds it to the shipped templates and to `BINDS_TO`/`ORDER_KEY`/`validate`'s
 # ref keys, so a template or a bound kind cannot grow a reference without
-# joining the sweep. `caught_in`/`fix_milestone` are `pm_migrate.py`'s misses.
+# joining the sweep.
 REF_FIELDS = ('depends_on', 'consumed_by', 'caused_by', 'reviewed', 'order',
-              'milestone', 'feature', 'caught_in', 'fix_milestone')
+              'milestone', 'feature')
 
 # An unindented frontmatter key, which is the only shape the readers accept.
 _KEY = re.compile(r'^(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?P<rest>.*)$')

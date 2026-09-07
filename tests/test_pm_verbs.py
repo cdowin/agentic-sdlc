@@ -87,12 +87,20 @@ class StatusMoves(unittest.TestCase):
         # `status:` line rewritten by hand lands a story at `done` under a DONE
         # feature — a state the old graph refused from `todo` — and every rule
         # that reads an END STATE is satisfied by it.
+        #
+        # The replacement targets `status: ready`, which is what `tree()`
+        # WRITES. It read `status: todo` until 0.6.0 and matched nothing, so
+        # the hand-edit this case is named for never happened and the PASS it
+        # asserted was over an untouched tree — the case proved half of itself.
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('ready',)) as root:
             sf = root / STORY_REL
-            sf.write_text(sf.read_text(encoding='utf-8')
-                          .replace('status: todo', 'status: done'),
-                          encoding='utf-8')
+            edited = sf.read_text(encoding='utf-8').replace('status: ready',
+                                                            'status: done')
+            self.assertNotEqual(edited, sf.read_text(encoding='utf-8'),
+                                'the hand-edit this case is about did not '
+                                'happen — the fixture spelling moved')
+            sf.write_text(edited, encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
@@ -180,7 +188,10 @@ class StatusMoves(unittest.TestCase):
 
     def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
         # The advisory about the features left behind is gone (story 03);
-        # D3 asks that question of the tree it left, as a WARN naming both.
+        # D11 asks that question of the tree it left, naming both. It was D3's
+        # WARN until 0.6.0 and is a FINDING now: a milestone that closes over
+        # an unfinished feature makes its own census a lie, and a WARN could
+        # not redden the gate that would have said so.
         #
         # STDOUT ONLY, and that is the claim (amended 0.5.0/D3): an arrival
         # reports the tree's open work on STDERR, so the stream a consumer
@@ -193,8 +204,8 @@ class StatusMoves(unittest.TestCase):
                              ['[pm] milestone 0.1: building -> done'])
             self.assertEqual(model.field_of(root / MFILE, 'status'), 'done')
             code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
-            self.assertIn("  WARN  milestone 0.1 is 'done' (done) but feature "
+            self.assertEqual(code, 1, out)
+            self.assertIn("  DRIFT  milestone 0.1 is 'done' (done) but feature "
                           "0.1/alpha is 'building' (in_progress)", out)
 
 
@@ -982,8 +993,7 @@ class ListFindsTheNail(unittest.TestCase):
             # A bug lists too, and `--owner` still belongs to stories alone.
             write(root / 'pm/roadmap/bugs/crash.md',
                   {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
-                   'name': 'C', 'status': 'open', 'caught_in': '"0.1"',
-                   'fix_milestone': '', 'caused_by': ''})
+                   'name': 'C', 'status': 'open', 'caused_by': ''})
             self.assertEqual(run_cli(root, 'list', '--kind', 'bug')[0], 0)
             code, out = run_cli(root, 'list', '--kind', 'bug', '--owner', 'ada')
             self.assertEqual(code, 2, out)

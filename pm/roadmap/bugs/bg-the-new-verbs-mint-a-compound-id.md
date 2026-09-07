@@ -4,8 +4,6 @@ kind: bug
 milestone: "ms-a-move-is-an-event"
 name: `pm new` bakes the binding into the identity
 status: closed
-caught_in: "ms-a-move-is-an-event"
-fix_milestone:
 caused_by:
 ---
 

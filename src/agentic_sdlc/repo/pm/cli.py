@@ -112,7 +112,7 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            columns IN ORDER:
                                              id  status  milestone  <2nd>  name
                                            where <2nd> is `reviewed` for a
-                                           feature and `caught_in` for a bug.
+                                           feature and `caused_by` for a bug.
                                            The BINDING is a column, so "what
                                            have I written and not scheduled"
                                            is a pipe:
@@ -152,7 +152,7 @@ way. `pm config --seed` shows the whole declaration with an example.
   rename <old-id> <new-id>                (rewrite the grain's own `id:` AND
                                            every inbound reference in the tree
                                            — depends_on, consumed_by, reviewed,
-                                           caused_by, caught_in, fix_milestone,
+                                           caused_by,
                                            the bindings (milestone:/feature:)
                                            and every `order` entry — in one
                                            pass, WHOLE OR NOT AT ALL: one
@@ -257,8 +257,10 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            one)
   new bug <milestone> <slug> [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
-                                           one that will FIX it and is written
-                                           to `milestone:` and `caught_in:`.
+                                           PARENT, written to `milestone:`
+                                           alone; it must close before the
+                                           milestone does, and `pm remove`
+                                           returns it to the pool.
                                            --caused-by stamps caused_by: — the
                                            feature whose change produced the
                                            bug, any status; it must resolve, and
@@ -1252,7 +1254,7 @@ LIST_COLUMNS = {
     # A grain that BINDS emits its binding, so `$4 == "-"` is "unbound" and
     # every other question about the edge is a pipe away.
     'feature': ('id', 'status', 'milestone', 'reviewed', 'name'),
-    'bug': ('id', 'status', 'milestone', 'caught_in', 'name'),
+    'bug': ('id', 'status', 'milestone', 'caused_by', 'name'),
 }
 
 
@@ -1275,7 +1277,7 @@ def _list_bound(cfg: model.PmConfig, kind: str, statuses: set[str],
             continue
         if milestone and bound != milestone:
             continue
-        second = 'reviewed' if kind == 'feature' else 'caught_in'
+        second = 'reviewed' if kind == 'feature' else 'caused_by'
         rows.append((gid, status or DASH, bound or DASH,
                      model.unquote(model.field_of(grain.path, second)) or DASH,
                      model.unquote(model.field_of(grain.path, 'name')) or DASH))
@@ -1538,8 +1540,8 @@ def cmd_validate(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 # --- new ----------------------------------------------------------------------
-# `caused_by:` names the feature whose change produced the bug; `caught_in:`
-# names the milestone that found it.
+# `caused_by:` relates two grains, like `depends_on:` — never a second copy of
+# `milestone:`, the binding, which is the only one.
 CAUSED_BY = 'caused_by'
 CAUSED_BY_FLAG = '--caused-by'
 
@@ -1752,8 +1754,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         bf = _mint_path(cfg, 'bug', bid, '', mid)
         if _exists(bf):
             raise Refused(f'{cfg.rel(bf)} already exists')
-        # Bugs anchor to where they were CAUGHT; `caught_in:` carries that now
-        # that the path does not.
+        # The argument is the PARENT, written to `milestone:` alone.
         body = templates.render(
             templates.load(cfg, 'bug'),
             {'id': bid, 'kind': 'bug', 'milestone': mid, 'slug': slug})
@@ -2742,9 +2743,9 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
                 raise Refused(f'{cfg.rel(child.path)} has no frontmatter block '
                               f'to put `{field}:` in — nothing was written')
             wrote.append(f'{child.gid}: {field} {before!r} -> {parent.gid!r}')
-            if before:
-                # Rule 11: `add` does not reach into a grain it was not given,
-                # so it says what it left behind.
+            # ONLY when the old parent really lists it (0.6.0/D11).
+            former = model.grain_index(cfg).get(before) if before else None
+            if former is not None and child.gid in _sequence(cfg, former):
                 wrote.append(f'  noticed: {before} still lists {child.gid} in '
                              f'its `order` — that entry is now DANGLING; '
                              f'`agentic-sdlc pm remove {before} {child.gid}` '

@@ -233,10 +233,11 @@ class DriftGate(unittest.TestCase):
     Story 03 of the-code-knows-entry-and-exit moved D2, D3, D5 and D6 to
     WARN. Chris: *"a feature to-do and a story in progress, that's a warn.
     Not a fail, no action, just messaging."* D1 and D4 are facts about the
-    input and stay findings.
+    input and stay findings. D3 became D11 at 0.6.0 and left the WARN set
+    with it: containment is a fact about the tree, not messaging.
     """
 
-    WARNED = ('D2', 'D3', 'D5', 'D6')
+    WARNED = ('D2', 'D5', 'D6')
 
     # (rule, tree kwargs, the line the finding must carry)
     #
@@ -249,7 +250,7 @@ class DriftGate(unittest.TestCase):
         ('D2', dict(feature_status='ready', story_statuses=('done',)),
          "feature 0.1/alpha: all stories done, feature still ready (todo) — "
          "all 1 stories are done"),
-        ('D3', dict(milestone_status='done', feature_status='building'),
+        ('D11', dict(milestone_status='done', feature_status='building'),
          "milestone 0.1 is 'done' (done) but feature 0.1/alpha is "
          "'building' (in_progress)"),
         # The set the tree is judged against: the FEATURE's declared order,
@@ -375,13 +376,13 @@ class DriftGate(unittest.TestCase):
         # kind, so this case pins the roster to the rules it is actually about.
         # Counting a constant would make the delta this asserts meaningless.
         with tree(feature_status='planning', story_statuses=('done',),
-                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                  config='[pm]\nchecks = ["D1","D2","D11","D4","D5","D6",'
                          '"V1","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertIn('all stories done, feature still planning', out)
             before = warned(out)
-            write_config(root, '[pm]\nchecks = ["D1","D3","D4","D5","D6"]\n')
+            write_config(root, '[pm]\nchecks = ["D1","D11","D4","D5","D6"]\n')
             code, out = run_gate(root)
             self.assertEqual(code, 0)
             self.assertNotIn('all stories done', out)
@@ -454,7 +455,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                                       ('done', '', False)):
             with self.subTest(status=status, owner=owner), \
                     tree(feature_status='building', story_statuses=(),
-                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                         config='[pm]\nchecks = ["D1","D2","D11","D4","D5",'
                                 '"D6","V1","V4","V5"]\n') as root:
                 self._settle(root)
                 write(root / STORY_REL,
@@ -482,7 +483,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             with self.subTest(status=status, filled=body is filled), \
                     tree(feature_status='building',
                          story_statuses=('ready',),
-                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                         config='[pm]\nchecks = ["D1","D2","D11","D4","D5",'
                                 '"D6","V1","V4","V5"]\n') as root:
                 self._settle(root)
                 self._story(root, status, body)
@@ -498,7 +499,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # milestone's own `order:` sequences its features now.)
         with tree(milestone_status='building', feature_status='building',
                   story_statuses=(),
-                  config='[pm]\nchecks = ["D1","D2","D3","D4","D5","D6",'
+                  config='[pm]\nchecks = ["D1","D2","D11","D4","D5","D6",'
                          '"V1","V4","V5"]\n') as root:
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
@@ -771,7 +772,7 @@ class AStaleRuleIdStopsTheGATE_NotTheReadVerbs(unittest.TestCase):
     still readable.
     """
 
-    STALE = '[pm]\nchecks = ["D1","D2","D3","D4","D5","D6","D99"]\n'
+    STALE = '[pm]\nchecks = ["D1","D2","D11","D4","D5","D6","D99"]\n'
 
     def test_the_verbs_still_run(self):
         with tree(story_statuses=('ready',)) as root:
@@ -1566,9 +1567,9 @@ class BugStatusVocabulary(unittest.TestCase):
     """D4 — a bug's status, held to the vocabulary like every other grain's,
     and the census that says how many bug files the walk opened.
 
-    Where a bug LIVES is not this tool's business: it is filed where it was
-    caught, nothing moves it, and nothing deletes it. What is a fact about the
-    file is whether its status is a word the schema has — and it matters more
+    Where a bug's FILE sits is not this tool's business — the pool decides its
+    kind and `milestone:` decides its parent. What is a fact about the file is
+    whether its status is a word the schema has — and it matters more
     for a bug than anywhere else, because every reader asking "is this still
     open" tests for a NAME, so a typo reads as closed and passes in silence.
 
@@ -1581,7 +1582,7 @@ class BugStatusVocabulary(unittest.TestCase):
     def _bug(root: Path, rel: str, status: str) -> Path:
         p = root / 'pm/roadmap/bugs' / rel
         write(p, {'id': f'0.1/bugs/{Path(rel).stem}', 'milestone': '"0.1"',
-                  'status': status, 'caught_in': '"0.1"'})
+                  'status': status})
         return p
 
     def test_a_bad_status_is_a_finding_wherever_the_bug_file_sits(self):
@@ -1612,12 +1613,22 @@ class BugStatusVocabulary(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('3 bug(s)', out)
 
-    def test_an_open_bug_under_a_done_milestone_is_not_a_finding(self):
+    def test_an_open_bug_under_a_done_milestone_IS_a_finding(self):
+        """REVERSED at 0.6.0/D11, and the reversal is the whole ruling.
+
+        This case asserted exit 0 over a shipped milestone holding an open bug
+        — the third state containment forbids, pinned as correct. Seven bugs
+        sat that way under two shipped milestones and no gate could say so.
+        The opt-out is the binding, and `test_a_pooled_child_under_a_done_
+        parent_is_not_a_finding` is the half that still exits 0.
+        """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
             self._bug(root, 'seed-is-zero.md', 'open')
             code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
+            self.assertEqual(code, 1, out)
+            self.assertIn('a parent does not close over an unresolved child',
+                          out)
 
     def test_a_non_grain_md_parked_under_bugs_is_not_a_bug(self):
         # A grain IS its frontmatter, so a README explaining how bugs are filed
@@ -1767,8 +1778,7 @@ class StructuralIntegrity(unittest.TestCase):
             #     descended from the milestones and had no unbound arm at all.
             write(root / 'pm/roadmap/bugs/loose.md',
                   {'id': 'bg-loose', 'kind': 'bug', 'milestone': '', 'name': 'B',
-                   'status': 'flurble', 'caught_in': '"0.1"',
-                   'fix_milestone': '', 'caused_by': ''})
+                   'status': 'flurble', 'caused_by': ''})
             # (b) an unbound FEATURE with a dangling ref and a dead `reviewed:`
             #     — V4 and D1 both lived inside the descent.
             write(root / 'pm/roadmap/features/loose.md',
@@ -2219,7 +2229,7 @@ class DamagedFrontmatter(unittest.TestCase):
     def _bug(root: Path, slug: str, status: str) -> Path:
         p = root / 'pm/roadmap/bugs' / f'{slug}.md'
         write(p, {'id': f'0.1/bugs/{slug}', 'milestone': '"0.1"',
-                  'status': status, 'caught_in': '"0.1"'})
+                  'status': status})
         return p
 
     def test_a_damaged_story_is_reported_not_dropped(self):
@@ -2540,7 +2550,7 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         for needle in ('  DRIFT  feature 1.0/dangling: reviewed:',       # D1
                        '  WARN  feature 1.0/stalled: all stories done, '
                        'feature still shaped (todo)',                   # D2
-                       "  WARN  milestone 0.9 is 'shipped' (done) but feature",  # D3
+                       "  DRIFT  milestone 0.9 is 'shipped' (done) but feature",  # D3
                        "status 'wombat' not in",                      # D4 feature
                        "status 'wobmat' not in",                      # D4 story
                        "bug status 'fidel' is not in",                # D4 bug
@@ -2605,6 +2615,109 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         # dangling record stays a DRIFT marker (D1 is a finding).
         self.assertIn('<WARN: all stories done, feature still shaped>', out_r)
         self.assertIn('<DRIFT: reviewed:', out_r)
+
+
+class D11AParentDoesNotCloseOverAnUnresolvedChild(unittest.TestCase):
+    """D11 — containment, at every level, as a FINDING.
+
+    The DELIBERATELY-BROKEN PROBE the ladder asks for on a gate-semantics
+    change: each case plants the drift and asserts the gate FAILS, because the
+    rule this replaces (D3) warned about one pair and could not redden anything
+    — which is how a milestone shipped over seven unresolved bugs.
+
+    One walk off `BINDS_TO`, so all three pairs are the same question. The
+    retired-field half is here too: `fix_milestone:` and `caught_in:` are named
+    where they survive, never silently ignored, because a field that quietly
+    stopped being read is the defect the ruling exists to end.
+    """
+
+    def _closed_parent(self, root: Path) -> None:
+        write(root / 'pm/roadmap/milestones/m.md',
+              {'id': '"0.1"', 'kind': 'milestone', 'name': 'M',
+               'status': 'done'})
+
+    def test_a_done_milestone_over_an_open_bug_fails(self):
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            bug(root, 'crash', status='open')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('milestone 0.1 is \'done\' (done) but bug '
+                          '0.1/bugs/crash is \'open\'', out)
+            self.assertIn('a parent does not close over an unresolved child',
+                          out)
+            # The named remedy is the opt-out, and it is an ACT with a verb.
+            self.assertIn('pm remove 0.1 0.1/bugs/crash', out)
+            self.assertIn('(D11)', out)
+
+    def test_a_done_milestone_over_an_unfinished_feature_fails(self):
+        """D3's case, upgraded from WARN to FINDING. It exercised the same
+        shape and could not redden the gate, so the tree could ship."""
+        with tree(milestone_status='done', feature_status='building',
+                  story_statuses=('done',)) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('but feature 0.1/alpha is \'building\'', out)
+
+    def test_a_done_feature_over_an_unfinished_story_fails(self):
+        """The level D3 never reached at all."""
+        with tree(milestone_status='building', feature_status='done',
+                  story_statuses=('ready',)) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('but story', out)
+            self.assertIn('(D11)', out)
+
+    def test_a_pooled_child_under_a_done_parent_is_not_a_finding(self):
+        """THE OPT-OUT, and the half that keeps the rule usable. A bug that
+        declares no milestone gates nothing — and is COUNTED, never silent."""
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            bug(root, 'later', status='open', milestone='')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('D11)', out.split('CONTAINMENT')[0])
+            self.assertIn('1 bug(s) name no milestone:', out)
+
+    def test_the_walk_states_what_it_graded(self):
+        """Rule 4: a census over zero children says so rather than passing."""
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('ready',)) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('CONTAINMENT  2 bound child/ren graded', out)
+
+    def test_a_retired_binding_field_is_named_where_it_survives(self):
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('ready',)) as root:
+            bug(root, 'legacy', status='open',
+                fix_milestone='"0.1"', caught_in='"0.1"')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('carries `fix_milestone:`', out)
+            self.assertIn('carries `caught_in:`', out)
+            self.assertIn('retired in 0.6.0', out)
+
+    def test_a_retired_field_that_is_EMPTY_is_still_named(self):
+        """PRESENCE, not value. An empty `fix_milestone:` is precisely the
+        shape that gated nothing on every bug in this tree since 0.2.0, so a
+        rule reading the VALUE would pass over the exact defect."""
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('ready',)) as root:
+            bug(root, 'legacy', status='open', fix_milestone='')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('carries `fix_milestone:`', out)
+
+    def test_a_config_still_naming_D3_is_told_where_it_went(self):
+        with tree(story_statuses=('ready',)) as root:
+            write_config(root, '[pm]\nchecks = ["D3"]\n')
+            # `gate_both_streams`: a config refusal is stderr's, and a reader
+            # of stdout alone would assert against ''.
+            code, out = gate_both_streams(root)
+            self.assertEqual(code, 2, out)
+            self.assertIn('D3', out)
+            self.assertIn('became D11', out)
 
 
 class TheUnboundFamily(unittest.TestCase):

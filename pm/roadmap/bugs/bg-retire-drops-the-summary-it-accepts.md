@@ -4,8 +4,6 @@ kind: bug
 milestone: "ms-a-move-is-an-event"
 name: `pm retire` accepts a summary and writes it nowhere
 status: closed
-caught_in: "ms-a-move-is-an-event"
-fix_milestone:
 caused_by:
 ---
 

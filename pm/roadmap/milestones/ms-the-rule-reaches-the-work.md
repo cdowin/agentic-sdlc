@@ -7,6 +7,8 @@ depends_on: ["ms-a-move-is-an-event"]
 branch:
 version: 0.6.0
 order:
+  - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
+  - "bg-the-milestone-scaffold-still-mints-the-version"
   - "ft-the-branch-exists-on-the-remote-from-the-first-commit"
   - "ft-the-dispatch-carries-the-contract"
   - "ft-a-guard-declares-its-violation-corpus"
@@ -15,10 +17,7 @@ order:
   - "ft-the-changelog-is-a-field-and-a-verb"
   - "ft-a-read-verb-is-a-declaration"
   - "ft-a-warning-is-actionable-where-it-fires"
-  - "bg-the-milestone-scaffold-still-mints-the-version"
-  - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
   - "ft-the-vocabulary-is-constants-not-literals"
-  - "ft-the-dependency-rule-states-its-real-reason"
 ---
 
 # 0.6.0 — the rule reaches the work

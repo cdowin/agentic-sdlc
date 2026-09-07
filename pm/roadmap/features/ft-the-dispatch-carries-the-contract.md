@@ -7,6 +7,8 @@ status: planning
 reviewed:
 depends_on: []
 consumed_by: []
+order:
+  - "st-the-dependency-rule-states-its-real-reason"
 ---
 
 # the dispatch carries the contract

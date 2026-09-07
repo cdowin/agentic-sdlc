@@ -126,3 +126,5 @@
 {"ts":"2026-09-07T00:09:18Z","kind":"status","grain":"0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-records","from":"planning","to":"building"}
 {"ts":"2026-09-07T00:09:19Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks","from":"planning","to":"building"}
 {"ts":"2026-09-07T00:09:19Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exist","from":"planning","to":"building"}
+{"ts":"2026-09-07T00:09:27Z","kind":"status","grain":"0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-records","from":"building","to":"done"}
+{"ts":"2026-09-07T00:09:37Z","kind":"status","grain":"0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exist","from":"building","to":"done"}

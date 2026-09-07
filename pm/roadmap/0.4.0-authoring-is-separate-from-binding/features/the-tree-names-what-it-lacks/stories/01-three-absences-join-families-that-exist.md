@@ -3,7 +3,7 @@ id: 0.4.0/the-tree-names-what-it-lacks/01-three-absences-join-families-that-exis
 feature: 0.4.0/the-tree-names-what-it-lacks
 milestone: "0.4.0"
 name: owner, the Proof budget and an unrun gate are named where they are missing
-status: building
+status: done
 owner: claude
 depends_on: ["0.4.0/every-row-names-its-grain/02-an-unnamed-grain-resolves-or-is-omitted"]
 ---

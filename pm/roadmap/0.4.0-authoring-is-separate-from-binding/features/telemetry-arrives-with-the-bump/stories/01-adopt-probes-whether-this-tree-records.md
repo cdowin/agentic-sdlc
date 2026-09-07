@@ -3,7 +3,7 @@ id: 0.4.0/telemetry-arrives-with-the-bump/01-adopt-probes-whether-this-tree-reco
 feature: 0.4.0/telemetry-arrives-with-the-bump
 milestone: "0.4.0"
 name: adopt says whether telemetry is live, by probing
-status: building
+status: done
 owner: claude
 depends_on: ["0.4.0/recording-is-on-or-the-gate-is-red/01-the-gate-sees-a-courier-writing-nothing", "0.4.0/the-surface-says-telemetry/01-the-word-is-where-you-are-standing"]
 ---

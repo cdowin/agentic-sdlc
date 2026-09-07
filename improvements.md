@@ -337,3 +337,42 @@ final count was. It was four.
    automatic rows cannot carry is *what the agent was doing*. Resist if the answer is that grain
    attribution is already that label — but check, rather than assuming, and note that F1/F2/F3 are
    all cases where the answer was "it exists, nobody could find it."
+
+---
+
+## L: The migration is where a path stops being schema — and the SURFACES do not notice
+
+*Filed during 0.4.0, after the code was green and `make check` passed.*
+
+Every function that read a path as schema was found and fixed by the tests. Then, with the unit
+tier green and the tree's own gate passing, a grep for `milestone.md` outside `src/` found five
+more readers that no test could ever have caught:
+
+| what | how it broke |
+|---|---|
+| `.gitattributes` | `merge=union` matched `<roadmap>/**/ledger.jsonl`; a pooled milestone's is `ledgers/<id>.jsonl`. Every branch appends to the ledger of the milestone it is building, so the miss is a merge conflict on every parallel branch |
+| `install-ci`'s semver gate | globbed `$PM_ROADMAP/*/milestone.md`, scanned zero files, and failed every release PR with its own honest *"the gate scanned nothing"* |
+| `pm-operations` (the auto-loading rule AND the skill) | its tree diagram — the thing an operator reads to find out where a story lives |
+| three shipped agent contracts | *"read the relevant `milestone.md`"*, in files installed into consumers' repos |
+| the handoff guidance | one `grep -h '^depends_on' <roadmap>/<id>-*/features/*/feature.md` incantation |
+
+**None of these is Python, so none of them is in a census, a boundary test or an import graph.**
+The `.gitattributes` one is the sharpest: it is a *data file the tool writes*, it had a test, and
+the test asserted the pattern the tool produced rather than the paths the pattern must MATCH. It
+would have shipped, and the symptom would have arrived weeks later as a merge conflict nobody
+connected to the release.
+
+**Fix, and it is a real one.** A test that asserts a generated glob should assert what the glob
+MATCHES, over a real repo, through the tool that consumes it — `git check-attr` here — and should
+name both a path that must match and a path that must not. The case now does. The general form:
+**when a test pins a string that some OTHER program interprets, pin the interpretation.**
+
+**Second fix, cheaper.** A layout change needs one deliberate sweep of everything that is not
+code: installables, guidance, skills, rules, agent contracts, CI templates, dotfiles the tool
+writes. It cost twenty minutes and found two live bugs. Put it in the milestone's close checklist,
+not in somebody's memory.
+
+**What worked.** The migration was one script run once, not a verb — so the blast radius of every
+one of these was *this repo*, and a consumer bumping the pin still reads a nested tree correctly
+through the compat readers. Shipping the mover as `tools/dev/pm_migrate.py` rather than
+`pm migrate` also meant no consumer's gate now depends on a shape that exists for a one-time job.

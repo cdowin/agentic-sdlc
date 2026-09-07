@@ -12,6 +12,7 @@ order:
   - "ft-a-shared-surface-owns-a-contract-test"
   - "ft-prose-that-restates-a-verb-is-rendered-or-gone"
   - "ft-the-changelog-is-a-field-and-a-verb"
+  - "ft-a-read-verb-is-a-declaration"
   - "ft-a-warning-is-actionable-where-it-fires"
   - "bg-the-milestone-scaffold-still-mints-the-version"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"

@@ -116,7 +116,7 @@ condition was asked, one check resolved, the one write happened.
 |---|---|---|
 | `enter` | `rung.enter` | `ts`, `kind`, `grain`, `rung`, `ready`, `blockers` |
 | `verdict` | `check.verdict` | `ts`, `kind`, `rung`, `grain`, `check`, `verdict`, `detail`, `ran` |
-| `leave` | `rung.leave` | `ts`, `kind`, `grain`, `state`, `answer`, `rung`, `next_checks`, `next_actions`, `have`, `value` |
+| `leave` | `rung.leave` | `ts`, `kind`, `grain`, `state`, `answer`, `next_rung`, `next_checks`, `next_actions`, `have`, `value` |
 
 `verdict` is one of `ok`, `error`, `unverifiable`. `ran` is the command in the operation's table above, or the literal `reads the tree`. Every field is derived: the ids from the invocation, the categories from `[pm.states.*]`, the names from the registry that ran them.
 

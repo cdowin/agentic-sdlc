@@ -1016,23 +1016,73 @@ EVENT_MINTERS = (
     ('repo/pm/ledger.py', 'lesson_row'),
 )
 
-# The guard is a reader, and the way a reader dies is silently, so both
-# answers are probed before anything is graded.
+# The guard is a reader, and the way a reader dies is silently, so every shape
+# a minter is written in is probed before anything is graded — whole FUNCTIONS,
+# because the shape that defeated the first version of this rule was the
+# function-level one (E1).
 MINTER_SPELLINGS = (
-    ("return {'kind': KIND, 'rung': rung}", []),
-    ("return dict(zip(KEYS, (utc_now(), KIND, rung, nxt.belt if nxt else '')))",
-     []),
-    ("return [{'path': c.path, 'why': c.why} for c in have]", []),
-    ("return {'kind': KIND, 'suggested_action': 'run a review'}",
+    ("def m():\n return {'kind': KIND, 'rung': rung}", []),
+    ("def m():\n return dict(zip(KEYS, (utc_now(), KIND, rung,"
+     " nxt.belt if nxt else '')))", []),
+    ("def m():\n return [{'path': c.path, 'why': c.why} for c in have]", []),
+    ("def m():\n return {'kind': KIND, 'suggested_action': 'run a review'}",
      ['run a review']),
-    ("return dict(zip(KEYS, (KIND, 'stories-done')))", ['stories-done']),
+    ("def m():\n return dict(zip(KEYS, (KIND, 'stories-done')))",
+     ['stories-done']),
+    # `leave_row`'s own shape: built, subscripted, returned by NAME. Graded on
+    # the RETURN VALUE these two are indistinguishable and both invisible.
+    ("def m():\n row = dict(zip(KEYS, (a, b)))\n row['value'] = said.value"
+     "\n return row", []),
+    ("def m():\n row = dict(zip(KEYS, (a, b)))"
+     "\n row['suggested_action'] = 'run a review'\n return row",
+     ['run a review']),
+    # A docstring and a refusal are not fields the row carries.
+    ('def m():\n """Mint a row."""\n raise ValueError(\'refusing to mint\')',
+     []),
+    # A module constant is a sentence this file wrote with a name on it (E6).
+    ("SUGGESTED = 'run a review'\ndef m():\n"
+     " return dict(zip(KEYS, (KIND, SUGGESTED)))", ['run a review']),
+    ("KIND_LEAVE = 'rung.leave'\ndef m():\n"
+     " return dict(zip(KEYS, (KIND_LEAVE, rung)))", []),
 )
 
+# The ONE string source a minter may name: the kind, which IS the schema. Any
+# other module constant reaching a value position is a sentence this file
+# wrote, so a new kind has to be admitted here BY NAME.
+ADMITTED_CONSTANTS = ('KIND_ENTER', 'KIND_VERDICT', 'KIND_LEAVE',
+                      'KIND_LESSON')
 
-def _minted_strings(node: ast.AST) -> list[str]:
-    """Every string constant in a row's VALUES. A `Dict`'s keys are its schema
-    and are skipped; everything else is walked, so a hardcoded sentence inside
-    a comprehension or a conditional is still seen."""
+
+def _module_strings(tree: ast.AST) -> dict[str, str]:
+    """Top-level `NAME = '…'`, minus the kinds: what a bare `Name` in a value
+    position resolves to. A dotted `mod.NAME` is another module's schema and is
+    not resolved here."""
+    found: dict[str, str] = {}
+    for node in getattr(tree, 'body', []):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str) and node.value.value):
+            continue
+        if node.targets[0].id not in ADMITTED_CONSTANTS:
+            found[node.targets[0].id] = node.value.value
+    return found
+
+
+def _zip_values(node: ast.AST) -> list[ast.AST] | None:
+    """`zip(KEYS, (…))`'s VALUE arguments, or None: the first argument is the
+    schema, exactly as a `Dict`'s keys are."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == 'zip' and len(node.args) > 1):
+        return list(node.args[1:])
+    return None
+
+
+def _minted_strings(node: ast.AST, constants: dict[str, str]) -> list[str]:
+    """Every string a row's VALUES resolve to. A `Dict`'s keys and a `zip`'s
+    key tuple are the schema and are skipped; everything else is walked, so a
+    hardcoded sentence inside a comprehension, a conditional or a module
+    constant is still seen."""
     found: list[str] = []
     stack = [node]
     while stack:
@@ -1040,12 +1090,62 @@ def _minted_strings(node: ast.AST) -> list[str]:
         if isinstance(current, ast.Dict):
             stack.extend(current.values)
             continue
+        keyed = _zip_values(current)
+        if keyed is not None:
+            stack.extend(keyed)
+            continue
         if isinstance(current, ast.Constant):
             if isinstance(current.value, str) and current.value:
                 found.append(current.value)
             continue
+        if isinstance(current, ast.Name) and current.id in constants:
+            found.append(constants[current.id])
+            continue
         stack.extend(ast.iter_child_nodes(current))
     return found
+
+
+def _row_values(func: ast.AST) -> list[ast.AST]:
+    """Every expression a minter puts in a VALUE position, anywhere in its
+    body: a dict literal's values, `dict(zip(KEYS, …))`'s value tuple, and a
+    later `row[key] = …`.
+
+    The BODY, never `ast.Return`'s value — that is E1. `leave_row`'s only
+    return is `return row`, a bare Name, so grading return VALUES graded
+    nothing in the one minter carrying the next-step fields, and a planted
+    `row['suggested_action'] = 'run a review'` was invisible. A docstring and a
+    `raise`'s message are in no value position and stay ungraded."""
+    found: list[ast.AST] = []
+    stack: list[ast.AST] = [func]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.Dict):
+            found.extend(current.values)
+            continue
+        keyed = _zip_values(current)
+        if keyed is not None:
+            found.extend(keyed)
+            continue
+        if (isinstance(current, ast.Assign)
+                and any(isinstance(t, ast.Subscript)
+                        for t in current.targets)):
+            found.append(current.value)
+            continue
+        stack.extend(ast.iter_child_nodes(current))
+    return found
+
+
+def _minted_by(func: ast.AST, constants: dict[str, str]) -> list[str]:
+    """What one minter WROTE into its row, sorted: the readers, composed."""
+    return sorted(word for value in _row_values(func)
+                  for word in _minted_strings(value, constants))
+
+
+def _graded(source: str) -> list[str]:
+    """The whole reader over one module — its constants, then its minter."""
+    module = ast.parse(source)
+    minter = [n for n in ast.walk(module) if isinstance(n, ast.FunctionDef)][-1]
+    return _minted_by(minter, _module_strings(module))
 
 
 class EveryEventFieldIsDerived(unittest.TestCase):
@@ -1056,24 +1156,21 @@ class EveryEventFieldIsDerived(unittest.TestCase):
     def test_the_reader_can_still_tell_a_derived_field_from_a_written_one(self):
         for source, expected in MINTER_SPELLINGS:
             with self.subTest(source=source):
-                node = ast.parse(source).body[0]
-                self.assertEqual(expected, _minted_strings(node))
+                self.assertEqual(expected, _graded(source))
 
     def test_no_minter_writes_a_field_this_package_decided(self):
         seen = 0
         offenders: list[str] = []
         for rel, name in EVENT_MINTERS:
             tree = _tree(SRC / rel)
+            constants = _module_strings(tree)
             for node in ast.walk(tree):
                 if not (isinstance(node, ast.FunctionDef)
                         and node.name == name):
                     continue
                 seen += 1
-                for ret in [n for n in ast.walk(node)
-                            if isinstance(n, ast.Return) and n.value]:
-                    offenders.extend(
-                        f'{rel}::{name}:{ret.lineno}: {value!r}'
-                        for value in _minted_strings(ret.value))
+                offenders.extend(f'{rel}::{name}: {word!r}'
+                                 for word in _minted_by(node, constants))
         self.assertEqual(
             len(EVENT_MINTERS), seen,
             f'{seen} of {len(EVENT_MINTERS)} minters found — one was renamed '

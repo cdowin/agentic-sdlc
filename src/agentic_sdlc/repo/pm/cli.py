@@ -2311,8 +2311,9 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
         return 0
     previous = None
     for row in rows:
-        line = f'{row.data.get("ts", "")}  {row.data.get("kind", ""):<8}'
-        if row.data.get('kind') == ledger.KIND_STATUS:
+        kind = row.data.get('kind', '')
+        line = f'{row.data.get("ts", "")}  {kind:<{KIND_COLUMN}}'
+        if kind == ledger.KIND_STATUS:
             line += f'  {row.data.get("from")} -> {row.data.get("to")}'
             gap = _gap(previous, row)
             if previous is not None and gap is not None:
@@ -2320,8 +2321,8 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
             previous = row
         elif arrive.disposition_of(row.data):
             line += _disposition_cells(row.data)
-        elif row.data.get('kind') == ledger.KIND_LESSON:
-            line += _lesson_cells(row.data)
+        elif kind in ROW_CELLS:
+            line += ROW_CELLS[kind](row.data)
         print(line.rstrip())
     status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
     total = ledger.total_seconds(cfg, _grain_kind(cfg, gid), status)
@@ -2338,15 +2339,64 @@ def _lesson_cells(row: dict) -> str:
             f'(source: {row.get("source", "")})')
 
 
-def _disposition_cells(row: dict) -> str:
-    """What an arrival's disposition SAYS, beside its `ts` and `kind`: the
-    state it reached, the answer given, and every check a belt answered instead
-    of asking (0.5.0/D6). Rule 11's read side — this verb printed the kind and
-    stopped, which teaches a reader the tool does not hold the answer. Read
-    defensively: a hand-written row must not make a grain unprintable."""
+def _enter_cells(row: dict) -> str:
+    """The rung asked, the answer `pm ready-for` gave, and what blocked it."""
+    cells = (f'  {row.get("rung", "")}  '
+             + (ledger.READY if row.get(ledger.READY_FIELD)
+                else ledger.NOT_READY))
+    blockers = row.get('blockers')
+    named = [str(one.get('check') or one.get('why', ''))
+             for one in (blockers if isinstance(blockers, list) else [])
+             if isinstance(one, dict)]
+    return cells + (f'  blocked: {", ".join(named)}' if named else '')
+
+
+def _verdict_cells(row: dict) -> str:
+    """The rung, the check, the verdict word, the detail the belt's own line
+    carried and what it ran — without them a refused run and a passed one are
+    the same characters here, and the ABSENCE that signals a belt that wrote
+    nothing is unreadable."""
+    cells = (f'  {row.get("rung", "")}  {row.get("check", "")}  '
+             f'{row.get("verdict", "")}')
+    if row.get('detail'):
+        cells += f' — {row["detail"]}'
+    return cells + (f'  (ran: {row["ran"]})' if row.get('ran') else '')
+
+
+def _leave_cells(row: dict) -> str:
+    """The arrival the one write recorded, then the belt named NEXT."""
+    cells = _arrival_cells(row)
+    if not row.get('next_rung'):
+        return cells
+    cells += f'  next: {row["next_rung"]}'
+    checks = row.get('next_checks')
+    if isinstance(checks, list) and checks:
+        cells += f' ({", ".join(str(one) for one in checks)})'
+    return cells
+
+
+# Every kind whose payload this verb renders, and the column the kind sits in,
+# off the kinds themselves — `{kind:<8}` predated `check.verdict` (13).
+ROW_CELLS = {ledger.KIND_LESSON: _lesson_cells,
+             ledger.KIND_ENTER: _enter_cells,
+             ledger.KIND_VERDICT: _verdict_cells,
+             ledger.KIND_LEAVE: _leave_cells}
+KIND_COLUMN = max(len(word) for name, word in vars(ledger).items()
+                  if name.startswith('KIND_') and isinstance(word, str))
+
+
+def _arrival_cells(row: dict) -> str:
+    """The state reached and the answer given, `none` and its value included."""
     cells = f'  {row.get("state", "")}  {row.get("answer", "")}'
-    if row.get('value'):
-        cells += f' {row["value"]}'
+    return cells + (f' {row["value"]}' if row.get('value') else '')
+
+
+def _disposition_cells(row: dict) -> str:
+    """The arrival, plus every check a belt answered instead of asking
+    (0.5.0/D6). Rule 11's read side — this verb printed the kind and stopped,
+    which teaches a reader the tool does not hold the answer. Read defensively:
+    a hand-written row must not make a grain unprintable."""
+    cells = _arrival_cells(row)
     entries = row.get('skipped')
     if not isinstance(entries, list) or not entries:
         return cells

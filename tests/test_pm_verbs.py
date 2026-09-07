@@ -644,7 +644,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                 derived = arrive.derive_next(cfg, 'feature', 'building')
                 self.assertEqual(row['next_checks'], list(derived.checks))
                 self.assertEqual(row['next_actions'], [derived.action])
-                self.assertEqual(row['rung'], derived.belt)
+                self.assertEqual(row['next_rung'], derived.belt)
                 self.assertEqual([c['path'] for c in row['have']],
                                  [self.SCRIPT])
                 self.assertEqual(row['state'], 'building')

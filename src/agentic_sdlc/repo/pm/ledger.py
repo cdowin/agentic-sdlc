@@ -85,13 +85,20 @@ KIND_ENTER = 'rung.enter'
 KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
 
-ENTER_KEYS = ('ts', 'kind', 'grain', 'rung', 'ready', 'blockers')
+# A FIELD NAME — "was the entry condition met" — spelled once because it
+# collides with a state word, and the two words it renders as, here rather than
+# in `ready_for` so the verb that ANSWERS and the verb that READS cannot drift.
+READY_FIELD = 'ready'
+READY, NOT_READY = 'READY', 'NOT READY'
+ENTER_KEYS = ('ts', 'kind', 'grain', 'rung', READY_FIELD, 'blockers')
 VERDICT_KEYS = ('ts', 'kind', 'rung', 'grain', 'check', 'verdict', 'detail',
                 'ran')
-# `value` is LAST and unpaired: `leave_row` zips nine values against these ten
+# `next_rung` is the belt that runs NEXT; the other two kinds put the rung that
+# RAN in `rung`, and one word meaning two things in one rendered table joins a
+# story's leave to a feature's verdicts (D6). `value` is LAST and unpaired: `leave_row` zips nine values against these ten
 # keys, so an answer that carried none leaves an absent key rather than a `''`.
-LEAVE_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'rung', 'next_checks',
-              'next_actions', 'have', 'value')
+LEAVE_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'next_rung',
+              'next_checks', 'next_actions', 'have', 'value')
 EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
 

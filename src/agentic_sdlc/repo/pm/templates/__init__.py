@@ -140,8 +140,20 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
             f're-run') from err
 
     # Every refusal for the whole grain is raised before the first slot write
-    # (rule 3).
+    # (rule 3). A slot under another case is refused, never renamed or written
+    # past: on a case-insensitive filesystem `0.1-decisions.md` and
+    # `0.1-DECISIONS.md` are the same bytes, and on a sensitive one they are a
+    # twin nobody reads.
+    entries = model.dir_entries(doc.parent)
     for slot, path in slots.items():
+        variants = model.case_variants(entries, path.name)
+        if variants:
+            raise ScaffoldRefused(
+                f'{cfg.rel(doc.parent)}/ holds {", ".join(variants)} where '
+                f'this package expects {path.name} — nothing was written; '
+                f'rename it yourself (`git mv --force '
+                f'{cfg.rel(doc.parent / variants[0])} {cfg.rel(path)}`), then '
+                f're-run')
         if not path.exists() and not path.is_symlink():
             continue
         # The link before the kind: `is_dir()` follows a symlink, and a

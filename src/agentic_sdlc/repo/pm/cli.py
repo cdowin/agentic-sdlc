@@ -318,6 +318,30 @@ def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
           file=sys.stderr)
 
 
+def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
+    """The refusal for an id that resolves to nothing, carrying the damage.
+
+    A grain is found by its `id:` now, so a document whose frontmatter cannot
+    be read has no key and is in no index — and "no story resolves from id" is
+    then true and useless. The documents in that state are listed by path, so
+    the fix is the next thing the operator reads rather than the next thing
+    they have to go looking for.
+    """
+    parts = [f'no {kind} resolves from id {gid!r}']
+    if hint:
+        parts.append(f'({hint})')
+    try:
+        damaged = model.unkeyed_documents(cfg)
+    except OSError:
+        damaged = []
+    if damaged:
+        named = '; '.join(f'{cfg.rel(path)} {why}' for path, why in damaged)
+        parts.append(f'— and {len(damaged)} document(s) in this tree cannot be '
+                     f'keyed on, so a grain in one of them is addressable by '
+                     f'nothing: {named}')
+    return Usage(' '.join(parts))
+
+
 def _check_slug(kind: str, value: str) -> str:
     """A slug becomes a path component and half an id; reject anything else
     before a write can leave the repo root.
@@ -333,6 +357,13 @@ def _check_slug(kind: str, value: str) -> str:
     if value.startswith('-') or any(c in value for c in '*?[]!'):
         raise Refused(f'{kind} {value!r} contains a glob or leading dash — ids '
                       f'are literals')
+    # The same guard every resolver runs, so a name the filesystem would refuse
+    # is a refusal here rather than an OSError from the first write. It answers
+    # without opening a file, which is why it can run before the pool is walked.
+    defect = model.id_defect(value)
+    if defect:
+        raise Refused(f'{kind} {value!r} cannot name a grain: {defect} — '
+                      f'nothing was written')
     return value
 
 
@@ -450,8 +481,8 @@ def cmd_story(cfg: model.PmConfig, args: list[str]) -> int:
     _movable(cfg, 'story', to)
     sf = model.story_file(cfg, sid)
     if sf is None:
-        raise Usage(f'no story resolves from id {sid!r} '
-                    f'(expected <milestone>/<feature-slug>/<story-slug>)')
+        raise _unresolved(cfg, 'story', sid,
+                          'expected <milestone>/<feature-slug>/<story-slug>')
     cur = _was(sf)
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
@@ -476,8 +507,8 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
     to, bid = args
     _movable(cfg, 'bug', to)
     if f'/{model.BUGS_DIR}/' not in bid:
-        raise Usage(f'no bug resolves from id {bid!r} '
-                    f'(expected <milestone>/{model.BUGS_DIR}/<slug>)')
+        raise _unresolved(cfg, 'bug', bid,
+                          f'expected <milestone>/{model.BUGS_DIR}/<slug>')
     bf = _grain_file(cfg, bid)
     cur = _was(bf)
     if cur == to:
@@ -496,7 +527,7 @@ def cmd_bug(cfg: model.PmConfig, args: list[str]) -> int:
 def _feature_or_usage(cfg: model.PmConfig, fid: str) -> tuple[Path, str]:
     ff = model.feature_file(cfg, fid)
     if ff is None:
-        raise Usage(f'no feature resolves from id {fid!r}')
+        raise _unresolved(cfg, 'feature', fid)
     return ff, _was(ff)
 
 
@@ -1311,7 +1342,7 @@ def _caused_by(cfg: model.PmConfig, pairs: list[tuple[str, str]]) -> str:
     return value
 
 
-def _scaffold(cfg: model.PmConfig, kind: str, gdir: Path,
+def _scaffold(cfg: model.PmConfig, kind: str, doc: Path,
               values: dict[str, str]) -> int:
     """Fill a grain's canonical slots and report only what CHANGED."""
     try:
@@ -1324,7 +1355,7 @@ def _scaffold(cfg: model.PmConfig, kind: str, gdir: Path,
         raise Refused(f'the {kind} template cannot be read ({err}) — nothing '
                       f'was written') from err
     try:
-        actions = templates.scaffold(cfg, kind, gdir, values)
+        actions = templates.scaffold(cfg, kind, doc, values)
     except templates.ScaffoldRefused as err:
         raise Refused(str(err)) from err
     except templates.MissingTemplate as err:
@@ -1332,9 +1363,9 @@ def _scaffold(cfg: model.PmConfig, kind: str, gdir: Path,
     for what, path in actions:
         _ok(f'{what} {cfg.rel(path)}')
     if not actions:
-        _ok(f'{cfg.rel(gdir)}/ already has every canonical slot (no-op)')
+        _ok(f'{cfg.rel(doc)} already has every canonical slot (no-op)')
     else:
-        _ok(f'{cfg.rel(gdir)}/: {len(actions)} slot(s) filled')
+        _ok(f'{cfg.rel(doc)}: {len(actions)} slot(s) filled')
     return 0
 
 
@@ -1437,6 +1468,9 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
                     f'written into it — its frontmatter has no `---` block to '
                     f'put the field in; add one, or set it with `pm set {bid} '
                     f'{CAUSED_BY} {cause}`')
+            # Echoed, because a field the caller asked for and never sees
+            # confirmed is a field they have to go read the file to trust.
+            _ok(f'{CAUSED_BY} {cause!r} stamped on {cfg.rel(bf)}')
         return 0
     if grain == 'handoff':
         # ON DEMAND ONLY. `new milestone` deliberately does NOT mint this doc:

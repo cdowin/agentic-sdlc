@@ -128,7 +128,7 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
-                  'V1', 'V4', 'V5')
+                  'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary it declared, as
 # opposed to whether a word is declared at all (D4). U1 is its first member and
 # it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
@@ -164,8 +164,11 @@ RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
 # 0.4.0: both existed to keep two copies of one fact in agreement, and 0.4.0
 # deleted the second copy. `id:` is the identity and the binding is the
 # parentage; a document nothing can key on and a binding naming no grain are
-# the two facts that can still be wrong, and they have their own lines.
-VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V6')
+# the two facts that can still be wrong, and they have their own lines —
+# `unkeyed_documents` and V7, which walks the POOLS rather than descending from
+# the milestones, because a grain nothing claims is exactly what a descent
+# cannot see.
+VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V6', 'V7')
 KNOWN_CHECKS = tuple(dict.fromkeys(
     DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
     + VALIDATE_CHECKS))
@@ -1137,31 +1140,38 @@ def pool_dir(cfg: PmConfig, kind: str) -> Path:
     return cfg.roadmap / POOL_NAME[kind]
 
 
+def pool_scan(cfg: PmConfig, kind: str) -> Walk:
+    """One pool as a `Walk` — the kept documents AND what it narrowed away.
+
+    This is `slot_walk` for a table: the same two disclosed narrowings, because
+    the hazards did not move when the slot became a pool. A dot prefix is a
+    deliberate hide and stays out of scope, and a `.md` that opens no
+    frontmatter is a note rather than a grain — and both are COUNTED, so a
+    census can never assert the opposite of the filesystem (rule 4).
+    """
+    base = pool_dir(cfg, kind)
+    if not base.is_dir():
+        return Walk(())
+    return (walk.descendants(base, Kind.FILE, suffix='.md')
+            .filter(lambda p: not _is_hidden(base, p), SkipReason.DOTTED_NAME)
+            .filter(_is_grain_doc, SkipReason.NO_FRONTMATTER))
+
+
 def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
     """Every document in one pool, sorted. Replaces `milestone_walk`,
     `milestone_dirs` and `known_milestones` — three walks that were one walk
     with a kind baked in."""
-    base = pool_dir(cfg, kind)
-    if not base.is_dir():
-        return []
-    return sorted(p for p in walk.descendants(base, Kind.FILE,
-                                              suffix='.md').kept
-                  if _is_grain_doc(p))
+    return sorted(pool_scan(cfg, kind).kept)
 
 
 def pool_census(cfg: PmConfig, kind: str) -> tuple[int, int]:
-    """(documents this pool holds, files in it that are not documents).
+    """(documents this pool holds, candidates a narrowing removed).
 
-    Rule 4: a scan that skipped something says so. In a pool the skipped file
-    is a `.md` that opens no frontmatter, or anything that is not `.md` at
-    all — a README beside the grains, a note somebody left.
+    The second number is what `Walk.disclosures()` spells out; a caller that
+    only needs "did this scan skip anything" takes it as an int.
     """
-    base = pool_dir(cfg, kind)
-    if not base.is_dir():
-        return 0, 0
-    every = [p for p in walk.descendants(base, Kind.FILE).kept]
-    kept = pool_walk(cfg, kind)
-    return len(kept), len(every) - len(kept)
+    scan = pool_scan(cfg, kind)
+    return len(scan.kept), sum(scan.counts().values())
 
 
 def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
@@ -1447,7 +1457,7 @@ class AmbiguousStory(Exception):
 
 
 # --- children -----------------------------------------------------------------
-def shared_doc(cfg: PmConfig, grain: Grain, name: str) -> Path:
+def shared_doc(cfg: PmConfig, grain: 'Grain | Path', name: str) -> Path:
     """Where a grain's shared document lives — `decisions.md`, `handoff.md`,
     `review.md`.
 
@@ -1459,9 +1469,13 @@ def shared_doc(cfg: PmConfig, grain: Grain, name: str) -> Path:
     The prefix is the id and never a slug of it: a shared doc that could not be
     traced back to exactly one grain is a document with no owner.
     """
-    if grain.path.parent.name in POOL_NAME.values():
-        return grain.path.with_name(f'{grain.path.stem}-{name}')
-    return grain.path.parent / name
+    path = grain if isinstance(grain, Path) else grain.path
+    # `is_pooled` and not the parent's NAME: a tree that configured its pools
+    # somewhere else is still a pooled tree, and reading the name would put its
+    # shared docs back inside directories that do not exist.
+    if is_pooled(cfg):
+        return path.with_name(f'{path.stem}-{name}')
+    return path.parent / name
 
 
 def milestone_doc(handle: Path) -> Path:
@@ -1713,11 +1727,10 @@ def tree_walk(cfg: PmConfig) -> Walk:
     """
     found = Walk(())
     if is_pooled(cfg):
+        # The same two kinds the nested walk disclosed for, through the same
+        # narrowings — `pool_scan` IS `slot_walk` for a table.
         for kind in ('story', 'bug'):
-            base = pool_dir(cfg, kind)
-            if base.is_dir():
-                found = found.merge(walk.descendants(base, Kind.FILE,
-                                                     suffix='.md'))
+            found = found.merge(pool_scan(cfg, kind))
         return found
     for mdir in milestone_dirs(cfg):
         found = found.merge(slot_walk(mdir / BUGS_DIR))

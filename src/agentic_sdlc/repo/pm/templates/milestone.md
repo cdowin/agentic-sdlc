@@ -1,5 +1,6 @@
 ---
 id: "{id}"
+kind: {kind}
 name: {name}
 status: planning
 depends_on: []

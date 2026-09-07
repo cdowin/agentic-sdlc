@@ -313,10 +313,10 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # An `in_progress` milestone also wants its handoff; it is never
         # auto-minted, so the fixture writes one or the milestone's own line
         # drowns the story's.
-        (root / MFILE_REL).parent.joinpath(
-            model.HANDOFF_FILE_NAME).write_text(
-                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
-                encoding='utf-8')
+        model.shared_doc(cfg_for(root), root / MFILE_REL,
+                         model.HANDOFF_FILE_NAME).write_text(
+            model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+            encoding='utf-8')
 
     def test_a_story_in_progress_with_no_owner_warns(self):
         """A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says to set
@@ -404,10 +404,10 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
                                      'status': 'building',
                                      'branch': 'milestone/0.1'}, self.SHIP)
-            (root / MFILE_REL).parent.joinpath(
-                model.HANDOFF_FILE_NAME).write_text(
-                    model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
-                    encoding='utf-8')
+            model.shared_doc(cfg_for(root), root / MFILE_REL,
+                             model.HANDOFF_FILE_NAME).write_text(
+                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+                encoding='utf-8')
             self._story(root, 'planning', 'x')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
@@ -1199,26 +1199,30 @@ class BugStatusVocabulary(unittest.TestCase):
 
 
 class StoryWalk(unittest.TestCase):
-    """`stories/` is the same never-descended slot shape `bugs/` was.
+    """The story POOL is walked whole — every depth, either case, grains only.
 
     The bug walk was made recursive and case-insensitive on extension and
     `stories/` never got it, so a story parked one directory down was invisible
     to every rule at once — and worse than invisible: D4 could not see its
     status, and D2 read "all stories done" off the ones it could see and filed
-    a FALSE finding against a feature that had an unfinished story in it.
+    a FALSE finding against a feature that had an unfinished story in it. The
+    slot became a POOL in 0.4.0 and the hazard did not move: a project that
+    files its stories into `stories/parked/` is filing them somewhere the walk
+    has to reach, because the pool is a table and a row in it is a row.
     """
 
-    FDIR = 'pm/roadmap/features/alpha'
+    POOL = 'pm/roadmap/stories'
 
     def test_a_story_the_walk_cannot_see_becomes_a_FALSE_D2_finding(self):
         # Not just an undercount: the stories it COULD see were all done, so
         # D2 told the author to close a feature with an open story in it.
-        for rel in ('stories/parked/s2.md', 'stories/S2.MD'):
+        for rel in ('parked/s2.md', 'S2.MD'):
             with self.subTest(rel=rel), \
                     tree(feature_status='building',
                          story_statuses=('done',)) as root:
-                write(root / self.FDIR / rel,
-                      {'id': '0.1/alpha/s2', 'feature': '0.1/alpha',
+                write(root / self.POOL / rel,
+                      {'id': '0.1/alpha/s2', 'kind': 'story',
+                       'feature': '0.1/alpha',
                        'milestone': '"0.1"', 'name': 'S2', 'status': 'ready'})
                 code, out = run_gate(root)
                 self.assertIn('2 story/ies', out)
@@ -1226,19 +1230,20 @@ class StoryWalk(unittest.TestCase):
 
     def test_D4_can_see_a_nested_story_with_an_illegal_status(self):
         with tree(feature_status='building', story_statuses=('ready',)) as root:
-            write(root / self.FDIR / 'stories/parked/s2.md',
-                  {'id': '0.1/alpha/s2', 'feature': '0.1/alpha',
+            write(root / self.POOL / 'parked/s2.md',
+                  {'id': '0.1/alpha/s2', 'kind': 'story',
+                   'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': 'S2',
                    'status': 'NOT-A-REAL-STATUS'})
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn("status 'NOT-A-REAL-STATUS' not in", out)
 
-    def test_a_non_grain_md_parked_under_stories_is_not_a_story(self):
+    def test_a_non_grain_md_parked_in_the_pool_is_not_a_story(self):
         # The same rule `bugs/` gets, from the same walk: a README beside the
         # stories is not a story with an empty status.
         with tree(feature_status='building', story_statuses=('ready',)) as root:
-            (root / self.FDIR / 'stories/README.md').write_text(
+            (root / self.POOL / 'README.md').write_text(
                 '# how stories are written here\n', encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
@@ -1246,17 +1251,46 @@ class StoryWalk(unittest.TestCase):
 
 
 class StructuralIntegrity(unittest.TestCase):
-    def test_a_dir_with_no_grain_file_is_reported_not_skipped(self):
+    """A grain nothing claims is REPORTED, never walked past (V7).
+
+    The nested shape of this hazard was a feature directory under a milestone
+    directory with no `milestone.md` in it: the drifted feature vanished from
+    the scan entirely, because the scan descended and there was nothing to
+    descend from. Pools cannot lose a file that way — every document is in a
+    pool and every pool is walked — but the SAME hole reopens one field over:
+    the roll-ups still descend from the milestones, so a feature bound to a
+    milestone that is not in the tree is counted by the census and reached by
+    nothing. V7 is the walk that starts at the pools instead.
+    """
+
+    def test_a_grain_whose_binding_resolves_to_nothing_is_reported(self):
         with tree(story_statuses=('ready',)) as root:
-            ghost = root / 'pm/roadmap/0.2-beta/features/gizmo'
-            write(ghost / 'feature.md',
-                  {'id': '0.2/gizmo', 'milestone': '"0.2"', 'name': 'G',
-                   'status': 'done', 'reviewed': ''})
-            # 0.2-beta has NO milestone.md, so its drifted feature would
-            # otherwise vanish from the scan entirely.
+            write(root / 'pm/roadmap/features/gizmo.md',
+                  {'id': '0.2/gizmo', 'kind': 'feature', 'milestone': '"0.2"',
+                   'name': 'G', 'status': 'done', 'reviewed': ''})
             code, out = run_gate(root)
-            self.assertEqual(code, 1)
-            self.assertIn('SKIPPED', out)
+            self.assertEqual(code, 1, out)
+            self.assertIn("has milestone: '0.2', which is not a grain in this "
+                          'tree', out)
+            # ...and it was COUNTED, so the census is not quietly short one.
+            self.assertIn('2 feature(s)', out)
+
+    def test_a_grain_with_an_empty_binding_is_reported(self):
+        with tree(story_statuses=('ready',)) as root:
+            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('names no feature:', out)
+
+    def test_a_binding_that_names_the_wrong_KIND_is_reported(self):
+        # `feature: 0.1` resolves — to a MILESTONE. A binding that lands on a
+        # grain of the wrong kind is a tree that reads as valid and rolls up
+        # into nothing.
+        with tree(story_statuses=('ready',)) as root:
+            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '0.1')
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('which is a milestone and not a feature', out)
 
 
 class Validate(unittest.TestCase):
@@ -1278,13 +1312,14 @@ class Validate(unittest.TestCase):
 
     def test_each_integrity_rule_fires(self):
         # (rule, grain file, field, value, the line the finding carries)
+        # V2 and V3 are RETIRED — both graded a path against a field, and the
+        # path is not part of the identity any more. V7 is what replaced the
+        # half of V3 that was a real fact about the tree.
         rows = (
-            ('V2', 'features/alpha/feature.md', 'id', '0.1/WRONG',
-             'does not match its path'),
-            ('V3', 'features/alpha/stories/s0.md', 'feature',
-             '0.1/somewhere-else', 'but it lives under feature'),
-            ('V4', 'features/alpha/feature.md', 'depends_on',
+            ('V4', 'features/alpha.md', 'depends_on',
              '["0.1/no-such-feature"]', 'resolves to nothing'),
+            ('V7', 'stories/s0.md', 'feature', '0.1/somewhere-else',
+             'which is not a grain in this tree'),
         )
         for rule, rel, field, value, message in rows:
             with self.subTest(rule=rule), tree(story_statuses=('ready',)) as root:
@@ -1298,6 +1333,8 @@ class Validate(unittest.TestCase):
         with tree() as root:
             ff = root / 'pm/roadmap/features/alpha.md'
             model.set_field(ff, 'depends_on', '["0.0.9/long-gone"]')
+            # A HIERARCHICAL id names its milestone, and `0.0.9` is not in the
+            # tree. A flat id carries no such segment and would be a finding.
             findings, census = self._run(root)
             self.assertEqual(findings, [])
             self.assertEqual(census['unverifiable'], 1)
@@ -1306,8 +1343,8 @@ class Validate(unittest.TestCase):
         with tree() as root:
             run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
             fdir = root / 'pm/roadmap/features'
-            model.set_field(fdir / 'alpha/feature.md', 'depends_on', '["0.1/beta"]')
-            model.set_field(fdir / 'beta/feature.md', 'depends_on', '["0.1/alpha"]')
+            model.set_field(fdir / 'alpha.md', 'depends_on', '["0.1/beta"]')
+            model.set_field(fdir / 'beta.md', 'depends_on', '["0.1/alpha"]')
             findings, _ = self._run(root)
             self.assertTrue(any('CYCLE' in f for f in findings), findings)
 
@@ -1559,15 +1596,19 @@ class DamagedFrontmatter(unittest.TestCase):
                 with tree(feature_status='building',
                           story_statuses=('ready',)) as root:
                     damage(root / STORY_REL, form)
-                    self.assertIsNotNone(
+                    # 0.4.0: a grain is found by its `id:`, and a document
+                    # whose frontmatter cannot be read declares none — so it
+                    # is in no index and the resolver genuinely cannot reach
+                    # it. What must NOT happen is the answer stopping there.
+                    self.assertIsNone(
                         model.story_file(cfg_for(root), '0.1/alpha/s0'))
                     code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
                     self.assertEqual(code, 2, out)
-                    self.assertNotIn('no story resolves', out)
-                    # The one refusal a status verb keeps: the FRONTMATTER is
-                    # malformed, which is a fact about the file. What the
-                    # status VALUE happens to be is never a refusal.
-                    self.assertIn('malformed frontmatter', out)
+                    # The file, by path, and why it cannot be keyed on — so
+                    # the fix is the next thing read rather than the next
+                    # thing hunted for.
+                    self.assertIn('pm/roadmap/stories/s0.md', out)
+                    self.assertIn('declares no `id:`', out)
 
     def test_a_damaged_grain_is_never_quietly_accepted(self):
         # Lenient DETECTION must not become a lenient PARSER. A BOM'd file is a

@@ -1,5 +1,6 @@
 ---
 id: {id}
+kind: {kind}
 milestone: "{milestone}"
 name: {name}
 status: planning

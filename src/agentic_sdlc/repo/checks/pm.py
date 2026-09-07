@@ -185,13 +185,12 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             # only, not every started milestone: a handoff is a cold-start aid
             # and nobody picks up a finished milestone, so warning on `done`
             # would fire once per historical milestone on every consumer's tree.
-            if (m_cat == model.IN_PROGRESS
-                    and model.dir_entries(mfile.parent)
-                    .get(model.HANDOFF_FILE_NAME) != 'file'):
+            handoff = model.shared_doc(cfg, mfile, model.HANDOFF_FILE_NAME)
+            if m_cat == model.IN_PROGRESS and not handoff.is_file():
                 warn(f'milestone {mid} is {mstat!r} with no '
                      f'{model.HANDOFF_FILE_NAME} — past todo, and a cold '
                      f'session has nowhere to start; `pm new handoff {mid}` '
-                     f'mints one  [{cfg.rel(mfile.parent)}/]')
+                     f'mints one  [{cfg.rel(handoff)}]')
 
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(cfg, mid)]

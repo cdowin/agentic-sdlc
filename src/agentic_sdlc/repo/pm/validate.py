@@ -2,7 +2,8 @@
 
 V1 frontmatter well-formed · V2 and V3 RETIRED (0.4.0) ·
 V4 refs (`depends_on`, `consumed_by`, a bug's `caused_by`) resolve · V5 the
-feature graph is acyclic · V6 (opt-in) an execution list matches the tree.
+feature graph is acyclic · V6 (opt-in) an execution list matches the tree ·
+V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
 
@@ -83,32 +84,51 @@ def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
         return []
 
 
+def _unverifiable(index: dict, ref: str) -> bool:
+    """Whether a ref that resolved to nothing is UNVERIFIABLE rather than broken.
+
+    A retired milestone takes its grains with it, and reddening every ref that
+    pointed into it would make `pm retire` unusable — so a ref whose leading
+    segment names no milestone in the tree is not graded. That segment is a
+    HEURISTIC for exactly this question and nothing else: it is not how a ref
+    is RESOLVED (the index is, by `id:`), which is the whole of 0.4.0.
+
+    A FLAT id carries no such segment, so there is nothing to excuse it with
+    and an unresolvable ref is a finding. That asymmetry is the honest one: the
+    escape hatch exists because a hierarchical id happens to name its milestone,
+    and reading `ref not in index` as "its milestone is gone" would excuse
+    EVERY dangling ref in a flat tree — rule 4's first sin, wearing the word
+    UNVERIFIABLE.
+    """
+    prefix = ref.partition('/')[0]
+    return prefix != ref and prefix not in index
+
+
 def _grain_exists(cfg: model.PmConfig, ref: str) -> bool | None:
     """True/False if resolvable, None when the owning milestone is pruned
     (UNVERIFIABLE, not a finding).
     """
-    mid = ref.partition('/')[0]
-    if model.milestone_dir(cfg, mid) is None:
-        return None
-    depth = ref.count('/')
-    if depth == 0:
+    try:
+        index = model.grain_index(cfg)
+    except OSError:
+        return False
+    if ref in index:
         return True
-    if depth == 1:
-        return model.feature_file(cfg, ref) is not None
-    return model.story_file(cfg, ref) is not None
+    return None if _unverifiable(index, ref) else False
 
 
 def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
-    """`_grain_exists` for a ref that must name a feature; a milestone or
-    story id is False. An OSError is False too: `Path.is_dir()` raises on
-    an over-long component before 3.14 and answers False after.
+    """`_grain_exists` for a ref that must name a FEATURE; a milestone or a
+    story id is False. An OSError is False too.
     """
     try:
-        if model.milestone_dir(cfg, ref.partition('/')[0]) is None:
-            return None
-        return model.feature_file(cfg, ref) is not None
+        index = model.grain_index(cfg)
     except OSError:
         return False
+    found = index.get(ref)
+    if found is not None:
+        return found.kind == 'feature'
+    return None if _unverifiable(index, ref) else False
 
 
 def _check_ref_ids(cfg: model.PmConfig, path, key: str, refs: list[str],
@@ -200,6 +220,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
         for bfile in model.bug_files(cfg, _mid):
             _check_caused_by(cfg, bfile, on, bad, census)
 
+    if 'V7' in on:
+        findings.extend(_unbound_findings(cfg))
     if 'V5' in on:
         findings.extend(_graph_findings(graph))
     if 'V6' in on:
@@ -218,6 +240,42 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                         f'{cfg.rel(path)}: the execution list is stale — the tree '
                         f'has moved since it was rendered; run `pm sync`')
     return findings, census
+
+
+def _unbound_findings(cfg: model.PmConfig) -> list[str]:
+    """V7 — every grain's binding names a grain of the right kind, in the tree.
+
+    The walk above starts at milestones and descends, so a grain whose binding
+    resolves to nothing is never REACHED by it: it is not reported, it is not
+    counted, and the census that says "2 feature(s)" is the only trace it left.
+    That is rule 4's first sin with the drift hidden one level up. This is the
+    walk that starts at the POOLS instead, so every grain is graded exactly
+    once whether or not anything claims it.
+
+    A milestone binds to nothing and is never asked.
+    """
+    out: list[str] = []
+    index = model.grain_index(cfg)
+    for gid, grain in sorted(index.items()):
+        bind = model.BINDS_TO.get(grain.kind)
+        if bind is None:
+            continue
+        want_kind, field = bind
+        ref = model.unquote(model.field_of(grain.path, field))
+        rel = cfg.rel(grain.path)
+        if not ref:
+            out.append(f'{rel}: {grain.kind} {gid!r} names no {field}: — '
+                       f'membership is the field now, so a grain with none '
+                       f'belongs to nothing and every roll-up walks past it')
+            continue
+        found = index.get(ref)
+        if found is None:
+            out.append(f'{rel}: {grain.kind} {gid!r} has {field}: {ref!r}, '
+                       f'which is not a grain in this tree')
+        elif found.kind != want_kind:
+            out.append(f'{rel}: {grain.kind} {gid!r} has {field}: {ref!r}, '
+                       f'which is a {found.kind} and not a {want_kind}')
+    return out
 
 
 def _graph_findings(graph: dict[str, list[str]]) -> list[str]:

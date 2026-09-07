@@ -107,14 +107,16 @@ def record(root, *argv) -> tuple[int, str]:
 def all_ledger_lines(root) -> dict[str, list[str]]:
     """{relative path: lines} for EVERY ledger in the tree.
 
-    There are two homes since 0.4.0/D3 — one per milestone for attributed rows
-    and `<roadmap>/ledger.jsonl` for the rest — so "the file was not written"
-    is a claim about the tree, not about one path. A refusal that wrote into
-    the other file would pass a single-path check.
+    There are two homes since 0.4.0/D3 — `<roadmap>/ledgers/<id>.jsonl` per
+    milestone for attributed rows and `<roadmap>/ledger.jsonl` for the rest —
+    so "the file was not written" is a claim about the tree, not about one
+    path. A refusal that wrote into the other file would pass a single-path
+    check.
     """
+    found = sorted(root.rglob('ledger.jsonl')) + sorted(root.rglob('ledgers/*.jsonl'))
     return {str(path.relative_to(root)):
             path.read_text(encoding='utf-8').splitlines()
-            for path in sorted(root.rglob('ledger.jsonl'))}
+            for path in found}
 
 
 def only_row(root) -> dict:
@@ -122,7 +124,7 @@ def only_row(root) -> dict:
 
     Location-agnostic ON PURPOSE: every case reaching for this is asserting
     what a row CONTAINS — the module's subject — and WHERE it goes is
-    `_row_ledger_dir`'s, proven by the routing cases below over fixtures where
+    `_row_ledger`'s, proven by the routing cases below over fixtures where
     the candidate directories differ. Asserting one row across the whole tree
     is also the stronger claim: a second row written somewhere else fails here
     and would not fail a read of one path.

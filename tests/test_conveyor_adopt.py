@@ -672,60 +672,119 @@ def _drift_rels(root) -> set[str]:
 
 
 # --- 0.4.0/telemetry-arrives-with-the-bump ------------------------------------
+# The two halves a courier needs: make must REACH the recipe, and the recipe
+# must reach a CLI with a flow to answer with. A stub is honest here — the
+# check measures the vehicle, and `check hooks` measures the courier.
+VEHICLE = ('.PHONY: pm\npm:\n\t@printf "milestone feature story bug\\n"\n')
+# The exact shape mode 2 is: a PM tree IS a `pm/` directory, so a `pm:` target
+# that is not .PHONY is already satisfied and make never runs the recipe.
+NOT_PHONY = 'pm:\n\t@printf "milestone feature story bug\\n"\n'
+# Reached, and inert: the recipe runs and the CLI has nothing to answer with.
+INERT = '.PHONY: pm\npm:\n\t@echo "no [pm.states.*] declared" >&2; exit 2\n'
+
+WIRED = ('{"hooks": {"Stop": [{"hooks": [{"command": "bash '
+         'tools/hooks/cc-ledger-session.sh"}, {"command": "bash '
+         'tools/hooks/cc-ledger-subagent.sh"}]}]}}')
+
+
+def _couriers(root, *names) -> None:
+    """The corpus on disk. Content is irrelevant — `hooks-self-test` grades
+    the scripts; this check grades the VEHICLE."""
+    for name in names or ledger_couriers():
+        path = root / 'tools' / 'hooks' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+
+
+def ledger_couriers():
+    from agentic_sdlc.repo.pm import model
+    return model.LEDGER_COURIERS
+
+
+def _settings(root, text: str) -> None:
+    path = root / '.claude' / 'settings.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+
+
 def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
     """A consumer bumps the pin, gets the courier scripts, and pastes the
     settings block by hand — and nothing verified the paste. The failure is
     files present, hooks unarmed, zero rows, zero complaints, which is the
     state this package's own tree was in for a whole milestone.
 
-    A PROBE, not a file read: reading settings.json proves a string is there;
-    the courier's own `--self-test` drives the consumer's real vehicle, which
-    is the only thing that answers "does `make -s pm ARGS=…` reach the verb
-    here".
+    **A PROBE OF THIS TREE.** It ran the courier's `--self-test`, which builds
+    its own `mktemp` repo with its own stub `pm:` target and exits 0 from an
+    empty directory — so it proved the courier's argv and NOTHING about the
+    caller, while printing *"their self-test passes against this tree's
+    vehicle"*. That is a lie inside a PASS line (rule 4). It runs `make -s pm
+    ARGS=vocabulary` here instead: one call that needs make to reach the recipe
+    AND the CLI to have a flow to answer with.
     """
-    # No courier at all: unverifiable, never a pass and never a failure.
+    # No courier at all: unverifiable, never a pass and never a failure — and
+    # it names the opt-out, because a consumer who does not record is not
+    # broken and must not be told to install something to get past a belt.
     with tree() as root:
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.UNVERIFIABLE, answer
         assert 'install-hooks' in answer.detail, answer.detail
+        assert '[adopt] steps' in answer.detail, answer.detail
 
-    # The courier is there and nothing fires it — mode 1, and the sentence a
-    # consumer needs rather than a rule id.
+    # HALF the corpus is not the corpus. `install-hooks` installs two couriers
+    # and prints two entries; a one-name search read half-wired as wired.
     with tree() as root:
-        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
-        courier.parent.mkdir(parents=True, exist_ok=True)
-        courier.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+        _couriers(root, 'cc-ledger-session.sh')
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert 'cc-ledger-subagent.sh' in answer.detail, answer.detail
+
+    # Mode 1 — the corpus is there, the vehicle answers, nothing fires it.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert 'no ledger setup for this tree, no telemetry' in answer.detail
         assert 'install-hooks' in answer.detail and 'yours' in answer.detail
 
-    # The vehicle does not answer — mode 2/3, the courier's own self-test says
-    # so and the check carries its words rather than inventing any.
+    # Mode 1b — HALF the entries pasted. Named, so the fix is the missing one.
     with tree() as root:
-        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
-        courier.parent.mkdir(parents=True, exist_ok=True)
-        courier.write_text('#!/usr/bin/env bash\necho "the vehicle never '
-                           'reached the verb" >&2\nexit 1\n', encoding='utf-8')
-        settings = root / '.claude' / 'settings.json'
-        settings.parent.mkdir(parents=True, exist_ok=True)
-        settings.write_text('{"hooks": {"Stop": [{"hooks": [{"command": '
-                            '"bash tools/hooks/cc-ledger-session.sh"}]}]}}',
-                            encoding='utf-8')
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, '{"hooks": {"Stop": [{"hooks": [{"command": "bash '
+                        'tools/hooks/cc-ledger-session.sh"}]}]}}')
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.FALSE, answer
-        assert '.PHONY' in answer.detail and '[pm.states.*]' in answer.detail
+        assert 'cc-ledger-subagent.sh' in answer.detail, answer.detail
 
-    # Wired and working.
+    # Mode 2 — the `pm` target is not .PHONY. A PM tree IS a `pm/` directory,
+    # so make finds the target satisfied, exits 0, and never runs the recipe.
+    # This is the case the hermetic self-test could not see at all.
     with tree() as root:
-        courier = root / 'tools' / 'hooks' / 'cc-ledger-session.sh'
-        courier.parent.mkdir(parents=True, exist_ok=True)
-        courier.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
-        settings = root / '.claude' / 'settings.json'
-        settings.parent.mkdir(parents=True, exist_ok=True)
-        settings.write_text('{"hooks": {"Stop": [{"hooks": [{"command": '
-                            '"bash tools/hooks/cc-ledger-session.sh"}]}]}}',
-                            encoding='utf-8')
+        _couriers(root)
+        (root / 'Makefile').write_text(NOT_PHONY, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert '.PHONY' in answer.detail, answer.detail
+
+    # Mode 3 — reached, and inert: the recipe runs and the CLI refuses.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(INERT, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert '[pm.states.*]' in answer.detail, answer.detail
+
+    # Wired, and the vehicle answers.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.TRUE, answer
         assert 'telemetry is live' in answer.detail
+

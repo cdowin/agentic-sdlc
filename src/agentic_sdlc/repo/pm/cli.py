@@ -291,23 +291,19 @@ ABOVE = {'story': 'feature', 'feature': 'release'}
 def _breadcrumb(cfg: model.PmConfig, kind: str, to: str) -> None:
     """One line after a status write: what the conveyor asks NEXT, DERIVED.
 
-    Hard rule 9 says the tool never decides what a move MEANS or what should
-    happen next, and a breadcrumb survives that rule only by being read rather
-    than written. Three sources, all at runtime: the project's own
+    Rule 9 says the tool never decides what a move MEANS, and a breadcrumb
+    survives that only by being READ. Three runtime sources: the project's
     `[pm.states.<kind>]` for the category, `driver.step_names(<belt>)` for the
-    checks that belt will actually ask, and `driver.SUBJECT` for its argument.
+    checks that belt will ask, and `driver.SUBJECT` for its argument — so
+    `close feature asks stories-done, …` is the engine reading back what it
+    will run, where *"you should review now"* would be an opinion.
 
-        `close feature` asks stories-done, feature-verified, review-recorded
-
-    is the engine reading back what it will RUN; *"you should run a review
-    now"* is the engine having an opinion, and it does not ship. `step_names`
-    and not `registry_for`, because the registry is what SHIPS and the belt
-    runs `[<belt>] steps` — reading the registry told a consumer who had
-    narrowed that list four checks it had said it did not want.
+    `step_names` and not `registry_for`, because the registry is what SHIPS and
+    the belt runs `[<belt>] steps`: reading the registry told a consumer who
+    had narrowed that list four checks it had said it did not want.
 
     Why at the move at all: prose in three documents had already failed to stop
-    a builder batching nine reviews to the end of a milestone. What holds is
-    what the tool SAYS at the moment of the act.
+    a builder batching nine reviews to the end of a milestone.
     """
     if not cfg.breadcrumbs:
         return

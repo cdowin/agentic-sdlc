@@ -987,21 +987,20 @@ def check_telemetry_live(ctx: Context) -> Answer:
     """Is this tree RECORDING — and if not, which of the three ways.
 
     **A probe, not an inspection.** Reading `.claude/settings.json` proves a
-    string is present; the courier's own `--self-test` drives the consumer's
-    real vehicle end to end, which is the only thing that answers "does `make
-    -s pm ARGS=…` reach the verb here".
+    string is present. This runs THIS TREE'S vehicle — `make -s pm
+    ARGS="vocabulary"`, the same path a courier takes — because that is the
+    only thing that answers "does the verb get reached here".
+
+    Not `--self-test`: that builds its own `mktemp` repo with its own stub
+    `pm:` target and exits 0 from an empty directory, so it proved the
+    courier's argv and nothing about the caller.
 
     Three ways a bumping consumer records nothing, each silent, each named:
-
-      1. the settings entries were never pasted — the scripts are on disk and
-         nothing fires them. `install-hooks` PRINTS that block and never writes
-         it, because the file is the consumer's and has no merge;
-      2. the vehicle does not answer — the `pm` target is not `.PHONY` (a PM
-         tree IS a `pm/` directory, so make treats it as up to date) or does
-         not pass its environment through. The courier detects this exact case
-         and says so on a stderr nobody reads;
-      3. the CLI is inert — `[pm.states.<kind>]` has no default, so a tree that
-         declared no flow has every work-moving verb refuse by name.
+    the settings entries were never pasted (`install-hooks` PRINTS that block
+    and never writes the file, which is the consumer's); the `pm` target is not
+    `.PHONY`, and a PM tree IS a `pm/` directory, so make treats it as up to
+    date; or `[pm.states.<kind>]` is undeclared, which makes every work-moving
+    verb refuse by name.
 
     **It never refuses an adoption on its own.** The posture is *clearly
     available, warned when absent, never mandatory* (0.4.0/D5). What it must
@@ -1010,36 +1009,46 @@ def check_telemetry_live(ctx: Context) -> Answer:
     command = _configured(ctx, 'telemetry-live')
     if command:
         return run_command(ctx, 'telemetry-live', command)
-    courier = ctx.root / HOOKS_DIR / 'cc-ledger-session.sh'
-    if not courier.is_file():
+    from agentic_sdlc.repo.pm import model as pm_model
+    absent = [name for name in pm_model.LEDGER_COURIERS
+              if not (ctx.root / HOOKS_DIR / name).is_file()]
+    if absent:
         return Answer.unverifiable(
-            f'{HOOKS_DIR}/cc-ledger-session.sh is not in this checkout, so '
-            f'whether this tree records cannot be probed — `install-hooks` '
-            f'writes it')
-    settings = ctx.root / '.claude' / 'settings.json'
-    wired = settings.is_file() and 'cc-ledger-session.sh' in _read_text(settings)
-    code, out = _run(ctx, ['bash', str(courier), '--self-test'])
+            f'{", ".join(absent)} not in {HOOKS_DIR}/, so whether this tree '
+            f'records cannot be probed — `install-hooks` writes the corpus, or '
+            f'drop `telemetry-live` from [adopt] steps if this tree does not '
+            f'record')
+    # BOTH couriers: `install-hooks` prints two entries, and half-wired
+    # settings read as wired against a one-name search.
+    settings = ctx.root / pm_model.AGENT_SETTINGS
+    text = _read_text(settings) if settings.is_file() else ''
+    unwired = [name for name in pm_model.LEDGER_COURIERS if name not in text]
+    # The vehicle, in THIS tree: `vocabulary` is a read that needs make to
+    # reach the CLI *and* the CLI to have a flow to answer with, which is
+    # modes 2 and 3 in one call.
+    code, out = _run(ctx, ['make', '-s', 'pm', 'ARGS=vocabulary'])
     if code == 127:
-        return Answer.unverifiable('bash is not on PATH')
-    if code != 0:
+        return Answer.unverifiable('make is not on PATH')
+    reached = code == 0 and any(kind in out for kind in pm_model.FLOW_KINDS)
+    if not reached:
         return Answer.no(
-            f'no ledger setup for this tree, no telemetry — the courier\'s own '
-            f'self-test failed, so the vehicle does not answer here. The usual '
-            f'cause is a `pm` make target that is not .PHONY (a PM tree IS a '
-            f'`pm/` directory, so make exits 0 without reaching the verb), or '
-            f'an undeclared [pm.states.*] making every verb refuse: '
-            f'{_clip(out)}')
-    if not wired:
+            f'no ledger setup for this tree, no telemetry — `make -s pm '
+            f'ARGS=vocabulary` did not reach the verb, so neither will a '
+            f'courier. The usual causes are a `pm` target that is not .PHONY '
+            f'(a PM tree IS a `pm/` directory, so make exits 0 without running '
+            f'the recipe) and an undeclared [pm.states.*], which makes every '
+            f'verb refuse by name: {_clip(out)}')
+    if unwired:
         return Answer.no(
-            f'no ledger setup for this tree, no telemetry — the couriers work '
-            f'(their self-test passes against your vehicle) and '
-            f'.claude/settings.json does not fire them. `install-hooks` PRINTS '
-            f'the entries and never writes that file, because it is yours and '
-            f'has no merge; paste them and this goes green. Nothing here is '
-            f'mandatory — a tree that has opted out is not broken, only quiet')
-    return Answer.yes('telemetry is live: the couriers are wired in '
-                      '.claude/settings.json and their self-test passes '
-                      'against this tree\'s vehicle')
+            f'no ledger setup for this tree, no telemetry — the vehicle '
+            f'answers and {pm_model.AGENT_SETTINGS} does not fire '
+            f'{", ".join(unwired)}. `install-hooks` PRINTS the entries and '
+            f'never writes that file, because it is yours and has no merge; '
+            f'paste them and this goes green. Nothing here is mandatory — a '
+            f'tree that has opted out is not broken, only quiet')
+    return Answer.yes(f'telemetry is live: both couriers are wired in '
+                      f'{pm_model.AGENT_SETTINGS} and `make -s pm` reaches the '
+                      f'verb in this tree')
 
 
 def check_runner_targets_resolve(ctx: Context) -> Answer:
@@ -1349,10 +1358,11 @@ def registry_for(operation: str) -> dict[str, Check]:
 # runs it.
 STEP_DOC: dict[str, str] = {
     'telemetry-live':
-        'the ledger couriers are wired in `.claude/settings.json` AND their '
-        'own `--self-test` passes against this tree\'s vehicle — a probe, not '
-        'a file read. Never mandatory: a tree that has opted out is quiet, not '
-        'broken.',
+        'BOTH ledger couriers are wired in `.claude/settings.json` AND '
+        '`make -s pm` reaches the verb in THIS tree — a probe of your vehicle, '
+        'not a file read and not the courier\'s own hermetic self-test, which '
+        'passes from an empty directory. Never mandatory: a tree that has '
+        'opted out is quiet, not broken.',
     'tree-clean': '`git status --porcelain` is empty.',
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
@@ -1420,6 +1430,7 @@ STEP_DOC: dict[str, str] = {
 # What a check runs when the project configures no command for it.
 SHIPPED_ACTION: dict[str, str] = {
     'hooks-self-test': 'agentic-sdlc check hooks',
+    'telemetry-live': 'make -s pm ARGS=vocabulary',
     'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
     'checks-pass': 'agentic-sdlc check all',
     'pm-validates': 'agentic-sdlc pm validate',

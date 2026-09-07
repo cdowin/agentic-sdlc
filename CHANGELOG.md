@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v0.4.0 — 2026-09-07 — authoring is separate from binding
+
+> **The northstar: the path is where a file lives; the frontmatter is what it is and what it
+> belongs to.** A grain's kind, its id and its parent were all functions of where its file sat,
+> and `id:`/`milestone:`/`feature:` were copies that V2 and V3 existed to police — one fact stored
+> twice, which is the defect this package forbids everywhere else. The pools are the tables,
+> membership is the child's field, sequence is the parent's list, and nothing reads a path as
+> schema.
+>
+> **What that cost, honestly.** Fourteen defects of one shape survived into review: a rule written
+> inside a walk that descends by binding answers only for the grains that walk reaches, and 0.4.0
+> made authored-but-unbound the NORMAL state. Two BLOCKERs, four CRITICALs and about twenty MAJORs
+> came out of the feature reviews — a migration that could not run and then deleted twelve files it
+> never named, a scaffold that blinded a 138-grain tree, a telemetry probe that ran in its own
+> `mktemp` repo and reported "telemetry is live", a shape gate that decided what a document IS from
+> its filename and whose printed repair destroyed the document. **Every one passed its own tests.**
+
 - **`pm add` binds AND sequences, at every level, and it is exactly `set` plus a list insert.**
 
   ```

@@ -1,7 +1,7 @@
 ---
 id: ms-0.4.0
 name: authoring is separate from binding
-status: building
+status: done
 depends_on: ["ms-0.3.0"]
 branch: milestone/0.4.0-authoring-is-separate-from-binding
 version: 0.4.0

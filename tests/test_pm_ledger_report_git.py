@@ -1,17 +1,25 @@
 """test_pm_ledger_report_git.py — `pm ledger report <ms> --from <rev>`.
 
-D6 put a milestone's ledger inside the milestone directory and said the rest
-out loud: `retire` removes it with the directory, and a retired milestone's
-rows are read from GIT. So this verb's whole claim is an EQUALITY — the table a
-reader gets out of history is the table they would have got the day before the
-close — and an equality is only tested by capturing both sides and comparing
-the bytes. Every shape case here does exactly that: run the live report, commit
-the tree, tag it, retire the milestone, run `--from <tag>`, and compare
-byte-for-byte after stripping the one thing that is meant to differ.
+D6 gave every milestone its own ledger and said the rest out loud: `retire`
+removes it with the milestone's grains, and a retired milestone's rows are read
+from GIT. So this verb's whole claim is an EQUALITY — the table a reader gets
+out of history is the table they would have got the day before the close — and
+an equality is only tested by capturing both sides and comparing the bytes.
+Every shape case here does exactly that: run the live report, commit the tree,
+tag it, retire the milestone, run `--from <tag>`, and compare byte-for-byte
+after stripping the one thing that is meant to differ.
 
 A paraphrase would not do. "The numbers match" is what a report with a whole
 section missing also says, and a section that silently stopped printing is hard
 rule 4's read-side sin — a gate that misses real drift and prints PASS.
+
+0.4.0 sharpened the equality rather than replacing it. The pools moved every
+grain out of a per-milestone directory, so WHICH LAYOUT a tree is in is now a
+fact the reader has to ask — and `retire` leaves today's disk in a different
+layout from the rev being read, which is the exact shape of "the live tree
+leaking into a question about history". Every join that branches on the layout
+(the ledger's home, the milestone's document, a review record beside its grain)
+is therefore asked of the SOURCE, and the equality case is what proves it.
 
 **Every case here spawns git**, which is why the set is small and each member
 guards a SILENT wrong answer rather than a loud one: a census that does not
@@ -20,13 +28,11 @@ leaking into a read about history, CRLF producing a second table for one
 milestone, and a read verb that writes. The refusals kept are the ones where
 the alternative is not a crash — a rev that is really a git flag, and an empty
 `--from` quietly answering from the working tree.
-
-ALL of these fail at HEAD~: `--from` did not exist, so every case reported
-`unknown flag '--from'` at exit 2.
 """
 from __future__ import annotations
 
 import json
+import shutil
 
 from support.pm import (LEDGER_REL, bug, commit, dispatch_line, git,
                         porcelain, put_ledger, run_cli, snapshot, status_line,
@@ -34,9 +40,12 @@ from support.pm import (LEDGER_REL, bug, commit, dispatch_line, git,
 from support.pm import git_tree as tree
 
 
+
 STORY, QUIET, FEATURE, BUG = ('0.1/alpha/s0', '0.1/alpha/s1', '0.1/alpha',
                               '0.1/bugs/crash')
-MILESTONE_DIR = 'pm/roadmap/0.1-demo'
+# The tree, not a milestone's directory: 0.4.0 left the pools under it and
+# nothing under a per-milestone name. `pm/roadmap/` outlives every retire.
+ROADMAP = 'pm/roadmap'
 RECORD_REL = 'docs/reviews/alpha.md'
 TAG = 'v9.9.9'
 
@@ -76,9 +85,12 @@ def seeded(root) -> None:
     of the file kinds it has to open — the milestone document, a feature, a
     story, a bug, a review record, the ledger — must fail loudly here.
     """
-    write(root / MILESTONE_DIR / 'features/alpha/stories/s1.md',
-          {'id': QUIET, 'feature': FEATURE, 'milestone': '"0.1"', 'name': 'S1',
-           'status': 'ready', 'size': 'm'})
+    # The quiet story, in the stories POOL, where `tree()` already put it: the
+    # rewrite is for `size:`, which is a spend column and so has to be in the
+    # census on both sides.
+    write(root / ROADMAP / 'stories/s1.md',
+          {'id': QUIET, 'kind': 'story', 'feature': FEATURE,
+           'milestone': '"0.1"', 'name': 'S1', 'status': 'ready', 'size': 'm'})
     bug(root, 'crash', 'closed', caused_by=FEATURE)
     (root / RECORD_REL).write_text(RECORD, encoding='utf-8')
     put_ledger(
@@ -103,12 +115,16 @@ def seeded(root) -> None:
     )
 
 
-def roadmap(root) -> None:
-    """0.3.0: `ROADMAP.md` retired and `pm retire` no longer appends to it, so
-    there is no index to seed. Kept as a no-op rather than deleted from the two
-    call sites, because what those cases are ABOUT is reading a report out of
-    git at a tag after the milestone directory is gone — the prune row was
-    never the subject."""
+def grains_left(root) -> list[str]:
+    """Every grain document still under the roadmap, as posix paths.
+
+    `retire` deletes N FILES since 0.4.0 — a pooled tree has no per-milestone
+    directory to remove — so "it retired" is a claim about documents, and
+    `pm/roadmap/` being gone would be a different (and wrong) outcome.
+    """
+    base = root / ROADMAP
+    return sorted(p.relative_to(base).as_posix()
+                  for p in base.rglob('*.md') if p.is_file())
 
 
 def stripped(out: str, rev: str = TAG) -> str:
@@ -138,21 +154,45 @@ def refuses(root, *argv, needle: str = '') -> str:
 
 def test_the_report_at_the_tag_is_the_report_before_the_retire():
     """Text and JSON, byte for byte, through the REAL close: `retire` removes
-    the directory and the ledger with it (D6), which is exactly the state this
-    whole story exists for."""
+    the milestone's grains and its ledger (D6), which is exactly the state
+    this whole story exists for.
+
+    0.4.0 put the record BESIDE the grain here rather than at the end of a
+    `reviewed:` pointer, and that is the sharpest form of this case's own
+    subject. `<stem>-review.md` beside the document is the POOLED spelling;
+    `review.md` inside a directory is the nested one — and once the retire has
+    emptied the pools, today's disk answers "nested" for a rev that is pooled.
+    A reader that asked the disk prints a milestone nobody reviewed, with two
+    whole sections quietly missing and no line saying so.
+
+    The milestone document is RENAMED off its id for the same reason: a pooled
+    filename is convention and `id:` is identity, so a report that fell back
+    to the stem would head the table with `ms-demo` and read a ledger nobody
+    wrote — and it would only do so at the rev, where the document is not on
+    disk to be read.
+    """
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        roadmap(root)
+        (root / ROADMAP / 'milestones/0.1.md').rename(
+            root / ROADMAP / 'milestones/ms-demo.md')
+        (root / RECORD_REL).unlink()
+        write(root / ROADMAP / 'features/alpha.md',
+              {'id': FEATURE, 'kind': 'feature', 'milestone': '"0.1"',
+               'name': 'Alpha', 'status': 'building', 'reviewed': ''})
+        (root / ROADMAP / 'features/alpha-review.md').write_text(
+            RECORD, encoding='utf-8')
         live = capture(root, '0.1')
         live_json = capture(root, '0.1', '--json')
         commit(root, 'the milestone, still in the tree')
         git(root, 'tag', TAG)
         code, out = run_cli(root, 'retire', '0.1')
         assert code == 0, out
-        assert not (root / MILESTONE_DIR).exists(), out
+        assert grains_left(root) == [], out
+        assert (root / ROADMAP).is_dir(), out
         commit(root, 'retire 0.1')
         at_tag = capture(root, '0.1', '--from', TAG)
         at_tag_json = capture(root, '0.1', '--json', '--from', TAG)
+    assert 'SHIP-WITH-FIXES' in live
     assert f' — at {TAG} — ' in at_tag
     assert stripped(at_tag) == live
     payload = json.loads(at_tag_json)
@@ -176,31 +216,33 @@ def test_no_ledger_at_the_rev_is_one_line_and_exit_zero():
 
 def test_the_census_at_a_rev_narrows_exactly_as_the_disk_walk_does():
     """The claim `GitSource._grain_docs` makes, staged against a tree that
-    exercises every one of `model.slot_walk`'s decisions at once.
+    exercises every one of `model.pool_scan`'s decisions at once.
 
     A census read out of git that quietly counted MORE than the disk walk (a
-    note, a hidden document) or LESS (a nested bug, an uppercase extension)
-    would be hard rule 4 exactly: a table whose grain list is not the tree's,
-    printed with no sign that it isn't.
+    note, a hidden document) or LESS (a bug nested inside its pool, an
+    uppercase extension) would be hard rule 4 exactly: a table whose grain
+    list is not the tree's, printed with no sign that it isn't.
     """
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        base = root / MILESTONE_DIR
-        # In scope, and only the recursive walk finds it.
+        base = root / ROADMAP
+        # In scope, and only the recursive walk finds it: a pool is a table,
+        # not a flat directory, and a subdirectory inside one is filing.
         write(base / 'bugs/regressions/nested.md',
-              {'id': '0.1/bugs/regressions/nested', 'milestone': '"0.1"',
-               'name': '', 'status': 'open', 'caused_by': FEATURE})
+              {'id': '0.1/bugs/regressions/nested', 'kind': 'bug',
+               'milestone': '"0.1"', 'name': '', 'status': 'open',
+               'caused_by': FEATURE})
         # In scope: `.md` is compared case-INSENSITIVELY.
-        write(base / 'features/alpha/stories/LOUD.MD',
-              {'id': '0.1/alpha/LOUD', 'feature': FEATURE,
+        write(base / 'stories/LOUD.MD',
+              {'id': '0.1/alpha/LOUD', 'kind': 'story', 'feature': FEATURE,
                'milestone': '"0.1"', 'name': 'Loud', 'status': 'todo'})
         # Out of scope: a note beside the grains, no frontmatter at all.
         (base / 'bugs/README.md').write_text(
             'How bugs are filed here.\n', encoding='utf-8')
         # Out of scope: dot-prefixed, files and directories alike.
         write(base / 'bugs/.hold/parked.md',
-              {'id': '0.1/bugs/parked', 'milestone': '"0.1"', 'name': '',
-               'status': 'open'})
+              {'id': '0.1/bugs/parked', 'kind': 'bug', 'milestone': '"0.1"',
+               'name': '', 'status': 'open'})
         live = capture(root, '0.1')
         commit(root, 'a tree with one of each narrowing')
         git(root, 'tag', TAG)
@@ -246,9 +288,10 @@ def test_an_absolute_reviewed_pointer_never_reads_todays_disk():
         # one), or the mismatch alone hides the file from the rev read and the
         # case passes for the wrong reason. `commit` adds `-A`, so the record
         # IS in the rev — an absolute pointer must still not reach it.
-        write(root / f'{MILESTONE_DIR}/features/alpha/feature.md',
-              {'id': FEATURE, 'milestone': '"0.1"', 'name': 'Alpha',
-               'status': 'done', 'reviewed': str(outside.resolve())})
+        write(root / ROADMAP / 'features/alpha.md',
+              {'id': FEATURE, 'kind': 'feature', 'milestone': '"0.1"',
+               'name': 'Alpha', 'status': 'done',
+               'reviewed': str(outside.resolve())})
         commit(root, 'an absolute pointer')
         git(root, 'tag', TAG)
         out = capture(root, '0.1', '--from', TAG)
@@ -280,7 +323,6 @@ def test_the_verb_writes_nothing_and_checks_nothing_out():
     of whoever asked a question about history."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        roadmap(root)
         commit(root, 'seed')
         git(root, 'tag', TAG)
         before = git(root, 'rev-parse', 'HEAD')
@@ -325,27 +367,54 @@ def test_a_milestone_the_rev_does_not_hold_is_named():
     """The ordinary mistake: a rev from AFTER the close that retired it. Both
     spellings of a rev, because both are things a caller types — and the
     message says which rev to reach for instead, since "it is not there" alone
-    leaves the reader nowhere to go."""
+    leaves the reader nowhere to go.
+
+    0.4.0 changed what "not there" LOOKS like, so the staging changed with it:
+    the pools survive the retire (the next milestone's grains are in them) and
+    what is gone is the one document declaring this id. The message has to say
+    that — a tree still holding `pm/roadmap/milestones/` is not one where "no
+    `0.1-*` directory" tells the reader anything true.
+    """
     with tree() as root:
+        # The milestone whose close retires 0.1; without it the pools would be
+        # empty and the rev would read as a pre-migration tree.
+        write(root / ROADMAP / 'milestones/0.2.md',
+              {'id': '"0.2"', 'kind': 'milestone', 'name': 'Next',
+               'status': 'building'})
         commit(root, 'the milestone, in the tree')
-        git(root, 'rm', '-r', '-q', MILESTONE_DIR)
+        code, out = run_cli(root, 'retire', '0.1')
+        assert code == 0, out
         gone = commit(root, 'retired')
         git(root, 'tag', TAG)
         for rev in (gone, TAG):
             out = refuses(root, '0.1', '--from', rev,
-                          needle='no milestone directory 0.1-*')
+                          needle='declares `id: 0.1`')
+            # `<rev>:<path>` — the pool it looked in, spelled so a reader can
+            # paste it after `git show` and see for themselves.
+            assert f'{rev}:{ROADMAP}/milestones' in out
             assert 'release tag' in out
 
 
 def test_a_path_the_report_needs_and_the_rev_does_not_hold():
-    """The directory is there and `milestone.md` is not. Say which."""
+    """The directory is there and `milestone.md` is not. Say which.
+
+    Only a PRE-MIGRATION rev can be in that state — a pooled handle IS the
+    document, so there is no directory to find without one — and that is the
+    case worth keeping rather than substituting: reading a consumer's history
+    from before they moved to pools is half of what `--from` is for, and this
+    is the only case that walks the nested resolution at a rev.
+    """
     with tree() as root:
-        git(root, 'add', '-A')
-        (root / MILESTONE_DIR / 'milestone.md').unlink()
+        # Nothing is committed yet, so the pools are dropped from the DISK and
+        # `commit`'s `-A` never sees them: the rev holds the nested shape and
+        # only that.
+        shutil.rmtree(root / ROADMAP)
+        write(root / f'{ROADMAP}/0.1-demo/features/alpha/feature.md',
+              {'id': FEATURE, 'name': 'Alpha', 'status': 'done'})
         commit(root, 'a milestone directory with no milestone document')
         git(root, 'tag', TAG)
         out = refuses(root, '0.1', '--from', TAG,
-                      needle=f'{MILESTONE_DIR}/milestone.md')
+                      needle=f'{ROADMAP}/0.1-demo/milestone.md')
         assert f'{TAG}:' in out
 
 
@@ -361,3 +430,39 @@ def test_a_ledger_line_that_will_not_parse_at_the_rev():
         git(root, 'tag', TAG)
         out = refuses(root, '0.1', '--from', TAG, needle='line 2')
         assert f'{TAG}:{LEDGER_REL}' in out
+
+
+# --- the merge attribute, asked of GIT ----------------------------------------
+def test_the_merge_attribute_reaches_both_ledger_homes():
+    """0.4.0/D3 gave the tree a second ledger at `<roadmap>/ledger.jsonl`, and
+    the shipped pattern was `<roadmap>/*/ledger.jsonl` — ONE DIRECTORY LEVEL
+    too deep to reach it, and named after a FILE the pools no longer have (a
+    milestone's ledger is `<roadmap>/ledgers/<id>.jsonl`). Every branch appends
+    to one of the two, so a pattern that misses either conflicts on every
+    parallel branch, quietly, as a merge conflict nobody connects to the change
+    that caused it.
+
+    Asked of `git check-attr` over a real repo rather than of the pattern
+    STRING, because a string assertion passes on a pattern that matches
+    nothing — which is precisely the bug.
+    """
+    with tree() as root:
+        assert run_cli(root, 'init')[0] == 0
+        for rel in (f'{ROADMAP}/ledger.jsonl', f'{ROADMAP}/ledgers/0.1.jsonl'):
+            said = git(root, 'check-attr', 'merge', '--', rel)
+            assert said.strip() == f'{rel}: merge: union', said
+        # The negatives, so the pattern is not simply `**`: a grain document
+        # beside a ledger is left alone, and a ledger OUTSIDE the roadmap dir
+        # is not claimed by a pattern anchored to it.
+        for rel in (f'{ROADMAP}/milestones/0.1.md', 'pm/ledger.jsonl',
+                    'ledger.jsonl'):
+            said = git(root, 'check-attr', 'merge', '--', rel)
+            assert said.strip().endswith(': unspecified'), said
+        # And the depth the glob DOES reach, asserted rather than assumed:
+        # `**` matches any number of directories, so a ledger filed deeper in
+        # its pool would be covered too. Harmless — D3 gives a milestone one
+        # ledger — and it is here so that narrowing the pattern later fails
+        # HERE rather than in somebody's merge.
+        deep = f'{ROADMAP}/ledgers/archived/0.1.jsonl'
+        said = git(root, 'check-attr', 'merge', '--', deep)
+        assert said.strip() == f'{deep}: merge: union', said

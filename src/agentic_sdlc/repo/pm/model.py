@@ -31,6 +31,60 @@ CATEGORIES = (TODO, IN_PROGRESS, DONE_CATEGORY)
 # Per kind, so a bug's flow is one more declaration rather than a special case.
 FLOW_KINDS = ('milestone', 'feature', 'story', 'bug')
 
+# The ROOT is a container like any other: `releases.md` declares an `id:` and
+# a `kind:` and holds an `order` of milestone ids. Not a FLOW kind — nothing
+# moves it, so it declares no states and has no status.
+ROOT_KIND = 'roadmap'
+ROOT_ID = 'roadmap'
+CONTAINER_KINDS = (ROOT_KIND, *FLOW_KINDS)
+
+# WHICH KINDS MAY HOLD WHICH — one mapping read by `pm add`, instead of a
+# check per level. A GATE key: a repo declaring nothing behaves like one
+# declaring this.
+DEFAULT_CONTAINS = {'roadmap': ('milestone',),
+                    'milestone': ('feature', 'bug'),
+                    'feature': ('story',)}
+
+
+def contains_defect(mapping: dict[str, tuple[str, ...]]) -> str:
+    """Why `[pm.contains]` is not a containment mapping, or ''. It NARROWS:
+    `BINDS_TO` says which field a child names its parent with, so a pairing
+    there is no field for is a mapping nothing could ever write."""
+    for parent, kinds in sorted(mapping.items()):
+        if parent not in CONTAINER_KINDS:
+            return (f'[pm.contains] declares {parent!r} as a container, which '
+                    f'is not a kind this project has — '
+                    f'{" ".join(CONTAINER_KINDS)}')
+        for kind in kinds:
+            if kind not in FLOW_KINDS:
+                return (f'[pm.contains] {parent} names {kind!r} as a child, '
+                        f'which is not a kind this project has — '
+                        f'{" ".join(FLOW_KINDS)}')
+            wants, field_name = BINDS_TO.get(kind, (ROOT_KIND, ''))
+            if wants != parent:
+                return (f'[pm.contains] {parent} names {kind}, and a {kind} '
+                        f'names its parent with '
+                        + (f'`{field_name}:`, which holds a {wants} id'
+                           if field_name else
+                           f'no field at all — only the {wants} holds one')
+                        + f'. This key narrows the mapping; it cannot '
+                          f're-parent a kind')
+    return ''
+
+
+def may_hold(cfg: 'PmConfig', parent_kind: str, kind: str) -> str:
+    """'' when a `parent_kind` may hold a `kind`, else why not — naming BOTH.
+    Asked of the kinds the two ids DECLARE, so one mapping answers for every
+    level and no verb carries a per-level check."""
+    allowed = cfg.contains.get(parent_kind, ())
+    if kind in allowed:
+        return ''
+    return (f'a {parent_kind} does not hold a {kind} — [pm.contains] says a '
+            f'{parent_kind} holds '
+            + (f'{" and ".join(allowed)}' if allowed else 'nothing')
+            + f', and the pair is read off the two ids rather than from the '
+              f'command')
+
 
 @dataclass(frozen=True)
 class Flow:
@@ -128,30 +182,29 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
 DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
-                  'V1', 'V2', 'V3', 'V4', 'V5')
-# The USAGE family: what the tree DOES with the vocabulary it declared, as
-# opposed to whether a word is declared at all (D4). U1 is its first member and
-# it takes a NEW LETTER on purpose — `D7` was a real rule that RETIRED, and
-# reusing a retired id would silently enable a different rule for any consumer
-# whose config still names it, which is worse than the exit 2 they get today.
-#
-# U1 is STOCK-ON, and that was reversed on the milestone review's M2. It was
-# opt-in for one release-day: it adds warning lines to every consumer's
-# `check pm`, and those shapes are grepped (rule 6). But the milestone's
-# northstar is that a project can SEE whether it is using the flow it declared,
-# and an opt-in rule nobody enables answers that question with silence — which
-# is the exact failure the milestone was filed to end. A WARN cannot redden
-# anyone; the output change is the point, not a side effect.
-USAGE_CHECKS = ('U1',)   # named for the family; already in DEFAULT_CHECKS
+                  'V1', 'V4', 'V5', 'V7')
+# The USAGE family: what the tree DOES with the vocabulary (U1) and the
+# capabilities (U2) it declared, as opposed to whether a word is declared at
+# all (D4). A NEW LETTER on purpose — `D7` RETIRED, and reusing a retired id
+# would silently enable a different rule for a consumer whose config still
+# names it. Both are STOCK-ON: an opt-in rule nobody enables answers "is this
+# flow being used" with silence, which is the failure they were filed to end,
+# and a WARN cannot redden anyone. A tree that wires nothing stays quiet either
+# way, so stock-on costs a non-adopter nothing (0.4.0/D5).
+USAGE_CHECKS = ('U1', 'U2')  # named for the family; already in DEFAULT_CHECKS
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
 # The release family: the plan and the tree held to each other. Opt-in, because
 # a tree with no plan yet has nothing for them to grade.
 RELEASE_CHECKS = ('R1', 'R2', 'R3', 'R4', 'R5', 'R6')
-# V1-V5 are ON: an unsatisfied one is a malformed tree. V6 is opt-in: a
-# generated view going stale is not a defect in the tree.
-VALIDATE_CHECKS = ('V1', 'V2', 'V3', 'V4', 'V5', 'V6')
+# V1, V4, V5 and V7 are ON: an unsatisfied one is a malformed tree. V2 (id
+# matches path), V3 (parentage matches the directory) and V6 (the generated
+# execution list matches the tree) RETIRED in 0.4.0: each kept two copies of
+# one fact in agreement and 0.4.0 deleted the second copy. What can still be
+# wrong is a document nothing can key on (`unkeyed_documents`) and a binding
+# naming no grain (V7, which walks the POOLS rather than descending).
+VALIDATE_CHECKS = ('V1', 'V4', 'V5', 'V7')
 KNOWN_CHECKS = tuple(dict.fromkeys(
     DEFAULT_CHECKS + USAGE_CHECKS + FLOW_CHECKS + RELEASE_CHECKS
     + VALIDATE_CHECKS))
@@ -160,6 +213,20 @@ KNOWN_CHECKS = tuple(dict.fromkeys(
 # "unknown": a consumer whose config still lists it is told where the rule
 # went, rather than being silently ungated by a typo-shaped message.
 RETIRED_CHECKS = {
+    'V2': 'retired in 0.4.0 — it kept `id:` in agreement with the path, and a '
+          'path is no longer part of a grain\'s identity. `id:` IS the '
+          'identity; a document with none is reported by name',
+    'V3': 'retired in 0.4.0 — it kept `milestone:`/`feature:` in agreement '
+          'with the directory a document sat in, and membership is now the '
+          'field itself. A binding naming a grain that is not in the tree is '
+          'still a finding',
+    'V6': 'retired in 0.4.0 with the generated execution list it graded. A '
+          'rendered roster of a parent\'s children was a second scoreboard, '
+          'and keeping it in agreement with the tree was V2\'s defect one '
+          'level down. The SEQUENCE it carried is now `order:` on the parent '
+          'itself, written by `pm add` and read by `pm status` and '
+          '`pm roadmap`; `check pm` counts what is unsequenced and names what '
+          'dangles',
     'D7': 'was retired before 0.3.0 and did not come back. U1 is the '
           'declared-but-unused state rule and it took a NEW letter precisely '
           'so that a config still naming D7 is told it is gone rather than '
@@ -171,6 +238,13 @@ RETIRED_CHECKS = {
 }
 
 ARCHIVE_DIR_NAME = 'zz_archive'
+
+# U2's two halves, both readable without running anything. The settings file
+# is the consumer's own and hand-maintained (`install.py` says why it is
+# printed and never written); these are the script names the printed block
+# wires, so a tree that pasted the block matches.
+AGENT_SETTINGS = '.claude/settings.json'
+LEDGER_COURIERS = ('cc-ledger-session.sh', 'cc-ledger-subagent.sh')
 
 # --- the canonical grain slots ------------------------------------------------
 # One shape, every grain, all lowercase. `handoff.md` and `bugs/` are
@@ -227,8 +301,20 @@ SLOT_TEMPLATE = {
 SLOT_HEADER = {
     'decisions.md': 'Append with `agentic-sdlc pm decide <grain-id>` — never by '
                     'hand; the command stamps the date and the next ordinal.',
-    'handoff.md': 'Cold-start only. Never restate what `pm status` computes.',
+    'handoff.md': 'Cold-start only. Everything derivable is a command — never '
+                  'restate `pm status`, `git log` or `pm ledger report`.',
 }
+
+# Wordings that shipped before and still open real documents. RECOGNISED, never
+# written: `_header_wanted` treats any known header as present, so rewording an
+# entry above can neither stack a second line onto an existing doc nor red a
+# consumer's tree on upgrade day. `pm new` still rewrites nothing it did not
+# have to.
+RETIRED_SLOT_HEADERS = frozenset({
+    'Cold-start only. Never restate what `pm status` computes.',
+})
+
+KNOWN_SLOT_HEADERS = frozenset(SLOT_HEADER.values()) | RETIRED_SLOT_HEADERS
 
 
 def dir_entries(path: Path) -> dict[str, str]:
@@ -248,8 +334,28 @@ def case_variants(entries: dict[str, str], name: str) -> list[str]:
 class PmConfig:
     root: Path
     roadmap_dir: str = 'pm/roadmap'
+    # THE POOLS — one directory per kind, the tables of the database (0.4.0).
+    # Empty means "derive `<roadmap_dir>/<kind>s`", so a tree that declares
+    # none behaves exactly like one declaring every stock value and adopting
+    # costs zero edits. They are spelled out as four keys rather than folded
+    # into `roadmap_dir` because **the shape of the config is the shape of the
+    # model**: reading this block tells you there are four kinds and that they
+    # are peers, which one root never could.
+    milestone_dir_key: str = ''
+    feature_dir_key: str = ''
+    story_dir_key: str = ''
+    bug_dir_key: str = ''
+    # The ledgers are a table too — machine state rather than grains, but the
+    # same mechanism, so the file shows it the same way.
+    ledger_dir_key: str = ''
     review_dir: str = 'docs/reviews'
-    story_ordinal_prefix: bool = False
+    # Which kinds hold which, for `pm add` — one declaration for every level.
+    contains: dict[str, tuple[str, ...]] = field(
+        default_factory=lambda: dict(DEFAULT_CONTAINS))
+    # Stock ON: a breadcrumb nobody sees teaches nobody, and the failure it
+    # exists to prevent is a move nobody followed up on. Off in one line for a
+    # consumer parsing `pm` output strictly (rule 6).
+    breadcrumbs: bool = True
     # The declared order per kind, copied out by `load`; empty when the tree
     # declared nothing, which `flow_of` refuses. Never read from the retired
     # `[pm] <kind>_states`.
@@ -335,6 +441,11 @@ def load() -> PmConfig:
             f'{VERSION_AT_START!r} is the first entry in `order` that has not '
             f'shipped (bump at start), {VERSION_AT_SHIP!r} the last that has')
 
+    contains = str_tuple_table(sect, 'pm', 'contains', DEFAULT_CONTAINS)
+    defect = contains_defect(contains)
+    if defect:
+        raise ConfigError(defect)
+
     flows = _load_flows(sect)
 
     return PmConfig(
@@ -344,7 +455,13 @@ def load() -> PmConfig:
         # (hard rule 8).
         roadmap_dir=relpath(sect, 'pm', 'roadmap_dir', 'pm/roadmap'),
         review_dir=relpath(sect, 'pm', 'review_dir', 'docs/reviews'),
-        story_ordinal_prefix=flag(sect, 'pm', 'story_ordinal_prefix', False),
+        contains=contains,
+        milestone_dir_key=relpath(sect, 'pm', 'milestone_dir', ''),
+        feature_dir_key=relpath(sect, 'pm', 'feature_dir', ''),
+        story_dir_key=relpath(sect, 'pm', 'story_dir', ''),
+        bug_dir_key=relpath(sect, 'pm', 'bug_dir', ''),
+        ledger_dir_key=relpath(sect, 'pm', 'ledger_dir', ''),
+        breadcrumbs=flag(sect, 'pm', 'breadcrumbs', True),
         milestone_states=_order_of(flows, 'milestone'),
         feature_states=_order_of(flows, 'feature'),
         story_states=_order_of(flows, 'story'),
@@ -549,6 +666,11 @@ RETIRED_KEYS = {
                   'category — run `pm init` to write it',
     'also_done': 'the `done` category is [pm.states.<kind>] done = [...] — '
                  'list `obe` (or any word for abandoned work) there',
+    'story_ordinal_prefix':
+        'a story\'s FILE name is not its identity — `id:` is, and the file may '
+        'be called anything. What the `NN-` prefix was sequencing is now the '
+        'feature\'s own `order:` list, written by `agentic-sdlc pm add '
+        '<feature-id> <story-id> [--position N | --before <id> | --after <id>]`',
     'review_slug_fallback': 'a review record is the `reviewed:` pointer and '
                             'nothing else — a record found by glob was the '
                             'engine guessing which file a review was',
@@ -620,13 +742,11 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
 
     A real adoption is wrong in more than one way at once, and one defect per
     run makes the consumer pay a round trip to learn the next. The ORDER is the
-    point: a retired key is cosmetic and a missing flow stops every work-moving
+    point: a retired key is cosmetic, a missing flow stops every work-moving
     verb, and the tree that motivated this was told about the retired key.
 
-    Each reader is asked SEPARATELY and its refusal collected, rather than
-    letting `load()` raise at the first one — that made two defects inside
-    `load()` report as one, and let any `load()` defect hide the whole
-    retired-key sweep behind it (review D2, D3).
+    Each reader is asked SEPARATELY and its refusal collected, so one `load()`
+    defect cannot hide the retired-key sweep behind it (review D2, D3).
     """
     section = config_section('pm') if sect is None else sect
     out: list[str] = []
@@ -652,9 +772,18 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
         except ConfigError as err:
             add(str(err))
 
+    def contains_probe() -> None:
+        defect = contains_defect(
+            str_tuple_table(section, 'pm', 'contains', DEFAULT_CONTAINS))
+        if defect:
+            raise ConfigError(defect)
+
     probe(lambda: str_tuple(section, 'pm', 'checks', DEFAULT_CHECKS))
     probe(lambda: text(section, 'pm', 'version_file', 'pyproject.toml'))
-    probe(lambda: flag(section, 'pm', 'story_ordinal_prefix', False))
+    probe(contains_probe)
+    probe(lambda: flag(section, 'pm', 'breadcrumbs', True))
+    for _kind in FLOW_KINDS:
+        probe(lambda k=_kind: relpath(section, 'pm', f'{k}_dir', ''))
     for key, fallback in (('roadmap_dir', 'pm/roadmap'),
                           ('review_dir', 'docs/reviews'),
                           ('template_dir', '')):
@@ -779,14 +908,9 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
-def field_of(path: Path, key: str) -> str:
-    """Scalar value of `key` inside the leading frontmatter block, or '' —
-    never from the prose body.
-    """
-    try:
-        lines = _split(read_raw(path))
-    except (OSError, UnicodeDecodeError):
-        return ''
+def field_in(lines: list[str], key: str) -> str:
+    """`field_of` over lines already read — for a caller that opened the file
+    once and is answering several questions off the one read."""
     bounds = _fence_bounds(lines)
     if bounds is None:
         return ''
@@ -795,6 +919,16 @@ def field_of(path: Path, key: str) -> str:
             # .strip() also removes the CRLF carriage return.
             return unquote(line[len(key) + 1:].strip())
     return ''
+
+
+def field_of(path: Path, key: str) -> str:
+    """Scalar value of `key` inside the leading frontmatter block, or '' —
+    never from the prose body.
+    """
+    try:
+        return field_in(_split(read_raw(path)), key)
+    except (OSError, UnicodeDecodeError):
+        return ''
 
 
 def unquote(value: str) -> str:
@@ -868,6 +1002,25 @@ def list_field_of(path: Path, key: str) -> list[str]:
     return []
 
 
+def sequence_defect(path: Path) -> str:
+    """Why `order:` here cannot be rewritten as a block list, or ''."""
+    try:
+        lines = _split(read_raw(path))
+    except (OSError, UnicodeDecodeError) as err:
+        return f'could not be read as UTF-8 text ({err.__class__.__name__})'
+    bounds = _fence_bounds(lines)
+    if bounds is None:
+        return 'has no frontmatter block to hold `order:`'
+    open_i, close_i = bounds
+    for i in range(open_i + 1, close_i):
+        if lines[i].startswith(f'{ORDER_KEY}:'):
+            rest = lines[i][len(ORDER_KEY) + 1:].strip()
+            if rest and not rest.startswith('#'):
+                return (f'carries `{ORDER_KEY}:` as a scalar ({rest!r}) rather '
+                        f'than a block list — one `- "<id>"` per line')
+    return ''
+
+
 def set_field(path: Path, key: str, value: str) -> bool:
     """Set-or-insert one frontmatter scalar, preserving every other byte;
     False without writing when there is no frontmatter block or the write
@@ -908,16 +1061,11 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
 def set_list_field(path: Path, key: str, values: list[str]) -> bool:
     """Rewrite the block list under `key`, preserving every other byte.
 
-    The list-aware sibling to `set_field`. `order` is edited constantly — every
-    ship, insertion and re-sequence — so this is the writer that has to be
-    byte-honest: a diff that shows what MOVED is the whole reason the plan is a
-    grain and not TOML.
-
-    The file's own conventions are kept rather than normalised: the indent and
-    the quote character come from the first item already there, so a hand-edited
-    plan is not reformatted underneath its author. An empty `values` leaves the
-    key with no items, which is a plan that declares nothing — never the key's
-    deletion, because a caller that wanted the key gone would say so.
+    The list-aware sibling to `set_field`, and the writer that has to be
+    byte-honest: a diff showing what MOVED is why the plan is a grain and not
+    TOML. The file's own conventions are kept rather than normalised — indent
+    and quote character come from the first item already there. An empty
+    `values` leaves the key with no items, never deletes it.
     """
     try:
         text = read_raw(path)
@@ -1007,6 +1155,339 @@ def segment_is_literal(value: str) -> bool:
             and not any(c in value for c in '/\\'))
 
 
+# =============================================================================
+# THE GRAIN LAYER (0.4.0) — identity is frontmatter, location is convention
+# =============================================================================
+# `id:` and `kind:` are read from the document; the pools are where documents
+# live; nothing interprets a path. The ~20 functions this replaced each joined
+# an id onto a directory or into a `glob()` pattern — what `segment_is_literal`
+# was written to make safe. Match-by-field builds no path from user input.
+
+# The kind prefix a human reads off a bare id — in a commit message, a
+# dispatch, a review — without its location. `kind:` is what the TOOL reads;
+# this is for the person. NOT a namespace: it does not make ids unique across
+# repos, and cross-repo disambiguation is a display concern, never a filename.
+KIND_PREFIX = {'milestone': 'ms', 'feature': 'ft', 'story': 'st', 'bug': 'bg'}
+
+# The pool directory each kind DERIVES when the config names none. Spelled out
+# rather than `f'{kind}s'`, because English is not a rule the code should be
+# inferring — `storys` is what that inference produces.
+POOL_NAME = {'milestone': 'milestones', 'feature': 'features',
+             'story': 'stories', 'bug': 'bugs'}
+
+# The child's field that names its parent, per kind. **Membership is the
+# child's field** — the northstar, as one mapping.
+BINDS_TO = {'feature': ('milestone', 'milestone'),
+            'story': ('feature', 'feature'),
+            'bug': ('milestone', 'milestone')}
+
+
+@dataclass(frozen=True)
+class Grain:
+    """One grain document, read once: what it says it is and what it says it
+    belongs to. Nothing here is derived from `path`."""
+
+    gid: str
+    kind: str
+    path: Path
+    status: str = ''
+    binding: str = ''
+
+
+def pool_dir(cfg: PmConfig, kind: str) -> Path:
+    """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`.
+
+    Relative to the repo root the tool already discovers: an absolute root in
+    a committed config is wrong in every worktree, on every other machine and
+    in CI, which is why there is no `project_root_dir` key and asking for one
+    is exit 2.
+    """
+    declared = getattr(cfg, f'{kind}_dir_key', '')
+    if declared:
+        return cfg.root / declared
+    return cfg.roadmap / POOL_NAME[kind]
+
+
+def _is_shared_doc(path: Path) -> bool:
+    """A grain's own decisions/handoff/review doc, rather than a grain.
+
+    BOTH halves: a pooled slug is free-form, so a story named like a shared
+    doc is not one. It says so by opening frontmatter, which the two minted
+    shared docs never do.
+    """
+    if not any(path.name.endswith(f'-{slot}') for slot in SLOT_HEADER):
+        return False
+    return not _is_grain_doc(path)
+
+
+def pool_scan(cfg: PmConfig, kind: str) -> Walk:
+    """One pool as a `Walk` — the kept documents AND what it narrowed away.
+
+    `slot_walk` for a table: a dot prefix is a deliberate hide and a `.md` that
+    opens no frontmatter is a note, and both are COUNTED (rule 4).
+    """
+    base = pool_dir(cfg, kind)
+    if not base.is_dir():
+        return Walk(())
+    return (walk.descendants(base, Kind.FILE, suffix='.md')
+            .filter(lambda p: not _is_hidden(base, p), SkipReason.DOTTED_NAME)
+            .filter(lambda p: not _is_shared_doc(p), SkipReason.SHARED_DOC)
+            .filter(_is_grain_doc, SkipReason.NO_FRONTMATTER))
+
+
+def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
+    """Every document in one pool, sorted. Replaces `milestone_walk`,
+    `milestone_dirs` and `known_milestones` — three walks that were one walk
+    with a kind baked in."""
+    return sorted(pool_scan(cfg, kind).kept)
+
+
+def pool_census(cfg: PmConfig, kind: str, label: str) -> str:
+    """One pool's count WITH its narrowings — `Walk.census`, by kind.
+
+    A bare number is not available on purpose: the count and what the walk left
+    out render together or the count is a claim about the filter rather than
+    about the tree (rule 4).
+    """
+    return pool_scan(cfg, kind).census(label)
+
+
+def pool_skipped(cfg: PmConfig, kind: str) -> int:
+    """How many candidates a narrowing removed from one pool — for a caller
+    that renders its own sentence about them."""
+    return sum(pool_scan(cfg, kind).counts().values())
+
+
+def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
+    """One document as a `Grain`, or None when it declares no id.
+
+    `kind` is the POOL it was found in, and it is only a default: a document
+    that declares `kind:` is that kind, wherever it sits, because the location
+    is convention the tool does not interpret.
+    """
+    gid = unquote(field_of(path, 'id'))
+    if not gid:
+        return None
+    declared = unquote(field_of(path, 'kind')) or kind
+    field = BINDS_TO.get(declared, ('', ''))[1]
+    return Grain(gid=gid, kind=declared, path=path,
+                 status=field_of(path, 'status'),
+                 binding=unquote(field_of(path, field)) if field else '')
+
+
+def is_pooled(cfg: PmConfig) -> bool:
+    """Has this tree been migrated? True when any pool holds a document.
+
+    The one place the two layouts are told apart, and it is a fact about the
+    tree rather than a config key: a key would be a second copy of something
+    the directory already says, and a consumer mid-migration would have to
+    keep the two in agreement.
+    """
+    return any(pool_dir(cfg, kind).is_dir() and pool_walk(cfg, kind)
+               for kind in FLOW_KINDS)
+
+
+def is_nested(cfg: PmConfig) -> bool:
+    """Does this tree still hold grain DIRECTORIES? The question a WRITE asks:
+    a reader tells the layouts apart by what it finds, a writer has to choose
+    before anything exists."""
+    return bool(milestone_dirs(cfg))
+
+
+def mint_dir(cfg: PmConfig, kind: str, parent: Path | None = None) -> Path:
+    """Where `pm new` puts a NEW document of `kind` — the pool, unless the tree
+    is still nested, in which case it keeps its shape. Minting into a pool on a
+    nested tree flips `is_pooled` and hides every other grain behind it."""
+    if not is_nested(cfg):
+        return pool_dir(cfg, kind)
+    if kind == 'milestone':
+        return cfg.roadmap
+    if parent is None:
+        return pool_dir(cfg, kind)
+    if kind == 'feature':
+        return parent / FEATURES_DIR
+    if kind == 'story':
+        return parent / STORIES_DIR
+    return parent / BUGS_DIR
+
+
+def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
+    """The pre-0.4.0 layout, read the way it was always read: kind from the
+    slot the document sits in, parent from the directory above.
+
+    Kept so a consumer's tree keeps working the day they bump and before it is
+    moved — the alternative is a version that reads nothing until a migration
+    lands, which is a breaking change wearing a minor number. It is the ONLY
+    code left that treats a path as schema, and it goes when no nested tree is
+    left. `tools/dev/pm_migrate.py` is the mover, and it is a script rather
+    than a verb on purpose.
+    """
+    out: dict[str, Grain] = {}
+
+    def take(path: Path, kind: str, binding: str) -> str:
+        gid = unquote(field_of(path, 'id'))
+        if not gid:
+            return ''
+        out.setdefault(gid, Grain(gid=gid, kind=kind, path=path,
+                                  status=field_of(path, 'status'),
+                                  binding=binding))
+        return gid
+
+    for mdir in milestone_dirs(cfg):
+        mid = take(mdir / MILESTONE_DOC, 'milestone', '')
+        for ffile in _nested_feature_files(mdir):
+            fid = take(ffile, 'feature', mid)
+            for sfile in _nested_story_files(ffile):
+                take(sfile, 'story', fid)
+        for bfile in _nested_bug_files(mdir):
+            take(bfile, 'bug', mid)
+    return out
+
+
+def grain_index(cfg: PmConfig) -> dict[str, Grain]:
+    """Every grain in the tree, by id — the pools plus the ROOT container. The
+    one walk every resolver goes through.
+
+    A duplicate id is NOT resolved here — the first one read wins and V1 names
+    every file that shares one. Uniqueness is a gate FINDING and never a
+    runtime lock: an allocator needs a counter and a git repo has none, so two
+    agents on two branches would collide invisibly (0.4.0/D4).
+    """
+    if is_pooled(cfg):
+        out: dict[str, Grain] = {}
+        for kind in FLOW_KINDS:
+            for path in pool_walk(cfg, kind):
+                grain = read_grain(cfg, path, kind)
+                if grain is not None:
+                    out.setdefault(grain.gid, grain)
+    else:
+        out = _nested_index(cfg)
+    root = root_grain(cfg)
+    if root is not None:
+        # LAST: a pool document claiming the plan's id is a duplicate the gate
+        # reports, and the resolver must not answer it with the plan.
+        out.setdefault(root.gid, root)
+    return out
+
+
+# The characters an id cannot carry in EITHER layout. The security argument for
+# match-by-field is that no id reaches a path — that stands, and it is not what
+# this guard is for. This is CHEAPNESS and honesty: an id that cannot be a
+# grain's is refused before the tree is walked, so a hostile string is answered
+# without reading a single document, which is a property the resolvers this
+# replaced had and would otherwise be lost.
+_ID_FORBIDDEN = set('*?[]!\\:~\n\t\r\x00')
+ID_MAX = 200
+
+
+def id_defect(gid: str) -> str:
+    """'' when `gid` could name a grain, else why not. Never opens a file."""
+    if not gid or not gid.strip():
+        return 'an id may not be empty'
+    if len(gid) > ID_MAX:
+        return f'an id of {len(gid)} characters is past the {ID_MAX} limit'
+    if _ID_FORBIDDEN & set(gid):
+        return f'{gid!r} carries a character no id may hold'
+    parts = gid.split('/')
+    if any(p in ('', '.', '..') for p in parts):
+        return f'{gid!r} has an empty or dot segment'
+    return ''
+
+
+def kind_of(cfg: PmConfig, gid: str) -> str:
+    """The kind a grain declares, or '' when nothing in the tree claims the id.
+
+    The id's SHAPE is not consulted: `ft-x` and `0.1/x` are both just ids, and
+    reading a kind out of either is the derivation 0.4.0 deleted. A caller with
+    no grain to ask has no kind, and must say so rather than guess one.
+    """
+    found = grain_index(cfg).get(gid)
+    return found.kind if found is not None else ''
+
+
+def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
+    """The document for an id, or None. `kind` narrows when a caller knows it.
+
+    The six resolvers this replaces each joined an id onto a directory. This
+    reads `id:` and matches, so no user input reaches a path.
+    """
+    if id_defect(gid):
+        return None
+    grain = grain_index(cfg).get(gid)
+    if grain is None or (kind and grain.kind != kind):
+        return None
+    return grain.path
+
+
+def children(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
+    """Grains of `kind` whose binding field names `parent_id`.
+
+    Found by their BINDING, not by which directory they sit in — five per-kind
+    child listings become one.
+    """
+    return [g for g in grain_index(cfg).values()
+            if g.kind == kind and g.binding == parent_id]
+
+
+def unbound(cfg: PmConfig, kind: str) -> list[Grain]:
+    """Grains of `kind` that name no parent. Normal and expected: a grain
+    written and not yet bound is what separating authoring from binding is
+    FOR, and it is a census line, never a finding."""
+    return [g for g in grain_index(cfg).values()
+            if g.kind == kind and BINDS_TO.get(kind) and not g.binding]
+
+
+def milestone_of(cfg: PmConfig, gid: str) -> str:
+    """Which milestone a grain belongs to, followed through its bindings.
+
+    A feature or bug names its milestone; a story names its feature, so it
+    takes one more hop. `milestone_dir_of(path)` used to answer this by
+    counting path components — the same fact, derived from where a file sat.
+    """
+    index = grain_index(cfg)
+    seen: set[str] = set()
+    while gid and gid not in seen:
+        seen.add(gid)
+        grain = index.get(gid)
+        if grain is None:
+            return ''
+        if grain.kind == 'milestone':
+            return grain.gid
+        gid = grain.binding
+    return ''
+
+
+def duplicate_ids(cfg: PmConfig) -> dict[str, list[Path]]:
+    """{id: every document claiming it}, for the ids more than one claims.
+
+    Per KIND is the uniqueness rule, and this is the whole of its
+    implementation: the same slug in two different kinds is fine, because the
+    prefix distinguishes them.
+    """
+    seen: dict[tuple[str, str], list[Path]] = {}
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            grain = read_grain(cfg, path, kind)
+            if grain is not None:
+                seen.setdefault((grain.kind, grain.gid), []).append(path)
+    return {gid: paths for (_kind, gid), paths in seen.items()
+            if len(paths) > 1}
+
+
+def undeclared_kinds(cfg: PmConfig) -> list[tuple[Path, str]]:
+    """(document, the `kind:` it declares) for kinds this project does not
+    have. A fact about the INPUT — refused by name where a verb reads one,
+    reported by the gate over a tree."""
+    out = []
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            declared = unquote(field_of(path, 'kind'))
+            if declared and declared not in FLOW_KINDS:
+                out.append((path, declared))
+    return out
+
+
+# --- the nested layout, read only by the migration ----------------------------
 def milestone_dir(cfg: PmConfig, mid: str) -> Path | None:
     if not segment_is_literal(mid):
         return None
@@ -1019,11 +1500,9 @@ def milestone_dir(cfg: PmConfig, mid: str) -> Path | None:
 
 
 def milestone_file(cfg: PmConfig, mid: str) -> Path | None:
-    d = milestone_dir(cfg, mid)
-    if d is None:
-        return None
-    f = d / MILESTONE_DOC
-    return f if f.is_file() else None
+    """The milestone's document, in either layout — `grain_file` reads `id:`
+    and matches, so no id reaches a path."""
+    return grain_file(cfg, mid, 'milestone')
 
 
 def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
@@ -1038,32 +1517,24 @@ def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
 
 
 def feature_file(cfg: PmConfig, fid: str) -> Path | None:
-    d = feature_dir(cfg, fid)
-    if d is None:
-        return None
-    f = d / FEATURE_DOC
-    return f if f.is_file() else None
-
-
-_ORDINAL_STEM = re.compile(r'^[0-9][0-9]-(?P<slug>.*)$')
-
-
-def story_slug_of(cfg: PmConfig, stem: str) -> str:
-    """The id segment a story file named `stem` must carry — one rule for
-    `story_file`, V2 and `pm new story`. The ordinal prefix sequences the
-    build; it is not identity.
-    """
-    if not cfg.story_ordinal_prefix:
-        return stem
-    match = _ORDINAL_STEM.match(stem)
-    return match.group('slug') if match is not None else stem
+    """The feature's document, in either layout."""
+    return grain_file(cfg, fid, 'feature')
 
 
 def story_file(cfg: PmConfig, sid: str) -> Path | None:
-    """Resolve <milestone>/<feature-slug>/<story-slug> to its .md over
-    `story_files`, the walk the gates use. Exact stem first, then the
-    ordinal-prefixed form; two files at one precedence refuse.
+    """The story's document, in either layout.
+
+    `AmbiguousStory` — *two files claim one story id* — cannot happen against
+    a pooled tree: the index is keyed by id and `check pm` reports a duplicate
+    as a finding. It survives for the nested layout only, where a slug plus an
+    ordinal prefix could resolve two ways.
     """
+    if is_pooled(cfg):
+        return grain_file(cfg, sid, 'story')
+    # The nested layout keeps its own resolution WHOLE rather than falling
+    # back to it: the index answers by id and `setdefault`, so consulting it
+    # first would silently pick one of two files claiming a slug — turning a
+    # refusal this suite proves into a quiet wrong answer.
     mid, _, rest = sid.partition('/')
     fslug, _, sslug = rest.partition('/')
     if not fslug or not segment_is_literal(sslug):
@@ -1071,15 +1542,8 @@ def story_file(cfg: PmConfig, sid: str) -> Path | None:
     fdir = feature_dir(cfg, f'{mid}/{fslug}')
     if fdir is None:
         return None
-    exact: list[Path] = []
-    prefixed: list[Path] = []
-    for path in grain_docs(fdir / STORIES_DIR):
-        stem = path.name[:-len(path.suffix)]
-        if stem == sslug:
-            exact.append(path)
-        elif story_slug_of(cfg, stem) == sslug:
-            prefixed.append(path)
-    matches = exact or prefixed
+    matches = [path for path in grain_docs(fdir / STORIES_DIR)
+               if path.name[:-len(path.suffix)] == sslug]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
@@ -1097,23 +1561,164 @@ class AmbiguousStory(Exception):
 
 
 # --- children -----------------------------------------------------------------
-def orphan_dirs(cfg: PmConfig) -> list[tuple[Path, str]]:
-    """Directories that look like a grain but carry no grain file — reported
-    rather than silently dropped, since a dropped directory takes every
-    descendant with it (rule 4).
+def shared_doc(cfg: PmConfig, grain: 'Grain | Path', name: str) -> Path:
+    """Where a grain's shared document lives — `decisions.md`, `handoff.md`,
+    `review.md`.
+
+    Pooled: beside the grain, under the grain's own stem, because a pool is
+    flat and a bare `decisions.md` would be one file for every grain of that
+    kind. Nested: inside the grain's directory.
+    """
+    path = grain if isinstance(grain, Path) else grain.path
+    # `is_pooled` and not the parent's NAME: a tree that configured its pools
+    # somewhere else is still a pooled tree, and reading the name would put its
+    # shared docs back inside directories that do not exist.
+    if is_pooled(cfg):
+        return path.with_name(f'{path.stem}-{name}')
+    return path.parent / name
+
+
+def milestone_doc(handle: Path) -> Path:
+    """The milestone's DOCUMENT from whatever `known_milestones` handed back.
+
+    A pooled tree hands back the document; a nested one hands back the
+    directory it sits in. One function, so a caller does not have to know
+    which — and so the `handle / MILESTONE_DOC` join, which is the path being
+    schema, exists in one place instead of a dozen.
+    """
+    return handle if handle.is_file() else handle / MILESTONE_DOC
+
+
+def milestones(cfg: PmConfig) -> list[Grain]:
+    """Every milestone, by id. Replaces `milestone_dirs` and
+    `known_milestones` at every call site that wanted the grains rather than
+    the directories."""
+    return sorted((g for g in grain_index(cfg).values()
+                   if g.kind == 'milestone'), key=lambda g: g.gid)
+
+
+def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
+    """The documents of one kind bound to one parent, in the parent's declared
+    `order` where it has one and by id after that.
+
+    **Sequence is the parent's list and membership is the child's field**, so
+    the order comes from the parent and the membership from the children — the
+    two questions the nested layout answered with one directory.
+    """
+    found = {g.gid: g.path for g in children(cfg, kind, parent_id)}
+    parent = grain_index(cfg).get(parent_id)
+    declared = (list_field_of(parent.path, ORDER_KEY)
+                if parent is not None else [])
+    out = [found.pop(gid) for gid in declared if gid in found]
+    return out + [found[gid] for gid in sorted(found)]
+
+
+# A nested tree keeps its SLOT walk, whole: the index is keyed by `id:`, so a
+# damaged document has no key and would silently leave the census, and the slot
+# walk sees it either way (rule 4). A POOLED tree has no slot, so a document
+# with no id is reported by `check pm` on its own line instead.
+def feature_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The features bound to one milestone, in its declared order."""
+    if not is_pooled(cfg):
+        mdir = milestone_dir(cfg, mid)
+        return _nested_feature_files(mdir) if mdir is not None else []
+    return _children_paths(cfg, 'feature', mid)
+
+
+def story_files(cfg: PmConfig, fid: str) -> list[Path]:
+    """The stories bound to one feature, in its declared order."""
+    if not is_pooled(cfg):
+        ffile = feature_file(cfg, fid)
+        return _nested_story_files(ffile) if ffile is not None else []
+    return _children_paths(cfg, 'story', fid)
+
+
+def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The bugs bound to one milestone, in its declared order."""
+    if not is_pooled(cfg):
+        mdir = milestone_dir(cfg, mid)
+        return _nested_bug_files(mdir) if mdir is not None else []
+    return _children_paths(cfg, 'bug', mid)
+
+
+def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
+    """[(id, every document claiming it)] for each id claimed more than once.
+
+    The other half of D4: `grain_index` keeps the first document read, so the
+    second is in the tree, is counted, and is addressable by nothing.
+    """
+    seen: dict[str, list[Path]] = {}
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            gid = unquote(field_of(path, 'id'))
+            if gid:
+                seen.setdefault(gid, []).append(path)
+    return [(gid, paths) for gid, paths in sorted(seen.items())
+            if len(paths) > 1]
+
+
+def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
+    """{'feature': [ids naming no milestone], 'story': [...], 'bug': [...]}.
+
+    Only kinds that BIND, and only an EMPTY binding — a binding naming a grain
+    that is not in the tree is V7's, because that is drift rather than a
+    decision nobody has made yet.
+    """
+    out: dict[str, list[str]] = {}
+    for gid, grain in sorted(grain_index(cfg).items()):
+        bind = BINDS_TO.get(grain.kind)
+        if bind is None:
+            continue
+        if not unquote(field_of(grain.path, bind[1])):
+            out.setdefault(grain.kind, []).append(gid)
+    return out
+
+
+def stray_documents(cfg: PmConfig) -> list[Path]:
+    """Grain documents under the roadmap that sit in no pool.
+
+    Every pooled reader walks the pools, so a document outside all four is read
+    by NOTHING while `check grain-shape`, which walks the roadmap whole, counts
+    it. Shared docs and the plan are expected outside a pool and are not
+    strays.
+    """
+    if not is_pooled(cfg):
+        return []
+    pools = {pool_dir(cfg, kind) for kind in FLOW_KINDS}
+    known = {releases_file(cfg)}
+    out: list[Path] = []
+    for path in walk.descendants(cfg.roadmap, Kind.FILE, suffix='.md').kept:
+        if path in known or _is_hidden(cfg.roadmap, path):
+            continue
+        if any(pool == path.parent or pool in path.parents for pool in pools):
+            continue
+        if _is_grain_doc(path) and unquote(field_of(path, 'id')):
+            out.append(path)
+    return sorted(out)
+
+
+def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
+    """Documents in a pool that the index cannot key on, and why.
+
+    `orphan_dirs`' successor: a document with no readable `id:` has no key, is
+    in no index, and would leave the census silently.
     """
     out: list[tuple[Path, str]] = []
-    candidates = _milestone_candidates(cfg.roadmap, exclude_archive=True)
-    _, orphan_milestones = candidates.partition(_has_milestone_file,
-                                                SkipReason.NO_GRAIN_FILE)
-    orphaned = set(orphan_milestones)
-    for d in candidates.kept:
-        if d in orphaned:
-            out.append((d, 'milestone dir with no milestone.md'))
-            continue
-        _, orphan_features = walk.children(d / FEATURES_DIR, Kind.DIR).partition(
-            _has_feature_file, SkipReason.NO_GRAIN_FILE)
-        out += [(f, 'feature dir with no feature.md') for f in orphan_features]
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            if not unquote(field_of(path, 'id')):
+                out.append((path, 'declares no `id:`, so nothing can key on '
+                                  'it'))
+                continue
+            if not field_of(path, 'status'):
+                out.append((path, 'declares no `status:` — it is in the tree '
+                                  'and no question about it can be answered'))
+                continue
+            declared = unquote(field_of(path, 'kind'))
+            if declared and declared not in FLOW_KINDS:
+                out.append((path, f'declares kind {declared!r}, which this '
+                                  f'project does not have '
+                                  f'({" ".join(FLOW_KINDS)})'))
     return out
 
 
@@ -1149,32 +1754,16 @@ def milestone_dirs(cfg: PmConfig) -> list[Path]:
     return list(milestone_walk(cfg).kept)
 
 
-def milestone_dir_of(cfg: PmConfig, path: Path) -> Path | None:
-    """The milestone directory that contains this grain document, or None —
-    the twin of `milestone_dir`, asked of a resolved path. Structural: the
-    first component under `roadmap/` (or `roadmap/zz_archive/`), whether or
-    not it still holds a `milestone.md`.
-    """
-    base = cfg.roadmap
-    try:
-        here = path.resolve()
-        base = base.resolve()
-    except OSError:
-        return None
-    if not here.is_relative_to(base):
-        return None
-    parts = here.relative_to(base).parts
-    if parts[:1] == (ARCHIVE_DIR_NAME,):
-        base, parts = base / ARCHIVE_DIR_NAME, parts[1:]
-    if len(parts) < 2:
-        return None
-    return base / parts[0]
-
-
 def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
-    """Every milestone dir with its declared id (unquoted; '' when absent) —
-    the one enumeration `pm status`, `pm list` and retire read.
+    """(a handle, the declared id) per milestone — the one enumeration
+    `pm status`, `pm list` and `retire` read.
+
+    The handle is the milestone's own DIRECTORY in a nested tree and its
+    DOCUMENT in a pooled one. Callers passing it back to a listing do not care
+    which; one that needs a directory asks `milestone_dir`.
     """
+    if is_pooled(cfg):
+        return [(g.path, g.gid) for g in milestones(cfg)]
     return [(mdir, unquote(field_of(mdir / MILESTONE_DOC, 'id')))
             for mdir in milestone_dirs(cfg)]
 
@@ -1228,12 +1817,12 @@ def grain_docs(gdir: Path) -> list[Path]:
     return list(slot_walk(gdir).kept)
 
 
-def feature_files(mdir: Path) -> list[Path]:
+def _nested_feature_files(mdir: Path) -> list[Path]:
     return [d / FEATURE_DOC for d in walk.children(mdir / FEATURES_DIR, Kind.DIR)
             .filter(_has_feature_file, SkipReason.NO_GRAIN_FILE).kept]
 
 
-def story_files(ffile: Path) -> list[Path]:
+def _nested_story_files(ffile: Path) -> list[Path]:
     """Every story document under one feature, in reading order."""
     return grain_docs(ffile.parent / STORIES_DIR)
 
@@ -1243,9 +1832,15 @@ def tree_walk(cfg: PmConfig) -> Walk:
     `Walk.census` is the only way to a number here.
     """
     found = Walk(())
+    if is_pooled(cfg):
+        # The same two kinds the nested walk disclosed for, through the same
+        # narrowings — `pool_scan` IS `slot_walk` for a table.
+        for kind in ('story', 'bug'):
+            found = found.merge(pool_scan(cfg, kind))
+        return found
     for mdir in milestone_dirs(cfg):
         found = found.merge(slot_walk(mdir / BUGS_DIR))
-        for ffile in feature_files(mdir):
+        for ffile in _nested_feature_files(mdir):
             found = found.merge(slot_walk(ffile.parent / STORIES_DIR))
     return found
 
@@ -1294,12 +1889,11 @@ def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     one or refuse naming them all.
     """
     out = []
-    for mdir in milestone_dirs(cfg):
-        mfile = mdir / MILESTONE_DOC
-        status = field_of(mfile, 'status')
-        if category_of(cfg, 'milestone', status) != IN_PROGRESS:
+    for milestone in milestones(cfg):
+        if category_of(cfg, 'milestone', milestone.status) != IN_PROGRESS:
             continue
-        out.append((field_of(mfile, 'id'), field_of(mfile, 'branch'), mfile))
+        out.append((field_of(milestone.path, 'id'),
+                    field_of(milestone.path, 'branch'), milestone.path))
     return out
 
 
@@ -1334,8 +1928,20 @@ def shipped_version(cfg: PmConfig) -> str | None:
 # Nothing here parses, compares or increments a version string. "Did it
 # increase" is a POSITION in `order`; `"1.1.1"` and `"cow"` are equally valid.
 def releases_file(cfg: PmConfig) -> Path:
-    """`pm/roadmap/releases.md` — the plan. Absent until `pm order` writes it."""
+    """`pm/roadmap/releases.md` — the plan. Absent until `pm add` writes it."""
     return cfg.roadmap / RELEASES_DOC
+
+
+def root_grain(cfg: PmConfig) -> Grain | None:
+    """The plan document as a grain — the ROOT container — or None. A plan
+    written before 0.4.0 declares neither `id:` nor `kind:` and answers to
+    `roadmap`, so adopting `pm add` costs no edit."""
+    path = releases_file(cfg)
+    if not path.is_file():
+        return None
+    return Grain(gid=unquote(field_of(path, 'id')) or ROOT_ID,
+                 kind=unquote(field_of(path, 'kind')) or ROOT_KIND,
+                 path=path)
 
 
 def plan_defect(cfg: PmConfig) -> str | None:
@@ -1373,14 +1979,19 @@ def plan_defect(cfg: PmConfig) -> str | None:
         rest = lines[i][len(ORDER_KEY) + 1:].strip()
         if rest and not rest.startswith('#'):
             return (f'`{ORDER_KEY}:` carries a scalar ({rest!r}) rather than a '
-                    f'block list — one `- "<version>"` per line')
+                    f'block list — one `- "<milestone-id>"` per line')
         return None
     return (f'declares no `{ORDER_KEY}:` key — the file is there, so this is a '
             f'plan that lost its list rather than a tree that has none')
 
 
 def declared_order(cfg: PmConfig) -> list[str]:
-    """The declared sequence of versions, or [] when the tree has no plan."""
+    """The declared sequence of MILESTONE IDS, or [] when there is no plan.
+
+    Ids, not versions (0.4.0): `order` lists child ids at every level, so a
+    milestone that re-versions never touches the plan and `pm rename` sweeps
+    the entry with every other reference.
+    """
     return list_field_of(releases_file(cfg), ORDER_KEY)
 
 
@@ -1398,12 +2009,10 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     same version, and a dict would have eaten the duplicate.
     """
     out = []
-    for mdir, mid in known_milestones(cfg):
-        # `.strip()`: a whitespace-only `version:` is not a claim. Reading it as
-        # one put the milestone outside R2's backlog census while claiming a
-        # version nothing could match, and the R1 failure it produced then
-        # prescribed a `pm order --append` the verb refuses at exit 2 (B4).
-        version = field_of(mdir / MILESTONE_DOC, 'version').strip()
+    for handle, mid in known_milestones(cfg):
+        mfile = handle if handle.is_file() else handle / MILESTONE_DOC
+        # `.strip()`: a whitespace-only `version:` is not a claim.
+        version = field_of(mfile, 'version').strip()
         if version:
             out.append((version, mid))
     return out
@@ -1413,8 +2022,8 @@ def milestones_of_version(cfg: PmConfig, version: str) -> list[str]:
     """Every milestone claiming `version`, in tree order.
 
     A list, because two milestones claiming one version is a real tree defect
-    (R3) and answering with the first would make the verdict depend on a
-    directory NAME.
+    (R3) and answering with the first would make the verdict depend on which
+    document was read first.
     """
     return [mid for claimed, mid in version_claims(cfg) if claimed == version]
 
@@ -1425,27 +2034,19 @@ def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
     return claimants[0] if len(claimants) == 1 else None
 
 
-def release_is_shipped(cfg: PmConfig, version: str) -> bool:
-    """Has the one milestone claiming `version` finished?"""
-    mid = milestone_of_version(cfg, version)
-    if mid is None:
-        return False
+def entry_is_shipped(cfg: PmConfig, mid: str) -> bool:
+    """Has the milestone this plan entry names finished?"""
     mfile = milestone_file(cfg, mid)
     if mfile is None:
         return False
     return category_of(cfg, 'milestone', field_of(mfile, 'status')) == DONE_CATEGORY
 
 
-def release_is_unverifiable(cfg: PmConfig, version: str) -> bool:
-    """Can this entry's state not be established from the tree?
-
-    Two shapes, and neither may be read as "not shipped": a milestone that was
-    RETIRED (its record deleted, though the work shipped) and one that has not
-    been written yet look identical from here, and so does a version two
-    milestones both claim. Calling any of them unshipped is what made `pm
-    retire` roll the current release BACKWARD and demand a version regression.
-    """
-    return len(milestones_of_version(cfg, version)) != 1
+def entry_is_dangling(cfg: PmConfig, mid: str) -> bool:
+    """Does this plan entry name no milestone in the tree? Never read as "not
+    shipped": a RETIRED milestone and one nobody has written look identical
+    from here, and calling either unshipped rolled the release BACKWARD."""
+    return milestone_file(cfg, mid) is None
 
 
 def last_shipped_index(cfg: PmConfig) -> int:
@@ -1454,53 +2055,37 @@ def last_shipped_index(cfg: PmConfig) -> int:
     "Behind us" is a POSITION, which is the whole reason order is declared: no
     comparator is asked whether 0.90.10 follows 0.90.4.
     """
-    order = declared_order(cfg)
     last = -1
-    for i, version in enumerate(order):
-        if release_is_shipped(cfg, version):
+    for i, mid in enumerate(declared_order(cfg)):
+        if entry_is_shipped(cfg, mid):
             last = i
     return last
 
 
-def current_release(cfg: PmConfig) -> str | None:
-    """The release being WORKED ON: the first entry in `order` not yet shipped.
-
-    **This does not read `[pm] version_at`, and that separation is the point.**
-    `version_at` answers a DIFFERENT question — *which entry should the version
-    FILE equal* — and a project that bumps at CLOSE answers it with the last
-    SHIPPED release while working on the next one. Feeding that answer to "which
-    release am I working on" made `release` re-release a finished milestone and
-    filed gate cost rows into its closed ledger (review A1, B2, C1). One key,
-    one question; `graded_release` below is the other one.
-
-    An entry whose state cannot be established — no milestone claims it, or
-    several do — STOPS the walk rather than being stepped over. Skipping it
-    would answer with a release further down the plan than the tree can
-    support: a confident wrong answer where "I cannot tell" is the true one
-    (review B1).
-    """
-    for version in declared_order(cfg):
-        if release_is_shipped(cfg, version):
+def current_milestone(cfg: PmConfig) -> str | None:
+    """The milestone being WORKED ON: the first entry in `order` not yet done.
+    A DANGLING entry is stepped over rather than stopping the walk (it would
+    break the belt for every tree that prunes) and R1 names it every run."""
+    for mid in declared_order(cfg):
+        if entry_is_shipped(cfg, mid) or entry_is_dangling(cfg, mid):
             continue
-        if release_is_unverifiable(cfg, version):
-            # SKIPPED, and reported: `pm retire` deletes a finished milestone's
-            # record while its row survives in the plan on purpose, so after a
-            # retirement an entry that shipped is indistinguishable from one
-            # never written. Blocking on it would make `retire` break the
-            # ledger and the belt for every tree that prunes.
-            #
-            # The ambiguity is not resolved here because it CANNOT be — it is
-            # REPORTED, by R1, as UNVERIFIABLE, on every run. Two reviews of
-            # this milestone pulled opposite ways on it; decision D2 on
-            # `the-plan-and-the-tree-agree` records why the gate carries it
-            # rather than the resolver guessing.
-            continue
-        return version
+        return mid
     return None
 
 
+def current_release(cfg: PmConfig) -> str | None:
+    """The VERSION the current milestone declares, or None.
+
+    Never `[pm] version_at`, which answers *which entry should the version FILE
+    equal* — a project bumping at CLOSE answers that with the last SHIPPED
+    release, so feeding it here re-released a finished milestone.
+    """
+    mid = current_milestone(cfg)
+    return (milestone_version(cfg, mid) or None) if mid is not None else None
+
+
 def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
-    """(the entry `[pm] version_file` must equal, or None; why not).
+    """(the version `[pm] version_file` must equal, or None; why not).
 
     R5's question, and R5's only. `start` is bump-at-START — the release being
     worked on, so the file carries it while the work happens. `ship` is
@@ -1511,31 +2096,38 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
     if not order:
         return None, 'the plan declares no `order`'
     if cfg.version_at == VERSION_AT_START:
-        version = current_release(cfg)
-        if version is None:
+        mid = current_milestone(cfg)
+        if mid is None:
             return None, ('every entry in `order` has shipped, or the next one '
-                          'is claimed by no single milestone')
+                          'names no milestone in the tree')
+        version = milestone_version(cfg, mid)
+        if not version:
+            return None, (f'{mid} is the current entry in `order` and declares '
+                          f'no `version:` — `agentic-sdlc pm set {mid} version '
+                          f'<x.y.z>` says which release it is')
         return version, ''
-    shipped = [v for v in order if release_is_shipped(cfg, v)]
+    shipped = [mid for mid in order if entry_is_shipped(cfg, mid)]
     if not shipped:
         return None, ('no entry in `order` has shipped yet, so there is no '
                       'previous release for the version file to carry')
-    return shipped[-1], ''
+    version = milestone_version(cfg, shipped[-1])
+    if not version:
+        return None, (f'{shipped[-1]} is the last shipped entry in `order` and '
+                      f'declares no `version:`')
+    return version, ''
 
 
 def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
     """Every value `[pm] version_file` may hold, and why, for [pm] version_at.
 
-    `start` has exactly one answer. **`ship` has two, and that is what
-    bump-at-CLOSE means**: the file carries the last shipped release while the
-    next one is being built, and the release COMMIT moves it — so from the
-    moment that commit is written until the milestone's status flips, the file
-    correctly names a release that has not shipped yet.
+    `start` has one answer. **`ship` has two, and that is what bump-at-CLOSE
+    means**: the file carries the last shipped release while the next is being
+    built, and the release COMMIT moves it — so between that commit and the
+    status flip it correctly names a release that has not shipped.
 
-    Found by running the belt: `version-sync` wanted 0.3.0 and R5 wanted 0.2.0,
-    at the same instant, on the same tree, and neither was wrong. A rule that
-    makes a project's own documented flow unreachable is the rule that is wrong.
-    A file naming NEITHER still fails, which is what R5 is for.
+    Found by running the belt: `version-sync` wanted 0.3.0 and R5 wanted 0.2.0
+    at the same instant, and neither was wrong. A file naming NEITHER still
+    fails, which is what R5 is for.
     """
     one, why = graded_release(cfg)
     if one is None:
@@ -1546,59 +2138,90 @@ def graded_release_accepts(cfg: PmConfig) -> tuple[list[str], str]:
     return ([one] if nxt is None or nxt == one else [one, nxt]), ''
 
 
-def release_ledger_dir(cfg: PmConfig) -> tuple[Path | None, str]:
-    """(the milestone directory holding the current release's ledger, or None,
+def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
+    """(the DOCUMENT of the milestone the current release belongs to, or None,
     plus why not).
 
-    **Gate cost is a fact about a RUN**, and the run happened whether or not
-    anybody had flipped a status. Binding the ledger to "the one milestone in
-    `in_progress`" refused on none and on several, and this tree spent a week
-    planning two milestones with every cost row silently dropped.
-
     `order` answers with exactly one BY CONSTRUCTION — a position in a list is
-    one place. It does NOT read `[pm] version_at`: that key says which entry
-    the version FILE is graded against, which is a different question, and
-    conflating the two filed cost rows into a shipped milestone's ledger.
-
-    The in-progress fallback is deliberate and is recorded as a decision: a
-    consumer bumping the pin has a building milestone and no plan yet, and
-    refusing every cost row on the bump would be a breaking change wearing a
-    minor version. A tree with neither is refused naming `pm order`, which is
-    then the one honest reason left.
+    one place. It does NOT read `[pm] version_at`, which says which entry the
+    version FILE is graded against; conflating the two filed cost rows into a
+    shipped milestone's ledger. The in-progress fallback covers a consumer who
+    bumped the pin before adopting a plan, and a tree with neither is refused
+    naming `pm add`.
     """
-    version = current_release(cfg)
-    if version is not None:
-        mid = milestone_of_version(cfg, version)
-        mdir = milestone_dir(cfg, mid) if mid else None
-        if mdir is not None:
-            return mdir, ''
-        return None, (f'the current release {version} is claimed by no '
-                      f'milestone directory in {cfg.roadmap_dir} — '
-                      f'`agentic-sdlc pm roadmap` shows the plan against the '
-                      f'tree')
+    mid = current_milestone(cfg)
+    if mid is not None:
+        found = milestone_file(cfg, mid)
+        if found is not None:
+            return found, ''
     live = in_progress_milestones(cfg)
     if len(live) == 1:
-        return live[0][2].parent, ''
-    if not declared_order(cfg):
+        # The milestone's DOCUMENT, like the branch above: a pooled tree has no
+        # per-milestone directory, and every caller wants the grain, not a place.
+        return live[0][2], ''
+    order = declared_order(cfg)
+    if not order:
         return None, (f'{cfg.rel(releases_file(cfg))} declares no `order`, so '
                       f'there is no current release to file against — '
-                      f'`agentic-sdlc pm order --append <version>` writes the '
-                      f'plan')
+                      f'`agentic-sdlc pm add {root_id(cfg)} <milestone-id>` '
+                      f'writes the plan')
     # The reason is read off the plan rather than asserted (review C4): an
-    # entry nothing claims stops the walk, and saying "everything shipped"
+    # entry naming nothing is stepped over, and saying "everything shipped"
     # about it would be false.
-    order = declared_order(cfg)
-    unverifiable = [v for v in order
-                    if not release_is_shipped(cfg, v)
-                    and release_is_unverifiable(cfg, v)]
-    if unverifiable:
-        return None, (f'{unverifiable[0]} is the next unshipped entry in '
-                      f'{cfg.rel(releases_file(cfg))} and no single milestone '
-                      f'claims it, so there is no ledger to file against — '
-                      f'`agentic-sdlc pm roadmap` shows the plan against the '
-                      f'tree')
+    dangling = [mid for mid in order if entry_is_dangling(cfg, mid)]
+    if dangling:
+        return None, (f'{dangling[0]} is in {cfg.rel(releases_file(cfg))} '
+                      f'`order` and names no milestone in the tree, so there '
+                      f'is no ledger to file against — `agentic-sdlc pm '
+                      f'roadmap` shows the plan against the tree')
     return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped, '
                   f'so there is no release in progress to file against')
+
+
+def root_id(cfg: PmConfig) -> str:
+    """The id the plan answers to — its own `id:`, or `roadmap`."""
+    root = root_grain(cfg)
+    return root.gid if root is not None else ROOT_ID
+
+
+@dataclass(frozen=True)
+class Sequence:
+    """One container's `order` against the children it holds — THREE numbers,
+    each a different fact (rule 4): `dangling` names a grain the tree HAS and
+    this parent does not hold (drift); `unverifiable` names no grain at all (a
+    retired one looks the same); `unsequenced` is a child nobody has placed."""
+
+    dangling: list[str]
+    unverifiable: list[str]
+    unsequenced: list[str]
+
+
+def sequence_census(cfg: PmConfig, parent: Grain,
+                    index: dict[str, Grain] | None = None) -> Sequence:
+    """`parent`'s `order` graded against the children bound to it. A caller
+    grading MANY parents passes the index it already walked."""
+    index = grain_index(cfg) if index is None else index
+    held = {g.gid for g in contained(cfg, parent, index)}
+    declared = list_field_of(parent.path, ORDER_KEY)
+    return Sequence(
+        dangling=[gid for gid in declared
+                  if gid not in held and gid in index],
+        unverifiable=[gid for gid in declared if gid not in index],
+        unsequenced=sorted(gid for gid in held if gid not in declared))
+
+
+def contained(cfg: PmConfig, parent: Grain,
+              index: dict[str, Grain] | None = None) -> list[Grain]:
+    """Every grain `parent` holds — its bound children, per `[pm.contains]`. A
+    milestone names no parent (there is one root), so at that level membership
+    IS the tree and the plan says which are scheduled."""
+    found = grain_index(cfg) if index is None else index
+    out: list[Grain] = []
+    for kind in cfg.contains.get(parent.kind, ()):
+        rootward = BINDS_TO.get(kind) is None
+        out.extend(g for g in found.values() if g.kind == kind
+                   and (rootward or g.binding == parent.gid))
+    return out
 
 
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
@@ -1650,7 +2273,6 @@ class FeatureView:
     """
     fid: str
     status: str
-    phase: str
     path: Path
     stories: list[Path] = field(default_factory=list)
     done_n: int = 0
@@ -1664,9 +2286,8 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
     view = FeatureView(
         fid=unquote(field_of(ffile, 'id')),
         status=field_of(ffile, 'status'),
-        phase=unquote(field_of(ffile, 'phase')),
         path=ffile,
-        stories=story_files(ffile),
+        stories=story_files(cfg, unquote(field_of(ffile, 'id'))),
     )
     finished = holds(cfg, 'story',
                      ((s, field_of(s, 'status')) for s in view.stories),
@@ -1674,24 +2295,6 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
     view.done_n = finished.counted - len(finished.blockers)
     return view
 
-
-def phase_key(phase: str) -> tuple:
-    """The board's reading order for a feature's `phase:`: numbered phases
-    numerically, then named ones alphabetically, then the unphased. The
-    engine knows no phase word.
-    """
-    if phase.isdigit():
-        return (0, int(phase), '')
-    if phase:
-        return (1, 0, phase)
-    return (2, 0, '')
-
-
-def phase_label(phase: str) -> str:
-    """How `pm status` and the execution list head a phase bucket."""
-    if phase.isdigit():
-        return f'phase {phase}'
-    return phase or 'unphased'
 
 # --- shared-doc headers -------------------------------------------------------
 def header_of(path: Path) -> str:
@@ -1709,7 +2312,7 @@ def header_of(path: Path) -> str:
 # A bug is never moved by this tool; what is checkable is D4's fact, a status
 # outside the vocabulary — and every "is it open" reader tests a name, so a
 # typo would pass in silence.
-def bug_files(mdir: Path) -> list[Path]:
+def _nested_bug_files(mdir: Path) -> list[Path]:
     """Every bug document under one milestone, in reading order."""
     return grain_docs(mdir / BUGS_DIR)
 
@@ -1721,16 +2324,29 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     """
     out: list[tuple[Path, str]] = []
     scanned = 0
-    for mdir in milestone_dirs(cfg):
-        for bfile in bug_files(mdir):
-            scanned += 1
-            bstat = field_of(bfile, 'status')
-            if category_of(cfg, 'bug', bstat) is None:
-                # The bug line's shape is grepped (rule 6), so it is kept
-                # verbatim.
-                out.append((bfile, f'bug status {bstat!r} is not in '
-                                   f'({" ".join(flow_of(cfg, "bug").order)})'))
+    # The POOL: a bug nobody has bound was counted and asked nothing.
+    for bfile in _every(cfg, 'bug'):
+        scanned += 1
+        bstat = field_of(bfile, 'status')
+        if category_of(cfg, 'bug', bstat) is None:
+            # The bug line's shape is grepped (rule 6), so it is kept verbatim.
+            out.append((bfile, f'bug status {bstat!r} is not in '
+                               f'({" ".join(flow_of(cfg, "bug").order)})'))
     return out, scanned
+
+
+def _every(cfg: PmConfig, kind: str) -> list[Path]:
+    """Every document of one kind, bound or not — the pool when there is one,
+    and the descent's answer for a nested tree, which has no other."""
+    if is_pooled(cfg):
+        return pool_walk(cfg, kind)
+    if kind == 'bug':
+        return [b for m in milestones(cfg) for b in bug_files(cfg, m.gid)]
+    if kind == 'feature':
+        return [f for m in milestones(cfg) for f in feature_files(cfg, m.gid)]
+    return [s for m in milestones(cfg)
+            for f in feature_files(cfg, m.gid)
+            for s in story_files(cfg, unquote(field_of(f, 'id')))]
 
 
 def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
@@ -1753,14 +2369,13 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
         if bucket is not None and status in bucket:
             bucket[status] += 1
 
-    for mdir in milestone_dirs(cfg):
-        count('milestone', field_of(mdir / MILESTONE_DOC, 'status'))
-        for bf in bug_files(mdir):
-            count('bug', field_of(bf, 'status'))
-        for ff in feature_files(mdir):
-            count('feature', field_of(ff, 'status'))
-            for sf in story_files(ff):
-                count('story', field_of(sf, 'status'))
+    # Bound or not: U1's claim is that a word is held nowhere in the TREE, and
+    # a descent made that sentence false as soon as an unbound grain held it.
+    for milestone in milestones(cfg):
+        count('milestone', milestone.status)
+    for kind in ('feature', 'story', 'bug'):
+        for path in _every(cfg, kind):
+            count(kind, field_of(path, 'status'))
     return used
 
 
@@ -1789,6 +2404,10 @@ def left_todo(cfg: PmConfig, kind: str, status: str) -> bool:
 # templates' headings.
 ACCEPTANCE_HEADING = 'Acceptance criteria'
 SHIP_HEADING = 'Ship criterion'
+# The anti-bloat contract: how many cases a feature should cost, named before it
+# is built and compared after. Every feature template carries it and nothing had
+# ever checked it was filled in — a contract nobody verifies is a suggestion.
+PROOF_HEADING = 'Proof budget'
 
 _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 

@@ -36,7 +36,7 @@ make design decisions.
 
 ## Checklist
 
-1. Start: read `CLAUDE.md`, the roadmap index and the active `milestone.md`,
+1. Start: read `CLAUDE.md`, `pm roadmap`, and the active milestone document,
    then `git status` and `git log --oneline -10`; ask or propose.
 2. Spec: brainstorm intent, scope, tradeoffs and out-of-scope; write the
    narrative design doc and commit it. A 2-3 file slice skips the doc.

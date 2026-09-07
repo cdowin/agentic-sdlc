@@ -3,14 +3,12 @@
 Reads the `gate` rows `make unit` / `make integration` / `make test` file in the
 current release's ledger; runs nothing. The newest row by timestamp is graded.
 
-The two ways of not knowing are NOT the same finding, and this gate grades them
-apart. A tier whose newest run did not end PASS is NOT GRADED and that IS a
-finding: a run that stopped is cheaper and smaller than one that finished, so its
-duration and census are the cost of a stop, not measurements of the tier. A tier
-with no row at all is UNMEASURED — named in the verdict, never counted as within
-its ceiling, and NOT a finding, because a tier nobody ran has not got slower.
-Ships no ceiling (a number is the project's, not this package's), so with nothing
-declared it reports the measured costs and exits 0.
+The two ways of not knowing are NOT the same finding. A tier whose newest run
+did not end PASS is NOT GRADED and that IS a finding — a run that stopped is
+cheaper and smaller than one that finished, so its numbers measure the stop. A
+tier with no row is UNMEASURED: named, never counted as within its ceiling, and
+NOT a finding, because a tier nobody ran has not got slower. Ships no ceiling (a
+number is the project's), so with nothing declared it reports and exits 0.
 
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier
@@ -74,20 +72,14 @@ def _budgets() -> dict[str, int]:
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
     """Every row of the current release's ledger, or the defect that stopped the read."""
     cfg = model.load()
-    out: list[tuple[str, ledger.Row]] = []
-    # The SAME resolution the recorder writes through, so the number a human
-    # sees and the number the gate grades cannot disagree.
-    mdir, _why = model.release_ledger_dir(cfg)
-    for mdir in ([mdir] if mdir is not None else []):
-        path = ledger.ledger_path(mdir)
-        if not path.is_file():
-            continue
-        try:
-            rows = ledger.read_rows(path)
-        except ledger.LedgerError as err:
-            return [], f'{cfg.rel(path)} could not be read: {err}'
-        out.extend((cfg.rel(path), row) for row in rows)
-    return out, ''
+    path = ledger.grainless_path(cfg.roadmap)
+    if not path.is_file():
+        return [], ''
+    try:
+        rows = ledger.read_rows(path)
+    except ledger.LedgerError as err:
+        return [], f'{cfg.rel(path)} could not be read: {err}'
+    return [(cfg.rel(path), row) for row in rows], ''
 
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
@@ -241,7 +233,7 @@ def run() -> int:
         if data is None:
             unmeasured.append(tier)
             lines.append(f'  UNMEASURED  {tier} — ceiling {ceiling}s, and no '
-                         f'`gate` row for it in this milestone\'s ledger; run '
+                         f'`gate` row for it in this tree\'s ledger; run '
                          f'`make {tier}`')
             continue
         if data.get('verdict') != GRADED_VERDICT:
@@ -276,7 +268,7 @@ def run() -> int:
                             and not isinstance(count, int)):
             uncounted.append(tier)
             lines.append(f'  UNCOUNTED   {tier} — {limit}, and '
-                         + ('no `gate` row for it in this milestone\'s ledger'
+                         + ('no `gate` row for it in this tree\'s ledger'
                             if data is None else
                             'its newest `gate` row carries no census'))
             continue

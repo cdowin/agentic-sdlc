@@ -33,8 +33,10 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from support.pm import LEDGER_REL, cfg_for, put_ledger  # noqa: F401
 from support.pm import (
     damage,
+    declaring,
     ledger_lines,
     ledger_rows,
     run_cli,
@@ -82,7 +84,7 @@ def only_row(root) -> dict:
 
 
 def bug(root, status: str = 'open') -> None:
-    write(root / 'pm/roadmap/0.1-demo/bugs/b0.md',
+    write(root / 'pm/roadmap/bugs/b0.md',
           {'id': BUG_ID, 'milestone': '"0.1"', 'name': 'B0',
            'status': status})
 
@@ -103,7 +105,9 @@ def test_a_story_flip_writes_one_compact_line_with_the_five_keys():
     line a consumer's hook has to learn to skip.
     """
     with tree(story_statuses=('ready',)) as root:
-        code, out = run_cli(root, 'story', 'building', STORY)
+        # STDOUT ONLY: the breadcrumb 0.4.0 added is on stderr, which is what
+        # keeps this assertion the contract it was written to be.
+        code, out = run_cli(root, 'story', 'building', STORY, stdout_only=True)
         assert code == 0, out
         assert out == '[pm] story 0.1/alpha/s0: ready -> building\n'
         lines = ledger_lines(root)
@@ -168,7 +172,7 @@ def test_the_row_lands_in_the_grains_OWN_milestone_directory():
     """A story two milestones deep in the tree stamps ITS milestone, not the
     first one the walker finds."""
     with tree() as root:
-        other = root / 'pm/roadmap/0.2-next'
+        other = root / 'pm/roadmap/milestones'
         write(other / 'milestone.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
         assert run_cli(root, 'story', 'building', STORY)[0] == 0
@@ -238,7 +242,7 @@ def test_a_frontmatter_write_that_FAILS_writes_no_row():
     succeeded. Damaged frontmatter is where `set_field` returns False — the
     file is untouched, so the ledger must be too."""
     with tree() as root:
-        damage(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md',
+        damage(root / 'pm/roadmap/stories/s0.md',
                'no-closing-fence')
         code, out = run_cli(root, 'story', 'building', STORY)
         assert code == 2, out
@@ -260,9 +264,13 @@ def test_a_ledger_that_cannot_be_written_never_fails_the_verb_that_wrote():
     """
     if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits
         pytest.skip('running as root: a read-only file is still writable')
-    story = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
+    story = 'pm/roadmap/stories/s0.md'
     with tree(story_statuses=('ready',)) as root:
-        path = root / 'pm/roadmap/0.1-demo' / ledger.LEDGER_FILE_NAME
+        # The MILESTONE's ledger, in its pool — where a story's status row
+        # goes since 0.4.0. `<roadmap>/ledger.jsonl` is the grainless home and
+        # a story's row never lands there.
+        path = root / LEDGER_REL
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('', encoding='utf-8')
         path.chmod(0o444)
         try:
@@ -295,9 +303,11 @@ def test_a_feature_decision_lands_in_the_MILESTONE_ledger():
     report ever joins."""
     with tree() as root:
         assert run_cli(root, 'decide', '0.1/alpha', 'Ship it')[0] == 0
-        fdir = root / 'pm/roadmap/0.1-demo/features/alpha'
-        assert (fdir / 'decisions.md').is_file()
-        assert not (fdir / ledger.LEDGER_FILE_NAME).exists()
+        assert (root / 'pm/roadmap/features/alpha-decisions.md').is_file()
+        # No per-feature ledger, ever: D3's rejected alternative, and a
+        # pooled tree makes the absence structural rather than a convention.
+        assert not (root / 'pm/roadmap/features'
+                    / ledger.LEDGER_FILE_NAME).exists()
         row = only_row(root)
     assert (row['grain'], row['entry']) == ('0.1/alpha', 'D1')
 
@@ -310,7 +320,7 @@ def test_the_ordinal_on_the_row_is_the_one_written_into_the_log():
         assert run_cli(root, 'decide', '0.1', 'First')[0] == 0
         assert run_cli(root, 'decide', '0.1', 'Second')[0] == 0
         rows = ledger_rows(root)
-        log = (root / 'pm/roadmap/0.1-demo/decisions.md').read_text()
+        log = (root / 'pm/roadmap/milestones/0.1-decisions.md').read_text()
     assert [(r['entry'], r['title']) for r in rows] == [
         ('D1', 'First'), ('D2', 'Second')]
     assert '## D2 — ' in log
@@ -338,8 +348,7 @@ def test_a_refused_decide_appends_nothing():
 def test_a_hostile_decision_title_stays_ONE_row_and_round_trips(title):
     with tree() as root:
         assert run_cli(root, 'decide', '0.1', title)[0] == 0
-        raw = (root / 'pm/roadmap/0.1-demo'
-               / ledger.LEDGER_FILE_NAME).read_text(encoding='utf-8')
+        raw = (root / LEDGER_REL).read_text(encoding='utf-8')
     assert len(raw.splitlines()) == 1, raw
     assert json.loads(raw)['title'] == title
     # ensure_ascii=False: prose in the durable log is written as itself.
@@ -358,8 +367,7 @@ def test_validate_and_the_gate_and_status_are_unchanged_by_the_ledger():
         before = (run_cli(root, 'validate'), run_gate(root),
                   run_cli(root, 'status'))
         assert run_cli(root, 'story', 'building', STORY)[0] == 0
-        assert (root / 'pm/roadmap/0.1-demo'
-                / ledger.LEDGER_FILE_NAME).is_file()
+        assert (root / LEDGER_REL).is_file()
         after = (run_cli(root, 'validate'), run_gate(root),
                  run_cli(root, 'status'))
     assert before[0] == after[0], 'pm validate saw the ledger'
@@ -384,7 +392,15 @@ def test_pm_init_writes_the_merge_union_line_for_the_configured_roadmap_dir():
         assert code == 0, out
         body = (root / '.gitattributes').read_text(encoding='utf-8')
     assert body.startswith('*.png binary\n'), "the project's own attributes were lost"
-    assert f'planning/ms/*/{ledger.LEDGER_FILE_NAME} merge=union' in body
+    # `**/*.jsonl`, and both halves are load-bearing. `**` because 0.4.0/D3
+    # put a ledger at `<roadmap>/` itself for the rows naming no grain, and
+    # `*/` is one directory level too deep to reach it. `*.jsonl` because a
+    # pooled milestone's ledger is `<roadmap>/ledgers/<id>.jsonl` — no pattern
+    # ending in the FILE NAME reaches it, and every branch appends to the
+    # ledger of the milestone it is building. Both paths are proven to MATCH —
+    # by git, over a real repo — in test_pm_ledger_report_git.py; this case is
+    # about the configured prefix surviving.
+    assert 'planning/ms/**/*.jsonl merge=union' in body
 
 
 def test_a_second_init_does_not_duplicate_the_line():
@@ -466,3 +482,102 @@ def test_a_row_of_an_unknown_future_kind_survives_byte_identical(tmp_path):
                                                 ts=GATE_TS))
     assert path.read_bytes()[:len(foreign)] == foreign.encode('utf-8')
     assert [r.data['kind'] for r in ledger.read_rows(path)] == ['wombat', 'gate']
+
+
+# --- 0.4.0/every-grain-is-on-a-stopwatch --------------------------------------
+def test_an_in_flight_grain_is_measured_and_an_unmoved_one_is_not():
+    """`total_seconds` answers the CLOSED question and returns None while a
+    grain is in flight, which left the number that creates pressure
+    unmeasured: 0.3.0 built eleven features in 64 minutes and spent 93 more
+    reviewing them, with every one of those features sitting `building` and
+    nothing anywhere saying so.
+
+    The sharp half is the third row. **A grain nobody has moved is UNMEASURED,
+    never zero** — `0` would read as "moved a moment ago", which is a different
+    fact (rule 4).
+    """
+    now = datetime(2026, 9, 6, 12, 0, 0, tzinfo=timezone.utc)
+
+    class Row:
+        def __init__(self, ts, to):
+            self.data = {'kind': 'status', 'grain': STORY, 'ts': ts, 'to': to}
+
+    with tree(story_statuses=('building',)) as root:
+        cfg = cfg_for(root)
+        moved = [Row('2026-09-06T09:00:00Z', 'building')]
+        assert ledger.open_seconds(cfg, 'story', moved, now) == 3 * 3600
+        # Closed: `total_seconds`' question, and not this one's.
+        closed = moved + [Row('2026-09-06T11:00:00Z', 'done')]
+        assert ledger.open_seconds(cfg, 'story', closed, now) is None
+        # Never moved: absent, not zero.
+        assert ledger.open_seconds(cfg, 'story', [], now) is None
+
+
+@pytest.mark.parametrize('seconds,said', [
+    (None, '-'), (0, '0s'), (45, '45s'), (750, '12m 30s'),
+    (3 * 3600 + 900, '3h 15m'), (2 * 86400 + 4 * 3600, '2d 4h'),
+])
+def test_a_duration_is_two_units_at_most(seconds, said):
+    """A number a human reads at a glance is the point; `271431s` is not one."""
+    assert ledger.human_duration(seconds) == said
+
+
+def test_the_age_prints_over_a_POOL_SHAPED_id_too():
+    """M4. `support.pm.tree()` keeps slash-shaped ids (`0.1/alpha`), which are
+    valid — an id is opaque in 0.4.0 — but they are not the shape the migration
+    or a prefixed project mints. Every case for this feature ran on the slash
+    shape, so a resolver deciding a grain's KIND by counting slashes worked in
+    all of them and could not work on a real pooled tree: `ft-…`, `st-…` and
+    `bg-…` all read as milestones, and the milestone vocabulary was then asked
+    whether a bug had closed.
+
+    The case has to make the misclassification VISIBLE, and an open feature
+    does not: this repo's feature and milestone flows share `done`, so asking
+    the wrong vocabulary gives the right answer. So the tree declares a feature
+    flow whose done word the MILESTONE flow does not have. A grain that has
+    reached it is finished and must carry no age — and a resolver that decided
+    `ft-…` was a milestone asks the milestone vocabulary, does not find
+    `shipped` in it, and prints a growing age beside `[shipped]`. That is a
+    number that looks legitimate and is not (rule 4), in a read verb.
+    """
+    flow = declaring(feature={'todo': ('planning',), 'in_progress': ('building',),
+                              'done': ('shipped',)})
+    with tree(story_statuses=('building',), config=flow) as root:
+        for slug, status in (('beta', 'building'), ('gamma', 'shipped')):
+            write(root / f'pm/roadmap/features/{slug}.md',
+                  {'id': f'ft-{slug}', 'kind': 'feature', 'milestone': '"0.1"',
+                   'name': slug, 'status': status, 'reviewed': '', 'phase': ''})
+        # ONE call: `put_ledger` writes the file rather than appending to it.
+        put_ledger(root, *(ledger.dumps(ledger.status_row(
+            f'ft-{slug}', 'planning', status, ts='2020-01-01T00:00:00Z'))
+            for slug, status in (('beta', 'building'), ('gamma', 'shipped'))))
+        code, out = run_cli(root, 'status')
+        assert code == 0, out
+        by_slug = {slug: next(ln for ln in out.splitlines() if f'ft-{slug}' in ln)
+                   for slug in ('beta', 'gamma')}
+        # Open: an age, in days, because the row is from 2020.
+        assert 'open ' in by_slug['beta'], out
+        assert 'd ' in by_slug['beta'].split('open ')[1], out
+        # Finished IN ITS OWN VOCABULARY: no age at all.
+        assert 'open ' not in by_slug['gamma'], out
+
+
+def test_pm_status_prints_the_age_and_nothing_gates_on_it():
+    """The report, and the claim that it is only a report: a very old open
+    grain changes no exit code. A ceiling on how long a feature may stay open
+    would be this package having an opinion about somebody's week (rule 9)."""
+    with tree(story_statuses=('building',)) as root:
+        # A FEATURE, because `pm status` prints milestone and feature lines —
+        # a story's age has nowhere to land there, and `pm list` is the verb
+        # that enumerates stories.
+        put_ledger(root, ledger.dumps(ledger.status_row(
+            '0.1/alpha', 'ready', 'building', ts='2020-01-01T00:00:00Z')))
+        code, out = run_cli(root, 'status')
+        assert code == 0, out
+        # The FEATURE's line: the milestone's own cell now reads `open -`,
+        # because it is open and nobody has moved it (rule 4 — unmeasured is
+        # not young).
+        line = next(ln for ln in out.splitlines() if 'feature alpha' in ln)
+        assert 'open ' in line, out
+        # Years old, and still exit 0: the number is a report (rule 9).
+        assert 'd ' in line.split('open ')[1], out

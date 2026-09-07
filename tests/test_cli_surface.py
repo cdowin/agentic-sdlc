@@ -46,6 +46,8 @@ import pytest
 # module that actually gates `check budget`.
 from test_check_budget import BUDGET, check as budget_check, gate_row, tree
 
+import pytest
+
 from agentic_sdlc import cli
 
 # Every `agentic-sdlc <verb>` line in the docstring, first token only. The
@@ -304,6 +306,105 @@ class TestTheHelpDescribesWhatShips:
         assert cli.main([]) == 2
 
 
+class TestAReadVerbNamesItsColumns:
+    """0.4.0/the-read-verbs-compose.
+
+    The rule is *read verbs emit lines; composition is the shell's job* — and
+    it only works if a reader can see the columns without opening the source.
+    So the column list exists THREE times: the rows, `--json`'s keys, and the
+    `--help` line. The first two are one tuple zipped two ways and cannot
+    diverge; the third is prose and can, which is what these cases hold.
+
+    The defect that produced the rule: `pm list` emitted no `name`, so
+    `pm list | grep "<a name>"` returned nothing, and the agent that tried it
+    concluded the tool could not search and proposed `pm list --grep`. The
+    capability was there; the payload made it look absent.
+    """
+
+    def columns_in_help(self, kind: str) -> tuple[str, ...]:
+        """The column names off the `pm --help` line for one `--kind`, parsed
+        rather than restated — a hand-written roster here goes stale exactly
+        the way the thing it guards does."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        after = (pm_cli.USAGE or '').split('columns IN ORDER:')
+        # `>= 3`, not `== 3`: the ship criterion says EVERY read verb names its
+        # columns, so an exact count reddened on its own fix — a case that
+        # punishes the criterion being met is worse than no case (review M1).
+        assert len(after) >= 3, 'the help stopped naming its columns in order'
+        which = after[1] if kind == 'story' else after[2]
+        return tuple(which.strip().split('\n')[0].split())
+
+    @pytest.mark.parametrize('kind', ['story', 'milestone'])
+    def test_the_help_names_the_columns_the_rows_carry(self, kind):
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        assert self.columns_in_help(kind) == pm_cli.LIST_COLUMNS[kind]
+
+    def test_the_help_states_the_composition_rule(self):
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        said = (pm_cli.USAGE or '').lower()
+        assert 'composition is the shell' in said
+        assert 'is a column, not a verb' in said or 'a column' in said
+
+    def test_no_filter_flag_was_added(self):
+        """The rule's cheaper half: every filter flag not added is a flag not
+        documented, not tested and not kept in sync with the fields. This
+        feature adds a COLUMN and a serialisation, and the flag roster is the
+        one it inherited."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        with_json = {'--status', '--owner', '--milestone', '--kind',
+                     '--category'}
+        said = pm_cli.USAGE or ''
+        # Everything from the first `list` line to the next verb: BOTH list
+        # forms, since `--kind` only appears on the second.
+        listing = said[said.index('  list '):said.index('  ready-for')]
+        found = {tok for tok in re.findall(r'--[a-z-]+', listing)}
+        assert found - {'--json'} == with_json, sorted(found)
+
+
+class TestTheSurfaceSaysTelemetry:
+    """0.4.0/the-surface-says-telemetry. Not a missing column — a MISSING WORD.
+
+    `pm --help`'s ledger lines said what the verbs do and never what they are,
+    so an agent asked for "telemetry — phasing, timings, token use, tool calls"
+    grepped the package for that word, found five design documents and a
+    vendored lexer, and hand-wrote a markdown table over a package that ships
+    `pm ledger report`.
+    """
+
+    LEDGER_VOCABULARY = ('telemetry', 'spend', 'cost', 'tokens', 'tool calls')
+
+    def test_the_help_names_the_ledger_in_the_words_people_search_for(self):
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        said = (pm_cli.USAGE or '').lower()
+        for word in self.LEDGER_VOCABULARY:
+            assert word in said, f'`pm --help` never says {word!r}'
+
+    def test_the_help_names_the_grainless_ledger_by_path(self):
+        """Rule 11: the second home is where a row goes when nobody could
+        attribute it, and a reader standing at `--help` must not have to find
+        that out from a runtime message."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        assert 'ledger.jsonl' in (pm_cli.USAGE or '')
+
+    ROUTED_AT_0_4_0 = 14
+
+    def test_this_feature_added_no_verb(self):
+        """The ship criterion, asserted. Review M2: `documented == routed` is
+        the conjunction of the two cases above and would pass a verb that was
+        added AND documented — it proved the wrong thing. The COUNT is what the
+        criterion actually claims."""
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0, sorted(routed_verbs())
+
+    def test_every_read_verb_names_its_columns(self):
+        """Review M1: the criterion says EVERY read verb, and `next` and
+        `roadmap` both emit tab-separated rows. Asserted as a count against the
+        verbs that emit them, so a fifth such verb has to name its columns too.
+        Bare `order` was one of them until 0.4.0 retired the verb into
+        `pm add`; reading the plan is `pm roadmap`."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        said = pm_cli.USAGE or ''
+        assert said.count('columns IN ORDER:') >= 4, said.count(
+            'columns IN ORDER:')
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 

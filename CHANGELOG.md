@@ -2,6 +2,420 @@
 
 ## Unreleased
 
+## v0.4.0 — 2026-09-07 — authoring is separate from binding
+
+> **The northstar: the path is where a file lives; the frontmatter is what it is and what it
+> belongs to.** A grain's kind, its id and its parent were all functions of where its file sat,
+> and `id:`/`milestone:`/`feature:` were copies that V2 and V3 existed to police — one fact stored
+> twice, which is the defect this package forbids everywhere else. The pools are the tables,
+> membership is the child's field, sequence is the parent's list, and nothing reads a path as
+> schema.
+>
+> **What that cost, honestly.** Fourteen defects of one shape survived into review: a rule written
+> inside a walk that descends by binding answers only for the grains that walk reaches, and 0.4.0
+> made authored-but-unbound the NORMAL state. Two BLOCKERs, four CRITICALs and about twenty MAJORs
+> came out of the feature reviews — a migration that could not run and then deleted twelve files it
+> never named, a scaffold that blinded a 138-grain tree, a telemetry probe that ran in its own
+> `mktemp` repo and reported "telemetry is live", a shape gate that decided what a document IS from
+> its filename and whose printed repair destroyed the document. **Every one passed its own tests.**
+
+- **`pm add` binds AND sequences, at every level, and it is exactly `set` plus a list insert.**
+
+  ```
+  agentic-sdlc pm add <parent-id> <child-id> [--position N | --before <id> | --after <id>]
+  agentic-sdlc pm remove <parent-id> <child-id>
+  ```
+
+  Membership is the child's field; SEQUENCE is the parent's `order:` block list. One shape at
+  every level — root → milestones, milestone → features and bugs, feature → stories — and
+  **neither argument names a kind**: each id resolves to the grain that declares one, so the pair
+  is read off the ids rather than from a check written per level. Bare `add` appends. `remove`
+  unbinds and unsequences together; `pm set <id> <field> ""` still unbinds alone.
+
+  `add` does two writes and nothing else: the child's binding field, and the parent's list. It
+  never reaches into a grain it was not given — re-binding a child says which old parent is now
+  left with a DANGLING entry and names the `pm remove` that clears it.
+
+- **`[pm.contains]` declares which kinds may hold which**, and `pm add` refuses off it at exit 1
+  naming BOTH kinds. Stock (hard rule 5 — a repo declaring nothing behaves byte-identically):
+
+  ```toml
+  [pm.contains]
+  roadmap   = ["milestone"]
+  milestone = ["feature", "bug"]
+  feature   = ["story"]
+  ```
+
+  It NARROWS: which field a child names its parent with is fixed, so a project that files no bugs
+  drops `"bug"` and `pm add <milestone> <bug>` is then refused by name. A pairing no field could
+  carry (`milestone = ["story"]`) is a malformed declaration at exit 2, naming the field.
+
+- **`order` is OPTIONAL per container, and `check pm` counts both directions.** A bound child in
+  no parent's `order` is `UNSEQUENCED` — a counted line, never a finding, because authoring and
+  sequencing are separate acts. An entry naming a grain its parent does not hold is `DANGLING`
+  and FAILS (V7). One naming no grain at all is `UNVERIFIABLE` and WARNS, for the reason R1 has
+  always given: a retired grain and one never written look identical from here.
+
+- **The plan lists MILESTONE IDS, and `pm order` retires into `pm add` against the root.**
+  `pm/roadmap/releases.md` is a container like any other: it declares its own `id:` (`roadmap`
+  when it declares none, so an existing plan needs no edit) and `kind: roadmap`, and its `order`
+  sequences milestone ids rather than version strings. **A milestone that re-versions no longer
+  touches the plan**, and `pm rename` sweeps the entry with every other inbound reference.
+
+  **CONSUMER ACTION:** rewrite `order` in `pm/roadmap/releases.md` from versions to the ids of the
+  milestones claiming them, and replace `pm order --append <version>` in any script with
+  `agentic-sdlc pm add <plan-id> <milestone-id>`. `pm order` is refused at exit 2 naming its
+  replacement, never as an unknown command. Reading the plan is still `pm roadmap`; `pm next`
+  still prints `version  milestone  status`, taking the version from the milestone.
+
+  R1's second half changes with it: *a `version:` on no plan* was a FAIL and is now the
+  `UNSEQUENCED` counted line above. R4 and R6 name the milestone id where they named a version.
+
+  **Line shapes that moved** (rule 6, all of them grep-visible): `pm roadmap` prints
+  `(no version)` for a scheduled milestone that declares none and `-	<id>	DANGLING` for an entry
+  naming no milestone, where it printed `(unclaimed)`/`unverifiable`; its backlog header says
+  *"on no plan — not scheduled as a release"*. `pm status` prints one
+  `-- <n>/<m> feature(s) done` line per milestone instead of one per phase bucket.
+
+- **RETIRED: `<!-- pm:execution -->`, `pm sync` and V6.** A rendered roster of a parent's children
+  was a second scoreboard, and keeping it in agreement with the tree was V2's defect one level
+  down. **Replacement:** `order:` on the parent — written by `pm add`, read by `pm status`,
+  `pm roadmap` and `pm ledger report`, and graded by the UNSEQUENCED/DANGLING pair above. `pm sync`
+  and `V6` in `[pm] checks` are both refused at exit 2 naming that replacement. The block itself
+  is inert markdown; delete it when convenient.
+
+- **RETIRED: `[pm] story_ordinal_prefix`.** A story's FILE name is not its identity — `id:` is,
+  and the file may be called anything. **Replacement:** the feature's own `order:` list, one
+  sequence in the parent instead of `NN-` in forty filenames. `pm new story <fid> 01-boots` now
+  keeps `01-boots` as the id segment rather than stripping the ordinal out of it. The key is
+  refused at exit 2 by name, with that replacement.
+
+- **RETIRED: `phase:` as a grouping.** `pm status` grouped a milestone's features into phase
+  buckets with a per-bucket tally; it now prints them in the milestone's declared `order:` with
+  one `-- N/M feature(s) done` line, and `check pm`'s *"carries no phase:"* READY warning is
+  gone. **Replacement:** `order:` on the milestone. The field is inert where it is still written;
+  nothing reads it.
+
+- **A shared doc is scaffolded on demand, its ABSENCE is a warning, and a missing instruction
+  line is a finding.** Three changes to the same document class — `decisions.md`, `handoff.md`,
+  `review.md` — which sit beside their grain in a pool, under the grain's own stem
+  (`milestones/0.1-handoff.md`).
+
+  **`agentic-sdlc pm new handoff <milestone-id>`** mints `handoff.md` from the shipped template
+  with the id and name filled. It had a template and a `SLOT_TEMPLATE` entry and NO code path
+  wrote it, so an absent handoff was an empty canvas rather than an unfilled slot. It never
+  clobbers: section 3, *"Traps this milestone has already sprung"*, is the one thing in the tree
+  no command can regenerate.
+
+  **`check pm` WARNS when a milestone in an `in_progress` state has no handoff** — the doc is
+  deliberately never auto-minted, which is exactly why its absence can mean something. A WARN,
+  never the exit code, and only `in_progress`: warning on `done` would fire once per historical
+  milestone on every consumer's tree.
+
+  **`check grain-shape` gains `NO HEADER`**, a FINDING, on a shared doc that does not open with
+  its slot instruction line — the one channel that reaches a dispatched subagent, so a doc that
+  lost it is silently unguided. **This can flip an unchanged tree from PASS to exit 1**: a
+  hand-authored or hand-trimmed `decisions.md` was never asked for that line before. The finding
+  names the literal line and the verb that restores it, derived per grain — `pm new feature
+  0.1/alpha` for a feature's log, not a generic `pm new milestone`. Any KNOWN header passes,
+  including retired spellings, so rewording one never reddens a doc written under the old words.
+
+  `pm install-skills` writes a third file with them: `.claude/skills/handoff/SKILL.md`.
+
+- **THE PM TREE IS FOUR POOLS, AND A GRAIN'S IDENTITY IS ITS FRONTMATTER.** The largest change
+  this package has made to a consumer's tree. Before: a grain's kind came from which slot its
+  document sat in, its parent came from the directory above, and `id:`/`milestone:`/`feature:`
+  were copies of those facts that V2 and V3 existed to police — one fact stored twice, which is
+  the defect this package forbids everywhere else. After:
+
+  ```
+  pm/roadmap/milestones/<slug>.md          pm/roadmap/ledgers/<milestone-id>.jsonl
+  pm/roadmap/features/<slug>.md            pm/roadmap/ledger.jsonl   (rows naming no grain)
+  pm/roadmap/stories/<slug>.md             pm/roadmap/milestones/<stem>-decisions.md
+  pm/roadmap/bugs/<slug>.md                pm/roadmap/milestones/<stem>-handoff.md
+  ```
+
+  **The path is where a file lives; the frontmatter is what it is and what it belongs to.** Every
+  document declares `id:`, `kind:` and its binding — `milestone:` on a feature or a bug,
+  `feature:` on a story. Membership is the child's field; sequence is the parent's `order` list.
+  Nothing reads a path as schema any more, and the filename is yours: rename a document and every
+  reader still finds it, because none of them was ever looking at the name.
+
+  **A nested tree keeps working.** Every resolver falls back to the old reading when no pool holds
+  a document, so the day you bump nothing changes. Moving is
+  `python3 tools/dev/pm_migrate.py`, run from your checkout — deliberately NOT a verb: the CLI is
+  a published API, and a one-time move does not earn a shape every consumer's gate then depends on
+  forever. It reports slug collisions and writes nothing rather than inventing an id (D4).
+
+  **What you LOSE, and what answers instead.** `git log -- pm/roadmap/<milestone>/` stops
+  answering *"this milestone's history"* — `git log -- pm/roadmap/ledgers/<id>.jsonl` and
+  `pm ledger report <id>` do. `ls pm/roadmap/<milestone>/` stops answering *"what is in this
+  milestone"* — `pm status <id>` does, and it always answered better, because it reads status.
+
+- **V2 and V3 RETIRE; V7 arrives.** V2 held `id:` to the path and V3 held a binding to the
+  directory a document sat in; both kept two copies of one fact in agreement, and there is one
+  copy now. Naming either in `[pm] checks` is exit 2 with the reason, never a silent no-op.
+
+  **V7 is what replaced the half of V3 that was a real fact**: a binding that is empty, names no
+  grain in the tree, or names a grain of the wrong kind. It walks the POOLS rather than descending
+  from the milestones, and that is the whole point — a feature bound to a milestone that is not
+  there is exactly what a descent cannot see, so it was counted by the census and reached by
+  nothing. **V1 grew the other half**: a document whose frontmatter declares no `id:` is reported
+  BY NAME and counted as skipped, and two documents claiming one id are named together. A resolver
+  keeps the first it reads, because uniqueness cannot be a runtime lock without an allocator and a
+  git repo has none — so the collision is a finding rather than a refusal.
+
+- **`.gitattributes` becomes `<roadmap>/**/*.jsonl merge=union`.** The old
+  `<roadmap>/**/ledger.jsonl` reached both 0.3.0 homes because both were NAMED `ledger.jsonl`; a
+  pooled milestone's ledger is `<roadmap>/ledgers/<id>.jsonl`, which that pattern misses entirely.
+  Every branch appends to the ledger of the milestone it is building, so the miss is a merge
+  conflict on every parallel branch, quietly, with nothing connecting it to this change.
+  `pm init` appends the new line; **delete the old one** — the last match wins, so it is inert
+  rather than wrong, but it reads as a second rule.
+
+- **`pm move` is DELETED.** It existed only because position was parentage. Re-parenting is one
+  line now — `pm set <story-id> feature <fid>` — the id never changes, and there is nothing to
+  rewrite. `pm move` also renamed the file and did NOT rewrite the refs pointing at the moved
+  story, so every `depends_on` naming it went stale, silently, at the moment of the move.
+
+- **NEW VERB: `pm rename <old-id> <new-id>`** — the one ref-rewriting path that still has to
+  exist, which is the defect `pm move` had, done once in the verb that needs it. It rewrites the
+  grain's own `id:` and **every inbound reference in the tree** — `depends_on`, `consumed_by`,
+  `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings (`milestone:` / `feature:`)
+  and every `order` entry — in one pass, **whole or not at all**: one reference it cannot rewrite
+  and nothing at all is written, named. References are matched WHOLE-TOKEN, so `0.1/alphabet` and
+  `0.1/alpha/s0` are not references to `0.1/alpha`. A `<new-id>` failing the id grammar is refused
+  before the tree is read (exit 2); one another grain already holds is refused naming that grain
+  (exit 1) and never auto-resolved, which is what `tools/dev/pm_migrate.py` tells you to run when
+  it reports a slug collision. Frontmatter only: prose naming the id is yours, the ledger keeps
+  its rows under the old id because history is not rewritten, and the document keeps its
+  FILENAME — nothing reads a path as schema.
+
+- **`pm retire` removes a milestone's GRAINS, not a directory.** The same set of bytes the
+  directory used to hold — the milestone, every feature and bug bound to it, every story bound to
+  those, each grain's shared docs, and its ledger — addressed by binding instead of by location.
+  `pm/roadmap/` is the tree and always survives, and the tree's own ledger is untouched, because
+  those rows were never about the milestone.
+
+- **Each pool renders its own census.** `1 story/ies, 2 note(s) skipped (…), 0 bug(s), 1 note(s)
+  skipped (…)` rather than one aggregate: a note beside the FEATURES now discloses beside the
+  feature count, which an aggregate could say the size of but never the place of. A dot-prefixed
+  path is still a deliberate hide, still out of scope, and still counted.
+
+- **`pm new` refuses an id the grammar rejects before it walks anything**, and the four grain
+  templates carry `kind:`. `pm new bug --caused-by <fid>` echoes what it stamped: a field the
+  caller asked for and never sees confirmed is a field they have to open the file to trust.
+
+- **A row naming no grain lands in the tree's own ledger, `<roadmap>/ledger.jsonl`.** A `gate`
+  row (a gate run is not work on a grain), a `test` row, a session nobody could attribute, a hand
+  entry with no `--grain`: all of them had to be routed by asking the tree something, and every
+  such rule had a refusal path — which is a telemetry write being dropped. **They are the residue,
+  not the destination**: `pm ledger report` reads a milestone's ledger AND this one, shows these in
+  the `rows naming no grain` bucket it already printed, and never folds one into a grain's line.
+  After this there is no place a row can be refused for want of somewhere to put it, except a tree
+  with no `pm/roadmap` at all.
+
+  **`.gitattributes` moves from `<roadmap>/*/ledger.jsonl` to `<roadmap>/**/ledger.jsonl`** —
+  gitignore-style `a/**/b` matches `a/b` too, so one pattern covers both homes. Without it the
+  file every branch appends to would conflict on every branch, as a merge conflict nobody connects
+  to this change. `pm init` appends the new line on the next run; **a consumer whose
+  `.gitattributes` still carries the `*/` pattern should delete it** — the last match wins, so it
+  is inert rather than wrong, but it reads as a second rule.
+
+  `check budget` and `verify --plan` follow the rows and read the same one file. That is also a
+  fix they get for free: `pm retire` used to take a milestone's gate history away with its
+  directory, so the next milestone printed `unknown` for its rungs until it had run each one.
+
+  **On the first run after the bump both will say they have no numbers** — every historical `gate`
+  row is in a milestone ledger and neither reads those any more. `verify --plan` prints `unknown`
+  and `check budget` reports UNMEASURED for each tier until you have run it once. Both degrade
+  loudly and neither invents a cost, which is the intended behaviour; run `make <tier>` once and
+  the numbers come back. Old rows are not migrated: they are history, and moving them would be
+  rewriting an append-only log.
+
+  **`pm ledger report`'s `gate cost` section is now about the TREE, not the milestone in its
+  heading**, and says so on the line. Every gate row lands in one file, so two milestones' reports
+  print identical gate rows and `runs`/`delta_ms` are lifetime-of-tree numbers. Windowing them by
+  a milestone's timestamps was the alternative and it loses: a milestone declares no time range,
+  so the window would be inferred and then quoted as though somebody had stated it.
+
+  **`pm ledger show` reads both ledgers**, because a row naming no grain can still name a grain
+  through its `tree` snapshot — so `show` and `report` had begun to disagree about the same row,
+  with `report` billing a story for time `show` said did not exist.
+
+- **`check pm` gains U2: the ledger couriers are wired and this tree holds no row.** In the USAGE
+  family beside U1, because it asks U1's question one layer out — not *is this word used* but
+  *is this capability doing anything* — and STOCK-ON for U1's own argument: an opt-in warning
+  about silence is itself silence. A tree that wires nothing stays quiet either way, so a
+  non-adopter pays nothing. A **WARN**, never the exit code. The telemetry in this repo recorded nothing for a whole
+  milestone with the hooks installed, executable, self-testing and firing: the verb they called
+  refused every row, and a courier fails open by design (it must never block a session stop), so
+  the refusal went to a stderr nobody reads. Zero rows, zero complaints, for weeks.
+
+  `one-rule-routes-a-row` deleted that specific cause and none of the class. The rest all produce
+  the same silence: the entries were never pasted; the `pm` make target is not `.PHONY`, so `make`
+  exits 0 without ever reaching the verb; `[pm.states.*]` is undeclared, so every work-moving verb
+  refuses; `python3` or the transcript path does not resolve. The warning names all four in the
+  order they cost people time and names the one command that answers them —
+  `bash tools/hooks/cc-ledger-session.sh --self-test`.
+
+  **A tree that wires nothing stays silent.** It opted out, and this package does not conscript; a
+  `.claude/settings.json` that will not parse is UNVERIFIABLE, never a failure. An EMPTY
+  `ledger.jsonl` counts as no rows, because that is exactly what a courier leaves behind when it
+  created the file and then refused the row.
+
+  `pm-execution.md`'s claim step now says the flip is bookkeeping and **not** what turns recording
+  on — it never was after the routing change, and reading it that way is how the silence lasted.
+
+- **Three absences the tool could already see and did not say** (all WARN, none in an exit code):
+  a **story in an `in_progress` category with no `owner:`** — a live bug, not a tidy-up:
+  `pm-execution.md` step 1 says to set it in the same edit as the claim, two modules READ the
+  field, and nothing asked whether it was there, so a tree could run a milestone with every story
+  unowned; a **feature past `todo` with an empty `## Proof budget`** — the anti-bloat contract
+  every feature template carries and nothing had ever checked was filled in, which is a contract
+  nobody verifies, i.e. a suggestion; and **`verify --plan` names a gate in `[checks] all` that has
+  filed no cost row** while its neighbours have. That last is silent when NONE of them has one,
+  because a tree running its gates inside a composed target has rows for the composition and none
+  per gate — the join only means something when some are measured and one never is.
+
+  No new rule id, no new verb, no new gate module: two lines in the READY family and one in a
+  report that already existed. That is what "fix at the cheapest layer" looks like.
+
+- **`adopt` gains `telemetry-live`: is this tree recording, and if not, which of the three ways.**
+  A consumer bumps the pin, gets the courier scripts, and pastes the `.claude/settings.json` block
+  **by hand** — and nothing verified the paste. The failure is files present, hooks unarmed, zero
+  rows, zero complaints, which is the state this package's own tree was in for a whole milestone.
+
+  **A probe, not an inspection.** Reading settings.json proves a string is present; the courier's
+  own `--self-test` drives *your* vehicle end to end, which is the only thing that answers *does
+  `make -s pm ARGS=…` reach the verb here*. Every courier already shipped that corpus and no belt
+  called it. The three ways it reports: the entries were never pasted; the `pm` target is not
+  `.PHONY` so `make` exits 0 without reaching the verb; `[pm.states.*]` is undeclared so every
+  work-moving verb refuses. In plain words rather than a rule id — *no ledger setup for this tree,
+  no telemetry*.
+
+  **Never mandatory.** A tree that has not wired the couriers opted out and is not broken; what it
+  must never be is *silently* opted out. `install-hooks` now says the printed block is **not yet in
+  force** and that `adopt` and `check pm` U2 will report it until it is.
+
+- **Every status write breadcrumbs what the conveyor asks next**, and every read verb names its
+  columns. `pm story building <id>` now prints, on stderr, the belt that closes that grain and the
+  checks the belt will actually run — `close feature` asks stories-done, feature-verified,
+  review-recorded, findings-landed — read from the belt registry and from `[pm.states.<kind>]` at
+  runtime. **A breadcrumb that is not DERIVED does not ship**: *"you should run a review now"* is
+  the engine having an opinion, which is what hard rule 9 forbids. A project declaring different
+  state words gets its own words back. `[pm] breadcrumbs = false` turns it off; stock is ON,
+  because a breadcrumb nobody sees teaches nobody. **STDOUT is byte-identical** — the status line
+  is still the one line a consumer parses.
+
+- **`pm status` says how long each open grain has been open, and `pm ledger report` gives the
+  distribution.** The ledger already timestamped every move and `total_seconds` deliberately
+  answered `None` while a grain was in flight, so the number that creates pressure was the one
+  nothing measured: 0.3.0 built eleven features in 64 minutes and spent 93 more reviewing them,
+  with every one of those features sitting `building` and nothing anywhere saying so. `ledger
+  open_seconds` is first-status-row-to-now; a grain nobody has moved is **UNMEASURED, never zero**.
+  Nothing is gated on the number — a ceiling on how long a feature may stay open is this package
+  having an opinion about somebody's week.
+
+- **The word "telemetry" is now in the surfaces you are standing in when you need it.** It was in
+  none of them: not `pm --help`, not the rule that auto-loads on every tree edit, not either
+  shipped skill's `description:`. `grep -ril telemetry` over the package returned five design
+  documents, four tests and a vendored lexer — the archaeology of the feature, never the verb that
+  shipped from it. So an agent asked for *"full telemetry — phasing, timings, token use, tool
+  calls"* hand-wrote a markdown table while the package sat on `pm ledger`: seven row kinds,
+  automatic per-session capture off the transcript, and a per-grain spend report.
+
+  Three edits and **no new capability**: `pm --help`'s two ledger lines say what those verbs ARE;
+  `pm-execution.md`'s read-verb list names `pm ledger show` and `pm ledger report` and what each
+  answers; and `pm-operations`' skill `description:` carries the vocabulary a person actually types
+  — telemetry, spend, cost, tokens, *how long did this take* — because the description is the only
+  part a selector reads. A consumer gets all three on the bump (`pm install-skills --force`).
+
+- **`pm list` emits the NAME, and both listing forms take `--json`.** OUTPUT-SHAPE CHANGE, and
+  it is a fifth column at the END of each row: `id status owner feature name` for stories,
+  `id status category branch name` for milestones. **A consumer whose parser ends in a catch-all
+  will silently absorb it** — `IFS=$'\t' read -r a b c branch` makes `branch` hold
+  `branch<TAB>name`, because the last variable of a `read` takes every remaining field. This
+  package's own `agent-worktree.sh` broke exactly that way and is fixed with one extra variable;
+  check yours. `--help` now names each form's columns IN ORDER so a pipeline is writable without
+  reading source, and a tab inside a `name` is replaced by a space in the tab-separated form so it
+  cannot forge a column (`--json` keeps the byte).
+
+  The reason it is a column and not a flag: `pm list | grep "<a name>"` returned nothing, and the
+  conclusion drawn was that the tool could not search — so a `--grep` flag was proposed for a
+  capability the shell already had. **A read verb that omits a field people filter on teaches them
+  the tool cannot do it.** The rule is now in this package's `CLAUDE.md`: read verbs emit lines,
+  composition is the shell's job, and if you cannot pipe it the missing thing is a COLUMN, never a
+  verb. No filter flag is added by this change and the existing ones all stay.
+
+- **The report stops un-doing the recorder's refusal.** `pm ledger record` omits a row's `grain`
+  key when two stories are live, because a row filed against the wrong story is uncorrectable —
+  and `pm ledger report` then attributed that same row through its `tree` snapshot, to BOTH
+  stories and to their feature. So the bucket the whole thing exists for printed
+  `rows naming no grain (0)` in the one case it was built to handle. Now: **a snapshot places a row
+  only when it names one candidate at its finest kind**, judged over stories first (a feature named
+  alongside its own story is a roll-up, not a second candidate).
+
+  **And a row that STATES a grain is attributed by it and by nothing else, even when this milestone
+  cannot place it** — the fall-through billed a row naming a since-renamed story to whichever other
+  story happened to be live, and disclosed nothing. Those get their own counted line,
+  `stated_elsewhere` (a new `--json` key), rather than joining `rows naming no grain`: the two are
+  opposites, and every milestone's report reads the tree's shared ledger, so rows from elsewhere
+  are the ordinary case.
+
+  **`GDK_LEDGER_GRAIN` has a documented producer, which it did not.** Nothing in this package
+  exported it — not the printed settings block, not a hook, not a rule, not the README — so a
+  courier read a variable no surface told anyone to set. `pm-execution.md` and `install-hooks`'
+  next step now say who exports it and when. **Unverified, and said out loud:** whether a
+  `SubagentStop` hook's environment can carry a per-dispatch value under Claude Code, or only one
+  per session.
+
+- **A row with no `--grain` resolves one from the tree, or carries no `grain` key at all.** The
+  dispatched agent is told its grain; an orchestrator session nobody dispatched has no prompt to
+  read one out of, and that is the session type most of a milestone's work happens in. So: exactly
+  one story in an `in_progress` category is used and **routes the row to that grain's milestone**;
+  zero or several omit the key, and several print both candidate ids on stderr — which the
+  couriers pass through verbatim, so ambiguity is countable rather than assumed rare. `--grain`
+  always wins and the lookup does not even run.
+
+  **An unresolvable grain is an OMITTED KEY, never a zero and never a guess.** A row filed against
+  the wrong story is uncorrectable; a row filed against none is visible in a bucket that already
+  exists and can be fixed later. Resolution never changes an exit code, because the couriers'
+  fail-open promise now depends on it.
+
+- **Every automatic ledger row can name the grain it came from.** The telemetry worked and landed
+  **unattributed**: `grain` has been `ROW_KEYS`' third key since the ledger shipped and neither
+  courier filled it, so every hook-written row went to `rows naming no grain` and the per-grain
+  spend table — the one a human actually reads — showed `0` dispatches against every feature and
+  story in the milestone. The numbers were captured; nothing said what they bought.
+
+  `--grain` is now accepted **alongside** `--from-transcript` rather than exclusive with it: the
+  transcript is where the numbers come from and `--grain` is what the work was ON. The couriers
+  pass it from **`GDK_LEDGER_GRAIN`** in their environment, exported by whoever started the
+  session or dispatch — not a payload field, because no hook event carries a grain, and the fact
+  already exists at the moment of dispatch. Unset is normal and passes no flag; an id that
+  resolves to nothing is refused rather than dropped, on both forms, because a typo silently
+  becoming an omitted key is how a row is misattributed forever.
+
+  **`pm ledger report` now reads `grain:` and prefers it to the tree snapshot**, which it had been
+  ignoring — so a row that says which story it was for lands on that story's line and on nobody
+  else's. The snapshot stays for the rows already written, and for a row that states its grain it
+  is not consulted at all: a dispatch billed for every other story that happened to be live is the
+  read-side of the drift rule.
+
+- **A ledger row is filed against the milestone that owns its GRAIN, at any status.** The
+  telemetry writes went through a lookup that asked which milestone was `in_progress` and refused
+  when none was and when several were — so **a tree recorded nothing at all while it was still
+  planning, and said so only on a hook's stderr**, and two milestones in flight (the workflow this
+  package is built for) refused every row with *"which one owns this row is the one thing this
+  verb cannot know"*. The row knows: it names a grain, and the grain's document sits under exactly
+  one milestone. `_stamp` had routed that way since the ledger shipped; this deletes the second
+  mechanism rather than the first. **No status is read on any write path**, so a `planning`
+  milestone records, and nothing that used to be written is now refused. `pm ledger report` with
+  no id reports the CURRENT RELEASE's milestone — from `order` plus `[pm] version_at`, the same
+  answer `pm next` gives — instead of "the one milestone in progress"; a tree with no plan is
+  refused in the plan's own words, naming the argument that answers it.
+
 ## v0.3.0 — 2026-09-06 — the bump explains itself
 
 > **The northstar: the tool teaches the conveyor.** A project that has just adopted the flow should

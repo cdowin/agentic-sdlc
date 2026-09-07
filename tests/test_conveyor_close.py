@@ -197,14 +197,25 @@ def test_a_false_check_is_named_exit_1_and_nothing_is_written(capsys):
                    if line.startswith(f'[story] ') and f': {name}' in line) == 1, name
 
 
-def test_a_missing_story_is_a_false_check_not_a_crash(capsys):
-    """Bites: an unresolvable id landing as a traceback at exit 1 (rule 6's
-    code for findings) instead of one `error: story-exists:` line."""
+def test_a_missing_story_is_ONE_LINE_and_never_a_crash(capsys):
+    """Bites: an unresolvable id landing as a traceback at exit 1, which is
+    rule 6's code for findings and what a consumer's hook prints.
+
+    It is refused BEFORE the first check now, and that is the cheaper answer:
+    a belt that writes needs the grain, so running `verify --story` over a
+    story that does not exist spends a spawn to learn what the resolver
+    already knows. What the line must do is name the STORY — saying "no
+    milestone 'st-nobody-wrote-this'" sent the reader hunting for a milestone
+    nobody had named.
+    """
     with tree() as root:
-        code = close('story', f'{FEATURE_ID}/nobody')
-        out = capsys.readouterr().out
-        assert code == 1, out
-        assert '[story] error: story-exists:' in out, out
+        code = close('story', 'st-nobody-wrote-this')
+        captured = capsys.readouterr()
+        said = captured.out + captured.err
+        assert code == 1, said
+        assert 'Traceback' not in said, said
+        assert "no story 'st-nobody-wrote-this'" in said, said
+        assert 'nothing was written' in said, said
         assert rows(root) == []
 
 
@@ -337,8 +348,11 @@ def test_an_open_finding_is_false_and_a_record_that_does_not_parse_is_unverifiab
     (['story', STORY_ID, '--skip', 'committed'], 'removed'),
     (['story', STORY_ID, '--status'], 'removed'),
     (['story', STORY_ID, FEATURE_ID], 'exactly one'),
-    (['story', FEATURE_ID], '3 segments'),
-    (['feature', STORY_ID], '2 segments'),
+    # NOT a segment count: an id has no shape in 0.4.0. The belt asks the
+    # grain's own `kind:`, so the refusal names what it IS and which belt does
+    # ask about one.
+    (['story', FEATURE_ID], 'is a feature, not a story'),
+    (['feature', STORY_ID], 'is a story, not a feature'),
     (['story', '../../etc'], 'not a story id'),
     (['bogus', STORY_ID], 'unknown grain'),
     ([], 'needs a grain'),

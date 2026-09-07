@@ -62,9 +62,10 @@ tree, in CI and pre-push.
 | 2 | `installables-current` | — *(reads the tree)* | every installed file the project has not claimed in `[<op>] ours` is byte-current with what this version ships, or differs only in its project-config header; each that differs is named with the `install-* --diff` that shows it, and what was claimed is counted and named beside it, on every run. |
 | 3 | `config-updated` | — *(reads the tree)* | every devkit.toml section this version reads accepts what this repo declares. |
 | 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards still return the verdicts their own corpus asserts. |
-| 5 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`; an empty tier list passes and says so. |
-| 6 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0 — not `make check`, which verifies your code against your rules. |
-| 7 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0; a repo with no PM tree is refused. |
+| 5 | `telemetry-live` | `make -s pm ARGS=vocabulary` *(shipped)* | BOTH ledger couriers are wired in `.claude/settings.json` AND `make -s pm` reaches the verb in THIS tree — a probe of your vehicle, not a file read and not the courier's own hermetic self-test, which passes from an empty directory. Never mandatory: a tree that has opted out is quiet, not broken. |
+| 6 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`; an empty tier list passes and says so. |
+| 7 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0 — not `make check`, which verifies your code against your rules. |
+| 8 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0; a repo with no PM tree is refused. |
 
 **Then:** nothing. `adopt` writes nothing; it is checks only, and `--force` is refused.
 

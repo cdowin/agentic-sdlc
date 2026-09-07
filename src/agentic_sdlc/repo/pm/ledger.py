@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
 
 # Inside the milestone directory, so `retire` removes it with the directory and
@@ -19,7 +20,11 @@ from agentic_sdlc.repo import gates_extra
 LEDGER_FILE_NAME = 'ledger.jsonl'
 
 # The row kinds minted here; `dispatch`/`session` rows come from `pm ledger
-# record`.
+# record`. `STORIES_IN_PROGRESS` is the snapshot bucket a row's live stories sit
+# in, named here because THREE modules reach for it — one writes it, one
+# resolves off it, one attributes by it.
+STORIES_IN_PROGRESS = 'stories_in_progress'
+
 KIND_STATUS = 'status'
 KIND_DECISION = 'decision'
 KIND_GATE = 'gate'
@@ -90,12 +95,10 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
 
 # --- the deviation row --------------------------------------------------------
 # Minted here because this module owns the serialisation contract. Only
-# deviations are rows: the ledger is tracked, so a row per completed step would
-# dirty the tree after `tree-clean`; the driver writes one for every step that
-# is not true, carrying the step's own reason.
-# One slow test, named: the `gate` row says what a tier cost, this says which
-# case did. Only the slowest few are filed, because a row per test would double
-# a committed file every afternoon.
+# DEVIATIONS are rows: the ledger is tracked, so a row per completed step would
+# dirty the tree after `tree-clean`. `test` is the same economy one level down
+# — the `gate` row says what a tier cost, this says which case did, and only
+# the slowest few are filed.
 KIND_TEST = 'test'
 
 KIND_DEVIATION = 'deviation'
@@ -172,20 +175,73 @@ def ledger_path(milestone_dir: Path) -> Path:
     return milestone_dir / LEDGER_FILE_NAME
 
 
-def append_row(milestone_dir: Path, row: dict) -> None:
-    """Append one row to `<milestone_dir>/ledger.jsonl`, creating the file
-    (never the directory) if absent. `open('a')` rather than a `core.apply`
-    overwrite, because read-modify-write drops rows under two appenders.
-    One byte is read first — the last — and a newline closes a torn tail
-    before the row lands. Raises `OSError`: the caller has already changed
-    the tree and must say so.
+# The pool the ledgers live in once a tree is migrated: milestone-scoped
+# machine state is not a grain, so it gets a table of its own named by the same
+# mechanism as the others (0.4.0/the-pools-are-the-tables).
+LEDGERS_POOL = 'ledgers'
+
+
+def ledgers_dir(cfg) -> Path:
+    """The table the ledgers live in — `[pm] ledger_dir`, or
+    `<roadmap>/ledgers`. Relative to the repo root, through the same path
+    grammar every other key uses."""
+    return (cfg.root / cfg.ledger_dir_key if cfg.ledger_dir_key
+            else cfg.roadmap / LEDGERS_POOL)
+
+
+def ledger_for(cfg, milestone_id: str) -> Path:
+    """The ledger of one milestone, in EITHER layout.
+
+    Pooled: `<ledger_dir>/<milestone-id>.jsonl`. Nested: the `ledger.jsonl`
+    inside the milestone's own directory, which is where every row written
+    before the migration already is. One function, because a reader that
+    guessed would find the rows in one layout and silently none in the other.
     """
-    path = ledger_path(milestone_dir)
+    from agentic_sdlc.repo.pm import model
+    if model.is_pooled(cfg):
+        return ledgers_dir(cfg) / f'{milestone_id}.jsonl'
+    mdir = model.milestone_dir(cfg, milestone_id)
+    return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
+
+
+def grainless_dir(roadmap_dir: Path) -> Path:
+    """The DIRECTORY whose ledger holds every row that names no grain
+    (0.4.0/D3) — the roadmap root, so the file sits beside the milestones
+    rather than inside one.
+
+    It returns its argument, and that is the point: WHICH directory is the
+    grainless home is a decision, and it was restated at five call sites.
+    """
+    return roadmap_dir
+
+
+def grainless_path(roadmap_dir: Path) -> Path:
+    """The grainless ledger itself — `grainless_dir` joined by `ledger_path`.
+    What `check budget`, `verify --plan` and `pm ledger report|show` read."""
+    return ledger_path(grainless_dir(roadmap_dir))
+
+
+def append_to(path: Path, row: dict) -> None:
+    """Append one row to a ledger FILE, creating the file and the pool it sits
+    in.
+
+    `open('a')` rather than a `core.apply` overwrite, because read-modify-write
+    drops rows under two appenders. One byte is read first — the last — and a
+    newline closes a torn tail before the row lands. Raises `OSError`: the
+    caller has already changed the tree and must say so.
+    """
+    apply.raise_on_error(apply.make_dir(path.parent))
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
         line = '\n' + line
     with path.open('a', encoding='utf-8', newline='\n') as handle:
         handle.write(line)
+
+
+def append_row(milestone_dir: Path, row: dict) -> None:
+    """`append_to`, addressed by DIRECTORY — what a nested tree gave every
+    caller, and what the grainless home still is."""
+    append_to(ledger_path(milestone_dir), row)
 
 
 def _ends_mid_line(path: Path) -> bool:
@@ -207,9 +263,8 @@ def _ends_mid_line(path: Path) -> bool:
 # --- the usage rows (D3/D4/D5) ------------------------------------------------
 # A `dispatch` row is one subagent's whole life; a `session` row is the
 # orchestrator's totals at one stop. One rule: copy what the transcript holds,
-# omit what it lacks, invent nothing. The only refusal is a transcript this
-# module cannot read (exit 2), because a row of zeros reads like a cheap
-# dispatch.
+# omit what it lacks, invent nothing — and refuse a transcript this module
+# cannot read, because a row of zeros reads like a cheap dispatch.
 KIND_DISPATCH = 'dispatch'
 KIND_SESSION = 'session'
 
@@ -452,6 +507,44 @@ def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
     if start is None or end is None:
         return None
     return int((end - start).total_seconds())
+
+def open_seconds(cfg, grain_kind: str, status: list,
+                 now: datetime | None = None) -> int | None:
+    """First status row -> NOW, for a grain that has NOT reached a terminal
+    state; `None` for one that has, and `None` for one nobody has moved.
+
+    `total_seconds` above answers the closed question and returns None while a
+    grain is in flight, which left the number that creates pressure unmeasured:
+    a milestone spent more time reviewing than building, with every feature
+    sitting `building` and nothing anywhere saying so.
+
+    **A grain with no status row is UNMEASURED, never zero** (rule 4): it has
+    not been moved, which is a different fact from having been moved a moment
+    ago, and a `0` here would read as the second.
+    """
+    if not status or ends_grain(cfg, grain_kind, status[-1].data.get('to')):
+        return None
+    start = parse_ts(status[0].data.get('ts'))
+    if start is None:
+        return None
+    when = datetime.now(timezone.utc) if now is None else now
+    return max(0, int((when - start).total_seconds()))
+
+
+def human_duration(seconds: int | None) -> str:
+    """`3d 4h`, `12m`, `-`. Two units at most: a number a human reads at a
+    glance is the point, and `271431s` is not one."""
+    if seconds is None:
+        return '-'
+    units = (('d', 86400), ('h', 3600), ('m', 60), ('s', 1))
+    parts = []
+    left = seconds
+    for name, size in units:
+        if left >= size and len(parts) < 2:
+            parts.append(f'{left // size}{name}')
+            left %= size
+    return ' '.join(parts) or '0s'
+
 
 def row_names(row: dict, names: set[str]) -> bool:
     """True when this row names the grain — in `grain`, or anywhere in `tree`.

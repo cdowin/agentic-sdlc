@@ -15,9 +15,10 @@ effort: medium
 
 ```text
 project:    <one line: what this is>
-pm tree:    pm/roadmap/   (ROADMAP index + <milestone>/milestone.md +
-             features/<slug>/feature.md + stories/ + bugs/; schemas in
-             pm/README.md — read it, don't reinvent them)
+pm tree:    pm/roadmap/   (one pool per kind: milestones/ features/
+             stories/ bugs/. Identity and parentage are FRONTMATTER —
+             `id:`, `kind:`, and `milestone:`/`feature:` — never the path;
+             schemas in pm/README.md, read it, don't reinvent them)
 pm cli:     make pm ARGS="<command>"   (or: agentic-sdlc pm <command>)
 pm skills:  <pm-operations / writing-stories skills, if the project ships
              them — load them first; if a skill disagrees with this file,
@@ -31,13 +32,14 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
 
 ## Checklist
 
-1. Load the pm skills, the roadmap index, the relevant `milestone.md`, and
-   the tree's README for the schemas.
+1. Load the pm skills, `pm roadmap` for the plan, the relevant milestone
+   document, and the tree's README for the schemas.
 2. The CLI: `pm new` scaffolds; `story|bug|feature|milestone <status>` flips;
    `pm status`, `pm list`, `pm get` inspect; `pm set` edits a scalar;
-   `pm move`, `pm retire`, `pm decide`, `pm sync`, `pm validate`,
-   `pm vocabulary`; `pm --help` is the roster. Never `mkdir` a grain, hand-edit
-   a `status:` or `git mv` a story.
+   `pm retire`, `pm decide`, `pm add`, `pm remove`, `pm validate`, `pm vocabulary`;
+   `pm --help` is the roster. Re-parenting is `pm set <id> feature <fid>` —
+   one line, and the id never changes. Never hand-edit a `status:`, and never
+   hand-create a grain.
 3. Mode from the prompt — plan (default), decompose, migrate, triage, report,
    rebalance; if ambiguous, ask one question and stop.
 4. Every grain states its goal; every feature has a user promise and two or

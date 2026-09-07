@@ -36,7 +36,7 @@ PM_CMD=(make -s pm)
 integration_branch() {
 	local root="${1:-$MAIN_ROOT}"
 	local ask="list --kind milestone --category in_progress"
-	local out line _id _status _cat branch found="" count=0 answered=0
+	local out line _id _status _cat branch _rest found="" count=0 answered=0
 	out="$(cd "$root" && "${PM_CMD[@]}" ARGS="$ask" 2>&1)" || out=""
 	while IFS= read -r line; do
 		case "$line" in
@@ -44,7 +44,12 @@ integration_branch() {
 			*"	"*) ;;
 			*) continue ;;
 		esac
-		IFS=$'\t' read -r _id _status _cat branch <<-EOF
+		# `_rest` and not a bare `branch`: the LAST variable of a `read`
+		# absorbs every remaining field, so a fifth column would silently
+		# become part of the branch name. 0.4.0 added `name` and this is
+		# what broke — a trailing catch-all is a consumer that only works
+		# while the payload never grows.
+		IFS=$'\t' read -r _id _status _cat branch _rest <<-EOF
 		$line
 		EOF
 		case "$branch" in

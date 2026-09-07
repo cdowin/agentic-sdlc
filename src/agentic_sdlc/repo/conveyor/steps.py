@@ -42,6 +42,12 @@ DEFAULT_ADOPT_STEPS = (
     'installables-current',
     'config-updated',
     'hooks-self-test',
+    # After `hooks-self-test`, which proves the corpus replays, and before the
+    # gates: this one asks whether the couriers are WIRED and whether the
+    # vehicle they call answers. A consumer that bumps the pin gets the scripts
+    # and pastes the settings block by hand, and nothing verified the paste —
+    # so the failure is files present, hooks unarmed, no rows, no complaint.
+    'telemetry-live',
     'runner-targets-resolve',
     'checks-pass',
     'pm-validates',
@@ -194,6 +200,30 @@ def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
 def _branch(ctx: Context) -> str:
     code, out = _git(ctx, 'rev-parse', '--abbrev-ref', 'HEAD')
     return out if code == 0 else ''
+
+
+def _run(ctx: Context, argv: list[str]) -> tuple[int, str]:
+    """Any command in the checkout, with `_make`'s failure vocabulary — a
+    missing binary is an exit code, never a crash."""
+    try:
+        done = subprocess.run(argv, cwd=str(ctx.root), capture_output=True,
+                              text=True, timeout=_timeout(ctx.operation))
+    except FileNotFoundError:
+        return 127, f'{argv[0]} is not on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, f'{argv[0]} timed out'
+    except OSError as err:
+        return 126, str(err)
+    return done.returncode, (done.stdout + done.stderr).strip()
+
+
+def _read_text(path) -> str:
+    """A file's text, or `''` — this module reads to DECIDE, and a file it
+    cannot open is a check that says so rather than a traceback."""
+    try:
+        return path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
 
 
 def _make(ctx: Context, *args: str) -> tuple[int, str]:
@@ -542,10 +572,23 @@ def _configured(ctx: Context, step: str) -> str:
 
 
 # --- the pm predicates this module CALLS --------------------------------------
+def subject_grain(ctx: Context) -> str:
+    """The GRAIN this operation is about — `ctx.version` for a close, and for
+    `release`/`adopt` the milestone CLAIMING that version. One name, because
+    the driver's WRITE asks the same question its checks do."""
+    if ctx.operation not in ('release', 'adopt'):
+        return ctx.version
+    try:
+        cfg = _pm_cfg(ctx)
+    except Exception:  # noqa: BLE001 - a config this cannot read decides nothing
+        return ctx.version
+    return model.milestone_of_version(cfg, ctx.version) or ctx.version
+
+
 def ready_for(ctx: Context, target: str) -> Answer:
     """`pm ready-for <target> <grain>` through `pm.cli.main` (0 ready, 1 not
     ready naming the blockers, 2 usage), never re-implemented."""
-    code, said = _pm_run(ctx, 'ready-for', target, ctx.version)
+    code, said = _pm_run(ctx, 'ready-for', target, subject_grain(ctx))
     if code == 0:
         return Answer.yes(said or f'`pm ready-for {target}` exited 0')
     if code == 1:
@@ -562,8 +605,12 @@ def _belt_written(ctx: Context) -> str:
     from agentic_sdlc.repo.pm import ledger
 
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, ctx.version)
-    return '' if path is None else cfg.rel(ledger.ledger_path(path.parent))
+    mid = subject_grain(ctx)
+    if model.milestone_file(cfg, mid) is None:
+        return ''
+    # `ledger_for`, not the document's parent directory: pooled, the ledger
+    # sits in its own table and the milestones pool holds no ledger at all.
+    return cfg.rel(ledger.ledger_for(cfg, mid))
 
 
 def check_tree_clean(ctx: Context) -> Answer:
@@ -583,7 +630,7 @@ def check_tree_clean(ctx: Context) -> Answer:
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, ctx.version)
+    path = model.milestone_file(cfg, subject_grain(ctx))
     if path is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')
@@ -950,6 +997,70 @@ def check_hooks_self_test(ctx: Context) -> Answer:
                         found=f'{HOOKS_DIR}/ replayed')
 
 
+def check_telemetry_live(ctx: Context) -> Answer:
+    """Is this tree RECORDING — and if not, which of the three ways.
+
+    **A probe, not an inspection.** Reading `.claude/settings.json` proves a
+    string is present; this runs THIS TREE'S vehicle, `make -s pm
+    ARGS="vocabulary"`. Not `--self-test`, which builds its own `mktemp` repo
+    with its own stub `pm:` target and exits 0 from an empty directory.
+
+    Three ways a bumping consumer records nothing, each silent, each named:
+    the settings entries were never pasted (`install-hooks` PRINTS that block
+    and never writes the file, which is the consumer's); the `pm` target is not
+    `.PHONY`, and a PM tree IS a `pm/` directory, so make treats it as up to
+    date; or `[pm.states.<kind>]` is undeclared, which makes every work-moving
+    verb refuse by name.
+
+    **It never refuses an adoption on its own.** The posture is *clearly
+    available, warned when absent, never mandatory* (0.4.0/D5). What it must
+    never be is SILENTLY opted out.
+    """
+    command = _configured(ctx, 'telemetry-live')
+    if command:
+        return run_command(ctx, 'telemetry-live', command)
+    from agentic_sdlc.repo.pm import model as pm_model
+    absent = [name for name in pm_model.LEDGER_COURIERS
+              if not (ctx.root / HOOKS_DIR / name).is_file()]
+    if absent:
+        return Answer.unverifiable(
+            f'{", ".join(absent)} not in {HOOKS_DIR}/, so whether this tree '
+            f'records cannot be probed — `install-hooks` writes the corpus, or '
+            f'drop `telemetry-live` from [adopt] steps if this tree does not '
+            f'record')
+    # BOTH couriers: `install-hooks` prints two entries, and half-wired
+    # settings read as wired against a one-name search.
+    settings = ctx.root / pm_model.AGENT_SETTINGS
+    text = _read_text(settings) if settings.is_file() else ''
+    unwired = [name for name in pm_model.LEDGER_COURIERS if name not in text]
+    # The vehicle, in THIS tree: `vocabulary` is a read that needs make to
+    # reach the CLI *and* the CLI to have a flow to answer with, which is
+    # modes 2 and 3 in one call.
+    code, out = _run(ctx, ['make', '-s', 'pm', 'ARGS=vocabulary'])
+    if code == 127:
+        return Answer.unverifiable('make is not on PATH')
+    reached = code == 0 and any(kind in out for kind in pm_model.FLOW_KINDS)
+    if not reached:
+        return Answer.no(
+            f'no ledger setup for this tree, no telemetry — `make -s pm '
+            f'ARGS=vocabulary` did not reach the verb, so neither will a '
+            f'courier. The usual causes are a `pm` target that is not .PHONY '
+            f'(a PM tree IS a `pm/` directory, so make exits 0 without running '
+            f'the recipe) and an undeclared [pm.states.*], which makes every '
+            f'verb refuse by name: {_clip(out)}')
+    if unwired:
+        return Answer.no(
+            f'no ledger setup for this tree, no telemetry — the vehicle '
+            f'answers and {pm_model.AGENT_SETTINGS} does not fire '
+            f'{", ".join(unwired)}. `install-hooks` PRINTS the entries and '
+            f'never writes that file, because it is yours and has no merge; '
+            f'paste them and this goes green. Nothing here is mandatory — a '
+            f'tree that has opted out is not broken, only quiet')
+    return Answer.yes(f'telemetry is live: both couriers are wired in '
+                      f'{pm_model.AGENT_SETTINGS} and `make -s pm` reaches the '
+                      f'verb in this tree')
+
+
 def check_runner_targets_resolve(ctx: Context) -> Answer:
     """Every composed gate target resolves under `make -n`; an empty tier
     list passes and says so."""
@@ -1221,6 +1332,7 @@ ADOPT_STEPS: dict[str, Check] = _registry(
     Check('installables-current', check_installables_current),
     Check('config-updated', check_config_updated),
     Check('hooks-self-test', check_hooks_self_test),
+    Check('telemetry-live', check_telemetry_live),
     Check('runner-targets-resolve', check_runner_targets_resolve),
     Check('checks-pass', check_checks_pass),
     Check('pm-validates', check_pm_validates),
@@ -1255,6 +1367,12 @@ def registry_for(operation: str) -> dict[str, Check]:
 # One sentence per check for the rendered document, beside the check that
 # runs it.
 STEP_DOC: dict[str, str] = {
+    'telemetry-live':
+        'BOTH ledger couriers are wired in `.claude/settings.json` AND '
+        '`make -s pm` reaches the verb in THIS tree — a probe of your vehicle, '
+        'not a file read and not the courier\'s own hermetic self-test, which '
+        'passes from an empty directory. Never mandatory: a tree that has '
+        'opted out is quiet, not broken.',
     'tree-clean': '`git status --porcelain` is empty.',
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
@@ -1322,6 +1440,7 @@ STEP_DOC: dict[str, str] = {
 # What a check runs when the project configures no command for it.
 SHIPPED_ACTION: dict[str, str] = {
     'hooks-self-test': 'agentic-sdlc check hooks',
+    'telemetry-live': 'make -s pm ARGS=vocabulary',
     'runner-targets-resolve': 'make -n <[adopt] runner_targets>',
     'checks-pass': 'agentic-sdlc check all',
     'pm-validates': 'agentic-sdlc pm validate',

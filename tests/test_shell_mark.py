@@ -69,6 +69,7 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_cli_surface.py',
+    'test_config_seed.py',
     'test_consumer_independence.py',
     'test_conveyor_deviation.py',
     'test_conveyor_driver.py',
@@ -86,6 +87,7 @@ UNMARKED_MODULES = (
     'test_pm_ledger_report_sections.py',
     'test_pm_order.py',
     'test_pm_ready_for.py',
+    'test_pm_rename.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',
@@ -222,7 +224,8 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
         unmarked = [p for p in _modules() if not conftest.module_spawns(p)]
         offenders = []
         for path in unmarked + sorted(SUPPORT.glob('*.py')):
-            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+            for node in ast.walk(ast.parse(
+                    path.read_text(encoding='utf-8'))):
                 if not isinstance(node, ast.Call):
                     continue
                 function = node.func
@@ -241,6 +244,22 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
                          'not read, so the module stays unmarked and stops running '
                          'on three interpreters in silence. Teach the derivation, '
                          'or spawn through `subprocess`.')
+
+    # THE EXEMPTION IS GONE, and this is the record of why.
+    #
+    # 0.4.0 taught this scan to step over `TheUnitTierCannotSpawn` in
+    # test_boundaries.py — the one class in the suite that reached `subprocess`
+    # through a name the AST could not fold, on purpose, to prove the conftest
+    # guard refuses a spawn. Review W5 asked for the exemption's SCOPE to be
+    # proven, and one of the three cases it produced was "the exempt class is
+    # still in the suite", on the argument that an exemption for a class nobody
+    # has is a hole with no edges.
+    #
+    # It went red on the next merge: 0.3.0 had moved that proof out of
+    # test_boundaries.py. So the gate caught its own exemption going stale, the
+    # exemption was deleted rather than repointed, and the scan is unconditional
+    # again. **An allowance worth having is one that fails when its reason
+    # stops being true.**
 
 
 class ScratchSuite:

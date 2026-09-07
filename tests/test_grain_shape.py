@@ -17,9 +17,10 @@ from support import pm as pmfx                                  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli as devkit_cli                      # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape                # noqa: E402
+from agentic_sdlc.repo.pm import model as pm_model              # noqa: E402
 
-STORY = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
-FEATURE = 'pm/roadmap/0.1-demo/features/alpha/feature.md'
+STORY = 'pm/roadmap/stories/s0.md'
+FEATURE = 'pm/roadmap/features/alpha.md'
 MODULE = REPO_ROOT / 'src/agentic_sdlc/repo/checks/grain_shape.py'
 
 
@@ -410,7 +411,7 @@ def test_a_note_parked_beside_a_grain_is_disclosed_not_measured():
     in the disclosure, because "40 documents" and "40 documents and a README
     nobody looked at" are different facts about a tree."""
     with pmfx.tree() as root:
-        (root / 'pm/roadmap/0.1-demo/README.md').write_text(
+        (root / 'pm/roadmap/README.md').write_text(
             '# how bugs are filed\n' + body(400), encoding='utf-8')
         code, out = gate()
     assert code == 0, out
@@ -424,13 +425,45 @@ def test_decisions_md_is_measured_though_it_carries_no_frontmatter():
     fire is worse than one that errors, because its author believes it took
     effect."""
     with pmfx.tree() as root:
-        (root / 'pm/roadmap/0.1-demo/decisions.md').write_text(
+        (root / 'pm/roadmap/milestones/0.1-decisions.md').write_text(
             'Append with `agentic-sdlc pm decide <grain-id>`\n' + body(400),
             encoding='utf-8')
         config(root, '[grain_shape]\ncaps = { decisions = 10 }\n')
         code, out = gate()
     assert code == 1, out
     assert 'decisions.md' in out and 'decisions cap 10' in out, out
+
+
+def test_a_grain_NAMED_like_a_shared_doc_is_still_a_grain():
+    """A pooled slug is free-form, so `pm new story <fid> the-tradeoffs-decisions`
+    files a real story whose filename ends in `-decisions.md`.
+
+    Reading the NAME alone made the gate call it a decisions log: measured
+    against the 300-line decisions cap instead of the story cap, and given a
+    false `NO HEADER` finding whose printed repair — prepend the decisions
+    header — pushes `---` off line 1 and stops the file opening frontmatter at
+    all. `check pm` then reported `0 story/ies`. Rule 4's first sin, reached by
+    obeying the tool.
+
+    A document that declares frontmatter is a GRAIN, whatever it is called.
+    """
+    with pmfx.tree() as root:
+        story = root / 'pm/roadmap/stories/the-tradeoffs-decisions.md'
+        pmfx.write(story, {'id': '0.1/alpha/tradeoffs', 'kind': 'story',
+                           'feature': '0.1/alpha', 'milestone': '"0.1"',
+                           'name': 'Tradeoffs', 'status': 'planning'},
+                   body(40))
+        code, out = gate()
+        assert code == 0, out
+        # Measured as a STORY — 40 lines is under the 60 story cap and would
+        # have been well under the 300 a decisions log gets, so the CAP is what
+        # separates the two answers.
+        assert 'story 2/' in out, out
+        assert 'NO HEADER' not in out, out
+        # ...and `check pm` still counts it, which is the half that made the
+        # false repair permanent.
+        assert pmfx.run_gate(root)[0] == 0
+        assert '2 story/ies' in pmfx.run_gate(root)[1]
 
 
 def test_a_review_record_over_its_cap_reddens_and_the_census_counts_it():
@@ -480,3 +513,82 @@ def test_it_reads_each_document_once_and_spawns_nothing():
     assert source.count('read_raw') == 1, (
         'a second read of the same document — the cache exists so the '
         'frontmatter question and the length question share one open')
+
+
+HANDOFF = 'pm/roadmap/milestones/0.1-handoff.md'
+
+
+def test_a_shared_doc_that_lost_its_instruction_line_is_a_finding():
+    """`SLOT_HEADER`'s comment calls that line "the one channel that reaches a
+    dispatched subagent". A doc that lost it is SILENTLY unguided — the writer
+    (`templates._header_wanted`) has always known how to spot that, and it only
+    ran on `pm new`, so a hand-authored or hand-trimmed doc was never asked.
+
+    This is the probe for that. It is also the case that would have caught the
+    0.4.0 handoff, which was authored by hand and opened with its own `#` title.
+    """
+    with pmfx.tree() as root:
+        (root / HANDOFF).write_text('# 0.1 demo — handoff\n\nnotes\n',
+                                    encoding='utf-8')
+        code, out = gate()
+        assert code == 1, out
+        assert 'NO HEADER' in out, out
+        assert HANDOFF in out, out
+        # The finding names the repair AND the literal line, so it is fixable
+        # without opening the source — and the repair names THIS grain's verb
+        # and id, not a generic one.
+        assert 'pm new milestone 0.1' in out, out
+        assert 'Cold-start only' in out, out
+
+
+def test_the_repair_names_the_verb_that_actually_repairs_it():
+    """`NO HEADER` said `pm new milestone <id>` for every shared doc. Follow
+    that on a FEATURE's decisions log and `pm new milestone 0.1` answers
+    `already has every canonical slot (no-op)` and changes nothing: the gate
+    stays red and its hint is a dead end.
+
+    A shared doc is `<stem>-<slot>`, so the grain is the document beside it and
+    it declares its own kind and id. The hint is derived from that.
+    """
+    with pmfx.tree() as root:
+        doc = root / 'pm/roadmap/features/alpha-decisions.md'
+        doc.write_text('# alpha — decisions\n\nnotes\n', encoding='utf-8')
+        code, out = gate()
+        assert code == 1, out
+        assert 'NO HEADER' in out, out
+        assert 'pm new feature 0.1/alpha' in out, out
+        assert 'pm new milestone' not in out, out
+
+
+def test_a_doc_opening_with_a_RETIRED_header_still_passes():
+    """The gate must not out-strict the writer, and rewording an entry in
+    `SLOT_HEADER` must not red every doc written under the old words.
+
+    Both halves are one fact: `_header_wanted` treats any KNOWN header as
+    present so `_fill_header` cannot stack a second line onto an existing doc.
+    If this case fails, a consumer's tree goes red on upgrade day AND `pm new`
+    starts growing two headers on the same file.
+    """
+    retired = sorted(pm_model.RETIRED_SLOT_HEADERS)
+    assert retired, 'a retired wording must stay recognised once one exists'
+    for header in retired:
+        with pmfx.tree() as root:
+            (root / HANDOFF).write_text(f'{header}\n\n# 0.1 demo\n',
+                                        encoding='utf-8')
+            code, out = gate()
+        assert code == 0, out
+        assert 'NO HEADER' not in out, out
+
+
+def test_the_writer_and_the_gate_read_ONE_known_header_set():
+    """A local copy in either module is a second name for the same fact, and
+    the two would drift the first time a header is reworded — the gate reddening
+    docs the scaffolder calls correct.
+    """
+    writer = (REPO_ROOT / 'src/agentic_sdlc/repo/pm/templates/__init__.py'
+              ).read_text(encoding='utf-8')
+    assert 'model.KNOWN_SLOT_HEADERS' in writer, writer
+    text = MODULE.read_text(encoding='utf-8')
+    assert 'model.KNOWN_SLOT_HEADERS' in text, text
+    assert 'frozenset(model.SLOT_HEADER' not in text, (
+        'the gate rebuilt the set locally instead of reading the one source')

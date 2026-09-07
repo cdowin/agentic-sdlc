@@ -55,8 +55,8 @@ def tree(**kwargs):
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
 ALPHA_RECORD = 'docs/reviews/alpha.md'
-BETA_RECORD = 'pm/roadmap/0.1-demo/features/beta/review.md'
-DELTA_RECORD = 'pm/roadmap/0.1-demo/features/delta/review.md'
+BETA_RECORD = 'pm/roadmap/features/beta-review.md'
+DELTA_RECORD = 'pm/roadmap/features/delta-review.md'
 
 YIELD, REWORK, ESCAPES, OVERHEAD, GATES = (
     'yield per review pass', 'rework', 'escapes', 'overhead shape',
@@ -101,16 +101,19 @@ verdict: SHIP
 def feature(root, fid: str, status: str, record: str = '',
             stories: tuple = ()) -> None:
     slug = fid.partition('/')[2]
-    fdir = root / 'pm/roadmap/0.1-demo/features' / slug
-    write(fdir / 'feature.md', {'id': fid, 'milestone': '"0.1"',
-                                'name': slug, 'status': status,
-                                'reviewed': ''})
+    pools = root / 'pm/roadmap'
+    write(pools / 'features' / f'{slug}.md',
+          {'id': fid, 'kind': 'feature', 'milestone': '"0.1"',
+           'name': slug, 'status': status, 'reviewed': ''})
     if record:
-        (fdir / 'review.md').write_text(record, encoding='utf-8')
+        # Beside the grain, under its own name: a pool is flat, so a bare
+        # `review.md` would be one file for every feature.
+        (pools / 'features' / f'{slug}-review.md').write_text(
+            record, encoding='utf-8')
     for name, sstatus in stories:
-        write(fdir / 'stories' / f'{name}.md',
-              {'id': f'{fid}/{name}', 'feature': fid, 'milestone': '"0.1"',
-               'name': name, 'status': sstatus})
+        write(pools / 'stories' / f'{slug}-{name}.md',
+              {'id': f'{fid}/{name}', 'kind': 'story', 'feature': fid,
+               'milestone': '"0.1"', 'name': name, 'status': sstatus})
 
 
 def seeded(root) -> None:
@@ -197,10 +200,10 @@ YIELD_TABLE = """\
 [ledger:report] 0.1 — yield per review pass — 3 record(s), 2 pass(es), 7 finding(s)
 
 -- verdict (3)
-feature    record                                        pass  verdict           findings  landed  rejected  deferred  open
-0.1/alpha  docs/reviews/alpha.md                            1  SHIP-WITH-FIXES          4       2         1         1     0
-0.1/beta   pm/roadmap/0.1-demo/features/beta/review.md      1  HOLD                     3       0         0         2     1
-0.1/delta  pm/roadmap/0.1-demo/features/delta/review.md     -  no verdict block         -       -         -         -     -
+feature    record                               pass  verdict           findings  landed  rejected  deferred  open
+0.1/alpha  docs/reviews/alpha.md                   1  SHIP-WITH-FIXES          4       2         1         1     0
+0.1/beta   pm/roadmap/features/beta-review.md      1  HOLD                     3       0         0         2     1
+0.1/delta  pm/roadmap/features/delta-review.md     -  no verdict block         -       -         -         -     -
 
 -- findings by severity (7)
 feature    pass  severity  findings
@@ -425,6 +428,154 @@ def test_a_delta_needs_both_ends_measured():
 
 # --- nothing to report --------------------------------------------------------
 
+def test_a_row_that_names_its_grain_is_on_that_grains_line():
+    """0.4.0/every-row-names-its-grain, read side. Until the couriers passed
+    `--grain`, every automatic row reached the report with nothing but a tree
+    SNAPSHOT to be attributed by — which works for a status flip and not for a
+    session, so the per-grain table showed 0 dispatches against every story in
+    the milestone. The numbers were captured; nothing said what they bought.
+
+    The snapshot is deliberately EMPTY here, so `grain:` is the only thing that
+    could attribute the row.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
+                                 tool_calls=9),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert '-- rows naming no grain (0)' in out, out
+
+
+def test_a_stated_grain_outranks_the_snapshot_and_bills_nobody_else():
+    """The row says `0.1/alpha/s1`; the snapshot says `0.1/alpha/s0` was live.
+
+    Both are true — the OTHER story was in progress at that instant — and only
+    one of them is what the dispatch was doing. Adding the snapshot's grains on
+    top would bill s0 for nine tool calls it never spent, which is rule 4 on
+    the read side. The stated grain wins, and it wins ALONE.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
+                                 tool_calls=9, tree=snapshot(stories_wip=[A_S0])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was, out
+    # And it is not a silent drop: `frozen_only` exists to disclose a snapshot
+    # the report read past, and a STATED grain is not that.
+    assert 'dispatch row(s)' in out
+
+
+# --- 0.4.0/D8: the reader does not un-do the writer's refusal ------------------
+def test_an_ambiguous_snapshot_places_nothing_and_stays_in_the_bucket():
+    """M2. `pm ledger record` omits the `grain` key when two stories are live,
+    because a row filed against the wrong one is uncorrectable. The reader was
+    then attributing that same row through its snapshot — to BOTH stories and
+    to their feature — so the decision was un-done on the way out and the
+    bucket the feature exists to fill printed `(0)`.
+
+    The snapshot here names two live stories and no grain, which is exactly
+    what the courier writes in the case this milestone was built for.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was_s0 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S0, A_S1])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
+    assert stray and '9' in stray[0], out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was_s0, out
+
+
+def test_one_story_and_its_feature_is_ONE_candidate_not_two():
+    """The rule's edge, and getting it wrong would empty the whole table: a
+    snapshot naming a story AND the feature that owns it names one thing, and
+    the feature is a roll-up `_named_through` added. Ambiguity is judged at
+    the finest kind the snapshot names."""
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S1],
+                                               features_building=[ALPHA])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
+    assert '-- rows naming no grain (0)' in out, out
+
+
+def test_a_stated_grain_this_milestone_cannot_place_never_falls_through():
+    """M3. `stated in kinds` fell THROUGH to the snapshot, so a row naming a
+    story that had since been renamed away was billed to whichever other story
+    happened to be live — and `frozen_only` disclosed nothing, under a
+    docstring promising a stated grain is attributed by it and nothing else.
+
+    It gets its own counted line rather than joining `rows naming no grain`:
+    the two are opposites, and since D3 every milestone's report reads the
+    tree's shared ledger, so another milestone's rows are the ordinary case.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        was_s1 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S1)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', grain='9.9/gone/s0',
+                                 tool_calls=9,
+                                 tree=snapshot(stories_wip=[A_S1])),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    assert row_of(out, 'spend per grain', 'story (3)', A_S1) == was_s1, out
+    assert '-- rows naming no grain (0)' in out, out
+    assert 'does not hold' in out, out
+
+
+# --- 0.4.0/D3: the report reads BOTH ledgers -----------------------------------
+def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
+    """A milestone's report reads its own ledger AND `<roadmap>/ledger.jsonl`,
+    where every row that names no grain now lives.
+
+    Two claims, and the second is the one that could go wrong silently: the
+    root rows must appear in `rows naming no grain`, and they must not be added
+    to any grain's line. Reading only the milestone's file would empty that
+    bucket for every tree; folding the rows into a grain would bill a story for
+    seconds nobody spent on it.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        before = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
+        # An empty tree snapshot and no `grain`: nothing to attribute it to,
+        # which is exactly the row D3 gave a home to. A `gate` row beside it,
+        # because that one can never be attributed at all.
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9),
+                   gate_line('2026-09-03T12:01:00Z', 'check'),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    # The block's own title carries the count, so the number is asserted where
+    # a reader reads it. It is `(0)` without this story — every seeded dispatch
+    # row is attributed through its tree snapshot — so the count IS the case.
+    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
+    assert stray and stray[0][0] == '1' and '9' in stray[0], out
+    # And not folded into a grain: the busiest story's row is unchanged from
+    # the same report over a tree with no root ledger.
+    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == before
+    assert 'check' in section_of(out, 'gate cost'), out
+
+
 def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted():
     """Never a table of zeros — and never silence either: a census that saw
     nothing has to say so, or `no data` is indistinguishable from `not run`."""
@@ -589,7 +740,8 @@ def test_the_seeded_gate_rows_print_this_exact_table():
     a gate that costs nothing, and the measurement that started this feature
     found the gate suspected by NAME costing 0.2 s."""
     assert section_of(gates_report(*THREE_PARSE_ONE_LINT), GATES) == """\
-[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), 1 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 1 delta(s) marked \
 * for a census that moved or is absent, 0 row(s) this section could not use
 
 -- gate (2)
@@ -637,7 +789,8 @@ def test_every_unusable_gate_row_is_named_with_why_and_the_good_row_survives():
     """Hard rule 4's read side: a row this section cannot use is NAMED, never
     dropped into silence and never coerced to a zero."""
     assert section_of(gates_report(*BROKEN_GATE_ROWS), GATES) == """\
-[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), 0 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
 * for a census that moved or is absent, 4 row(s) this section could not use
 
 -- gate (1)
@@ -652,6 +805,30 @@ unit      duration_ms is negative        2026-09-03T10:03:00Z
 -         no gate name                   2026-09-03T10:04:00Z"""
 
 
+def test_the_gate_section_says_it_is_the_trees_and_two_milestones_agree():
+    """Review M2. `gate` rows name no grain, so 0.4.0/D3 files every one at the
+    tree's root and every milestone's report reads the same set — which makes
+    `runs` and `delta_ms` lifetime-of-TREE numbers under a MILESTONE heading.
+
+    Two claims, and the second is the one that would have been a silent lie:
+    the section states its own scope, and two different milestones' reports
+    print the identical gate line. Windowing by the milestone's timestamps was
+    the alternative and it loses — a milestone declares no time range, so the
+    window would be inferred and then quoted as if somebody had stated it.
+    """
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
+        put_ledger(root,
+                   gate_line('2026-01-01T00:00:00Z', 'unit'),
+                   gate_line('2026-07-01T00:00:00Z', 'unit'),
+                   rel='pm/roadmap/ledger.jsonl')
+        one = section_of(report(root, '0.1')[1], GATES)
+        two = section_of(report(root, '0.2')[1], GATES)
+    assert 'across the whole tree, not this milestone' in one, one
+    assert one.replace('0.1', 'X') == two.replace('0.2', 'X'), (one, two)
+
+
 def test_a_ledger_with_no_gate_row_still_prints_the_section():
     """A missing section is indistinguishable from an empty one, and only one
     of those is true."""
@@ -659,7 +836,8 @@ def test_a_ledger_with_no_gate_row_still_prints_the_section():
         status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
         dispatch_line('2026-09-03T10:05:00Z', agent_type='developer'))
     assert section_of(out, GATES) == """\
-[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), 0 delta(s) marked \
+[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), \
+across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
 * for a census that moved or is absent, 0 row(s) this section could not use
 no data"""
 

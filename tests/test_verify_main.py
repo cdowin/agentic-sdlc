@@ -239,7 +239,7 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
                      'gate': 'milestone', 'verdict': 'SKIP'}))):
             tree = dict(self.TREE)
             if ledger is not None:
-                tree['pm/roadmap/0.1/ledger.jsonl'] = ledger
+                tree['pm/roadmap/ledger.jsonl'] = ledger
             with self.subTest(case=label):
                 with Repo(LADDER + STORY_RULE, tree):
                     _, out = run('--plan')
@@ -248,12 +248,61 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
                 self.assertNotIn('x —', ratio.replace('unknown', ''),
                                  'no ratio is invented where no rows exist')
 
+    def test_a_roster_gate_with_no_cost_row_is_named_beside_the_measured_ones(self):
+        """`[checks] all` names GATES and the ledger records what runs COST,
+        and nothing had ever joined them — so a roster entry that never runs
+        reads exactly like one that passes. This project has already paid for
+        that: the toolkit is two pinned packages and each refuses a gate name
+        it does not know.
+
+        **All-missing is its own sentence, not silence.** A tree running its
+        gates inside a composed `check` target has cost rows for the
+        composition and none per gate, so naming each of them there would be a
+        nag — but printing NOTHING is worse, because it is byte-identical to a
+        roster fully measured. On this package's own tree the two namespaces do
+        not overlap at all, so the suppression was permanent: `verify --plan`
+        said nothing about five unmeasured gates, forever, and that silence
+        read as "measured" (rule 4).
+        """
+        rows = self._with_ledger(
+            {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'doc',
+             'verdict': 'PASS', 'duration_ms': 900})
+        # (roster, is there a line, the word that says WHICH case it is)
+        for roster, expect, says in (
+                ('["doc", "pm"]', True, 'while the others have'),
+                ('["doc"]', False, ''),                  # all measured
+                ('["pm", "shell"]', True, 'two namespaces')):  # none measured
+            with self.subTest(roster=roster):
+                tree = dict(self.TREE)
+                tree['pm/roadmap/ledger.jsonl'] = rows
+                # The roster rides in the `[verify]` block Repo writes, since
+                # that is the one devkit.toml this fixture produces.
+                with Repo(LADDER + STORY_RULE
+                          + f'\n[checks]\nall = {roster}\n', tree):
+                    code, out = run('--plan')
+                self.assertEqual(code, 0, out)
+                self.assertEqual('unrun' in out, expect, out)
+                if says:
+                    self.assertIn(says, out)
+
+    def test_a_roster_this_cannot_read_is_reported_rather_than_silent(self):
+        # `except Exception: return []` swallowed a MALFORMED roster too, so a
+        # `[checks] all` that `check all` refuses at exit 2 read here as a
+        # clean plan. A bare string is the shape `core.config` exists to catch.
+        tree = dict(self.TREE)
+        with Repo(LADDER + STORY_RULE + '\n[checks]\nall = "doc"\n', tree):
+            code, out = run('--plan')
+        self.assertEqual(code, 0, out)
+        self.assertIn('unrun', out)
+        self.assertIn('could not be read', out)
+        self.assertIn('check all', out)
+
     def test_with_gate_rows_the_plan_prints_the_measured_numbers(self):
         # The counterpart to the case above: without this, an implementation
         # that answered `unknown` unconditionally would pass every other
         # assertion in this class.
         tree = dict(self.TREE)
-        tree['pm/roadmap/0.1/ledger.jsonl'] = self._with_ledger(
+        tree['pm/roadmap/ledger.jsonl'] = self._with_ledger(
             {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'story',
              'verdict': 'PASS', 'duration_ms': 900, 'census': 5},
             {'ts': '2026-09-05T10:01:00Z', 'kind': 'gate', 'gate': 'milestone',

@@ -15,7 +15,8 @@ effort: high
 
 ```text
 project:      <one line: what this is, and its stack>
-pm tree:      pm/roadmap/       (milestone.md + features/*/feature.md)
+pm tree:      pm/roadmap/       (milestones/*.md + features/*.md — a feature
+               names its milestone in `milestone:`, not by where it sits)
 findings dir: docs/reviews/
 invariants:   <where the architecture contracts live — CLAUDE.md + any
                constitution/design corpus>
@@ -31,7 +32,7 @@ edit no spec and no code; you may Write only your review.
 
 ## Checklist
 
-1. Read `milestone.md`, every feature file under it, `CLAUDE.md`, the roadmap
+1. Read the milestone document, every feature bound to it, `CLAUDE.md`, the roadmap
    index, and the code the spec names — the refs tool over a raw grep.
 2. Execution-readiness: could a developer build each feature without guessing
    wrong on something that matters?

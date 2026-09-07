@@ -68,7 +68,7 @@ def seeded(root) -> None:
     """The fixture every shape case reads: one story worked and closed, one
     story nothing ever touched, the feature that owns them, one closed bug, and
     three dispatch rows — two agent types on the story, one naming no grain."""
-    write(root / 'pm/roadmap/0.1-demo/features/alpha/stories/s1.md',
+    write(root / 'pm/roadmap/stories/s1.md',
           {'id': QUIET, 'feature': FEATURE, 'milestone': '"0.1"', 'name': 'S1',
            'status': 'ready', 'size': 'm'})
     bug(root, 'crash', 'closed')
@@ -126,7 +126,20 @@ SPEND_TITLE = 'spend per grain'
 # Section 1's keys in `--json`, and the one key each later section adds.
 # `legacy` landed with the category keys (decision D7): how many dispatch rows
 # predate them, and how many of those named nothing.
-SPEND_KEYS = ('milestone', 'section', 'grains', 'unattributed', 'legacy',
+SPEND_KEYS = ('milestone', 'section', 'grains',
+              # 0.4.0/every-grain-is-on-a-stopwatch: per kind, how many
+              # grains have not reached a terminal state and how long
+              # they have been in flight. A report; nothing gates on it.
+              'in_flight',
+              # ...and how many status rows it could NOT place, so an empty
+              # distribution can never read as a calm zero (0.4.0/C1).
+              'in_flight_unplaceable',
+              'unattributed',
+              # 0.4.0/D8: a row STATING a grain this milestone does not
+              # hold, counted apart from the ones naming none — the
+              # tree's shared ledger is read by every milestone's
+              # report, so this is the ordinary case, not an error.
+              'stated_elsewhere', 'legacy',
               'totals')
 SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead', 'gates')
 
@@ -338,6 +351,14 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
                          'usage': dict(blank_usage(), input=5),
                          'tool_calls': 2, 'duration_s': None},
         'legacy': {'rows': 0, 'unattributed': 0},
+        'stated_elsewhere': 0,
+        # Everything the seeded fixture touches is closed, so nothing is in
+        # flight — and an EMPTY list rather than an absent key, because "none
+        # in flight" is an answer and a missing key is not. It is only an
+        # answer BESIDE the second number: zero rows this could not place, so
+        # the emptiness is measured rather than merely reported.
+        'in_flight': [],
+        'in_flight_unplaceable': 0,
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
                    'usage': dict(full, input=1205), 'tool_calls': 39,
                    'duration_s': 812},
@@ -364,7 +385,7 @@ def test_which_milestones_ledger_is_read():
     yet" is a fact about the tree and not an error."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
+        write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': 'planning'})
         named = report(root, '0.1')
         default = report(root)
@@ -421,24 +442,55 @@ def test_the_refusal_matrix():
             assert needle in out, (argv, out)
 
 
-@pytest.mark.parametrize('kwargs,second,needle', [
-    (dict(milestone_status='planning'), False, 'is in progress'),
-    (dict(), True, '2 milestones are in progress'),
+@pytest.mark.parametrize('kwargs,second', [
+    (dict(milestone_status='planning'), False),
+    (dict(), True),
 ])
-def test_a_milestone_this_verb_cannot_choose_is_named(kwargs, second, needle):
-    """The one question the verb cannot answer, and it says so rather than
-    picking — with the spelling that would have answered it."""
+def test_a_bare_report_asks_the_plan_and_never_a_status(kwargs, second):
+    """0.4.0/D1 — INVERTED from `…cannot_choose_is_named`, deliberately.
+
+    Both rows used to BE the refusal: "no milestone is in progress" and "2
+    milestones are in progress". Neither is a question any more, on any path,
+    so the refusal that remains is the PLAN's — there is nothing to file
+    against because nothing was scheduled — and the two old sentences must not
+    appear, because nothing asked. Asserting their ABSENCE is the case: a
+    status lookup left behind on this path would still refuse here, with the
+    same exit code, and a needle-only assertion would pass over it.
+    """
     with tree(**kwargs) as root:
         if second:
-            write(root / 'pm/roadmap/0.2-next/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
         code, out = report(root)
         assert code == 2, out
-        assert needle in out
-        if second:
-            assert '0.1 0.2' in out
-            assert 'pm ledger report <milestone-id>' in out
-            assert report(root, '0.1')[0] == 0
+        assert 'declares no `order`' in out
+        assert 'in progress' not in out, 'a status lookup survived'
+        assert 'pm ledger report <milestone-id>' in out
+        assert report(root, '0.1')[0] == 0
+
+
+def test_two_milestones_in_progress_is_answered_from_the_plan():
+    """The situation that was the loudest refusal, now an answer.
+
+    Two milestones building is the workflow this package exists for, and the
+    bare report used to call it "the one thing this verb cannot know". The
+    plan knows: `order` names the current release and one milestone claims it.
+    """
+    with tree() as root:
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': 'building',
+               'version': '0.2.0'})
+        write(root / 'pm/roadmap/milestones/0.1.md',
+              {'id': '"0.1"', 'name': 'Demo', 'status': 'building',
+               'version': '0.1.0'})
+        # The plan lists MILESTONE IDS (0.4.0); each milestone's own
+        # `version:` says which release it is.
+        (root / 'pm/roadmap/releases.md').write_text(
+            '---\nid: releases\norder:\n  - "0.1"\n  - "0.2"\n---\n\n'
+            '# Releases\n', encoding='utf-8')
+        code, out = report(root)
+        assert code == 0, out
+        assert '0.1' in out
 
 
 # --- the boundary: rows written before the snapshot carried categories --------

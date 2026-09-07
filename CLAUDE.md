@@ -24,10 +24,16 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 4. **Two cardinal sins, one shape.** A gate that misses drift and prints PASS; a write that looks
    legitimate and is not. Both are worse than a crash. Prove the census matches intent — a gate
    scanning 0 files FAILS and says so. An LLM recovers from an error and cannot recover from a lie.
-5. **Config over forks.** Per-project variation is the consumer's `devkit.toml`, never an edit to
-   the tool. A GATE ships stock defaults: a repo with no `devkit.toml` runs byte-identically to one
-   declaring them. A WORKFLOW does not: states and flow are the project's declaration — `init`
-   writes them, every run reads them, and a tree without them is refused by name.
+5. **Config over forks, and the byte-identical guarantee is GATES-ONLY.** Per-project variation
+   is the consumer's `devkit.toml`, never an edit to the tool. A GATE key has a stock default
+   behind it, so a repo with no `devkit.toml` runs every gate byte-identically to one declaring
+   them — and the seed carries that key COMMENTED at exactly the value the code holds, which
+   `tests/test_config_seed.py` compares key by key and fails on by name. A WORKFLOW key has
+   nothing behind it: `[pm.states.*]` and `[verify]` are the project's own declaration, spelled
+   out with their argument, and each reader refuses BY NAME when its section is absent. So the
+   FILE is not optional even though every gate key in it is — a tree with no `[pm.states.*]` has
+   no working `pm` at all. `pm config --seed` prints the seed the pinned tool ships, which is what
+   a BUMP reads; `init` serves a new repo once.
 6. **Exit codes are contract:** 0 pass, 1 findings, 2 usage or config error. Output line shapes
    are grepped by consumers; changing one is a **minor** bump at least.
 7. **Semver, enforced by habit:** patch = same interface; minor = a new verb, flag, config key or
@@ -49,6 +55,27 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
     process. **Prove it once**: before a new case, name the one that already covers this or can
     be amended to; a new case is warranted only when neither exists. A tier that got slower is a
     finding.
+11. **Absence is a finding, and a capability advertises itself where you stand.** The operator
+    here is usually an LLM with no memory of last week, and its failure mode is not getting things
+    wrong — it is **not knowing they exist**. So: something the tree needs and does not have gets a
+    NAMED line, never silence (a milestone past `todo` with no handoff; a grain with no binding; a
+    courier wired to write and writing nothing). And a capability this package HAS is named in the
+    surface someone is standing in when they need it — a column on the read verb, a word in
+    `--help`, a line in the rule that auto-loads, a description on the skill. Rule 4 forbids the
+    tool LYING; this one forbids it staying quiet. **The test: could someone hand-roll a thing this
+    package already does, and would anything have stopped them?** Fix at the cheapest layer — a
+    word, a column, a warning, a caller — never a new capability. Tree absences join `check pm`'s
+    WARN family; `verify --plan` printing `unknown` rather than a guess is the same rule.
+
+    **Read verbs emit LINES; composition is the shell's job.** The rule's read side, and the
+    reason it has one: a read verb that omits a field people filter on does not just inconvenience
+    them, **it teaches them the tool cannot do it**. `pm list` withheld the name, so
+    `pm list | grep` returned nothing and the answer proposed was a new `--grep` flag. So: every
+    read verb names its columns in order in `--help`, and if you cannot pipe something the missing
+    thing is a **column**, never a verb. Existing filter flags stay — removing them breaks
+    consumers for a purity nobody asked for — and the rule governs the next one. **A capability
+    nobody can find is a capability you do not have**; when a request is met by hand-rolling
+    something this package already does, the defect is the surface, not the requester.
 
 ## Where things live
 

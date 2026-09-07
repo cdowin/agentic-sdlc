@@ -24,6 +24,10 @@ class SkipReason(Enum):
 
     # --- narrowing: was a candidate, a filter removed it ----------------------
     NO_FRONTMATTER = '{n} note(s) skipped (no frontmatter — not a grain)'
+    # A grain's own decisions/handoff/review doc. It opens no frontmatter
+    # either, so it would otherwise be counted as somebody's stray note — and
+    # a tree grows one per grain that has ever been decided on.
+    SHARED_DOC = '{n} shared doc(s) beside their grains'
     DOTTED_NAME = '{n} hidden (dot-prefixed — skipped, as D13 skips them)'
     NO_GRAIN_FILE = '{n} dir(s) with no grain file'
     EXCLUDED_PATH = '{n} path(s) excluded from scope'

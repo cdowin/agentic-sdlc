@@ -16,6 +16,9 @@ note 250, review 120.
 
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
+
+Shared docs are also checked for the instruction line `model.SLOT_HEADER` gives them —
+the one channel reaching a dispatched subagent. Any KNOWN header passes.
 """
 from __future__ import annotations
 
@@ -85,24 +88,93 @@ def _caps() -> dict[str, int]:
     return {**DEFAULT_CAPS, **declared}
 
 
-def _kind_of(rel: Path) -> str:
-    """Which kind a grain document is, from `model`'s names and slots."""
+# The kinds a document may DECLARE, mapped to this gate's cap names — which
+# are the same words, plus two shared docs no grain kind spells.
+_DECLARED = {MILESTONE: MILESTONE, FEATURE: FEATURE, STORY: STORY, BUG: BUG}
+
+
+def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
+    """Which kind a document is: what it SAYS first, where it sits second.
+
+    The path is still the fallback: the two shared docs open no frontmatter to
+    declare anything, and a nested tree has no `kind:` in it at all.
+    """
     name = rel.name
+    # What it SAYS, first. A grain that happens to be named `…-decisions.md` is
+    # a grain; the two shared docs open no frontmatter, so they cannot say
+    # anything and fall through to the name.
+    if lines is not None:
+        declared = model.unquote(model.field_in(lines, 'kind'))
+        if declared in _DECLARED:
+            return _DECLARED[declared]
+    slot = _slot_named(name, lines)
+    for named, kind in ((model.DECISION_FILE_NAME, DECISIONS),
+                        (model.HANDOFF_FILE_NAME, HANDOFF)):
+        if slot == named:
+            return kind
     if name == model.MILESTONE_DOC:
         return MILESTONE
     if name == model.FEATURE_DOC:
         return FEATURE
-    if name == model.DECISION_FILE_NAME:
-        return DECISIONS
-    if name == model.HANDOFF_FILE_NAME:
-        return HANDOFF
-    # Every component, because `bugs/<topic>/<doc>.md` is a real shape.
+    # Every component, because `bugs/<topic>/<doc>.md` is a real shape — and a
+    # POOL is that same shape one level up, so the stock pool names answer a
+    # document that declared no kind.
     parts = rel.parts[:-1]
-    if model.STORIES_DIR in parts:
-        return STORY
-    if model.BUGS_DIR in parts:
-        return BUG
+    for pool, kind in ((model.STORIES_DIR, STORY), (model.BUGS_DIR, BUG),
+                       (model.POOL_NAME[MILESTONE], MILESTONE),
+                       (model.POOL_NAME[FEATURE], FEATURE)):
+        if pool in parts:
+            return kind
     return NOTE
+
+
+def _repair_verb(shared: Path) -> str:
+    """The `pm new` that would restore this shared doc's header line.
+
+    Not `pm new milestone <id>` for everything: a feature's decisions log is
+    repaired by `pm new feature`, and pointing the author at the milestone verb
+    is a hint that leaves the gate red — it answers "already has every
+    canonical slot (no-op)" and changes nothing.
+
+    A shared doc is `<stem>-<slot>`, so the grain is the document beside it,
+    which declares its own kind and id. An unreadable neighbour falls back to
+    the generic sentence rather than guessing a verb.
+    """
+    for slot in model.SLOT_HEADER:
+        if not shared.name.endswith(f'-{slot}'):
+            continue
+        grain = shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix)
+        kind = model.unquote(model.field_of(grain, 'kind'))
+        gid = model.unquote(model.field_of(grain, 'id'))
+        if kind and gid:
+            return f'`pm new {kind} {gid}`'
+        break
+    return '`pm new <kind> <id>` for the grain it sits beside'
+
+
+def _slot_named(name: str, lines: list[str] | None = None) -> str:
+    """The shared-doc slot this document is, or the name itself.
+
+    The name is only half the test: a pooled slug is free-form, so a story
+    called `the-tradeoffs-decisions` is named like a shared doc and is not one.
+    It says so by opening frontmatter, which the two shared docs never do.
+    """
+    if lines is not None and model._opens_frontmatter(lines):
+        return name
+    for slot in model.SLOT_HEADER:
+        if name == slot or name.endswith(f'-{slot}'):
+            return slot
+    return name
+
+
+def _header_line(lines: list[str]) -> str:
+    """The doc's first non-blank line, stripped — `model.header_of` computed off
+    lines already read, so the header check costs no second open.
+    """
+    for line in lines:
+        if line.strip():
+            return line.strip()
+    return ''
 
 
 def _body_lines(lines: list[str]) -> int:
@@ -134,7 +206,9 @@ def _walk(roadmap: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
     def in_scope(path: Path) -> bool:
         # Read unconditionally: `run()` reads `lines_of` back for every kept path.
         lines = _read(path, lines_of)
-        if path.name in FRONTMATTERLESS_SLOTS:
+        # By SLOT, not by filename: a pooled shared doc is `0.1-decisions.md`
+        # and it opens no frontmatter either.
+        if _slot_named(path.name, lines) in FRONTMATTERLESS_SLOTS:
             return True
         return True if lines is None else model._opens_frontmatter(lines)
 
@@ -180,7 +254,8 @@ def run() -> int:
     lines_of: dict[Path, list[str] | None] = {}
     found = _walk(roadmap, lines_of)
     reviews = _review_walk(root / review_dir, lines_of)
-    docs = [(path, _kind_of(path.relative_to(roadmap))) for path in found]
+    docs = [(path, _kind_of(path.relative_to(roadmap), lines_of[path]))
+            for path in found]
     docs += [(path, REVIEW) for path in reviews]
     census = (f'{found.census(f"PM document(s) under {roadmap_dir}/")}, '
               f'{reviews.census(f"review record(s) under {review_dir}/")}')
@@ -209,12 +284,28 @@ def run() -> int:
                 f'{rel} is a grain document this gate cannot open, so its '
                 f'length is unknown — it is counted, never assumed to fit'))
             continue
+        # The instruction line is the one channel that reaches a dispatched
+        # subagent, so a shared doc that lost it is silently unguided. ANY
+        # known header passes, matching what the scaffolder accepts: a gate
+        # stricter than the writer would red a doc `pm new` calls correct.
+        # The slot's own name, whether it is `decisions.md` in a grain
+        # directory or `0.1-decisions.md` beside its grain in a pool.
+        want = model.SLOT_HEADER.get(_slot_named(path.name, lines))
+        if want is not None and _header_line(lines) not in model.KNOWN_SLOT_HEADERS:
+            findings.append((
+                'NO HEADER',
+                f'{rel} does not open with its slot instruction line — the one '
+                f'channel that reaches a dispatched subagent. '
+                f'{_repair_verb(path)} restores it, or prepend it yourself: '
+                f'{want!r}'))
         length = _body_lines(lines)
         if length > caps[kind]:
             findings.append((
                 'OVER CAP',
                 f'{rel} — {length} body line(s), {kind} cap {caps[kind]} '
-                f'(raise it in [{SECTION}] {CAPS_KEY} or split the document)'))
+                f'(raise it in [{SECTION}] {CAPS_KEY} or split the document). '
+                f'A doc that keeps hitting its cap is usually restating '
+                f'something a command already answers'))
 
     scope = f'{census}; measured {_measured_line(seen, caps)}'
     if findings:

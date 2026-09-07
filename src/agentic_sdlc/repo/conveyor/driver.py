@@ -38,8 +38,9 @@ WRITES = {'release': 'milestone', 'story': 'story', 'feature': 'feature',
 SUBJECT = {
     'release': (1, 'version', '<version>'),
     'adopt': (1, 'version', '<version>'),
-    'story': (3, 'story id', '<milestone>/<feature>/<story>'),
-    'feature': (2, 'feature id', '<milestone>/<feature>'),
+    # The count only separates a version subject from a grain one.
+    'story': (2, 'story id', '<story-id>'),
+    'feature': (2, 'feature id', '<feature-id>'),
 }
 
 # A milestone id is one path segment; `model.segment_is_literal` owns the
@@ -284,8 +285,8 @@ was written, 2 the declaration could not be read.\
 """
 
 CLOSE_USAGE = f"""\
-agentic-sdlc {CLOSE_VERB} story   <milestone>/<feature>/<story>   [--force]
-agentic-sdlc {CLOSE_VERB} feature <milestone>/<feature>           [--force]
+agentic-sdlc {CLOSE_VERB} story   <story-id>     [--force]
+agentic-sdlc {CLOSE_VERB} feature <feature-id>   [--force]
 
 The two INNER belts (SDLC.md §0). Each runs its checks, prints one line per
 check, and then writes exactly one thing or nothing: the grain's status, set
@@ -368,32 +369,35 @@ def version_defect(value: str) -> str:
 
 
 def subject_defect(operation: str, value: str) -> str:
-    """'' when `value` may be this operation's subject, else why not. The
-    segment count matters: `close story` given a feature id would answer the
-    wrong question about a real file."""
-    segments, noun, shape = SUBJECT.get(operation, SUBJECT['release'])
+    """'' when `value` COULD be this operation's subject, else why not — a fact
+    about the INPUT and nothing more. It counted segments (the nested id shape,
+    the path spelled as an id) and so refused every id a migrated tree holds;
+    story-or-feature is a question about the GRAIN, which `_wrong_kind` asks."""
+    segments, noun, _shape = SUBJECT.get(operation, SUBJECT['release'])
     if segments == 1:
         return version_defect(value)
-    if not value:
-        return f'the {noun} is empty'
+    if any(ch.isspace() for ch in value):
+        return f'{_quote(value)} carries whitespace, which no {noun} has'
     if len(value) > MAX_SUBJECT:
         return (f'the {noun} is too long ({len(value)} characters; the limit '
                 f'is {MAX_SUBJECT})')
-    if any(ch.isspace() for ch in value):
-        return f'{_quote(value)} carries whitespace, which no {noun} has'
-    parts = value.split('/')
-    if len(parts) != segments:
-        return (f'{_quote(value)} is not a {noun} — a {operation} id is '
-                f'{segments} segments, {shape}; this one has {len(parts)}')
-    for part in parts:
-        if len(part) > MAX_VERSION:
-            return (f'{_quote(value)}: one segment is {len(part)} characters; '
-                    f'the limit is {MAX_VERSION}')
-        if not model.segment_is_literal(part):
-            return (f'{_quote(value)} is not a {noun} — globs, path '
-                    f'separators, schemes, absolute paths and the "." / ".." '
-                    f'segments are all refused')
-    return ''
+    defect = model.id_defect(value)
+    return f'{_quote(value)} is not a {noun}: {defect}' if defect else ''
+
+
+def _wrong_kind(cfg, operation: str, subject: str) -> str:
+    """'' when the tree's grain for `subject` is this belt's kind, else why not.
+    The half of the old segment count that was real — `close story` given a
+    FEATURE id answers the wrong question about a real file — asked off
+    `kind:`, so it holds for any id shape."""
+    want = {'story': 'story', 'feature': 'feature'}.get(operation)
+    if want is None:
+        return ''
+    found = model.kind_of(cfg, subject)
+    if not found or found == want:
+        return ''
+    return (f'{_quote(subject)} is a {found}, not a {want} — '
+            f'`close {found} {subject}` is the belt that asks about one')
 
 
 def grain_path(cfg, operation: str, subject: str) -> Path | None:
@@ -413,10 +417,11 @@ def _config(root: Path | None) -> 'model.PmConfig':
 def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
     the `status` row and `check pm` reads what it wrote."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
     from agentic_sdlc.repo.pm import cli as pm_cli
 
     def write(ctx: Context, state: str) -> tuple[bool, str]:
-        argv = [kind, state, ctx.version]
+        argv = [kind, state, step_defs.subject_grain(ctx)]
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), \
                 contextlib.redirect_stderr(buffer):
@@ -427,7 +432,7 @@ def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
     return write
 
 
-def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
+def _recorder(mledger: Path, operation: str, subject: str) -> Recorder:
     """The `deviation` row a forced write leaves, with `ledger.deviation_row`'s
     keys: `step` names every false check, `reason` carries each sentence."""
     def record(false: Sequence[tuple[str, str]]) -> str:
@@ -445,7 +450,7 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
                'step': ', '.join(name for name, _ in false),
                'outcome': FORCED, 'reason': reason}
         try:
-            ledger.append_row(mdir, row)
+            ledger.append_to(mledger, row)
         except (ledger.LedgerError, OSError) as err:
             return str(err)
         return ''
@@ -454,12 +459,13 @@ def _recorder(mdir: Path, operation: str, subject: str) -> Recorder:
 
 
 def _no_ledger(nowhere: str) -> Recorder:
-    """The recorder for a run with NO milestone directory: it records nothing
-    and says why, so a forced write can never print as though a row landed.
+    """The recorder for a run whose milestone is not in the tree: it records
+    nothing and says why, so a forced write can never print as though a row
+    landed.
 
     Only a checks-only belt gets here — a belt that writes is still refused
-    without the directory — but `run` may not assume that, and a silent
-    recorder is rule 4's second sin in miniature.
+    without the grain — but `run` may not assume that, and a silent recorder is
+    rule 4's second sin in miniature.
     """
     def record(false: Sequence[tuple[str, str]]) -> str:
         return f'{nowhere} to hold a ledger row'
@@ -467,12 +473,23 @@ def _no_ledger(nowhere: str) -> Recorder:
     return record
 
 
+def _milestone_id(cfg, operation: str, subject: str) -> str:
+    """The milestone this operation's subject belongs to — followed through the
+    grain's BINDINGS for a close, and the subject itself for release/adopt.
+    Splitting the id on `/` read the nested shape."""
+    if operation in ('release', 'adopt'):
+        # A VERSION; the milestone is whichever one CLAIMS it. `release` takes
+        # the version a human says out loud, and the plan lists ids.
+        return model.milestone_of_version(cfg, subject) or subject
+    return model.milestone_of(cfg, subject) or subject
+
+
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
-    mid = subject.split('/')[0]
+    mid = _milestone_id(cfg, operation, subject)
     path = model.milestone_file(cfg, mid)
     branch = (model.field_of(path, 'branch') if path is not None else '') \
         or '<branch>'
@@ -565,6 +582,11 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     defect = plan_defect(known, names)
     if defect:
         return _refuse(f'{spoken}: {defect}')
+    # The KIND needs the TREE, so it sits below the config load; the guard
+    # above it stays a fact about the input.
+    wrong = _wrong_kind(cfg, operation, subject) if subject else ''
+    if wrong:
+        return _refuse(f'{spoken}: {wrong}')
 
     if operation == 'release':
         # The plan already knows which version is current, so the human does
@@ -576,7 +598,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                     f'{spoken} needs a version, and the plan cannot supply one: '
                     f'{cfg.rel(model.releases_file(cfg))} declares no `order` '
                     f'(or every entry in it has shipped). Name the version, or '
-                    f'run `agentic-sdlc pm order --append <version>`')
+                    f'schedule the milestone that carries it: `agentic-sdlc pm '
+                    f'add {model.ROOT_ID} <milestone-id>`')
             subject = current
             defect = subject_defect(operation, subject)
             if defect:
@@ -592,34 +615,45 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'{spoken} {subject}: the current release is {current!r} — '
                 f'shipping out of the order declared in '
                 f'{cfg.rel(model.releases_file(cfg))} is refused, and nothing '
-                f'was written. Re-sequence the plan with `agentic-sdlc pm '
-                f'order` if {subject} really goes first')
+                f'was written. Re-sequence the plan with `agentic-sdlc pm add '
+                f'{model.ROOT_ID} <milestone-id> --before <id>` if {subject} '
+                f'really goes first')
 
-    mid = subject.split('/')[0]
-    mdir = model.milestone_dir(cfg, mid)
-    nowhere = f'no milestone directory {cfg.rel(cfg.roadmap)}/{mid}-*'
-    if mdir is None and kind:
-        # A belt that WRITES needs the grain's directory: the status it sets
-        # lives there, and so does the ledger row a forced write leaves.
-        print(f'agentic-sdlc: {spoken} {subject}: {nowhere} — refused, and '
+    mid = _milestone_id(cfg, operation, subject)
+    # The GRAIN, not a directory: what a belt needs is the milestone's document
+    # (whose status it writes) and the ledger its rows land in, and both are
+    # addressed by id now.
+    mfile = model.milestone_file(cfg, mid)
+    mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
+    nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
+    # A belt that WRITES needs the grain, and is refused BEFORE the first
+    # check — which is also why nothing spawns here. The sentence names what
+    # was looked for: "no milestone 'st-nobody-wrote-this'" about a STORY id
+    # sent the reader hunting for a milestone nobody had named.
+    if mfile is None and kind:
+        missing = (nowhere if operation in ('release', 'adopt')
+                   else f'no {operation} {subject!r} in '
+                        f'{cfg.rel(cfg.roadmap)}/, or it is bound to no '
+                        f'milestone')
+        print(f'agentic-sdlc: {spoken} {subject}: {missing} — refused, and '
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:
-        # Checks only (D12): the milestone directory is the LEDGER's home and
-        # nothing else, so its absence is not an entry condition. WHERE the
-        # project tracks the bump — a milestone, a feature, a story, nowhere
-        # at all — is the project's business, the same way `[pm.states.*]` is.
-        # Every check runs either way, and the run says which it found.
+        # Checks only (D12): the milestone is the LEDGER's home and nothing
+        # else, so its absence is not an entry condition. WHERE the project
+        # tracks the bump — a milestone, a feature, a story, nowhere at all —
+        # is the project's business, the same way `[pm.states.*]` is. Every
+        # check runs either way, and the run says which it found.
         print(f'[{operation}] {NOTHING_RECORDED} — '
-              + (f'a row would land in {cfg.rel(ledger.ledger_path(mdir))}'
-                 if mdir is not None
+              + (f'a row would land in {cfg.rel(mledger)}'
+                 if mledger is not None
                  else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
     result = run(known, names, ctx, force=force, state=state,
                  write=write if write is not None else _writer(cfg, kind),
-                 record=(_recorder(mdir, operation, subject)
-                         if mdir is not None else _no_ledger(nowhere)))
+                 record=(_recorder(mledger, operation, subject)
+                         if mledger is not None else _no_ledger(nowhere)))
     for line in result.lines:
         print(line)
     if result.refused:

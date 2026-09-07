@@ -44,7 +44,7 @@ CASE_SENSITIVE_TMP = _case_sensitive_tmp()
 # a hand-edit eats the closing one. All three still OPEN a `---` block, so all
 # three are grains whose frontmatter is DAMAGED — never notes.
 DAMAGE_FORMS = ('bom', 'blank-line', 'no-closing-fence')
-STORY_REL = 'pm/roadmap/0.1-demo/features/alpha/stories/s0.md'
+STORY_REL = 'pm/roadmap/stories/s0.md'
 
 
 def damage(path: Path, form: str) -> None:
@@ -190,25 +190,32 @@ def tree(milestone_status='building', feature_status='building',
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
-        mdir = root / 'pm' / 'roadmap' / '0.1-demo'
-        fdir = mdir / 'features' / 'alpha'
+        # POOLED (0.4.0), and the IDS ARE UNCHANGED. A kind-prefixed slug is a
+        # convention for a human reading a bare id, not something the tool
+        # enforces — so every case that names `0.1/alpha/s0` still names it,
+        # and what this fixture moved is only where the documents SIT. That is
+        # the whole claim the migration makes, and a fixture that changed both
+        # at once would prove less about either.
+        pools = root / 'pm' / 'roadmap'
         root.mkdir(parents=True, exist_ok=True)
         write_config(root, config)
-        write(mdir / 'milestone.md', {'id': '"0.1"', 'name': 'Demo',
-                                      'status': milestone_status})
-        feature = {'id': '0.1/alpha', 'milestone': '"0.1"', 'name': 'Alpha',
-                   'status': feature_status, 'reviewed': ''}
+        write(pools / 'milestones' / '0.1.md',
+              {'id': '"0.1"', 'kind': 'milestone', 'name': 'Demo',
+               'status': milestone_status})
+        feature = {'id': '0.1/alpha', 'kind': 'feature', 'milestone': '"0.1"',
+                   'name': 'Alpha', 'status': feature_status, 'reviewed': ''}
         if with_record:
             (root / 'docs' / 'reviews').mkdir(parents=True, exist_ok=True)
             (root / 'docs' / 'reviews' / 'alpha.md').write_text(
                 'A real review record with enough content to be substantive.\n',
                 encoding='utf-8')
             feature['reviewed'] = 'docs/reviews/alpha.md'
-        write(fdir / 'feature.md', feature)
+        write(pools / 'features' / 'alpha.md', feature)
         for i, st in enumerate(story_statuses):
-            write(fdir / 'stories' / f's{i}.md',
-                  {'id': f'0.1/alpha/s{i}', 'feature': '0.1/alpha',
-                   'milestone': '"0.1"', 'name': f'S{i}', 'status': st})
+            write(pools / 'stories' / f's{i}.md',
+                  {'id': f'0.1/alpha/s{i}', 'kind': 'story',
+                   'feature': '0.1/alpha', 'milestone': '"0.1"',
+                   'name': f'S{i}', 'status': st})
         _mark(root)
         previous = Path.cwd()
         os.chdir(root)
@@ -243,7 +250,7 @@ def bug(root: Path, slug: str = 'crash', status: str = 'open',
     The canonical frontmatter a scaffolded bug carries, so a test that cares
     about ONE field (`caused_by:`) names that field and nothing else.
     """
-    path = root / 'pm/roadmap/0.1-demo/bugs' / f'{slug}.md'
+    path = root / 'pm/roadmap/bugs' / f'{slug}.md'
     front = {'id': f'0.1/bugs/{slug}', 'milestone': '"0.1"', 'name': '',
              'status': status, 'caught_in': '"0.1"', 'fix_milestone': ''}
     front.update(extra)
@@ -262,7 +269,7 @@ def frontmatter(path: Path) -> list[str]:
     return lines[1:lines.index('---', 1)]
 
 
-LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/ledgers/0.1.jsonl'
 
 
 def ledger_lines(root: Path, rel: str = LEDGER_REL) -> list[str]:
@@ -289,19 +296,27 @@ def cfg_for(root: Path) -> model.PmConfig:
     return loaded(root)
 
 
-def run_cli(root: Path, *argv: str) -> tuple[int, str]:
+def run_cli(root: Path, *argv: str, stdout_only: bool = False) -> tuple[int, str]:
+    """Run one `pm` invocation; both streams merged, or stdout alone.
+
+    `stdout_only` is for the cases asserting *a write prints what it wrote and
+    nothing else* — a claim about STDOUT, which is what a consumer parses.
+    0.4.0 put the conveyor breadcrumb on stderr precisely so that claim stays
+    true, and a merged read would have made the two indistinguishable.
+    """
     # repo_root()/load_config() are lru_cached on purpose in production, where
     # the cwd never moves mid-run. Tests move it every case.
     from agentic_sdlc.core.project import load_config, repo_root
     repo_root.cache_clear()
     load_config.cache_clear()
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), \
+            contextlib.redirect_stderr(out if not stdout_only else err):
         try:
             code = cli.main(list(argv))
         except SystemExit as exc:  # pragma: no cover - defensive
             code = int(exc.code or 0)
-    return code, buf.getvalue()
+    return code, out.getvalue()
 
 
 def run_gate(root: Path) -> tuple[int, str]:

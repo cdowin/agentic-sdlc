@@ -1,8 +1,9 @@
 """validate.py — structural and referential integrity of the PM tree.
 
-V1 frontmatter well-formed · V2 id matches path · V3 parentage consistent ·
+V1 frontmatter well-formed · V2 and V3 RETIRED (0.4.0) ·
 V4 refs (`depends_on`, `consumed_by`, a bug's `caused_by`) resolve · V5 the
-feature graph is acyclic · V6 (opt-in) an execution list matches the tree.
+feature graph is acyclic · V6 RETIRED (0.4.0, with the execution list) ·
+V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
 
@@ -83,32 +84,47 @@ def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
         return []
 
 
+def _unverifiable(index: dict, ref: str) -> bool:
+    """Whether a ref that resolved to nothing is UNVERIFIABLE rather than broken.
+
+    A retired milestone takes its grains with it, and reddening every ref that
+    pointed into it would make `pm retire` unusable — so a ref whose leading
+    segment names no milestone in the tree is not graded. That segment is a
+    HEURISTIC for this question alone; refs are RESOLVED through the index.
+
+    A FLAT id carries no such segment, so an unresolvable one is a finding:
+    reading `ref not in index` as "its milestone is gone" would excuse every
+    dangling ref in a flat tree, wearing the word UNVERIFIABLE.
+    """
+    prefix = ref.partition('/')[0]
+    return prefix != ref and prefix not in index
+
+
 def _grain_exists(cfg: model.PmConfig, ref: str) -> bool | None:
     """True/False if resolvable, None when the owning milestone is pruned
     (UNVERIFIABLE, not a finding).
     """
-    mid = ref.partition('/')[0]
-    if model.milestone_dir(cfg, mid) is None:
-        return None
-    depth = ref.count('/')
-    if depth == 0:
+    try:
+        index = model.grain_index(cfg)
+    except OSError:
+        return False
+    if ref in index:
         return True
-    if depth == 1:
-        return model.feature_file(cfg, ref) is not None
-    return model.story_file(cfg, ref) is not None
+    return None if _unverifiable(index, ref) else False
 
 
 def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
-    """`_grain_exists` for a ref that must name a feature; a milestone or
-    story id is False. An OSError is False too: `Path.is_dir()` raises on
-    an over-long component before 3.14 and answers False after.
+    """`_grain_exists` for a ref that must name a FEATURE; a milestone or a
+    story id is False. An OSError is False too.
     """
     try:
-        if model.milestone_dir(cfg, ref.partition('/')[0]) is None:
-            return None
-        return model.feature_file(cfg, ref) is not None
+        index = model.grain_index(cfg)
     except OSError:
         return False
+    found = index.get(ref)
+    if found is not None:
+        return found.kind == 'feature'
+    return None if _unverifiable(index, ref) else False
 
 
 def _check_ref_ids(cfg: model.PmConfig, path, key: str, refs: list[str],
@@ -160,88 +176,97 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # (grain path, its declared id, the id its PATH implies, parentage pairs)
     graph: dict[str, list[str]] = {}
 
-    for mdir in model.milestone_dirs(cfg):
-        mfile = mdir / model.MILESTONE_DOC
-        mid = model.field_of(mfile, 'id')
+    # V1 over the POOLS, before the descent — because these are precisely the
+    # documents the descent cannot reach. A document with no readable `id:` is
+    # in no index, so nothing below would ever visit it; two documents claiming
+    # one id means the descent visits the first and walks past the second.
+    if 'V1' in on:
+        for path, why in model.unkeyed_documents(cfg):
+            bad(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
+        for gid, paths in model.duplicate_ids(cfg):
+            names = ' '.join(cfg.rel(path) for path in paths)
+            bad(f'{len(paths)} documents claim id {gid!r} — a resolver keeps '
+                f'the first it reads and the rest are addressable by nothing; '
+                f'give each one its own id: {names}')
+
+    # EVERY grain, bound or not: V1 asks about one document, V4 about one ref,
+    # V5 about the feature graph, so the descent was never what they needed —
+    # and it left a ref on an unbound grain unread while the census counted the
+    # grain (rule 4).
+    for milestone in model.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not mid or not model.field_of(mfile, 'status')):
-            bad(f'{cfg.rel(mfile)}: missing id: or status: in the frontmatter')
-        # The dir carries a human suffix after the version; the id is the prefix.
-        if 'V2' in on and mid and not mdir.name.startswith(f'{mid}-'):
-            bad(f'{cfg.rel(mfile)}: id {mid!r} does not match its directory '
-                f'{mdir.name!r} (expected {mid}-<slug>/)')
+        if 'V1' in on and (not model.field_of(milestone.path, 'id')
+                           or not model.field_of(milestone.path, 'status')):
+            bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
+                f'frontmatter')
+        _check_refs(cfg, milestone.path, 'depends_on', on, bad, census)
 
-        for ffile in model.feature_files(mdir):
-            census['grains'] += 1
-            fid = model.field_of(ffile, 'id')
-            fstat = model.field_of(ffile, 'status')
-            if 'V1' in on and (not fid or not fstat):
-                bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
-            expect = f'{mid}/{ffile.parent.name}'
-            if 'V2' in on and fid and fid != expect:
-                bad(f'{cfg.rel(ffile)}: id {fid!r} does not match its path '
-                    f'(expected {expect!r})')
-            if 'V3' in on:
-                own = model.field_of(ffile, 'milestone')
-                if own and own != mid:
-                    bad(f'{cfg.rel(ffile)}: milestone: {own!r} but it lives under '
-                        f'milestone {mid!r}')
-            if fid:
-                graph[fid] = []
+    for ffile in model._every(cfg, 'feature'):
+        census['grains'] += 1
+        expect = model.unquote(model.field_of(ffile, 'id'))
+        if 'V1' in on and (not expect or not model.field_of(ffile, 'status')):
+            bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
+        # The UNQUOTED id, because that is what a ref carries: keying the node
+        # on the raw `id:` meant a quoted one matched none of its own.
+        if expect:
+            graph[expect] = []
+        for key in _REF_KEYS:
+            resolved = _check_refs(cfg, ffile, key, on, bad, census)
+            if key == 'depends_on' and expect:
+                # Which kind a ref names is a question about the GRAIN;
+                # counting slashes left the graph empty on a flat tree.
+                graph[expect].extend(ref for ref in resolved
+                                     if model.kind_of(cfg, ref) == 'feature')
 
-            for sfile in model.story_files(ffile):
-                census['grains'] += 1
-                sid = model.field_of(sfile, 'id')
-                if 'V1' in on and (not sid or not model.field_of(sfile, 'status')):
-                    bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
-                # The prefix is stripped, never the check skipped: skipping
-                # left every story unchecked under VALID.
-                s_expect = f'{expect}/{model.story_slug_of(cfg, sfile.stem)}'
-                if 'V2' in on and sid and sid != s_expect:
-                    bad(f'{cfg.rel(sfile)}: id {sid!r} does not match its path '
-                        f'(expected {s_expect!r})')
-                if 'V3' in on:
-                    parent = model.field_of(sfile, 'feature')
-                    if parent and parent != expect:
-                        bad(f'{cfg.rel(sfile)}: feature: {parent!r} but it lives '
-                            f'under feature {expect!r}')
-                    own = model.field_of(sfile, 'milestone')
-                    if own and own != mid:
-                        bad(f'{cfg.rel(sfile)}: milestone: {own!r} but it lives '
-                            f'under milestone {mid!r}')
-                _check_refs(cfg, sfile, 'depends_on', on, bad, census)
+    for sfile in model._every(cfg, 'story'):
+        census['grains'] += 1
+        if 'V1' in on and (not model.field_of(sfile, 'id')
+                           or not model.field_of(sfile, 'status')):
+            bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
+        _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
-            for key in _REF_KEYS:
-                resolved = _check_refs(cfg, ffile, key, on, bad, census)
-                if key == 'depends_on' and fid:
-                    graph[fid].extend(ref for ref in resolved
-                                      if ref.count('/') == 1)
+    # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
+    # only milestones, features and stories.
+    for bfile in model._every(cfg, 'bug'):
+        _check_caused_by(cfg, bfile, on, bad, census)
 
-        _check_refs(cfg, mfile, 'depends_on', on, bad, census)
-
-        # Bugs are walked for `caused_by:` alone; `census['grains']` still
-        # counts only milestones, features and stories.
-        for bfile in model.bug_files(mdir):
-            _check_caused_by(cfg, bfile, on, bad, census)
-
+    if 'V7' in on:
+        findings.extend(_unbound_findings(cfg))
     if 'V5' in on:
         findings.extend(_graph_findings(graph))
-    if 'V6' in on:
-        # A generated list is only safe because this fails when it drifts.
-        from agentic_sdlc.repo.pm import execlist
-        try:
-            stale = execlist.sync(cfg, write=False, existing_only=True)
-        except execlist.Refusal as err:
-            # A refused grain is a finding here, never a crash that takes V1-V5
-            # down with it.
-            findings.extend(str(err).split('\n'))
-        else:
-            for path, changed in stale:
-                if changed:
-                    findings.append(
-                        f'{cfg.rel(path)}: the execution list is stale — the tree '
-                        f'has moved since it was rendered; run `pm sync`')
     return findings, census
+
+
+def _unbound_findings(cfg: model.PmConfig) -> list[str]:
+    """V7 — a binding that names a grain not in the tree, or one of the wrong
+    kind. An EMPTY binding is not here: it is unbound, which is a counted line.
+
+    The walk above descends from the milestones, so a grain whose binding
+    resolves to nothing is never REACHED by it. This one starts at the POOLS,
+    so every grain is graded exactly once whether or not anything claims it.
+    A milestone binds to nothing and is never asked.
+    """
+    out: list[str] = []
+    index = model.grain_index(cfg)
+    for gid, grain in sorted(index.items()):
+        bind = model.BINDS_TO.get(grain.kind)
+        if bind is None:
+            continue
+        want_kind, field = bind
+        ref = model.unquote(model.field_of(grain.path, field))
+        rel = cfg.rel(grain.path)
+        if not ref:
+            # NOT a finding: a grain nobody has bound yet is a plan in
+            # progress, and `check pm` counts it in the unbound family.
+            continue
+        found = index.get(ref)
+        if found is None:
+            out.append(f'{rel}: {grain.kind} {gid!r} has {field}: {ref!r}, '
+                       f'which is not a grain in this tree')
+        elif found.kind != want_kind:
+            out.append(f'{rel}: {grain.kind} {gid!r} has {field}: {ref!r}, '
+                       f'which is a {found.kind} and not a {want_kind}')
+    return out
 
 
 def _graph_findings(graph: dict[str, list[str]]) -> list[str]:

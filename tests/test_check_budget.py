@@ -34,8 +34,13 @@ MILESTONE = '---\nid: "1.0"\nname: M\nstatus: building\n---\n\n# M\n'
 def tree(tmp_path: Path, rows: list[dict], config: str = ''):
     """A marked tree with a milestone, a ledger and a config. Never a repo.
 
-    The config DECLARES ITS FLOW (`with_flow`): the gate finds the ledger by
-    asking which milestone is in `in_progress`, and a tree that declared no
+    The ledger is the TREE's — `pm/roadmap/ledger.jsonl` — because `gate` and
+    `test` rows name no grain and 0.4.0/D3 files a grainless row there. The
+    milestone directory stays: it is what makes this a PM tree at all, and a
+    fixture with the rows in it would pass over a gate that had gone back to
+    asking which milestone was building.
+
+    The config DECLARES ITS FLOW (`with_flow`): a tree that declared no
     categories is refused by name before any row is read.
     """
     root = tmp_path / 'repo'
@@ -43,7 +48,7 @@ def tree(tmp_path: Path, rows: list[dict], config: str = ''):
     mdir.mkdir(parents=True)
     (root / '.git').mkdir()
     (mdir / 'milestone.md').write_text(MILESTONE, encoding='utf-8')
-    (mdir / 'ledger.jsonl').write_text(
+    (root / 'pm' / 'roadmap' / 'ledger.jsonl').write_text(
         ''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
     (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
     previous = Path.cwd()
@@ -275,7 +280,7 @@ def test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs(
     """The census again: a ledger this gate cannot parse is not a tree with no
     gate rows in it."""
     with tree(tmp_path, [gate_row('unit', 1_000)], BUDGET) as root:
-        ledger = root / 'pm/roadmap/1.0-m/ledger.jsonl'
+        ledger = root / 'pm/roadmap/ledger.jsonl'
         ledger.write_text(line, encoding='utf-8')
         code, out = check()
     assert code == 1, out

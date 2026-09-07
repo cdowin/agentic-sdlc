@@ -11,11 +11,15 @@ Under D12 `adopt` writes nothing at all: `--force` is refused, and the whole
 belt leaves the tree byte-identical. Every case here works on a scratch tree.
 
 Two of those cases are about REACH rather than verdict. The belt used to
-require a milestone directory named for the version, so a project folding the
+require a milestone of its own named for the version, so a project folding the
 bump into an open milestone as a feature could not run it at all; and
 `installables-current` graded all 27 installed files, so a project that
 deliberately owns eleven of them was stuck at 6/7 forever. `tracks=AS_FEATURE`
 builds the first shape and `[adopt] ours` declares the second.
+
+The scratch trees here are POOLED (0.4.0): a grain's kind and its binding are
+frontmatter, so `milestones/<slug>.md` may carry any `id:` and the belt finds
+the milestone by reading, never by walking to a path built from the version.
 """
 from __future__ import annotations
 
@@ -39,20 +43,28 @@ from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
-from agentic_sdlc.repo.pm import ledger  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
 VERSION = '9.9.9'
 # The milestone this project is actually building when the pin bump is folded
-# into it as a feature; it is NOT named for the version being adopted.
+# into it as a feature; it does NOT carry the version being adopted.
 OPEN_VERSION = '0.1.0'
 # Where the scratch project records the bump: a milestone of its own, or a
-# feature under `OPEN_VERSION` and no `9.9.9-*` directory anywhere.
+# feature bound to `OPEN_VERSION` and no milestone carrying `9.9.9` anywhere.
 AS_MILESTONE, AS_FEATURE = 'milestone', 'feature'
+# What the belts say when no milestone carries the id — the writing belt
+# refuses with it, the checks-only belt reports it and runs anyway.
+NOWHERE = f'no milestone {VERSION!r} in pm/roadmap/'
+# Pooled: one ledger per milestone, in a table of its own named by id.
+LEDGER_REL = f'pm/roadmap/{ledger.LEDGERS_POOL}/{VERSION}.jsonl'
 
 
 def milestone_doc(mid: str) -> str:
+    """A pooled milestone document. `id:` and `kind:` are the identity; the
+    file name below is a slug and carries none of it."""
     return f"""---
 id: "{mid}"
+kind: milestone
 name: A scratch milestone
 status: building
 branch: milestone/{mid}
@@ -64,6 +76,7 @@ branch: milestone/{mid}
 
 BUMP_FEATURE = f"""---
 id: {OPEN_VERSION}/adopt-the-devkit-pin
+kind: feature
 milestone: "{OPEN_VERSION}"
 name: adopt the v{VERSION} pin
 status: building
@@ -84,25 +97,28 @@ def tree(files: dict[str, str] | None = None, config: str = '',
     the flow declaration, which `with_flow` appends.
 
     `tracks` is WHERE the project records the bump. `AS_MILESTONE` is a
-    `9.9.9-*` directory named for the version being adopted. `AS_FEATURE` is
-    the consumer shape that made this belt unreachable: an OPEN milestone of
-    the project's own, the bump folded into it as a feature, and no directory
-    named for the version anywhere in the tree.
+    milestone grain carrying the version being adopted as its `id:`.
+    `AS_FEATURE` is the consumer shape that made this belt unreachable: an OPEN
+    milestone of the project's own, the bump folded into it as a feature bound
+    to that milestone, and no grain anywhere carrying the adopted version.
+
+    Both shapes sit in the POOLS, and the slugs are deliberately not the ids:
+    a belt that resolved `9.9.9` by building a path would find nothing in
+    either tree, which is the confusion this milestone removed.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         roadmap = root / 'pm/roadmap'
+        (roadmap / 'milestones').mkdir(parents=True)
         if tracks == AS_MILESTONE:
-            (roadmap / f'{VERSION}-scratch').mkdir(parents=True)
-            (roadmap / f'{VERSION}-scratch/milestone.md').write_text(
+            (roadmap / 'milestones/scratch.md').write_text(
                 milestone_doc(VERSION), encoding='utf-8')
         else:
-            open_dir = roadmap / f'{OPEN_VERSION}-open'
-            fdir = open_dir / 'features/adopt-the-devkit-pin'
-            fdir.mkdir(parents=True)
-            (open_dir / 'milestone.md').write_text(
+            (roadmap / 'features').mkdir(parents=True)
+            (roadmap / 'milestones/open.md').write_text(
                 milestone_doc(OPEN_VERSION), encoding='utf-8')
-            (fdir / 'feature.md').write_text(BUMP_FEATURE, encoding='utf-8')
+            (roadmap / 'features/adopt-the-devkit-pin.md').write_text(
+                BUMP_FEATURE, encoding='utf-8')
         (root / 'devkit.toml').write_text(with_flow(config), encoding='utf-8')
         for rel, body in (files or {}).items():
             target = root / rel
@@ -180,14 +196,14 @@ def decoy_bytes(root: Path) -> dict[str, bytes]:
 
 
 # --- the census ---------------------------------------------------------------
-def test_the_adopt_registry_is_exactly_the_shipped_seven():
+def test_the_adopt_registry_is_exactly_the_shipped_eight():
     """Bites: a check added to the registry and not the list, or the
     reverse — a name nothing runs."""
     assert set(steps.ADOPT_STEPS) == set(steps.DEFAULT_ADOPT_STEPS)
     assert steps.DEFAULT_ADOPT_STEPS == (
         'pin-bumped', 'installables-current', 'config-updated',
-        'hooks-self-test', 'runner-targets-resolve', 'checks-pass',
-        'pm-validates')
+        'hooks-self-test', 'telemetry-live', 'runner-targets-resolve',
+        'checks-pass', 'pm-validates')
     assert driver.WRITES['adopt'] == ''
     for name in steps.DEFAULT_ADOPT_STEPS:
         assert name in steps.STEP_DOC, f'{name} ships no sentence'
@@ -197,48 +213,53 @@ def test_the_adopt_registry_is_exactly_the_shipped_seven():
 def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
     """Bites: the ENTRY condition, which made the belt unreachable rather than
     advisory. A consumer folding toolkit work into an open milestone as a
-    feature has no `9.9.9-*` directory and will not grow one — a pin bump is a
-    day of work and a milestone there is a month of game. At HEAD this printed
-    `no milestone directory pm/roadmap/9.9.9-* — refused, and nothing was
-    written` and exited 1 with ZERO checks asked; the adopting agent then did
-    all seven by hand, in an order it invented, and missed one."""
+    feature has no milestone carrying `9.9.9` and will not grow one — a pin
+    bump is a day of work and a milestone there is a month of game. Before the
+    condition was relaxed this printed the refusal a WRITING belt still prints
+    — `no milestone '9.9.9' in pm/roadmap/ — refused, and nothing was written`
+    — and exited 1 with ZERO checks asked; the adopting agent then did all
+    seven by hand, in an order it invented, and missed one."""
     with tree({'Makefile': PIN + 'include Makefile.devkit\n'},
               tracks=AS_FEATURE) as root:
         before = snapshot(root)
         code, out = adopt()
-        assert not list(root.glob(f'pm/roadmap/{VERSION}-*')), (
-            'the fixture grew a milestone named for the version')
+        # Asked of the reader the belt itself uses, so "no such milestone" is
+        # a fact about the frontmatter and not about a path that happens not
+        # to exist.
+        assert model.milestone_file(model.load(), VERSION) is None, (
+            'the fixture grew a milestone carrying the adopted version')
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert 'refused' not in out, out
         # It says THAT it recorded: nowhere, because it writes nothing.
         assert driver.NOTHING_RECORDED in out, out
         assert driver.ANYWHERE in out, out
-        assert f'pm/roadmap/{VERSION}-*' in out, out
+        assert NOWHERE in out, out
         assert snapshot(root) == before, 'adopt wrote into the tree'
 
 
 def test_adopt_names_the_ledger_when_the_bump_is_tracked_as_a_milestone():
-    """The other half of the same sentence: with a directory named for the
-    version, the run says WHERE a row would land — and still that none did,
-    because `adopt` writes nothing (D12)."""
+    """The other half of the same sentence: with a milestone carrying the
+    version, the run says WHERE a row would land — the ledger named for that
+    id, not one buried under a slug — and still that none did, because `adopt`
+    writes nothing (D12)."""
     with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
         code, out = adopt()
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert driver.NOTHING_RECORDED in out, out
-        assert f'{VERSION}-scratch/{ledger.LEDGER_FILE_NAME}' in out, out
-        assert not (root / f'pm/roadmap/{VERSION}-scratch'
-                    / ledger.LEDGER_FILE_NAME).exists(), (
+        assert LEDGER_REL in out, out
+        assert not (root / LEDGER_REL).exists(), (
             'a belt that writes nothing minted a ledger')
 
 
-def test_a_belt_that_writes_still_needs_the_milestone_directory():
+def test_a_belt_that_writes_still_needs_the_milestone_grain():
     """Bites: relaxing the entry condition for ALL FOUR belts instead of the
-    one that writes nothing. `close feature` sets a status that lives in the
-    milestone directory, and a forced one records there too; without the
-    directory there is nowhere to write and nowhere to record, so it is
-    refused before the first check — which is also why nothing spawns here."""
+    one that writes nothing. `close feature` sets a status in a document bound
+    to the milestone, and a forced one records a row in that milestone's
+    ledger; with no milestone carrying the id there is nothing to bind to and
+    nowhere to record, so it is refused before the first check — which is also
+    why nothing spawns here."""
     with tree(tracks=AS_FEATURE) as root:
         before = snapshot(root)
         buf = io.StringIO()
@@ -246,7 +267,9 @@ def test_a_belt_that_writes_still_needs_the_milestone_directory():
             code = driver.main(['close', 'feature', f'{VERSION}/nope'])
         out = buf.getvalue()
         assert code == 1, out
-        assert 'no milestone directory' in out and 'refused' in out, out
+        # The sentence names the FEATURE it could not place, not a milestone
+        # nobody typed.
+        assert f"no feature '{VERSION}/nope'" in out and 'refused' in out, out
         assert 'nothing was written' in out, out
         assert asked(out) == [], out
         assert snapshot(root) == before
@@ -648,3 +671,122 @@ def _drift_rels(root) -> set[str]:
     from agentic_sdlc.repo.conveyor import driver, steps
     ctx = driver.Context(root=root, operation='adopt', version=VERSION)
     return {rel for _verb, rel, _v in steps._installable_drift(ctx)}
+
+
+# --- 0.4.0/telemetry-arrives-with-the-bump ------------------------------------
+# The two halves a courier needs: make must REACH the recipe, and the recipe
+# must reach a CLI with a flow to answer with. A stub is honest here — the
+# check measures the vehicle, and `check hooks` measures the courier.
+VEHICLE = ('.PHONY: pm\npm:\n\t@printf "milestone feature story bug\\n"\n')
+# The exact shape mode 2 is: a PM tree IS a `pm/` directory, so a `pm:` target
+# that is not .PHONY is already satisfied and make never runs the recipe.
+NOT_PHONY = 'pm:\n\t@printf "milestone feature story bug\\n"\n'
+# Reached, and inert: the recipe runs and the CLI has nothing to answer with.
+INERT = '.PHONY: pm\npm:\n\t@echo "no [pm.states.*] declared" >&2; exit 2\n'
+
+WIRED = ('{"hooks": {"Stop": [{"hooks": [{"command": "bash '
+         'tools/hooks/cc-ledger-session.sh"}, {"command": "bash '
+         'tools/hooks/cc-ledger-subagent.sh"}]}]}}')
+
+
+def _couriers(root, *names) -> None:
+    """The corpus on disk. Content is irrelevant — `hooks-self-test` grades
+    the scripts; this check grades the VEHICLE."""
+    for name in names or ledger_couriers():
+        path = root / 'tools' / 'hooks' / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8')
+
+
+def ledger_couriers():
+    from agentic_sdlc.repo.pm import model
+    return model.LEDGER_COURIERS
+
+
+def _settings(root, text: str) -> None:
+    path = root / '.claude' / 'settings.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+
+
+def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
+    """A consumer bumps the pin, gets the courier scripts, and pastes the
+    settings block by hand — and nothing verified the paste. The failure is
+    files present, hooks unarmed, zero rows, zero complaints, which is the
+    state this package's own tree was in for a whole milestone.
+
+    **A PROBE OF THIS TREE.** It ran the courier's `--self-test`, which builds
+    its own `mktemp` repo with its own stub `pm:` target and exits 0 from an
+    empty directory — so it proved the courier's argv and NOTHING about the
+    caller, while printing *"their self-test passes against this tree's
+    vehicle"*. That is a lie inside a PASS line (rule 4). It runs `make -s pm
+    ARGS=vocabulary` here instead: one call that needs make to reach the recipe
+    AND the CLI to have a flow to answer with.
+    """
+    # No courier at all: unverifiable, never a pass and never a failure — and
+    # it names the opt-out, because a consumer who does not record is not
+    # broken and must not be told to install something to get past a belt.
+    with tree() as root:
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert 'install-hooks' in answer.detail, answer.detail
+        assert '[adopt] steps' in answer.detail, answer.detail
+
+    # HALF the corpus is not the corpus. `install-hooks` installs two couriers
+    # and prints two entries; a one-name search read half-wired as wired.
+    with tree() as root:
+        _couriers(root, 'cc-ledger-session.sh')
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.UNVERIFIABLE, answer
+        assert 'cc-ledger-subagent.sh' in answer.detail, answer.detail
+
+    # Mode 1 — the corpus is there, the vehicle answers, nothing fires it.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert 'no ledger setup for this tree, no telemetry' in answer.detail
+        assert 'install-hooks' in answer.detail and 'yours' in answer.detail
+
+    # Mode 1b — HALF the entries pasted. Named, so the fix is the missing one.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, '{"hooks": {"Stop": [{"hooks": [{"command": "bash '
+                        'tools/hooks/cc-ledger-session.sh"}]}]}}')
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert 'cc-ledger-subagent.sh' in answer.detail, answer.detail
+
+    # Mode 2 — the `pm` target is not .PHONY. A PM tree IS a `pm/` directory,
+    # so make finds the target satisfied, exits 0, and never runs the recipe.
+    # This is the case the hermetic self-test could not see at all.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(NOT_PHONY, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert '.PHONY' in answer.detail, answer.detail
+
+    # Mode 3 — reached, and inert: the recipe runs and the CLI refuses.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(INERT, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.FALSE, answer
+        assert '[pm.states.*]' in answer.detail, answer.detail
+
+    # Wired, and the vehicle answers.
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'telemetry is live' in answer.detail
+

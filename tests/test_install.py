@@ -1318,6 +1318,22 @@ class TestTheNameBothCommandsBlockIsOneWording:
             assert self.OPEN not in install.body_of(name), name
 
 
+def test_install_hooks_says_the_settings_are_not_yet_in_force_and_who_sets_the_grain():
+    """0.4.0. Two rule-11 holes in one paragraph, both found in review.
+
+    The block is PRINTED and never written (`.claude/settings.json` is the
+    consumer's and has no merge), and a printed block reads as informational —
+    which is how step 1 gets skipped and a consumer runs for a milestone with
+    the couriers on disk and nothing firing them. And `GDK_LEDGER_GRAIN` is the
+    one `GDK_LEDGER_*` a courier cannot take off the payload: nothing in this
+    package exports it, so the paragraph has to say who does.
+    """
+    from agentic_sdlc.repo import install
+    said = install._NEXT_STEP['install-hooks']
+    assert 'NOT YET IN FORCE' in said
+    assert 'adopt' in said and 'U2' in said
+    assert 'GDK_LEDGER_GRAIN' in said
+    assert 'Nothing exports it for you' in said
 # --- the report is complete on the FAILING run too (review I1/I4/I5) ----------
 def _heads(out: str) -> list[str]:
     return [ln for ln in out.split('\n') if ln.startswith('[install]')]
@@ -1371,7 +1387,7 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
     """Review I2: `pm install-skills` is the sixth installer in CLAUDE.md's
     self-hosting list, and it prefixed `[pm]`, so the documented
     `grep '^[install]'` summary returned 0 for both of its files."""
-    from agentic_sdlc.repo.pm import cli as pm_cli
+    from agentic_sdlc.repo.pm import cli as pm_cli, skills
     with repo() as root:
         (root / 'devkit.toml').write_text(_flow(), encoding='utf-8')
         load_config.cache_clear()
@@ -1379,9 +1395,11 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
         with contextlib.redirect_stdout(buf):
             pm_cli.main(['install-skills'])
         heads = _heads(buf.getvalue())
-        assert len(heads) == 2, buf.getvalue()
-        for rel in ('.claude/rules/pm-execution.md',
-                    '.claude/skills/pm-operations/SKILL.md'):
+        # Asked of the PLAN, not counted: 0.4.0 added the handoff skill as a
+        # third entry, and a hand-written `== 2` made that a red build for a
+        # roster change the criterion has no opinion about.
+        assert len(heads) == len(skills.GUIDANCE_PLAN), buf.getvalue()
+        for _name, rel in skills.GUIDANCE_PLAN:
             assert any(rel in h for h in heads), buf.getvalue()
 
 

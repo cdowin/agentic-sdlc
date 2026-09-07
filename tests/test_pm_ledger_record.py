@@ -43,9 +43,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from support.pm import ledger_lines, ledger_rows, loaded, run_cli, tree, write
+from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
+                        tree, write)
 
 from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import model
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -73,7 +75,11 @@ MAIN_SESSION = FIXTURES / 'main-session.jsonl'
 
 STORY = '0.1/alpha/s0'
 BUG = '0.1/bugs/b0'
-LEDGER_REL = 'pm/roadmap/0.1-demo/ledger.jsonl'
+LEDGER_REL = 'pm/roadmap/ledgers/0.1.jsonl'
+# 0.4.0/D3: a row naming no grain lands in the TREE's ledger. A
+# transcript row carries no grain yet and a `gate` row never will, so
+# this is where most of this module's rows arrive.
+ROOT_LEDGER_REL = 'pm/roadmap/ledger.jsonl'
 
 # A stamp for the rows a case seeds by hand, and the stock gate-form argv.
 TS = '2026-09-03T10:00:00Z'
@@ -100,8 +106,34 @@ def record(root, *argv) -> tuple[int, str]:
     return run_cli(root, 'ledger', 'record', *argv)
 
 
+def all_ledger_lines(root) -> dict[str, list[str]]:
+    """{relative path: lines} for EVERY ledger in the tree.
+
+    There are two homes since 0.4.0/D3 — `<roadmap>/ledgers/<id>.jsonl` per
+    milestone for attributed rows and `<roadmap>/ledger.jsonl` for the rest —
+    so "the file was not written" is a claim about the tree, not about one
+    path. A refusal that wrote into the other file would pass a single-path
+    check.
+    """
+    found = sorted(root.rglob('ledger.jsonl')) + sorted(root.rglob('ledgers/*.jsonl'))
+    return {str(path.relative_to(root)):
+            path.read_text(encoding='utf-8').splitlines()
+            for path in found}
+
+
 def only_row(root) -> dict:
-    rows = ledger_rows(root)
+    """The one row in the tree, wherever it landed.
+
+    Location-agnostic ON PURPOSE: every case reaching for this is asserting
+    what a row CONTAINS — the module's subject — and WHERE it goes is
+    `_row_ledger`'s, proven by the routing cases below over fixtures where
+    the candidate directories differ. Asserting one row across the whole tree
+    is also the stronger claim: a second row written somewhere else fails here
+    and would not fail a read of one path.
+    """
+    rows = [row for lines in all_ledger_lines(root).values()
+            for line in lines if line.strip()
+            for row in [json.loads(line)]]
     assert len(rows) == 1, f'expected one row, got {rows}'
     return rows[0]
 
@@ -114,8 +146,8 @@ def stamped(row: dict) -> dict:
     return {k: v for k, v in row.items() if k != 'ts'}
 
 
-def put_ledger(root, *lines: str) -> None:
-    path = root / LEDGER_REL
+def put_ledger(root, *lines: str, rel: str = LEDGER_REL) -> None:
+    path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(''.join(line + '\n' for line in lines), encoding='utf-8')
 
@@ -125,7 +157,7 @@ def status_line(ts: str, grain: str, frm: str, to: str) -> str:
 
 
 def bug_doc(root, status: str = 'open') -> None:
-    write(root / 'pm/roadmap/0.1-demo/bugs/b0.md',
+    write(root / 'pm/roadmap/bugs/b0.md',
           {'id': BUG, 'milestone': '"0.1"', 'name': 'B0', 'status': status})
 
 
@@ -137,10 +169,10 @@ def assistant(model: str, ts: str = '2026-09-03T10:00:00Z') -> dict:
 
 def refuses(root, *argv, needle: str = '') -> str:
     """Exit 2, the message names why, and the file's LINES are unchanged."""
-    before = ledger_lines(root)
+    before = all_ledger_lines(root)
     code, out = record(root, *argv)
     assert code == 2, (argv, out)
-    assert ledger_lines(root) == before, f'a refusal wrote a row: {argv}'
+    assert all_ledger_lines(root) == before, f'a refusal wrote a row: {argv}'
     if needle:
         assert needle in out, (argv, out)
     return out
@@ -157,10 +189,14 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
                            '--event', 'SubagentStop',
                            '--agent-type', 'developer')
         assert code == 0, out
+        # This tree has exactly ONE story in progress, so D2's fallback
+        # resolves the grain and the row is ATTRIBUTED — which puts it in that
+        # grain's milestone ledger, not the tree's.
         lines = ledger_lines(root)
         row = only_row(root)
     assert stamped(row) == {
         'kind': 'dispatch',
+        'grain': STORY,
         'session_id': '406aac76-fb60-4d90-9383-5b0af2163067',
         'agent_id': 'a0c097f0217026051',
         'agent_type': 'developer',
@@ -179,7 +215,7 @@ def test_the_subagent_fixture_produces_this_exact_dispatch_row():
     # `ROW_KEYS` order, minus the keys nothing supplied: the durable line's
     # own shape, not just its contents.
     assert list(row) == [
-        'ts', 'kind', 'session_id', 'agent_id', 'agent_type', 'model',
+        'ts', 'kind', 'grain', 'session_id', 'agent_id', 'agent_type', 'model',
         'started_at', 'ended_at', 'duration_s', 'messages', 'tool_calls',
         'tools', 'tool_calls_before_first_write', 'usage', 'tree']
     assert len(lines) == 1
@@ -305,13 +341,12 @@ def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
     grain in `in_progress` — `accepted` included, a word no frozen key can
     spell — and the frozen keys hold exactly what they always held."""
     with tree(story_statuses=('building', 'done', 'accepted')) as root:
-        beta = root / 'pm/roadmap/0.1-demo/features/beta'
-        write(beta / 'feature.md',
-              {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
-               'status': 'reviewing', 'reviewed': ''})
-        write(beta / 'stories/b0.md',
-              {'id': '0.1/beta/b0', 'feature': '0.1/beta', 'milestone': '"0.1"',
-               'name': 'B0', 'status': 'reviewing'})
+        write(root / 'pm/roadmap/features/beta.md',
+              {'id': '0.1/beta', 'kind': 'feature', 'milestone': '"0.1"',
+               'name': 'Beta', 'status': 'reviewing', 'reviewed': ''})
+        write(root / 'pm/roadmap/stories/b0.md',
+              {'id': '0.1/beta/b0', 'kind': 'story', 'feature': '0.1/beta',
+               'milestone': '"0.1"', 'name': 'B0', 'status': 'reviewing'})
         assert record(root, '--from-transcript', str(SUBAGENT),
                       '--event', 'SubagentStop')[0] == 0
         snap = only_row(root)['tree']
@@ -442,31 +477,310 @@ def test_a_gate_row_carries_exactly_what_it_was_given(argv, expected):
 # exactly why this verb must not lie about having recorded: a silent success
 # would make the discarded failure unauditable.
 
-# 0.3.0: the ledger binds to the CURRENT RELEASE, not to a status flag. "No
-# milestone is in progress" stopped being a reason to refuse a cost row — gate
-# cost is a fact about a RUN, and the run happened whether or not anybody had
-# flipped a status. The one honest reason left is that the tree has no plan.
-# 0.3.0, review X1: having nowhere to file a gate row is a TRUE and
-# unremarkable fact — a fresh adoption has no plan and no milestone in progress
-# — and reporting it as a REFUSAL made every gate of every run print `the
-# recorder exited 1`, which reads as a broken install. It is INFORMATION now:
-# one line, exit 0, and still no row, which is the half that must not change.
-@pytest.mark.parametrize('kwargs,remove_pm,second_milestone,code,needle', [
-    (dict(), True, False, 0, 'no PM tree'),
-    (dict(milestone_status='planning'), False, False, 0, 'declares no `order`'),
-    (dict(), False, True, 0, 'declares no `order`'),
+# 0.4.0/D3: ONE reason is left, and it is not about the tree's state. A gate
+# row is refused when there is nowhere at all to put it — no `pm/roadmap` — and
+# `append_row` creates the FILE but never the directory. Every other row this
+# roster used to carry ("no milestone is in progress", "several are", "the plan
+# declares no `order`") is a write now, each proven above.
+# 0.4.0/D3 + 0.3.0 review X1, merged. A gate row names no grain, so it lands in
+# the tree's own ledger: there is no plan to consult and no milestone to pick,
+# and the ONLY way to have nowhere to file it is to have no PM tree at all.
+# That case is INFORMATION, not a refusal — reporting it as one made every gate
+# of every run print `the recorder exited 1`, which reads as a broken install.
+# One line, exit 0, and still no row, which is the half that must not change.
+@pytest.mark.parametrize('kwargs,second_milestone', [
+    (dict(), False),
+    (dict(milestone_status='planning'), False),
+    (dict(), True),
 ])
-def test_the_verb_names_what_it_cannot_answer_and_writes_nothing(
-        kwargs, remove_pm, second_milestone, code, needle):
+def test_a_tree_with_no_roadmap_is_information_not_a_refusal(
+        kwargs, second_milestone):
     with tree(**kwargs) as root:
-        if remove_pm:
-            shutil.rmtree(root / 'pm')
         if second_milestone:
-            write(root / 'pm/roadmap/0.2-next/milestone.md',
+            write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
+        shutil.rmtree(root / 'pm')
         got, out = record(root, *GATE)
-        assert (got, needle in out) == (code, True), out
+        assert (got, 'no PM tree' in out) == (0, True), out
         assert list(root.rglob('ledger.jsonl')) == []
+
+
+# --- D1: a row is routed by its GRAIN, and no status is read ------------------
+# The lookup these replace asked which milestone was `in_progress` and refused
+# on none and on several. Every case below is a write that used to be REFUSED
+# or MISFILED, so each one fails at the commit before this story.
+# The second milestone's document and the ledger keyed to its id: one file per
+# milestone under `<roadmap>/ledgers/`, which is where an ATTRIBUTED row goes.
+SECOND_DOC = 'pm/roadmap/milestones/0.2.md'
+SECOND_LEDGER = 'pm/roadmap/ledgers/0.2.jsonl'
+
+
+def two_milestones(root, other_status: str = 'planning') -> str:
+    """A second milestone with a feature of its own, so the milestone that owns
+    the GRAIN and the milestone that is BUILDING are two different directories.
+
+    Without that separation a case asserting "the row landed in 0.1" passes for
+    the old reason — 0.1 is also the one milestone in progress — and proves
+    nothing about what routed it. Returns the second feature's id.
+    """
+    write(root / SECOND_DOC,
+          {'id': '"0.2"', 'kind': 'milestone', 'name': 'Next',
+           'status': other_status})
+    write(root / 'pm/roadmap/features/beta.md',
+          {'id': '0.2/beta', 'kind': 'feature', 'milestone': '"0.2"',
+           'name': 'Beta', 'status': 'planning', 'reviewed': ''})
+    return '0.2/beta'
+
+
+def test_a_grain_in_a_planning_milestone_records():
+    """Exit 1 with no write until this story: nothing was `in_progress` in
+    0.2, so the row that names 0.2's feature had nowhere to go. Design work IS
+    the milestone's work, and it is the first thing a milestone does."""
+    with tree(milestone_status='planning') as root:
+        write(root / 'pm/roadmap/milestones/0.1.md',
+              {'id': '"0.1"', 'name': 'Demo', 'status': 'planning'})
+        code, out = record(root, '--grain', '0.1/alpha')
+        assert code == 0, out
+        assert [r['grain'] for r in ledger_rows(root)] == ['0.1/alpha']
+
+
+def test_two_milestones_in_progress_file_against_the_one_that_owns_the_grain():
+    """The refusal that said "which one owns this row is the one thing this
+    verb cannot know". The row knows: it names a grain, and the grain's
+    document sits under exactly one milestone."""
+    with tree() as root:
+        other = two_milestones(root, other_status='building')
+        assert record(root, '--grain', other)[0] == 0
+        assert record(root, '--grain', '0.1/alpha')[0] == 0
+        assert [r['grain'] for r in ledger_rows(root, SECOND_LEDGER)] == [other]
+        assert [r['grain'] for r in ledger_rows(root)] == ['0.1/alpha']
+
+
+def test_the_milestone_that_is_building_does_not_collect_another_ones_rows():
+    """The inversion of "lands in the building milestone", with the two pulled
+    apart: 0.1 is the only milestone in progress and the row still goes to
+    0.2, because 0.2 owns the grain. Under the old rule this row landed in
+    0.1 — the same file, for the wrong reason."""
+    with tree() as root:
+        other = two_milestones(root)
+        code, out = record(root, '--grain', other, '--event', 'Stop')
+        assert code == 0, out
+        assert ledger_lines(root) == [], 'the building milestone took the row'
+        rows = ledger_rows(root, SECOND_LEDGER)
+        assert [(r['kind'], r['grain']) for r in rows] == [('session', other)]
+
+
+# --- D2's fallback: the orchestrator's path, and the one rule that outranks it -
+def transcript(root, *extra):
+    return record(root, '--from-transcript', str(SUBAGENT), '--event', 'Stop',
+                  *extra)
+
+
+def second_story(root, status: str = 'building') -> str:
+    write(root / 'pm/roadmap/stories/s9.md',
+          {'id': '0.1/alpha/s9', 'kind': 'story', 'feature': '0.1/alpha',
+           'milestone': '"0.1"', 'name': 'S9', 'status': status, 'owner': ''})
+    return '0.1/alpha/s9'
+
+
+def test_show_reads_the_trees_ledger_too_so_it_cannot_disagree_with_report():
+    """Review M1. `ledger show` read the milestone's ledger alone while
+    `ledger report` read both, so one root row could be BILLED to a story by
+    one verb and invisible to the other.
+
+    The row here names no grain and still NAMES this story, through its `tree`
+    snapshot — which is what `row_names` reads and what the report attributes
+    by. Two read verbs over one row must not answer differently.
+    """
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)  # two live: resolution omits the key
+        assert transcript(root)[0] == 0
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL]
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+        assert code == 0, out
+        assert 'no rows' not in out, out
+        assert 'session' in out, out
+
+
+
+# `--grain` given -> use it. Absent and one story live -> use it. Absent and
+# zero or several -> OMIT THE KEY, and name the candidates. Never a guess.
+def test_one_story_in_progress_resolves_and_routes():
+    """The undispatched orchestrator, which is the session type most of a
+    milestone's work happens in: no prompt to read a grain out of, and one
+    obvious answer in the tree."""
+    with tree(story_statuses=('building',)) as root:
+        code, out = transcript(root)
+        assert code == 0, out
+        assert only_row(root)['grain'] == STORY
+        # A resolved grain ROUTES as well as names (D1): one rule, whichever
+        # way the grain arrived.
+        assert list(all_ledger_lines(root)) == [LEDGER_REL], out
+
+
+def test_no_story_in_progress_omits_the_key_entirely():
+    """Asserted on the KEY SET, not with a membership check: a row carrying
+    `grain: ""` or `grain: null` has to fail here. A number not given is a key
+    the row does not carry, never a zero — and `grain` is no different."""
+    with tree(story_statuses=('ready',)) as root:
+        code, out = transcript(root)
+        assert code == 0, out
+        assert 'grain' not in sorted(only_row(root))
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL], out
+
+
+def test_two_stories_in_progress_omit_the_key_and_name_the_candidates():
+    """**The case this story exists for.** Two agents on two stories in one
+    milestone is the workflow this package is built for, and it is exactly
+    when a lookup has more than one answer. A row filed against the wrong
+    story is uncorrectable; a row filed against none is visible in a bucket
+    that already exists.
+
+    The candidates go to stderr, which the couriers pass through verbatim, so
+    D2's "revisit if ambiguity turns out to be common" is countable rather
+    than hopeful."""
+    with tree(story_statuses=('building',)) as root:
+        other = second_story(root)
+        code, out = transcript(root)
+        assert code == 0, out
+        assert 'grain' not in sorted(only_row(root))
+        assert '2 stories are in progress' in out
+        assert STORY in out and other in out
+        assert 'GDK_LEDGER_GRAIN' in out, 'the fix is not named'
+
+
+def test_the_flag_wins_over_the_lookup_and_the_lookup_stays_quiet():
+    """A caller who said what they meant is never overridden — and the lookup
+    must not even RUN, or a dispatch that named its grain still gets a
+    complaint about two live stories it was never torn between."""
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)
+        code, out = transcript(root, '--grain', STORY)
+        assert code == 0, out
+        assert only_row(root)['grain'] == STORY
+        assert 'in progress' not in out, out
+
+
+def test_resolution_never_changes_an_exit_code():
+    """The fail-open promise the couriers depend on lives here now: a row that
+    could not be attributed is a SUCCESSFUL write with a key absent.
+
+    THREE shapes, and the third is the one that shipped broken: zero live,
+    several live, and **two files claiming one id**. `_resolved_grain_file`
+    caught `Usage` and the story resolver raised `AmbiguousStory`, a plain
+    `Exception` — so a lookup NOBODY ASKED FOR became exit 2 with no row
+    written anywhere. The convenience destroyed the row it was meant to label.
+
+    The third shape resolves now rather than raising: a duplicate id keeps the
+    first document read (0.4.0/D4 — uniqueness cannot be a runtime lock without
+    an allocator, and a git repo has none). So the exit code is what this case
+    is about, and the collision itself is graded where a collision belongs —
+    `check pm`, by name, which is the assertion at the end.
+    """
+    with tree(story_statuses=('ready',)) as root:
+        second_story(root, 'ready')
+        assert transcript(root)[0] == 0
+    with tree(story_statuses=('building',)) as root:
+        second_story(root)
+        assert transcript(root)[0] == 0
+    # Two files, ONE id, and only one of them live — so the lookup has exactly
+    # one candidate and that candidate will not resolve. The resolver's own
+    # refusal, reached from a path the caller never asked to travel.
+    with tree(story_statuses=('ready',), config=LEGACY_FLOW) as root:
+        for stem, status in (('01-twin', 'building'), ('02-twin', 'ready')):
+            write(root / f'pm/roadmap/stories/{stem}.md',
+                  {'id': '0.1/alpha/twin', 'kind': 'story',
+                   'feature': '0.1/alpha',
+                   'milestone': '"0.1"', 'name': 'Twin', 'status': status,
+                   'owner': ''})
+        code, out = transcript(root)
+        assert code == 0, out
+        # The row landed, attributed to the id both files claim.
+        assert only_row(root)['grain'] == '0.1/alpha/twin'
+        # And the collision is a FINDING where findings live — otherwise one
+        # of those two files is in the tree and addressable by nothing.
+        code, out = run_gate(root)
+        assert code == 1, out
+        assert "2 documents claim id '0.1/alpha/twin'" in out, out
+        assert '01-twin.md' in out and '02-twin.md' in out, out
+
+
+# --- D2: a dispatch that was TOLD its grain files a row that says so ----------
+def test_a_transcript_row_carries_the_grain_it_was_given():
+    """The numbers come from the transcript; `--grain` says what they were
+    spent ON. The two were exclusive until 0.4.0, which made every automatic
+    row unattributed — captured, and saying nothing about the work.
+
+    The `grain` key sits in `ROW_KEYS` position, and the row lands in the
+    GRAIN's milestone rather than the tree's, which is the whole point: this is
+    what moves a dispatch off the `rows naming no grain` line.
+    """
+    with tree() as root:
+        code, out = record(root, '--from-transcript', str(SUBAGENT),
+                           '--event', 'Stop', '--grain', STORY)
+        assert code == 0, out
+        row = only_row(root)
+        assert list(all_ledger_lines(root)) == [LEDGER_REL], out
+    assert row['grain'] == STORY
+    # Third key, as `ROW_KEYS` declares — a durable line's shape, not just its
+    # contents.
+    assert list(row)[:4] == ['ts', 'kind', 'grain', 'session_id']
+    # And the transcript's own numbers are untouched by the attribution.
+    assert row['tool_calls'] == 23 and row['duration_s'] == 80
+
+
+def test_the_row_carries_the_id_the_grain_declares_not_the_string_typed():
+    """Two rows naming one grain must spell it one way, or the report bills
+    two lines for one thing. `_ledger_id` is what every other row already
+    uses."""
+    with tree() as root:
+        write(root / 'pm/roadmap/stories/s0.md',
+              {'id': STORY, 'feature': '0.1/alpha', 'milestone': '"0.1"',
+               'name': 'S0', 'status': 'building', 'owner': ''})
+        assert record(root, '--from-transcript', str(SUBAGENT),
+                      '--event', 'SubagentStop', '--grain', STORY)[0] == 0
+        assert only_row(root)['grain'] == STORY
+
+
+def test_a_row_naming_no_grain_lands_in_the_trees_own_ledger():
+    """D3. A transcript row carries no grain, so it has no milestone to belong
+    to — and under the deleted lookup that made it a REFUSAL when nothing was
+    in progress, which is how a whole milestone's telemetry went missing. It
+    now has a home, created on first write like a milestone's is."""
+    with tree(milestone_status='planning') as root:
+        assert not (root / ROOT_LEDGER_REL).exists()
+        code, out = record(root, '--from-transcript', str(SUBAGENT),
+                           '--event', 'SubagentStop')
+        assert code == 0, out
+        assert ROOT_LEDGER_REL in out, 'the verb did not say where it wrote'
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL]
+        assert 'grain' not in only_row(root)
+
+
+def test_retire_takes_the_milestones_ledger_and_leaves_the_trees():
+    """The `check pm` D6 rule is unchanged by D3: an attributed row still dies
+    with its milestone and git is still the archive. The root ledger outlives
+    it, which is correct — those rows were never about it."""
+    with tree(milestone_status='done', feature_status='done',
+              story_statuses=('done',)) as root:
+        put_ledger(root, status_line(TS, STORY, 'building', 'done'))
+        assert record(root, *GATE)[0] == 0
+        before = (root / ROOT_LEDGER_REL).read_bytes()
+        code, out = run_cli(root, 'retire', '0.1')
+        assert code == 0, out
+        # The GRAINS go, not the tree — `pm/roadmap/` is the tree itself and a
+        # pooled milestone has no directory of its own to remove.
+        assert not (root / LEDGER_REL).exists()
+        assert model.milestones(loaded(root)) == []
+        assert (root / ROOT_LEDGER_REL).read_bytes() == before
+
+
+def test_an_id_no_grain_carries_is_still_refused_and_writes_nothing():
+    """Routing by grain must not turn an unknown id into a new place to
+    write."""
+    with tree() as root:
+        refuses(root, '--grain', '0.1/nope', needle='no grain resolves')
+        assert all_ledger_lines(root) == {}
 
 
 def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed():
@@ -476,8 +790,12 @@ def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed():
     if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits
         pytest.skip('running as root: a read-only file is still writable')
     with tree() as root:
-        put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
-        path = root / LEDGER_REL
+        # The ROOT ledger, because that is where a gate row is addressed (D3);
+        # locking the milestone's would leave the write path untouched and the
+        # case would prove the opposite of what it says.
+        put_ledger(root, status_line(TS, STORY, 'ready', 'building'),
+                   rel=ROOT_LEDGER_REL)
+        path = root / ROOT_LEDGER_REL
         before = path.read_bytes()
         path.chmod(0o444)
         try:
@@ -557,8 +875,14 @@ RECORD_REFUSALS = [
     (('--from-transcript', str(SUBAGENT)), '--event is required'),
     (('--grain', STORY, '--tokens-in=-1'), 'non-negative integer'),
     (('--grain', STORY, '--duration-s=3.5'), 'non-negative integer'),
-    (('--grain', STORY, '--from-transcript', str(SUBAGENT), '--event', 'Stop'),
-     'are exclusive'),
+    # NOT here any more: `--grain` with `--from-transcript` is the courier's
+    # own shape since 0.4.0/every-row-names-its-grain. It is a WRITE, proven
+    # below.
+    # An id that resolves to nothing is refused on the transcript form too —
+    # the same bar the hand form applies. A bad grain must never degrade to an
+    # omitted key: that is how a typo becomes silent misattribution.
+    (('--grain', '0.1/alpha/nope', '--from-transcript', str(SUBAGENT),
+      '--event', 'Stop'), 'no grain resolves'),
     (('--agent-type', 'developer'), 'needs --from-transcript'),
     (('--grain', '0.1/alpha/nope'), 'no grain resolves'),
     # The grain grammar, one representative per class: traversal, absolute,
@@ -796,41 +1120,37 @@ def test_such_a_row_does_not_become_this_grains_row():
     assert ledger.row_names({'tree': {'stories_wip': [STORY]}}, {STORY})
 
 
-# --- 0.3.0: the release is what the ledger binds to ---------------------------
-def test_a_tree_at_rest_with_a_plan_files_the_row(tmp_path):
-    """THE BUG. Every gate run during this milestone's design printed
-
-        [pm] REFUSED — no milestone in pm/roadmap is in progress, so there is
-        no ledger this gate row belongs to; no row was written
-
-    over a tree that was planning two milestones with none flipped to
-    `in_progress`. The refusal was on the wrong axis: gate cost is a fact about
-    a RUN. `order` plus `version_at` answer with exactly one by construction,
-    and read no status field to do it.
-    """
-    with tree(milestone_status='planning') as root:
-        _model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
-                        'version', '"0.1.0"')
-        (root / 'pm/roadmap/releases.md').write_text(
-            '---\norder:\n  - "0.1.0"\n---\n\nThe plan.\n', encoding='utf-8')
+# --- 0.4.0/D3+D7: a gate row names no grain, so it lands in the TREE's ledger --
+# INVERTED from 0.3.0's pair, which proved a gate row followed the current
+# RELEASE (`order` plus `version_at`). That was a better answer than the status
+# lookup it replaced and still a second routing mechanism reading tree state; a
+# binding is a FIELD, and `gate_row` has none. So the plan is not consulted
+# either, and a tree with no plan at all records — which the release rule could
+# not do.
+@pytest.mark.parametrize('kwargs,plan', [
+    # THE BUG, in its original shape: two milestones planned, none flipped to
+    # `in_progress`, and every gate run of this milestone's design printed
+    # "no milestone in pm/roadmap is in progress" and wrote nothing.
+    (dict(milestone_status='planning'), False),
+    # A tree at rest with a plan: the row does not go to the release's
+    # milestone, because it is not about a milestone.
+    (dict(milestone_status='planning'), True),
+    # Two in progress — "which one owns this row" was the one thing the verb
+    # said it could not know. Nothing asks.
+    (dict(milestone_status='building'), False),
+])
+def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
+    with tree(**kwargs) as root:
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': '"0.2"', 'name': 'Next', 'status': kwargs['milestone_status'],
+               'version': '"0.2.0"'})
+        if plan:
+            _model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+                             'version', '"0.1.0"')
+            (root / 'pm/roadmap/releases.md').write_text(
+                '---\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n\nThe plan.\n',
+                encoding='utf-8')
         code, out = record(root, *GATE)
         assert code == 0, out
         assert only_row(root)['kind'] == 'gate'
-
-
-def test_several_milestones_in_progress_is_no_longer_a_question(tmp_path):
-    """"Which one owns this row" was the one thing the verb could not know. A
-    position in `order` is one place, so it is not asked."""
-    with tree(milestone_status='building') as root:
-        write(root / 'pm/roadmap/0.2-next/milestone.md',
-              {'id': '"0.2"', 'name': 'Next', 'status': 'building',
-               'version': '"0.2.0"'})
-        _model.set_field(root / 'pm/roadmap/0.1-demo/milestone.md',
-                        'version', '"0.1.0"')
-        (root / 'pm/roadmap/releases.md').write_text(
-            '---\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n', encoding='utf-8')
-        code, out = record(root, *GATE)
-        assert code == 0, out
-        # `start`: the first unshipped entry is 0.1.0, so its milestone holds it.
-        assert (root / 'pm/roadmap/0.1-demo/ledger.jsonl').is_file(), out
-        assert not (root / 'pm/roadmap/0.2-next/ledger.jsonl').exists()
+        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL], out

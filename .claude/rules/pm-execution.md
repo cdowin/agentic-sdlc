@@ -67,7 +67,11 @@ while its status never moved — the tree and the work disagreeing. Move the sta
 it becomes true, rather than batching flips at the end.
 
 1. **Claim.** `pm story building <id>` when you begin editing files for a story, and
-   set `owner:` in the same edit (`pm set <id> owner <name>`).
+   set `owner:` in the same edit (`pm set <id> owner <name>`). This is bookkeeping,
+   and only bookkeeping: **the flip does not turn recording on.** A ledger row is
+   filed against the milestone that owns the row's grain, at any status, so work on a
+   `planning` milestone records too — and a tree whose couriers are wired and whose
+   ledgers are empty is `check pm`'s U2, not something a status flip fixes.
 2. **Commit atomically.** One logical unit per commit.
 3. **Ready for review.** `pm story reviewing <id>`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
@@ -120,15 +124,20 @@ Every command is idempotent. Exit codes: `0` ok, `1` refused, `2` usage or confi
 `this file` → stays in the story · `next story here` → the feature's own banner ·
 `next feature` → the milestone · `nobody` → it's the commit message, already written.
 
-**Never write what is already derivable.** `pm status <milestone>` gives phase/status/
+**Never write what is already derivable.** `pm status <milestone>` gives status and
 story tallies; `git log` gives history. **Do not hand-maintain a story list in a
 feature file, or a feature list in a milestone file** — that is a second scoreboard
-and it will lie.
+and it will lie. Sequence is `order:` on the parent, written by `pm add`, and it is
+a list of ids and nothing else — never a rendered roster.
 
 ## Keeping the tree honest
 
-- `pm status [<milestone>]` — the whole tree, grouped by `phase:`. Never hand-copy a
-  tally out of it.
+- `pm status [<milestone>]` — the whole tree, each milestone's features in its own
+  declared `order:`. Never hand-copy a tally out of it.
+- `pm add <parent-id> <child-id> [--position N | --before <id> | --after <id>]` —
+  BIND and SEQUENCE in one act: membership is the child's field, sequence is the
+  parent's `order:` list. Neither argument names a kind. `pm remove` is the pair.
+  `order` is optional: an unsequenced child is counted, never a finding.
 - `pm list [--status …] [--owner …] [--milestone …]` — one tab-separated row per story,
   filtered. `pm list --status building,reviewing` is "what is open right now" where
   `pm status` is "what is everything doing".
@@ -139,6 +148,25 @@ and it will lie.
 - `pm vocabulary [--json]` — the closed CATEGORY set, each kind's states with
   the category each sits in, and the rule ids `[pm] checks` may name — nothing
   else about flow. Read it after a devkit pin bump.
+- `pm ledger show <grain-id>` — that grain's TELEMETRY, oldest first: every
+  status flip, decision and dispatch, with the seconds between them. What a
+  story COST, rather than where it is.
+- **`GDK_LEDGER_GRAIN`** — export it, and the session's or dispatch's rows land
+  on that grain's line instead of in `rows naming no grain`. The couriers read
+  it from their own environment and pass it as `--grain`; **nothing exports it
+  for you**, and it is the one `GDK_LEDGER_*` value the hook cannot get from
+  the payload, because no hook event carries a grain. Whoever starts a session
+  or dispatches an agent knows what it is working on, so passing it is copying
+  a fact rather than deriving one. Unset is normal: the verb then uses the one
+  story in progress, and omits the key when there is none or several — never a
+  guess.
+- `pm ledger report [<milestone-id>]` — the same rows added up per grain:
+  dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
+  each category. This is the answer to *how long did this take*, *what did it
+  spend* and *what did the gates cost* — do not hand-write a table of them.
+  A row is filed against the milestone that owns its grain, at any status; a
+  row naming none lands in `<roadmap>/ledger.jsonl` and is reported in the
+  `rows naming no grain` bucket.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

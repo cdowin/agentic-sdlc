@@ -273,16 +273,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     try:
         from agentic_sdlc.repo.pm import ledger, model
         cfg = model.load()
-        # The SAME resolution the gate recorder and `check budget` use (review
-        # C2). Filing these against "the one milestone in progress" while the
-        # gate rows went to the current release split one ledger in two: the
-        # slowest-tier lines and the gate rows they sit beside described
-        # different runs, hours apart, in different files.
-        mdir, _why = model.release_ledger_dir(cfg)
-        if mdir is not None:
-            for rank, report in enumerate(slowest, start=1):
-                ledger.append_row(mdir, ledger.test_row(
-                    tier, report.nodeid, int(report.duration * 1000), rank))
+        # THE TREE's ledger, and both sides of this merge were reaching for
+        # the same thing: 0.3.0's review C2 asked that these land WHERE THE
+        # GATE ROWS LAND, because a slowest-tier line and the gate row it sits
+        # beside must describe one run. 0.4.0/D3 then made that one file for
+        # both — a `test` row names no grain, like a `gate` row — so the
+        # agreement C2 asked for is now structural rather than a resolution
+        # copied into two places.
+        for rank, report in enumerate(slowest, start=1):
+            ledger.append_row(ledger.grainless_dir(cfg.roadmap),
+                              ledger.test_row(
+                                  tier, report.nodeid,
+                                  int(report.duration * 1000), rank))
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could
         # not write its own cost row would be telemetry outranking the thing it

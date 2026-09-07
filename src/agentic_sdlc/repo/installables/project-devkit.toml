@@ -4,37 +4,64 @@
 # with --force: the tool is pinned by DEVKIT_VERSION in the Makefile, and what
 # that tool should do HERE is the project's own statement.
 #
-# Every section below is COMMENTED OUT and carries the stock default, with ONE
-# exception — `[pm.states.*]`, which is LIVE and argued where it sits. A repo
-# with no devkit.toml behaves byte-identically to one declaring every commented
-# default, so deleting any of those is always safe — uncomment only where your
-# layout genuinely differs. `agentic-sdlc check <gate> --help` prints that
-# gate's contract, its section and its honest scope.
+# EVERY KEY HERE IS A KNOB OR A DECLARATION, and one question tells them
+# apart: **is there a default behind this key in the code?**
+#
+#   KNOB — yes. The reader takes the stock value when the key is absent, so a
+#     repo with no devkit.toml runs that GATE byte-identically to one
+#     declaring it (CLAUDE.md hard rule 5, gate half). A knob stays COMMENTED
+#     at exactly the value the code holds, and `tests/test_config_seed.py`
+#     compares the two every run and names the first that drifts. Deleting a
+#     commented line is therefore always safe — uncomment only where your
+#     layout genuinely differs.
+#   DECLARATION — no. Nothing is behind the key, and the reader refuses BY
+#     NAME when it is absent, because the words are this project's and the
+#     tool will not invent them (hard rule 5, workflow half). A declaration is
+#     spelled out WITH ITS ARGUMENT and its block is marked `DECLARATION`
+#     below. There are two. `[pm.states.*]` is LIVE at the bottom, because
+#     `pm` refuses on its first call without it and the seeded words fit any
+#     project. `[verify]` stays commented, because its argument is make
+#     targets only your Makefile can name — an absent `[verify]` is exit 2 on
+#     every `verify` flag, so uncomment that block and edit the target names
+#     before you use the ladder.
+#
+# That rule decides the next key rather than being re-argued per key.
+# `agentic-sdlc pm config --seed` prints this file as the PINNED tool holds
+# it — the surface for a bump, where `init` serves only a new repo.
+# `agentic-sdlc check <gate> --help` prints that gate's contract, its section
+# and its honest scope.
 #
 # A key this package no longer honours is NAMED at exit 2, never ignored; a
 # wrong-typed value (a bare string where a list belongs) is exit 2 as well,
 # because a gate quietly scanning nothing is worse than a gate that stops.
 
 # --- which gates run ----------------------------------------------------------
-# The roster `agentic-sdlc check all` runs HERE. Five gates exist — `doc`,
-# `shell`, `repo-hygiene`, `pm`, `hooks` — and two are in the stock aggregate.
+# The roster `agentic-sdlc check all` runs HERE. Seven gates exist — `doc`,
+# `shell`, `grain-shape`, `repo-hygiene`, `pm`, `hooks`, `budget` — and three
+# are in the stock aggregate.
 # A repo holding NONE of a gate's file kind gets a 0-file census, and that gate
 # correctly reddens — a gate that scanned nothing must say so. That is the
 # roster being wrong for the repo, not a reason to soften a gate: narrow it
 # here instead. An unknown name is exit 2.
 #
-# The other three are OPT-IN, each for its own reason: `repo-hygiene` is
+# The other four are OPT-IN, each for its own reason: `repo-hygiene` is
 # close-time and hits the network, `pm` would fail a repo that has no PM tree,
-# and `hooks` would fail one that has not run `install-hooks` — arming is a
-# decision a consumer makes once, and the gate is for a repo that has made it.
+# `hooks` would fail one that has not run `install-hooks`, and `budget` grades
+# tier costs against ceilings only your project can put a number on — it reads
+# `[tests] budget / cases / floor`, which this seed does not carry because
+# there is no stock number to carry. Arming is a decision a consumer makes
+# once, and each gate is for a repo that has made it.
 # Name any of them here to fold it in.
 # [checks]
-# all = ["doc", "shell"]
+# all = ["doc", "shell", "grain-shape"]
 
 # `make check` runs the devkit gates and then YOUR gate targets, named here as
 # make goals — extension by config, never a fork of Makefile.devkit. A name
 # that is not a plain make goal (whitespace, a path, a shell or make
-# metacharacter) is exit 2, and `check` refuses to re-enter itself.
+# metacharacter) is exit 2, and `check` refuses to re-enter itself. The stock
+# value is NO extra goals, and an empty list has no legal spelling here:
+# `extra = []` is exit 2 ("remove the key to take the default"), because a
+# list-valued key that declares nothing is nearly always a mistake.
 # [gates]
 # extra = []
 
@@ -52,11 +79,11 @@
 # roots = ["tools"]
 
 # `check grain-shape` holds every grain body and every review record to a cap, in
-# lines. Stock: story 60, feature 80, bug 50, milestone 120, decisions 300,
-# review 120. A kind not named keeps its stock cap; raise one here, visibly, or
-# split the record. `review` reads `[pm] review_dir`.
+# lines. The whole stock table is below; a kind you do not name keeps its stock
+# cap, so raise one here, visibly, or split the record. `review` reads
+# `[pm] review_dir`.
 # [grain_shape]
-# caps = { story = 60 }
+# caps = { bug = 50, decisions = 300, feature = 80, handoff = 120, milestone = 120, note = 250, review = 120, story = 60 }
 
 # `check repo-hygiene` is CLOSE-TIME and fetches from the network.
 # [repo_hygiene]
@@ -70,13 +97,47 @@
 # the rule ids in full.
 # [pm]
 # roadmap_dir  = "pm/roadmap"     # the tree, relative to the repo root
-# template_dir = "pm/templates"   # REQUIRED to override a grain template
+# template_dir = ""               # set it to override a grain template;
+#                                 # `pm templates` copies the stock set out
 # review_dir   = "docs/reviews"   # where review records live
-# story_ordinal_prefix = false    # also resolve stories/NN-<slug>.md
-# checks = ["D1", "D2", "D3", "D4", "D5", "D6",   # drift rules — the default
-#           "V1", "V2", "V3", "V4", "V5"]         # integrity rules
-#                                   # V6 (execution lists match the tree) and
-#                                   # the FLOW rules are opt-in: D9 (an
+#
+# THE POOLS (0.4.0) — one directory per kind, the tables of the database.
+# Empty means "derive `<roadmap_dir>/<kind>s`", so a tree declaring none of
+# them behaves exactly like one declaring every stock value and adopting costs
+# zero edits. Four keys rather than one root because the shape of the config is
+# the shape of the model: this block says there are four kinds and that they
+# are peers, which a single root never could.
+# milestone_dir = ""              # else <roadmap_dir>/milestones
+# feature_dir   = ""              # else <roadmap_dir>/features
+# story_dir     = ""              # else <roadmap_dir>/stories
+# bug_dir       = ""              # else <roadmap_dir>/bugs
+# ledger_dir    = ""              # else <roadmap_dir>/ledgers — machine state
+#                                 # rather than grains, same mechanism
+#
+# breadcrumbs = true              # after a move, the `next:` line on STDERR
+#                                 # naming the rung that follows. STDOUT is
+#                                 # byte-identical either way; turn it off in
+#                                 # one line if you parse `pm` strictly
+# contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = ["story"] }
+#                                 # WHICH KINDS HOLD WHICH — what `pm add
+#                                 # <parent-id> <child-id>` allows, read off
+#                                 # the two ids rather than from the command.
+#                                 # It NARROWS: which field a child names its
+#                                 # parent with is fixed (a feature has
+#                                 # `milestone:`, a story `feature:`), so a
+#                                 # project that files no bugs drops "bug" and
+#                                 # `pm add` then refuses one by name. The
+#                                 # ROOT is a container too: `roadmap` is
+#                                 # pm/roadmap/releases.md, whose `order`
+#                                 # sequences the milestones
+# checks = ["D1", "D2", "D3", "D4", "D5", "D6", "U1", "V1", "V4", "V5", "V7"]
+#                                 # D-drift, U-usage and V-integrity rules
+#                                                 # (V2/V3 retired in 0.4.0:
+#                                                 #  they kept `id:` and the
+#                                                 #  bindings in agreement with
+#                                                 #  the PATH, and a path is no
+#                                                 #  longer part of identity)
+#                                   # The FLOW rules are opt-in: D9 (an
 #                                   # in-progress milestone declares `branch:`)
 #                                   # and D10 (that branch is neither empty nor
 #                                   # the mainline). Both report over EVERY
@@ -84,9 +145,10 @@
 #                                   # below.
 #                                   # The RELEASE family holds the plan
 #                                   # (pm/roadmap/releases.md `order`) and the
-#                                   # tree to each other: R1 an entry no
-#                                   # milestone claims, or a `version:` on no
-#                                   # plan; R2 the backlog census; R3 two
+#                                   # tree to each other: R1 an entry naming
+#                                   # no milestone in the tree (a milestone on
+#                                   # no plan is a counted line); R2 the
+#                                   # backlog census; R3 two
 #                                   # milestones claiming one version; R4
 #                                   # history is a prefix; R5 the version file
 #                                   # equals the CURRENT entry (`version_at`
@@ -116,8 +178,8 @@
 #                                   # each file — bash has no TOML reader, so
 #                                   # it is written twice on purpose. Change
 #                                   # one, change the other.
-# The states themselves are [pm.states.<kind>] below — the one LIVE section in
-# this file — and every question `pm` and `check pm` ask is asked of a state's
+# The states themselves are [pm.states.<kind>] below — the one section written
+# LIVE — and every question `pm` and `check pm` ask is asked of a state's
 # CATEGORY (todo / in_progress / done), never of the word. The flat
 # `<kind>_states` lists, `also_done` and `review_slug_fallback` are retired
 # and refused by name: a second declaration of the same words was a second
@@ -131,15 +193,15 @@
 # set that happens to use one of those words is your vocabulary, not the
 # window, and nothing here refuses it.
 
-# --- THE FLOW — the ONE LIVE SECTION in this file -----------------------------
-# Everything else here is commented at its stock default, because a GATE ships
-# stock defaults and a commented default IS the default: a repo with no
-# devkit.toml runs every gate byte-identically to one declaring them. **A
-# WORKFLOW does not** (CLAUDE.md hard rule 5). There is NO runtime fallback
-# behind the table below — the reader takes what is here and refuses BY NAME
-# when it is absent — so a commented copy of this section would leave this
-# freshly-initialised tree refused on its first `pm` call. That is the whole
-# reason it is live, and it is the only section that has one.
+# --- THE FLOW — the ONE SECTION WRITTEN LIVE ----------------------------------
+# DECLARATION — there is NO runtime fallback behind the table below. The reader
+# takes what is here and refuses BY NAME when it is absent, so a commented copy
+# of this section would leave this freshly-initialised tree refused on its first
+# `pm` call. Every knob above is commented at its stock default instead, because
+# a GATE ships stock defaults and a commented default IS the default: a repo
+# with no devkit.toml runs every gate byte-identically to one declaring them.
+# **A WORKFLOW does not** (CLAUDE.md hard rule 5). That is the whole reason this
+# one is live, and `[verify]` is the only other declaration in the file.
 #
 # YOURS, and changing a word here changes no code anywhere. The tool keeps
 # three opinions and no more: the category set is `todo` / `in_progress` /
@@ -209,10 +271,15 @@ done        = ["closed"]
 # what a target RUNS. `close story` runs the story rung; `release`'s `gate`
 # check runs `make milestone`. `verify --check` holds each target to existing
 # in the Makefile; `verify --plan` prints each rung's cost from the ledger.
-# `unit` and `test` are the tier targets your Makefile.tiers defines. An
-# absent `[verify]` is exit 2 on every flag, and the retired `[[verify.narrow]]`
-# table — the story rung when it selected commands by changed path — is
-# refused by name.
+# The retired `[[verify.narrow]]` table — the story rung when it selected
+# commands by changed path — is refused by name.
+#
+# DECLARATION — there is NO default behind these three rungs. An absent
+# `[verify]` is exit 2 on every flag and `milestone` is required, so the three
+# lines below are a WORKED EXAMPLE and not a stock value: `unit` and `test` are
+# tier targets your own Makefile.tiers defines and this seed cannot know them.
+# It stays commented for that reason alone — uncomment it and edit the target
+# names to yours before you use the ladder.
 # [verify]
 # story     = "make unit"
 # feature   = "make test"

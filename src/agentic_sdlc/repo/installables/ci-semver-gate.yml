@@ -112,9 +112,16 @@ jobs:
             echo "::error::PM_ROADMAP='$PM_ROADMAP' is not a directory — set the step env to this project's [pm] roadmap_dir. A gate that scanned nothing cannot say OK."
             exit 1
           fi
+          # BOTH layouts: `<roadmap>/milestones/<slug>.md` since 0.4.0, and
+          # `<roadmap>/<mid>-<slug>/milestone.md` before it. A checkout may be
+          # either, and a loop that knew only one scanned zero files and failed
+          # every release PR with "the gate scanned nothing".
           scanned=0
-          for m in "$PM_ROADMAP"/*/milestone.md; do
+          for m in "$PM_ROADMAP"/milestones/*.md "$PM_ROADMAP"/*/milestone.md; do
             [ -f "$m" ] || continue
+            # A pool holds shared docs beside the grains; only a document that
+            # declares an id is a milestone.
+            [ -n "$(fm "$m" id)" ] || continue
             scanned=$((scanned + 1))
             id="$(fm "$m" id)"
             [ "$id" = "$PR" ] || continue
@@ -127,7 +134,7 @@ jobs:
             fi
           done
           if [ "$scanned" -eq 0 ]; then
-            echo "::error::no milestone.md under $PM_ROADMAP/*/ — the gate scanned nothing and cannot say OK. Set PM_ROADMAP to this project's [pm] roadmap_dir."
+            echo "::error::no milestone document under $PM_ROADMAP/milestones/ or $PM_ROADMAP/*/ — the gate scanned nothing and cannot say OK. Set PM_ROADMAP to this project's [pm] roadmap_dir."
             exit 1
           fi
           if [ -z "$legit" ]; then

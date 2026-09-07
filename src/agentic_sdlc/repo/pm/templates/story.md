@@ -1,5 +1,6 @@
 ---
 id: {id}
+kind: {kind}
 feature: {feature}
 milestone: "{milestone}"
 name: {name}

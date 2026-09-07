@@ -459,7 +459,6 @@ DELETED = (
     ('pm.ledger', 'TERMINAL_STATE'),
     ('pm.ledger', 'terminal_state'),
     ('pm.ready_for', '_needs_state'),
-    ('pm.execlist', '_phase_key'),             # `seam`
     ('pm.cli', 'cmd_feature_reviewing'),       # `model.REVIEWING`'s verb
     # story 01 of the-code-knows-entry-and-exit: the step-to-state table, its
     # reader, the vocabulary section that printed it, and the ledger report's

@@ -88,23 +88,28 @@ recommends.
 gate-is-red` (0.4.0) is the precedent: a fail-open courier with no fail-loud counterpart recorded
 nothing for the whole of 0.3.0 and nobody could tell. The same trap is waiting here.
 
-## Prior art, and the thing it gets wrong
+## Prior art — the same product, built from the other end
 
-The unrelated `agentic-sdlc` on PyPI (truongnat, 3.0.0) ships `WorkflowEngine`, `Coordinator`,
-`Agent` and a self-learning `Learner`. It is worth reading once, as a boundary marker:
+The unrelated `agentic-sdlc` on PyPI (truongnat, 3.0.0, MIT) is not a namesake accident. Its CLI is
+`init`, `run <workflow>`, `status`, `agent create|list`, `workflow create`, `config show|set`,
+`health`, `brain stats|learn` — **this package's surface minus the PM tree and minus every gate.**
+It is aimed at the same target and it started from the other end: the orchestration surface first,
+gates never.
 
-- `WorkflowEngine._execute_step` returns `{"step": …, "action": …, "status": "completed"}`. The
-  `action` is a string echoed back, never resolved to anything callable. Every step "completes" and
-  nothing runs.
-- `Coordinator.start_execution` sets `status: "running"` and executes nothing.
-- `Learner` genuinely persists patterns — and `frequency` is initialised to `1`, read on load, used
-  to rank recommendations and to compute `confidence = min(frequency / 10.0, 1.0)`, and
-  **incremented nowhere in the package**. The confidence is permanently `0.1`. The loop has no
-  feedback edge.
+That ordering is why it is worth reading exactly once. It took the plugin-framework path this
+milestone rejects, and D1 records what that path decayed into — a carefully written `Plugin(ABC)`
+with entry-point discovery, zero cross-module call sites, two execution engines that do not
+reference each other, and a `_compat` shim map whose own comment admits members were removed. The
+abstract half of a framework costs nothing to keep; the concrete half costs everything.
 
-**A learning loop that is never read back is decoration.** That is the failure mode this milestone
-has to avoid, and it is why capture alone does not satisfy the ship criterion — a lesson has to
-surface where somebody is standing (rule 11), or it is `frequency` all over again.
+**A package of gates cannot lose its implementation quietly.** A gate that stops checking prints
+PASS over zero files, and rule 4 makes that a failure. That asymmetry is the argument for the whole
+design here, and D1 is where it is written down.
+
+The one thing worth taking is the SHAPE of `brain learn` — a durable lesson store fed by observed
+events. What is not worth taking is its `Learner`, whose `frequency` is never incremented, so its
+confidence is pinned at `0.1` forever. **A learning loop that is never read back is decoration** —
+which is why capture alone does not satisfy the ship criterion below.
 
 ## Ship criterion
 

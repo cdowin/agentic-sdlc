@@ -3,7 +3,7 @@ id: "ms-the-rule-reaches-the-work"
 kind: milestone
 name: the rule reaches the work
 status: planning
-depends_on: ms-a-move-is-an-event
+depends_on: ["ms-a-move-is-an-event"]
 branch:
 version: 0.6.0
 order:
@@ -13,6 +13,7 @@ order:
   - "ft-prose-that-restates-a-verb-is-rendered-or-gone"
   - "ft-a-warning-is-actionable-where-it-fires"
   - "bg-the-milestone-scaffold-still-mints-the-version"
+  - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
 ---
 
 # 0.6.0 — the rule reaches the work

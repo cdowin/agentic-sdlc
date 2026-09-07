@@ -63,6 +63,20 @@
   `pm-execution.md`'s claim step now says the flip is bookkeeping and **not** what turns recording
   on — it never was after the routing change, and reading it that way is how the silence lasted.
 
+- **Three absences the tool could already see and did not say** (all WARN, none in an exit code):
+  a **story in an `in_progress` category with no `owner:`** — a live bug, not a tidy-up:
+  `pm-execution.md` step 1 says to set it in the same edit as the claim, two modules READ the
+  field, and nothing asked whether it was there, so a tree could run a milestone with every story
+  unowned; a **feature past `todo` with an empty `## Proof budget`** — the anti-bloat contract
+  every feature template carries and nothing had ever checked was filled in, which is a contract
+  nobody verifies, i.e. a suggestion; and **`verify --plan` names a gate in `[checks] all` that has
+  filed no cost row** while its neighbours have. That last is silent when NONE of them has one,
+  because a tree running its gates inside a composed target has rows for the composition and none
+  per gate — the join only means something when some are measured and one never is.
+
+  No new rule id, no new verb, no new gate module: two lines in the READY family and one in a
+  report that already existed. That is what "fix at the cheapest layer" looks like.
+
 - **`adopt` gains `telemetry-live`: is this tree recording, and if not, which of the three ways.**
   A consumer bumps the pin, gets the courier scripts, and pastes the `.claude/settings.json` block
   **by hand** — and nothing verified the paste. The failure is files present, hooks unarmed, zero

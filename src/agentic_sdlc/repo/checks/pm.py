@@ -23,7 +23,9 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
-  READY  a grain past `todo` with an empty scaffolded section, no stories, no `phase:`,
+  READY  a grain past `todo` with an empty scaffolded section (`## Ship criterion`,
+         `## Acceptance criteria`, `## Proof budget`), a story in progress with no
+         `owner:`, no stories, no `phase:`,
          no `branch:`, or (a milestone) no `handoff.md` — the doc is never auto-minted,
          so its absence is the signal and `pm new handoff <id>` is the fix
   R2  the BACKLOG census — milestones declaring no `version:`; a counted line, never a finding
@@ -219,6 +221,18 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     warn(f'feature {view.fid} is {view.status!r} and {why} — '
                          f'past todo, and nothing says what done means'
                          f'  [{frel}]')
+                # The anti-bloat contract, and it had never been verified to
+                # exist: the template carries the section, the milestone's own
+                # rules call it "where test bloat is stopped, not at review",
+                # and an empty one is how a feature ships twice its budget with
+                # nobody able to say so. `empty_section` already answers this
+                # question for two other headings; this is one constant and one
+                # call in the loop that already runs.
+                why = model.empty_section(view.path, model.PROOF_HEADING)
+                if why:
+                    warn(f'feature {view.fid} is {view.status!r} and {why} — '
+                         f'past todo, and nothing says what it should COST'
+                         f'  [{frel}]')
 
             for sfile in view.stories:
                 sid = model.field_of(sfile, 'id')
@@ -233,6 +247,17 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mdirs,
                     if why:
                         warn(f'story {sid} is {sstat!r} and {why} — past todo, '
                              f'and nothing says what must be true  [{srel}]')
+                if (_cat(cfg, 'story', sstat) == model.IN_PROGRESS
+                        and not model.unquote(model.field_of(sfile, 'owner'))):
+                    # A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says
+                    # to set `owner:` in the same edit as the claim, two
+                    # modules READ the field, and nothing asked whether it was
+                    # there — so a tree could run for a milestone with every
+                    # story unowned.
+                    warn(f'story {sid} is {sstat!r} '
+                         f'({model.IN_PROGRESS}) and carries no owner: — '
+                         f'somebody is working on it and the tree cannot say '
+                         f'who  [{srel}]')
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     warn(f'story {sid} is {sstat!r} '

@@ -248,6 +248,36 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
                 self.assertNotIn('x —', ratio.replace('unknown', ''),
                                  'no ratio is invented where no rows exist')
 
+    def test_a_roster_gate_with_no_cost_row_is_named_beside_the_measured_ones(self):
+        """`[checks] all` names GATES and the ledger records what runs COST,
+        and nothing had ever joined them — so a roster entry that never runs
+        reads exactly like one that passes. This project has already paid for
+        that: the toolkit is two pinned packages and each refuses a gate name
+        it does not know.
+
+        **Silent when NONE of them has a row**, which is the precision that
+        keeps it from being a nag: a tree running its gates inside a composed
+        `check` target has cost rows for the composition and none per gate, and
+        reporting all of them there would fire on every consumer forever. The
+        join only means something when some are measured and one never is.
+        """
+        rows = self._with_ledger(
+            {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'doc',
+             'verdict': 'PASS', 'duration_ms': 900})
+        for roster, expect in (('["doc", "pm"]', True),     # one measured, one not
+                               ('["doc"]', False),          # all measured
+                               ('["pm", "shell"]', False)):  # none measured
+            with self.subTest(roster=roster):
+                tree = dict(self.TREE)
+                tree['pm/roadmap/ledger.jsonl'] = rows
+                # The roster rides in the `[verify]` block Repo writes, since
+                # that is the one devkit.toml this fixture produces.
+                with Repo(LADDER + STORY_RULE
+                          + f'\n[checks]\nall = {roster}\n', tree):
+                    code, out = run('--plan')
+                self.assertEqual(code, 0, out)
+                self.assertEqual('unrun' in out, expect, out)
+
     def test_with_gate_rows_the_plan_prints_the_measured_numbers(self):
         # The counterpart to the case above: without this, an implementation
         # that answered `unknown` unconditionally would pass every other

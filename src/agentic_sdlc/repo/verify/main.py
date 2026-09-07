@@ -236,7 +236,49 @@ def _plan(ladder: Ladder, root: Path) -> int:
         measured[name] = cost.duration_ms if cost else None
     print()
     print(f'  {_ratio(measured[STORY], measured[MILESTONE], ledger_at)}')
+    for line in _roster_without_rows(root, costs):
+        print(f'  {line}')
     return EXIT_OK
+
+
+def _roster_without_rows(root: Path, costs: dict) -> list[str]:
+    """Gates named in `[checks] all` that have produced no cost row here.
+
+    `[checks] all` names gates and the ledger records what each gate COST, and
+    nothing had ever joined them — so a roster entry that never runs looks
+    exactly like one that passes. That is a failure mode this project has
+    already paid for: the toolkit is two pinned packages and each refuses a
+    gate name it does not know, so a name in the roster is not proof of a gate.
+
+    The other direction of `verify --plan`'s own rule. It prints `unknown`
+    rather than guessing a cost; this says which gates have never given it one.
+    A REPORT — no exit code moves (rule 9), and a fresh checkout legitimately
+    has none of them.
+    """
+    try:
+        # `core.config` and not `cli.all_roster`: this package's layers point
+        # DOWNWARD only, and `verify` reaching up into the router would be the
+        # import the boundary gate exists to refuse. The roster is a config
+        # value; validating the NAMES is the router's job and not this line's.
+        from agentic_sdlc.core.config import config_section, str_tuple
+        roster = str_tuple(config_section('checks'), 'checks', 'all', ())
+    except Exception:  # noqa: BLE001 - a config this cannot read says nothing
+        return []
+    missing = [name for name in roster if name not in costs]
+    # SILENT when NONE of them has a row, and that is the whole precision of
+    # this line. `[checks] all` names GATES and a `gate` row names a MAKE
+    # TARGET — two namespaces (`gates_extra.py` says so) — so a tree that runs
+    # its gates inside a composed `check` target has cost rows for the
+    # composition and none per gate. Reporting all of them there would be a
+    # nag on every consumer. When SOME roster gates have rows and others never
+    # have, the join means something: that gate is named and nothing is
+    # measuring it.
+    if not missing or len(missing) == len(roster):
+        return []
+    return [f'unrun     {len(missing)} of {len(roster)} gate(s) in [checks] '
+            f'all have filed no cost row here while the others have: '
+            f'{" ".join(missing)} — a roster entry that never runs reads '
+            f'exactly like one that passes']
 
 
 def _ratio(story_ms: int | None, milestone_ms: int | None,

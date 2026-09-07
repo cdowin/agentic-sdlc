@@ -534,6 +534,13 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # budget" forever: the read-side cardinal sin, in the gate whose whole job
     # is to notice a number getting worse.
     'repo/checks/budget.py',
+    # `[checks] all` — the roster `verify --plan` joins against the ledger's
+    # gate rows, to say which named gate has never produced a cost. Read
+    # through `str_tuple`, which is the guard for a list-of-strings, and NOT
+    # through `cli.all_roster`: this package's layers point downward, so
+    # `verify` reaching up into the router is the import next door refuses.
+    # Validating the NAMES stays the router's job.
+    'repo/verify/main.py',
     'repo/gates_extra.py',
     # The conveyor reads `[release] steps`, `[release.commands]` and
     # `[<op>.version_files]`, and every one of those values goes through a

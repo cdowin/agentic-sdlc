@@ -286,11 +286,20 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
     PROMPT = '<!-- What must be TRUE. One line each, and each one able to fail. -->'
 
     def _story(self, root, status, body):
+        # `owner:` set, because a story in progress without one is its own
+        # READY warning since 0.4.0 — and these cases are about the SECTION,
+        # so a second line in the output would make them assert two things.
         write(root / STORY_REL,
               {'id': '0.1/alpha/s0', 'feature': '0.1/alpha',
-               'milestone': '"0.1"', 'name': 'S0', 'status': status}, body)
+               'milestone': '"0.1"', 'name': 'S0', 'status': status,
+               'owner': 'ada'}, body)
 
-    SHIP = '# Alpha\n\n## Ship criterion\n\nIt ships.\n'
+    # Both feature sections the READY family reads, so a case about the
+    # STORY sees only the story's line. `## Proof budget` joined in
+    # 0.4.0/the-tree-names-what-it-lacks — the anti-bloat contract that
+    # every template carried and nothing had ever checked was filled in.
+    SHIP = ('# Alpha\n\n## Ship criterion\n\nIt ships.\n\n'
+            '## Proof budget\n\n  cases: 2\n')
 
     def _settle(self, root):
         """The milestone and the feature with nothing left to warn about, so
@@ -308,6 +317,34 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             model.HANDOFF_FILE_NAME).write_text(
                 model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
                 encoding='utf-8')
+
+    def test_a_story_in_progress_with_no_owner_warns(self):
+        """A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says to set
+        `owner:` in the same edit as the claim; `execlist.py` and `cli.py` both
+        READ the field; nothing asked whether it was there. So a tree could run
+        a whole milestone with every story unowned and the gate silent.
+
+        Asked of the CATEGORY, never the word — a project spelling its
+        in-progress state `wip` gets the same line.
+        """
+        for status, owner, expect in (('building', '', True),
+                                      ('building', 'ada', False),
+                                      ('ready', '', False),
+                                      ('done', '', False)):
+            with self.subTest(status=status, owner=owner), \
+                    tree(feature_status='building', story_statuses=(),
+                         config='[pm]\nchecks = ["D1","D2","D3","D4","D5",'
+                                '"D6","V1","V2","V3","V4","V5"]\n') as root:
+                self._settle(root)
+                write(root / STORY_REL,
+                      {'id': '0.1/alpha/s0', 'feature': '0.1/alpha',
+                       'milestone': '"0.1"', 'name': 'S0', 'status': status,
+                       'owner': owner},
+                      '# S0\n\n## Acceptance criteria\n\n- it works\n')
+                code, out = run_gate(root)
+                # A WARN, never the exit code.
+                self.assertEqual(code, 0, out)
+                self.assertEqual('carries no owner:' in out, expect, out)
 
     def test_each_warning_fires_on_the_scaffold_and_is_silent_on_a_filled_grain(self):
         empty = f'# S0\n\n## Acceptance criteria\n\n{self.PROMPT}\n\n## Out of scope\n'
@@ -350,9 +387,13 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                            "feature 0.1/alpha is 'building' and has no `## Ship criterion` section",
                            # Never auto-minted, so the ABSENCE is the signal —
                            # and the line names the verb that fills it.
-                           "milestone 0.1 is 'building' with no handoff.md"):
+                           "milestone 0.1 is 'building' with no handoff.md",
+                           # The anti-bloat contract, which every feature
+                           # template carried and nothing had ever checked was
+                           # filled in (0.4.0/the-tree-names-what-it-lacks).
+                           "feature 0.1/alpha is 'building' and has no `## Proof budget` section"):
                 self.assertIn(f'  WARN  {needle}', out, out)
-            self.assertIn('; 6 warning(s)', out)
+            self.assertIn('; 7 warning(s)', out)
             self.assertNotIn('DRIFT', out)
             # Filled: the sections written, the branch and the phase stamped,
             # one story under the feature — silent, and the verdict line is

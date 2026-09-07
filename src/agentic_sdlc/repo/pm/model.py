@@ -1800,6 +1800,10 @@ def left_todo(cfg: PmConfig, kind: str, status: str) -> bool:
 # templates' headings.
 ACCEPTANCE_HEADING = 'Acceptance criteria'
 SHIP_HEADING = 'Ship criterion'
+# The anti-bloat contract: how many cases a feature should cost, named before it
+# is built and compared after. Every feature template carries it and nothing had
+# ever checked it was filled in — a contract nobody verifies is a suggestion.
+PROOF_HEADING = 'Proof budget'
 
 _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 

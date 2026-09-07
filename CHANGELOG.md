@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`tree-clean` reads what `committed` reads: no modified path OUTSIDE the roadmap directory**
+  (`ft-a-lesson-surfaces-where-you-stand`). `tree-clean` is `release`'s first check and it counted
+  every modified path, while `committed` on the story belt already excluded the roadmap directory
+  — so the same tree could satisfy one belt and never the other, and the belt DIRTIES that
+  directory by design: it writes the milestone's status there, `gate` files its cost rows in the
+  milestone ledger, every `[emit]` tap files an event, and the lesson reader surfaces one before
+  check number one runs. That last one made the refusal permanent — commit the row, run again,
+  another row lands, exit 1 forever — so **a recorded lesson could stop a release for good.** Both
+  checks now come from one reading. Two output shapes moved with it: both name the directory they
+  skip (`... path(s) outside pm/roadmap/: ...`), and neither counts what is inside it any more,
+  because a count that moves with the belt's own writes cannot be a stable line.
+
 - **`install-hooks` emits ABSOLUTE script paths, names the settings file, and offers to write
   it** (`ft-wiring-is-one-act-and-it-is-portable`, issue #13). The block carried
   `bash tools/hooks/<hook>.sh`, which resolves only when the harness's cwd IS the repo root, and

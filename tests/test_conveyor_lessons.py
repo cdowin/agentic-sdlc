@@ -28,16 +28,18 @@ import io
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import NamedTuple
+from typing import Callable, NamedTuple
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
-from support.pm import (LEDGER_REL, cfg_for, ledger_rows, run_cli,  # noqa: E402
-                        tree, write_config)
+from support.pm import (LEDGER_REL, bug, cfg_for, ledger_rows,  # noqa: E402
+                        run_cli, tree, write, write_config)
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
-from agentic_sdlc.repo.conveyor import driver, lessons  # noqa: E402
-from agentic_sdlc.repo.pm import ledger  # noqa: E402
+from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, ready_for  # noqa: E402
 
 MILESTONE = '0.1'
 FEATURE = '0.1/alpha'
@@ -324,3 +326,178 @@ def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
         f'{sorted(names & set(RANKING))} in the lesson reader — anything '
         f'inferred needs a feedback edge, and a reader/writer has nowhere to '
         f'put one (D1)')
+
+
+# --- 5: the coupling to `pm ready-for`'s printed blockers ---------------------
+# The third surface reads grains off ANOTHER verb's sentences, and until this
+# census exactly one of the eleven shapes that verb constructs had a case. The
+# rest failed the way rule 4 forbids: quietly. Every shape below is produced by
+# running the REAL verb, so a reworded sentence turns one of these red.
+
+FEATURE_DOC = 'pm/roadmap/features/alpha.md'
+STORY_DOC = 'pm/roadmap/stories/s0.md'
+GONE = 'docs/reviews/gone.md'
+BUG = '0.1/bugs/crash'
+OVER_CAP = ready_for.MAX_NAMED + 5
+HOLD_RECORD = ('A record.\n\n```\nverdict: HOLD\n'
+               '| id | severity | disposition |\n| E1 | BLOCKER | open |\n```\n')
+
+
+def no_features(root: Path) -> None:
+    (root / FEATURE_DOC).unlink()
+    (root / STORY_DOC).unlink()
+
+
+def open_bug(root: Path) -> None:
+    bug(root, 'crash', 'open', fix_milestone=f'"{MILESTONE}"')
+
+
+def pointer_to_nothing(root: Path) -> None:
+    path = root / FEATURE_DOC
+    path.write_text(path.read_text(encoding='utf-8')
+                    .replace('reviewed:', f'reviewed: {GONE}'), encoding='utf-8')
+
+
+def open_finding(root: Path) -> None:
+    (root / RECORD).write_text(HOLD_RECORD, encoding='utf-8')
+
+
+class Shape(NamedTuple):
+    """One blocker sentence `pm ready-for` constructs, and what it NAMES.
+
+    `named` is asserted exactly, `grain` is the id the sentence is ABOUT — ''
+    when the sentence names none, which is a fact about the verb's wording and
+    not a miss: a lesson against the RULE still surfaces on the same check.
+    """
+
+    why: str
+    build: dict
+    edit: Callable[[Path], None] | None
+    argv: tuple[str, ...]
+    named: tuple[str, ...]
+    grain: str
+
+
+SHAPES = (
+    Shape('feature: a story not in done — `<sid> is <status>`',
+          {'story_statuses': ('building',)}, None,
+          ('ready-for', 'feature', FEATURE), (STORY,), STORY),
+    Shape('feature: no stories at all — vacuously READY, no blocker',
+          {'story_statuses': ()}, None,
+          ('ready-for', 'feature', FEATURE), (), ''),
+    Shape('milestone: a feature not in done — `<fid> is <status>`',
+          {'feature_status': 'building'}, None,
+          ('ready-for', 'milestone', MILESTONE), (FEATURE,), FEATURE),
+    Shape('milestone: done with a record defect — `<fid> is done, <defect>`',
+          {'feature_status': 'done', 'with_record': False}, None,
+          ('ready-for', 'milestone', MILESTONE), (FEATURE,), FEATURE),
+    Shape('milestone: no features — `<mid> has no features …`',
+          {}, no_features,
+          ('ready-for', 'milestone', MILESTONE), (MILESTONE,), MILESTONE),
+    Shape('milestone: an open bug — `<bid> is <status> — a bug whose …`',
+          {'feature_status': 'done'}, open_bug,
+          ('ready-for', 'milestone', MILESTONE), (BUG,), BUG),
+    # The shape M1 was raised on: the id carries the sentence's colon, and
+    # taking the token verbatim yielded `0.1/alpha:`, which matches no lesson.
+    Shape('tag: a record pointer defect — `<owner>: <defect>`',
+          {'feature_status': 'done', 'with_record': False}, pointer_to_nothing,
+          ('ready-for', 'tag', MILESTONE), (FEATURE, MILESTONE), FEATURE),
+    Shape('tag: a record that will not parse — `UNVERIFIABLE <rel>: …`',
+          {'feature_status': 'done'}, None,
+          ('ready-for', 'tag', MILESTONE), (RECORD,), ''),
+    Shape('tag: open blocking findings — `E1, E2 open in <rel>`',
+          {'feature_status': 'done'}, open_finding,
+          ('ready-for', 'tag', MILESTONE), ('E1',), ''),
+    Shape('tag: no records — `<mid> points at no review record …`',
+          {'feature_status': 'done', 'with_record': False}, None,
+          ('ready-for', 'tag', MILESTONE), (MILESTONE,), MILESTONE),
+    Shape('story: nothing decidable before the work — `nothing was asked — …`',
+          {'story_statuses': ('building',),
+           'config': '[story]\nsteps = ["story-verified"]\n'}, None,
+          ('ready-for', 'story', STORY), ('nothing',), ''),
+)
+
+
+@pytest.mark.parametrize('shape', SHAPES, ids=[s.why.split(':')[0] + '-'
+                                               + str(i) for i, s
+                                               in enumerate(SHAPES)])
+def test_every_blocker_shape_the_verb_prints_is_read_the_same_way(shape: Shape):
+    """Bites: `pm ready-for` rewording a sentence and this surface going dark
+    with no line — the silent miss M1 named, one case per shape.
+
+    Three shapes name no grain (a record path, a finding id, the word
+    `nothing`). Those are asserted too: the reader hands them on, `against_grain`
+    is `==`, and they match nothing — so the miss is bounded and visible rather
+    than a surprise the next reader has to re-derive.
+    """
+    with tree(**shape.build) as root:
+        if shape.edit is not None:
+            shape.edit(root)
+        code, said = run_cli(root, *shape.argv)
+        assert code in (0, 1), f'{shape.why}: usage or config error — {said}'
+        assert lessons.blockers_named(said) == shape.named, (
+            f'{shape.why}: the verb printed {" ".join(said.split())!r}')
+        if shape.grain:
+            assert shape.grain in shape.named, (
+                f'{shape.why}: the sentence is ABOUT {shape.grain} and the '
+                f'reader did not name it')
+        else:
+            # A store holding a lesson against every grain this tree HAS: a
+            # token the sentence led with that is not one of them must match
+            # nothing, which is what keeps a non-grain harmless rather than a
+            # lesson surfacing under a word nobody recorded.
+            store = lessons.Store(tuple(
+                lessons.lesson_of(lesson_row(grain=gid))
+                for gid in (MILESTONE, FEATURE, STORY)))
+            for name in shape.named:
+                assert store.against_grain(name) == (), (
+                    f'{shape.why}: {name!r} names no grain and matched one')
+
+
+def test_the_blocked_marker_is_the_verbs_own_and_the_cap_line_names_nothing():
+    """Bites the two ways the coupling breaks without a line anywhere.
+
+    The MARKER: this reader imports `ready_for.BLOCKED` rather than spelling it,
+    and reads it with sentence punctuation trimmed — so the `BLOCKED:` /
+    `BLOCKED (…)` spelling every other guard in this repo uses would still be
+    found. Asserted against the verb's real output, not against the constant
+    alone, because the constant surviving a flatten is the actual claim.
+
+    The CAP: past `MAX_NAMED` the verb prints one `...` line instead of the
+    rest. That line must contribute NO name — a `...` read as a grain would be
+    a lesson surfacing under a token nobody recorded.
+    """
+    with tree(story_statuses=tuple('building' for _ in range(OVER_CAP))) as root:
+        code, said = run_cli(root, 'ready-for', 'feature', FEATURE)
+        assert code == 1
+        flat = ' '.join(said.split())
+        assert ready_for.BLOCKED.strip() in flat.split(), (
+            f'the marker did not survive the verb\'s own printing: {flat[:200]}')
+        named = lessons.blockers_named(said)
+        assert len(named) == ready_for.MAX_NAMED, (
+            f'{len(named)} named off a run the verb capped at '
+            f'{ready_for.MAX_NAMED}; the over-cap line added one')
+        assert all(name.startswith(f'{FEATURE}/s') for name in named), named
+
+
+def test_a_blocker_is_read_from_the_whole_output_not_the_clipped_detail():
+    """Bites a silent miss the belt owned rather than the verb: `steps._clip`
+    bounds a check's DETAIL to one line (rule 6) by keeping only the lines that
+    look like a failure — so a run where ONE blocker sentence happens to contain
+    `error:` dropped every other blocker before the reader saw it, and their
+    lessons with them. The detail stays clipped; the blockers are read whole.
+    """
+    with tree(feature_status='error: it broke') as root:
+        write(root / 'pm/roadmap/features/beta.md',
+              {'id': '0.1/beta', 'kind': 'feature', 'milestone': f'"{MILESTONE}"',
+               'name': 'Beta', 'status': 'building', 'reviewed': ''})
+        cfg_for(root)  # the config caches a moved cwd invalidates
+        ctx = driver.Context(root=root, operation='release',
+                             version=MILESTONE)
+        answer = steps.ready_for(ctx, 'milestone')
+
+        assert not answer.is_true
+        assert '0.1/beta' not in answer.detail, (
+            'the fixture no longer clips — this case probes nothing')
+        assert answer.names == (FEATURE, '0.1/beta'), (
+            f'a blocker was dropped with the clipped line: {answer.names}')

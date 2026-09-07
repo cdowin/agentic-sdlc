@@ -300,9 +300,15 @@ def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
     return Answer.no(f'{spoken} exited {code}: {said}')
 
 
-def _pm_run(ctx: Context, *argv: str) -> tuple[int, str]:
+def _pm_run(ctx: Context, *argv: str, clip: bool = True) -> tuple[int, str]:
     """One `pm` verb in process with its exit code — `pm` is `repo/`, so it
-    is imported rather than spawned."""
+    is imported rather than spawned.
+
+    `clip=False` hands back what the verb printed. `_clip` is right for a
+    DETAIL, which rule 6 bounds to one line, and wrong for anything READ out of
+    the output: it keeps only the `_SALIENT` lines when any line matches, and
+    cuts at `OUTPUT_LIMIT`.
+    """
     import contextlib
     import io
 
@@ -310,7 +316,8 @@ def _pm_run(ctx: Context, *argv: str) -> tuple[int, str]:
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
         code = pm_cli.main(list(argv))
-    return code, _clip(buffer.getvalue())
+    said = buffer.getvalue()
+    return code, _clip(said) if clip else said
 
 
 # --- config -------------------------------------------------------------------
@@ -612,9 +619,13 @@ def ready_for(ctx: Context, target: str) -> Answer:
 
     The blockers it NAMED ride on the answer, so a lesson recorded against one
     surfaces beside this check — read off the verb's own marker, never guessed
-    from the sentence around it.
+    from the sentence around it. Blockers off the WHOLE output, detail off the
+    clipped one: `_clip` drops every line that does not look like a failure,
+    and a blocker dropped that way takes its lesson with it, silently.
     """
-    code, said = _pm_run(ctx, 'ready-for', target, subject_grain(ctx))
+    code, printed = _pm_run(ctx, 'ready-for', target, subject_grain(ctx),
+                            clip=False)
+    said = _clip(printed)
     if code == 0:
         answer = Answer.yes(said or f'`pm ready-for {target}` exited 0')
     elif code == 1:
@@ -623,43 +634,34 @@ def ready_for(ctx: Context, target: str) -> Answer:
         answer = Answer.unverifiable(
             f'`pm ready-for {target}` exited {code} — a usage or config error, '
             f'so nothing was decided: {said}')
-    return replace(answer, names=lessons.blockers_named(said))
+    return replace(answer, names=lessons.blockers_named(printed))
 
 
 # --- cleanliness, asked once for both belts -----------------------------------
-# What a cleanliness check reads, and what it must NOT: the roadmap directory is
-# this tool's own bookkeeping, and a belt writes there BY DESIGN — `release`
-# writes the milestone's status into it, `gate` files its cost rows in the
-# milestone ledger, every `[emit]` tap files an event, and the lesson reader
-# surfaces one before the first check runs. A check that forbids the tool's own
-# writes is measuring the wrong thing, and it can refuse a state no re-run
-# reaches: commit the row, run again, another row lands, exit 1 forever.
 class _GitUnreadable(Exception):
     """git itself did not answer — UNVERIFIABLE, never a false."""
 
 
 def _uncommitted(ctx: Context) -> tuple[list[str], str]:
-    """(the paths modified outside the roadmap directory, that directory) from
-    ONE `git status --porcelain`, or a raise on a bad config.
+    """(the paths modified outside the roadmap directory, that directory).
 
-    Both belts ask this question and they used to answer it differently:
-    `committed` (story) excluded the roadmap directory and `tree-clean`
-    (release) did not, so the same tree could satisfy one and never the other.
-    That disagreement WAS the defect; one reading is the fix.
+    ONE reading for `tree-clean` and `committed`. They asked the same question
+    and answered it differently — only `committed` excluded the roadmap
+    directory — so a tree could satisfy the story belt and never `release`, and
+    a belt writes in that directory BY DESIGN: the status it lands, `gate`'s
+    cost rows, every `[emit]` event, a lesson surfaced before check one. Held
+    against the belt, that is a refusal no re-run reaches.
 
-    **What is inside the directory is not counted, and that is deliberate.** A
-    tally of it would move with the belt's OWN writes — a surfaced lesson, a
-    gate cost row, an `[emit]` event — and rule 6's line shapes may not depend
-    on what this run happened to record. The directory is NAMED in every
-    sentence below instead, which is the disclosure rule 11 asks for and does
-    not change under the tool's feet.
+    Nothing INSIDE is counted, deliberately: a tally would move with the belt's
+    own writes, and rule 6's line shapes may not depend on what a run happened
+    to record. The directory is named in every sentence instead.
     """
     code, out = _git(ctx, 'status', '--porcelain', strip=False)
     if code != 0:
         raise _GitUnreadable(f'git status failed: {_clip(out)}')
     cfg = _pm_cfg(ctx)
-    # `line[3:]`, not a strip: `git status --porcelain` is COLUMNAR and column
-    # 0 carries meaning, so a blanket strip eats the first character of a path.
+    # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
+    # meaning, so a blanket strip eats the first character of the first path.
     paths = [line[3:] for line in out.split('\n') if len(line) > 3]
     inside = f'{cfg.roadmap_dir}/'
     return [p for p in paths if not p.startswith(inside)], inside
@@ -1467,9 +1469,9 @@ STEP_DOC: dict[str, str] = {
     'tree-clean':
         '`git status --porcelain` names no path outside the roadmap '
         'directory — the same reading `committed` makes on the story belt. '
-        'The belt writes INSIDE that directory by design (the status it '
-        'lands, `gate`\'s cost rows, every `[emit]` event), so what is '
-        'modified there is counted, named and not held against you.',
+        'What is modified INSIDE it is neither read nor counted, because the '
+        'belt writes there by design: the status it lands, `gate`\'s cost '
+        'rows, every `[emit]` event.',
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
     'changelog-unreleased-nonempty':

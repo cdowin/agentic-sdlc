@@ -90,7 +90,7 @@ A belt's output is one line per check, then one line saying what happened:
 ```
 [story] ok: story-exists — pm/roadmap/stories/works.md
 [story] ok: story-verified — `agentic-sdlc verify --story` exited 0 — the story rung [verify] names
-[story] error: committed: 2 uncommitted path(s): src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
+[story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
 [story] error — 2 check(s) false; nothing written
 ```

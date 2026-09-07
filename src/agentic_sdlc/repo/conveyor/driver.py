@@ -82,7 +82,11 @@ class Answer:
     names: tuple[str, ...] = ()
     """The grains this answer NAMED, for the checks that name any — the
     blockers `pm ready-for` printed. A lesson recorded against one surfaces
-    beside the check that named it, and every other check names none."""
+    beside the check that named it, and every other check names none. Read off
+    another verb's sentences (`lessons.blockers_named`), a few of which lead
+    with a record path or a finding id instead; filtering those would mean
+    deciding what an id LOOKS like, and matching is `==` at the reader, so one
+    naming no lesson surfaces nothing."""
 
     @property
     def is_true(self) -> bool:

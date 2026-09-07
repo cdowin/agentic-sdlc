@@ -32,7 +32,7 @@ tree, in CI and pre-push.
 
 | # | check | runs | what must be true |
 |---|---|---|---|
-| 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. The belt writes INSIDE that directory by design (the status it lands, `gate`'s cost rows, every `[emit]` event), so what is modified there is counted, named and not held against you. |
+| 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. What is modified INSIDE it is neither read nor counted, because the belt writes there by design: the status it lands, `gate`'s cost rows, every `[emit]` event. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
 | 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the changelog's `## Unreleased` section holds at least one bullet. |
 | 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and no open bug names the milestone. |

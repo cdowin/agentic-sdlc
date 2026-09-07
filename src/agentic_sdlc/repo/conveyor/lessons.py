@@ -103,16 +103,44 @@ def read(cfg) -> Store:
     return Store(tuple(lessons), tuple(unreadable))
 
 
-def blockers_named(said: str) -> tuple[str, ...]:
-    """The grains `pm ready-for` NAMED as blockers: the token after each of
-    its own `BLOCKED` marker, imported and never copied — the verb owns it."""
-    from agentic_sdlc.repo.pm.ready_for import BLOCKED
+# The third surface reads grains off ANOTHER verb's sentences, so both halves of
+# the coupling are trimmed rather than taken verbatim: the marker was matched
+# bare while every other `BLOCKED` this repo ships is `BLOCKED:` or
+# `BLOCKED (…)`, and the id was the first token exactly, so the tag rung's
+# `<owner>: <defect>` yielded `0.1/alpha:` and matched nothing. Both went dark
+# with no line. Four of the eleven shapes name no grain AT ALL and rightly say
+# nothing; what stops that being silence is a case per shape in
+# `tests/test_conveyor_lessons.py`, where a reworded sentence goes red.
+TOKEN_TRIM = ',;:.!?()[]{}<>"\'`'
 
-    marker = BLOCKED.strip()
-    tokens = said.split()
-    return tuple(dict.fromkeys(
-        tokens[i + 1] for i, token in enumerate(tokens)
-        if token == marker and i + 1 < len(tokens)))
+
+def _token(raw: str) -> str:
+    """One printed word read as an ID, sentence punctuation off. Never re-cased
+    and never re-spelled: `0.1/Alpha` is not `0.1/alpha` (rule 9)."""
+    return raw.strip(TOKEN_TRIM)
+
+
+def blockers_named(said: str) -> tuple[str, ...]:
+    """The grains `pm ready-for` NAMED as blockers, first seen first: the first
+    word of each blocked sentence that is not the verb's own vocabulary, every
+    one of those words IMPORTED from the verb rather than respelled here."""
+    from agentic_sdlc.repo.pm.ready_for import BLOCKED, UNVERIFIABLE
+
+    marker = _token(BLOCKED.strip())
+    prefixes = {_token(UNVERIFIABLE)}  # `UNVERIFIABLE <thing>: …`
+    found: list[str] = []
+    want = False
+    for raw in said.split():
+        token = _token(raw)
+        if token == marker:
+            want = True
+        elif want and token not in prefixes:
+            # ONE word per blocker: scanning on would collect prose into a
+            # tuple the driver documents as grains.
+            want = False
+            if token:
+                found.append(token)
+    return tuple(dict.fromkeys(found))
 
 
 def _clip(text: str) -> str:

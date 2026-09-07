@@ -55,10 +55,12 @@ own; and it is IDEMPOTENT — a second run finds a pooled tree and says so.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, walk
+from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.repo.pm import model
 
 # The fields that can name another grain, and every one is rewritten when an id
@@ -106,21 +108,41 @@ def mint(kind: str, gid: str) -> str:
     a grain conflict on one line. Both fail hardest in the workflow this
     package is built for (0.4.0/D4).
     """
-    slug = gid.rsplit('/', 1)[-1]
-    match = model._ORDINAL_STEM.match(slug)
-    if match is not None:
-        slug = match.group('slug')
+    slug = _without_ordinal(gid.rsplit('/', 1)[-1])
     prefix = model.KIND_PREFIX[kind]
     return slug if slug.startswith(f'{prefix}-') else f'{prefix}-{slug}'
+
+
+# `NN-slug`. Held HERE, not imported: `story_ordinal_prefix` and `phase:` are
+# retired, so the model no longer carries either — and this script reads them
+# as INPUT, once, to build the `order` that replaced them.
+_ORDINAL = re.compile(r'^(?P<n>\d{2})-(?P<slug>.+)$')
+_PHASES = ('foundation', 'core', 'polish')
+
+
+def _without_ordinal(slug: str) -> str:
+    """`01-boots` -> `boots`. The number sequenced the build; the slug is the
+    identity, and `order` carries the sequence now."""
+    match = _ORDINAL.match(slug)
+    return match.group('slug') if match is not None else slug
+
+
+def _phase_key(phase: str) -> tuple:
+    """A feature's `phase:` as a sort key — read once, to flatten into the
+    milestone's `order`, and then never again."""
+    word = (phase or '').strip().strip('"\'').lower()
+    if word in _PHASES:
+        return (0, _PHASES.index(word), '')
+    return (1, 0, word)
 
 
 def _ordinal_of(path: Path) -> tuple[int, str]:
     """The `NN-` prefix as a sort key, or a large one — the sequence the
     filename encoded, read once so `order` can carry it instead."""
-    match = model._ORDINAL_STEM.match(path.stem)
+    match = _ORDINAL.match(path.stem)
     if match is None:
         return (10_000, path.stem)
-    return (int(path.stem[:2]), path.stem)
+    return (int(match.group('n')), path.stem)
 
 
 def plan(cfg: model.PmConfig) -> Planned:
@@ -157,7 +179,7 @@ def plan(cfg: model.PmConfig) -> Planned:
             # `phase:` grouped features within a milestone; it flattens into
             # the milestone's order in phase reading order and stops being a
             # field the tool interprets.
-            phase = model.phase_key(model.field_of(ffile, 'phase'))
+            phase = _phase_key(model.field_of(ffile, 'phase'))
             feature_ids.append(((phase, ft_id), ft_id))
             story_ids: list[tuple[tuple, str]] = []
             for sfile in model._nested_story_files(ffile):
@@ -266,12 +288,30 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
                    f'written ({applied.error}); the tree is unchanged']
     for move in staged.moves:
         apply.remove_file(move.old_path)
+    # A husk goes only when it is EMPTY. `plan()` stages four document classes
+    # and everything else under a milestone directory used to go with the
+    # `delete_tree` — four `ledger.jsonl`, six `decisions.md`, a handoff and a
+    # loose design note, on this repo's own tree, none of them named. Git is
+    # the undo for a MOVE; there is no undo for a file nobody was told about.
+    left: list[str] = []
     for mdir in husks:
+        remaining = sorted(walk.descendants(mdir, Kind.FILE).kept)
+        if remaining:
+            left += [cfg.rel(path) for path in remaining]
+            continue
         apply.Plan().delete_tree(mdir).apply(decide=False)
+    tail = lines
+    if left:
+        tail = tail + [
+            '',
+            f'  {len(left)} file(s) were NOT moved and NOT deleted — this '
+            f'script knows four document classes and these are not among '
+            f'them. Move them yourself, then remove the empty directories:'
+        ] + [f'    {rel}' for rel in left]
     return 0, ([f'[pm] migrated {len(staged.moves)} grain(s) into '
                 f'{len(model.FLOW_KINDS)} pool(s); '
                 f'{len(renames)} id(s) changed and every inbound ref was '
-                f'rewritten. Git is the undo.'] + lines)
+                f'rewritten. Git is the undo.'] + tail)
 
 
 def _with_fields(text: str, fields: dict[str, str]) -> str:

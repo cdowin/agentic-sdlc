@@ -1414,6 +1414,40 @@ def _scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     return 0
 
 
+def _slugify(text: str) -> str:
+    """ASCII-only: the result becomes a permanent directory name in a NESTED
+    tree, and `str.isalnum()` is Unicode-aware."""
+    keep = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    out = ''.join(c if c in keep else '-' for c in text.lower())
+    while '--' in out:
+        out = out.replace('--', '-')
+    return out.strip('-')
+
+
+def _mint_path(cfg: model.PmConfig, kind: str, slug: str, name: str = '',
+               parent_id: str = '') -> Path:
+    """The file a NEW grain is written to, in whichever layout the tree is in.
+
+    A NESTED tree keeps its shape, and that is not a nicety: minting into a
+    pool there flips `is_pooled`, and every reader then sees the one new file
+    and none of the tree behind it.
+    """
+    if not model.is_nested(cfg):
+        return model.pool_dir(cfg, kind) / f'{slug}.md'
+    if kind == 'milestone':
+        stem = f'{slug}-{_slugify(name)}' if name else slug
+        return cfg.roadmap / stem / model.MILESTONE_DOC
+    parent = (model.milestone_dir(cfg, parent_id) if kind != 'story'
+              else model.feature_dir(cfg, parent_id))
+    if parent is None:
+        return model.pool_dir(cfg, kind) / f'{slug}.md'
+    if kind == 'feature':
+        return parent / model.FEATURES_DIR / slug / model.FEATURE_DOC
+    if kind == 'story':
+        return parent / model.STORIES_DIR / f'{slug}.md'
+    return parent / model.BUGS_DIR / f'{slug}.md'
+
+
 def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
@@ -1428,7 +1462,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if found is None and not name:
             raise Usage(f'milestone {ver!r} does not exist yet — a new one '
                         f'needs a name')
-        target = found or (model.pool_dir(cfg, 'milestone') / f'{ver}.md')
+        target = found or _mint_path(cfg, 'milestone', ver, name)
         name = name or model.field_of(target, 'name')
         return _scaffold(cfg, 'milestone', target,
                          {'id': ver, 'kind': 'milestone', 'name': name})
@@ -1444,7 +1478,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if found is None and not name:
             raise Usage(f'feature {fid!r} does not exist yet — a new one '
                         f'needs a name')
-        target = found or (model.pool_dir(cfg, 'feature') / f'{slug}.md')
+        target = found or _mint_path(cfg, 'feature', slug, name, mid)
         name = name or model.field_of(target, 'name')
         return _scaffold(cfg, 'feature', target,
                          {'id': fid, 'kind': 'feature', 'milestone': mid,
@@ -1466,7 +1500,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
             raise Refused(f'story id {sid!r} is already held by '
                           f'{cfg.rel(claimed)} — two files claiming one id is '
                           f'addressable by neither')
-        sf = model.pool_dir(cfg, 'story') / f'{slug}.md'
+        sf = _mint_path(cfg, 'story', slug, '', fid)
         if _exists(sf):
             raise Refused(f'{cfg.rel(sf)} already exists')
         body = templates.render(
@@ -1489,7 +1523,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         bid = f'{mid}/{model.BUGS_DIR}/{slug}'
         if model.grain_file(cfg, bid) is not None:
             raise Refused(f'bug {bid!r} already exists')
-        bf = model.pool_dir(cfg, 'bug') / f'{slug}.md'
+        bf = _mint_path(cfg, 'bug', slug, '', mid)
         if _exists(bf):
             raise Refused(f'{cfg.rel(bf)} already exists')
         # Bugs anchor to where they were CAUGHT; `caught_in:` carries that now

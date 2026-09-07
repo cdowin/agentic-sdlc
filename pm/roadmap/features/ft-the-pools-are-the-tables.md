@@ -3,7 +3,7 @@ id: ft-the-pools-are-the-tables
 milestone: ms-0.4.0
 name: Each kind gets a pool, and the config says where it is
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-the-pooled-model.md
 phase:
 depends_on: ["ft-identity-lives-in-frontmatter"]
 consumed_by: []

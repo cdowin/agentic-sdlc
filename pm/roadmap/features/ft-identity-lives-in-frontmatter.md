@@ -3,7 +3,7 @@ id: ft-identity-lives-in-frontmatter
 milestone: ms-0.4.0
 name: Identity and kind live in frontmatter, and the path stops being schema
 status: building
-reviewed:
+reviewed: docs/reviews/2026-09-06-0.4.0-the-pooled-model.md
 phase:
 depends_on: []
 consumed_by: []

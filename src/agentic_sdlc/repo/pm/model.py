@@ -1287,6 +1287,30 @@ def is_pooled(cfg: PmConfig) -> bool:
                for kind in FLOW_KINDS)
 
 
+def is_nested(cfg: PmConfig) -> bool:
+    """Does this tree still hold grain DIRECTORIES? A fact about the tree, like
+    `is_pooled`, and the one a WRITE asks: a reader can tell the layouts apart
+    by what it finds, a writer has to choose before anything exists."""
+    return bool(milestone_dirs(cfg))
+
+
+def mint_dir(cfg: PmConfig, kind: str, parent: Path | None = None) -> Path:
+    """Where `pm new` puts a NEW document of `kind` — the pool, unless the tree
+    is still nested, in which case it keeps its shape. Minting into a pool on a
+    nested tree flips `is_pooled` and hides every other grain behind it."""
+    if not is_nested(cfg):
+        return pool_dir(cfg, kind)
+    if kind == 'milestone':
+        return cfg.roadmap
+    if parent is None:
+        return pool_dir(cfg, kind)
+    if kind == 'feature':
+        return parent / FEATURES_DIR
+    if kind == 'story':
+        return parent / STORIES_DIR
+    return parent / BUGS_DIR
+
+
 def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
     """The pre-0.4.0 layout, read the way it was always read: kind from the
     slot the document sits in, parent from the directory above.

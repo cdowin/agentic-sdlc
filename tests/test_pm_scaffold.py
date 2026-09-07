@@ -316,6 +316,57 @@ class Scaffolding(unittest.TestCase):
             self.assertFalse(pm_cli._exists(root / ('a' * 300)))
 
 
+class NewKeepsTheTreesOwnLayout(unittest.TestCase):
+    """`pm new` on a NESTED tree must not mint into a pool.
+
+    `is_pooled` is "does any pool hold a document", so one `pm new story` on an
+    unmigrated checkout made it TRUE — and every reader then saw that one file
+    and none of the tree behind it. Measured on the real pre-migration tree:
+    `check pm` went from PASS over 4 milestones / 44 features / 79 stories to
+    `FAIL — no milestones found under pm/roadmap/ (wrong [pm] roadmap_dir…)`,
+    blaming a config key that was correct.
+
+    The compat promise is that a consumer's tree works the day they bump, and a
+    scaffold that blinds it is the loudest possible way to break that.
+    """
+
+    def _nested(self, root: Path) -> Path:
+        """The pooled fixture, moved back to grain directories."""
+        rm = root / 'pm/roadmap'
+        mdir = rm / '0.1-demo'
+        (mdir / 'features/alpha/stories').mkdir(parents=True)
+        (rm / 'milestones/0.1.md').rename(mdir / 'milestone.md')
+        (rm / 'features/alpha.md').rename(mdir / 'features/alpha/feature.md')
+        (rm / 'stories/s0.md').rename(mdir / 'features/alpha/stories/s0.md')
+        for pool in ('milestones', 'features', 'stories'):
+            for leftover in (rm / pool).iterdir():
+                leftover.unlink()
+            (rm / pool).rmdir()
+        return mdir
+
+    def test_a_nested_tree_keeps_its_shape_and_stays_readable(self):
+        with tree(story_statuses=('ready',)) as root:
+            mdir = self._nested(root)
+            self.assertFalse(model.is_pooled(cfg_for(root)))
+            code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')
+            self.assertEqual(code, 0, out)
+            self.assertTrue((mdir / 'features/alpha/stories/probe.md').is_file(),
+                            out)
+            self.assertFalse((root / 'pm/roadmap/stories').exists(), out)
+            # The tree is still READ as nested, which is the half that broke.
+            self.assertFalse(model.is_pooled(cfg_for(root)))
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('2 story/ies', out)
+
+    def test_a_POOLED_tree_still_mints_into_the_pool(self):
+        # The other half, so the fix cannot be "always nested".
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(
+                run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')[0], 0)
+            self.assertTrue((root / 'pm/roadmap/stories/probe.md').is_file())
+
+
 class NoDeleter(unittest.TestCase):
     """The tracker mostly REPORTS; the one verb that deletes NAMES its target.
 

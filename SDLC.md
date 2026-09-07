@@ -91,8 +91,8 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
   HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
-- never touch `pm/roadmap/`; never edit shared docs — README / CHANGELOG wording is returned as
-  **PROPOSED** text;
+- never touch `pm/roadmap/`; never edit shared docs — README wording is returned as **PROPOSED**
+  text; a grain's `changelog:` is written with `pm set`, not by hand;
 - ship, with every fix, a test that **failed at HEAD**;
 - run **scoped** verification only, never the full gate — and *scoped* means a
   TIER TARGET, never a bare `pytest <file>`: selecting a module by path collects

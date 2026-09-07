@@ -304,6 +304,8 @@ def main(argv: list[str]) -> int:
     print('     and `make milestone` get their tiers. Without one they are '
           '`check` alone,')
     print('     and they say so.')
-    print('  7. `agentic-sdlc pm new milestone 0.1 "First Milestone"`, then '
+    print('  7. `agentic-sdlc pm new milestone 0.1 "First Milestone"` (it mints '
+          'the id')
+    print('     `ms-0.1` — the kind prefix and your slug), then '
           '`agentic-sdlc check pm`.')
     return 0

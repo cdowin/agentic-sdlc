@@ -11,15 +11,17 @@ description: Operating a agentic-sdlc PM tree — the grain schemas, scaffolding
 # Operating the PM tree
 
 Milestone → feature → story, as markdown with YAML frontmatter under `pm/roadmap/`.
-Bugs hang off a milestone. The id IS the path, which is what makes every id
-greppable and every resolver trivial.
+Bugs hang off a milestone. The id is in the FRONTMATTER and never in the path
+(0.4.0), which is what makes a grain movable, renameable and re-parentable
+without breaking a single reference to it.
 
 ## The tree records what it cost, and `pm ledger` reads it back
 
 **Before hand-writing a table of timings, token counts or grain durations: the
 tree already has them.** Every status flip, decision and `--force` files a row;
 a `Stop`/`SubagentStop` hook sums each session's transcript into one; and every
-gate run files what it cost. Seven row kinds, all in `ledger.jsonl`.
+gate run files what it cost — as does every `retire`, so a shipped release keeps its
+version, name and summary after its documents are gone. All of them in `ledger.jsonl`.
 
     pm ledger show <grain-id>       that grain's rows oldest first, with the
                                     seconds between status changes
@@ -45,7 +47,7 @@ in a review record or a decision; `pm ledger report` renders the arithmetic.
 
 ```
 pm/roadmap/
-  releases.md                    the plan — `order`, one version per line
+  releases.md                    the plan — `order`, one MILESTONE ID per line
   milestones/<slug>.md           id, kind, name, status, + your project's own fields
   milestones/<stem>-handoff.md   cold-start only — never what `pm status` computes
   milestones/<stem>-decisions.md DURABLE, append-only; survives close
@@ -74,6 +76,14 @@ idempotent: re-run one on an existing grain and it fills the missing slots witho
 touching an existing byte. It does NOT mint a shared doc — `decisions.md` appears
 when `pm decide` records the first one, `handoff.md` and `review.md` when somebody
 writes one. An empty one in every grain is sprawl the tool made.
+
+**Read the id `pm new` printed before you cite it.** Through v0.4.0 it takes the parent
+positionally and bakes it INTO the id — `pm new feature <mid> <slug>` gives
+`<mid>/<slug>`, `pm new bug` gives `<mid>/bugs/<slug>` — which contradicts the paragraph
+above on a tree whose ids are flat (`<kind-prefix>-<slug>`), and makes re-parenting such
+a grain a `pm rename` plus a ref sweep instead of one `pm set`. Open defect
+`bg-the-new-verbs-mint-a-compound-id` (issue #8); `pm rename <old> <new>` is the sweep
+that corrects an id you did not want.
 
 **decisions.md is the durable record.** Open a decision with
 `pm decide <grain-id> <title>`: it appends one `## <id> — <date> — <title>` heading,
@@ -159,9 +169,11 @@ until 0.4.0 and retired with the generated execution list.)
   **Read verbs emit LINES and composition is the shell's job** — `pm list | grep`
   is the search, and if you cannot pipe something the missing thing is a COLUMN,
   never a new verb. `--json` gives the same fields keyed by those names.
-- **`pm validate`** — ids match paths, parentage is consistent, refs resolve, the graph
-  is acyclic. **UNVERIFIABLE** in its summary is not a failure: it
-  counts refs into milestones no longer in the working tree, which is expected.
+- **`pm validate`** — frontmatter is well-formed, every binding names a grain of the
+  right kind that is in the tree, refs resolve, the graph is acyclic. No rule holds an
+  id to its path (V2/V3 retired in 0.4.0). **UNVERIFIABLE** in its summary is not a
+  failure: it counts refs into milestones no longer in the working tree, which is
+  expected.
 - **`check pm`** — the same integrity rules plus status drift, as a gate. A failure
   names the file; fix it with the CLI, never with a `status:` edit. A `  WARN  ` line
   is not a failure and moves nothing: it names a grain that has left `todo` (its status
@@ -175,13 +187,24 @@ until 0.4.0 and retired with the generated execution list.)
 
 ## Retiring a closed milestone — git history is the archive
 
-Nothing in this toolkit deletes a grain. When a closed milestone's records stop being
-useful in the working tree, YOU remove the directory in a commit of its own; the commit
-that did it is the resurrect anchor (`git show <hash>:<old-path>` recovers any file,
-`git ls-tree -r <hash> <path>` browses). Removing it is a judgement about what is still
-worth reading, so it is a decision a person makes, not a scope a tool picks.
+WHEN a closed milestone's records stop being useful in the working tree is a judgement
+about what is still worth reading, so nothing makes it for you. Removing them is the
+tool's work: `pm retire <milestone-id> [<why>]` deletes the GRAINS that milestone owns —
+its own document, every feature and bug bound to it, every story bound to those, the
+shared docs beside each, and its ledger — not a directory, which a pooled tree has none
+of. It refuses only on an id it cannot resolve; an unfinished milestone or an open bug
+is a `noticed:` line, not a refusal, and `--dry-run` decides everything and writes
+nothing. Do it in a commit of its own: that commit is the resurrect anchor
+(`git show <hash>:<old-path>` recovers any file, `git ls-tree -r <hash> <path>` browses).
 
 So: **ids stay canonical forever** even after the files are gone (a ref naming one is
-censused UNVERIFIABLE, never failed), ROADMAP.md keeps one row per shipped milestone
-permanently, and anything load-bearing that a live document links gets PROMOTED out of
-the tree first rather than left to rot behind a dangling link.
+censused UNVERIFIABLE, never failed). Two things outlive the documents: the milestone's
+own id in `releases.md` `order`, which nobody maintains, and a **`retire` row in the
+tree's own `ledger.jsonl`** carrying its `version`, its `name` and the `<why>` you
+typed — the three facts nothing else in the tree has a copy of. `pm roadmap` prints
+that entry as `retired` with all three: the shipped half of the ROADMAP.md retired in
+0.3.0. Schedule a milestone with `pm add <plan-id> <milestone-id>` before retiring it
+or `pm roadmap` has no row to print it on; `pm retire` says which of the two you are
+in. And anything load-bearing that a live
+document links gets PROMOTED out of the tree first rather than left to rot behind a
+dangling link.

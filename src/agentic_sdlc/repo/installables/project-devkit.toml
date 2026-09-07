@@ -193,6 +193,31 @@
 # set that happens to use one of those words is your vocabulary, not the
 # window, and nothing here refuses it.
 
+# --- the event stream ---------------------------------------------------------
+# A hook is an event this package WRITES; it is never a command this package
+# RUNS. `[emit]` says where the conveyor's events go and which of the three taps
+# produces one — the entry condition being asked, one check resolving, the one
+# write happening. Nothing named here is executed, imported or resolved to a
+# callable: a sink is opened, appended to, and closed, and a courier YOU arm
+# carries the rows onward, exactly as the ledger couriers already carry
+# transcripts. That is the property that keeps every verb in this package safe
+# to run from a git hook, in parallel, without a sandbox.
+#
+# The sink takes one of three things: the word below, which is the same
+# ledger.jsonl every other row already lands in, routed by the grain the event
+# names; a path inside this checkout, appended to as JSON lines; or `-`, one
+# JSON line per event on stdout, beside the human prose and never inside it (a
+# consumer parsing prose keeps parsing prose). A sink this package cannot write
+# to is a WARNING naming it — never a crash, never a changed exit code, and
+# never silence.
+#
+# Dropping a tap from the list silences that tap; an empty list is exit 2 rather
+# than a silent opt-out, and no section at all is every tap to the ledger, which
+# is what a tree that never heard of this key already does.
+# [emit]
+# sink  = "ledger"
+# kinds = ["enter", "verdict", "leave"]
+
 # --- THE FLOW — the ONE SECTION WRITTEN LIVE ----------------------------------
 # DECLARATION — there is NO runtime fallback behind the table below. The reader
 # takes what is here and refuses BY NAME when it is absent, so a commented copy

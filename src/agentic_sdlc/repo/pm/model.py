@@ -9,6 +9,8 @@ asked of a status's category (`holds`), every move checked by
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -191,7 +193,7 @@ DEFAULT_CHECKS = ('D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'U1',
 # flow being used" with silence, which is the failure they were filed to end,
 # and a WARN cannot redden anyone. A tree that wires nothing stays quiet either
 # way, so stock-on costs a non-adopter nothing (0.4.0/D5).
-USAGE_CHECKS = ('U1', 'U2')  # named for the family; already in DEFAULT_CHECKS
+USAGE_CHECKS = ('U1', 'U2', 'U3', 'U4')  # named for the family
 # D9/D10 read an `in_progress` milestone's `branch:`; D8 read its id as the
 # version and RETIRED into R5, which grades against a position in `order`.
 FLOW_CHECKS = ('D9', 'D10')
@@ -888,7 +890,12 @@ def write_raw(path: Path, text: str) -> None:
     """The grain-file write, through `core.apply` with the same disabled
     newline translation; a failure comes back as `OSError`.
     """
-    apply.raise_on_error(apply.write(path, text))
+    try:
+        apply.raise_on_error(apply.write(path, text))
+    finally:
+        # However the write ended, the parse this module is holding is now a
+        # claim about bytes that may be gone.
+        forget_document(path)
 
 
 def _eol(line: str) -> str:
@@ -908,7 +915,7 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
-def field_in(lines: list[str], key: str) -> str:
+def field_in(lines: Sequence[str], key: str) -> str:
     """`field_of` over lines already read — for a caller that opened the file
     once and is answering several questions off the one read."""
     bounds = _fence_bounds(lines)
@@ -921,12 +928,143 @@ def field_in(lines: list[str], key: str) -> str:
     return ''
 
 
+# --- ONE READ PER DOCUMENT ----------------------------------------------------
+# Every field used to be its own `open()` plus a re-split of the whole file —
+# 2.1M opens over a 700-document tree, `make check` at 87s
+# (bg-check-pm-reopens-every-file-per-field). A document is parsed ONCE now and
+# every reader answers off that.
+#
+# PER PROCESS and nothing else: a module dict, never written anywhere. Every hit
+# re-`stat`s the file and re-parses when the stamp moved, and `write_raw` drops
+# what it rewrote — a gate answering off bytes that have moved on is rule 4's
+# first cardinal sin wearing a speedup.
+
+
+@dataclass(frozen=True)
+class Document:
+    """One document read once: its lines, the bounds of the leading `---`
+    block, and every scalar inside that block as a dict.
+
+    `lines` is a TUPLE because the cache hands one object to every reader, and
+    a reader that could edit it would be editing the next reader's answer.
+    """
+
+    lines: tuple[str, ...]
+    bounds: tuple[int, int] | None
+    fields: dict[str, str]
+
+    @property
+    def text(self) -> str:
+        """The bytes as read — `_split` is `str.split`, so the join is exact."""
+        return '\n'.join(self.lines)
+
+    def field(self, key: str) -> str:
+        """`field_in`'s answer, off the parsed dict. A key carrying a `:` is
+        one the dict cannot be keyed on — `a:b` matches the line `a:b: v`,
+        whose key is `a` — so the scan itself answers that one."""
+        if ':' in key:
+            return field_in(self.lines, key)
+        return self.fields.get(key, '')
+
+    def list_field(self, key: str) -> list[str]:
+        """`list_field_of`'s answer, off the bounds already found."""
+        return _list_in(self.lines, self.bounds, key)
+
+
+def parse_document(text: str) -> Document:
+    """One document's text, parsed. The scalars are read exactly as `field_in`
+    reads them — first line wins, the key is what precedes the first `:` at
+    column 0, the value stripped and unquoted — so the dict answers what a scan
+    would answer.
+    """
+    lines = _split(text)
+    bounds = _fence_bounds(lines)
+    fields: dict[str, str] = {}
+    if bounds is not None:
+        for line in lines[bounds[0] + 1:bounds[1]]:
+            key, sep, value = line.partition(':')
+            if sep:
+                # .strip() also removes the CRLF carriage return.
+                fields.setdefault(key, unquote(value.strip()))
+    return Document(lines=tuple(lines), bounds=bounds, fields=fields)
+
+
+# A cap rather than an unbounded dict: a tree big enough for the cache to
+# matter must not turn a gate into a memory hog. Entries leave oldest-first.
+DOCUMENT_CACHE_MAX_CHARS = 64_000_000
+
+# {str(path): (stamp, characters, the parse)}; `_stamp` says what a stamp is.
+_DOCUMENTS: dict[str, tuple[tuple[int, ...], int, Document]] = {}
+_DOCUMENT_CHARS = 0
+
+
+def _stamp(path) -> tuple[int, ...] | None:
+    """What must be unchanged for a parse to still be this file's — or None
+    when the thing read is not a file on disk. `pm report --rev` reads git
+    BLOBS through these functions and a blob has no `stat`, so those reads are
+    never cached rather than cached under a key nothing could invalidate.
+    """
+    stat = getattr(path, 'stat', None)
+    if stat is None:
+        return None
+    st = stat()
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_dev)
+
+
+def document(path) -> Document:
+    """This file's parse — from the cache when the file has not moved since.
+    Raises what `read_raw` raises, which every caller here already answers.
+    """
+    key = str(path)
+    try:
+        stamp = _stamp(path)
+    except OSError:
+        forget_document(path)
+        raise
+    if stamp is not None:
+        held = _DOCUMENTS.get(key)
+        if held is not None and held[0] == stamp:
+            return held[2]
+    text = read_raw(path)
+    doc = parse_document(text)
+    if stamp is not None:
+        _remember(key, stamp, len(text), doc)
+    return doc
+
+
+def _remember(key: str, stamp: tuple[int, ...], chars: int,
+              doc: Document) -> None:
+    global _DOCUMENT_CHARS
+    replaced = _DOCUMENTS.pop(key, None)
+    if replaced is not None:
+        _DOCUMENT_CHARS -= replaced[1]
+    _DOCUMENTS[key] = (stamp, chars, doc)
+    _DOCUMENT_CHARS += chars
+    while _DOCUMENT_CHARS > DOCUMENT_CACHE_MAX_CHARS and len(_DOCUMENTS) > 1:
+        # Insertion order is eviction order; the entry just added stays.
+        _DOCUMENT_CHARS -= _DOCUMENTS.pop(next(iter(_DOCUMENTS)))[1]
+
+
+def forget_document(path) -> None:
+    """Drop one document's parse. Every write through `write_raw` comes here."""
+    global _DOCUMENT_CHARS
+    dropped = _DOCUMENTS.pop(str(path), None)
+    if dropped is not None:
+        _DOCUMENT_CHARS -= dropped[1]
+
+
+def documents_held() -> int:
+    """How many parses the cache is holding — the number the cache test
+    asserts on, and the only way to ask."""
+    return len(_DOCUMENTS)
+
+
 def field_of(path: Path, key: str) -> str:
     """Scalar value of `key` inside the leading frontmatter block, or '' —
-    never from the prose body.
+    never from the prose body. One parse per document, through `document`.
     """
     try:
-        return field_in(_split(read_raw(path)), key)
+        return document(path).field(key)
     except (OSError, UnicodeDecodeError):
         return ''
 
@@ -971,10 +1109,15 @@ def list_field_of(path: Path, key: str) -> list[str]:
     a different shape and reads as no list at all, never as a one-element one.
     """
     try:
-        lines = _split(read_raw(path))
+        doc = document(path)
     except (OSError, UnicodeDecodeError):
         return []
-    bounds = _fence_bounds(lines)
+    return doc.list_field(key)
+
+
+def _list_in(lines: Sequence[str], bounds: tuple[int, int] | None,
+             key: str) -> list[str]:
+    """`list_field_of` over lines and bounds already found."""
     if bounds is None:
         return []
     open_i, close_i = bounds
@@ -1005,10 +1148,10 @@ def list_field_of(path: Path, key: str) -> list[str]:
 def sequence_defect(path: Path) -> str:
     """Why `order:` here cannot be rewritten as a block list, or ''."""
     try:
-        lines = _split(read_raw(path))
+        doc = document(path)
     except (OSError, UnicodeDecodeError) as err:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
-    bounds = _fence_bounds(lines)
+    lines, bounds = doc.lines, doc.bounds
     if bounds is None:
         return 'has no frontmatter block to hold `order:`'
     open_i, close_i = bounds
@@ -1169,6 +1312,25 @@ def segment_is_literal(value: str) -> bool:
 # repos, and cross-repo disambiguation is a display concern, never a filename.
 KIND_PREFIX = {'milestone': 'ms', 'feature': 'ft', 'story': 'st', 'bug': 'bg'}
 
+# What joins the prefix to the slug. Named because `mint_id` and every reader
+# that asks "does this already carry its prefix" must agree on the byte.
+PREFIX_SEPARATOR = '-'
+
+
+def mint_id(kind: str, slug: str) -> str:
+    """`<prefix>-<slug>` — THE ONE MINTING PATH, for `pm new` and for
+    `tools/dev/pm_migrate.py`, so a migrated tree grows one id vocabulary and
+    not two (`bg-the-new-verbs-mint-a-compound-id`).
+
+    No parent in it: a binding is the child's own field, and an id restating it
+    made re-parenting a `pm rename` plus a ref sweep. Idempotent — a slug
+    already carrying its prefix comes back unchanged. It MINTS and nothing
+    else; no check grades an id against this (rule 9).
+    """
+    prefix = KIND_PREFIX[kind] + PREFIX_SEPARATOR
+    return slug if slug.startswith(prefix) else f'{prefix}{slug}'
+
+
 # The pool directory each kind DERIVES when the config names none. Spelled out
 # rather than `f'{kind}s'`, because English is not a rule the code should be
 # inferring — `storys` is what that inference produces.
@@ -1220,6 +1382,51 @@ def _is_shared_doc(path: Path) -> bool:
     return not _is_grain_doc(path)
 
 
+# --- ONE WALK PER SCAN --------------------------------------------------------
+# `document` answers *what does this file say* once; this answers *what is in
+# the tree* once, for a caller that is only READING it. `check pm` asked that
+# question about 330 times over a 700-document tree, and every ask was four
+# `rglob`s and a sort of every path under them.
+#
+# SCOPED, never a global memo: a verb that writes must see its own write on the
+# next read, so the snapshot lives only inside `reading_tree()`. Belt and
+# braces, it is dropped the instant anything in this process mutates a file —
+# `core.apply` counts every write this package is allowed to make, and
+# `tests/test_boundaries.py` is what makes that count complete.
+_SNAPSHOT: dict | None = None
+_MUTATIONS_KEY = 'mutations'
+
+
+@contextmanager
+def reading_tree():
+    """Walk the pools ONCE for the length of this block — for a caller that
+    only reads. Nested scopes share the outer one; leaving drops it.
+    """
+    global _SNAPSHOT
+    outer = _SNAPSHOT
+    if outer is None:
+        _SNAPSHOT = {_MUTATIONS_KEY: apply.mutations()}
+    try:
+        yield
+    finally:
+        _SNAPSHOT = outer
+
+
+def _held(key, produce):
+    """`produce()`, held for the rest of the scope when there is one and
+    nothing has written since it opened."""
+    snap = _SNAPSHOT
+    if snap is None:
+        return produce()
+    mutations = apply.mutations()
+    if snap.get(_MUTATIONS_KEY) != mutations:
+        snap.clear()
+        snap[_MUTATIONS_KEY] = mutations
+    if key not in snap:
+        snap[key] = produce()
+    return snap[key]
+
+
 def pool_scan(cfg: PmConfig, kind: str) -> Walk:
     """One pool as a `Walk` — the kept documents AND what it narrowed away.
 
@@ -1227,6 +1434,10 @@ def pool_scan(cfg: PmConfig, kind: str) -> Walk:
     opens no frontmatter is a note, and both are COUNTED (rule 4).
     """
     base = pool_dir(cfg, kind)
+    return _held(('pool', str(base)), lambda: _pool_scan(base))
+
+
+def _pool_scan(base: Path) -> Walk:
     if not base.is_dir():
         return Walk(())
     return (walk.descendants(base, Kind.FILE, suffix='.md')
@@ -1264,15 +1475,22 @@ def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     `kind` is the POOL it was found in, and it is only a default: a document
     that declares `kind:` is that kind, wherever it sits, because the location
     is convention the tool does not interpret.
+
+    FOUR fields off ONE parse: a document that cannot be read declares no id,
+    which is the same answer the four separate `field_of` calls gave.
     """
-    gid = unquote(field_of(path, 'id'))
+    try:
+        doc = document(path)
+    except (OSError, UnicodeDecodeError):
+        return None
+    gid = unquote(doc.field('id'))
     if not gid:
         return None
-    declared = unquote(field_of(path, 'kind')) or kind
+    declared = unquote(doc.field('kind')) or kind
     field = BINDS_TO.get(declared, ('', ''))[1]
     return Grain(gid=gid, kind=declared, path=path,
-                 status=field_of(path, 'status'),
-                 binding=unquote(field_of(path, field)) if field else '')
+                 status=doc.field('status'),
+                 binding=unquote(doc.field(field)) if field else '')
 
 
 def is_pooled(cfg: PmConfig) -> bool:
@@ -1352,7 +1570,17 @@ def grain_index(cfg: PmConfig) -> dict[str, Grain]:
     every file that shares one. Uniqueness is a gate FINDING and never a
     runtime lock: an allocator needs a counter and a git repo has none, so two
     agents on two branches would collide invisibly (0.4.0/D4).
+
+    Held for the length of a `reading_tree()` scope; built afresh outside one.
+    Every caller READS the mapping — none of them may edit it, because inside a
+    scope they would be editing the next reader's answer.
     """
+    return _held(('index', str(cfg.roadmap),
+                  tuple(str(pool_dir(cfg, k)) for k in FLOW_KINDS)),
+                 lambda: _grain_index(cfg))
+
+
+def _grain_index(cfg: PmConfig) -> dict[str, Grain]:
     if is_pooled(cfg):
         out: dict[str, Grain] = {}
         for kind in FLOW_KINDS:
@@ -1771,7 +1999,7 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
 BOM = '﻿'
 
 
-def _opens_frontmatter(lines: list[str]) -> bool:
+def _opens_frontmatter(lines: Sequence[str]) -> bool:
     """True when this text attempts a leading `---` block — lenient on a BOM,
     blank lines and fence indent, so a damaged grain is a finding rather
     than a note, but never past prose.
@@ -1791,7 +2019,7 @@ def _is_grain_doc(path: Path) -> bool:
     does a file that cannot be read.
     """
     try:
-        return _opens_frontmatter(_split(read_raw(path)))
+        return _opens_frontmatter(document(path).lines)
     except (OSError, UnicodeDecodeError):
         return True
 
@@ -1956,11 +2184,11 @@ def plan_defect(cfg: PmConfig) -> str | None:
     if not path.is_file():
         return None
     try:
-        text = read_raw(path)
+        doc = document(path)
     except (OSError, UnicodeDecodeError) as err:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
-    lines = _split(text)
-    if _fence_bounds(lines) is None:
+    lines = doc.lines
+    if doc.bounds is None:
         if lines and lines[0].startswith(BOM):
             # Naming it "no frontmatter" sent the reader looking for a missing
             # block when the block is there and three invisible bytes precede
@@ -2300,11 +2528,12 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
 def header_of(path: Path) -> str:
     """The file's first non-blank line, stripped — its canonical header slot."""
     try:
-        for line in _split(read_raw(path)):
-            if line.strip():
-                return line.strip()
+        lines = document(path).lines
     except (OSError, UnicodeDecodeError):
         return ''
+    for line in lines:
+        if line.strip():
+            return line.strip()
     return ''
 
 
@@ -2416,7 +2645,11 @@ def section_lines(text: str, heading: str) -> list[str] | None:
     """The lines under `## <heading>`, up to the next heading; None when the
     heading is absent, which is a different sentence from "empty".
     """
-    lines = _split(text)
+    return section_lines_in(_split(text), heading)
+
+
+def section_lines_in(lines: Sequence[str], heading: str) -> list[str] | None:
+    """`section_lines` over lines already read — the body of one parse."""
     start = None
     for i, line in enumerate(lines):
         m = _HEADING.match(line)
@@ -2459,7 +2692,7 @@ def section_is_empty(lines: list[str]) -> bool:
 
 def empty_section(path: Path, heading: str) -> str | None:
     """'' when `## <heading>` is present and written; else why it is not."""
-    lines = section_lines(read_raw(path), heading)
+    lines = section_lines_in(document(path).lines, heading)
     if lines is None:
         return f'has no `## {heading}` section'
     if section_is_empty(lines):

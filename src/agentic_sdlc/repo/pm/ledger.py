@@ -65,6 +65,55 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
             'entry': entry, 'title': title}
 
 
+# --- the retire row -----------------------------------------------------------
+# WHAT OUTLIVES THE DOCUMENTS. `pm retire` removes a milestone's whole grain
+# family; `order` keeps its id and nothing else, so its version, its name and
+# the one sentence the operator typed died with the file it took the summary
+# for and never wrote (`bg-retire-drops-the-summary-it-accepts`).
+#
+# Here rather than in `order`, for three reasons: `order` is a list of child ids
+# at three levels of the tree and turning one entry into a mapping is a schema
+# change at all three; the ledger is already the tree's append-only EVENT log
+# and a retire is an event, where `order` is a plan; and this file is the one
+# `retire` explicitly does not touch (0.4.0/D3) and already carries rows naming
+# no grain — which is exactly what a retired milestone becomes.
+KIND_RETIRE = 'retire'
+
+# The three fields the tree has no other copy of once the documents are gone.
+RETIRE_FIELDS = ('version', 'name', 'summary')
+
+
+def retire_row(grain_id: str, version: str = '', name: str = '',
+               summary: str = '', ts: str = '') -> dict:
+    """One retirement: which milestone, what it shipped as, what it was called,
+    and the sentence the operator gave the verb.
+
+    An empty field is an ABSENT KEY, never `''` — the economy `gate_row` keeps
+    for `census`, so a reader can tell "never recorded" from "recorded empty".
+    """
+    row = {'ts': ts or utc_now(), 'kind': KIND_RETIRE, 'grain': grain_id}
+    for key, value in zip(RETIRE_FIELDS, (version, name, summary)):
+        if value:
+            row[key] = value
+    return row
+
+
+def retired_releases(cfg) -> dict[str, dict]:
+    """{milestone id: its last retire row} from the tree's grainless ledger.
+
+    LAST wins: a milestone written again after a retire and retired again has
+    two rows, and the newer one is what the plan should print. Raises
+    `LedgerError` on a ledger that will not parse — a reader that answered
+    "nothing was retired" over a damaged file is rule 4's first sin.
+    """
+    out: dict[str, dict] = {}
+    for row in read_rows(grainless_path(cfg.roadmap)):
+        gid = row.data.get('grain')
+        if row.data.get('kind') == KIND_RETIRE and isinstance(gid, str) and gid:
+            out[gid] = row.data
+    return out
+
+
 # --- the gate row -------------------------------------------------------------
 # A gate run is not work somebody was dispatched to do, so it is neither a
 # grain row nor a usage row.
@@ -90,6 +139,58 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
     for key, value in (('duration_ms', duration_ms), ('census', census)):
         if value is not None:
             row[key] = value
+    return row
+
+
+# --- the verify row -----------------------------------------------------------
+# A `gate` row says what a TARGET cost; this says what a RUNG decided and the
+# TREE STATE it decided over, so a run over a byte-identical tree can report the
+# verdict instead of paying for it again. Its own kind, BESIDE the cost and not
+# on top of it: every reader of `gate` rows takes the LAST row per gate name, so
+# a second row per run would move the cost and census they report — and `check
+# budget` grades a tier on exactly that row.
+KIND_VERIFY = 'verify'
+
+# Narrower than `GATE_VERDICTS`: a rung either ran its target to an exit code or
+# recorded nothing. `HANG`/`SKIP` are what a wrapper says about a run it could
+# not grade, and none of those may be reused as an answer.
+VERIFY_VERDICTS = ('PASS', 'FAIL')
+
+
+def verify_row(rung: str, gate: str, verdict: str, state: str,
+               duration_ms: int, exit_code: int, census: int | None = None,
+               ts: str = '') -> dict:
+    """One rung's verdict against the tree state it ran on: which rung, which
+    make target, what it decided, the target's own exit code, what it cost, over
+    how much, and the digest — `state` — that makes the row reusable or not.
+    Every field is refused rather than defaulted: a row this minter would accept
+    half-built is a row its reader must then distrust.
+    """
+    if verdict not in VERIFY_VERDICTS:
+        raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
+                         f'{verdict!r} is not one of {VERIFY_VERDICTS}')
+    for name, value in (('rung', rung), ('gate', gate), ('state', state)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f'refusing to mint a {KIND_VERIFY} row: {name} is '
+                             f'{value!r}, and a verdict nothing can be keyed on '
+                             f'is a verdict nothing may reuse')
+    for name, value in (('duration_ms', duration_ms), ('exit_code', exit_code)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f'refusing to mint a {KIND_VERIFY} row for '
+                             f'{rung!r}: {name} is {value!r}, which is not a '
+                             f'whole number')
+    # PASS and exit 0 are one fact spelled twice, and a row where they
+    # disagree is the shape of rule 4's first sin.
+    if (verdict == VERIFY_VERDICTS[0]) != (exit_code == 0):
+        raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
+                         f'{verdict} with exit code {exit_code} — a verdict and '
+                         f'an exit code that disagree cannot both be reported')
+    row = {'ts': ts or utc_now(), 'kind': KIND_VERIFY, 'rung': rung,
+           'gate': gate, 'verdict': verdict, 'exit_code': exit_code,
+           'duration_ms': duration_ms, 'state': state}
+    # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
+    if census is not None:
+        row['census'] = census
     return row
 
 
@@ -202,6 +303,22 @@ def ledger_for(cfg, milestone_id: str) -> Path:
         return ledgers_dir(cfg) / f'{milestone_id}.jsonl'
     mdir = model.milestone_dir(cfg, milestone_id)
     return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
+
+
+def ledger_of_grain(cfg, gid: str) -> Path | None:
+    """The ledger a row naming `gid` belongs in, followed through the grain's
+    BINDINGS — a story to its feature to its milestone (D1). None when the
+    grain names no milestone, or when the caller named no grain.
+
+    The one answer to "where does this row go", because there has been more
+    than one before: the lookup 0.4.0 retired asked which milestone was
+    `in_progress`, and lost every row a planning tree wrote. `pm/cli.py` and
+    `repo/emit.py` both route through here rather than each spelling the two
+    hops out; `tests/test_boundaries.py` names the retired one.
+    """
+    from agentic_sdlc.repo.pm import model
+    mid = model.milestone_of(cfg, gid) if gid else ''
+    return ledger_for(cfg, mid) if mid else None
 
 
 def grainless_dir(roadmap_dir: Path) -> Path:

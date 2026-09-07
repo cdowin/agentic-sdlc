@@ -35,7 +35,13 @@ WHAT IT DOES, IN ORDER
      prefix and `phase:` are the migration's INPUT — they encoded sequence, so
      they are read once to produce `order` and then stop mattering;
   6. moves the files into the pools;
-  7. rewrites every inbound ref, because ids changed.
+  7. rewrites every inbound ref, because ids changed;
+  8. PRINTS the ref census either side of the move — `refs` and `UNVERIFIABLE`
+     before, and the same two after. A ref it failed to rewrite still names a
+     grain that is in the tree, under an id nothing answers to, so no gate goes
+     red: it is counted UNVERIFIABLE and the migration reports success. That
+     number is the only one that says whether the graph survived, so it is the
+     one thing this script must never leave unsaid.
 
 THE COLLISION PROBLEM IS THE FEATURE
 
@@ -61,7 +67,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, walk
 from agentic_sdlc.core.walk import Kind
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import model, validate
 
 # The fields that can name another grain, and every one is rewritten when an id
 # changes. `pm move` rewrote three of them and skipped the refs pointing AT the
@@ -73,6 +79,25 @@ from agentic_sdlc.repo.pm import model
 # tree's own declarations by `tests/test_pm_rename.py`; keep the two in sync.
 REF_FIELDS = ('depends_on', 'consumed_by', 'reviewed', 'caused_by',
               'milestone', 'feature', 'caught_in', 'fix_milestone', 'order')
+
+# `validate`'s census keys, and the word the one that matters prints under —
+# spelled here once so the line below and the number it reports cannot drift.
+REFS_KEY = 'refs'
+UNVERIFIABLE_KEY = 'unverifiable'
+UNVERIFIABLE = 'UNVERIFIABLE'
+# Printed rather than guessed when the tree could not be read (rule 11).
+UNKNOWN = 'unknown'
+
+# Everything from an unquoted `#` on is a trailing comment, which is prose and
+# never a ref — `model._without_trailing_comment` reads a value the same way.
+COMMENT = '#'
+
+# The characters that END an id token on the value side of a frontmatter line:
+# YAML's own separators, plus the comment mark. An id holds none of them —
+# `model._ID_FORBIDDEN` refuses `[]:` outright and `validate._refs` refuses an
+# entry carrying a comma, a quote or a space — so a maximal run between them IS
+# one whole token, and matching one needs no quote around it.
+_TOKEN = re.compile(r'[^\s,\[\]{}"\'#]+')
 
 
 @dataclass
@@ -102,15 +127,17 @@ class Planned:
 def mint(kind: str, gid: str) -> str:
     """`<prefix>-<slug>` from a grain's current last id segment.
 
+    The SLUG is this script's business (an old id carries a parent and an
+    ordinal, both migration INPUT); the PREFIX is `model.mint_id`, which
+    `pm new` also calls, so the two minting paths are now one.
+
     Never a number. A counter needs an allocator and a git repo has none:
     scan-and-take-max+1 gives two agents on two branches the same number,
     invisibly, until merge, and a counter file makes every branch that creates
     a grain conflict on one line. Both fail hardest in the workflow this
     package is built for (0.4.0/D4).
     """
-    slug = _without_ordinal(gid.rsplit('/', 1)[-1])
-    prefix = model.KIND_PREFIX[kind]
-    return slug if slug.startswith(f'{prefix}-') else f'{prefix}-{slug}'
+    return model.mint_id(kind, _without_ordinal(gid.rsplit('/', 1)[-1]))
 
 
 # `NN-slug`. Held HERE, not imported: `story_ordinal_prefix` and `phase:` are
@@ -198,12 +225,47 @@ def plan(cfg: model.PmConfig) -> Planned:
     return out
 
 
+def _value_side(line: str) -> tuple[str, str]:
+    """(what INTRODUCES the value, the value) — `key:`, or the bullet's `-`.
+
+    Nothing before the separator is offered to the matcher, because a key is
+    never a ref: an old id that happened to spell a field name would otherwise
+    rewrite the field it sits on.
+    """
+    if line.lstrip().startswith('- '):
+        # The bullet is the FIRST `-`, so a dashed id cannot be split on.
+        indent, _, rest = line.partition('-')
+        return f'{indent}-', rest
+    key, sep, rest = line.partition(':')
+    return f'{key}{sep}', rest
+
+
+def _swapped(value: str, renames: dict[str, str]) -> str:
+    """One value with every WHOLE token that names a renamed grain rewritten.
+
+    ONE pass over the value, not one pass per rename: a chain — A renamed to a
+    name B is being renamed FROM — cannot double-rewrite a token the first pass
+    already replaced. Spacing, quoting and the trailing comment are kept.
+    """
+    head, mark, tail = value.partition(COMMENT)
+    return (_TOKEN.sub(lambda m: renames.get(m.group(), m.group()), head)
+            + mark + tail)
+
+
 def _rewritten(text: str, renames: dict[str, str]) -> str:
     """Every inbound reference in one document's frontmatter, rewritten.
 
-    Whole-token, never a substring: `0.1/alpha` must not be rewritten inside
-    `0.1/alphabet`, and a ref list is `["a", "b"]` or a block of `- a` lines.
-    Both are handled by splitting on the characters a ref cannot contain.
+    WHOLE-TOKEN, never a substring and never on a QUOTE. Matching a quote on
+    both sides of the id rewrote `depends_on: ["0.1/a"]` and walked past
+    `consumed_by: [0.1/a,0.1/b]` — a plain YAML inline sequence — so a real
+    497-grain tree came out of the migration with 52 refs still naming
+    pre-migration ids, every one of them counted UNVERIFIABLE at exit 0
+    (bg-the-migration-rewrites-only-quoted-refs).
+
+    The id grammar already says what a token is, so the boundary is the
+    grammar's: a ref list is `["a", "b"]`, `[a,b]`, a bare scalar or a block of
+    `- a` lines, all four are the same scan, and `0.1/alpha` is not a ref
+    inside `0.1/alphabet` by construction rather than by punctuation.
     """
     lines = model._split(text)
     bounds = model._fence_bounds(lines)
@@ -215,16 +277,52 @@ def _rewritten(text: str, renames: dict[str, str]) -> str:
         key = line.split(':', 1)[0].strip().lstrip('- ')
         if key not in REF_FIELDS and not line.lstrip().startswith('- '):
             continue
-        for old, new in renames.items():
-            for quote in ('"', "'", ' ', '[', ',', '\t'):
-                line = line.replace(f'{quote}{old}"', f'{quote}{new}"')
-                line = line.replace(f"{quote}{old}'", f"{quote}{new}'")
-            if line.rstrip().endswith(old):
-                head = line.rstrip()[:-len(old)]
-                if head.endswith((': ', '- ', '"', "'", '[', ', ')):
-                    line = head + new + model._eol(lines[i])
-        lines[i] = line
+        head, value = _value_side(line)
+        lines[i] = head + _swapped(value, renames)
     return '\n'.join(lines)
+
+
+def _census(cfg: model.PmConfig) -> dict | None:
+    """`pm validate`'s ref census over the tree as it stands, or None when it
+    could not be read — never a guess, and never a raise: a measurement that
+    failed must not take the migration down with it."""
+    try:
+        return validate.run(cfg)[1]
+    except OSError:
+        return None
+
+
+def _count(census: dict | None, key: str) -> str:
+    return UNKNOWN if census is None else str(census.get(key, 0))
+
+
+def _census_lines(before: dict | None, after: dict | None) -> list[str]:
+    """What the ref graph did across the move — THE NUMBER THIS SCRIPT DID NOT
+    PRINT.
+
+    A ref the sweep misses still names a grain that IS in the tree, under an id
+    nothing answers to, so nothing fails: it is counted UNVERIFIABLE, the same
+    bucket a legitimately retired milestone lands in. That is how 52 of them
+    landed in a consumer's tree with the migration reporting success and
+    `check pm` exiting 0, and the absence of this line is why it landed quietly
+    (rule 11, and rule 4's first cardinal sin one layer up).
+    """
+    lines = [f'  refs: {_count(before, REFS_KEY)} -> {_count(after, REFS_KEY)}; '
+             f'{UNVERIFIABLE}: {_count(before, UNVERIFIABLE_KEY)} -> '
+             f'{_count(after, UNVERIFIABLE_KEY)}']
+    if before is None or after is None:
+        lines.append(f'  the ref census is {UNKNOWN} on one side of the move, '
+                     f'so whether the refs survived is unproven here — run '
+                     f'`agentic-sdlc pm validate`')
+        return lines
+    risen = after[UNVERIFIABLE_KEY] - before[UNVERIFIABLE_KEY]
+    if risen > 0:
+        lines.append(f'  WARNING: {risen} more ref(s) are {UNVERIFIABLE} than '
+                     f'before the move — a ref this script did not rewrite '
+                     f'still names a grain in the tree under its old id, and '
+                     f'nothing downstream fails on one. `agentic-sdlc pm '
+                     f'validate` names each; git is the undo.')
+    return lines
 
 
 def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
@@ -262,6 +360,9 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     # directory the directory is no longer a milestone directory, so a second
     # `milestone_dirs()` afterwards returns nothing and the husks stay forever.
     husks = list(model.milestone_dirs(cfg))
+    # Read BEFORE anything moves, for the same reason: this is the tree the
+    # refs were written against, and after the move there is no reading it.
+    before = _census(cfg)
     plan_ = apply.Plan()
     lines = []
     for move in staged.moves:
@@ -306,10 +407,14 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
             f'script knows four document classes and these are not among '
             f'them. Move them yourself, then remove the empty directories:'
         ] + [f'    {rel}' for rel in left]
+    # The headline no longer CLAIMS that every inbound ref was rewritten. It
+    # claimed exactly that while 52 of them were not, and the claim is what a
+    # reader trusted instead of counting; the census below is the count.
     return 0, ([f'[pm] migrated {len(staged.moves)} grain(s) into '
                 f'{len(model.FLOW_KINDS)} pool(s); '
-                f'{len(renames)} id(s) changed and every inbound ref was '
-                f'rewritten. Git is the undo.'] + tail)
+                f'{len(renames)} id(s) changed, and the ref census below says '
+                f'whether the refs came with them. Git is the undo.']
+               + _census_lines(before, _census(cfg)) + tail)
 
 
 def _with_fields(text: str, fields: dict[str, str]) -> str:

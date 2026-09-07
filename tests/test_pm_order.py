@@ -20,7 +20,7 @@ from pathlib import Path
 
 from support.pm import cfg_for, run_cli, run_gate, tree, write, write_config
 
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import cli, model
 
 PLAN_REL = 'pm/roadmap/releases.md'
 
@@ -111,25 +111,25 @@ class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
     def _three(self, root: Path) -> None:
         for slug in ('b', 'c'):
             run_cli(root, 'new', 'feature', '0.1', slug, slug.upper())
-        for fid in ('0.1/alpha', '0.1/b', '0.1/c'):
+        for fid in ('0.1/alpha', 'ft-b', 'ft-c'):
             run_cli(root, 'add', '0.1', fid)
 
     def test_bare_add_appends(self):
         with tree(story_statuses=('ready',)) as root:
             self._three(root)
             self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'),
-                             ['0.1/alpha', '0.1/b', '0.1/c'])
+                             ['0.1/alpha', 'ft-b', 'ft-c'])
 
     def test_each_placement_flag_puts_it_where_it_says(self):
         for flag, value, expect in (
-                ('--position', '1', ['0.1/c', '0.1/alpha', '0.1/b']),
-                ('--position', '2', ['0.1/alpha', '0.1/c', '0.1/b']),
-                ('--before', '0.1/b', ['0.1/alpha', '0.1/c', '0.1/b']),
-                ('--after', '0.1/alpha', ['0.1/alpha', '0.1/c', '0.1/b'])):
+                ('--position', '1', ['ft-c', '0.1/alpha', 'ft-b']),
+                ('--position', '2', ['0.1/alpha', 'ft-c', 'ft-b']),
+                ('--before', 'ft-b', ['0.1/alpha', 'ft-c', 'ft-b']),
+                ('--after', '0.1/alpha', ['0.1/alpha', 'ft-c', 'ft-b'])):
             with self.subTest(flag=flag, value=value), \
                     tree(story_statuses=('ready',)) as root:
                 self._three(root)
-                code, out = run_cli(root, 'add', '0.1', '0.1/c', flag, value)
+                code, out = run_cli(root, 'add', '0.1', 'ft-c', flag, value)
                 self.assertEqual(code, 0, out)
                 self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'),
                                  expect)
@@ -141,7 +141,7 @@ class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
                     tree(story_statuses=('ready',)) as root:
                 self._three(root)
                 before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
-                code, out = run_cli(root, 'add', '0.1', '0.1/c', flag, value)
+                code, out = run_cli(root, 'add', '0.1', 'ft-c', flag, value)
                 self.assertIn(code, (1, 2), out)
                 after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
                 self.assertEqual(before, after)
@@ -243,7 +243,7 @@ class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             run_cli(root, 'add', '0.1/alpha', '0.1/alpha/s0')
-            code, out = run_cli(root, 'add', '0.1/b', '0.1/alpha/s0')
+            code, out = run_cli(root, 'add', 'ft-b', '0.1/alpha/s0')
             self.assertEqual(code, 0, out)
             self.assertIn('DANGLING', out)
             self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'),
@@ -253,13 +253,13 @@ class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
             self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'), [])
             self.assertEqual(
                 model.unquote(model.field_of(
-                    root / 'pm/roadmap/stories/s0.md', 'feature')), '0.1/b')
+                    root / 'pm/roadmap/stories/s0.md', 'feature')), 'ft-b')
 
     def test_removing_a_child_bound_elsewhere_refuses(self):
         with tree(story_statuses=('ready',)) as root:
             run_cli(root, 'new', 'feature', '0.1', 'b', 'B')
             before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
-            code, out = run_cli(root, 'remove', '0.1/b', '0.1/alpha/s0')
+            code, out = run_cli(root, 'remove', 'ft-b', '0.1/alpha/s0')
             self.assertEqual(code, 1, out)
             self.assertIn('nothing was written', out)
             after = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
@@ -337,8 +337,14 @@ class ThePlanIsRead(unittest.TestCase):
             run_cli(root, 'add', 'roadmap', 'b')
             code, out = run_cli(root, 'roadmap')
             self.assertEqual(code, 0, out)
-            self.assertIn('0.1.0\t0.1\tbuilding', out)
-            self.assertIn('(no version)\tb\tbuilding', out)
+            # COLUMNS IN ORDER, `-` for an empty cell so a shell `read` gets a
+            # fixed count: version, milestone, state, name, summary.
+            self.assertIn('0.1.0\t0.1\tbuilding\tDemo\t-', out)
+            self.assertIn('(no version)\tb\tbuilding\tB\t-', out)
+            for line in [ln for ln in out.splitlines()
+                         if not ln.startswith('[pm]')]:
+                self.assertEqual(len(line.split('\t')),
+                                 len(cli.ROADMAP_COLUMNS), line)
 
     def test_roadmap_names_a_dangling_entry_rather_than_calling_it_unshipped(self):
         with tree(story_statuses=('ready',)) as root:
@@ -348,6 +354,40 @@ class ThePlanIsRead(unittest.TestCase):
             code, out = run_cli(root, 'roadmap')
             self.assertEqual(code, 0, out)
             self.assertIn('DANGLING', out)
+
+    def test_a_retired_release_still_prints_its_version_name_and_summary(self):
+        """`bg-retire-drops-the-summary-it-accepts`. A consumer deleting a
+        hand-maintained ROADMAP.md loses its upcoming table to `order` — and
+        its SHIPPED table to nothing at all, because a retire took the version,
+        the name and the one sentence with the documents. The `retire` row is
+        the tree's own copy, and this is the surface that reads it back.
+
+        It also answers the question R1 could only call UNVERIFIABLE: a plan
+        entry naming no grain is `retired` when a row says so, DANGLING when
+        nothing does.
+        """
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+                            'version', '0.1.0')
+            self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
+            self.assertEqual(
+                run_cli(root, 'retire', '0.1', 'the', 'pools', 'landed')[0], 0)
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('0.1.0\t0.1\tretired\tDemo\tthe pools landed', out)
+            self.assertNotIn('DANGLING', out)
+
+    def test_an_entry_no_retire_row_explains_is_still_DANGLING(self):
+        # The other half, so `retired` cannot become the answer for every
+        # entry that names no grain.
+        with tree(story_statuses=('ready',)) as root:
+            (root / PLAN_REL).write_text(
+                '---\nid: roadmap\norder:\n  - "gone"\n---\n\nPlan.\n',
+                encoding='utf-8')
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('-\tgone\tDANGLING\t-\t-', out)
 
     def test_next_is_the_first_unshipped_entry(self):
         with tree(story_statuses=('ready',)) as root:

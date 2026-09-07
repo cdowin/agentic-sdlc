@@ -28,6 +28,11 @@ import ast
 import unittest
 from pathlib import Path
 
+# The derivation that puts the `shell` mark on a spawning module. Imported
+# rather than re-implemented: primitive 5 below holds `repo/emit.py` to the
+# SAME no-subprocess question the tier definition is built on, and two
+# spellings of one question is how they drift apart.
+from conftest import module_spawns
 from support import REPO_ROOT
 
 SRC = REPO_ROOT / 'src' / 'agentic_sdlc'
@@ -607,6 +612,12 @@ CONFIG_IMPORT_ALLOWLIST = frozenset((
     # protocol that walked past what it was asked to prove — the same shape as
     # a gate roster narrowed by a typo, one altitude up.
     'repo/conveyor/steps.py',
+    # `[emit] sink` and `[emit] kinds`, read through `relpath` and `str_tuple`.
+    # The sink is the value with the sharpest edge in this package: a string a
+    # consumer wrote, one `import_module` away from being a plugin system
+    # (0.5.0/D1). It goes through a guard and then it is a PATH and nothing
+    # else — `TheToolEmitsAndNeverExecutes` below holds that shut by AST.
+    'repo/emit.py',
 ))
 # Calls that build a collection straight from an unguarded value.
 COLLECTORS = ('tuple', 'set', 'list', 'frozenset')
@@ -622,6 +633,45 @@ LAYER_RULES = (
     ('repo/', ('agentic_sdlc.cli',), 4),
 )
 PACKAGE = 'agentic_sdlc'
+# --- primitive 5: the tool EMITS, and never EXECUTES ---------------------------
+# 0.5.0/D1. `repo/emit.py` takes a string a CONSUMER wrote and opens a file with
+# it — the one value in this package that is a single `import_module` away from
+# being a plugin system, which is the design D1 rejects and the package that
+# owns our name on PyPI is the worked example of.
+#
+# Hard rule 2 — boots nothing, safe anywhere, any time, in parallel — is what
+# makes every gate here runnable from a git hook and from CI without a sandbox,
+# and ONE verb that spawns a consumer-named command ends that for every verb,
+# because a caller can no longer tell which ones are safe.
+#
+# The pressure it has to survive is one sentence: *"just let the config name a
+# command to run."* It is one commit and it will sound reasonable, so it breaks
+# the BUILD here rather than resting on a reviewer noticing.
+EMIT_MODULE = 'repo/emit.py'
+# The closed set of modules the emit path may import. An allowlist rather than a
+# ban list, because "imports a module named in config" is not a name you can
+# enumerate: what makes it impossible is that the ONLY importable things here
+# are five modules written down in this file.
+EMIT_IMPORTS = frozenset((
+    'sys', 'pathlib', 'typing',
+    f'{PACKAGE}.core.config',      # the guards every config value crosses
+    f'{PACKAGE}.repo.pm.ledger',   # `dumps`, `append_to`, and the row routing
+))
+# Calls that turn a STRING into behaviour. `import_module`/`__import__` import
+# what a config value named, `eval`/`exec`/`compile` run it, `entry_points` is
+# the discovery half of the rejected plugin design, and `getattr`/`setattr` are
+# how an imported module becomes a callable.
+EXECUTORS = ('eval', 'exec', 'compile', '__import__', 'import_module',
+             'entry_points', 'getattr', 'setattr')
+# The `os.<name>` spellings that start a process WITHOUT importing `subprocess`
+# — invisible to the `shell` derivation, because none of them imports it.
+OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
+               'execl', 'execle', 'execlp', 'execlpe', 'spawnv', 'spawnve',
+               'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'posix_spawn',
+               'posix_spawnp', 'fork', 'forkpty', 'startfile')
+# What the emit path must still BE, so this class cannot pass over a file that
+# was emptied or moved: it appends to a sink and it reads its own section.
+EMIT_MUST_CALL = ('append_to', 'config_section')
 
 
 def _import_bindings(rel: str, tree: ast.Module) -> list[tuple[str, str, int]]:
@@ -807,6 +857,111 @@ class LayersPointDownward(unittest.TestCase):
             'an import against the layering. A layer imports DOWNWARD only '
             '(core/ -> repo/ -> cli.py; nothing below reaches up):\n  '
             + '\n  '.join(offenders))
+
+
+def _imported_modules(tree: ast.Module) -> list[tuple[str, str, int]]:
+    """(module, module.name, lineno) for every import in the file.
+
+    Two spellings because `from a.b import c` is ambiguous in the syntax: `c`
+    is a module in `from agentic_sdlc.repo.pm import ledger` and a function in
+    `from agentic_sdlc.core.config import str_tuple`. An allowlist matches
+    EITHER, so it can name a package's public face (`agentic_sdlc.core.config`)
+    or one module inside it (`agentic_sdlc.repo.pm.ledger`) and mean exactly
+    what it says.
+
+    `ast.walk`, not `tree.body`: a deferred `import x` inside a function is
+    still an import, and "we only do it lazily" is exactly how a spawn would
+    arrive here.
+    """
+    out: list[tuple[str, str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend((alias.name, alias.name, node.lineno)
+                       for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module != '__future__':
+            module = '.' * node.level + (node.module or '')
+            out.extend((module, f'{module}.{alias.name}', node.lineno)
+                       for alias in node.names)
+    return out
+
+
+def _execution_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every call in this module that could turn a string into behaviour."""
+    out: list[str] = []
+    for node in _calls(tree):
+        func = node.func
+        name = (func.id if isinstance(func, ast.Name)
+                else func.attr if isinstance(func, ast.Attribute) else '')
+        if name in EXECUTORS:
+            out.append(f'{rel}:{node.lineno}: {name}()')
+        elif (isinstance(func, ast.Attribute)
+              and isinstance(func.value, ast.Name) and func.value.id == 'os'
+              and func.attr in OS_SPAWNERS):
+            out.append(f'{rel}:{node.lineno}: os.{func.attr}()')
+    return out
+
+
+class TheToolEmitsAndNeverExecutes(unittest.TestCase):
+    """PRIMITIVE 5 — the emit path writes a sink and does nothing else.
+
+    A sink is opened, appended to, closed. Nothing on this path spawns a
+    process, imports a module named in config, or resolves a config string to a
+    callable — and that is asserted rather than reviewed, because the change
+    that would break it is one line long and reads as a convenience.
+    """
+
+    def test_the_emit_path_never_spawns_a_process(self):
+        """The same question `tests/conftest.py` derives the `shell` mark
+        from, asked of a SHIPPED module — plus the `os` spellings that
+        derivation cannot see, because none of them imports `subprocess`."""
+        self.assertFalse(
+            module_spawns(SRC / EMIT_MODULE),
+            f'{EMIT_MODULE} reaches `subprocess`. An event is WRITTEN here, '
+            f'never run (0.5.0/D1): the moment one verb spawns a '
+            f'consumer-named command, no caller can tell which verbs are safe '
+            f'to run from a git hook, and hard rule 2 is gone for all of them.')
+
+    def test_the_emit_path_resolves_no_string_to_a_callable(self):
+        offenders = _execution_sites(EMIT_MODULE, _tree(SRC / EMIT_MODULE))
+        self.assertEqual(
+            [], offenders,
+            'the emit path can turn a value into behaviour. `[emit] sink` is a '
+            'string a CONSUMER wrote; imported, evaluated or looked up in an '
+            'entry-point group, it is the plugin system D1 rejected — and the '
+            'tool has stopped being a reader/writer and become a runtime that '
+            'owns lifecycle, timeouts and error isolation:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_emit_path_imports_only_the_allowlist(self):
+        offenders = [f'{EMIT_MODULE}:{lineno}: {dotted}'
+                     for module, dotted, lineno in
+                     _imported_modules(_tree(SRC / EMIT_MODULE))
+                     if module not in EMIT_IMPORTS
+                     and dotted not in EMIT_IMPORTS]
+        self.assertEqual(
+            [], offenders,
+            'an import the emit path does not need. The allowlist is the '
+            'mechanism: "imports a module named in config" cannot be '
+            'enumerated as a ban list, so the only importable things here are '
+            'the five written down in EMIT_IMPORTS. Widening it is a '
+            'DECISION:\n  ' + '\n  '.join(offenders))
+
+    def test_the_emit_path_is_the_real_one(self):
+        """Rule 4's floor: three assertions of emptiness above pass perfectly
+        over a file that was emptied, renamed or never written."""
+        self.assertIn(EMIT_MODULE, {rel for rel, _ in _sources()},
+                      f'{EMIT_MODULE} is not in the census — the class above '
+                      f'is asserting emptiness over a module that moved')
+        tree = _tree(SRC / EMIT_MODULE)
+        called = {func.attr if isinstance(func, ast.Attribute) else
+                  func.id if isinstance(func, ast.Name) else ''
+                  for func in (node.func for node in _calls(tree))}
+        missing = sorted(set(EMIT_MUST_CALL) - called)
+        self.assertEqual(
+            [], missing,
+            f'{EMIT_MODULE} no longer {" or ".join(missing)}s — it is not '
+            f'reading a sink out of config and appending to it, so this class '
+            f'is policing something that does not happen')
 
 
 if __name__ == '__main__':

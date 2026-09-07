@@ -149,10 +149,21 @@ def rows(root: Path) -> list[dict]:
     return [r.data for r in ledger.read_rows(path)] if path.exists() else []
 
 
+# The TREE's ledger — where a row naming no grain lands (0.4.0/D3) — is not a
+# belt write, so it is not graded as one. A check the belt RUNS may file
+# telemetry about its own run: the gate wrapper records what a target COST on
+# every real gate, and `verify` records its VERDICT and the tree state it ran
+# on beside it. The belt's one write is a grain's status, and the milestone
+# ledger (`LEDGER`, the file a status row lands in) is still graded byte for
+# byte below.
+GRAINLESS_LEDGER = 'pm/roadmap/ledger.jsonl'
+
+
 def snapshot(root: Path) -> dict[str, bytes]:
     return {str(p.relative_to(root)): p.read_bytes()
             for p in sorted(root.rglob('*'))
-            if p.is_file() and '.git' not in p.parts}
+            if p.is_file() and '.git' not in p.parts
+            and p != root / GRAINLESS_LEDGER}
 
 
 def first_done(kind: str) -> str:

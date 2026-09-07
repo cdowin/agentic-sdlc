@@ -2,6 +2,200 @@
 
 ## Unreleased
 
+- **`install-hooks` emits ABSOLUTE script paths, names the settings file, and offers to write
+  it** (`ft-wiring-is-one-act-and-it-is-portable`, issue #13). The block carried
+  `bash tools/hooks/<hook>.sh`, which resolves only when the harness's cwd IS the repo root, and
+  the run named no destination at all — a fragment pasted by hand, wrong invisibly, with every
+  surface reporting success. This milestone's own build recorded **zero ledger rows across nine
+  dispatches** because of it. The commands are now absolute, so the same block works in whatever
+  settings file the harness actually reads, and the run names `<repo>/.claude/settings.json` as
+  the destination. **New flag: `install-hooks --write-settings`** writes that file when nothing
+  is in the way, and is a no-op on the second run. A settings file that already exists is
+  refused by path and left byte for byte — `--force` included — because it carries permissions,
+  env and MCP entries this package knows nothing about.
+
+- **The ledger couriers take their tree from `GDK_LEDGER_ROOT`.** Both couriers derived the repo
+  from the stop event's `cwd`, so a session rooted at a parent directory that is not itself a git
+  repository filed no row — correctly by the courier's own contract, and unfixable from outside
+  it. `GDK_LEDGER_ROOT` in the courier's environment names the tree; unset is normal and the
+  payload's `cwd` is still the fallback, so existing wiring behaves exactly as it did. A value
+  naming no git tree is a note on stderr and exit 0, never a crash and never a guess at another
+  tree. Each courier's `--self-test` corpus — what `agentic-sdlc check hooks` replays — gained
+  three rows for it: the session cwd deriving the WRONG tree, the override filing the row from
+  that other scope, and an unresolvable override noting rather than falling back.
+
+- **`pm new <kind> <slug>` mints `<kind-prefix>-<slug>` and nothing else**
+  (`bg-the-new-verbs-mint-a-compound-id`, issue #8). It minted `<mid>/<slug>` for a feature and
+  `<mid>/bugs/<slug>` for a bug while `tools/dev/pm_migrate.py` minted `<prefix>-<slug>` off
+  `model.KIND_PREFIX` — so a migrated tree grew BOTH vocabularies, one grain at a time, and
+  `check pm` passed either way. There is one minting path now, `model.mint_id`, and the migration
+  calls it too. The id also restated the binding `milestone:`/`feature:` already carried, which
+  made re-parenting a `pm rename` plus a whole-tree ref sweep — the cost 0.4.0 deleted when it
+  retired `pm move`; it is one `pm set` again, and an id is stable for life.
+
+  **The parent argument is unchanged and still positional** — it writes the child's binding field,
+  the same fact `pm add` writes — it simply is not in the id. **Nothing grades an id's shape**: a
+  prefix or a version in an id is the project's own taste (rule 9), and no check was added.
+
+  A grain authored on 0.4.0 is still found by its compound id, so `pm new feature <mid> <slug>` on
+  a tree written before the bump keeps FILLING that document instead of minting a second one
+  beside it (rule 3). New grains land at `<pool>/<id>.md`, the name the migration writes.
+
+  `<name...>` is **marked required** in the `--help` synopsis for `new milestone|feature|story`,
+  and omitting it now refuses by naming the omitted ARGUMENT — the old
+  *"feature 'x' does not exist yet — a new one needs a name"* read as *this grain is missing from
+  your tree*.
+
+- **`pm bug <status> <bug-id>` resolves by `kind:`, not by `/bugs/` in the id.** The verb required
+  that literal in the id, so **no bug on a migrated tree could be moved by it at all** — and
+  `pm new bug` now mints exactly those flat `bg-` ids. The guard was a path test standing in for a
+  kind test; `grain_file(..., 'bug')` is the kind test, and a feature id is still refused.
+
+- **`pm retire <id> [<summary...>]` records what it deletes** (`bg-retire-drops-the-summary-it-
+  accepts`, issue #5). The summary was joined, interpolated into a sentence and **printed**; on the
+  branch actually taken it was not even in the sentence. Only the id survived a retire —
+  `version:`, `name:` and the summary went with the document, and a consumer's shipped-release
+  table was therefore not derivable from the tree, which is the half of a hand-maintained
+  `ROADMAP.md` that was real.
+
+  Retire now appends one **`retire` row** to the tree's own `<roadmap>/ledger.jsonl` — the file it
+  explicitly does not touch, and which already carries rows naming no grain — holding `grain`,
+  `version`, `name` and `summary`. An empty field is an absent key. The summary's whitespace is
+  collapsed at the write so it cannot forge a column downstream. The row is appended AFTER the
+  removal lands; a ledger that cannot be written is a refusal carrying the whole row by value.
+
+- **`pm roadmap` prints a shipped release fully.** Columns IN ORDER are now
+  `version  milestone  state  name  summary`, `-` for an empty cell, and a plan entry whose
+  milestone has been retired prints `retired` with the version, name and summary from its
+  `retire` row. An entry that names no grain and has no row is still `DANGLING` — which is the
+  distinction R1 could previously only report as UNVERIFIABLE.
+
+- **`check pm` reads each document ONCE, and walks each pool once per run**
+  (`bg-check-pm-reopens-every-file-per-field`, issue #6). `field_of` opened and re-split the whole
+  file for every field, so a resolver answering one grain's question by walking every grain made the
+  gate n²: a consumer's ~700-document tree made **2.1M `open()` calls** and took `make check` from
+  8.4 s to **87 s**, past its own 20 s `check budget` ceiling. A document is now parsed once into a
+  frontmatter dict that every reader answers off, and `check pm` — a gate, which reads and prints and
+  writes nothing — asks for the pool walk once for the length of its run. Measured here: a
+  711-document tree **33.3 s -> 0.26 s**, this repo's own tree **10.6 s -> 0.12 s**, with the gate's
+  verdict, census and every finding line **byte-identical** (rule 6).
+  Both caches are per process and neither touches disk. Rule 4 governs the invalidation and it is
+  what the new cases pin: every parse re-`stat`s its file and re-reads when the stamp moved, so a
+  document rewritten by a verb, a test or an editor is never answered from bytes that have moved on;
+  a git blob read by `pm report --rev` has no `stat` and so is never cached; and the walk snapshot is
+  dropped the instant anything in the process mutates a file, which `core.apply` now counts because
+  it is the only place this package moves a byte.
+
+- **`verify` remembers its last green, and what it was green ON.** `[verify] feature = "make test"`
+  is tree-wide by design, so a tree has one state at a time and closing seven features ran one 90 s
+  suite seven times — nine of the ten and a half minutes were repetition of a question whose input
+  had not changed. Each rung now records a `verify` row in the tree's ledger, beside the `gate` cost
+  rows `verify --plan` already reads: which rung, which make target, the verdict, the target's own
+  exit code, what it cost, the census the gate itself filed, and the **tree state** it ran on — git
+  HEAD plus a SHA-256 over every path `git ls-files --cached --others --exclude-standard` names,
+  each file's CONTENT, its executable bit and its symlink target. A later run whose state is
+  byte-identical prints two `[verify:cache]` lines — the run it came from, its age, its census, its
+  cost, and the state's own file count — and exits with the recorded code **without running the
+  target**. Closing N features on an unchanged tree is one gate run and N-1 reads.
+  Hard rule 4 is the whole design: **the state covers untracked files**, so a new module that breaks
+  collection invalidates it; **a reuse is always printed**, because a reused green that reads like a
+  fresh green is the first cardinal sin; **`--no-cache` runs the target anyway** and records what it
+  found; and **a malformed, missing or unreadable row re-runs** — a row is refused unless every field
+  reads whole and its verdict and exit code agree. Ignored files and the ledgers are not in the state
+  and that is stated where it is computed: they are what a gate WRITES while it runs, so a state
+  covering them could never repeat. `--no-cache` beside `--plan` or `--check` is exit 2 — those run
+  no rung.
+
+- **The two files `pm install-skills` writes stop asserting behaviour this package retired, and
+  a test now holds every installable to that.** `.claude/rules/pm-execution.md` auto-loads into
+  every session and `.claude/skills/pm-operations/SKILL.md` is the manual, and both told an
+  operator to do things that are gone: maintain `ROADMAP.md` (retired in 0.3.0, replaced by
+  `pm roadmap` + `releases.md`), read `pm validate` as holding an id to its path (V2/V3, retired
+  in 0.4.0), read the plan's `order` as a list of versions (0.4.0 made it milestone ids), and
+  remove a retired milestone's DIRECTORY by hand — where `pm retire` deletes that milestone's
+  grains and a pooled tree has no such directory. `pm new`'s entry said it *"scaffolds to the
+  schema"*; it now says what the verb mints, names the open defect
+  (`bg-the-new-verbs-mint-a-compound-id`, issue #8), and tells the reader to check the id it got.
+  **And step 3 of the loop instructed a command the stock vocabulary refuses:**
+  `pm story reviewing <id>` exits 2 naming `[pm.states.story]`, which declares no review word —
+  review is a FEATURE act (`pm feature reviewing <id>`), and the same rule's own drift example
+  used the refused word as its GOOD case. Both corrected.
+  These files are neither code nor a doc in `[doc] scope`, so nothing graded them:
+  `tests/test_install.py` now sweeps every packaged installable for the names in the code's own
+  retirement registries (`RETIRED_COMMANDS`, `RETIRED_KEYS`, `RETIRED_CHECKS`, `[verify]`'s
+  `RETIRED`) plus `ROADMAP.md`, `<!-- pm:execution -->` and `[[verify.narrow]]`, and fails a line
+  that names one without also saying "retired". **Consumers: run
+  `agentic-sdlc pm install-skills --diff`, then `--force`.**
+
+- **`prepare-commit-msg` recognises any Co-Authored-By trailer it should not duplicate, not only
+  the exact string it writes.** The dedupe guard was `grep -qF "$TRAILER"`, which holds only while
+  this hook is the sole writer of a trailer — and it is not: a harness signs its own session off
+  with a MODEL-NAMED line (`Co-Authored-By: Claude Opus 5 <…>`), which the fixed string never
+  matched, so every dispatched-agent commit ended with TWO trailers. `is_agent_context` gates the
+  hook, so it never fired on a trunk commit anyone reads. What the hook WRITES (`TRAILER`) is now
+  separate from what counts as ALREADY WRITTEN (`TRAILER_RE`, an ERE); both live in the
+  `project config` header, so editing either is not a drift. The hook now answers
+  `--self-test` with a five-row message corpus — the model-named input among them — so
+  `check hooks` replays three corpora rather than two. **Re-install with
+  `agentic-sdlc install-hooks --force` and re-read the header.**
+
+- **`tools/dev/pm_migrate.py` rewrites a ref on TOKEN boundaries, not on quote characters, and
+  prints the ref census either side of the move.** The sweep required a quote on both sides of an
+  id, so `depends_on: ["a/b"]` was rewritten and `consumed_by: [a/b,c/d]` — an ordinary YAML
+  inline sequence — was not. A 497-grain consumer tree came out of the migration with **52 refs
+  naming pre-migration ids**, and nothing failed: a ref that names a grain under an id nothing
+  answers to is counted UNVERIFIABLE, the same bucket a retired milestone's refs land in, so the
+  migration reported success and `check pm` exited 0. The id grammar says what a token is, so
+  `0.1/alpha` is still not a ref inside `0.1/alphabet` — by construction rather than by
+  punctuation. The run now prints `refs: N -> N; UNVERIFIABLE: N -> N` and WARNS by name when the
+  second number rose. **If you migrated a tree with an earlier copy of this script, run
+  `agentic-sdlc pm validate` and read the UNVERIFIABLE count.**
+
+- **NEW `[emit]`: the conveyor's events are WRITTEN to a sink you declare, and this package never
+  runs anything to deliver them.** `sink` takes the word `"ledger"` (the same `ledger.jsonl` every
+  other row already lands in, routed by the grain the event names), a path inside the checkout
+  (appended to as JSON lines), or `"-"` (one JSON line per event on stdout, beside the human prose
+  and never inside it — a consumer parsing prose keeps parsing prose). `kinds` narrows which of the
+  three taps — `enter`, `verdict`, `leave` — produce a row. Both keys are stock-defaulted, so **a
+  tree declaring no `[emit]` behaves exactly as 0.4.0 did, exit codes and stdout included**, and
+  `pm config --seed` carries both commented at their real values. A sink this package cannot write
+  to is a `[emit] WARNING — …` line on stderr naming it: never a crash, never a changed exit code
+  and never silence, because emission is not load-bearing for any verdict. **No code path spawns a
+  process, imports a module named in config, or resolves a config string to a callable** — a hook
+  is an event this package writes, never a command it runs (0.5.0/D1), which is what keeps every
+  gate here safe to run from a git hook in parallel. `tests/test_boundaries.py` holds
+  `repo/emit.py` to an import allowlist and to the same no-subprocess derivation the `shell` tier
+  is built on, so a spawn added there is a build break rather than a review.
+
+- **NEW `check pm` U3: a declared `[emit]` sink that has never been written to is a WARN, and a
+  tree declaring no `[emit]` gets no line at all.** `recording-is-on-or-the-gate-is-red` (0.4.0)
+  exists because the ledger couriers were wired, executable, and recorded nothing for the whole of
+  0.3.0 with nobody able to tell; a declared sink that is silent is that trap on a fresh surface,
+  because it looks exactly like a tree that opted out. **Opting out stays quiet** — the finding is
+  *declared AND silent*, a contradiction the tree is holding. The rule READS: it never writes a
+  probe row to find out, because a gate that mutates to measure is a gate that lies about what it
+  measured. The `"-"` sink leaves nothing in the tree, so it is UNVERIFIABLE by name rather than
+  passed over. A malformed `[emit]` value is still exit 2, never a finding.
+
+- **NEW `check pm` U4: the LAST hook-written row is named with its age, beside the wiring.**
+  `adopt`'s `telemetry-live` read `.claude/settings.json`, confirmed both couriers were wired and
+  PASSED — but whether a harness ever LOADS that file depends on the session's project root, so a
+  session rooted above the checkout records nothing while every wiring answer stays green. U2 did
+  not fire, because the ledgers were not empty: they held the `status`, `decision` and `gate` rows
+  this checkout writes itself, and **no rule counted row KINDS**. U4 counts them: `dispatch` and
+  `session` are the kinds a courier files (`ledger.EVENT_KINDS`), everything else is written from
+  inside the repo and is not evidence a hook ever fired. A tree that has recorded one gets a
+  counted `RECORDING  last hook-written row: dispatch, 3h ago` line; a tree that has not gets a
+  WARN naming what the ledgers DO hold. A tree that wires no courier stays silent — telemetry is
+  *clearly available, warned when absent, never mandatory* (0.4.0/D5).
+
+- **`adopt`'s `telemetry-live` reports the row it observed, not only the config it read.** Its
+  verdict line now carries the same phrase U4 prints — `the last hook-written row is dispatch, 3h
+  ago`, or `last hook-written row: never` — off one shared reader, so the belt and the gate cannot
+  disagree about whether a tree is recording. It still never refuses an adoption on its own, and
+  the line no longer says `telemetry is live` over a tree where nothing has ever come through:
+  `wired` alone is the tool asserting an outcome it did not observe (rule 4).
+
 ## v0.4.0 — 2026-09-07 — authoring is separate from binding
 
 > **The northstar: the path is where a file lives; the frontmatter is what it is and what it

@@ -270,9 +270,9 @@ class Guidance(unittest.TestCase):
                 self.assertEqual(
                     run_cli(root, 'new', 'milestone', '0.1', 'First')[0], 0)
                 self.assertEqual(
-                    run_cli(root, 'new', 'feature', '0.1', 'gw', 'GW')[0], 0)
+                    run_cli(root, 'new', 'feature', 'ms-0.1', 'gw', 'GW')[0], 0)
                 self.assertEqual(run_cli(root, 'validate')[0], 0)
-                code, out = run_cli(root, 'milestone', 'ready', '0.1')
+                code, out = run_cli(root, 'milestone', 'ready', 'ms-0.1')
                 self.assertEqual(code, 0, out)
                 # Idempotent: a second init leaves the declaration alone.
                 code, out = run_cli(root, 'init')

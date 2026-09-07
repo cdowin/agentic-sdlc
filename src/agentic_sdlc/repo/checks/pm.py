@@ -2,7 +2,7 @@
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1-D6 + U1/U2 + V1/V4/V5/V7; D9/D10 and the R family are opt-in).
+(default: D1-D6 + U1/U2/U3/U4 + V1/V4/V5/V7; D9/D10 and the R family are opt-in).
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
@@ -24,6 +24,14 @@ WARN (a line, never the exit code; both grains and both categories named):
   U1  a DECLARED state no grain of that kind has ever held, with the count in use
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
+  U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
+      declares no `[emit]` opted out and gets no line; declared-and-silent is a
+      contradiction the tree is holding. The rule READS the sink, never probes it
+  U4  the couriers are wired and the LAST hook-written row is named with its age —
+      a WARN when there has never been one, a counted RECORDING line when there
+      has. Status, decision and gate rows are written from inside this checkout
+      and are not evidence a courier ran, which is why U2 passes over a tree that
+      records no dispatch at all
   V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
       not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
       its parent does not hold is DANGLING (FAIL), one naming no grain at all
@@ -41,13 +49,29 @@ Archived milestones are out of scope; a zero census FAILS.
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NamedTuple
 
 from agentic_sdlc.repo.pm import model
+
+# What U4 prints where an age would go when the answer is that there is no row
+# to date. One word, so `check pm | grep never` is a consumer's whole reader.
+NEVER = 'never'
+# The age of a row this reader cannot date. A row whose `ts` will not parse is
+# not a row with an age of zero (rule 4): the ledger is `merge=union` and rows
+# arrive from other branches and other versions.
+UNDATEABLE = 'at a timestamp this reader cannot parse'
 
 
 def run() -> int:
     try:
-        return _run()
+        # THE one read-only scope (`model.reading_tree`): every rule below asks
+        # the same tree the same questions, and the walk under them is shared
+        # instead of repeated per rule per grain. A gate reads and prints; it
+        # writes nothing, and the scope drops itself if anything does.
+        with model.reading_tree():
+            return _run()
     except model.ConfigError as err:
         # Exit 2 for the whole walk: the flow is read lazily, so a tree that
         # declared none is refused at the first category question. EVERY
@@ -126,6 +150,8 @@ def _run() -> int:
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
     _recording_findings(cfg, enabled, warn)
+    _hook_recording_findings(cfg, enabled, warn)
+    _emit_sink_findings(cfg, enabled, warn)
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V7: structural + referential integrity ------------------------
@@ -372,6 +398,135 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
              f'is not running (U1)')
 
 
+# --- the RECORDING family (U2/U3/U4) ------------------------------------------
+# Three rules, one question asked of three sinks: did anything land. U2 asks
+# whether the tree records AT ALL, U4 asks whether a COURIER ever wrote, U3 asks
+# whether the declared `[emit]` sink ever did. They share the walk below because
+# a rule that opened the same files a second time would answer off a different
+# read than the rule beside it.
+#
+# **Every one of them READS.** None writes a probe row to find out, because a
+# gate that mutates to measure is a gate that lies about what it measured.
+
+
+def _ledger_paths(cfg: model.PmConfig) -> list[Path]:
+    """Both homes (0.4.0/D3): the tree's own ledger, and one per milestone."""
+    from agentic_sdlc.repo.pm import ledger
+    paths = [ledger.grainless_path(cfg.roadmap)]
+    paths += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    return paths
+
+
+def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str]]:
+    """(every row in every ledger, with the file it sits in; the ledgers this
+    could not be read).
+
+    An unreadable or unparseable ledger is NEITHER answer — it is named and the
+    scan continues, so one damaged file cannot make the tree look silent.
+    """
+    from agentic_sdlc.repo.pm import ledger
+    rows: list[tuple[Path, dict]] = []
+    unreadable: list[str] = []
+    for path in _ledger_paths(cfg):
+        if not path.is_file():
+            continue
+        try:
+            rows.extend((path, row.data) for row in ledger.read_rows(path))
+        except ledger.LedgerError:
+            unreadable.append(cfg.rel(path))
+    return rows, unreadable
+
+
+def _wired_couriers(cfg: model.PmConfig) -> tuple[list[str], str]:
+    """(the couriers `.claude/settings.json` fires, why it could not be read).
+
+    U2's read, shared with U4: the settings file is the consumer's own and
+    hand-maintained, so the question is only which of the printed entries are
+    in it. **No settings file at all is an empty list, not a defect** — a tree
+    that wires nothing opted out (0.4.0/D5) and this package does not conscript.
+    """
+    settings = cfg.root / model.AGENT_SETTINGS
+    if not settings.is_file():
+        return [], ''
+    try:
+        text = model.read_raw(settings)
+    except (OSError, UnicodeDecodeError) as err:
+        return [], err.__class__.__name__
+    return sorted(name for name in model.LEDGER_COURIERS if name in text), ''
+
+
+def _age_of(row: dict) -> str:
+    """`3h ago`, or the named non-answer for a row this reader cannot date."""
+    from agentic_sdlc.repo.pm import ledger
+    when = ledger.parse_ts(row.get('ts'))
+    if when is None:
+        return UNDATEABLE
+    # Clamped: a row stamped in the future is a clock disagreement, and
+    # rendering it as a negative age would read as a defect in this line.
+    seconds = max(0, int((datetime.now(timezone.utc) - when).total_seconds()))
+    return f'{ledger.human_duration(seconds)} ago'
+
+
+def _kind_of(row: dict) -> str:
+    """The row's `kind`, or '' — type-checked, because a ledger is
+    `merge=union` and rows arrive from other branches and other versions."""
+    kind = row.get('kind')
+    return kind if isinstance(kind, str) else ''
+
+
+def _kind_census(rows: list[tuple[Path, dict]]) -> str:
+    """`'2 status, 1 gate'`, most-seen first — what the tree DID record, said
+    beside what it did not. A row whose kind is unreadable is counted as one."""
+    counts: dict[str, int] = {}
+    for _path, row in rows:
+        kind = _kind_of(row) or '(no kind)'
+        counts[kind] = counts.get(kind, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ', '.join(f'{n} {kind}' for kind, n in ranked)
+
+
+class Recording(NamedTuple):
+    """What this tree's ledgers say about rows a COURIER wrote.
+
+    PUBLIC, because `adopt`'s `telemetry-live` reports the same fact beside the
+    same wiring, and two readers of one fact is how a belt and a gate come to
+    disagree about whether a tree is recording.
+    """
+
+    last: dict                      # the newest hook-written row, or {}
+    where: str                      # the ledger it sits in, repo-relative
+    written: int                    # how many rows a courier wrote
+    total: int                      # how many rows the ledgers hold at all
+    unreadable: tuple[str, ...]     # the ledgers this could not read
+
+
+def hook_recording(cfg: model.PmConfig) -> Recording:
+    """Every ledger in the tree, read for the LAST row a courier wrote.
+
+    Ordered by the row's own `ts`, which is the stamp the courier wrote and not
+    the file's mtime: a ledger is merged `union` across branches, so the last
+    line in a file is not the last event in time.
+    """
+    rows, unreadable = _ledger_rows(cfg)
+    written = [(path, row) for path, row in rows if _hook_written(row)]
+    if not written:
+        return Recording({}, '', 0, len(rows), tuple(unreadable))
+    path, last = max(written, key=lambda pair: str(pair[1].get('ts', '')))
+    return Recording(last, cfg.rel(path), len(written), len(rows),
+                     tuple(unreadable))
+
+
+def recording_phrase(rec: Recording) -> str:
+    """`'dispatch, 3h ago'`, `'never'`, or why neither could be answered — the
+    sentence every surface that reports recording prints, spelled once."""
+    if rec.unreadable:
+        return (f'UNVERIFIABLE ({", ".join(rec.unreadable)} could not be '
+                f'read)')
+    if not rec.written:
+        return NEVER
+    return f'{_kind_of(rec.last)}, {_age_of(rec.last)}'
+
+
 def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
@@ -379,10 +534,11 @@ def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     and existence is not enough — an empty file is what a courier leaves when
     it created the file and then refused the row. **An unreadable ledger is
     neither answer**, so it is reported and the scan continues.
+
+    Raw text rather than `_ledger_rows`: a line this package cannot parse is
+    still something a courier wrote, and U2 asks whether anything landed.
     """
-    from agentic_sdlc.repo.pm import ledger
-    paths = [ledger.grainless_path(cfg.roadmap)]
-    paths += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    paths = _ledger_paths(cfg)
     found, unreadable = False, []
     for path in paths:
         if not path.is_file():
@@ -405,18 +561,13 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """
     if 'U2' not in enabled:
         return
-    settings = cfg.root / model.AGENT_SETTINGS
-    if not settings.is_file():
-        return
-    try:
-        text = model.read_raw(settings)
-    except (OSError, UnicodeDecodeError) as err:
+    wired, unread = _wired_couriers(cfg)
+    if unread:
         warn(f'{model.AGENT_SETTINGS} could not be read '
-             f'({err.__class__.__name__}), so whether the ledger couriers are '
+             f'({unread}), so whether the ledger couriers are '
              f'wired is UNVERIFIABLE — not a finding, and not a pass either '
              f'(U2)')
         return
-    wired = sorted(name for name in model.LEDGER_COURIERS if name in text)
     if not wired:
         return
     found, unreadable = _tree_has_a_row(cfg)
@@ -437,6 +588,170 @@ def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'`python3` or the transcript path does not resolve; the entries name '
          f'a script that is not there. **`bash tools/hooks/'
          f'cc-ledger-session.sh --self-test` answers all four** (U2)')
+
+
+def _hook_written(row: dict) -> bool:
+    """Did a COURIER write this row?
+
+    `ledger.EVENT_KINDS` maps the harness event to the kind the courier's verb
+    files it under, so this reads the writer's own vocabulary rather than a
+    second copy of it. Everything else in a ledger — `status`, `decision`,
+    `gate`, `verify`, `test`, `deviation`, `retire` — is written by the CLI or
+    by the make wrapper from INSIDE this checkout, and none of it is evidence
+    that a hook ever fired.
+    """
+    from agentic_sdlc.repo.pm import ledger
+    return _kind_of(row) in set(ledger.EVENT_KINDS.values())
+
+
+def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
+                             warn) -> None:
+    """U4 — the couriers are wired, and the last row THEY wrote, with its age.
+
+    **This rule was found by this build recording nothing.** `adopt`'s
+    `telemetry-live` reads `.claude/settings.json`, confirms both couriers are
+    wired and passes — but whether the harness LOADS that file depends on the
+    session's project root, so a session rooted above this checkout records
+    nothing while every surface reports the wiring as green. U2 does not fire,
+    because the ledgers are not empty: they hold the status, decision and gate
+    rows this tree writes itself. **No rule counted row KINDS**, so the one
+    fact that separates a wired path from a working one went unasked.
+
+    So: name the last hook-written row and its age, every run. `couriers wired;
+    last hook-written row: never` is a sentence a consumer can act on; `wired`
+    alone is the tool asserting an outcome it did not observe (rule 4).
+
+    A WARN, never a finding, and a tree that wires nothing stays silent: the
+    posture for telemetry is *clearly available, warned when absent, never
+    mandatory* (0.4.0/D5).
+    """
+    if 'U4' not in enabled:
+        return
+    from agentic_sdlc.repo.pm import ledger
+    wired, unread = _wired_couriers(cfg)
+    if unread:
+        warn(f'{model.AGENT_SETTINGS} could not be read ({unread}), so the '
+             f'last hook-written row cannot be read beside its wiring — '
+             f'UNVERIFIABLE, not a finding and not a pass either (U4)')
+        return
+    if not wired:
+        return
+    rec = hook_recording(cfg)
+    if rec.unreadable:
+        warn(f'{", ".join(rec.unreadable)} could not be read, so the last '
+             f'hook-written row is UNVERIFIABLE — not a finding, and not a '
+             f'pass either (U4)')
+        return
+    events = ' and '.join(sorted(ledger.EVENT_KINDS))
+    kinds = '/'.join(dict.fromkeys(ledger.EVENT_KINDS.values()))
+    if not rec.written:
+        rows, _ = _ledger_rows(cfg)
+        held = _kind_census(rows) or 'no rows at all'
+        warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
+             f'wired in {model.AGENT_SETTINGS} and no {kinds} row has EVER '
+             f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
+             f'{recording_phrase(rec)}. What the ledgers hold is {held}, '
+             f'which this checkout writes itself and which is not evidence '
+             f'that a courier ran. Wiring is a CONFIG fact: whether a harness '
+             f'loads {model.AGENT_SETTINGS} depends on the session\'s project '
+             f'root, so a session rooted above this checkout fires no {events} '
+             f'hook here and records nothing while every wiring answer stays '
+             f'green (U4)')
+        return
+    # COUNTED, never a finding: the tree IS recording, and the age is the fact
+    # a consumer reads to tell live telemetry from telemetry that stopped.
+    print(f'  RECORDING  last hook-written row: {recording_phrase(rec)} — '
+          f'{rec.written} of {rec.total} row(s) in {cfg.roadmap_dir}/ came '
+          f'from a courier  [{rec.where}] (U4)')
+
+
+def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+    """U3 — `[emit]` is declared and its sink has never been written to.
+
+    `recording-is-on-or-the-gate-is-red` (0.4.0) exists because the couriers
+    were wired, executable and recorded nothing for a whole release with nobody
+    able to tell. **The emit sink is the same trap on a fresh surface**: a
+    declared `[emit]` whose sink has never been written to looks exactly like a
+    tree that opted out.
+
+    **Opting out stays quiet.** A tree with no `[emit]` is not broken and gets
+    no line at all; the finding is *declared and silent*, a contradiction the
+    tree is holding rather than an absence of configuration.
+
+    A malformed `[emit]` value is exit 2 through `emit.settings()`, never a
+    finding — a fact about the input, the way every other config refusal is.
+    """
+    if 'U3' not in enabled:
+        return
+    from agentic_sdlc.repo import emit
+    if not emit.declared():
+        return
+    # A malformed value raises here — including `kinds = []`, which
+    # `core.config.str_tuple` refuses by name rather than reading as "no tap
+    # emits". So every declared section this rule reaches emits SOMETHING, and
+    # silence in the sink is never something the project asked for.
+    conf = emit.settings()
+    taps = ', '.join(conf.kinds)
+    if conf.sink == emit.SINK_STDOUT:
+        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
+             f'{emit.SINK_STDOUT!r} (stdout) and {emit.KINDS_KEY} = {taps}, '
+             f'and stdout leaves nothing in the tree — whether a tap has ever '
+             f'emitted is UNVERIFIABLE here, not a finding and not a pass '
+             f'either. A courier reading the stream is what proves it (U3)')
+        return
+    if conf.sink == emit.SINK_LEDGER:
+        rows, unreadable = _ledger_rows(cfg)
+        if unreadable:
+            warn(f'{", ".join(unreadable)} could not be read, so whether the '
+                 f'[{emit.SECTION}] sink has ever been written to is '
+                 f'UNVERIFIABLE — not a finding, and not a pass either (U3)')
+            return
+        emitted = [row for _path, row in rows if _emitted(row, emit.TAPS)]
+        if emitted:
+            return
+        held = _kind_census(rows) or 'no rows at all'
+        warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = '
+             f'{emit.SINK_LEDGER!r} and {emit.KINDS_KEY} = {taps}, and no '
+             f'event from any of those taps has ever landed in '
+             f'{cfg.roadmap_dir}/ — a sink that is DECLARED and silent is a '
+             f'contradiction this tree is holding. What the ledgers hold is '
+             f'{held}; none of it names a tap. A tree that declares no '
+             f'[{emit.SECTION}] emits nothing and is owed no line — this one '
+             f'declared one (U3)')
+        return
+    target = cfg.root / conf.sink
+    try:
+        written = target.is_file() and bool(
+            target.read_text(encoding='utf-8').strip())
+    except (OSError, UnicodeDecodeError) as err:
+        warn(f'the [{emit.SECTION}] {emit.SINK_KEY} {conf.sink!r} could not be '
+             f'read ({err.__class__.__name__}), so whether it has ever been '
+             f'written to is UNVERIFIABLE — not a finding, and not a pass '
+             f'either  [{cfg.rel(target)}] (U3)')
+        return
+    if written:
+        return
+    warn(f'[{emit.SECTION}] declares {emit.SINK_KEY} = {conf.sink!r} and '
+         f'{emit.KINDS_KEY} = {taps}, and that sink '
+         f'{"is empty" if target.is_file() else "is not in this checkout"} — '
+         f'a sink that is DECLARED and silent is a contradiction this tree is '
+         f'holding, and it looks exactly like a tree that opted out. A tree '
+         f'that declares no [{emit.SECTION}] emits nothing and is owed no '
+         f'line; this one declared one  [{cfg.rel(target)}] (U3)')
+
+
+def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
+    """Did a TAP write this row?
+
+    A tap's row NAMES its tap in `kind` — bare (`enter`) or dotted
+    (`rung.enter`, `check.verdict`, `rung.leave`) — so the last dotted segment
+    is the tap. Read off `emit.TAPS`, which is the shipped vocabulary of the
+    section this rule grades, rather than off a copy of the row-kind list: a
+    second spelling of the schema is the scoreboard this package deletes
+    everywhere else, and a rule keyed on a copy goes blind the day the copy
+    goes stale.
+    """
+    return _kind_of(row).rsplit('.', 1)[-1] in taps
 
 
 def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:

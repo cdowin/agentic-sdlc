@@ -21,6 +21,7 @@ from agentic_sdlc import __version__
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       relpath_tuple)
+from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import Answer, Check, Context, grain_path
 from agentic_sdlc.repo.pm import model, verdict
 
@@ -83,6 +84,26 @@ DEFAULT_COMMANDS: dict[str, str] = {'gate': 'make milestone'}
 COMMANDABLE = frozenset((
     'gate', 'hooks-self-test', 'runner-targets-resolve', 'checks-pass',
     'pm-validates', 'story-verified', 'feature-verified'))
+
+# THE ENTRY EDGE. A belt's list above is what it asks at the CLOSE; this names
+# the subset of it that is decidable BEFORE the work, which is what
+# `pm ready-for <rung>` asks and READS from here — never a list of its own,
+# so a project declaring different `[<op>] steps` gets its own answer back.
+#
+# Why the story belt contributes exactly one: `story-verified` runs a command
+# over the edit, and `ready-for` boots nothing (hard rule 2); `evidence-written`
+# is the author's `done:` line and `committed` is the act of committing the
+# work — neither can be true before the story is built, and asking `committed`
+# would shell out to git in the verb an agent runs dozens of times a milestone.
+#
+# `stories-done`, `features-done` and `findings-resolved` are absent because
+# each IS a rung — `SHIPPED_ACTION` declares `pm ready-for feature|milestone|
+# tag` as what answers it — and a check that is a rung cannot also be that
+# rung's entry condition.
+#
+# A check named in no set is not an entry condition, and `ready-for` NAMES it
+# as one it did not ask, rather than passing over it in silence (rule 11).
+ENTRY_CONDITIONS = frozenset(('story-exists',))
 
 # Caller commands printed on the after-list; a `[release.commands]` entry for
 # one is accepted and shown there.
@@ -587,15 +608,22 @@ def subject_grain(ctx: Context) -> str:
 
 def ready_for(ctx: Context, target: str) -> Answer:
     """`pm ready-for <target> <grain>` through `pm.cli.main` (0 ready, 1 not
-    ready naming the blockers, 2 usage), never re-implemented."""
+    ready naming the blockers, 2 usage), never re-implemented.
+
+    The blockers it NAMED ride on the answer, so a lesson recorded against one
+    surfaces beside this check — read off the verb's own marker, never guessed
+    from the sentence around it.
+    """
     code, said = _pm_run(ctx, 'ready-for', target, subject_grain(ctx))
     if code == 0:
-        return Answer.yes(said or f'`pm ready-for {target}` exited 0')
-    if code == 1:
-        return Answer.no(said or f'`pm ready-for {target}` exited 1')
-    return Answer.unverifiable(
-        f'`pm ready-for {target}` exited {code} — a usage or config error, so '
-        f'nothing was decided: {said}')
+        answer = Answer.yes(said or f'`pm ready-for {target}` exited 0')
+    elif code == 1:
+        answer = Answer.no(said or f'`pm ready-for {target}` exited 1')
+    else:
+        answer = Answer.unverifiable(
+            f'`pm ready-for {target}` exited {code} — a usage or config error, '
+            f'so nothing was decided: {said}')
+    return replace(answer, names=lessons.blockers_named(said))
 
 
 # --- the release checks -------------------------------------------------------
@@ -997,8 +1025,25 @@ def check_hooks_self_test(ctx: Context) -> Answer:
                         found=f'{HOOKS_DIR}/ replayed')
 
 
+def _recorded_phrase(ctx: Context) -> str:
+    """`'dispatch, 3h ago'`, `'never'`, or why neither could be answered.
+
+    Read through `check pm`'s U4 reader rather than spelled a second time here:
+    the belt line and the gate line report ONE fact, and two readers of one
+    fact is how a belt and a gate come to disagree about whether a tree is
+    recording. A tree this process cannot read as a PM tree is a named
+    non-answer, never a silent 'never'.
+    """
+    from agentic_sdlc.repo.checks import pm as pm_check
+    try:
+        cfg = _pm_cfg(ctx)
+    except ConfigError as err:
+        return f'UNVERIFIABLE (the ledgers could not be located: {_clip(str(err), 80)})'
+    return pm_check.recording_phrase(pm_check.hook_recording(cfg))
+
+
 def check_telemetry_live(ctx: Context) -> Answer:
-    """Is this tree RECORDING — and if not, which of the three ways.
+    """Is this tree RECORDING — and if not, which of the four ways.
 
     **A probe, not an inspection.** Reading `.claude/settings.json` proves a
     string is present; this runs THIS TREE'S vehicle, `make -s pm
@@ -1012,9 +1057,22 @@ def check_telemetry_live(ctx: Context) -> Answer:
     date; or `[pm.states.<kind>]` is undeclared, which makes every work-moving
     verb refuse by name.
 
+    **The fourth was found by this build recording nothing**, and it is why the
+    verdict line now carries the last hook-written ROW. Every check above reads
+    CONFIG; whether the harness ever LOADS `.claude/settings.json` depends on
+    the session's project root, so a session rooted above the checkout records
+    nothing while all three answers stay green. Six agent dispatches against
+    this tree produced zero `SubagentStop` rows and no surface said so. The
+    ledgers were not empty — they held status, decision and gate rows this
+    checkout writes itself — so nothing counted the KINDS. `couriers wired;
+    last hook-written row: never` is a sentence a consumer can act on; `wired`
+    alone is the tool asserting an outcome it did not observe (rule 4).
+
     **It never refuses an adoption on its own.** The posture is *clearly
     available, warned when absent, never mandatory* (0.4.0/D5). What it must
-    never be is SILENTLY opted out.
+    never be is SILENTLY opted out — so a tree that has recorded nothing is
+    reported in the line rather than in the verdict, and `check pm` U4 says the
+    same thing on every run.
     """
     command = _configured(ctx, 'telemetry-live')
     if command:
@@ -1056,9 +1114,23 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'never writes that file, because it is yours and has no merge; '
             f'paste them and this goes green. Nothing here is mandatory — a '
             f'tree that has opted out is not broken, only quiet')
-    return Answer.yes(f'telemetry is live: both couriers are wired in '
-                      f'{pm_model.AGENT_SETTINGS} and `make -s pm` reaches the '
-                      f'verb in this tree')
+    recorded = _recorded_phrase(ctx)
+    wiring = (f'both couriers are wired in {pm_model.AGENT_SETTINGS} and '
+              f'`make -s pm` reaches the verb in this tree')
+    from agentic_sdlc.repo.checks import pm as pm_check
+    if recorded == pm_check.NEVER:
+        # TRUE, and honest: the wiring is right and nothing has come through.
+        # Telemetry is never mandatory (0.4.0/D5), so the fact goes in the
+        # line — but the line may not call it live, because no row was seen.
+        return Answer.yes(
+            f'{wiring}, and NOTHING has come through — last hook-written row: '
+            f'{recorded}. Wiring is a CONFIG fact: whether a harness loads '
+            f'{pm_model.AGENT_SETTINGS} depends on the session\'s project '
+            f'root, so a session rooted above this checkout records nothing '
+            f'while every wiring answer here stays green. `check pm` U4 '
+            f'reports the same row on every run')
+    return Answer.yes(f'telemetry is live: {wiring}, and the last hook-written '
+                      f'row is {recorded}')
 
 
 def check_runner_targets_resolve(ctx: Context) -> Answer:

@@ -61,9 +61,11 @@ class Scaffolding(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')[0], 0)
             self.assertEqual(
-                run_cli(root, 'new', 'story', '0.1/beta', 'first', 'First')[0], 0)
-            ff = root / 'pm/roadmap/features/beta.md'
-            self.assertEqual(model.field_of(ff, 'id'), '0.1/beta')
+                run_cli(root, 'new', 'story', 'ft-beta', 'first', 'First')[0], 0)
+            ff = root / 'pm/roadmap/features/ft-beta.md'
+            # The MINTED id is the kind prefix and the slug; the parent is the
+            # BINDING and is not in it.
+            self.assertEqual(model.field_of(ff, 'id'), 'ft-beta')
             self.assertEqual(model.field_of(ff, 'milestone'), '0.1')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             code, out = run_gate(root)
@@ -224,11 +226,11 @@ class Scaffolding(unittest.TestCase):
         # can print, so the escaping exception becomes a refusal that names
         # exactly which slots did land rather than a stack trace over them.
         with tree(story_statuses=('ready',)) as root:
-            doc = root / MILESTONES / '0.2.md'
+            doc = root / MILESTONES / 'ms-0.2.md'
             real = templates.write
 
             def flaky(path: Path, text: str) -> None:
-                if path.name == '0.2.md':
+                if path.name == 'ms-0.2.md':
                     raise OSError(28, 'No space left on device')
                 real(path, text)
 
@@ -350,8 +352,8 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
             self.assertFalse(model.is_pooled(cfg_for(root)))
             code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')
             self.assertEqual(code, 0, out)
-            self.assertTrue((mdir / 'features/alpha/stories/probe.md').is_file(),
-                            out)
+            self.assertTrue(
+                (mdir / 'features/alpha/stories/st-probe.md').is_file(), out)
             self.assertFalse((root / 'pm/roadmap/stories').exists(), out)
             # The tree is still READ as nested, which is the half that broke.
             self.assertFalse(model.is_pooled(cfg_for(root)))
@@ -364,7 +366,7 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')[0], 0)
-            self.assertTrue((root / 'pm/roadmap/stories/probe.md').is_file())
+            self.assertTrue((root / 'pm/roadmap/stories/st-probe.md').is_file())
 
 
 class NoDeleter(unittest.TestCase):
@@ -419,6 +421,135 @@ class NoDeleter(unittest.TestCase):
                       'own fixture has gone stale')
 
 
+class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
+    """`bg-the-new-verbs-mint-a-compound-id`, GitHub #8.
+
+    `pm new` minted `<mid>/<slug>` while `tools/dev/pm_migrate.py` minted
+    `<kind-prefix>-<slug>` off `model.KIND_PREFIX`, so a migrated tree grew
+    BOTH vocabularies, one grain at a time, and nothing went red. The id also
+    restated the binding that `milestone:`/`feature:` already carried, which
+    made re-parenting a `pm rename` plus a whole-tree ref sweep — the cost
+    0.4.0 deleted when it retired `pm move`.
+
+    Nothing here grades an id's SHAPE and nothing should: a prefix or a version
+    in an id is the project's taste (rule 9). What is asserted is that the
+    ENGINE has one minting path.
+    """
+
+    def _milestone(self, root: Path) -> None:
+        self.assertEqual(run_cli(root, 'new', 'milestone', 'later', 'Later')[0], 0)
+
+    def test_every_kind_mints_what_the_migration_would_have_minted(self):
+        # Compared against `model.mint_id` rather than four literals: the claim
+        # is that the two paths are ONE function, and two hard-coded strings
+        # would still pass the day they diverge again.
+        with tree(story_statuses=('ready',)) as root:
+            for argv, kind, slug, doc in (
+                    (('new', 'milestone', 'later', 'Later'),
+                     'milestone', 'later', MILESTONES),
+                    (('new', 'feature', '0.1', 'census', 'Census'),
+                     'feature', 'census', FEATURES),
+                    (('new', 'story', '0.1/alpha', 'boots', 'Boots'),
+                     'story', 'boots', 'pm/roadmap/stories'),
+                    (('new', 'bug', '0.1', 'oops'),
+                     'bug', 'oops', 'pm/roadmap/bugs')):
+                with self.subTest(kind=kind):
+                    code, out = run_cli(root, *argv)
+                    self.assertEqual(code, 0, out)
+                    gid = model.mint_id(kind, slug)
+                    self.assertEqual(gid, f'{model.KIND_PREFIX[kind]}-{slug}')
+                    path = root / doc / f'{gid}.md'
+                    self.assertTrue(path.is_file(), out)
+                    self.assertEqual(model.unquote(model.field_of(path, 'id')),
+                                     gid)
+                    # The PARENT is not in it, at any level.
+                    self.assertNotIn('/', gid)
+            self.assertEqual(run_cli(root, 'validate')[0], 0)
+
+    def test_the_parent_is_the_binding_field_and_re_parenting_is_one_set(self):
+        # The functional claim the bug is actually about: the id is stable for
+        # life, so moving a grain to another milestone is `pm set`, not
+        # `pm rename` plus a ref sweep.
+        with tree(story_statuses=('ready',)) as root:
+            self._milestone(root)
+            self.assertEqual(
+                run_cli(root, 'new', 'feature', '0.1', 'census', 'C')[0], 0)
+            ff = root / FEATURES / 'ft-census.md'
+            self.assertEqual(
+                model.unquote(model.field_of(ff, 'milestone')), '0.1')
+            before = model.unquote(model.field_of(ff, 'id'))
+            self.assertEqual(
+                run_cli(root, 'set', 'ft-census', 'milestone', 'ms-later')[0], 0)
+            self.assertEqual(
+                model.unquote(model.field_of(ff, 'milestone')), 'ms-later')
+            self.assertEqual(model.unquote(model.field_of(ff, 'id')), before)
+
+    def test_a_slug_already_carrying_its_prefix_is_not_doubled(self):
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(
+                run_cli(root, 'new', 'bug', '0.1', 'bg-already')[0], 0)
+            self.assertTrue((root / 'pm/roadmap/bugs/bg-already.md').is_file())
+            self.assertFalse(
+                (root / 'pm/roadmap/bugs/bg-bg-already.md').exists())
+
+    def test_a_bug_this_verb_mints_is_movable_by_the_bug_verb(self):
+        # Collateral, and load-bearing: `pm bug <status> <id>` required
+        # `/bugs/` IN THE ID, so every flat `bg-` id the migration mints was
+        # unmovable — and this verb now mints those. A create path whose
+        # product no verb can move is a create path that does not work.
+        with tree(story_statuses=('ready',)) as root:
+            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'oops')[0], 0)
+            code, out = run_cli(root, 'bug', 'fixed', 'bg-oops')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(
+                model.field_of(root / 'pm/roadmap/bugs/bg-oops.md', 'status'),
+                'fixed')
+            # And the kind guard the id-shape test stood in for still holds:
+            # a FEATURE id cannot be written through the bug flow.
+            code, out = run_cli(root, 'bug', 'fixed', '0.1/alpha')
+            self.assertEqual(code, 2, out)
+            self.assertIn('no bug resolves', out)
+
+    def test_a_grain_authored_on_0_4_0_is_re_scaffolded_not_duplicated(self):
+        # The compat half. A consumer's tree holds `<mid>/<slug>` ids; the same
+        # `pm new` they ran before the bump must keep FILLING that document
+        # rather than minting a second one beside it (rule 3).
+        with tree(story_statuses=('ready',)) as root:
+            fdir = root / FEATURES
+            before = sorted(p.name for p in fdir.iterdir())
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha')
+            self.assertEqual(code, 0, out)
+            self.assertIn('already has every canonical slot', out)
+            self.assertEqual(sorted(p.name for p in fdir.iterdir()), before)
+            self.assertFalse((fdir / 'ft-alpha.md').exists())
+
+    def test_a_create_with_no_name_names_the_argument_not_a_missing_grain(self):
+        # *"feature 'x' does not exist yet — a new one needs a name"* read as
+        # THIS GRAIN IS MISSING and sent readers looking for a lost file. The
+        # refusal leads with the argument that was omitted.
+        with tree(story_statuses=('ready',)) as root:
+            for argv in (('new', 'milestone', 'nameless'),
+                         ('new', 'feature', '0.1', 'nameless')):
+                with self.subTest(argv=argv):
+                    code, out = run_cli(root, *argv)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(cli.NAME_ARG, out)
+                    self.assertIn('is required', out)
+                    self.assertNotIn('does not exist yet', out)
+                    self.assertNotIn('needs a name', out)
+
+    def test_the_help_marks_the_name_required_on_every_create(self):
+        # Rule 11's read side: the synopsis showed `[<name...>]` while the verb
+        # refused without it, so the flag people omitted looked optional.
+        for line in ('new milestone <slug> <name...>',
+                     'new feature <milestone> <slug> <name...>',
+                     'new story <feature-id> <slug> <name...>'):
+            with self.subTest(line=line):
+                self.assertIn(line, cli.USAGE)
+                self.assertNotIn(line.replace(cli.NAME_ARG,
+                                              f'[{cli.NAME_ARG}]'), cli.USAGE)
+
+
 class TheScaffolderNeverMintsATwiceClaimedId(unittest.TestCase):
     """`pm new story` refuses rather than overwriting, and writes nothing.
 
@@ -447,11 +578,11 @@ class TheScaffolderNeverMintsATwiceClaimedId(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
-            sf = root / 'pm/roadmap/stories/01-boots.md'
-            self.assertEqual(model.field_of(sf, 'id'), '0.1/alpha/01-boots')
+            sf = root / 'pm/roadmap/stories/st-01-boots.md'
+            self.assertEqual(model.field_of(sf, 'id'), 'st-01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(
-                run_cli(root, 'story', 'building', '0.1/alpha/01-boots')[0], 0)
+                run_cli(root, 'story', 'building', 'st-01-boots')[0], 0)
 
 
 class BugNamesItsCause(unittest.TestCase):
@@ -476,8 +607,8 @@ class BugNamesItsCause(unittest.TestCase):
         # bug leaves `validate` and the gate clean.
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'unattributed')[0], 0)
-            self.assertEqual(frontmatter(root / self.BUGS / 'unattributed.md'), [
-                'id: 0.1/bugs/unattributed',
+            self.assertEqual(frontmatter(root / self.BUGS / 'bg-unattributed.md'), [
+                'id: bg-unattributed',
                 # 0.4.0: a grain states its own kind, so nothing has to infer
                 # one from where the file happens to sit.
                 'kind: bug',
@@ -491,8 +622,8 @@ class BugNamesItsCause(unittest.TestCase):
             code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero',
                                 '--caused-by', '0.1/alpha')
             self.assertEqual(code, 0, out)
-            self.assertEqual(frontmatter(root / self.BUGS / 'seed-is-zero.md'), [
-                'id: 0.1/bugs/seed-is-zero',
+            self.assertEqual(frontmatter(root / self.BUGS / 'bg-seed-is-zero.md'), [
+                'id: bg-seed-is-zero',
                 'kind: bug',
                 'milestone: "0.1"',
                 'name:',
@@ -505,7 +636,7 @@ class BugNamesItsCause(unittest.TestCase):
             self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'joined',
                                      '--caused-by=0.1/alpha')[0], 0)
             self.assertEqual(
-                model.field_of(root / self.BUGS / 'joined.md', 'caused_by'),
+                model.field_of(root / self.BUGS / 'bg-joined.md', 'caused_by'),
                 '0.1/alpha')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(run_gate(root)[0], 0)
@@ -590,12 +721,12 @@ class Templates(unittest.TestCase):
         with tree() as root:
             run_cli(root, 'new', 'milestone', '0.2', 'Second')
             entries = model.dir_entries(root / MILESTONES)
-            self.assertEqual(entries.get('0.2.md'), 'file', entries)
+            self.assertEqual(entries.get('ms-0.2.md'), 'file', entries)
             # And no shared doc rode along beside it.
             for slot in model.MILESTONE_OPTIONAL_SLOTS:
-                self.assertNotIn(f'0.2-{slot}', entries)
-            self.assertIn('# 0.2 — Second',
-                          (root / MILESTONES / '0.2.md').read_text())
+                self.assertNotIn(f'ms-0.2-{slot}', entries)
+            self.assertIn('# ms-0.2 — Second',
+                          (root / MILESTONES / 'ms-0.2.md').read_text())
 
     def test_templates_command_refuses_to_write_past_a_case_variant(self):
         # `is_file()` on macOS answers `decisions.md` with a leftover
@@ -628,9 +759,9 @@ class Templates(unittest.TestCase):
             (tdir / 'DECISIONS.md').rename(tdir / 'x.tmp')
             (tdir / 'x.tmp').rename(tdir / 'decisions.md')
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.3', 'Third')[0], 0)
-            self.assertEqual(run_cli(root, 'decide', '0.3', 'a choice')[0], 0)
+            self.assertEqual(run_cli(root, 'decide', 'ms-0.3', 'a choice')[0], 0)
             self.assertIn('MINE', model.read_raw(
-                shared(root, '0.3', 'decisions.md')))
+                shared(root, 'ms-0.3', 'decisions.md')))
 
     def test_a_project_template_is_used_verbatim_and_owns_only_its_own_grain(self):
         # Three claims about one template dir, because they are one rule: the
@@ -649,7 +780,7 @@ class Templates(unittest.TestCase):
                 encoding='utf-8')
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', 's', 'S')[0], 0)
-            sf = root / 'pm/roadmap/stories/s.md'
+            sf = root / 'pm/roadmap/stories/st-s.md'
             self.assertEqual(model.field_of(sf, 'house_field'), 'yes')
             self.assertEqual(model.field_of(sf, 'status'), 'done')
             # feature.md is not in the project's dir: the packaged one is used.
@@ -756,14 +887,15 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
                     ['milestones'])
                 self.assertEqual(
                     sorted(p.name for p in (root / MILESTONES).iterdir()),
-                    ['0.1.md'])
-                self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'f', 'F')[0], 0)
+                    ['ms-0.1.md'])
+                self.assertEqual(
+                    run_cli(root, 'new', 'feature', 'ms-0.1', 'f', 'F')[0], 0)
                 self.assertEqual(
                     sorted(p.name for p in (root / FEATURES).iterdir()),
-                    ['f.md'])
+                    ['ft-f.md'])
                 self.assertEqual(
-                    run_cli(root, 'new', 'story', '0.1/f', 's0', 'S0')[0], 0)
+                    run_cli(root, 'new', 'story', 'ft-f', 's0', 'S0')[0], 0)
                 self.assertTrue(
-                    (root / 'pm/roadmap/stories/s0.md').is_file())
+                    (root / 'pm/roadmap/stories/st-s0.md').is_file())
             finally:
                 os.chdir(previous)

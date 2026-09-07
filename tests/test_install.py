@@ -21,8 +21,12 @@ this module spawns NOTHING and sits in the unit tier. `install.main` reads and
 writes files, so every case here is a temp tree; the four cases that ran bash
 or git moved to the module whose subject that is (the installed corpus, run:
 test_hooks_payloads.py; install day's gates: test_fresh_project.py) or were
-already proven there. A claim about the installables' PROSE is not asserted;
-a claim about what a write did to the disk is.
+already proven there. A claim about what a write did to the disk is asserted
+here; a claim about the installables' PROSE is not, with ONE exception at the
+foot of this module — an installable that NAMES something this package retired
+is a false instruction to an operator, and until
+`bg-the-shipped-rules-name-retired-behaviour` nothing in the repo graded these
+files at all.
 """
 from __future__ import annotations
 
@@ -899,6 +903,91 @@ def test_the_two_ledger_couriers_are_registered_async_and_unmatched():
         assert subagent['async'] is True and session['async'] is True, wired
 
 
+# --- the wiring is one act, and it is PORTABLE (0.5.0, issue #13) -------------
+# This milestone's own build recorded zero rows across nine dispatches. The
+# block carried RELATIVE script paths, which resolve only when the harness's cwd
+# IS the repo root, and the run named no file to put them in — a fragment with
+# no destination, pasted by hand, wrong invisibly, with every surface reporting
+# success. So: absolute paths, the destination named, and the write OFFERED.
+
+
+def _block(out: str) -> dict:
+    """The pasteable block, parsed — an operator who has to repair it first
+    hand-writes their own instead, which is the fork this verb prevents."""
+    return json.loads(out[out.index('{\n  "hooks"'):out.rindex('}') + 1])
+
+
+def _commands(block: dict) -> list[str]:
+    return [entry['command'] for event in block['hooks'].values()
+            for group in event for entry in group['hooks']]
+
+
+def test_every_emitted_command_is_an_absolute_path_to_an_installed_file():
+    """`bash tools/hooks/cc-ledger-subagent.sh` fires nothing from a session
+    rooted at a parent directory, and says nothing when it does not."""
+    with repo() as root:
+        code, out = run('install-hooks')
+        assert code == 0, out
+        commands = _commands(_block(out))
+        assert commands, out
+        for command in commands:
+            script = Path(command.split(' ', 1)[1])
+            assert script.is_absolute(), f'{command} is relative\n{out}'
+            assert script.is_file(), f'{command} names no installed file'
+            # `.resolve()`: the emitted path is the one `repo_root()` found,
+            # symlinks and all, which is the canonical spelling of the tree.
+            assert script.is_relative_to(root.resolve()), command
+
+
+def test_the_run_names_the_file_the_wiring_belongs_in_and_offers_to_write_it():
+    """A fragment with no destination is the step no gate observes. The name
+    is the ABSOLUTE path, and the offer names the flag that lands it."""
+    with repo() as root:
+        code, out = run('install-hooks')
+        assert code == 0, out
+        assert str(root / install.AGENT_SETTINGS) in out, out
+        assert install.SETTINGS_FLAG in out, out
+        assert not (root / install.AGENT_SETTINGS).exists(), (
+            'the default run wrote a harness config nobody asked it to')
+
+
+def test_write_settings_lands_the_file_and_the_second_run_is_a_no_op():
+    """The offer, taken. What lands is what was printed, and the run after it
+    has nothing to do — an installer's write is idempotent."""
+    with repo() as root:
+        code, out = run('install-hooks', install.SETTINGS_FLAG)
+        assert code == 0, out
+        target = root / install.AGENT_SETTINGS
+        assert target.is_file(), out
+        written = json.loads(target.read_text(encoding='utf-8'))
+        assert written == json.loads(install.hook_settings(root.resolve()))
+        for rel in CC_HOOKS:
+            assert any(rel in command for command in _commands(written)), rel
+        code, again = run('install-hooks', install.SETTINGS_FLAG)
+        assert code == 0, again
+        assert 'already carries exactly this block' in again, again
+
+
+def test_a_settings_file_that_exists_is_never_merged_into_or_replaced():
+    """The one destination `--force` does not take. It carries permissions,
+    env and MCP entries this package knows nothing about, so overwriting it
+    would be rule 4's second sin wearing an installer's clothes."""
+    mine = '{"permissions": {"allow": ["Bash"]}}\n'
+    with repo() as root:
+        assert run('install-hooks')[0] == 0
+        target = root / install.AGENT_SETTINGS
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(mine, encoding='utf-8')
+        for argv in ((install.SETTINGS_FLAG,),
+                     ('--force', install.SETTINGS_FLAG)):
+            code, out = refuse('install-hooks', *argv)
+            assert code == 1, out
+            assert install.AGENT_SETTINGS in out, out
+            assert target.read_text(encoding='utf-8') == mine, argv
+        # And the block is still printed, because pasting is now the way in.
+        assert _commands(_block(out)), out
+
+
 # --- a collision withholds ITS file, and a header-only one is named as one ----
 # The v0.23.0 adoption defect, from both consumers: four hooks differed ONLY
 # inside the `project config` header the file invites them to edit, so the two
@@ -1406,3 +1495,92 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
 def _flow() -> str:
     from support.pm import with_flow
     return with_flow('')
+
+
+# --- the shipped instructions name nothing this package retired ---------------
+# `bg-the-shipped-rules-name-retired-behaviour`: two files `pm install-skills`
+# writes into every consumer, and that auto-load into every session, told an
+# operator to do things this package deleted — maintain `ROADMAP.md` (retired in
+# 0.3.0), trust `pm validate` to hold an id to its path (V2/V3, retired in
+# 0.4.0). They are neither code nor a doc in `[doc] scope`, so nothing graded
+# them, and an agent that trusts an installed rule over the tool's own output is
+# behaving correctly. The defect is ours.
+#
+# The names come from the code's OWN retirement registries, so a verb, key or
+# check retired tomorrow joins this sweep with no edit here — the two cannot
+# drift apart. What this CANNOT catch is a false claim that names nothing
+# retired ("`pm new` scaffolds to the schema", the sibling half of that bug):
+# grading a sentence against behaviour is a different mechanism.
+RETIRED_ELSEWHERE = {
+    # Retired outside a registry the code can be asked for.
+    'ROADMAP.md': 'retired in 0.3.0 — `pm roadmap` + releases.md `order`',
+    '<!-- pm:execution -->': 'retired in 0.4.0 with V6 — `order:` on the parent',
+    '[[verify.narrow]]': 'retired — the story rung is a make target',
+}
+# A migration NOTE is the legitimate way to name a retired thing, and the seed
+# devkit.toml is full of them. So the allowance is exactly that: the line has to
+# say the word.
+MIGRATION_NOTE = 'retire'
+# Everything a consumer receives verbatim: `install-*`'s payloads, the guidance
+# `pm install-skills` writes, and the grain templates `pm templates` copies out.
+INSTALLED_SOURCES = ('src/agentic_sdlc/repo/installables',
+                     'src/agentic_sdlc/repo/pm/guidance',
+                     'src/agentic_sdlc/repo/pm/templates')
+NOT_SHIPPED = ('__init__.py',)
+
+
+def _retired_names() -> dict[str, str]:
+    """{the spelling that would appear in prose: what it is}, off the code."""
+    from agentic_sdlc.repo.pm import cli as pm_cli, model as pm_model
+    from agentic_sdlc.repo.verify import rules
+    names = {f'pm {verb}': 'a retired pm verb'
+             for verb in pm_cli.RETIRED_COMMANDS}
+    names.update({key: 'a retired [pm] config key'
+                  for key in pm_model.RETIRED_KEYS})
+    names.update({check: 'a retired check id'
+                  for check in pm_model.RETIRED_CHECKS})
+    names.update({f'[{section}]': 'a retired config section'
+                  for section in pm_model.RETIRED_SECTIONS})
+    names.update({f'[verify] {key}': 'a retired [verify] key'
+                  for key in rules.RETIRED})
+    names.update(RETIRED_ELSEWHERE)
+    return names
+
+
+def _boundaried(name: str) -> re.Pattern:
+    """`pm move` must not match `pm moved`; `[[verify.narrow]]` has no word
+    edge to guard, so the guard is added per side."""
+    left = r'(?<![\w-])' if name[0].isalnum() or name[0] == '_' else ''
+    right = r'(?![\w-])' if name[-1].isalnum() or name[-1] == '_' else ''
+    return re.compile(left + re.escape(name) + right)
+
+
+def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
+    names = _retired_names()
+    assert names, 'the retirement registries are empty — this scanned nothing'
+    patterns = {name: _boundaried(name) for name in names}
+    scanned = 0
+    found: list[str] = []
+    for source in INSTALLED_SOURCES:
+        directory = REPO_ROOT / source
+        assert directory.is_dir(), f'{source} is not a directory'
+        for path in sorted(directory.rglob('*')):
+            if (not path.is_file() or path.suffix == '.pyc'
+                    or path.name in NOT_SHIPPED):
+                continue
+            scanned += 1
+            body = path.read_text(encoding='utf-8', errors='replace')
+            for number, line in enumerate(body.splitlines(), 1):
+                if MIGRATION_NOTE in line.lower():
+                    continue
+                for name, pattern in patterns.items():
+                    if pattern.search(line):
+                        found.append(
+                            f'{source}/{path.name}:{number} names {name!r} '
+                            f'({names[name]}) as if it were live: '
+                            f'{line.strip()[:90]}')
+    assert scanned, f'no installable was read from {INSTALLED_SOURCES}'
+    assert not found, (
+        f'{len(found)} shipped instruction(s) name something this package '
+        f'retired; say "retired" on the line to keep it as a migration note:\n'
+        + '\n'.join(f'    {row}' for row in found))

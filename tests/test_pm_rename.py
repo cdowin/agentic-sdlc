@@ -4,7 +4,9 @@
 once, so what earns a case here is rule 4's write-side sin — a sweep that looks
 whole and is not. Nothing else in the suite covers a multi-file grain write:
 `pm set` and the status verbs each rewrite ONE line in ONE file, `pm retire`
-only deletes, and `tools/dev/pm_migrate.py` is a script no test drives. So: one
+only deletes, and `tools/dev/pm_migrate.py` carries a SECOND, simpler matcher
+that shares no code with this one (`tests/test_pm_migrate.py`, after it swept
+past every unquoted ref in a 497-grain tree). So: one
 case per ref KIND in one pass (each field is a different reader), the
 all-or-nothing refusal, the two ways `<new-id>` is refused, idempotence, and a
 census holding the swept key list to the tree's own declarations.

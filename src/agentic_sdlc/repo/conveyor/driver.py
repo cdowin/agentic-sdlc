@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.pm import ledger, model
 
 # `story` and `feature` are subcommands of `close`, since `agentic-sdlc story`
@@ -78,6 +79,10 @@ class Answer:
 
     truth: Truth
     detail: str = ''
+    names: tuple[str, ...] = ()
+    """The grains this answer NAMED, for the checks that name any — the
+    blockers `pm ready-for` printed. A lesson recorded against one surfaces
+    beside the check that named it, and every other check names none."""
 
     @property
     def is_true(self) -> bool:
@@ -191,12 +196,15 @@ Recorder = Callable[[Sequence[tuple[str, str]]], str]
 def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         *, force: bool = False, state: str = '',
         write: Writer | None = None,
-        record: Recorder | None = None) -> Result:
+        record: Recorder | None = None,
+        surfacer: 'lessons.Surfacer | None' = None) -> Result:
     """Ask every check, print each, then write once or not at all.
 
     `state` and `write` are handed in so decision and mechanism are two
     functions with one seam; `record` mints a forced write's `deviation` row
     and returns '' or why it could not; `state == ''` writes nothing.
+    `surfacer` reads recorded lessons back beside the verdicts and CANNOT
+    change one — it contributes lines and nothing else.
     """
     op = ctx.operation
     defect = plan_defect(registry, names)
@@ -204,6 +212,9 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         return Result((f'[{op}] error — {defect}',), (), '', 2, defect)
     lines: list[str] = []
     false: list[tuple[str, str]] = []
+    if surfacer is not None:
+        # The MOVE surface: this run is about to touch its subject grain.
+        lines += surfacer.at_entry()
     for name in names:
         try:
             answer = ask(registry[name], ctx)
@@ -216,16 +227,20 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         if answer.is_true:
             lines.append(f'[{op}] ok: {name}'
                          + (f' — {answer.detail}' if answer.detail else ''))
-            continue
-        # A check that is not true and gave no reason has a defect, and the
-        # defect is what gets reported.
-        reason = answer.detail or (
-            'the check answered no and gave no reason — a defect in the '
-            'check, not a fact about the tree')
-        word = (UNVERIFIABLE_WORD if answer.truth is Truth.UNVERIFIABLE
-                else 'error')
-        lines.append(f'[{op}] {word}: {name}: {reason}')
-        false.append((name, reason))
+        else:
+            # A check that is not true and gave no reason has a defect, and the
+            # defect is what gets reported.
+            reason = answer.detail or (
+                'the check answered no and gave no reason — a defect in the '
+                'check, not a fact about the tree')
+            word = (UNVERIFIABLE_WORD if answer.truth is Truth.UNVERIFIABLE
+                    else 'error')
+            lines.append(f'[{op}] {word}: {name}: {reason}')
+            false.append((name, reason))
+        if surfacer is not None:
+            # The RULE surface, and the blockers this check named — after the
+            # verdict line, because the verdict is the check's own business.
+            lines += surfacer.at_check(name, answer.names)
     names_false = tuple(n for n, _ in false)
     if false and not force:
         lines.append(f'[{op}] error — {len(false)} check(s) false; '
@@ -279,6 +294,11 @@ false>`, or `unverifiable: <check>: <why>` (counts as false) — then one of:
 
 and, after a write, `next:` lines saying what is yours to do. Nothing else
 is written, moved, bumped, retitled, pushed or tagged.
+
+A `lesson` row recorded against this grain, or against a check's name, is
+printed beside that verdict with its `source` path and emitted on the
+`[emit]` sink. It is a record, never a gate: it changes no verdict and no
+exit code.
 
 Exit codes: 0 written (or nothing to write), 1 a check is false and nothing
 was written, 2 the declaration could not be read.\
@@ -484,6 +504,16 @@ def _milestone_id(cfg, operation: str, subject: str) -> str:
     return model.milestone_of(cfg, subject) or subject
 
 
+def _subject_grain(ctx: Context) -> str:
+    """The grain this run is ABOUT, asked of the check lists so the lesson
+    surface and the write cannot disagree about what is being touched."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+    try:
+        return step_defs.subject_grain(ctx)
+    except Exception:  # noqa: BLE001 — a grain nobody could name is no grain
+        return ctx.version
+
+
 def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
@@ -653,7 +683,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     result = run(known, names, ctx, force=force, state=state,
                  write=write if write is not None else _writer(cfg, kind),
                  record=(_recorder(mledger, operation, subject)
-                         if mledger is not None else _no_ledger(nowhere)))
+                         if mledger is not None else _no_ledger(nowhere)),
+                 surfacer=lessons.surfacer_for(cfg, operation,
+                                               _subject_grain(ctx)))
     for line in result.lines:
         print(line)
     if result.refused:

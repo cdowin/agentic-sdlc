@@ -12,6 +12,9 @@ order:
   - "bg-the-new-verbs-mint-a-compound-id"
   - "bg-the-shipped-rules-name-retired-behaviour"
   - "bg-retire-drops-the-summary-it-accepts"
+  - "bg-the-commit-hook-dedupes-on-an-exact-string"
+  - "ft-telemetry-proves-the-path-not-the-config"
+  - "ft-verify-remembers-its-last-green"
   - "ft-the-tool-emits-and-never-executes"
   - "ft-one-event-shape-serves-three-readers"
   - "ft-a-move-emits-the-breadcrumb-it-prints"
@@ -19,6 +22,9 @@ order:
   - "ft-a-sink-wired-and-silent-is-a-finding"
   - "ft-a-lesson-is-a-row-bound-to-a-grain"
   - "ft-a-lesson-surfaces-where-you-stand"
+  - "ft-time-is-measured-per-state-and-rolls-up"
+  - "ft-a-move-names-the-capability-you-are-standing-in"
+  - "ft-wiring-is-one-act-and-it-is-portable"
 ---
 
 # 0.5.0 — a move is an event

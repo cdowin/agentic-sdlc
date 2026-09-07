@@ -71,10 +71,13 @@ template_dir = "pm/templates"
 # What this table adds is that neither verb may quietly swap contracts.
 SEQUENCE: tuple[tuple[tuple[str, ...], int], ...] = (
     (('pm', 'init'), 0),
+    # The PARENT of each step is the id the step before it MINTED — `ms-0.1`,
+    # not `0.1` — because `pm new` mints `<kind-prefix>-<slug>` and the parent
+    # is a binding rather than a piece of the id.
     (('pm', 'new', 'milestone', '0.1', 'First', 'Milestone'), 0),
-    (('pm', 'new', 'feature', '0.1', 'thing', 'A', 'Thing'), 0),
-    (('pm', 'new', 'story', '0.1/thing', '01-slug', 'Do', 'It'), 1),
-    (('pm', 'new', 'bug', '0.1', 'a-bug'), 1),
+    (('pm', 'new', 'feature', 'ms-0.1', 'thing', 'A', 'Thing'), 0),
+    (('pm', 'new', 'story', 'ft-thing', '01-slug', 'Do', 'It'), 1),
+    (('pm', 'new', 'bug', 'ms-0.1', 'a-bug'), 1),
     (('pm', 'templates'), 0),
     (('pm', 'install-skills'), 0),
     (('install-ci',), 0),

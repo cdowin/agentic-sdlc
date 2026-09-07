@@ -352,6 +352,9 @@ class TheRefusalMatrix(unittest.TestCase):
 
     REFUSED = (
         (),                                     # no mode: never a default
+        ('--no-cache',),                        # a rung flag is not a mode
+        ('--plan', '--no-cache'),               # …and --plan runs no rung
+        ('--check', '--no-cache'),
         ('--story', '--plan'),                  # two modes
         ('--story', '--feature', '--milestone'),
         ('--story', '--story'),
@@ -379,6 +382,190 @@ class TheRefusalMatrix(unittest.TestCase):
             code, out = run('--help')
         self.assertEqual(0, code)
         self.assertIn('--story', out)
+
+
+class VerifyRemembersItsLastGreen(unittest.TestCase):
+    """A rung records its verdict against the TREE STATE it ran on, and a run
+    over a byte-identical tree reports that verdict instead of buying the same
+    answer again — the seven-closes-one-suite case (issue #10).
+
+    **Every case here is hard rule 4's first cardinal sin waiting to happen**: a
+    reused verdict IS a gate that missed drift and printed PASS, if the state
+    ever misses a byte or the reuse is ever quiet. So the sentinel files do the
+    proving, exactly as they do for the rungs above — `story.ran` present is a
+    run, absent is a read — and the untracked-file case is the one that must
+    exist, because a new module that breaks collection is the cheapest way to
+    make a green tree red without touching a tracked byte.
+    """
+
+    # `boom` exits 3 AND leaves a sentinel, so a reused FAIL can be told from a
+    # re-run one; the module's own `boom` recipe cannot say which happened.
+    MAKEFILE = MAKEFILE.replace('boom:\n\t@exit 3',
+                                'boom:\n\t@touch boom.ran\n\t@exit 3')
+    LEDGER = 'pm/roadmap/ledger.jsonl'
+
+    def _first_run(self, repo, sentinel='story.ran', code=0):
+        """Run the story rung once, prove it RAN, and put the tree back
+        byte-for-byte by removing the sentinel it left."""
+        got, out = run('--story')
+        self.assertEqual(code, got, out)
+        path = repo.root / sentinel
+        self.assertTrue(path.exists(), f'the first run must run the target:\n{out}')
+        path.unlink()
+        return out
+
+    def test_a_second_run_on_an_unchanged_tree_reuses_the_verdict_and_its_code(self):
+        # The ship criterion, for a green rung and a red one: the recorded
+        # verdict, its provenance, its age, and the recorded EXIT CODE — a
+        # cache that only remembered greens would re-run every red tree N-1
+        # times and call that safety.
+        for label, rule, sentinel, code, verdict in (
+                ('a green rung', STORY_RULE, 'story.ran', 0, 'PASS'),
+                ('a red rung', 'story = "make boom"\n', 'boom.ran', 1, 'FAIL')):
+            with self.subTest(case=label), \
+                    Repo(LADDER + rule, makefile=self.MAKEFILE) as repo:
+                self._first_run(repo, sentinel, code)
+                got, out = run('--story')
+                self.assertEqual(code, got, out)
+                self.assertFalse((repo.root / sentinel).exists(),
+                                 'the target must NOT have run the second time')
+                self.assertNotIn('  $ ', out, 'nothing was spawned')
+                # Loud, and naming the run it came from: a reused green that
+                # reads like a fresh green is the sin this feature could add.
+                self.assertIn(f'REUSED {verdict}', out)
+                self.assertIn('ago) by `verify --story`: make', out)
+                self.assertIn('did NOT run', out)
+                self.assertIn('--no-cache', out)
+                if verdict == 'FAIL':
+                    # `make` exits 2 on a failed recipe, and 2 is the code rule
+                    # 6 reserves for config — so the recorded code is printed
+                    # in the same shape a fresh failure prints it, and the
+                    # verb's own exit stays 1.
+                    self.assertIn('FAILED (exit 2)', out,
+                                  "the TARGET's own code is the recorded one")
+
+    def test_an_untracked_file_invalidates_the_verdict_and_an_ignored_one_does_not(self):
+        """THE case this feature can commit rule 4's first sin with.
+
+        A file git has never seen is not in `git diff`, not in the index and
+        not in HEAD — and it is exactly what a new test module is, five seconds
+        before it breaks collection. An ignored file is the deliberate other
+        side: `.gitignore` names what the build itself writes, and a state
+        covering the gate's own leavings could never repeat.
+        """
+        with Repo(LADDER + STORY_RULE,
+                  {'src/a.py': 'x\n', '.gitignore': 'junk/\n'}) as repo:
+            self._first_run(repo)
+            (repo.root / 'tests_new_case.py').write_text('raise SystemExit(1)\n',
+                                                         encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'),
+                            'a file that would break collection MUST re-run')
+            self.assertNotIn('REUSED', out)
+            # …and with that file gone the tree is the recorded one again,
+            # which is what makes the assertion above about the FILE and not
+            # about the cache being broken.
+            (repo.root / 'tests_new_case.py').unlink()
+            (repo.root / 'story.ran').unlink()
+            (repo.root / 'junk').mkdir()
+            (repo.root / 'junk' / 'gate.log').write_text('PASS\n', encoding='utf-8')
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'), 'an IGNORED file is the build\'s '
+                                                'own leavings, not the tree')
+            self.assertIn('REUSED PASS', out)
+
+    def test_one_byte_anywhere_else_moves_the_state_too(self):
+        # Tracked-or-not is not the axis: CONTENT is, plus HEAD. Each of these
+        # leaves the file COUNT unchanged, so a state that hashed the listing
+        # rather than the bytes would reuse all three.
+        def edit(repo):
+            (repo.root / 'src' / 'a.py').write_text('y\n', encoding='utf-8')
+
+        def delete(repo):
+            (repo.root / 'src' / 'a.py').unlink()
+
+        def commit(repo):
+            subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@e',
+                            'commit', '-q', '--allow-empty', '-m', 'x'],
+                           cwd=repo.root, check=True)
+
+        for label, change in (('one edited byte', edit),
+                              ('a file removed', delete),
+                              ('a new commit under an unchanged tree', commit)):
+            with self.subTest(case=label), Repo(LADDER + STORY_RULE) as repo:
+                self._first_run(repo)
+                change(repo)
+                code, out = run('--story')
+                self.assertEqual(0, code, out)
+                self.assertTrue(repo.ran('story'), f'{label} must re-run')
+                self.assertNotIn('REUSED', out)
+
+    def test_no_cache_runs_the_target_and_records_what_it_found(self):
+        # Property 3, and the half that is easy to miss: `--no-cache` must also
+        # RECORD, or a CI run with the flag would leave the next local run
+        # paying full price for an answer that was just bought.
+        with Repo(LADDER + STORY_RULE) as repo:
+            self._first_run(repo)
+            code, out = run('--story', '--no-cache')
+            self.assertEqual(0, code, out)
+            self.assertTrue(repo.ran('story'), '--no-cache always runs')
+            self.assertNotIn('REUSED', out)
+            self.assertIn('--no-cache', out)
+            (repo.root / 'story.ran').unlink()
+            code, out = run('--story')
+            self.assertEqual(0, code, out)
+            self.assertFalse(repo.ran('story'))
+            self.assertIn('REUSED PASS', out)
+
+    def test_a_row_this_cannot_read_whole_re_runs_rather_than_trusting_it(self):
+        """Never the record over the tree. Each row below names THIS tree's
+        exact state, so the only thing standing between it and a reuse is the
+        field it gets wrong — and the last row, which gets nothing wrong, is
+        what proves the other six were refused rather than merely unmatched.
+        """
+        from agentic_sdlc.repo.verify import cache
+
+        def row(**over):
+            base = {'ts': '2026-09-05T10:00:00Z', 'kind': 'verify',
+                    'rung': 'story', 'gate': 'story', 'verdict': 'PASS',
+                    'exit_code': 0, 'duration_ms': 5}
+            base.update(over)
+            return base
+
+        cases = (
+            ('no verify row at all', lambda state: []),
+            ('a line that is not JSON', lambda state: ['{"kind": "verify"']),
+            ('no verdict', lambda state: [row(state=state, verdict=None)]),
+            ('PASS with a failing exit code',
+             lambda state: [row(state=state, exit_code=3)]),
+            ('a duration that is not a number',
+             lambda state: [row(state=state, duration_ms='fast')]),
+            ('a timestamp nothing can age',
+             lambda state: [row(state=state, ts='yesterday')]),
+            ('a row naming another tree', lambda state: [row(state='0' * 64)]),
+            # The control: the same row, whole.
+            ('a row this CAN read', lambda state: [row(state=state)]),
+        )
+        for label, build in cases:
+            with self.subTest(case=label), Repo(LADDER + STORY_RULE) as repo:
+                state, defect = cache.tree_state(repo.root)
+                self.assertIsNotNone(state, defect)
+                path = repo.root / self.LEDGER
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # The ledger is NOT in the state (it is where the gate files
+                # its own cost row), so writing it here leaves the digest above
+                # true — which is the exclusion under test as well.
+                path.write_text(''.join(
+                    (line if isinstance(line, str) else json.dumps(line)) + '\n'
+                    for line in build(state.digest)), encoding='utf-8')
+                code, out = run('--story')
+                self.assertEqual(0, code, out)
+                reused = label == 'a row this CAN read'
+                self.assertEqual(not reused, repo.ran('story'),
+                                 f'{label}: {out}')
+                self.assertEqual(reused, 'REUSED' in out, out)
 
 
 @contextlib.contextmanager

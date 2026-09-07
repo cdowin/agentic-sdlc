@@ -19,6 +19,7 @@ all.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import sys
 from importlib import resources
@@ -84,7 +85,7 @@ BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
 
 USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff]
        agentic-sdlc install-agents  [--force] [--diff]
-       agentic-sdlc install-hooks   [--force] [--diff]
+       agentic-sdlc install-hooks   [--force] [--diff] [--write-settings]
        agentic-sdlc install-gates   [--force] [--diff]
        agentic-sdlc install-sdlc    [--force] [--diff]
 
@@ -112,8 +113,16 @@ install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 to edit after install. The two couriers ship their own corpora:
                 wire `bash tools/hooks/<hook>.sh --self-test` into your static
                 gate (a `hooks-self-test`-shaped target inside your own
-                `check`). The run prints the .claude/settings.json entries that
-                fire them.
+                `check`). The run names .claude/settings.json and prints
+                the entries that FIRE them, with ABSOLUTE script paths, so the
+                same block works in whatever settings file your harness reads
+                — including one above this repo, where a relative path fires
+                nothing. --write-settings writes that file when nothing is in
+                the way; without it the block is printed and the file is left
+                alone. A settings file that already exists is never merged
+                into and never replaced, --force included: it carries
+                permissions, env and MCP entries this package knows nothing
+                about.
 install-gates   tools/dev/gdk_gate.sh — the shell library your gate targets
                 source (one verdict line per gate naming
                 .gate-reports/<gate>.log, VERBOSE=1 streams the transcript, and
@@ -170,15 +179,20 @@ _NEXT_STEP = {
                      'session twin into your static gate (a '
                      '`hooks-self-test`-shaped target inside your own `check`) '
                      '— each replays its own block/allow corpus, so an edit to '
-                     'a guard cannot quietly change a verdict. Then paste the '
-                     'settings block below into '
-                     '.claude/settings.json — installing a Claude Code hook '
-                     'is not registering it, and an unregistered hook is a '
-                     'file nothing ever runs. THESE ENTRIES ARE NOT YET IN '
-                     'FORCE: nothing here writes that file (it is yours and '
-                     'has no merge), so until you paste them the couriers are '
-                     'on disk and nothing fires them — `agentic-sdlc adopt` '
-                     'and `check pm` U2 both report that until it is done. '
+                     'a guard cannot quietly change a verdict. Then land the '
+                     'settings block below — re-run with --write-settings, '
+                     'which writes .claude/settings.json when nothing is in '
+                     'the way, or paste it into the settings file your '
+                     'harness reads. Installing a Claude Code hook is not '
+                     'registering it, and an unregistered hook is a file '
+                     'nothing ever runs. THESE ENTRIES ARE NOT YET IN FORCE '
+                     'until one of those two happens, and until then the '
+                     'couriers are on disk and nothing fires them — '
+                     '`agentic-sdlc adopt` and `check pm` U2 both report that. '
+                     'Next, the couriers take the TREE from GDK_LEDGER_ROOT '
+                     'when the session cwd is not inside it: a session rooted '
+                     'at a parent directory derives no repo and files no row, '
+                     'and no gate here can see that from outside. '
                      'Last, the ledger couriers read GDK_LEDGER_GRAIN from '
                      'THEIR OWN ENVIRONMENT and pass it as `--grain`, which is '
                      'what puts a session\'s tokens on a story\'s line rather '
@@ -235,43 +249,103 @@ _NEXT_STEP = {
                     'anyway and the ledger row names them.',
 }
 
-# Printed, never written: `.claude/settings.json` is hand-maintained and there is no merge.
-# The couriers are async because they parse a transcript; the guards must block in time.
-_HOOK_SETTINGS = '''{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {"type": "command", "command": "bash tools/hooks/cc-commit-pathspec.sh"}
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
-        "hooks": [
-          {"type": "command", "command": "bash tools/hooks/cc-write-confine.sh"}
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {"type": "command", "command": "bash tools/hooks/cc-stop-gate.sh"},
-          {"type": "command", "command": "bash tools/hooks/cc-ledger-session.sh", "async": true}
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {"type": "command", "command": "bash tools/hooks/cc-ledger-subagent.sh", "async": true}
-        ]
-      }
-    ]
-  }
-}'''
+# The wiring, as data: (event, matcher, hook, whether it is async). The couriers
+# are async because they parse a transcript; the guards must block in time.
+_WIRING: tuple[tuple[str, str | None, str, bool], ...] = (
+    ('PreToolUse', 'Bash', 'tools/hooks/cc-commit-pathspec.sh', False),
+    ('PreToolUse', 'Write|Edit|MultiEdit|NotebookEdit',
+     'tools/hooks/cc-write-confine.sh', False),
+    ('Stop', None, 'tools/hooks/cc-stop-gate.sh', False),
+    ('Stop', None, 'tools/hooks/cc-ledger-session.sh', True),
+    ('SubagentStop', None, 'tools/hooks/cc-ledger-subagent.sh', True),
+)
 
-_SETTINGS_BLOCK = {'install-hooks': _HOOK_SETTINGS}
+# The one destination this package OFFERS to write and never merges into.
+AGENT_SETTINGS = '.claude/settings.json'
+SETTINGS_FLAG = '--write-settings'
+SETTINGS_COMMANDS = ('install-hooks',)
+SETTINGS_INDENT = 2
+
+
+def hook_settings(root: Path) -> str:
+    """The settings body that FIRES the installed hooks, with ABSOLUTE script paths.
+
+    A relative path resolves only when the harness's cwd IS `root`, so a
+    session rooted anywhere else fires nothing and says nothing. An absolute
+    one is the same block wherever the settings file carrying it lives.
+    """
+    events: dict[str, list[dict]] = {}
+    groups: dict[tuple[str, str | None], dict] = {}
+    for event, matcher, rel, is_async in _WIRING:
+        entry: dict = {'type': 'command', 'command': f'bash {root / rel}'}
+        if is_async:
+            entry['async'] = True
+        group = groups.get((event, matcher))
+        if group is None:
+            group = {'hooks': []} if matcher is None else {'matcher': matcher,
+                                                           'hooks': []}
+            groups[(event, matcher)] = group
+            events.setdefault(event, []).append(group)
+        group['hooks'].append(entry)
+    return json.dumps({'hooks': events}, indent=SETTINGS_INDENT)
+
+
+SETTINGS_NAMES = (
+    '{path} — the entries that FIRE these hooks. The script paths are '
+    'ABSOLUTE, so this block works in whatever settings file your harness '
+    'actually reads, including one above this repo. Export '
+    'GDK_LEDGER_ROOT={root} in that session when its cwd is not inside this '
+    'tree, or the couriers derive no tree and file nothing:')
+SETTINGS_OFFER = ('{rel} was NOT written — pass {flag} and this verb writes it '
+                  'when nothing is in the way')
+SETTINGS_WROTE = 'wrote {rel} — these hooks are in force now'
+SETTINGS_CURRENT = '{rel} already carries exactly this block'
+SETTINGS_WITHHELD = (
+    '{rel} exists and is yours — it carries permissions, env and MCP entries '
+    'this package knows nothing about, so nothing here merges into it and '
+    '--force does not replace it; paste the block above')
+SETTINGS_DEFECT = '{rel} {defect} — nothing was written'
+
+
+def _settings_step(root: Path, write: bool) -> bool:
+    """Name the settings file, print its wiring, and write it when asked and free.
+
+    True when a write was ASKED FOR and withheld, which is exit 1 like any
+    other withheld replacement. The block is printed unless it is already on
+    disk, so the last thing on stdout stays pasteable.
+    """
+    target = root / AGENT_SETTINGS
+    body = hook_settings(root) + '\n'
+    if not write:
+        _say(SETTINGS_OFFER.format(rel=AGENT_SETTINGS, flag=SETTINGS_FLAG))
+        return _print_settings(target, root, body, withheld=False)
+    defect = destination_defect(target)
+    if defect:
+        _say(SETTINGS_DEFECT.format(rel=AGENT_SETTINGS, defect=defect))
+        return _print_settings(target, root, body, withheld=True)
+    if target.is_file():
+        existing, _unreadable = read_destination(target)
+        if existing == body:
+            _say(SETTINGS_CURRENT.format(rel=AGENT_SETTINGS))
+            return False
+        _say(SETTINGS_WITHHELD.format(rel=AGENT_SETTINGS))
+        return _print_settings(target, root, body, withheld=True)
+    result = apply.Plan().overwrite(target, body, newline=None,
+                                    label=AGENT_SETTINGS).apply(decide=False)
+    if result.failed is not None:
+        _say(SETTINGS_DEFECT.format(rel=AGENT_SETTINGS,
+                                    defect=f'could not be written '
+                                           f'({result.error})'))
+        return _print_settings(target, root, body, withheld=True)
+    _say(SETTINGS_WROTE.format(rel=AGENT_SETTINGS))
+    return False
+
+
+def _print_settings(target: Path, root: Path, body: str,
+                    withheld: bool) -> bool:
+    """The pasteable block, under the line that names where it goes."""
+    print(f'\n{SETTINGS_NAMES.format(path=target, root=root)}\n\n{body}')
+    return withheld
 
 
 HEADER_ONLY_NOTE = '   (project-config header only)'
@@ -643,11 +717,14 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     """One install verb; `next_step=False` is for `init`, which does what the paragraph asks."""
     force = False
     diff = False
+    write_settings = False
     for arg in argv:
         if arg == '--force':
             force = True
         elif arg == '--diff':
             diff = True
+        elif arg == SETTINGS_FLAG and command in SETTINGS_COMMANDS:
+            write_settings = True
         elif arg in ('-h', '--help', 'help'):
             print(USAGE)
             return 0
@@ -671,6 +748,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             print_diff(rel, target, body)
         if next_step:
             _report_retirements(command, root)
+        if write_settings:
+            # Named rather than ignored: --diff writes nothing, this included.
+            _say(f'{SETTINGS_FLAG} writes nothing under --diff')
         return 0
 
     # Decide the whole plan first; touch nothing until it holds. A WITHHELD entry
@@ -777,10 +857,10 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         _report_retirements(command, root)
     if written and next_step:
         print(f'[install] {_NEXT_STEP[command]}')
-        settings = _SETTINGS_BLOCK.get(command)
-        if settings:
-            # Unprefixed, so the block can be pasted whole.
-            print(f'\n.claude/settings.json — the entries that FIRE these '
-                  f'hooks (merge into yours):\n\n{settings}\n')
+    # Whatever the plan did: a re-run on a current tree is how an operator
+    # reaches --write-settings, and the wiring is the step no gate observes.
+    settings_withheld = False
+    if next_step and command in SETTINGS_COMMANDS:
+        settings_withheld = _settings_step(root, write_settings)
     # A withheld replacement is non-zero even when additions landed.
-    return 1 if collisions else 0
+    return 1 if collisions or settings_withheld else 0

@@ -67,14 +67,19 @@ Nothing runs a rung wider than the thing you changed.
 `agentic-sdlc verify --plan` prints the three `verify` rungs with the cost each one last took, read
 from your ledger. Ask it instead of guessing.
 
+A rung also RECORDS its verdict, against the state of the tree it ran on — so closing seven features
+on an unchanged tree costs one gate run and six reads. The reuse is always printed, naming the run it
+came from and its age; one byte anywhere in the working tree, tracked or untracked, and it re-runs.
+`--no-cache` re-runs unconditionally.
+
 ## Quickstart
 
 ```bash
-agentic-sdlc pm new milestone 0.1 first-light
-agentic-sdlc pm new feature 0.1 the-thing
-agentic-sdlc pm new story 0.1/the-thing works "the thing works"
-agentic-sdlc pm story building 0.1/the-thing/works     # one line written, one ledger row
-agentic-sdlc pm add 0.1/the-thing 0.1/the-thing/works  # bind it, and sequence it there
+agentic-sdlc pm new milestone 0.1 first-light           # mints id ms-0.1
+agentic-sdlc pm new feature ms-0.1 the-thing "The thing"   # mints ft-the-thing
+agentic-sdlc pm new story ft-the-thing works "it works"    # mints st-works
+agentic-sdlc pm story building st-works                # one line written, one ledger row
+agentic-sdlc pm add ft-the-thing st-works              # bind it, and sequence it there
 agentic-sdlc pm status                                 # the tree, in its declared order
 make check                                             # check all: doc + shell + pm + …
 agentic-sdlc close story 0.1/the-thing/works           # its checks, then `done` — or an error
@@ -100,7 +105,7 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | Verb | Reads / writes |
 |---|---|
 | `pm <kind> <status> <id>` | Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — and one ledger row. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
-| `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone (the version stays on the plan), set one frontmatter field. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
+| `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone, set one frontmatter field. `pm new <kind> <slug>` mints **`<kind-prefix>-<slug>`** — the same id `tools/dev/pm_migrate.py` mints, one path for both — and the parent argument writes the child's BINDING, never a piece of the id. `pm retire <id> [<summary...>]` keeps the milestone's id on the plan and files a `retire` row in `<roadmap>/ledger.jsonl` holding its version, name and summary, which `pm roadmap` prints. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
 | `pm config --seed` | Prints the seed `devkit.toml` this pinned version ships — every gate key commented at the default the code actually holds, and the two declarations spelled out with their arguments. Writes nothing. `init` serves a new repo once; this serves every bump after it |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker |
 | `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — `gate` and `test` rows, and a session nobody could attribute. `show` and `report` both read both. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else from the one story in progress, else not at all |
@@ -112,14 +117,14 @@ between runs. All true → the one write and `next:` lines naming what is yours 
 | `pm install-skills` | Writes `.claude/rules/pm-execution.md`, `.claude/skills/pm-operations/SKILL.md` and `.claude/skills/handoff/SKILL.md` |
 | `check doc \| shell \| grain-shape \| pm \| hooks \| repo-hygiene \| budget` | The gates. Pure text over git, markdown and shell; each prints a census of what it scanned and one verdict line. `check all` runs `[checks] all` (stock: `doc`, `shell`, `grain-shape`). `check <gate> --help` is that gate's contract |
 | `gates-extra` | Not a gate: prints `[gates] extra`, one make target per line, for `Makefile.devkit`'s `check` |
-| `verify --story \| --feature \| --milestone \| --plan \| --check` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
+| `verify --story \| --feature \| --milestone \| --plan \| --check` `[--no-cache]` | The three rungs, each the make target `[verify] <rung>` names — `story = "make unit"`, `feature = "make test"`, `milestone = "make milestone"`; a rung not declared is exit 2. A rung records its verdict against the tree state it ran on (HEAD plus a digest over every file git lists, tracked and untracked) and a run over a byte-identical tree prints `[verify:cache] REUSED …` with that run's age, census and cost and exits with its code, instead of running the target; `--no-cache` runs it anyway. `--plan` prints all three with their measured cost and runs nothing; `--check` holds the three targets to the Makefile |
 | `close story <id>`, `close feature <id>` | The inner belts: checks, then the grain's status set to the first state of its kind's `done` list, or nothing |
 | `release <version>` | The outer belt: tree clean, on the milestone branch, changelog non-empty, features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Retitle, push, PR, merge and tag are printed as `next:` — never performed |
 | `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone is only where a ledger row would land |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
 | `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, changelog-writer, doc-hygiene, pm-operator — each with a Project config section that is yours after install |
-| `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Prints the `.claude/settings.json` entries; never writes that file |
+| `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
 | `install-gates` | `Makefile.devkit` (`help`, `pm`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library |
 | `install-sdlc` | `docs/sdlc-protocol.md`, **rendered** from your `[story]` / `[feature]` / `[release]` / `[adopt]` check lists and the `done` state each belt writes |
 | `version` | This package's version |
@@ -188,15 +193,25 @@ contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = 
                                               # which kinds `pm add` lets hold which. It
                                               # NARROWS the stock mapping — drop "bug" and
                                               # `pm add <ms> <bug>` refuses by name
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", "U1", "U2",   # + D9 D10 R5, opt-in.
-          "V1", "V4", "V5", "V7"]             # U2: the ledger couriers are wired and the
-                                              # tree holds no row — recording that goes
-                                              # nowhere, which is silent otherwise
+checks = ["D1", "D2", "D3", "D4", "D5", "D6", # + D9 D10 R5, opt-in.
+          "U1", "U2", "U3", "U4",             # U2: the ledger couriers are wired and the
+          "V1", "V4", "V5", "V7"]             # tree holds no row at all. U3: [emit] is
+                                              # declared and its sink has never been
+                                              # written to. U4: the LAST hook-written row,
+                                              # named with its age — recording that goes
+                                              # nowhere is silent otherwise
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
 version_pattern = '^version = "(.*)"$'
 version_at      = "start"                     # R5: which entry in `order` the version file
                                               # must match — "start" (the first not yet shipped,
                                               # bump-at-START) or "ship" (the last that has)
+
+[emit]                                        # where the conveyor's events are WRITTEN. Nothing
+sink  = "ledger"                              # here is RUN: "ledger" (routed by the event's
+                                              # grain), a path appended to as JSON lines, or "-"
+                                              # for one JSON line per event on stdout
+kinds = ["enter", "verdict", "leave"]         # which taps fire. A sink that cannot be written is
+                                              # a WARNING naming it, never a changed exit code
 
 [pm.states.story]                             # one table per kind: milestone, feature, story, bug
 todo        = ["planning", "ready"]

@@ -757,22 +757,37 @@ def test_a_row_naming_no_grain_lands_in_the_trees_own_ledger():
         assert 'grain' not in only_row(root)
 
 
-def test_retire_takes_the_milestones_ledger_and_leaves_the_trees():
+def test_retire_takes_the_milestones_ledger_and_appends_to_the_trees():
     """The `check pm` D6 rule is unchanged by D3: an attributed row still dies
-    with its milestone and git is still the archive. The root ledger outlives
-    it, which is correct — those rows were never about it."""
+    with its milestone and git is still the archive.
+
+    The tree's own ledger is APPENDED to and never rewritten — every byte that
+    was there is still there, in order, and the one new line is the `retire`
+    row carrying what the deleted documents held
+    (`bg-retire-drops-the-summary-it-accepts`). Retire removing rows that were
+    never about this milestone would be the same defect from the other side.
+    """
     with tree(milestone_status='done', feature_status='done',
               story_statuses=('done',)) as root:
         put_ledger(root, status_line(TS, STORY, 'building', 'done'))
         assert record(root, *GATE)[0] == 0
         before = (root / ROOT_LEDGER_REL).read_bytes()
-        code, out = run_cli(root, 'retire', '0.1')
+        code, out = run_cli(root, 'retire', '0.1', 'the first cut')
         assert code == 0, out
         # The GRAINS go, not the tree — `pm/roadmap/` is the tree itself and a
         # pooled milestone has no directory of its own to remove.
         assert not (root / LEDGER_REL).exists()
         assert model.milestones(loaded(root)) == []
-        assert (root / ROOT_LEDGER_REL).read_bytes() == before
+        after = (root / ROOT_LEDGER_REL).read_bytes()
+        assert after.startswith(before), after
+        added = [json.loads(line) for line in
+                 after[len(before):].decode('utf-8').splitlines() if line.strip()]
+        assert [r['kind'] for r in added] == [ledger.KIND_RETIRE], added
+        assert added[0]['grain'] == '0.1' and added[0]['name'] == 'Demo'
+        assert added[0]['summary'] == 'the first cut'
+        # No version declared, so no `version` key — an absent fact is an
+        # absent key, never an empty string.
+        assert 'version' not in added[0], added[0]
 
 
 def test_an_id_no_grain_carries_is_still_refused_and_writes_nothing():

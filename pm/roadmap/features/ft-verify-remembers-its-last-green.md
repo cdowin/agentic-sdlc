@@ -1,0 +1,74 @@
+---
+id: ft-verify-remembers-its-last-green
+kind: feature
+milestone: "ms-a-move-is-an-event"
+name: verify remembers its last green
+status: planning
+reviewed:
+depends_on: []
+consumed_by: []
+---
+
+# verify remembers its last green
+
+GitHub issue #10. **The gate already knows, and it has no way to say so — which is this milestone's
+northstar with a different subject.**
+
+`[verify] feature = "make test"`, tree-wide by design; the `[[verify.narrow]]` glob engine was
+removed deliberately on 2026-09-06 and that decision is not reopened here. The consequence is that
+`feature-verified` verifies the TREE, and a tree has one state at a time. So closing seven features
+runs one 90s suite seven times, and runs 2..N answer a question whose input did not change.
+
+    story      make unit        17803 ms (census 845)
+    feature    make test        90170 ms (census 1254)
+    milestone  make milestone  124207 ms
+
+Ten and a half minutes per seven-feature milestone, of which nine are repetition.
+
+## The shape
+
+`verify --story|--feature|--milestone` records its verdict against the TREE STATE it ran on — git
+HEAD plus a hash covering the working tree, tracked and untracked. A later run whose state is
+byte-identical reports the recorded verdict **with its provenance** — when, what target, what census
+— instead of re-running.
+
+This is a read, not a decision. `verify --plan` already reads each rung's last COST from the ledger;
+this reads its last VERDICT from the same rows. Rule 9 holds: nothing is inferred about a tree that
+changed, because any difference at all re-runs.
+
+## What makes it safe, stated as the rule it could break
+
+Hard rule 4: *a gate that misses drift and prints PASS* is the first cardinal sin. A reused verdict
+is exactly that shape if it is ever wrong or ever quiet. So:
+
+- **The state hash covers untracked files.** A new file that breaks collection must invalidate.
+- **A reuse is PRINTED, always**, naming the run it came from and its age. A reused green that looks
+  like a fresh green is the sin; loudness is the fix, not re-running.
+- **`--no-cache` re-runs unconditionally**, and CI uses it — a cold tree in CI has no rows anyway,
+  but the flag makes that explicit rather than incidental.
+- **A malformed or unreadable row re-runs.** Never trust the record over the tree.
+
+## Ship criterion
+
+A second `verify --feature` on an unchanged tree reports the recorded verdict without running the
+target, prints that it did and where the verdict came from, and exits with the recorded code. One
+byte changed anywhere in the working tree — tracked, untracked, or HEAD — and it re-runs.
+
+Closing N features on an unchanged tree costs one gate run and N-1 reads.
+
+## Proof budget
+
+  cases: 5
+  tier: pyunit
+  lands in: `tests/test_verify.py`
+  what already covers this: the rung-resolution cases exist there; these are rows on that harness.
+    The untracked-file invalidation case is the one that must exist, because it is the only way this
+    feature can commit rule 4's first sin.
+
+## Out of scope
+
+Caching across machines or checkouts. The rows are this tree's ledger and stay local; a shared cache
+is a distributed-consistency problem this package has no business having.
+
+Narrowing what a rung runs. That engine was removed on purpose. This makes the SAME tree-wide run
+cost once instead of N times; it does not make it smaller.

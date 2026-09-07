@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -703,6 +704,35 @@ def ledger_couriers():
     return model.LEDGER_COURIERS
 
 
+def _ledger_line(root, row: dict) -> None:
+    """One row in the tree's OWN ledger — where a row naming no grain lands
+    (0.4.0/D3), which is where a courier files when nothing exported
+    `GDK_LEDGER_GRAIN`. The path comes from `ledger.grainless_path`, never
+    from a second spelling of it here."""
+    path = ledger.grainless_path(model.PmConfig(root=root).roadmap)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as handle:
+        handle.write(ledger.dumps(row) + '\n')
+
+
+def _hook_row(root, hours: int = 1) -> None:
+    """One row a COURIER wrote, `hours` back — the evidence the check reports.
+
+    Minted through `ledger.usage_row` with `EVENT_KINDS`' own kind, so the
+    fixture cannot drift from the writer's vocabulary.
+    """
+    when = datetime.now(timezone.utc) - timedelta(hours=hours)
+    _ledger_line(root, ledger.usage_row(
+        ledger.EVENT_KINDS['SubagentStop'],
+        ts=when.strftime(ledger.TS_FORMAT), duration_s=1))
+
+
+def _gate_row(root) -> None:
+    """A row THIS CHECKOUT writes itself: `gdk_gate.sh` files one per gate
+    run, from inside the repo, and it is not evidence a hook ever fired."""
+    _ledger_line(root, ledger.gate_row('check', 'PASS', 1))
+
+
 def _settings(root, text: str) -> None:
     path = root / '.claude' / 'settings.json'
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -781,12 +811,43 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         assert answer.truth is driver.Truth.FALSE, answer
         assert '[pm.states.*]' in answer.detail, answer.detail
 
-    # Wired, and the vehicle answers.
+    # Mode 4 — WIRED, the vehicle answers, and nothing has ever come through.
+    # The failure this feature was filed for: whether the harness LOADS
+    # `.claude/settings.json` depends on the session's project root, so a
+    # session rooted above the checkout records nothing while all three checks
+    # above stay green. It stays TRUE — telemetry is never mandatory
+    # (0.4.0/D5) — and the LINE stops claiming an outcome it did not observe.
     with tree() as root:
         _couriers(root)
         (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
         _settings(root, WIRED)
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.TRUE, answer
-        assert 'telemetry is live' in answer.detail
+        assert 'last hook-written row: never' in answer.detail, answer.detail
+        assert 'telemetry is live' not in answer.detail, answer.detail
+
+    # Wired, the vehicle answers, and a COURIER has written: the kind and the
+    # age are the evidence, and only now does the line say "live".
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        _hook_row(root, hours=2)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'telemetry is live' in answer.detail, answer.detail
+        assert 'last hook-written row is dispatch, 2h ago' in answer.detail, \
+            answer.detail
+
+    # A row this CHECKOUT wrote is not evidence a courier ran: the make
+    # wrapper files `gate` rows from inside the tree, and reading one as
+    # telemetry is the PASS-over-nothing this rule exists to end (rule 4).
+    with tree() as root:
+        _couriers(root)
+        (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
+        _settings(root, WIRED)
+        _gate_row(root)
+        answer = check('telemetry-live', root)
+        assert answer.truth is driver.Truth.TRUE, answer
+        assert 'last hook-written row: never' in answer.detail, answer.detail
 

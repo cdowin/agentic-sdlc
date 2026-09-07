@@ -4,7 +4,7 @@
 # into `pm ledger record`, and exits 0. It is a courier: the verb parses, sums
 # and refuses; this file never reads a transcript or invents a row. It never
 # blocks a stop (never exit 2): every failure says so on stderr and exits 0.
-# Wire it `"async": true`; `install-hooks` prints the settings.json snippet.
+# Wire it `"async": true` from ANY scope; `install-hooks` emits that wiring.
 # `bash cc-ledger-session.sh --self-test` replays the fail-open matrix.
 set -eu
 
@@ -20,6 +20,8 @@ MAKE_PM=(make -s pm)
 # resolves it from the tree, or omits the key. Never set it to a guess: a row
 # filed against the wrong grain is uncorrectable, and one filed against none is
 # visible in a bucket that already exists.
+# GDK_LEDGER_ROOT — the TREE this row belongs to, when the session cwd is not
+# inside it. Unset falls back to that cwd; a value naming no tree is a note.
 # -----------------------------------------------------------------------------
 
 # The event is a CONSTANT, not `hook_event_name` off the payload: a mis-wired
@@ -83,20 +85,20 @@ sys.stdout.write(json.dumps(event))
 ' "$@"
 }
 
-# fire <payload> [<grain>] — both streams, then `exit=<n>`.
+# fire <payload> [<grain>] [<root>] — both streams, then `exit=<n>`.
 #
-# The child's environment is BUILT rather than inherited, because the grain is
-# the one input that arrives that way (no hook event carries one). `env -u` and
-# not "leave it alone": an operator with GDK_LEDGER_GRAIN exported would
-# otherwise turn every case that asserts NO `--grain` flag into a false pass,
-# which is the one thing a self-test may never do.
+# The child's environment is BUILT, not inherited: the grain and the tree root
+# arrive that way, and an operator with either exported would turn every case
+# asserting its ABSENCE into a false pass. Every `-u` precedes every
+# assignment, because BSD `env` stops reading options at the first NAME=value.
 self_test_fire() {
 	local rc=0 out
-	if [ -n "${2:-}" ]; then
-		out="$(printf '%s' "$1" | env "GDK_LEDGER_GRAIN=$2" bash "$0" 2>&1)" || rc=$?
-	else
-		out="$(printf '%s' "$1" | env -u GDK_LEDGER_GRAIN bash "$0" 2>&1)" || rc=$?
-	fi
+	local child=(env)
+	[ -n "${2:-}" ] || child+=(-u GDK_LEDGER_GRAIN)
+	[ -n "${3:-}" ] || child+=(-u GDK_LEDGER_ROOT)
+	[ -z "${2:-}" ] || child+=("GDK_LEDGER_GRAIN=$2")
+	[ -z "${3:-}" ] || child+=("GDK_LEDGER_ROOT=$3")
+	out="$(printf '%s' "$1" | "${child[@]}" bash "$0" 2>&1)" || rc=$?
 	printf '%s\nexit=%s\n' "$out" "$rc"
 }
 
@@ -118,7 +120,7 @@ self_test_case() {
 }
 
 self_test() {
-	local rc=0 tmp repo argv want tilde
+	local rc=0 tmp repo other argv want tilde
 	# shellcheck disable=SC2088  # a LITERAL leading ~ is the payload under test
 	tilde='~/t.jsonl'
 	tmp="$(mktemp -d "${TMPDIR:-/tmp}/cc-ledger-selftest.XXXXXX")"
@@ -180,6 +182,34 @@ self_test() {
 		for want in 'ARG[--grain]' 'ARG[0.1/alpha/s0]' 'exit=0'; do
 			self_test_says 'the grain travels' "$argv" "$want" || rc=1
 		done
+
+		# The TREE, from the environment. `other` is a git tree with no Makefile
+		# and `repo` has one, so which tree was derived is visible in the note.
+		other="$tmp/other"
+		mkdir -p "$other"
+		git -C "$other" init -q
+		argv="$(self_test_fire "$(self_test_payload \
+			"$EVENT" "$other" 'sess-1' "$tilde")")"
+		self_test_says 'a session rooted in another tree derives THAT tree' \
+			"$argv" 'has no Makefile' || rc=1
+		argv="$(self_test_fire "$(self_test_payload \
+			"$EVENT" "$other" 'sess-1' "$tilde")" '' "$repo")"
+		for want in 'ARG[ledger]' 'ARG[record]' "ARG[${HOME}/t.jsonl]" 'exit=0'; do
+			self_test_says 'GDK_LEDGER_ROOT files the row from another scope' \
+				"$argv" "$want" || rc=1
+		done
+		# A root naming no tree is a NOTE and exit 0, never a fall back to a cwd.
+		argv="$(self_test_fire "$(self_test_payload \
+			"$EVENT" "$repo" 'sess-1' "$tilde")" '' "$tmp/no-such-tree")"
+		for want in 'GDK_LEDGER_ROOT' 'not inside a git repository' 'exit=0'; do
+			self_test_says 'a root naming no tree is a note' "$argv" "$want" || rc=1
+		done
+		case "$argv" in
+			*'ARG[ledger]'*)
+				printf '  MISS — an unresolvable GDK_LEDGER_ROOT fell back to the cwd\n    got: %s\n' \
+					"${argv//$'\n'/ | }" >&2
+				rc=1 ;;
+		esac
 
 		# A non-bash vehicle under LC_ALL=C: a bash-quoted value would be a lost row
 		# with nothing red anywhere.
@@ -264,9 +294,17 @@ if [ -z "$TRANSCRIPT" ]; then
 fi
 
 [ -n "$SESSION_CWD" ] || SESSION_CWD="$PWD"
-REPO_ROOT="$(git -C "$SESSION_CWD" rev-parse --show-toplevel 2>/dev/null || true)"
+# The tree: named in the environment, else derived from the cwd — which a
+# session rooted above the repo cannot supply, and no gate here sees that.
+LEDGER_ROOT="$SESSION_CWD"
+ROOT_FROM="the $EVENT payload's cwd"
+if [ -n "${GDK_LEDGER_ROOT:-}" ]; then
+	LEDGER_ROOT="$(expand_tilde "$GDK_LEDGER_ROOT")"
+	ROOT_FROM="GDK_LEDGER_ROOT"
+fi
+REPO_ROOT="$(git -C "$LEDGER_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$REPO_ROOT" ]; then
-	note "$SESSION_CWD is not inside a git repository — no ledger row"
+	note "$LEDGER_ROOT ($ROOT_FROM) is not inside a git repository — no ledger row"
 	exit 0
 fi
 

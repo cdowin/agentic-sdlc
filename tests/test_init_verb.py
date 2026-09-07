@@ -205,7 +205,7 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
 # section ADDED to the template without a line here now fails too, where the
 # old `in` loop would have let one arrive unmentioned.
 CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
-                   'pm', 'verify')
+                   'pm', 'emit', 'verify')
 
 
 # The two sections with NO default behind them, each with the reader that

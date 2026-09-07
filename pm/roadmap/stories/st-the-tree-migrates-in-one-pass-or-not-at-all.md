@@ -3,7 +3,7 @@ id: st-the-tree-migrates-in-one-pass-or-not-at-all
 feature: ft-the-migration-is-whole-or-nothing
 milestone: "ms-0.4.0"
 name: pm migrate writes the pooled tree whole, or writes nothing and says why
-status: building
+status: done
 owner: claude
 depends_on: ["st-order-sequences-every-container"]
 kind: story

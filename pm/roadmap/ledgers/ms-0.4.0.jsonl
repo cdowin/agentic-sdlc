@@ -142,3 +142,12 @@
 {"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-order-sequences-every-container","from":"planning","to":"building"}
 {"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-each-kind-has-a-configured-pool","from":"planning","to":"building"}
 {"ts":"2026-09-07T03:20:02Z","kind":"status","grain":"st-every-edge-reports-both-ways-it-is-unbound","from":"planning","to":"building"}
+{"ts":"2026-09-07T03:27:02Z","kind":"status","grain":"st-set-binds-and-unbinds-and-pm-move-dies","from":"building","to":"done"}
+{"ts":"2026-09-07T03:27:21Z","kind":"status","grain":"st-rename-sweeps-every-inbound-ref","from":"building","to":"done"}
+{"ts":"2026-09-07T03:27:51Z","kind":"status","grain":"st-a-grain-reads-its-id-and-kind-from-its-own-frontmatter","from":"building","to":"done"}
+{"ts":"2026-09-07T03:28:10Z","kind":"status","grain":"st-the-resolvers-collapse-and-V2-retires","from":"building","to":"done"}
+{"ts":"2026-09-07T03:28:28Z","kind":"status","grain":"st-the-seed-is-printable-and-held-to-the-code","from":"building","to":"done"}
+{"ts":"2026-09-07T03:28:47Z","kind":"status","grain":"st-the-tree-migrates-in-one-pass-or-not-at-all","from":"building","to":"done"}
+{"ts":"2026-09-07T03:29:06Z","kind":"status","grain":"st-order-sequences-every-container","from":"building","to":"done"}
+{"ts":"2026-09-07T03:29:24Z","kind":"status","grain":"st-each-kind-has-a-configured-pool","from":"building","to":"done"}
+{"ts":"2026-09-07T03:29:42Z","kind":"status","grain":"st-every-edge-reports-both-ways-it-is-unbound","from":"building","to":"done"}

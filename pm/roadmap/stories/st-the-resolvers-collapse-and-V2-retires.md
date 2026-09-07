@@ -3,7 +3,7 @@ id: st-the-resolvers-collapse-and-V2-retires
 feature: ft-identity-lives-in-frontmatter
 milestone: "ms-0.4.0"
 name: One grain_file, one children, one pool_walk, and V2 retires by name
-status: building
+status: done
 owner: claude
 depends_on: ["st-a-grain-reads-its-id-and-kind-from-its-own-frontmatter"]
 kind: story

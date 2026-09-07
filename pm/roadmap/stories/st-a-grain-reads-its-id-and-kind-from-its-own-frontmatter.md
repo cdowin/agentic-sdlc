@@ -3,7 +3,7 @@ id: st-a-grain-reads-its-id-and-kind-from-its-own-frontmatter
 feature: ft-identity-lives-in-frontmatter
 milestone: "ms-0.4.0"
 name: id and kind come from frontmatter, and the path is not consulted
-status: building
+status: done
 owner: claude
 depends_on: []
 kind: story

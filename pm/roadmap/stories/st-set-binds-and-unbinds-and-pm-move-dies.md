@@ -3,7 +3,7 @@ id: st-set-binds-and-unbinds-and-pm-move-dies
 feature: ft-binding-is-a-field
 milestone: "ms-0.4.0"
 name: milestone: and feature: are optional authoritative bindings
-status: building
+status: done
 owner: claude
 depends_on: ["st-each-kind-has-a-configured-pool"]
 kind: story

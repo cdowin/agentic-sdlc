@@ -3,7 +3,7 @@ id: st-the-seed-is-printable-and-held-to-the-code
 feature: ft-the-config-is-the-model
 milestone: "ms-0.4.0"
 name: pm config --seed prints the model, and a test holds it to the defaults
-status: building
+status: done
 owner: claude
 depends_on: []
 kind: story

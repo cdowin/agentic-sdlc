@@ -806,3 +806,11 @@
 {"ts":"2026-09-07T04:57:10Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[does-not-exist]@the-real-repo","duration_ms":10282,"rank":4}
 {"ts":"2026-09-07T04:57:10Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":10216,"rank":5}
 {"ts":"2026-09-07T04:57:10Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":90170,"census":1254}
+{"ts":"2026-09-07T04:59:34Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":10476}
+{"ts":"2026-09-07T05:01:29Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":115480}
+{"ts":"2026-09-07T05:01:30Z","kind":"gate","gate":"budget","verdict":"FAIL","duration_ms":89}
+{"ts":"2026-09-07T05:01:30Z","kind":"gate","gate":"milestone","verdict":"FAIL","duration_ms":126392}
+{"ts":"2026-09-07T05:02:50Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":9994}
+{"ts":"2026-09-07T05:04:37Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":106509}
+{"ts":"2026-09-07T05:04:37Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":88}
+{"ts":"2026-09-07T05:04:37Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":116946}

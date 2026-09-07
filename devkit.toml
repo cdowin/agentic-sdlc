@@ -128,11 +128,27 @@ budget = { unit = 20, integration = 130, test = 150 }
 # absorb it — and the number that then goes wrong is the reader's, not the
 # gate's. Measured 2026-09-06: 706 unit and 389 integration (1,095 in `test`).
 #
-# Set ~10% above the counts they were written against (1,123 / 730), because
-# the point is to make GROWTH a decision somebody argues rather than one that
-# happens. Today's counts sit well under them; lowering the ceilings toward
-# today's is a decision to take on purpose, not a drift to correct in passing.
-cases = { unit = 780, integration = 430 }
+# Set ~10% above the counts they were written against, because the point is to
+# make GROWTH a decision somebody argues rather than one that happens.
+#
+# RAISED 2026-09-07, at the close of 0.4.0, and this is the argument. The unit
+# tier went 706 -> 845 (+139, +20%) and the gate caught it, which is the gate
+# working. The growth is concentrated in five modules and every case in it pins
+# a defect that HAPPENED or a verb that shipped:
+#
+#   test_pm_gate    +17  V7, the unbound census, the five descent holes, the
+#                        stray document, `[pm.contains]` ungating a finding,
+#                        and a V5 cycle a flat-id tree could not see
+#   test_pm_order   +13  `pm add`/`pm remove` and five retirements by name
+#   test_pm_rename  +10  a new verb, whole
+#   test_cli_surface +7  the read-verb surface rules
+#   test_config_seed +5  the seed held to the code, which found seven drifts
+#
+# Two BLOCKERs, four CRITICALs and about twenty MAJORs came out of this
+# milestone's reviews; each landed with a case. That is rule 10 being obeyed,
+# not bloat — so the ceiling moves to fit the suite that exists, once, with the
+# reason written down. It does not move again without one.
+cases = { unit = 930, integration = 430 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

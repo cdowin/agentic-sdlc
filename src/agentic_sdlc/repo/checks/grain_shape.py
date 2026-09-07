@@ -89,24 +89,53 @@ def _caps() -> dict[str, int]:
     return {**DEFAULT_CAPS, **declared}
 
 
-def _kind_of(rel: Path) -> str:
-    """Which kind a grain document is, from `model`'s names and slots."""
+# The kinds a document may DECLARE, mapped to this gate's cap names — which
+# are the same words, plus two shared docs no grain kind spells.
+_DECLARED = {MILESTONE: MILESTONE, FEATURE: FEATURE, STORY: STORY, BUG: BUG}
+
+
+def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
+    """Which kind a document is: what it SAYS first, where it sits second.
+
+    0.4.0 put the answer in the frontmatter — `kind:` — and this gate had been
+    reading it off the filename, which is why every pooled feature measured as
+    a 250-line `note`. A path is still the fallback, because the two shared
+    docs open no frontmatter to declare anything and a nested tree has no
+    `kind:` in it at all.
+    """
     name = rel.name
+    # The shared docs first: `0.1-decisions.md` sits in the milestone pool
+    # beside its grain, and it is not a milestone.
+    for slot, kind in ((model.DECISION_FILE_NAME, DECISIONS),
+                       (model.HANDOFF_FILE_NAME, HANDOFF)):
+        if name == slot or name.endswith(f'-{slot}'):
+            return kind
+    if lines is not None:
+        declared = model.unquote(model.field_in(lines, 'kind'))
+        if declared in _DECLARED:
+            return _DECLARED[declared]
     if name == model.MILESTONE_DOC:
         return MILESTONE
     if name == model.FEATURE_DOC:
         return FEATURE
-    if name == model.DECISION_FILE_NAME:
-        return DECISIONS
-    if name == model.HANDOFF_FILE_NAME:
-        return HANDOFF
-    # Every component, because `bugs/<topic>/<doc>.md` is a real shape.
+    # Every component, because `bugs/<topic>/<doc>.md` is a real shape — and a
+    # POOL is that same shape one level up, so the stock pool names answer a
+    # document that declared no kind.
     parts = rel.parts[:-1]
-    if model.STORIES_DIR in parts:
-        return STORY
-    if model.BUGS_DIR in parts:
-        return BUG
+    for pool, kind in ((model.STORIES_DIR, STORY), (model.BUGS_DIR, BUG),
+                       (model.POOL_NAME[MILESTONE], MILESTONE),
+                       (model.POOL_NAME[FEATURE], FEATURE)):
+        if pool in parts:
+            return kind
     return NOTE
+
+
+def _slot_named(name: str) -> str:
+    """The shared-doc slot a filename is, in either layout, or the name itself."""
+    for slot in model.SLOT_HEADER:
+        if name == slot or name.endswith(f'-{slot}'):
+            return slot
+    return name
 
 
 def _header_line(lines: list[str]) -> str:
@@ -148,7 +177,9 @@ def _walk(roadmap: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
     def in_scope(path: Path) -> bool:
         # Read unconditionally: `run()` reads `lines_of` back for every kept path.
         lines = _read(path, lines_of)
-        if path.name in FRONTMATTERLESS_SLOTS:
+        # By SLOT, not by filename: a pooled shared doc is `0.1-decisions.md`
+        # and it opens no frontmatter either.
+        if _slot_named(path.name) in FRONTMATTERLESS_SLOTS:
             return True
         return True if lines is None else model._opens_frontmatter(lines)
 
@@ -194,7 +225,8 @@ def run() -> int:
     lines_of: dict[Path, list[str] | None] = {}
     found = _walk(roadmap, lines_of)
     reviews = _review_walk(root / review_dir, lines_of)
-    docs = [(path, _kind_of(path.relative_to(roadmap))) for path in found]
+    docs = [(path, _kind_of(path.relative_to(roadmap), lines_of[path]))
+            for path in found]
     docs += [(path, REVIEW) for path in reviews]
     census = (f'{found.census(f"PM document(s) under {roadmap_dir}/")}, '
               f'{reviews.census(f"review record(s) under {review_dir}/")}')
@@ -227,7 +259,9 @@ def run() -> int:
         # subagent, so a shared doc that lost it is silently unguided. ANY
         # known header passes, matching what the scaffolder accepts: a gate
         # stricter than the writer would red a doc `pm new` calls correct.
-        want = model.SLOT_HEADER.get(path.name)
+        # The slot's own name, whether it is `decisions.md` in a grain
+        # directory or `0.1-decisions.md` beside its grain in a pool.
+        want = model.SLOT_HEADER.get(_slot_named(path.name))
         if want is not None and _header_line(lines) not in model.KNOWN_SLOT_HEADERS:
             findings.append((
                 'NO HEADER',

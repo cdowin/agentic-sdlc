@@ -185,7 +185,7 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
          for sfile in kept),
         DONE)
     blockers = list(held.names)
-    _held, skipped = model.pool_census(cfg, 'story')
+    skipped = model.pool_skipped(cfg, 'story')
     census = (f'{len(kept)} story/ies'
               + (f', {skipped} file(s) skipped (no frontmatter — not a '
                  f'grain)' if skipped else ''))

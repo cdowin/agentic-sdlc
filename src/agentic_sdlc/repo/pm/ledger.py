@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.core import apply
 from agentic_sdlc.repo import gates_extra
 
 # Inside the milestone directory, so `retire` removes it with the directory and
@@ -230,7 +231,7 @@ def append_to(path: Path, row: dict) -> None:
     newline closes a torn tail before the row lands. Raises `OSError`: the
     caller has already changed the tree and must say so.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    apply.raise_on_error(apply.make_dir(path.parent))
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
         line = '\n' + line

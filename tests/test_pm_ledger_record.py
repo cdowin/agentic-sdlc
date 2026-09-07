@@ -43,9 +43,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from support.pm import ledger_lines, ledger_rows, loaded, run_cli, tree, write
+from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
+                        tree, write)
 
 from agentic_sdlc.repo.pm import ledger
+from agentic_sdlc.repo.pm import model
 
 # THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
 # a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
@@ -339,13 +341,12 @@ def test_the_tree_snapshot_is_the_live_trees_state_verbatim():
     grain in `in_progress` — `accepted` included, a word no frozen key can
     spell — and the frozen keys hold exactly what they always held."""
     with tree(story_statuses=('building', 'done', 'accepted')) as root:
-        beta = root / 'pm/roadmap/features/beta'
-        write(beta / 'feature.md',
-              {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
-               'status': 'reviewing', 'reviewed': ''})
-        write(beta / 'stories/b0.md',
-              {'id': '0.1/beta/b0', 'feature': '0.1/beta', 'milestone': '"0.1"',
-               'name': 'B0', 'status': 'reviewing'})
+        write(root / 'pm/roadmap/features/beta.md',
+              {'id': '0.1/beta', 'kind': 'feature', 'milestone': '"0.1"',
+               'name': 'Beta', 'status': 'reviewing', 'reviewed': ''})
+        write(root / 'pm/roadmap/stories/b0.md',
+              {'id': '0.1/beta/b0', 'kind': 'story', 'feature': '0.1/beta',
+               'milestone': '"0.1"', 'name': 'B0', 'status': 'reviewing'})
         assert record(root, '--from-transcript', str(SUBAGENT),
                       '--event', 'SubagentStop')[0] == 0
         snap = only_row(root)['tree']
@@ -508,8 +509,10 @@ def test_a_tree_with_no_roadmap_is_information_not_a_refusal(
 # The lookup these replace asked which milestone was `in_progress` and refused
 # on none and on several. Every case below is a write that used to be REFUSED
 # or MISFILED, so each one fails at the commit before this story.
-SECOND = 'pm/roadmap/milestones'
-SECOND_LEDGER = f'{SECOND}/ledger.jsonl'
+# The second milestone's document and the ledger keyed to its id: one file per
+# milestone under `<roadmap>/ledgers/`, which is where an ATTRIBUTED row goes.
+SECOND_DOC = 'pm/roadmap/milestones/0.2.md'
+SECOND_LEDGER = 'pm/roadmap/ledgers/0.2.jsonl'
 
 
 def two_milestones(root, other_status: str = 'planning') -> str:
@@ -520,11 +523,12 @@ def two_milestones(root, other_status: str = 'planning') -> str:
     the old reason — 0.1 is also the one milestone in progress — and proves
     nothing about what routed it. Returns the second feature's id.
     """
-    write(root / f'{SECOND}/milestone.md',
-          {'id': '"0.2"', 'name': 'Next', 'status': other_status})
-    write(root / f'{SECOND}/features/beta/feature.md',
-          {'id': '0.2/beta', 'milestone': '"0.2"', 'name': 'Beta',
-           'status': 'planning', 'reviewed': ''})
+    write(root / SECOND_DOC,
+          {'id': '"0.2"', 'kind': 'milestone', 'name': 'Next',
+           'status': other_status})
+    write(root / 'pm/roadmap/features/beta.md',
+          {'id': '0.2/beta', 'kind': 'feature', 'milestone': '"0.2"',
+           'name': 'Beta', 'status': 'planning', 'reviewed': ''})
     return '0.2/beta'
 
 
@@ -574,8 +578,8 @@ def transcript(root, *extra):
 
 def second_story(root, status: str = 'building') -> str:
     write(root / 'pm/roadmap/stories/s9.md',
-          {'id': '0.1/alpha/s9', 'feature': '0.1/alpha', 'milestone': '"0.1"',
-           'name': 'S9', 'status': status, 'owner': ''})
+          {'id': '0.1/alpha/s9', 'kind': 'story', 'feature': '0.1/alpha',
+           'milestone': '"0.1"', 'name': 'S9', 'status': status, 'owner': ''})
     return '0.1/alpha/s9'
 
 
@@ -662,11 +666,16 @@ def test_resolution_never_changes_an_exit_code():
     could not be attributed is a SUCCESSFUL write with a key absent.
 
     THREE shapes, and the third is the one that shipped broken: zero live,
-    several live, and **one live candidate that will not resolve**.
-    `_resolved_grain_file` caught `Usage` and `model.story_file` raises
-    `AmbiguousStory`, a plain `Exception` — so a tree with two files claiming
-    one id turned a lookup NOBODY ASKED FOR into exit 2 with no row written
-    anywhere. The convenience destroyed the row it was meant to label.
+    several live, and **two files claiming one id**. `_resolved_grain_file`
+    caught `Usage` and the story resolver raised `AmbiguousStory`, a plain
+    `Exception` — so a lookup NOBODY ASKED FOR became exit 2 with no row
+    written anywhere. The convenience destroyed the row it was meant to label.
+
+    The third shape resolves now rather than raising: a duplicate id keeps the
+    first document read (0.4.0/D4 — uniqueness cannot be a runtime lock without
+    an allocator, and a git repo has none). So the exit code is what this case
+    is about, and the collision itself is graded where a collision belongs —
+    `check pm`, by name, which is the assertion at the end.
     """
     with tree(story_statuses=('ready',)) as root:
         second_story(root, 'ready')
@@ -681,17 +690,20 @@ def test_resolution_never_changes_an_exit_code():
               config=LEGACY_FLOW + '[pm]\nstory_ordinal_prefix = true\n') as root:
         for stem, status in (('01-twin', 'building'), ('02-twin', 'ready')):
             write(root / f'pm/roadmap/stories/{stem}.md',
-                  {'id': '0.1/alpha/twin', 'feature': '0.1/alpha',
+                  {'id': '0.1/alpha/twin', 'kind': 'story',
+                   'feature': '0.1/alpha',
                    'milestone': '"0.1"', 'name': 'Twin', 'status': status,
                    'owner': ''})
         code, out = transcript(root)
         assert code == 0, out
-        assert 'grain' not in sorted(only_row(root))
-        # W4: and it SAYS SO. The ambiguous branch already spoke; a single
-        # candidate that would not resolve was the silent third case, and the
-        # courier's operator is standing in the stderr the hooks pass through.
-        assert 'could not resolve' in out, out
-        assert 'check pm' in out, out
+        # The row landed, attributed to the id both files claim.
+        assert only_row(root)['grain'] == '0.1/alpha/twin'
+        # And the collision is a FINDING where findings live — otherwise one
+        # of those two files is in the tree and addressable by nothing.
+        code, out = run_gate(root)
+        assert code == 1, out
+        assert "2 documents claim id '0.1/alpha/twin'" in out, out
+        assert '01-twin.md' in out and '02-twin.md' in out, out
 
 
 # --- D2: a dispatch that was TOLD its grain files a row that says so ----------
@@ -757,7 +769,10 @@ def test_retire_takes_the_milestones_ledger_and_leaves_the_trees():
         before = (root / ROOT_LEDGER_REL).read_bytes()
         code, out = run_cli(root, 'retire', '0.1')
         assert code == 0, out
-        assert not (root / 'pm/roadmap').exists()
+        # The GRAINS go, not the tree — `pm/roadmap/` is the tree itself and a
+        # pooled milestone has no directory of its own to remove.
+        assert not (root / LEDGER_REL).exists()
+        assert model.milestones(loaded(root)) == []
         assert (root / ROOT_LEDGER_REL).read_bytes() == before
 
 
@@ -766,7 +781,7 @@ def test_an_id_no_grain_carries_is_still_refused_and_writes_nothing():
     write."""
     with tree() as root:
         refuses(root, '--grain', '0.1/nope', needle='no grain resolves')
-        assert list(root.rglob('ledger.jsonl')) == []
+        assert all_ledger_lines(root) == {}
 
 
 def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed():

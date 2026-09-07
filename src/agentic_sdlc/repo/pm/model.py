@@ -845,14 +845,9 @@ def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
     return None
 
 
-def field_of(path: Path, key: str) -> str:
-    """Scalar value of `key` inside the leading frontmatter block, or '' —
-    never from the prose body.
-    """
-    try:
-        lines = _split(read_raw(path))
-    except (OSError, UnicodeDecodeError):
-        return ''
+def field_in(lines: list[str], key: str) -> str:
+    """`field_of` over lines already read — for a caller that opened the file
+    once and is answering several questions off the one read."""
     bounds = _fence_bounds(lines)
     if bounds is None:
         return ''
@@ -861,6 +856,16 @@ def field_of(path: Path, key: str) -> str:
             # .strip() also removes the CRLF carriage return.
             return unquote(line[len(key) + 1:].strip())
     return ''
+
+
+def field_of(path: Path, key: str) -> str:
+    """Scalar value of `key` inside the leading frontmatter block, or '' —
+    never from the prose body.
+    """
+    try:
+        return field_in(_split(read_raw(path)), key)
+    except (OSError, UnicodeDecodeError):
+        return ''
 
 
 def unquote(value: str) -> str:
@@ -1164,14 +1169,20 @@ def pool_walk(cfg: PmConfig, kind: str) -> list[Path]:
     return sorted(pool_scan(cfg, kind).kept)
 
 
-def pool_census(cfg: PmConfig, kind: str) -> tuple[int, int]:
-    """(documents this pool holds, candidates a narrowing removed).
+def pool_census(cfg: PmConfig, kind: str, label: str) -> str:
+    """One pool's count WITH its narrowings — `Walk.census`, by kind.
 
-    The second number is what `Walk.disclosures()` spells out; a caller that
-    only needs "did this scan skip anything" takes it as an int.
+    A bare number is not available on purpose: the count and what the walk left
+    out render together or the count is a claim about the filter rather than
+    about the tree (rule 4).
     """
-    scan = pool_scan(cfg, kind)
-    return len(scan.kept), sum(scan.counts().values())
+    return pool_scan(cfg, kind).census(label)
+
+
+def pool_skipped(cfg: PmConfig, kind: str) -> int:
+    """How many candidates a narrowing removed from one pool — for a caller
+    that renders its own sentence about them."""
+    return sum(pool_scan(cfg, kind).counts().values())
 
 
 def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
@@ -1542,6 +1553,25 @@ def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
         mdir = milestone_dir(cfg, mid)
         return _nested_bug_files(mdir) if mdir is not None else []
     return _children_paths(cfg, 'bug', mid)
+
+
+def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
+    """[(id, every document claiming it)] for each id claimed more than once.
+
+    The other half of D4. `grain_index` resolves a duplicate by keeping the
+    first document read, which is the only thing a resolver CAN do without an
+    allocator — and it means the second document is in the tree, is counted,
+    and can be addressed by nothing. That is rule 4's first sin unless somebody
+    says so, so this is where it gets said.
+    """
+    seen: dict[str, list[Path]] = {}
+    for kind in FLOW_KINDS:
+        for path in pool_walk(cfg, kind):
+            gid = unquote(field_of(path, 'id'))
+            if gid:
+                seen.setdefault(gid, []).append(path)
+    return [(gid, paths) for gid, paths in sorted(seen.items())
+            if len(paths) > 1]
 
 
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:

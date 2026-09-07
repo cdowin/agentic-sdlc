@@ -105,23 +105,22 @@ def _run() -> int:
     for path, why in model.unkeyed_documents(cfg):
         report(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
 
+    # The other half of the same question: not a document with no key, but two
+    # documents fighting over one. The resolver keeps the first it reads and
+    # every other one is addressable by nothing (0.4.0/D4).
+    for gid, paths in model.duplicate_ids(cfg):
+        names = ' '.join(cfg.rel(path) for path in paths)
+        report(f'{len(paths)} documents claim id {gid!r} — a resolver keeps '
+               f'the first it reads and the rest are addressable by nothing; '
+               f'give each one its own id: {names}')
+
     # Always walked for the census; reported only under D4.
     bug_findings, n_bugs = model.bug_status_findings(cfg)
-    if model.is_pooled(cfg):
-        n_bugs = model.pool_census(cfg, 'bug')[0]
     if 'D4' in enabled:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
 
     n_features, n_stories = _drift_walk(cfg, enabled, mfiles, report, warn)
-    # The CENSUS is the pool's, not the walk's. A document with damaged
-    # frontmatter declares no `id:`, so it is bound to nothing and no walk
-    # reaches it — and a census that counted only what the walk saw would
-    # quietly drop exactly the document `unkeyed_documents` just reported.
-    # Rule 4: the number says what is THERE.
-    if model.is_pooled(cfg):
-        n_features = model.pool_census(cfg, 'feature')[0]
-        n_stories = model.pool_census(cfg, 'story')[0]
 
     _flow_findings(cfg, enabled, report)
     _unused_states(cfg, enabled, warn)
@@ -137,8 +136,9 @@ def _run() -> int:
         for msg in v_findings:
             report(msg)
 
-    return _verdict(cfg, findings, warnings, len(mfiles), n_features,
-                    n_stories, n_bugs, v_on, v_census)
+    return _verdict(cfg, findings, warnings,
+                    _census(cfg, len(mfiles), n_features, n_stories, n_bugs),
+                    v_on, v_census)
 
 
 # D2's and D6's shared tail; neither rule has an opinion about which state is next.
@@ -590,16 +590,39 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
            f'version_at = {cfg.version_at!r} (R5)')
 
 
-def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],
-             n_milestones: int, n_features: int, n_stories: int, n_bugs: int,
-             v_on: set[str], v_census: dict) -> int:
-    """The census + verdict; warnings are counted separately and never decide the code."""
-    print()
+def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
+            n_stories: int, n_bugs: int) -> str:
+    """`'4 milestone(s), 44 feature(s), 79 story/ies, 11 bug(s)'` — with every
+    narrowing each walk made, rendered beside the count it narrowed.
+
+    Pooled: each pool renders its OWN census, because that is the walk that
+    produced the number and `Walk.census` is the only way to a count that
+    carries what it left out. The count is the POOL's rather than the drift
+    walk's on purpose: a document with damaged frontmatter declares no `id:`,
+    so it is bound to nothing and no descent reaches it — and a census counting
+    only what the descent saw would quietly drop exactly the document
+    `unkeyed_documents` just reported by name (rule 4).
+
+    Nested: the drift walk's own counts, with `tree_walk`'s disclosures, which
+    is what every consumer on the old layout still reads.
+    """
+    if model.is_pooled(cfg):
+        return ', '.join(model.pool_census(cfg, kind, label) for kind, label in
+                         (('milestone', 'milestone(s)'),
+                          ('feature', 'feature(s)'),
+                          ('story', 'story/ies'),
+                          ('bug', 'bug(s)')))
     census = (f'{n_milestones} milestone(s), {n_features} feature(s), '
               f'{n_stories} story/ies')
     # `Walk` renders every narrowing itself, so a new filter discloses without an edit here.
     census += model.tree_walk(cfg).disclosures()
-    census += f', {n_bugs} bug(s)'
+    return census + f', {n_bugs} bug(s)'
+
+
+def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],
+             census: str, v_on: set[str], v_census: dict) -> int:
+    """The census + verdict; warnings are counted separately and never decide the code."""
+    print()
     if v_census:
         census += f', {v_census["refs"]} ref(s)'
         if v_census['unverifiable']:

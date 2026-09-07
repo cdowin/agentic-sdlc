@@ -81,6 +81,7 @@ def routed_verbs() -> set[str]:
     finding's own point read backwards.
     """
     return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
+            cli.LESSON_VERB,
             *cli.install_commands(), *cli.conveyor_verbs()}
 
 
@@ -388,12 +389,27 @@ class TestTheSurfaceSaysTelemetry:
 
     ROUTED_AT_0_4_0 = 14
 
+    # Every verb routed SINCE that criterion was met, one line per decision.
+    # The number stays 14 because it is a claim about a milestone that shipped;
+    # what a later verb has to do is name itself here, which is the argument it
+    # would otherwise never have to make.
+    ROUTED_SINCE = {
+        # 0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain: a lesson is written by
+        # whoever just learned it, not as part of moving a grain, so it is not
+        # a `pm` subcommand.
+        'lesson',
+    }
+
     def test_this_feature_added_no_verb(self):
         """The ship criterion, asserted. Review M2: `documented == routed` is
         the conjunction of the two cases above and would pass a verb that was
         added AND documented — it proved the wrong thing. The COUNT is what the
         criterion actually claims."""
-        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0, sorted(routed_verbs())
+        assert len(routed_verbs()) == self.ROUTED_AT_0_4_0 + len(
+            self.ROUTED_SINCE), sorted(routed_verbs())
+        assert self.ROUTED_SINCE <= routed_verbs(), (
+            f'{sorted(self.ROUTED_SINCE - routed_verbs())} is written down as '
+            f'a verb this package added and the router does not dispatch it')
 
     def test_every_read_verb_names_its_columns(self):
         """Review M1: the criterion says EVERY read verb, and `next` and

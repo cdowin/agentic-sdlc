@@ -24,6 +24,10 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
     agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
 
+Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
+    agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
+    agentic-sdlc lesson show [--grain <id> | --rule <id>]
+
     agentic-sdlc version            # also -V / --version
 
 Per-project config is devkit.toml at the consuming repo root.
@@ -38,6 +42,11 @@ from agentic_sdlc.core.config import (ConfigError, config_section,
 
 FIX_FLAG = '--fix'
 HELP_FLAGS = ('-h', '--help')
+
+# Its own verb rather than a `pm` subcommand: a lesson is written by whoever
+# just learned it — a reviewer, a belt's caller — and never as part of moving a
+# grain, which is what everything under `pm` is.
+LESSON_VERB = 'lesson'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -213,6 +222,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'verify':
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
+    if cmd == LESSON_VERB:
+        from agentic_sdlc.repo.conveyor import lessons
+        return lessons.main(rest)
     if cmd in CONVEYOR_VERBS:
         # The whole argv passes through: `close` picks its grain beside the driver's table.
         from agentic_sdlc.repo.conveyor import driver

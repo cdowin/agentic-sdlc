@@ -1,21 +1,25 @@
-"""lessons.py — a recorded `lesson` row, read back where the belt is standing.
+"""lessons.py — a `lesson` row: recorded by hand, read back where you stand.
 
-D1: capture with no read-back is decoration. **Never a gate**: no verdict and
-no exit code change, and what would not read is a NAMED line (rule 11).
-**Never a nag**: the grain or the rule named, exactly — no fuzzy match, no
-ranking, no scoring (rule 9), and every match prints in recorded order.
+D1: capture with no read-back is decoration, and read-back with no capture
+reads an empty file. **Never a gate**: no verdict and no exit code change, and
+what would not read is a NAMED line (rule 11). **Never a nag**: the grain or
+the rule named, exactly — no fuzzy match, no ranking, no scoring (rule 9), and
+every match prints in recorded order.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import ledger, model
 
-# The row kind, and its fields IN ORDER — the columns a read verb names.
-KIND = 'lesson'
-FIELDS = ('grain', 'rule', 'source', 'text', 'at')
+# The row kind, and its fields IN ORDER — the columns a read verb names. `ts`,
+# the stamp every other reader keys on: spelled `at`, a row sorts as the empty
+# string and files at the beginning of time.
+KIND = ledger.KIND_LESSON
+FIELDS = ('grain', 'rule', 'source', 'text', 'ts')
 COLUMNS = FIELDS
 
 # The line this module adds BESIDE a verdict; it never reshapes one (rule 6).
@@ -40,7 +44,7 @@ class Lesson(NamedTuple):
     rule: str
     source: str
     text: str
-    at: str
+    ts: str
     row: dict
 
 
@@ -74,19 +78,11 @@ class Store(NamedTuple):
         return tuple(les for les in self.lessons if les.rule == rule)
 
 
-def paths(cfg) -> list[Path]:
-    """Both ledger homes (0.4.0/D3), and THE HELPER THAT BELONGS IN `ledger.py`:
-    `checks/pm.py` spells it privately, and a third is a third answer."""
-    found = [ledger.grainless_path(cfg.roadmap)]
-    found += [ledger.ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
-    return list(dict.fromkeys(found))
-
-
 def read(cfg) -> Store:
     """Every `lesson` row, oldest first. Never raises: a lesson may not decide
     a belt, so what would not read is carried and said."""
     try:
-        found = paths(cfg)
+        found = ledger.ledger_paths(cfg)
     except Exception as err:  # noqa: BLE001 — a named non-answer, not a crash
         return Store((), (f'the ledgers could not be located '
                           f'({type(err).__name__}: {err})',))
@@ -231,3 +227,173 @@ class Surfacer:
 def surfacer_for(cfg, operation: str, grain: str) -> Surfacer:
     """The reader one belt run uses, built once and asked per check."""
     return Surfacer(read(cfg), cfg, operation, grain)
+
+
+# --- the verb: `agentic-sdlc lesson record|show` ------------------------------
+# The WRITE half. A lesson comes from a gate verdict, a below-MAJOR review
+# finding or a `--force` deviation, and the CALLER names which: nothing derives
+# one, because anything inferred needs a feedback edge and a reader/writer has
+# nowhere to put one (D1). `show` is the read side rule 11 requires beside it.
+RECORD, SHOW = 'record', 'show'
+GRAIN_FLAG, RULE_FLAG = f'--{SCOPE_GRAIN}', f'--{SCOPE_RULE}'
+SOURCE_FLAG = '--source'
+RECORD_FLAGS = (GRAIN_FLAG, RULE_FLAG, SOURCE_FLAG)
+SHOW_FLAGS = (GRAIN_FLAG, RULE_FLAG)
+DASH = '-'
+HELP_WORDS = ('-h', '--help', 'help')
+
+USAGE = f"""\
+agentic-sdlc {WORD} {RECORD} {GRAIN_FLAG} <id> {RULE_FLAG} <id> \
+{SOURCE_FLAG} <path> "<text>"
+agentic-sdlc {WORD} {SHOW} [{GRAIN_FLAG} <id> | {RULE_FLAG} <id>]
+
+One append-only ledger row naming the grain it came from, the rule or check it
+is about, and the record it was derived from — routed to the milestone that
+owns the grain, like every other row. The row POINTS at its source and never
+restates it.
+
+  {GRAIN_FLAG + ' <id>':<16}the grain the lesson came from
+  {RULE_FLAG + ' <id>':<16}the rule or belt check it is about
+  {SOURCE_FLAG + ' <path>':<16}the record it was derived from: a review record, a
+                  gate transcript, the deviation row that prompted it — a
+                  path resolving to nothing is refused, and nothing lands
+  {'"<text>"':<16}the lesson itself, one line
+
+`{SHOW}` prints one tab-separated row per lesson in the order they were
+recorded; columns IN ORDER: {' '.join(COLUMNS)}
+With no filter it prints them all. Nothing is ranked, scored or weighed
+(rule 9) — composition is the shell's job.
+
+The belts read these back where you stand: a lesson against the grain at the
+move, one against a check's name beside that check's verdict.
+
+Exit codes: 0 recorded or printed, 1 the source or the grain names nothing and
+nothing was recorded, 2 usage or config.\
+"""
+
+
+def _refused(why: str, code: int) -> int:
+    """One line on stderr, and the code rule 6 files it under."""
+    print(f'agentic-sdlc {WORD}: {why}', file=sys.stderr)
+    return code
+
+
+def flags_given(rest: list[str], known: tuple[str, ...]
+                ) -> tuple[dict[str, str], list[str], str]:
+    """(the flags given, the words left over, '' or the defect). Both spellings
+    — `--flag value` and `--flag=value` — and a flag given twice is a defect:
+    one lesson names one grain and one rule."""
+    given: dict[str, str] = {}
+    left: list[str] = []
+    index = 0
+    while index < len(rest):
+        word = rest[index]
+        name, split, value = word.partition('=')
+        if name in known:
+            if not split:
+                if index + 1 >= len(rest):
+                    return given, left, f'{name} needs a value'
+                value, index = rest[index + 1], index + 1
+            if name in given:
+                return given, left, f'{name} was given twice'
+            given[name] = value
+        elif word.startswith(DASH):
+            return given, left, f'unknown flag {word!r}'
+        else:
+            left.append(word)
+        index += 1
+    return given, left, ''
+
+
+def _source_file(cfg, source: str) -> Path:
+    """The record a lesson points at, as `--review-record` resolves one."""
+    return Path(source) if source.startswith('/') else cfg.root / source
+
+
+def record(cfg, rest: list[str]) -> int:
+    """Append one row, routed by grain. Both pointers are resolved BEFORE the
+    append: a row naming a source that is not there, or a grain no milestone
+    owns, is the drift `--review-record` already refuses to stamp."""
+    given, words, defect = flags_given(rest, RECORD_FLAGS)
+    if not defect and ([f for f in RECORD_FLAGS if not given.get(f)]
+                       or len(words) != 1):
+        defect = (f'{RECORD} takes {" ".join(RECORD_FLAGS)} and exactly one '
+                  f'quoted text, and every one of them is required')
+    if defect:
+        return _refused(defect, 2)
+    target = _source_file(cfg, given[SOURCE_FLAG])
+    if not model.record_resolves(target):
+        return _refused(f'{SOURCE_FLAG} {given[SOURCE_FLAG]!r} names no file '
+                        f'({cfg.rel(target)}); nothing was recorded, because a '
+                        f'row pointing at nothing is the paraphrase this row '
+                        f'exists not to be', 1)
+    where = ledger.ledger_of_grain(cfg, given[GRAIN_FLAG])
+    if where is None:
+        return _refused(f'no milestone owns {given[GRAIN_FLAG]!r}, so no '
+                        f'{ledger.LEDGER_FILE_NAME} can hold this {WORD}; '
+                        f'nothing was recorded', 1)
+    try:
+        row = ledger.lesson_row(given[GRAIN_FLAG], given[RULE_FLAG],
+                                given[SOURCE_FLAG], words[0])
+    except ValueError as err:
+        return _refused(str(err), 2)
+    try:
+        ledger.append_to(where, row)
+    except OSError as err:
+        return _refused(f'{cfg.rel(where)} could not be appended to ({err}); '
+                        f'nothing was recorded', 1)
+    print(f'[{WORD}] recorded against {given[GRAIN_FLAG]} / '
+          f'{given[RULE_FLAG]} — {cfg.rel(where)}')
+    return 0
+
+
+def _row_line(les: Lesson) -> str:
+    """One lesson as one line, tab-separated, `-` for a column the row left
+    empty — a fixed column count is what a shell `read` needs."""
+    cells = [getattr(les, name) or DASH for name in COLUMNS]
+    return '\t'.join(cell.replace('\t', ' ') for cell in cells)
+
+
+def show(cfg, rest: list[str]) -> int:
+    """Every lesson, or the ones naming EXACTLY one grain or one rule."""
+    given, words, defect = flags_given(rest, SHOW_FLAGS)
+    if not defect and words:
+        defect = f'{SHOW} takes no words, got {" ".join(words)}'
+    if not defect and len(given) > 1:
+        defect = (f'{SHOW} filters by {GRAIN_FLAG} or by {RULE_FLAG}, never '
+                  f'both — one filter, one column')
+    if defect:
+        return _refused(defect, 2)
+    store = read(cfg)
+    for why in store.unreadable:
+        print(f'[{WORD}] WARNING — {why}', file=sys.stderr)
+    found = store.lessons
+    if GRAIN_FLAG in given:
+        found = store.against_grain(given[GRAIN_FLAG])
+    elif RULE_FLAG in given:
+        found = store.against_rule(given[RULE_FLAG])
+    for les in found:
+        print(_row_line(les))
+    if not found:
+        # Rule 11: nothing recorded is a FACT, said in words, not a blank.
+        print(f'[{WORD}] no {WORD} recorded'
+              + (f' against {" ".join(given.values())}' if given else ''))
+    return 0
+
+
+def main(argv) -> int:
+    """`lesson record` and `lesson show`; the config is read once, and never
+    before `--help` answers."""
+    args = list(argv)
+    if not args or args[0] in HELP_WORDS:
+        print(USAGE)
+        return 0 if args else 2
+    word, rest = args[0], args[1:]
+    if word not in (RECORD, SHOW):
+        return _refused(f'unknown {WORD} command {word!r} (expected: '
+                        f'{RECORD}, {SHOW})', 2)
+    try:
+        cfg = model.load()
+    except model.ConfigError as err:
+        return _refused(str(err), 2)
+    return record(cfg, rest) if word == RECORD else show(cfg, rest)

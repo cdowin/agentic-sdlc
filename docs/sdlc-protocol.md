@@ -105,6 +105,27 @@ tree, in CI and pre-push.
 - commit the roadmap directory — the status line and the ledger row this belt wrote
 - when every feature of the milestone is done: `agentic-sdlc release <version>`
 
+## The events a belt emits
+
+`[emit]` in devkit.toml names the sink; a repo that declares none emits nothing
+and behaves exactly as it did, exit codes included. A belt is its checks, then
+one write, and that sentence has exactly three moments worth a row: the entry
+condition was asked, one check resolved, the one write happened.
+
+| tap | kind | the row it writes |
+|---|---|---|
+| `enter` | `rung.enter` | `ts`, `kind`, `grain`, `rung`, `ready`, `blockers` |
+| `verdict` | `check.verdict` | `ts`, `kind`, `rung`, `grain`, `check`, `verdict`, `detail`, `ran` |
+| `leave` | `rung.leave` | `ts`, `kind`, `grain`, `state`, `answer`, `rung`, `next_checks`, `next_actions`, `have`, `value` |
+
+`verdict` is one of `ok`, `error`, `unverifiable`. `ran` is the command in the operation's table above, or the literal `reads the tree`. Every field is derived: the ids from the invocation, the categories from `[pm.states.*]`, the names from the registry that ran them.
+
+There is deliberately no fourth kind for a belt that stopped. One that writes
+nothing emits its false verdicts and no `rung.leave`, and the absence IS the
+signal — a row saying "the thing did not happen" is the tool narrating rather
+than recording. A `lesson` row is recorded by hand (`agentic-sdlc lesson
+record`) and read back beside the check it names.
+
 ## Not checks, and why
 
 A check earns its place by having something to READ in the tree. What follows is real protocol with nothing to read, so the machine states it and does not pretend to enforce it.

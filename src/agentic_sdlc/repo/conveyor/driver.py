@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from agentic_sdlc.core.config import ConfigError
+from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.pm import ledger, model, verdict
 
@@ -88,6 +89,18 @@ class Truth(Enum):
     TRUE = 'true'
     FALSE = 'false'
     UNVERIFIABLE = 'unverifiable'
+
+
+# The word each answer is NAMED by — on the line and in the emitted row, which
+# is one fact and therefore one table. A closed vocabulary: a `check.verdict`
+# row a consumer cannot key on is a row it has to parse prose out of.
+VERDICT_WORDS = {Truth.TRUE: 'ok', Truth.FALSE: 'error',
+                 Truth.UNVERIFIABLE: UNVERIFIABLE_WORD}
+
+# What a check that answered no and gave none reports instead: a defect in the
+# check, and the sentence the row carries as its `detail` (rule 4).
+NO_REASON = ('the check answered no and gave no reason — a defect in the '
+             'check, not a fact about the tree')
 
 
 @dataclass(frozen=True)
@@ -219,6 +232,65 @@ def done_state(cfg: 'model.PmConfig', kind: str) -> str:
     return model.flow_of(cfg, kind).by_category[model.DONE_CATEGORY][0]
 
 
+# --- the middle tap: one check resolved ---------------------------------------
+# `rung.enter` is `pm ready-for`'s and `rung.leave` is the arrival's; this is
+# the one between them, and every field is DERIVED — rung and grain from the
+# invocation, the name from `registry_for(operation)`, the word from
+# `VERDICT_WORDS`, `ran` from `[<op>.commands]` over the shipped actions.
+#
+# **There is deliberately no `rung.exit_failed`.** A belt that writes nothing
+# emits these rows with false verdicts and no `rung.leave`: the ABSENCE is the
+# signal, and a kind saying "it did not happen" is the tool narrating.
+def verdict_row(rung: str, grain: str, check: str, answer: Answer,
+                ran: str, ts: str = '') -> dict:
+    """One resolved check, as the belt printed it: `detail` is the same
+    sentence the line carries, so the row and the line cannot disagree."""
+    return dict(zip(ledger.VERDICT_KEYS, (
+        ts or ledger.utc_now(), ledger.KIND_VERDICT, rung, grain, check,
+        VERDICT_WORDS[answer.truth], answer.detail, ran)))
+
+
+class Verdicts:
+    """The tap one run emits through: the config the seam needs, the grain the
+    rows are routed by, and what each check runs. A check the caller answered
+    with `--skip` mints NOTHING here — its judgement is a field on the
+    arrival's disposition row (D6), and a verdict for a check nobody asked is
+    the false verdict rule 4 calls a sin."""
+
+    def __init__(self, cfg, operation: str, grain: str, ran: Mapping[str, str]):
+        self.cfg = cfg
+        self.operation = operation
+        self.grain = grain
+        self.ran = ran
+        self._defect = ''
+
+    def say(self, check: str, answer: Answer) -> list[str]:
+        """Emit one row; '' lines unless the sink itself could not be reached,
+        which is ONE warning a run and never a verdict (D1)."""
+        row = verdict_row(self.operation, self.grain, check, answer,
+                          self.ran.get(check, ''))
+        try:
+            emit.emit(self.cfg, emit.TAP_VERDICT, row)
+        except Exception as err:  # noqa: BLE001 — never load-bearing (D1)
+            if self._defect:
+                return []
+            self._defect = (
+                f'[{self.operation}] WARNING — the {emit.TAP_VERDICT} event '
+                f'for {check} was not emitted ({type(err).__name__}: {err}); '
+                f'the verdict above stands and the belt is unaffected')
+            return [self._defect]
+        return []
+
+
+def ran_for(operation: str, names: Sequence[str],
+            registry: Mapping[str, Check]) -> dict[str, str]:
+    """{check: what it runs} for this list — the same two values
+    `install-sdlc` renders into the protocol table."""
+    from agentic_sdlc.repo.conveyor import steps as step_defs
+    commands = step_defs.commands_for(operation, tuple(names), dict(registry))
+    return {name: step_defs.ran_of(name, commands) for name in names}
+
+
 # --- the run ------------------------------------------------------------------
 Writer = Callable[[Context, str, Sequence[tuple[str, str]]], tuple[bool, str]]
 Recorder = Callable[[Sequence[tuple[str, str]]], str]
@@ -228,14 +300,17 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
         *, force: bool = False, skips: Mapping[str, str] | None = None,
         state: str = '', write: Writer | None = None,
         record: Recorder | None = None,
-        surfacer: 'lessons.Surfacer | None' = None) -> Result:
+        surfacer: 'lessons.Surfacer | None' = None,
+        verdicts: 'Verdicts | None' = None) -> Result:
     """Ask every check the caller did not answer, print each, then write once
     or not at all.
 
     `state` and `write` are handed in so decision and mechanism are two
     functions with one seam; `record` mints a forced write's `deviation` row
     and returns '' or why it could not; `state == ''` writes nothing.
-    `surfacer` contributes lines beside the verdicts and CANNOT change one.
+    `surfacer` contributes lines beside the verdicts and CANNOT change one;
+    `verdicts` emits one `check.verdict` event per check ASKED and likewise
+    decides nothing — a run given neither behaves exactly as it did.
 
     `skips` is check -> why, already graded against `[<op>] skippable` by the
     caller: a check in it is NOT asked, because the point is that the
@@ -272,18 +347,18 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
             return Result(tuple(lines), tuple(n for n, _ in false), '', 2,
                           refused)
         if answer.is_true:
-            lines.append(f'[{op}] ok: {name}'
+            lines.append(f'[{op}] {VERDICT_WORDS[answer.truth]}: {name}'
                          + (f' — {answer.detail}' if answer.detail else ''))
         else:
             # A check that is not true and gave no reason has a defect, and the
-            # defect is what gets reported.
-            reason = answer.detail or (
-                'the check answered no and gave no reason — a defect in the '
-                'check, not a fact about the tree')
-            word = (UNVERIFIABLE_WORD if answer.truth is Truth.UNVERIFIABLE
-                    else 'error')
-            lines.append(f'[{op}] {word}: {name}: {reason}')
-            false.append((name, reason))
+            # defect is what gets reported — and carried, so the emitted row
+            # says what the line said rather than nothing.
+            answer = replace(answer, detail=answer.detail or NO_REASON)
+            lines.append(f'[{op}] {VERDICT_WORDS[answer.truth]}: {name}: '
+                         f'{answer.detail}')
+            false.append((name, answer.detail))
+        if verdicts is not None:
+            lines += verdicts.say(name, answer)
         if surfacer is not None:
             # The RULE surface, and the blockers this check named — after the
             # verdict line, because the verdict is the check's own business.
@@ -770,6 +845,10 @@ def main(argv: Sequence[str], *, root: Path | None = None,
         # The DECLARATION `--skip` is graded against; a malformed one is exit 2
         # here rather than a skip refused for a reason nobody can see.
         declared = _skippable(operation, names, known) if skips else ()
+        # The `ran` column, resolved once, beside the two reads above: a
+        # malformed `[<op>.commands]` is exit 2 before the first check, not a
+        # field this run then has to leave out of its events.
+        ran = ran_for(operation, names, known)
     except ConfigError as err:
         return _refuse(f'{spoken}: {err}')
     defect = plan_defect(known, names)
@@ -843,12 +922,15 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                  else f'there is {nowhere} to land one in; {ANYWHERE}'))
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
+    # ONE grain for both taps: the row a lesson surfaces against and the row a
+    # verdict is filed under are the same grain or they are two logs.
+    grain = _subject_grain(ctx)
     result = run(known, names, ctx, force=force, skips=skips, state=state,
                  write=write if write is not None else _writer(cfg, kind),
                  record=(_recorder(mledger, operation, subject)
                          if mledger is not None else _no_ledger(nowhere)),
-                 surfacer=lessons.surfacer_for(cfg, operation,
-                                               _subject_grain(ctx)))
+                 surfacer=lessons.surfacer_for(cfg, operation, grain),
+                 verdicts=Verdicts(cfg, operation, grain, ran))
     for line in result.lines:
         print(line)
     if result.refused:

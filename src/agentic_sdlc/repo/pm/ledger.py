@@ -74,9 +74,26 @@ DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'value',
                     'skipped')
 SKIPPED_KEYS = ('check', 'why')
 
-# `<rung>.<edge>`, the spelling `ready_for.KIND_ENTER` uses; the last dotted
-# segment is the tap `check pm` reads off `emit.TAPS`.
+# --- the three taps a belt emits, and the schema `install-sdlc` renders -------
+# `<rung|check>.<tap>`: the last dotted segment is the TAP `check pm`'s U3
+# counts off `emit.TAPS`, so a kind that does not spell its tap makes U3 noisy
+# rather than blind. `pm/ready_for.py` mints the first and `conveyor/driver.py`
+# the second; their KEYS live here with `rung.leave`'s because one table is
+# rendered and a hand-written one beside it is the second scoreboard.
+# `tests/test_pm_ledger.py` mints a row of each kind and compares.
+KIND_ENTER = 'rung.enter'
+KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
+
+ENTER_KEYS = ('ts', 'kind', 'grain', 'rung', 'ready', 'blockers')
+VERDICT_KEYS = ('ts', 'kind', 'rung', 'grain', 'check', 'verdict', 'detail',
+                'ran')
+# `value` is LAST and unpaired: `leave_row` zips nine values against these ten
+# keys, so an answer that carried none leaves an absent key rather than a `''`.
+LEAVE_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'rung', 'next_checks',
+              'next_actions', 'have', 'value')
+EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
+              KIND_LEAVE: LEAVE_KEYS}
 
 # What the row says when nobody answered. It cannot collide with a declared
 # answer, because `model._arrive_node_defect` refuses one that does not open
@@ -117,16 +134,45 @@ def leave_row(grain_id: str, state: str, nxt: Next | None,
     """The `rung.leave` payload: the same next-step facts the printed
     breadcrumb states, from `arrive.derive_next` — the one derivation. A fact
     this row wants and the printed line lacks belongs there, not here."""
-    row = {'ts': ts or utc_now(), 'kind': KIND_LEAVE,
-           'grain': grain_id, 'state': state, 'answer': said.answer,
-           'rung': nxt.belt if nxt else '',
-           'next_checks': list(nxt.checks) if nxt else [],
-           'next_actions': [nxt.action] if nxt else [],
-           'have': [{'path': c.path, 'why': c.why, 'installed': c.installed}
-                    for c in have]}
+    row = dict(zip(LEAVE_KEYS, (
+        ts or utc_now(), KIND_LEAVE, grain_id, state, said.answer,
+        nxt.belt if nxt else '',
+        list(nxt.checks) if nxt else [],
+        [nxt.action] if nxt else [],
+        [{'path': c.path, 'why': c.why, 'installed': c.installed}
+         for c in have])))
     if said.value:
         row['value'] = said.value
     return row
+
+
+# --- the lesson row (0.5.0/D1) ------------------------------------------------
+# CAPTURE, and only capture: the grain it came from, the rule it is about, and
+# the record it was derived from. The row POINTS at its source and never
+# restates it — a store that paraphrases the record it came from is a second
+# scoreboard. Nothing here ranks, scores or infers (rule 9).
+KIND_LESSON = 'lesson'
+LESSON_KEYS = ('ts', 'kind', 'grain', 'rule', 'source', 'text')
+
+
+def lesson_row(grain_id: str, rule: str, source: str, text: str,
+               ts: str = '') -> dict:
+    """One recorded lesson. Every field is refused rather than defaulted: a
+    lesson naming no grain and no rule surfaces nowhere, and one naming no
+    source is the paraphrase this row exists not to be. `text` is graded like
+    a deviation's reason — one line, bounded, and it must say something."""
+    for name, value in (('grain', grain_id), ('rule', rule),
+                        ('source', source)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f'refusing to mint a {KIND_LESSON} row: {name} is {value!r}, '
+                f'and a lesson nothing can be keyed on surfaces nowhere')
+    defect = reason_defect(text)
+    if defect:
+        raise ValueError(f'refusing to mint a {KIND_LESSON} row against '
+                         f'{rule!r}: {defect}')
+    return dict(zip(LESSON_KEYS, (ts or utc_now(), KIND_LESSON, grain_id,
+                                  rule, source, text)))
 
 
 # --- the retire row -----------------------------------------------------------
@@ -368,6 +414,17 @@ def grainless_path(roadmap_dir: Path) -> Path:
     """The grainless ledger itself — `grainless_dir` joined by `ledger_path`.
     What `check budget`, `verify --plan` and `pm ledger report|show` read."""
     return ledger_path(grainless_dir(roadmap_dir))
+
+
+def ledger_paths(cfg) -> list[Path]:
+    """BOTH homes (0.4.0/D3), deduplicated: the tree's own ledger and one per
+    milestone — the walk every reader of "every row" takes, and the reason it
+    is here is that `conveyor/lessons.py` and `checks/pm.py::_ledger_paths`
+    were two more spellings of it."""
+    from agentic_sdlc.repo.pm import model
+    found = [grainless_path(cfg.roadmap)]
+    found += [ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    return list(dict.fromkeys(found))
 
 
 def append_to(path: Path, row: dict) -> None:

@@ -490,6 +490,12 @@ SEED_ASSIGNMENTS = {
                            'DEFAULT_FLOWS', 'DONE_CATEGORY'}),
     'pm.verdict': frozenset({'OPEN'}),
     'pm.ready_for': frozenset({'READY_KEY'}),
+    # The `rung.enter` payload's key list (0.5.0). `ready` is a FIELD NAME
+    # there — "was the entry condition met" — and shares its spelling with a
+    # state word this project happens to declare; `ready_for.READY_KEY` is the
+    # same word for the same reason, and the two are bound by
+    # `tests/test_pm_ledger.py`, which mints the row and compares its keys.
+    'pm.ledger': frozenset({'ENTER_KEYS'}),
 }
 
 # The seed's exported words (`model.LIFECYCLE` / `BUILDING` / `REVIEWING`)

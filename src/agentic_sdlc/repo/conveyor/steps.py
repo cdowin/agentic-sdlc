@@ -1629,6 +1629,18 @@ SHIPPED_ACTION: dict[str, str] = {
     'findings-resolved': 'agentic-sdlc pm ready-for tag <id>',
 }
 
+# The other value a check's `runs` column takes, and the whole vocabulary with
+# it: a check either runs a shipped command or reads the tree. Spelled once,
+# for the rendered protocol table and for the `ran` field of every
+# `check.verdict` event, which are the same fact in two carriers.
+READS_THE_TREE = 'reads the tree'
+
+
+def ran_of(check: str, commands: dict[str, str]) -> str:
+    """What this check RAN: the project's command, the shipped one, or the
+    literal. `commands` is `commands_for(operation)`, already merged."""
+    return commands.get(check) or SHIPPED_ACTION.get(check) or READS_THE_TREE
+
 # What the caller does after a write, printed on success and rendered into the
 # document; `{version}`, `{branch}` and `{mainline}` are filled by the driver.
 AFTER: dict[str, tuple[str, ...]] = {

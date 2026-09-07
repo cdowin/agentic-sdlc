@@ -260,3 +260,5 @@
 {"ts":"2026-09-07T23:51:57Z","kind":"status","grain":"ft-a-read-verb-is-a-declaration","from":"reviewing","to":"done"}
 {"ts":"2026-09-07T23:51:57Z","kind":"disposition","grain":"ft-a-read-verb-is-a-declaration","state":"done","answer":"none"}
 {"ts":"2026-09-07T23:51:57Z","kind":"rung.leave","grain":"ft-a-read-verb-is-a-declaration","state":"done","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["agentic-sdlc release <version>"],"have":[]}
+{"ts":"2026-09-07T23:52:23Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"milestone","ready":false,"blockers":[{"check":"features-done","why":"ft-the-vocabulary-is-constants-not-literals is planning"},{"check":"features-done","why":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty is open — a bug nested in ms-the-rule-reaches-the-work"}]}
+{"ts":"2026-09-07T23:53:22Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"tag","ready":true,"blockers":[]}

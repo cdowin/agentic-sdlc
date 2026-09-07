@@ -45,17 +45,17 @@ Each is bound twice — once in `milestone:`, once inside its own id — and the
 empty. The one argument that names a release becomes the one field that is not the release. R2 then
 correctly reports the milestone as BACKLOG for declaring no version — while its id is the version.
 
-## And the auto-loaded rule says the scaffold is right
+## On a migrated consumer tree it becomes two vocabularies
 
-`.claude/rules/pm-execution.md` — written by `install-skills`, shipped to every consumer, loaded into
-every session — says:
+GitHub issue #8. `pm_migrate.py` mints `<kind-prefix>-<slug>` off `model.KIND_PREFIX`; `pm new` on
+the same tree, minutes later, mints the hierarchical id. So a migrated tree does not have one legacy
+convention and one current one — **it grows both, forever, one grain at a time**, and
+`pm list | grep '^bg-'` stops meaning anything. Nothing is broken, `check pm` passes either way, and
+that is what makes it accumulate.
 
-> Creation too: `pm new milestone|feature|story|bug` scaffolds to the schema.
-
-That is the sentence an operator trusts instead of checking, and it is why this survived a release:
-the scaffold hands back a shape the tree does not use, and the only loaded rule on the subject
-vouches for it. `ft-documented-behaviour-is-the-behaviour` (0.4.0) is the rule it breaks. The fix
-below makes the sentence true; nothing here asks for a new gate.
+`.claude/rules/pm-execution.md` says the scaffold *"scaffolds to the schema"*, which is why this
+survived a release; that sentence and its sibling in the shipped skill are
+`bg-the-shipped-rules-name-retired-behaviour`.
 
 ## Fix
 

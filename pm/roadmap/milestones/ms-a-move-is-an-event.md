@@ -15,6 +15,10 @@ order:
   - "ft-a-lesson-is-a-row-bound-to-a-grain"
   - "ft-a-lesson-surfaces-where-you-stand"
   - "bg-the-new-verbs-mint-a-compound-id"
+  - "bg-the-migration-rewrites-only-quoted-refs"
+  - "bg-check-pm-reopens-every-file-per-field"
+  - "bg-retire-drops-the-summary-it-accepts"
+  - "bg-the-shipped-rules-name-retired-behaviour"
 ---
 
 # 0.5.0 — a move is an event
@@ -110,6 +114,28 @@ The one thing worth taking is the SHAPE of `brain learn` — a durable lesson st
 events. What is not worth taking is its `Learner`, whose `frequency` is never incremented, so its
 confidence is pinned at `0.1` forever. **A learning loop that is never read back is decoration** —
 which is why capture alone does not satisfy the ship criterion below.
+
+## The 0.4.0 bump's tail — five bugs this milestone also carries
+
+Four came from GitHub issues filed against a real consumer bump (~700 documents, 497 grains); the
+fifth was found authoring this milestone. They are not event work and they are here because they are
+open against shipped code, not because they belong to the theme.
+
+    bg-the-migration-rewrites-only-quoted-refs   #7  52 refs silently UNVERIFIABLE, check pm PASS
+    bg-check-pm-reopens-every-file-per-field     #6  2.1M opens; make check 8.4s -> 87s
+    bg-retire-drops-the-summary-it-accepts       #5  the archive half of ROADMAP.md is underivable
+    bg-the-shipped-rules-name-retired-behaviour  #8  installed rule + skill assert retired behaviour
+    bg-the-new-verbs-mint-a-compound-id          #8  two id conventions on a migrated tree
+
+**Two of them are rule 4's first cardinal sin.** The migration degraded 36 refs to decorative and
+`check pm` exited 0 throughout; the scaffold mints a shape the tree does not use and no rule reads
+it. Both are gates that missed drift and printed PASS, on consumer data.
+
+**#6 and #7 are load-bearing on a tree that is bumped RIGHT NOW.** `release`'s `features-done` check
+refuses while any open bug names this milestone, so carrying them here means 0.5.0 cannot ship until
+they close — and a consumer waiting on 0.5.0 for a fix to shipped 0.4.0 waits for the whole event
+stream to land. A 0.4.1 carrying #6 and #7 alone is the alternative, and it is worth deciding
+deliberately rather than by default.
 
 ## Ship criterion
 

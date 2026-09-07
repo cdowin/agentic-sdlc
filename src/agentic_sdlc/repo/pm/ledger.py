@@ -78,9 +78,8 @@ SKIPPED_KEYS = ('check', 'why')
 # `<rung|check>.<tap>`: the last dotted segment is the TAP `check pm`'s U3
 # counts off `emit.TAPS`, so a kind that does not spell its tap makes U3 noisy
 # rather than blind. `pm/ready_for.py` mints the first and `conveyor/driver.py`
-# the second; their KEYS live here with `rung.leave`'s because one table is
-# rendered and a hand-written one beside it is the second scoreboard.
-# `tests/test_pm_ledger.py` mints a row of each kind and compares.
+# the second; the KEYS live here with `rung.leave`'s because ONE table is
+# rendered, and `tests/test_pm_ledger.py` binds it to all three minters.
 KIND_ENTER = 'rung.enter'
 KIND_VERDICT = 'check.verdict'
 KIND_LEAVE = 'rung.leave'
@@ -149,8 +148,8 @@ def leave_row(grain_id: str, state: str, nxt: Next | None,
 # --- the lesson row (0.5.0/D1) ------------------------------------------------
 # CAPTURE, and only capture: the grain it came from, the rule it is about, and
 # the record it was derived from. The row POINTS at its source and never
-# restates it — a store that paraphrases the record it came from is a second
-# scoreboard. Nothing here ranks, scores or infers (rule 9).
+# restates it — a paraphrase of the record is a second scoreboard — and
+# nothing here ranks, scores or infers (rule 9).
 KIND_LESSON = 'lesson'
 LESSON_KEYS = ('ts', 'kind', 'grain', 'rule', 'source', 'text')
 
@@ -418,9 +417,8 @@ def grainless_path(roadmap_dir: Path) -> Path:
 
 def ledger_paths(cfg) -> list[Path]:
     """BOTH homes (0.4.0/D3), deduplicated: the tree's own ledger and one per
-    milestone — the walk every reader of "every row" takes, and the reason it
-    is here is that `conveyor/lessons.py` and `checks/pm.py::_ledger_paths`
-    were two more spellings of it."""
+    milestone — the walk every reader of "every row" takes, and here because
+    `conveyor/lessons.py` and `checks/pm.py` were two more spellings of it."""
     from agentic_sdlc.repo.pm import model
     found = [grainless_path(cfg.roadmap)]
     found += [ledger_for(cfg, g.gid) for g in model.milestones(cfg)]

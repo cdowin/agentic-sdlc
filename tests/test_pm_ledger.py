@@ -594,3 +594,112 @@ def test_pm_status_prints_the_age_and_nothing_gates_on_it():
         assert 'open ' in line, out
         # Years old, and still exit 0: the number is a report (rule 9).
         assert 'd ' in line.split('open ')[1], out
+
+
+# --- the lesson row (0.5.0/ft-a-lesson-is-a-row-bound-to-a-grain) -------------
+# CAPTURE, and the whole of it: four fields the caller states and nothing
+# derived from them. The row kind joins the harness above — it routes by grain
+# like every other row, and it is refused rather than half-minted, because a
+# lesson naming no grain surfaces nowhere and one naming no source is the
+# paraphrase D1 says a lesson must never be.
+
+LESSON_TS = '2026-09-07T12:00:00Z'
+LESSON = ('0.1/alpha', 'review-recorded', 'docs/reviews/alpha.md',
+          'the fixture is copied, never edited in place')
+
+
+def test_the_lesson_row_is_the_four_fields_written_and_nothing_derived():
+    """Bites: a `weight`, a `confidence`, a `count` — anything the row holds
+    that nobody typed. The namesake package's `Learner` pins confidence at 0.1
+    forever because `frequency` is incremented nowhere (D1); a field with no
+    feedback edge is the shape of that defect, and the assertion is EQUALITY so
+    a sixth key fails rather than passes."""
+    assert ledger.lesson_row(*LESSON, ts=LESSON_TS) == {
+        'ts': LESSON_TS, 'kind': 'lesson', 'grain': '0.1/alpha',
+        'rule': 'review-recorded', 'source': 'docs/reviews/alpha.md',
+        'text': 'the fixture is copied, never edited in place'}
+
+
+@pytest.mark.parametrize('field,value', [
+    ('grain', ''), ('grain', '   '), ('grain', None),
+    ('rule', ''), ('source', ''),
+    ('text', ''), ('text', '   '), ('text', '...'),
+    ('text', 'one\ntwo'), ('text', 'x' * (ledger.REASON_MAX + 1)),
+])
+def test_a_lesson_missing_a_pointer_or_a_text_is_refused_not_minted(field,
+                                                                   value):
+    """Refused HERE, as `deviation_row` refuses a reason, so no path can mint
+    one: a row carrying `''` where a pointer belongs reads back as a lesson
+    about nothing, and `Store.against_grain('')` answers nothing for it."""
+    fields = dict(zip(('grain_id', 'rule', 'source', 'text'), LESSON))
+    fields[{'grain': 'grain_id'}.get(field, field)] = value
+    with pytest.raises(ValueError, match='lesson'):
+        ledger.lesson_row(**fields)
+
+
+def test_a_lesson_row_lands_in_the_ledger_that_owns_its_grain():
+    """The routing quartet's harness, asked of the new kind: a row about a
+    story files under the milestone that owns it, and `pm ledger show` prints
+    it in the same stream as the status rows — a reader who has to join two
+    logs has two logs."""
+    with tree() as root:
+        target = ledger.ledger_of_grain(cfg_for(root), '0.1/alpha/s0')
+        ledger.append_to(target, ledger.lesson_row(
+            '0.1/alpha/s0', 'evidence-written', 'docs/reviews/alpha.md',
+            'a story with no done: line is not closed', ts=LESSON_TS))
+        assert target.resolve() == (root / LEDGER_REL).resolve()
+        code, out = run_cli(root, 'ledger', 'show', '0.1/alpha/s0')
+        assert code == 0, out
+        said = [ln for ln in out.splitlines() if 'lesson' in ln]
+        assert len(said) == 1, out
+        # Rule 11's read side: the row PRINTS what it holds. A bare `ts kind`
+        # teaches a reader the tool does not have the answer.
+        for cell in ('evidence-written', 'a story with no done: line',
+                     'source: docs/reviews/alpha.md'):
+            assert cell in said[0], said[0]
+
+
+# --- the event schema is the schema the minters mint (0.5.0) -----------------
+# `install-sdlc` renders `ledger.EVENT_KEYS` into the protocol document, so the
+# tuples there are a CLAIM about three functions in three modules. Bound here
+# by minting one row of each kind and comparing: a field added to a payload and
+# not to the schema renders a document that is quietly wrong, which is the
+# second-scoreboard defect the feature exists to delete.
+
+def test_every_tap_kind_spells_the_tap_check_pm_counts():
+    """U3 keys on the last dotted segment (`emit.TAPS`), so a kind that does
+    not spell its tap makes the gate noisy rather than blind."""
+    from agentic_sdlc.repo import emit
+    taps = [kind.rsplit('.', 1)[-1] for kind in ledger.EVENT_KEYS]
+    assert taps == list(emit.TAPS), taps
+    assert len(ledger.EVENT_KEYS) == len(emit.TAPS)
+
+
+def test_the_rendered_schema_is_the_row_each_minter_actually_mints():
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.pm import arrive, ready_for
+    assert ready_for.KIND_ENTER == ledger.KIND_ENTER
+    minted = {
+        ledger.KIND_ENTER: ready_for._enter_row('feature', '0.1/alpha', []),
+        ledger.KIND_VERDICT: driver.verdict_row(
+            'feature', '0.1/alpha', 'stories-done', driver.Answer.yes('ok'),
+            'agentic-sdlc pm ready-for feature <id>'),
+        ledger.KIND_LEAVE: ledger.leave_row(
+            '0.1/alpha', 'done', None, (), arrive.NOTHING),
+    }
+    for kind, row in minted.items():
+        assert row['kind'] == kind
+        declared = ledger.EVENT_KEYS[kind]
+        assert list(row) == [k for k in declared if k in row], row
+        assert set(row) <= set(declared), sorted(set(row) - set(declared))
+
+
+def test_an_answer_that_carried_a_value_fills_the_last_leave_key():
+    """`value` is the one optional key, and it is last so nine values zip
+    against ten keys. The negative control for the row above: an absent answer
+    value must be an absent KEY, never a `''`."""
+    from agentic_sdlc.repo.pm import arrive
+    said = arrive.Said(answer='--by agent', value='builder')
+    row = ledger.leave_row('0.1/alpha', 'building', None, (), said)
+    assert row['value'] == 'builder'
+    assert list(row) == list(ledger.LEAVE_KEYS)

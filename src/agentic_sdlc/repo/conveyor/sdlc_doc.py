@@ -81,10 +81,9 @@ def _table(operation: str) -> list[str]:
 
 
 def _events() -> list[str]:
-    """The emitted schema, off `ledger.EVENT_KEYS` — the same tuples the three
-    minters build their rows from. Rendered rather than written here for the
-    reason the check tables are: a hand-written table beside a rendered one is
-    the second scoreboard this package deletes everywhere else."""
+    """The emitted schema, off `ledger.EVENT_KEYS` — the tuples the three
+    minters build their rows from. Rendered for the reason the check tables
+    are: a hand-written table beside a rendered one is a second scoreboard."""
     out = ['| tap | kind | the row it writes |', '|---|---|---|']
     for kind, keys in ledger.EVENT_KEYS.items():
         cells = ', '.join(f'`{key}`' for key in keys)

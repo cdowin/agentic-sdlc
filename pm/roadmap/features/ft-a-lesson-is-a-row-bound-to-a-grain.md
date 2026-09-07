@@ -14,10 +14,13 @@ consumed_by: []
 Capture, and only capture. A lesson is an append-only ledger row naming the grain it came from, the
 rule or check it is about, and the record it was derived from.
 
-    {kind: "lesson", grain, rule, source, text, at}
+    {ts, kind: "lesson", grain, rule, source, text}
 
 `source` is a path — a review record, a `.gate-reports/` transcript, the deviation row that prompted
-it. **The row points at its source; it never restates it.** A lesson store that paraphrases the
+it. The stamp is `ts`, the one every reader in this package keys on: spelled `at`, a row sorts as
+the empty string and files at the beginning of time.
+
+**The row points at its source; it never restates it.** A lesson store that paraphrases the
 record it came from is a second scoreboard, and it drifts the way every duplicate in this package's
 history has.
 

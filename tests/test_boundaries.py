@@ -996,6 +996,99 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
             f'is policing something that does not happen')
 
 
+# --- primitive 6: every field of an emitted event is DERIVED -------------------
+# 0.5.0/ft-one-event-shape-serves-three-readers. Three taps carry the belts'
+# events, and the line the feature is written against is one sentence:
+# `next_checks: ["stories-done", "findings-landed"]` is the engine reading its
+# own registry back; `suggested_action: "run a review"` is the engine deciding,
+# and rule 9 forbids it. The two are indistinguishable in a review of the row
+# and trivially distinguishable in the source that mints it, which is why this
+# is here rather than in a checklist.
+#
+# THE RULE: in a minter, a field's VALUE may not be a string this file wrote.
+# It comes from a parameter, from the kind constant, or from the clock —
+# `''` is admitted because it spells "the tree did not say", never a sentence.
+# Keys are excluded (they are the schema); values are not.
+EVENT_MINTERS = (
+    ('repo/pm/ready_for.py', '_enter_row'),
+    ('repo/conveyor/driver.py', 'verdict_row'),
+    ('repo/pm/ledger.py', 'leave_row'),
+    ('repo/pm/ledger.py', 'lesson_row'),
+)
+
+# The guard is a reader, and the way a reader dies is silently, so both
+# answers are probed before anything is graded.
+MINTER_SPELLINGS = (
+    ("return {'kind': KIND, 'rung': rung}", []),
+    ("return dict(zip(KEYS, (utc_now(), KIND, rung, nxt.belt if nxt else '')))",
+     []),
+    ("return [{'path': c.path, 'why': c.why} for c in have]", []),
+    ("return {'kind': KIND, 'suggested_action': 'run a review'}",
+     ['run a review']),
+    ("return dict(zip(KEYS, (KIND, 'stories-done')))", ['stories-done']),
+)
+
+
+def _minted_strings(node: ast.AST) -> list[str]:
+    """Every string constant in a row's VALUES. A `Dict`'s keys are its schema
+    and are skipped; everything else is walked, so a hardcoded sentence inside
+    a comprehension or a conditional is still seen."""
+    found: list[str] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.Dict):
+            stack.extend(current.values)
+            continue
+        if isinstance(current, ast.Constant):
+            if isinstance(current.value, str) and current.value:
+                found.append(current.value)
+            continue
+        stack.extend(ast.iter_child_nodes(current))
+    return found
+
+
+class EveryEventFieldIsDerived(unittest.TestCase):
+    """PRIMITIVE 6 — a payload holds what the tree said, never what the tool
+    thinks. The same shape as the breadcrumb's guard: assert the TRACE, not the
+    sentence, because a hardcoded next-step passes every substring check."""
+
+    def test_the_reader_can_still_tell_a_derived_field_from_a_written_one(self):
+        for source, expected in MINTER_SPELLINGS:
+            with self.subTest(source=source):
+                node = ast.parse(source).body[0]
+                self.assertEqual(expected, _minted_strings(node))
+
+    def test_no_minter_writes_a_field_this_package_decided(self):
+        seen = 0
+        offenders: list[str] = []
+        for rel, name in EVENT_MINTERS:
+            tree = _tree(SRC / rel)
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.FunctionDef)
+                        and node.name == name):
+                    continue
+                seen += 1
+                for ret in [n for n in ast.walk(node)
+                            if isinstance(n, ast.Return) and n.value]:
+                    offenders.extend(
+                        f'{rel}::{name}:{ret.lineno}: {value!r}'
+                        for value in _minted_strings(ret.value))
+        self.assertEqual(
+            len(EVENT_MINTERS), seen,
+            f'{seen} of {len(EVENT_MINTERS)} minters found — one was renamed '
+            f'or moved, and this rule is grading what is left')
+        self.assertEqual(
+            [], offenders,
+            'a field an emitted row carries that nothing in the tree said. '
+            'Every key must resolve to `[pm.states.*]`, to '
+            '`registry_for(operation)` or to a frontmatter field — a value '
+            'written here is the engine deciding what should happen next, '
+            'which rule 9 forbids and a review would pass:\n  '
+            + '\n  '.join(offenders))
+
+
+
 if __name__ == '__main__':
     unittest.main()
 

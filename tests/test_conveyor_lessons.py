@@ -56,11 +56,14 @@ OTHER_RULE = 'tree-clean'
 
 def lesson_row(grain: str = '', rule: str = '', source: str = RECORD,
                text: str = 'the fixture is copied, never edited in place',
-               at: str = TS) -> dict:
-    """One `lesson` row as `ft-a-lesson-is-a-row-bound-to-a-grain` writes it —
-    `{kind, grain, rule, source, text, at}` and nothing derived."""
-    return {'ts': TS, 'kind': lessons.KIND, 'grain': grain, 'rule': rule,
-            'source': source, 'text': text, 'at': at}
+               ts: str = TS) -> dict:
+    """One `lesson` row, keyed off the MINTER's own list so a renamed column
+    goes red here. Built rather than minted because several cases below need a
+    DEGENERATE row — no source, no text — which `ledger.lesson_row` refuses to
+    write and the reader must still survive reading."""
+    values = {'ts': ts, 'kind': lessons.KIND, 'grain': grain, 'rule': rule,
+              'source': source, 'text': text}
+    return {name: values[name] for name in ledger.LESSON_KEYS}
 
 
 def record(root: Path, *rows: dict, rel: str = LEDGER_REL) -> None:
@@ -298,6 +301,25 @@ def test_a_lesson_changes_no_verdict_and_no_exit_code():
 RANKING = ('sorted', 'sort', 'rank', 'ranked', 'score', 'scored', 'confidence',
            'frequency', 'similarity', 'best', 'top')
 
+LESSON_MODULE = 'src/agentic_sdlc/repo/conveyor/lessons.py'
+# The ROW MINTER lives among minters that legitimately sort, so the ledger is
+# scanned by FUNCTION: everything the lesson word owns there is named `lesson`.
+MINTER_MODULE = 'src/agentic_sdlc/repo/pm/ledger.py'
+
+
+def lesson_sources() -> list[tuple[str, ast.AST]]:
+    """Every piece of source the lesson word owns — the reader and the verb
+    whole, plus the minter's own functions."""
+    read = ast.parse((REPO_ROOT / LESSON_MODULE).read_text(encoding='utf-8'))
+    found = [(LESSON_MODULE, read)]
+    minters = ast.parse((REPO_ROOT / MINTER_MODULE).read_text(encoding='utf-8'))
+    found += [(f'{MINTER_MODULE}::{node.name}', node)
+              for node in ast.walk(minters)
+              if isinstance(node, ast.FunctionDef)
+              and lessons.KIND in node.name]
+    assert len(found) > 1, 'the minter left the census — nothing is scanned'
+    return found
+
 
 def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
     """Choosing is inference and the caller has the source paths (rule 9). The
@@ -323,14 +345,16 @@ def test_every_match_prints_in_recorded_order_and_nothing_ranks_them():
             'an unbounded row made an unbounded line — the text is clipped '
             'and the source, which is where the reader goes next, is not')
 
-    module = REPO_ROOT / 'src/agentic_sdlc/repo/conveyor/lessons.py'
-    names = {node.attr if isinstance(node, ast.Attribute) else node.id
-             for node in ast.walk(ast.parse(module.read_text(encoding='utf-8')))
-             if isinstance(node, (ast.Name, ast.Attribute))}
-    assert not names & set(RANKING), (
-        f'{sorted(names & set(RANKING))} in the lesson reader — anything '
-        f'inferred needs a feedback edge, and a reader/writer has nowhere to '
-        f'put one (D1)')
+    # The WRITE half joins the guard the read half already carried: a lesson
+    # ranked at the moment it is recorded is ranked just as permanently.
+    for where, source in lesson_sources():
+        names = {node.attr if isinstance(node, ast.Attribute) else node.id
+                 for node in ast.walk(source)
+                 if isinstance(node, (ast.Name, ast.Attribute))}
+        assert not names & set(RANKING), (
+            f'{sorted(names & set(RANKING))} in {where} — anything inferred '
+            f'needs a feedback edge, and a reader/writer has nowhere to put '
+            f'one (D1)')
 
 
 # --- 5: the coupling to `pm ready-for`'s printed blockers ---------------------
@@ -506,3 +530,130 @@ def test_a_blocker_is_read_from_the_whole_output_not_the_clipped_detail():
             'the fixture no longer clips — this case probes nothing')
         assert answer.names == (FEATURE, '0.1/beta'), (
             f'a blocker was dropped with the clipped line: {answer.names}')
+
+
+# --- 6: the WRITE half — `agentic-sdlc lesson record|show` --------------------
+# Until this feature, nothing in the package could write the row the four cases
+# above read: the store was a reader of a file no verb produced. What is proven
+# here is the pair D1 says has to exist together — a row lands, and it lands
+# routed by grain like every other row — plus the two refusals that keep the
+# store honest, both of them the ones `--review-record` already makes.
+
+def run_lesson(root: Path, *argv: str) -> tuple[int, str]:
+    """The verb through `cli.main`, so what is exercised is the surface a
+    caller types rather than a function this file reached for."""
+    from agentic_sdlc import cli
+    cfg_for(root)  # the config caches a moved cwd invalidates
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = cli.main([cli.LESSON_VERB, *argv])
+    return code, out.getvalue() + err.getvalue()
+
+
+TEXT = 'a NIT that blocks is a NIT nobody writes down'
+
+
+def test_a_recorded_lesson_lands_routed_by_grain_and_reads_back_verbatim():
+    """The ship criterion, end to end and through the CLI: one row, in the
+    ledger of the milestone that owns the grain, with the four fields the
+    caller stated and nothing else — then read back by the verb beside it,
+    which is the half D1 says capture is decoration without."""
+    with tree() as root:
+        code, out = run_lesson(root, lessons.RECORD,
+                               lessons.GRAIN_FLAG, FEATURE,
+                               lessons.RULE_FLAG, RULE,
+                               lessons.SOURCE_FLAG, RECORD, TEXT)
+        assert code == 0, out
+        rows = [r for r in ledger_rows(root) if r['kind'] == lessons.KIND]
+        assert len(rows) == 1, rows
+        assert rows[0] == {'ts': rows[0]['ts'], 'kind': lessons.KIND,
+                           'grain': FEATURE, 'rule': RULE, 'source': RECORD,
+                           'text': TEXT}
+        assert ledger.parse_ts(rows[0]['ts']) is not None, (
+            'the stamp is `ts` and parses — a row spelled `at` sorts as the '
+            'empty string and files at the beginning of time')
+
+        code, shown = run_lesson(root, lessons.SHOW)
+        assert code == 0, shown
+        assert shown.splitlines()[0].split('\t') == [
+            FEATURE, RULE, RECORD, TEXT, rows[0]['ts']], shown
+
+
+@pytest.mark.parametrize('flags,why', [
+    ((lessons.SOURCE_FLAG, 'docs/reviews/nowhere.md'),
+     'a source resolving to nothing'),
+    ((lessons.GRAIN_FLAG, '0.9/nobody'), 'a grain no milestone owns'),
+])
+def test_a_pointer_resolving_to_nothing_is_refused_and_nothing_is_written(
+        flags, why):
+    """Exactly as `--review-record` refuses one (exit 1, nothing stamped). A
+    lesson whose `source` names no file is the paraphrase D1 forbids, and one
+    whose grain no ledger owns would surface at no move ever."""
+    with tree() as root:
+        argv = [lessons.RECORD, lessons.GRAIN_FLAG, FEATURE,
+                lessons.RULE_FLAG, RULE, lessons.SOURCE_FLAG, RECORD, TEXT]
+        argv[argv.index(flags[0]) + 1] = flags[1]
+        code, out = run_lesson(root, *argv)
+        assert code == 1, out
+        assert 'nothing was recorded' in out, out
+        assert [r for r in ledger_rows(root) if r['kind'] == lessons.KIND] \
+            == [], why
+
+
+@pytest.mark.parametrize('argv', [
+    (lessons.RECORD,),
+    (lessons.RECORD, lessons.GRAIN_FLAG, FEATURE, RULE, RECORD, TEXT),
+    (lessons.RECORD, lessons.GRAIN_FLAG, FEATURE, lessons.RULE_FLAG, RULE,
+     lessons.SOURCE_FLAG, RECORD),
+    (lessons.RECORD, lessons.GRAIN_FLAG, FEATURE, lessons.RULE_FLAG, RULE,
+     lessons.SOURCE_FLAG, RECORD, TEXT, 'and one more'),
+    (lessons.RECORD, lessons.GRAIN_FLAG),
+    (lessons.SHOW, FEATURE),
+    (lessons.SHOW, lessons.GRAIN_FLAG, FEATURE, lessons.RULE_FLAG, RULE),
+    ('learn',),
+])
+def test_an_incomplete_or_invented_invocation_is_exit_2_and_writes_nothing(
+        argv):
+    """Rule 6: usage is 2, never 1. Both filters at once is here because a
+    lesson matches one column or the other EXACTLY — an implicit AND would be
+    the tool deciding what the caller meant."""
+    with tree() as root:
+        code, out = run_lesson(root, *argv)
+        assert code == 2, out
+        assert [r for r in ledger_rows(root) if r['kind'] == lessons.KIND] == []
+
+
+def test_show_filters_by_one_column_exactly_and_says_when_nothing_matched():
+    """Rule 11's read side: `--grain` and `--rule` are the store's own two
+    filters, `=` is the whole match, and nothing recorded is a LINE rather than
+    a blank — a reader who cannot tell "none" from "broken" has been told
+    nothing."""
+    with tree() as root:
+        record(root, lesson_row(grain=FEATURE, rule=RULE, text='first'),
+               lesson_row(grain=STORY, rule=OTHER_RULE, text='second'))
+        for flag, value, expected in (
+                (lessons.GRAIN_FLAG, FEATURE, ['first']),
+                (lessons.RULE_FLAG, OTHER_RULE, ['second']),
+                (lessons.GRAIN_FLAG, '0.1/alph', []),
+                (lessons.RULE_FLAG, RULE.upper(), [])):
+            code, out = run_lesson(root, lessons.SHOW, flag, value)
+            assert code == 0, out
+            texts = [line.split('\t')[3] for line in out.splitlines()
+                     if '\t' in line]
+            assert texts == expected, out
+            if not expected:
+                assert f'no {lessons.WORD} recorded' in out, out
+        code, out = run_lesson(root, lessons.SHOW)
+        assert len([ln for ln in out.splitlines() if '\t' in ln]) == 2, out
+
+
+def test_the_help_names_its_columns_in_order_and_the_reader_agrees():
+    """Rule 11's read side again, and the third copy of the column list: the
+    rows and the filters are one tuple, the `--help` line is prose and can
+    drift, which is what this holds. The FIELDS are the minter's keys, so a
+    column renamed in `ledger.py` reddens here too."""
+    columns = lessons.USAGE.split('columns IN ORDER:')[1].split('\n')[0]
+    assert tuple(columns.split()) == lessons.COLUMNS
+    assert set(lessons.COLUMNS) == set(ledger.LESSON_KEYS) - {'kind'}
+    assert 'ts' in lessons.COLUMNS and 'at' not in lessons.COLUMNS, (
+        'every reader in this package keys the stamp as `ts`')

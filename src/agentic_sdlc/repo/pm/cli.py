@@ -310,7 +310,11 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `<state>  <answer> [<value>]` and
                                            then `skipped: <check> — "<why>"`
                                            for every check a belt answered
-                                           instead of asking. --json prints the
+                                           instead of asking; a `lesson` says
+                                           `<rule>  <text>  (source: <path>)`,
+                                           and `agentic-sdlc lesson show
+                                           --grain <id>` is the verb that
+                                           filters those. --json prints the
                                            raw lines. Reads the grain's
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
@@ -2287,12 +2291,22 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
             previous = row
         elif arrive.disposition_of(row.data):
             line += _disposition_cells(row.data)
+        elif row.data.get('kind') == ledger.KIND_LESSON:
+            line += _lesson_cells(row.data)
         print(line.rstrip())
     status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
     total = ledger.total_seconds(cfg, _grain_kind(cfg, gid), status)
     if total is not None:
         print(f'first row → terminal row: {total}s')
     return 0
+
+
+def _lesson_cells(row: dict) -> str:
+    """What a recorded lesson SAYS here: the rule, the text, and ALWAYS the
+    source, so the reader goes to the record rather than trusting this line.
+    `agentic-sdlc lesson show` is the verb that filters them."""
+    return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
+            f'(source: {row.get("source", "")})')
 
 
 def _disposition_cells(row: dict) -> str:

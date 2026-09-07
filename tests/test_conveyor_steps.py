@@ -166,8 +166,8 @@ def lesson_row(grain: str) -> dict:
     """One `lesson` row, minted from the READER's own field list so a renamed
     column goes red here rather than surfacing nothing."""
     values = {'grain': grain, 'rule': '', 'source': LESSON_SOURCE,
-              'text': LESSON_TEXT, 'at': LESSON_AT}
-    return {'ts': LESSON_AT, 'kind': lessons.KIND,
+              'text': LESSON_TEXT, 'ts': LESSON_AT}
+    return {'kind': lessons.KIND,
             **{name: values[name] for name in lessons.FIELDS}}
 
 

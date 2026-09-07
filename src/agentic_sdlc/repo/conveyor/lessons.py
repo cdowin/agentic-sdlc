@@ -280,9 +280,8 @@ def _refused(why: str, code: int) -> int:
 
 def flags_given(rest: list[str], known: tuple[str, ...]
                 ) -> tuple[dict[str, str], list[str], str]:
-    """(the flags given, the words left over, '' or the defect). Both spellings
-    — `--flag value` and `--flag=value` — and a flag given twice is a defect:
-    one lesson names one grain and one rule."""
+    """(the flags given, the words left over, '' or the defect). Both
+    spellings, and a flag given twice is a defect: one lesson, one grain."""
     given: dict[str, str] = {}
     left: list[str] = []
     index = 0
@@ -311,9 +310,9 @@ def _source_file(cfg, source: str) -> Path:
 
 
 def record(cfg, rest: list[str]) -> int:
-    """Append one row, routed by grain. Both pointers are resolved BEFORE the
-    append: a row naming a source that is not there, or a grain no milestone
-    owns, is the drift `--review-record` already refuses to stamp."""
+    """Append one row, routed by grain. Both pointers resolve BEFORE the
+    append: a source that is not there, or a grain no milestone owns, is the
+    drift `--review-record` already refuses to stamp."""
     given, words, defect = flags_given(rest, RECORD_FLAGS)
     if not defect and ([f for f in RECORD_FLAGS if not given.get(f)]
                        or len(words) != 1):
@@ -348,8 +347,8 @@ def record(cfg, rest: list[str]) -> int:
 
 
 def _row_line(les: Lesson) -> str:
-    """One lesson as one line, tab-separated, `-` for a column the row left
-    empty — a fixed column count is what a shell `read` needs."""
+    """One lesson, tab-separated, `-` for an empty column: a fixed column
+    count is what a shell `read` needs."""
     cells = [getattr(les, name) or DASH for name in COLUMNS]
     return '\t'.join(cell.replace('\t', ' ') for cell in cells)
 
@@ -381,9 +380,9 @@ def show(cfg, rest: list[str]) -> int:
     return 0
 
 
-def main(argv) -> int:
-    """`lesson record` and `lesson show`; the config is read once, and never
-    before `--help` answers."""
+def main(argv: list[str]) -> int:
+    """`lesson record` and `lesson show`, with the config read once — and
+    never before `--help` has answered."""
     args = list(argv)
     if not args or args[0] in HELP_WORDS:
         print(USAGE)

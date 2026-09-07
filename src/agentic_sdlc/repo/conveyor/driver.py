@@ -233,10 +233,10 @@ def done_state(cfg: 'model.PmConfig', kind: str) -> str:
 
 
 # --- the middle tap: one check resolved ---------------------------------------
-# `rung.enter` is `pm ready-for`'s and `rung.leave` is the arrival's; this is
-# the one between them, and every field is DERIVED — rung and grain from the
-# invocation, the name from `registry_for(operation)`, the word from
-# `VERDICT_WORDS`, `ran` from `[<op>.commands]` over the shipped actions.
+# `rung.enter` is `pm ready-for`'s, `rung.leave` is the arrival's; this is the
+# one between. Every field is DERIVED — the ids from the invocation, the name
+# from `registry_for(operation)`, the word from `VERDICT_WORDS`, `ran` from
+# `[<op>.commands]` over the shipped actions.
 #
 # **There is deliberately no `rung.exit_failed`.** A belt that writes nothing
 # emits these rows with false verdicts and no `rung.leave`: the ABSENCE is the
@@ -265,8 +265,8 @@ class Verdicts:
         self._defect = ''
 
     def say(self, check: str, answer: Answer) -> list[str]:
-        """Emit one row; '' lines unless the sink itself could not be reached,
-        which is ONE warning a run and never a verdict (D1)."""
+        """Emit one row; no lines unless the sink could not be reached, which
+        is ONE warning a run and never a verdict (D1)."""
         row = verdict_row(self.operation, self.grain, check, answer,
                           self.ran.get(check, ''))
         try:
@@ -284,8 +284,7 @@ class Verdicts:
 
 def ran_for(operation: str, names: Sequence[str],
             registry: Mapping[str, Check]) -> dict[str, str]:
-    """{check: what it runs} for this list — the same two values
-    `install-sdlc` renders into the protocol table."""
+    """{check: what it runs} — what `install-sdlc` renders in that column."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
     commands = step_defs.commands_for(operation, tuple(names), dict(registry))
     return {name: step_defs.ran_of(name, commands) for name in names}
@@ -309,8 +308,8 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
     functions with one seam; `record` mints a forced write's `deviation` row
     and returns '' or why it could not; `state == ''` writes nothing.
     `surfacer` contributes lines beside the verdicts and CANNOT change one;
-    `verdicts` emits one `check.verdict` event per check ASKED and likewise
-    decides nothing — a run given neither behaves exactly as it did.
+    `verdicts` emits one `check.verdict` event per check ASKED, and decides
+    nothing either — a run given neither behaves exactly as it did.
 
     `skips` is check -> why, already graded against `[<op>] skippable` by the
     caller: a check in it is NOT asked, because the point is that the

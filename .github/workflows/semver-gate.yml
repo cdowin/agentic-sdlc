@@ -124,12 +124,22 @@ jobs:
             [ -n "$(fm "$m" id)" ] || continue
             scanned=$((scanned + 1))
             id="$(fm "$m" id)"
-            [ "$id" = "$PR" ] || continue
+            # A milestone declares its version in `version:`; before that field
+            # existed the id WAS the version, so both are asked and either
+            # match counts. Asking `id` ALONE never once fired: a scaffolded id
+            # is `ms-<slug>` — or `ms-0.4.0`, which is still not `0.4.0` — so
+            # the success path of this gate was dead in every layout the tool
+            # emits, and a legitimate release PR got the one refusal an
+            # operator cannot act on.
+            declares=""
+            [ "$(fm "$m" version)" = "$PR" ] && declares=version
+            [ -n "$declares" ] || { [ "$id" = "$PR" ] && declares=id; } || true
+            [ -n "$declares" ] || continue
             status="$(fm "$m" status)"
             if [ "$status" = done ]; then
-              legit="the id of done milestone $id"
+              legit="the $declares of done milestone $id"
             else
-              echo "::error::$PR is the id of milestone $id, whose status is '${status:-unset}', not done. A release carries a CLOSED milestone; the bump-at-start of the NEXT milestone waits until the previous close has merged."
+              echo "::error::$PR is the $declares of milestone $id, whose status is '${status:-unset}', not done. A release carries a CLOSED milestone; the bump-at-start of the NEXT milestone waits until the previous close has merged."
               exit 1
             fi
           done
@@ -138,7 +148,7 @@ jobs:
             exit 1
           fi
           if [ -z "$legit" ]; then
-            echo "::error::$PR is neither the id of a done milestone under $PM_ROADMAP nor main's version ($MAIN) plus one hotfix component. A release is a closed milestone or a hotfix; the NEXT milestone's bump-at-start waits until this merge has landed."
+            echo "::error::$PR is the version or id of no done milestone under $PM_ROADMAP, and is not main's version ($MAIN) plus one hotfix component. A release is a closed milestone or a hotfix; the NEXT milestone's bump-at-start waits until this merge has landed."
             exit 1
           fi
           echo "Version bump OK: $MAIN -> $PR ($legit)"

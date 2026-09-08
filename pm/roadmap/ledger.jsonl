@@ -2634,3 +2634,7 @@
 {"ts":"2026-09-08T02:19:24Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_census_accounts_for_every_file_it_walked","duration_ms":853,"rank":4}
 {"ts":"2026-09-08T02:19:24Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":817,"rank":5}
 {"ts":"2026-09-08T02:19:24Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":7542,"census":1132}
+{"ts":"2026-09-08T02:20:16Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2843}
+{"ts":"2026-09-08T02:21:24Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":67706}
+{"ts":"2026-09-08T02:21:24Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":94}
+{"ts":"2026-09-08T02:21:24Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":70984}

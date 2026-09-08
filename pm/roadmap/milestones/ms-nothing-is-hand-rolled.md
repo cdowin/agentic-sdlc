@@ -12,6 +12,7 @@ order:
   - "bg-a-decision-citation-resolves-to-the-wrong-milestone"
   - "bg-the-brief-undercounts-the-coupling-it-argues-from"
   - "ft-an-agent-is-a-registered-kind"
+  - "ft-the-storage-layer-is-named-and-the-engine-stops-reaching-through-it"
   - "ft-a-phase-declares-what-it-hands-an-agent"
   - "ft-a-hand-rolled-command-is-a-missing-verb"
   - "ft-the-record-is-harvested-not-pushed"
@@ -78,6 +79,17 @@ roster is theirs (rule 8) — what ships is the mechanism and the shipped twelve
 becomes a verb, a flag on an existing verb, or a written reason why not. `pm ledger record` already
 takes `--from-transcript` and cannot find one; that is a locator, not a capability.
 
+**The storage layer is named, and the engine stops reaching through it.** Asked directly: is the
+markdown handling separated from the SDLC? Measured, no. `core/markdown.py` is 65 lines of fence
+scanning and is not the markdown layer; the real one is 385 lines buried mid-file in a 2,817-line
+`model.py` that is simultaneously the config loader, the storage engine, the id grammar and the work
+provider. **164 calls reach the storage mechanics from 13 modules outside it, against 71 to the
+semantic layer** — the engine reaches THROUGH the abstraction 2.3x more often than it uses it, and
+`field_of(path: Path, key)` at 89 sites means that many places hard-code *a grain is a file*.
+
+`core/apply.py` already shows the fix: *"the one place this package mutates a filesystem"*, enforced
+by `test_boundaries.py`. That rule was applied to WRITES and never to READS.
+
 **A gate measures the suite the way it measures the source.** The prose census extends to `tests/`
 with its own ceiling and its own argument, so the cut is a gate rather than an afternoon. The
 source-shaped guards get named as such, because "8,075 lines police our own AST" is either the best
@@ -115,6 +127,9 @@ count that the 0.6.0 brief got wrong is one of the things a verb now answers.
 
 `tests/` is measured the way `src/` is, with its own declared ceiling and its own argument, and the
 source-shaped guards are named as a set rather than inferred by grepping for `ast.parse`.
+
+No module outside the storage layer and a named exemption class passes a `Path` to ask what a grain
+says, and `test_boundaries.py` enforces it the way it already enforces the write side.
 
 ## Risks
 

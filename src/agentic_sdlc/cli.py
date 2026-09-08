@@ -24,6 +24,10 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
     agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
 
+Rendering (writes to stdout, runs nothing — paste it or pipe it):
+    agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
+    agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
+
 Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
     agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
     agentic-sdlc lesson show [--grain <id> | --rule <id>]

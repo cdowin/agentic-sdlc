@@ -30,11 +30,14 @@ documentation and a second copy of itself.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import dataclasses
 import functools
+import inspect
 import io
 import re
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 
@@ -76,29 +79,73 @@ def documented_verbs() -> set[str]:
     return set(_INVOCATION.findall(cli.__doc__ or ''))
 
 
+# The rosters `main()` resolves rather than spells: `install_commands()` reads
+# the installer's `PLANS`, `conveyor_verbs()` the driver's `OPERATIONS`.
+# `CONVEYOR_VERBS` is a LAZY tuple — iterating it yields nothing, which is why
+# the branch is named here by the function behind it rather than read as a
+# value.
+_ROSTER_CALLS = {'install_commands': cli.install_commands,
+                 'conveyor_verbs': cli.conveyor_verbs}
+_ROSTER_NAMES = {'CONVEYOR_VERBS': cli.conveyor_verbs}
+_VERB = re.compile(r'^[a-z][a-z0-9-]*$')
+
+
+def _resolve(node: ast.expr) -> tuple[set[str], list[str]]:
+    """(the verbs this comparator routes, the shapes that could not be read)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}, []
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        verbs: set[str] = set()
+        unread: list[str] = []
+        for element in node.elts:
+            found, missed = _resolve(element)
+            verbs |= found
+            unread += missed
+        return verbs, unread
+    if isinstance(node, ast.Name):
+        if node.id in _ROSTER_NAMES:
+            return set(_ROSTER_NAMES[node.id]()), []
+        value = getattr(cli, node.id, None)
+        if isinstance(value, str):
+            return {value}, []
+        return set(), [f'cli.{node.id}']
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in _ROSTER_CALLS):
+        return set(_ROSTER_CALLS[node.func.id]()), []
+    return set(), [ast.dump(node)[:60]]
+
+
 def routed_verbs() -> set[str]:
-    """What `main()` dispatches, read off the router's own branches.
+    """What `main()` dispatches, read off the router's own BRANCHES.
 
-    The two ROSTERS are asked, never listed — `install_commands()` reads the
-    installer's `PLANS` and `conveyor_verbs()` reads the driver's `OPERATIONS`,
-    exactly as `main()` does. So a fifth installer or a third operation is
-    documented-or-flagged the moment it exists, with nothing to update here.
+    This used to be a hand-written set beside a docstring claiming another test
+    kept it honest. It did not: that test walks `documented_verbs()`, so a verb
+    missing from BOTH is invisible to both. Finding E2 caught `version` that
+    way once, by hand. 0.6.0 shipped `dispatch` and `changelog` routed and
+    undocumented, and every test stayed green — the same class, twice, in the
+    milestone whose northstar is that a gate which cannot fail is not a gate.
 
-    The singletons below are the branches `main()` writes out longhand. They
-    are the one hand-maintained list in this file, and the test that keeps them
-    honest is `test_a_documented_verb_is_not_answered_with_unknown_command`,
-    which asks the router rather than this set.
-
-    `version` is here because of finding E2: it is routed at `cli.py`'s
-    `cmd in ('-V', '--version', 'version')` — a MEMBERSHIP test rather than an
-    equality branch, which is why the finding says *"routed_verbs() cannot see
-    it"* — and it was in no `--help` line at all. Documenting it without adding
-    it here would have turned a silent verb into a red build, which is the
-    finding's own point read backwards.
+    So the router is READ. Every `cmd == X` / `cmd in X` comparison in `main()`
+    contributes its verbs, and a comparator shape this cannot resolve FAILS by
+    name rather than dropping out silently: an unreadable branch is the defect,
+    not an exemption from it. Flag spellings (`-V`, `--version`) are not verbs
+    and are filtered by the same grammar `--help` lines are read with.
     """
-    return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
-            cli.LESSON_VERB,
-            *cli.install_commands(), *cli.conveyor_verbs()}
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cli.main)))
+    verbs: set[str] = set()
+    unread: list[str] = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)
+                and node.left.id == 'cmd'):
+            for comparator in node.comparators:
+                found, missed = _resolve(comparator)
+                verbs |= found
+                unread += missed
+    assert not unread, (
+        f'routed_verbs() cannot read {len(unread)} branch(es) of cli.main(): '
+        f'{unread}; teach it the shape rather than letting a verb go unseen')
+    assert len(verbs) > 5, f'the router census collapsed to {sorted(verbs)}'
+    return {verb for verb in verbs if _VERB.match(verb)}
 
 
 # --- the exit-code surface, enumerated the same way the verbs are ------------
@@ -414,6 +461,14 @@ class TestTheSurfaceSaysTelemetry:
         # whoever just learned it, not as part of moving a grain, so it is not
         # a `pm` subcommand.
         'lesson',
+        # 0.6.0/ft-the-dispatch-carries-the-contract: it renders a preamble at
+        # the moment a dispatch begins and moves no grain, so it is neither a
+        # `pm` subcommand nor a belt.
+        'dispatch',
+        # 0.6.0/ft-the-changelog-is-a-field-and-a-verb: `CHANGELOG.md` retired
+        # into `changelog:` on the grain, and rendering those in `order:` is a
+        # read over the whole tree rather than a read of one grain.
+        'changelog',
     }
 
     def test_this_feature_added_no_verb(self):

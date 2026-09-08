@@ -3,7 +3,7 @@ id: ft-a-surface-reaches-its-reader-or-it-is-decoration
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a surface reaches its reader, or it is decoration
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

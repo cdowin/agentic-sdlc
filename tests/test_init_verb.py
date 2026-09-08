@@ -100,7 +100,6 @@ WRITES = (
     '.claude/agents/simplifier.md',
     '.claude/agents/test-writer.md',
     '.claude/agents/tech-writer.md',
-    '.claude/agents/changelog-writer.md',
     '.claude/agents/doc-hygiene.md',
     '.claude/agents/pm-operator.md',
     '.github/workflows/verify.yml',

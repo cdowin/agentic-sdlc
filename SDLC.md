@@ -121,7 +121,7 @@ Every roster agent carries `model:` and `effort:`; **effort tracks judgment unde
 | `milestone-reviewer` | opus | high | pressure-tests the spec everything downstream builds from |
 | `simplifier` | fable | high | *"should this exist"* has no ground truth — the most abstract pass |
 | `test-writer` | sonnet | medium | audit-shaped work against a known diff |
-| `tech-writer` / `changelog-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
+| `tech-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
 
 **`model:` is overridable per-dispatch, downward;** the closing reviewer always runs strong.
 

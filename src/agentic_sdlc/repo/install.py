@@ -52,7 +52,6 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('simplifier.md', '.claude/agents/simplifier.md'),
         ('test-writer.md', '.claude/agents/test-writer.md'),
         ('tech-writer.md', '.claude/agents/tech-writer.md'),
-        ('changelog-writer.md', '.claude/agents/changelog-writer.md'),
         ('doc-hygiene.md', '.claude/agents/doc-hygiene.md'),
         ('pm-operator.md', '.claude/agents/pm-operator.md'),
     ),
@@ -619,9 +618,17 @@ class Retirement(NamedTuple):
     command: str
     targets: tuple[str, ...] = ()
     flags: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
 
 
-RETIREMENTS: tuple[Retirement, ...] = ()
+RETIREMENTS: tuple[Retirement, ...] = (
+    # 0.6.0 withdrew the changelog-writer agent with the file it maintained.
+    # `install-agents` writes a SET and never deletes, so a bumping consumer
+    # keeps an orphaned definition whose whole role was a document that no
+    # longer exists — silent, until someone dispatches it.
+    Retirement('0.6.0', 'install-agents',
+               files=('.claude/agents/changelog-writer.md',)),
+)
 
 # Where a consumer's `DEVKIT_VERSION` pin lives — READ, never written, and never
 # created. `[adopt] pin_file` can move it, but an install verb runs in trees with
@@ -634,12 +641,19 @@ NO_LONGER_SHIPPED = (
     'no longer shipped: {what} — withdrawn {span}. A make target your Makefile '
     'or `[gates] extra` still names fails with `No rule to make target`, so '
     'drop or replace each one')
+
+# A FILE is the quiet one: an install verb writes a set and never deletes, so a
+# withdrawn file simply stays, correct-looking and pointed at nothing.
+WITHDRAWN_FILES = (
+    'no longer written: {what} — withdrawn {span}. This verb writes a set and '
+    'never deletes, so the file is still in your tree; delete each one, or keep '
+    'it knowing nothing here maintains it')
 RETIRED_FLAGS = (
     'retired verb flags: {what} — withdrawn {span}. A flag lives in your prose, '
     'and no gate can read a sentence about one: grep your rules and agent '
     'briefs for each')
 NOTHING_WITHDRAWN = (
-    '{command} has withdrawn no make target and no verb flag {span}')
+    '{command} has withdrawn no make target, verb flag or file {span}')
 
 
 def _version_key(version: str) -> tuple[int, int, int] | None:
@@ -714,12 +728,15 @@ def retirement_report(command: str, stamp: str | None,
     span = _span_phrase(stamp)
     targets = [t for row in found for t in row.targets]
     flags = [f for row in found for f in row.flags]
+    files = [f for row in found for f in row.files]
     lines = []
     if targets:
         lines.append(NO_LONGER_SHIPPED.format(what=', '.join(targets),
                                               span=span))
     if flags:
         lines.append(RETIRED_FLAGS.format(what=', '.join(flags), span=span))
+    if files:
+        lines.append(WITHDRAWN_FILES.format(what=', '.join(files), span=span))
     return lines or [NOTHING_WITHDRAWN.format(command=command, span=span)]
 
 

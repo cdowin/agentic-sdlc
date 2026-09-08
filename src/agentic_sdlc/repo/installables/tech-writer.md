@@ -22,7 +22,9 @@ project's own judgement calls.
 ```text
 specs:       docs/specs/systems/
 pm tree:     pm/roadmap/   (schemas in pm/README.md; you never flip status)
-changelog:   <the product changelog surface — owned by changelog-writer>
+changelog:   `changelog:` is a FIELD on each grain — one or two lines, set with
+             `agentic-sdlc pm set <id> changelog "<sentence>"`, rendered by
+             `agentic-sdlc changelog <id>`. Not a document, and not yours to own
 refs tool:   <a reference-aware symbol search, if the project ships one;
               otherwise raw grep. Verify "X is gone" before writing it.>
 pm skill:    <path to a pm-operations skill, if the project ships one — read

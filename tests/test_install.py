@@ -147,7 +147,6 @@ AGENTS = ('.claude/agents/verification-reviewer.md',
           '.claude/agents/simplifier.md',
           '.claude/agents/test-writer.md',
           '.claude/agents/tech-writer.md',
-          '.claude/agents/changelog-writer.md',
           '.claude/agents/doc-hygiene.md',
           '.claude/agents/pm-operator.md')
 # The verification pair carries the review/build CONTRACT and predates the
@@ -430,18 +429,21 @@ THIS = install.__version__
 OLD_TARGET = 'a-target-withdrawn-long-ago'
 GONE_TARGET = 'a-target-a-split-dropped'
 GONE_FLAG = 'some-verb --a-flag-that-left'
+GONE_FILE = '.claude/agents/a-role-that-was-withdrawn.md'
 FIXTURE = (
     install.Retirement('0.0.2', 'install-gates', targets=(OLD_TARGET,)),
     install.Retirement(THIS, 'install-gates',
                        targets=(GONE_TARGET,), flags=(GONE_FLAG,)),
     install.Retirement(THIS, 'install-hooks', targets=('another-verbs-loss',)),
+    install.Retirement(THIS, 'install-agents', files=(GONE_FILE,)),
 )
 
 
 def reported(command: str, stamp: str | None) -> set[str]:
-    """Every target and flag the report would name, as one set."""
+    """Every target, flag and file the report would name, as one set."""
     found = install.retired_since(command, stamp, rows=FIXTURE)
-    return {name for row in found for name in row.targets + row.flags}
+    return {name for row in found
+            for name in row.targets + row.flags + row.files}
 
 
 @pytest.mark.parametrize('stamp,expected', [
@@ -471,12 +473,44 @@ def test_the_report_is_per_verb_and_says_so_when_nothing_was_withdrawn():
     lines = install.retirement_report('install-ci', None, rows=FIXTURE)
     assert len(lines) == 1, lines
     assert 'install-ci' in lines[0] and 'no longer shipped' not in lines[0]
-    assert 'withdrawn no make target and no verb flag' in lines[0]
-    # And the shipped table, empty, is honest the same way rather than silent.
+    assert 'withdrawn no make target, verb flag or file' in lines[0]
+    # And a verb the SHIPPED table has no row for is honest the same way.
     assert install.retirement_report('install-gates', None) == [
         install.NOTHING_WITHDRAWN.format(
             command='install-gates',
             span=install._span_phrase(None))]
+
+
+def test_a_withdrawn_FILE_is_named_because_an_install_never_deletes():
+    """The quiet retirement, and 0.6.0 is the first real one.
+
+    An install verb writes a SET and never deletes, so a file this package
+    stops shipping simply STAYS in a consumer's tree — correct-looking, and
+    pointed at nothing. A withdrawn make target announces itself the next time
+    `make` runs; a withdrawn agent definition announces itself never, until
+    somebody dispatches it.
+    """
+    lines = install.retirement_report('install-agents', None, rows=FIXTURE)
+    assert len(lines) == 1, lines
+    assert GONE_FILE in lines[0]
+    assert 'no longer written' in lines[0]
+    # The reason a consumer needs, in the line: nothing deleted it for them.
+    assert 'never deletes' in lines[0]
+
+
+def test_the_shipped_table_names_the_changelog_writer_at_0_6_0():
+    """The row is real, not a fixture. `ft-the-changelog-is-a-field-and-a-verb`
+    deleted `CHANGELOG.md`; the agent whose whole role was maintaining it went
+    with it, and a bumping consumer keeps the orphan unless told."""
+    rows = [r for r in install.RETIREMENTS if r.version == '0.6.0']
+    assert rows, 'the 0.6.0 retirement row is gone'
+    files = [f for r in rows for f in r.files]
+    assert '.claude/agents/changelog-writer.md' in files, files
+    # It reports at 0.6.0 and is silent before it.
+    after = install.retirement_report('install-agents', None, current='0.6.0')
+    assert any('changelog-writer' in line for line in after), after
+    before = install.retirement_report('install-agents', None, current='0.5.0')
+    assert not any('changelog-writer' in line for line in before), before
 
 
 # A version this cannot read is not a version this may narrow on: every one of
@@ -511,7 +545,7 @@ def test_every_declared_retirement_names_a_routed_verb_and_a_readable_version():
             f'{row.version} names {row.command}, which no verb routes')
         assert install._version_key(row.version) is not None, (
             f'{row.command} row {row.version!r} is not a version')
-        assert row.targets or row.flags, (
+        assert row.targets or row.flags or row.files, (
             f'{row.command} {row.version} withdrew nothing — a row with '
             f'nothing to say is a row that should not exist')
         checked += 1
@@ -1570,9 +1604,9 @@ class TestTheNameBothCommandsBlockIsOneWording:
 
     def test_the_agents_whose_work_has_no_inner_loop_do_not_carry_it(self):
         """A rule pasted where it does not apply is the noise that gets the
-        whole block deleted. `changelog-writer` and friends sync prose against
+        whole block deleted. `tech-writer` and friends sync prose against
         a known diff; there is no narrow command to name."""
-        for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
+        for name in ('doc-hygiene.md', 'tech-writer.md',
                      'pm-operator.md'):
             assert self.OPEN not in install.body_of(name), name
 

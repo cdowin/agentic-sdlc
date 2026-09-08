@@ -1,11 +1,11 @@
 ---
 id: bg-the-prose-ceiling-has-no-headroom
 kind: bug
-milestone: 
+milestone: ms-the-rule-reaches-the-work
 name:
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: `tests/test_prose_census.py` counts a module docstring that is printed verbatim as `--help` output as CODE rather than as commentary, derived by running every help surface — the identical text in a `USAGE` constant already counted that way, so the census had been charging the project for documenting its own CLI.
 ---
 
 # the prose ceiling has no headroom, so it gates growth rather than ratio
@@ -71,3 +71,39 @@ same shortcut from the other side.
 Whatever lands: a feature that adds a well-documented module must go green without any comment in
 any OTHER file changing. That is the property, and it is assertable — land a scratch module at the
 repo's own average ratio and the gate must pass.
+
+## Picked and landed — 0.6.0, at the close (D7)
+
+**Bound to `ms-the-rule-reaches-the-work` and fixed, which this file said not to do.** The reason it
+said not to was the risk of picking under pressure to make today green; the reason it happened
+anyway is that the close ran out of the alternative. Two more placement moves were paid first — D5
+and D6, each a rationale relocated to the decisions file, which is where a rejected alternative
+belongs — and the census was still 9 lines over with nothing left that was not load-bearing WHY.
+Chris's call, taken with the measurement in front of him rather than by the agent that was blocked.
+
+**Candidate 2 of the three above: exclude the surfaces that are contractually prose.** The ceiling
+is unchanged at 1/3. What changed is what counts.
+
+A module docstring `main()` prints verbatim is the program's OUTPUT — rule 6 makes an output line
+shape contract — and the identical text in a module-level `USAGE` constant ALREADY counted as code,
+because a string assignment is code. That is why help text was moved out of docstrings twice during
+this milestone. Two spellings of one thing, graded opposite ways, and the census was charging the
+project for documenting its own CLI. A category error in the measurement, not a threshold set too
+low.
+
+    before   4674 / 13996 = 0.33395   OVER by 9 lines
+    after    4460 / 14210 = 0.31386   headroom 276 prose lines
+             214 published lines across 9 modules, moved from prose to CODE
+
+**Derived, never a roster**: `published_docstrings()` runs every `--help` this package prints and
+asks which docstrings came back. Probed by withdrawing the check dispatcher's own
+`print(module.__doc__)` — the exclusion drops from 9 modules and 214 lines to 2 and 71.
+
+**This file's Verification clause is now a case.**
+`test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling` measures a median-sized module
+documented at this repo's own rate, so it cannot be satisfied by a flattering example, and it goes
+red the day the ceiling becomes a growth gate again.
+
+**Two of the three candidates are still open**, and the honest note is that 276 lines is about nine
+well-documented modules rather than infinity. If this tightens again the next argument is grading
+the DELTA, and it should be made on its own evidence and not under a close.

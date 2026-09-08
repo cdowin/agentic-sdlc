@@ -58,7 +58,6 @@ Archived milestones are out of scope; a zero census FAILS.
 """
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -554,38 +553,16 @@ class Wiring(NamedTuple):
     unread: str                 # why a settings file could not be read
 
 
-def _hook_commands(node: object) -> list[str]:
-    """Every `command` string under a settings file's `hooks` key — never the
-    whole file, where a `permissions.allow` entry naming a courier (which this
-    package's own next-step text tells consumers to add) read as wiring."""
-    found: list[str] = []
-    if isinstance(node, dict):
-        command = node.get('command')
-        if isinstance(command, str):
-            found.append(command)
-        for key, value in node.items():
-            if key != 'command':
-                found.extend(_hook_commands(value))
-    elif isinstance(node, list):
-        for item in node:
-            found.extend(_hook_commands(item))
-    return found
-
-
 def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
-    """(the couriers this one file registers, why it could not be read)."""
-    if not path.is_file():
-        return (), ''
-    try:
-        data = json.loads(model.read_raw(path))
-    except (OSError, UnicodeDecodeError) as err:
-        return (), err.__class__.__name__
-    except ValueError as err:
-        return (), f'it is not JSON: {err}'
-    hooks = data.get('hooks') if isinstance(data, dict) else None
-    commands = _hook_commands(hooks)
+    """(the couriers this one file registers, why it could not be read).
+
+    The reader is `checks.hooks.settings_commands`: `check hooks` asks the same
+    file the same question about the whole guard corpus, and two readers of one
+    settings file is the pair this milestone kept finding."""
+    from agentic_sdlc.repo.checks import hooks as check_hooks
+    commands, why = check_hooks.settings_commands(path)
     return tuple(sorted(name for name in model.LEDGER_COURIERS
-                        if any(name in command for command in commands))), ''
+                        if any(name in command for command in commands))), why
 
 
 def wired_couriers(root: Path) -> Wiring:

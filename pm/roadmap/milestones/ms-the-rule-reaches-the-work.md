@@ -27,6 +27,7 @@ order:
   - "ft-a-surface-reaches-its-reader-or-it-is-decoration"
   - "bg-the-semver-gate-reads-the-id-not-the-version"
   - "bg-a-time-dependent-assertion-fails-a-belt-on-a-loaded-machine"
+  - "bg-the-prose-ceiling-has-no-headroom"
 changelog: 0.6.0 — the rule reaches the work. A dispatched agent now receives this project's contracts before its first tool call, from a surface the package renders rather than an operator retypes. Every source-shaped guard declares a violation corpus and a gate replays it. `CHANGELOG.md` is retired: the changelog is a `changelog:` field on the grain and a verb that renders it. A bug binds to its parent through `milestone:` alone, and no parent closes over an unresolved child. `check pm` went from 57 warnings to 10 without deleting a rule.
 ---
 

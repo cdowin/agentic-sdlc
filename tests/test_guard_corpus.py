@@ -102,6 +102,13 @@ UNCOVERED = frozenset((
     'test_pm_flow.py::test_the_belts_spell_no_state_word',
     'test_pm_flow.py::test_the_seeds_exported_words_have_exactly_the_named_readers',
     'test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code',
+    # Its sibling, on the same reader and uncovered the same way: a bare
+    # function has nowhere to hang a corpus, and `prose_and_code` sums over a
+    # fixed node set rather than classifying which node it is looking at — the
+    # blindness this census narrows to. Its own arithmetic is probed in
+    # 0.6.0/D7 instead: withdraw the printing and the exclusion drops from 9
+    # modules to 2.
+    'test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling',
     'test_shell_mark.py::Census',
     'test_shell_mark.py::NoUnreadSpawnSpelling',
     'test_verify_rules.py::TheModuleReadsNoFileAndSpawnsNothing',

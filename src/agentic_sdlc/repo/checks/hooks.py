@@ -7,10 +7,17 @@ prints `SELF-TEST OK`. Which hooks carry a corpus, and which can block (`exit 2`
 derived from each hook's text, never a roster. `_*` and `*.local` are excluded and
 disclosed. Zero hooks, or zero replays, is a finding.
 
+TWO ARMINGS, and only one is git's. `core.hooksPath` arms the git hooks and is
+verified. A `cc-*` hook is a Claude Code hook that git never execs; what arms it is
+a settings file, and whether a harness READ that file depends on the session's
+project root. So its registration is COUNTED on a REGISTERED line and never
+asserted — the same sentence `check pm` U4 owes the ledger couriers.
+
 No devkit.toml section: `tools/hooks/` is where `install-hooks` writes in every consumer.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -41,6 +48,84 @@ SELF_TEST_DECL = re.compile(rf'^(?![ \t]*#).*{re.escape(SELF_TEST_FLAG)}',
 # A statement-initial `exit 2`, because the couriers name the digit only in prose.
 BLOCK_EXIT = 2
 BLOCKS_DECL = re.compile(rf'^[ \t]*exit[ \t]+{BLOCK_EXIT}\b', re.MULTILINE)
+
+
+# --- the OTHER arming, and it is not git's (0.6.0/D6) -------------------------
+SETTINGS_FILES = ('.claude/settings.json', '.claude/settings.local.json')
+
+
+def _commands(node: object) -> list[str]:
+    """Every `command` string under a settings file's `hooks` key — never the
+    document's text, where an allowlist entry reads as a registration."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        command = node.get('command')
+        if isinstance(command, str):
+            found.append(command)
+        for key, value in node.items():
+            if key != 'command':
+                found.extend(_commands(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_commands(item))
+    return found
+
+
+def settings_commands(path: Path) -> tuple[tuple[str, ...], str]:
+    """(the hook commands this one settings file registers, why it was unread).
+
+    Absent is `((), '')` and never a defect: a tree that registers nothing has
+    opted out (0.4.0/D5). `check pm`'s courier rules read through this too.
+    """
+    if not path.is_file():
+        return (), ''
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError) as err:
+        return (), err.__class__.__name__
+    except ValueError as err:
+        return (), f'it is not JSON: {err}'
+    return tuple(_commands(data.get('hooks') if isinstance(data, dict)
+                           else None)), ''
+
+
+def _registered(root: Path, names: list[str]) -> tuple[set[str], str, str]:
+    """(which of `names` a settings file registers, where, why unread)."""
+    found: set[str] = set()
+    where: list[str] = []
+    unread: list[str] = []
+    for rel in SETTINGS_FILES:
+        commands, why = settings_commands(root / rel)
+        if why:
+            unread.append(f'{rel} could not be read ({why})')
+            continue
+        here = {name for name in names
+                if any(name in command for command in commands)}
+        if here:
+            found |= here
+            where.append(rel)
+    return found, ' and '.join(where), '; '.join(unread)
+
+
+def _arming(root: Path, agent_hooks: list[str]) -> str:
+    """What is registered for the `cc-*` half, and what registration is worth.
+
+    Counted, never asserted, and the measurement that ruled it: 0.6.0/D6.
+    """
+    registered, where, unread = _registered(root, agent_hooks)
+    missing = sorted(set(agent_hooks) - registered)
+    said = [f'{len(registered)} of {len(agent_hooks)} {CC_PREFIX}hook(s) '
+            f'registered in {where}' if registered else
+            f'NONE of the {len(agent_hooks)} {CC_PREFIX}hook(s) is registered '
+            f'in a settings file in this checkout']
+    if missing:
+        said.append(f'{", ".join(missing)} registered nowhere here')
+    if unread:
+        said.append(unread)
+    return (f'{"; ".join(said)} — `install-hooks --write-settings` lands the '
+            f'block. Registered is not IN FORCE: whether a harness reads that '
+            f'file depends on the session\'s project root, so this is counted, '
+            f'never asserted')
 
 
 def _entries(directory: Path) -> Walk:
@@ -150,6 +235,7 @@ def run() -> int:
         return 1
 
     ran = parsed = replayed = 0
+    agent_hooks: list[str] = []
     # Counted only over hooks that started, like every other number in the verdict.
     blockers = blockers_replayed = 0
     for path in entries:
@@ -174,6 +260,7 @@ def run() -> int:
             continue
         if path.name.startswith(CC_PREFIX):
             ran += 1
+            agent_hooks.append(path.name)
         else:
             parsed += 1
         source = _source(path)
@@ -207,10 +294,13 @@ def run() -> int:
     scope = (f'{census}; {ran} fail open on a payload they cannot read, '
              f'{parsed} parse, {replayed} replay their own {SELF_TEST_FLAG} '
              f'corpus, {covered}')
+    # NAMED, never asserted (rule 4): a registration is not a hook that ran.
+    if agent_hooks:
+        print(f'  {"REGISTERED":<{LABEL_WIDTH}} {_arming(root, agent_hooks)}')
     if findings:
         for label, said in findings:
             print(f'  {label:<{LABEL_WIDTH}} {said}')
         print(f'[check:hooks] FAIL — {len(findings)} finding(s) across {scope}')
         return 1
-    print(f'[check:hooks] PASS — armed at {configured}; {scope}')
+    print(f'[check:hooks] PASS — git-armed at {configured}; {scope}')
     return 0

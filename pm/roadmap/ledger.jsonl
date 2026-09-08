@@ -2442,3 +2442,8 @@
 {"ts":"2026-09-08T00:31:50Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":5799,"rank":5}
 {"ts":"2026-09-08T00:31:50Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":45528,"census":1548}
 {"ts":"2026-09-08T00:32:36Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3031}
+{"ts":"2026-09-08T00:32:50Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3022}
+{"ts":"2026-09-08T00:33:49Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3113}
+{"ts":"2026-09-08T00:34:58Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":68646}
+{"ts":"2026-09-08T00:34:58Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":106}
+{"ts":"2026-09-08T00:34:59Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":72233}

@@ -16,7 +16,7 @@ from agentic_sdlc.repo.pm import model
 
 # grain -> template filename; shared docs are addressed by slot name, so there
 # is no table to sync.
-GRAINS = ('milestone', 'feature', 'story', 'bug')
+GRAINS = model.FLOW_KINDS
 DOCS = ('handoff', 'decisions')
 
 
@@ -108,9 +108,9 @@ def slot_paths(kind: str, doc: Path) -> dict[str, Path]:
     one function deciding where each one lives, so the scaffolder below never
     joins a name onto a directory itself.
     """
-    file_slots = (model.MILESTONE_FILE_SLOTS if kind == 'milestone'
+    file_slots = (model.MILESTONE_FILE_SLOTS if kind == model.GRAIN_MILESTONE
                   else model.FEATURE_FILE_SLOTS)
-    optional = (model.MILESTONE_OPTIONAL_SLOTS if kind == 'milestone'
+    optional = (model.MILESTONE_OPTIONAL_SLOTS if kind == model.GRAIN_MILESTONE
                 else model.FEATURE_OPTIONAL_SLOTS)
     out = {slot: doc for slot in file_slots}
     for slot in optional:
@@ -126,7 +126,7 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     report (0.4.0/D6).
     """
     slots = slot_paths(kind, doc)
-    file_slots = (model.MILESTONE_FILE_SLOTS if kind == 'milestone'
+    file_slots = (model.MILESTONE_FILE_SLOTS if kind == model.GRAIN_MILESTONE
                   else model.FEATURE_FILE_SLOTS)
     actions: list[tuple[str, Path]] = []
     # The pool is the first byte written, so an unwritable roadmap is a

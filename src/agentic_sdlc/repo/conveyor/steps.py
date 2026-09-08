@@ -22,7 +22,9 @@ from agentic_sdlc.core import walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       relpath_tuple, str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
-from agentic_sdlc.repo.conveyor.driver import Answer, Check, Context, grain_path
+from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
+                                              OP_FEATURE, OP_STORY,
+                                              grain_path)
 from agentic_sdlc.repo.pm import model, remote, verdict
 
 # --- the shipped defaults -----------------------------------------------------
@@ -72,8 +74,8 @@ DEFAULT_FEATURE_STEPS = (
 DEFAULT_STEPS: dict[str, tuple[str, ...]] = {
     'release': DEFAULT_RELEASE_STEPS,
     'adopt': DEFAULT_ADOPT_STEPS,
-    'story': DEFAULT_STORY_STEPS,
-    'feature': DEFAULT_FEATURE_STEPS,
+    OP_STORY: DEFAULT_STORY_STEPS,
+    OP_FEATURE: DEFAULT_FEATURE_STEPS,
 }
 
 # WHICH CHECKS ARE DISPOSITIONABLE IS A DECLARATION, and the stock declaration
@@ -155,8 +157,35 @@ def substitute(command: str, ctx: Context) -> str:
 STEP_NAME = re.compile(r'^[a-z][a-z0-9-]*$')
 STEP_NAME_MAX = 40
 
-# A gate writing 100 MB to stdout must still produce a bounded line.
+# A gate writing 100 MB to stdout must still produce a bounded line. The
+# narrower budgets are per MESSAGE, and they differ because the sentence around
+# them differs: a command echoed back beside its exit code, a `done:` line
+# quoted inside a longer finding, an exception rendered as an aside.
 OUTPUT_LIMIT = 400
+COMMAND_LIMIT = 120
+QUOTED_LIMIT = 80
+ASIDE_LIMIT = 160
+LIST_LIMIT = 200
+RENDER_ERROR_LIMIT = 60
+
+# NOT exit codes but SECONDS: `git` is the one command here with its own
+# timeout, because it runs outside a belt's `[<op>] timeout`.
+GIT_TIMEOUT = 120
+
+# The SHELL's codes for a command that never ran, synthesised so a caller
+# cannot mistake "the tool said no" for "the tool is not installed": 127 not on
+# PATH, 126 found and not executable, 124 killed by a timeout (`timeout(1)`'s).
+# A command that DID run returns its own code and none of these are invented.
+NOT_ON_PATH = 127
+CANNOT_RUN = 126
+TIMED_OUT = 124
+
+# How many names a census line prints before it says how many more there are.
+SHOWN_MAX = 5
+
+# `git status --porcelain` is COLUMNAR: two status columns and a space, then
+# the path. A blanket strip eats the first character of a path.
+PORCELAIN_PREFIX = 3
 DEFAULT_COMMAND_TIMEOUT = 1800
 
 # --- what the adopt checks look at, all of it inside the checkout --------------
@@ -228,13 +257,13 @@ def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
     keeps porcelain columns whose leading space carries meaning."""
     try:
         done = subprocess.run(('git',) + args, cwd=str(ctx.root),
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, timeout=GIT_TIMEOUT)
     except FileNotFoundError:
-        return 127, 'git is not on PATH'
+        return NOT_ON_PATH, 'git is not on PATH'
     except subprocess.TimeoutExpired:
-        return 124, 'git timed out'
+        return TIMED_OUT, 'git timed out'
     except OSError as err:
-        return 126, str(err)
+        return CANNOT_RUN, str(err)
     out = done.stdout + done.stderr
     return done.returncode, out.strip() if strip else out.rstrip('\n')
 
@@ -251,11 +280,11 @@ def _run(ctx: Context, argv: list[str]) -> tuple[int, str]:
         done = subprocess.run(argv, cwd=str(ctx.root), capture_output=True,
                               text=True, timeout=_timeout(ctx.operation))
     except FileNotFoundError:
-        return 127, f'{argv[0]} is not on PATH'
+        return NOT_ON_PATH, f'{argv[0]} is not on PATH'
     except subprocess.TimeoutExpired:
-        return 124, f'{argv[0]} timed out'
+        return TIMED_OUT, f'{argv[0]} timed out'
     except OSError as err:
-        return 126, str(err)
+        return CANNOT_RUN, str(err)
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
@@ -275,11 +304,11 @@ def _make(ctx: Context, *args: str) -> tuple[int, str]:
                               capture_output=True, text=True,
                               timeout=_timeout(ctx.operation))
     except FileNotFoundError:
-        return 127, 'make is not on PATH'
+        return NOT_ON_PATH, 'make is not on PATH'
     except subprocess.TimeoutExpired:
-        return 124, 'make timed out'
+        return TIMED_OUT, 'make timed out'
     except OSError as err:
-        return 126, str(err)
+        return CANNOT_RUN, str(err)
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
@@ -299,10 +328,10 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
                               text=True, env=env,
                               timeout=_timeout(ctx.operation))
     except subprocess.TimeoutExpired:
-        return 124, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
+        return TIMED_OUT, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
-        return 126, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
+        return CANNOT_RUN, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
     return done.returncode, _clip(done.stdout + done.stderr), argv
 
 
@@ -530,7 +559,7 @@ def _timeout(operation: str) -> int:
 def _changelog_retired(operation: str) -> None:
     """`[<op>] changelog` named the FILE this step counted bullets in. Named
     at exit 2, never ignored: a consumer still declaring it would keep a path
-    nothing reads and believe they had pointed it somewhere (0.6.0)."""
+    nothing reads and believe they had pointed it somewhere."""
     if 'changelog' in _section(operation):
         raise ConfigError(
             f'[{operation}] changelog was retired in 0.6.0 — the step grades '
@@ -626,15 +655,15 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
                               timeout=_timeout(ctx.operation))
     except subprocess.TimeoutExpired:
         return Answer.no(
-            f'`{_clip(command, 120)}` did not finish inside '
+            f'`{_clip(command, COMMAND_LIMIT)}` did not finish inside '
             f'{_timeout(ctx.operation)}s')
     except OSError as err:
         return Answer.unverifiable(
-            f'`{_clip(command, 120)}` could not be run ({err})')
+            f'`{_clip(command, COMMAND_LIMIT)}` could not be run ({err})')
     tail = _clip(done.stdout + done.stderr)
     if done.returncode == 0:
-        return Answer.yes(f'`{_clip(command, 120)}` exited 0')
-    return Answer.no(f'`{_clip(command, 120)}` exited {done.returncode}'
+        return Answer.yes(f'`{_clip(command, COMMAND_LIMIT)}` exited 0')
+    return Answer.no(f'`{_clip(command, COMMAND_LIMIT)}` exited {done.returncode}'
                      + (f' — {tail}' if tail else ''))
 
 
@@ -719,7 +748,8 @@ def _uncommitted(ctx: Context) -> tuple[list[str], str]:
     cfg = _pm_cfg(ctx)
     # `line[3:]`, not a strip: porcelain is COLUMNAR and column 0 carries
     # meaning, so a blanket strip eats the first character of the first path.
-    paths = [line[3:] for line in out.split('\n') if len(line) > 3]
+    paths = [line[PORCELAIN_PREFIX:] for line in out.split('\n')
+             if len(line) > PORCELAIN_PREFIX]
     inside = f'{cfg.roadmap_dir}/'
     return [p for p in paths if not p.startswith(inside)], inside
 
@@ -810,8 +840,9 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
         return Answer.unverifiable(f'{mid} holds no grains to read')
     silent = clog.unanswered(cfg, entries)
     if silent:
-        named = ', '.join(e.gid for e in silent[:5])
-        more = f' (+{len(silent) - 5} more)' if len(silent) > 5 else ''
+        named = ', '.join(e.gid for e in silent[:SHOWN_MAX])
+        more = (f' (+{len(silent) - SHOWN_MAX} more)'
+            if len(silent) > SHOWN_MAX else '')
         return Answer.no(
             f'{len(silent)} closed grain(s) answered neither: {named}{more} — '
             f'`agentic-sdlc pm set <id> {clog.FIELD} "<sentence>"`, or '
@@ -859,7 +890,7 @@ def check_version_sync(ctx: Context) -> Answer:
 
 
 def check_features_done(ctx: Context) -> Answer:
-    return ready_for(ctx, 'milestone')
+    return ready_for(ctx, model.GRAIN_MILESTONE)
 
 
 def check_findings_resolved(ctx: Context) -> Answer:
@@ -941,7 +972,8 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
                         if verb == skills.GUIDANCE_VERB
                         else install.resolve_body(name, rel))
             except (OSError, UnicodeDecodeError, ConfigError) as err:
-                out.append((verb, rel, f'unrenderable({_clip(str(err), 60)})'))
+                out.append((verb, rel,
+                            f'unrenderable({_clip(str(err), RENDER_ERROR_LIMIT)})'))
                 continue
             if text is None:
                 out.append((verb, rel, 'unreadable'))
@@ -1029,10 +1061,10 @@ def _config_readers() -> tuple[tuple[str, str, object], ...]:
          lambda: _read_operation('release')),
         ('adopt', '[adopt] steps / commands',
          lambda: _read_operation('adopt')),
-        ('story', '[story] steps / commands',
-         lambda: _read_operation('story')),
-        ('feature', '[feature] steps / commands',
-         lambda: _read_operation('feature')),
+        (OP_STORY, '[story] steps / commands',
+         lambda: _read_operation(OP_STORY)),
+        (OP_FEATURE, '[feature] steps / commands',
+         lambda: _read_operation(OP_FEATURE)),
         ('grain_shape', '[grain_shape] caps', _read_grain_shape),
         ('repo_hygiene', '[repo_hygiene] mainline / protected',
          _read_repo_hygiene),
@@ -1107,7 +1139,7 @@ def check_config_updated(ctx: Context) -> Answer:
             reader()
         except ConfigError as err:
             # Every reader is asked, every refusal reported.
-            refused.append(f'{label}: {_clip(str(err), 160)}')
+            refused.append(f'{label}: {_clip(str(err), ASIDE_LIMIT)}')
     if refused:
         return Answer.no(
             f'{len(refused)} of {len(asked)} section(s) hold a value '
@@ -1145,7 +1177,7 @@ def _recorded_phrase(ctx: Context) -> str:
     try:
         cfg = _pm_cfg(ctx)
     except ConfigError as err:
-        return f'UNVERIFIABLE (the ledgers could not be located: {_clip(str(err), 80)})'
+        return f'UNVERIFIABLE (the ledgers could not be located: {_clip(str(err), QUOTED_LIMIT)})'
     return pm_check.recording_phrase(pm_check.hook_recording(cfg))
 
 
@@ -1210,7 +1242,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
     # reach the CLI *and* the CLI to have a flow to answer with, which is
     # modes 2 and 3 in one call.
     code, out = _run(ctx, ['make', '-s', 'pm', 'ARGS=vocabulary'])
-    if code == 127:
+    if code == NOT_ON_PATH:
         return Answer.unverifiable('make is not on PATH')
     reached = code == 0 and any(kind in out for kind in pm_model.FLOW_KINDS)
     if not reached:
@@ -1276,7 +1308,7 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
     targets = _runner_targets_of(ctx.operation)
     # `-n` composes everything and RUNS nothing.
     code, out = _make(ctx, '-n', *targets)
-    if code == 127:
+    if code == NOT_ON_PATH:
         return Answer.unverifiable('make is not on PATH')
     if code != 0:
         return Answer.no(
@@ -1285,7 +1317,7 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
     empty = [line for line in out.split('\n') if '[TIERS]' in line]
     if empty:
         return Answer.yes(f'{len(targets)} target(s) resolve, and the tier '
-                          f'lists are empty: {_clip(" ".join(empty), 200)}')
+                          f'lists are empty: {_clip(" ".join(empty), LIST_LIMIT)}')
     return Answer.yes(f'{len(targets)} target(s) resolve with their tiers: '
                       f'{", ".join(targets)}')
 
@@ -1396,12 +1428,12 @@ def check_evidence_written(ctx: Context) -> Answer:
         said = EVIDENCE_LANDED.sub('', body).strip(' \t—–-:;,.')
         if not said:
             return Answer.no(
-                f'{cfg.rel(path)} `done: {_clip(body, 80)}` names what landed '
+                f'{cfg.rel(path)} `done: {_clip(body, QUOTED_LIMIT)}` names what landed '
                 f'and not what shipped — the second half of the line is the '
                 f'part a fresh session reads')
-        return Answer.yes(f'{cfg.rel(path)} carries `done: {_clip(body, 80)}`')
+        return Answer.yes(f'{cfg.rel(path)} carries `done: {_clip(body, QUOTED_LIMIT)}`')
     return Answer.no(
-        f'{cfg.rel(path)} `done: {_clip(lines[0], 80)}` names no commit — a '
+        f'{cfg.rel(path)} `done: {_clip(lines[0], QUOTED_LIMIT)}` names no commit — a '
         f'hash of {HASH_MIN}-{HASH_MAX} hex characters, or the literal '
         f'`{IN_PLACE}` for a fix that has not been committed yet')
 
@@ -1409,7 +1441,7 @@ def check_evidence_written(ctx: Context) -> Answer:
 # --- the feature checks -------------------------------------------------------
 def check_stories_done(ctx: Context) -> Answer:
     """`pm ready-for feature <fid>`, never re-implemented."""
-    return ready_for(ctx, 'feature')
+    return ready_for(ctx, model.GRAIN_FEATURE)
 
 
 def check_feature_verified(ctx: Context) -> Answer:
@@ -1433,7 +1465,7 @@ def _record_of(ctx: Context) -> tuple[Path | None, str]:
                       f'`pm set {ctx.version} reviewed <path>`')
     # `model.pointer_escapes`, not a local spelling of it: this hand-rolled
     # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
-    # predicate refuses. F1's class, in a second verb (0.6.0).
+    # predicate refuses. F1's class, in a second verb.
     if model.pointer_escapes(pointer):
         return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
@@ -1554,8 +1586,8 @@ FEATURE_STEPS: dict[str, Check] = _registry(
 
 REGISTRIES: dict[str, dict[str, Check]] = {'release': RELEASE_STEPS,
                                            'adopt': ADOPT_STEPS,
-                                           'story': STORY_STEPS,
-                                           'feature': FEATURE_STEPS}
+                                           OP_STORY: STORY_STEPS,
+                                           OP_FEATURE: FEATURE_STEPS}
 
 
 def registry_for(operation: str) -> dict[str, Check]:
@@ -1675,13 +1707,13 @@ def ran_of(check: str, commands: dict[str, str]) -> str:
 # What the caller does after a write, printed on success and rendered into the
 # document; `{version}`, `{branch}` and `{mainline}` are filled by the driver.
 AFTER: dict[str, tuple[str, ...]] = {
-    'story': (
+    OP_STORY: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
         'when every story of the feature is done: `agentic-sdlc close feature '
         '<feature-id>`',
     ),
-    'feature': (
+    OP_FEATURE: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
         'when every feature of the milestone is done: `agentic-sdlc release '

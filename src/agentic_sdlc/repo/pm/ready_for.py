@@ -34,8 +34,11 @@ from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import ledger, model, verdict
 from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
 
-# The closed set of questions; an unknown kind names all four.
-STORY, FEATURE, MILESTONE, TAG = 'story', 'feature', 'milestone', 'tag'
+# The closed set of questions; an unknown kind names all four. Three ARE grain
+# kinds, read from their one home; `tag` has no grain behind it.
+STORY, FEATURE, MILESTONE = (model.GRAIN_STORY, model.GRAIN_FEATURE,
+                             model.GRAIN_MILESTONE)
+TAG = 'tag'
 KINDS = (STORY, FEATURE, MILESTONE, TAG)
 
 # A rung a BELT exists for and this verb deliberately does not answer, with the
@@ -161,12 +164,12 @@ def _kind_of(path: Path) -> str:
     for a document that declares none — it used to come from the FILENAME,
     which is the path being schema.
     """
-    found = model.unquote(model.field_of(path, 'kind'))
+    found = model.unquote(model.field_of(path, model.FIELD_KIND))
     if not found:
         # A nested tree's documents declare no `kind:`; there the slot name IS
         # the kind — the derivation 0.4.0 deletes, surviving here alone.
-        found = {model.MILESTONE_DOC: 'milestone',
-                 model.FEATURE_DOC: 'feature'}.get(path.name, 'story')
+        found = {model.MILESTONE_DOC: model.GRAIN_MILESTONE,
+                 model.FEATURE_DOC: model.GRAIN_FEATURE}.get(path.name, model.GRAIN_STORY)
     return found
 
 
@@ -405,21 +408,23 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     """Is every story under this feature in the `done` category? Exit 1 names
     each that is not, with the word the file holds; no stories is vacuous."""
-    ffile = _grain(cfg, FEATURE, fid, 'feature', FEATURE,
+    ffile = _grain(cfg, FEATURE, fid, model.GRAIN_FEATURE, FEATURE,
                    "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
-    # it: membership is the child's field since 0.4.0.
-    kept = model.story_files(cfg, model.unquote(model.field_of(ffile, 'id'))
+    # it: membership is the child's field.
+    kept = model.story_files(cfg, model.unquote(model.field_of(ffile,
+                                                               model.FIELD_ID))
                              or fid)
     held = model.holds(
-        cfg, 'story',
-        ((model.unquote(model.field_of(sfile, 'id')) or cfg.rel(sfile),
-          model.field_of(sfile, 'status') or '(no status:)')
+        cfg, model.GRAIN_STORY,
+        ((model.unquote(model.field_of(sfile,
+                                       model.FIELD_ID)) or cfg.rel(sfile),
+          model.field_of(sfile, model.FIELD_STATUS) or '(no status:)')
          for sfile in kept),
         DONE)
     check = _check_answered_by(FEATURE)
     blockers = [Blocker(check, name) for name in held.names]
-    skipped = model.pool_skipped(cfg, 'story')
+    skipped = model.pool_skipped(cfg, model.GRAIN_STORY)
     census = (f'{len(kept)} story/ies'
               + (f', {skipped} file(s) skipped (no frontmatter — not a '
                  f'grain)' if skipped else ''))
@@ -438,8 +443,9 @@ def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
     Takes the DOCUMENT, not a directory: a pooled tree has none, and membership
     is the child's field.
     """
-    mid = model.unquote(model.field_of(mfile, 'id'))
-    return [(model.unquote(model.field_of(ff, 'id')) or cfg.rel(ff), ff)
+    mid = model.unquote(model.field_of(mfile, model.FIELD_ID))
+    return [(model.unquote(model.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
+             ff)
             for ff in model.feature_files(cfg, mid)]
 
 
@@ -451,17 +457,18 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     POOL is the second number, not a scan total — it separates
     zero-because-none-nested from zero-because-none-matched.
     """
-    against = [(model.unquote(model.field_of(bfile, 'id')) or cfg.rel(bfile),
-                model.field_of(bfile, 'status') or '(no status:)')
+    against = [(model.unquote(model.field_of(bfile,
+                                             model.FIELD_ID)) or cfg.rel(bfile),
+                model.field_of(bfile, model.FIELD_STATUS) or '(no status:)')
                for bfile in model.bug_files(cfg, mid)]
-    return against, len(model.unbound(cfg, 'bug'))
+    return against, len(model.unbound(cfg, model.GRAIN_BUG))
 
 
 def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
     promised to this milestone outside `done`. Zero features exits 1,
     deliberately opposite to the empty-story ruling."""
-    mfile = _grain(cfg, MILESTONE, mid, 'milestone', MILESTONE,
+    mfile = _grain(cfg, MILESTONE, mid, model.GRAIN_MILESTONE, MILESTONE,
                    "about a milestone's features")
     features = _features(cfg, mfile)
     subject = f'{MILESTONE} {mid}'
@@ -476,8 +483,8 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
                        '0 feature(s)')
     # Asked of the feature flow, not the story flow.
     held = model.holds(
-        cfg, 'feature',
-        ((fid, model.field_of(ffile, 'status') or '(no status:)')
+        cfg, model.GRAIN_FEATURE,
+        ((fid, model.field_of(ffile, model.FIELD_STATUS) or '(no status:)')
          for fid, ffile in features),
         DONE)
     unfinished = dict(held.blockers)
@@ -490,7 +497,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
     bugs, pooled = _bugs_against(cfg, mid)
-    open_bugs = model.holds(cfg, 'bug', bugs, DONE).blockers
+    open_bugs = model.holds(cfg, model.GRAIN_BUG, bugs, DONE).blockers
     for bid, status in open_bugs:
         blockers.append(Blocker(check, f'{bid} is {status} — a bug nested in '
                                        f'{mid}'))
@@ -517,7 +524,7 @@ def _pointers(cfg: model.PmConfig, mid: str,
 def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     """Is every finding in every record this milestone points at not `open`?
     An unparseable record is UNVERIFIABLE and blocks; no records blocks."""
-    mfile = _grain(cfg, TAG, mid, 'milestone', MILESTONE,
+    mfile = _grain(cfg, TAG, mid, model.GRAIN_MILESTONE, MILESTONE,
                    "about a milestone's review records")
     check = _check_answered_by(TAG)
     blockers: list[Blocker] = []

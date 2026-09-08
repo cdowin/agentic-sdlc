@@ -58,7 +58,7 @@ KNOWN_GATES = {
     'budget': False,
 }
 
-# Empty since 0.2.0, kept because `_run_check` refuses an unknown flag through it.
+# Empty, and kept because `_run_check` refuses an unknown flag through it.
 FIXABLE_CHECKS: frozenset[str] = frozenset()
 
 

@@ -61,7 +61,8 @@ def collect(cfg: model.PmConfig, gid: str,
     if grain is None or gid in seen:
         return []
     seen.add(gid)
-    out = [Entry(gid, grain.kind, model.field_of(grain.path, 'status'),
+    out = [Entry(gid, grain.kind, model.field_of(grain.path,
+                                                 model.FIELD_STATUS),
                  _text(grain.path))]
     for child in _children(cfg, index, grain):
         out.extend(collect(cfg, child, seen))

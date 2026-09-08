@@ -29,6 +29,10 @@ from agentic_sdlc.repo.pm import ledger, model
 
 NAME = 'budget'
 
+# Every duration this gate is handed is milliseconds; every one it PRINTS is
+# seconds, because that is the unit the ladder's costs are talked about in.
+MS_PER_SECOND = 1000
+
 # Only a finished run measures its tier; `ledger.GATE_VERDICTS` closes the vocabulary.
 GRADED_VERDICT = 'PASS'
 
@@ -91,15 +95,15 @@ def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,
     found: dict[str, list[tuple[datetime, dict]]] = {}
     for where, row in rows:
         data = row.data
-        if data.get('kind') != kind:
+        if data.get(ledger.KIND_FIELD) != kind:
             continue
         name = data.get(key)
         if not isinstance(name, str):
             continue
-        when = ledger.parse_ts(data.get('ts'))
+        when = ledger.parse_ts(data.get(ledger.TS_FIELD))
         if when is None:
             return {}, (f'{where} line {row.lineno} is a `{kind}` row for '
-                        f'`{name}` whose ts {data.get("ts")!r} is not a '
+                        f'`{name}` whose ts {data.get(ledger.TS_FIELD)!r} is not a '
                         f'timestamp, so its newest row cannot be chosen')
         found.setdefault(name, []).append((when, data))
     return {name: [data for _when, data in sorted(pairs, key=lambda p: p[0])]
@@ -175,9 +179,9 @@ def run() -> int:
             notes = [n for n in (
                 '' if data.get('verdict') == GRADED_VERDICT
                 else str(data.get('verdict') or 'no verdict'),
-                _age(data.get('ts'))) if n]
+                _age(data.get(ledger.TS_FIELD))) if n]
             note = f' ({", ".join(notes)})' if notes else ''
-            measured.append(f'{name} {ms / 1000:.1f}s{note}')
+            measured.append(f'{name} {ms / MS_PER_SECOND:.1f}s{note}')
         print(f'[check:{NAME}] PASS — no [tests] budget is declared, so no '
               f'tier has a ceiling; last measured: '
               f'{", ".join(measured) or "nothing yet"}')
@@ -219,8 +223,8 @@ def run() -> int:
             continue
         verdict = str(data.get('verdict') or 'no verdict')
         ms = data.get('duration_ms')
-        cost = f' at {ms / 1000:.1f}s' if isinstance(ms, int) else ''
-        age = _age(data.get('ts'))
+        cost = f' at {ms / MS_PER_SECOND:.1f}s' if isinstance(ms, int) else ''
+        age = _age(data.get(ledger.TS_FIELD))
         when = f', measured {age}' if age else ''
         ungraded.append(f'{tier} ({verdict})')
         lines.append(f'  NOT GRADED  {tier} — newest run ended {verdict}'
@@ -245,8 +249,8 @@ def run() -> int:
                          f'newest `gate` row carries duration_ms {ms!r}, '
                          f'which is not a number of milliseconds')
             continue
-        seconds = ms / 1000
-        age = _age(data.get('ts'))
+        seconds = ms / MS_PER_SECOND
+        age = _age(data.get(ledger.TS_FIELD))
         when = f', measured {age}' if age else ''
         if seconds > ceiling:
             over.append(tier)
@@ -300,7 +304,7 @@ def run() -> int:
         worst = slowest.get(tier)
         if worst:
             nodeid, ms = worst
-            print(f'  slowest    {tier} — {ms / 1000:.1f}s  {nodeid}')
+            print(f'  slowest    {tier} — {ms / MS_PER_SECOND:.1f}s  {nodeid}')
 
     if over or ungraded:
         parts = []

@@ -25,17 +25,21 @@ from pathlib import Path
 from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.pm import ledger, model, remote
 
+# The BELT names. Their home is `conveyor/driver.py` and `pm/` may not import
+# `conveyor/`, so they are spelled once here rather than at each use; the
+# release belt's subject is a version, and `_subject_of` asks `SUBJECT`.
+STORY_BELT = 'story'
+FEATURE_BELT = 'feature'
+RELEASE_BELT = 'release'
+
 # Which belt closes a grain of each kind, and which belt the grain ABOVE it
 # needs next — `steps.registry_for` keys, and the whole of the mapping: the
 # CHECKS each belt asks are read from the registry at runtime.
-CLOSES = {'story': 'story', 'feature': 'feature', 'milestone': 'release'}
+CLOSES = {model.GRAIN_STORY: STORY_BELT, model.GRAIN_FEATURE: FEATURE_BELT,
+          model.GRAIN_MILESTONE: RELEASE_BELT}
 # A milestone's `done` names nothing above it: inventing a sentence for what
 # somebody does after a release would be this engine having an opinion.
-ABOVE = {'story': 'feature', 'feature': 'release'}
-
-# The belt whose subject is a version rather than a grain id; `_subject_of`
-# asks its own `SUBJECT` entry rather than this name.
-RELEASE_BELT = 'release'
+ABOVE = {model.GRAIN_STORY: FEATURE_BELT, model.GRAIN_FEATURE: RELEASE_BELT}
 
 # The frontmatter pointer a close stamps. A grain whose document does not
 # carry the key is not counted for want of a field it never had.
@@ -126,7 +130,7 @@ def disposition_of(row: dict) -> bool:
     """Is this row an arrival's disposition? ONE shape carries the word since
     0.5.0/D6, so this is the kind and nothing else — every reader asks it here
     rather than each branching on its own idea of the shape."""
-    return row.get('kind') == ledger.KIND_DISPOSITION
+    return row.get(ledger.KIND_FIELD) == ledger.KIND_DISPOSITION
 
 
 # --- the ONE derivation, two renderers ----------------------------------------
@@ -278,11 +282,11 @@ def _rows_by_grain(cfg: model.PmConfig) -> tuple[dict[str, list], int]:
             unreadable += 1
             continue
         for row in rows:
-            gid = row.data.get('grain')
+            gid = row.data.get(ledger.GRAIN_FIELD)
             if isinstance(gid, str) and gid:
                 out.setdefault(gid, []).append(row)
     for rows in out.values():
-        rows.sort(key=lambda r: str(r.data.get('ts') or ''))
+        rows.sort(key=lambda r: str(r.data.get(ledger.TS_FIELD) or ''))
     return out, unreadable
 
 
@@ -305,8 +309,8 @@ def answered_at(cfg: model.PmConfig, gid: str, state: str) -> bool:
         rows = ledger.read_rows(path) if path is not None else []
     except Exception:  # noqa: BLE001 — unreadable is not answered
         return False
-    return _answered(sorted((r for r in rows if r.data.get('grain') == gid),
-                            key=lambda r: str(r.data.get('ts') or '')), state)
+    return _answered(sorted((r for r in rows if r.data.get(ledger.GRAIN_FIELD) == gid),
+                            key=lambda r: str(r.data.get(ledger.TS_FIELD) or '')), state)
 
 
 def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
@@ -325,7 +329,7 @@ def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
     unanswered = no_record = record_pool = 0
     for grain in sorted(grains, key=lambda g: g.gid):
         status = [r for r in rows.get(grain.gid, ())
-                  if r.data.get('kind') == ledger.KIND_STATUS]
+                  if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS]
         seconds = ledger.open_seconds(cfg, grain.kind, status, now=when)
         if seconds is not None and (oldest_seconds is None
                                     or seconds > oldest_seconds):
@@ -402,7 +406,7 @@ def emit_leave(cfg: model.PmConfig, row: dict) -> None:
             emit.emit(cfg, emit.TAP_LEAVE, row)
     except Exception as err:  # noqa: BLE001 — a finding, never the answer
         print(f'{emit.FINDING_PREFIX} WARNING — the {emit.TAP_LEAVE} event for '
-              f'{row.get("grain")} was not recorded ({type(err).__name__}: '
+              f'{row.get(ledger.GRAIN_FIELD)} was not recorded ({type(err).__name__}: '
               f'{err}); the write itself landed', file=sys.stderr)
 
 
@@ -413,7 +417,8 @@ def remote_lines(cfg: model.PmConfig, kind: str, to: str) -> list[str]:
     Asked at the arrival into `in_progress`, the moment the work starts being
     worth something. INVENTORY and a command, never a push (rule 9).
     """
-    if kind != 'milestone' or model.category_of(cfg, kind, to) != model.IN_PROGRESS:
+    if kind != model.GRAIN_MILESTONE or model.category_of(cfg, kind,
+                                                          to) != model.IN_PROGRESS:
         return []
     state = remote.read(cfg.root)
     if state is None or not state:

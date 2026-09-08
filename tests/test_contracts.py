@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from agentic_sdlc.repo.pm import changelog, ledger, model, report
+from agentic_sdlc.repo.pm import changelog, ledger, model, report, templates
 from agentic_sdlc.repo.pm import cli as pm_cli
 
 # {surface: (the constant, the case that binds it to its reader)}. A surface
@@ -31,6 +31,7 @@ SURFACES = {
     'changelog.COLUMNS': 'test_changelog_rows_and_json_carry_the_same_columns',
     'cli.LIST_COLUMNS': 'test_every_list_kind_emits_exactly_its_declared_columns',
     'model.BINDS_TO': 'test_every_binding_field_is_one_the_templates_carry',
+    'model.FLOW_KINDS': 'test_every_grain_kind_reaches_the_tables_keyed_on_it',
     'model.pointer_escapes': 'test_no_caller_hand_rolls_its_own_escape_check',
     'cli.ROADMAP_COLUMNS': 'test_pm_roadmap_help_names_its_columns',
     'report.CLOCK_COLUMNS': 'test_ledger_report_help_names_its_clock_and_actor_columns',
@@ -354,6 +355,20 @@ class TheColumnsRoundTrip(unittest.TestCase):
                 self.assertEqual(len(set(pm_cli.LIST_COLUMNS[kind])),
                                  len(pm_cli.LIST_COLUMNS[kind]),
                                  'a duplicate column silently shifts a row')
+
+    def test_every_grain_kind_reaches_the_tables_keyed_on_it(self):
+        """`model.FLOW_KINDS` is the vocabulary every kind-keyed table indexes.
+        A kind added there with no prefix, pool, template or list columns is
+        four `KeyError`s waiting on four different verbs."""
+        for kind in model.FLOW_KINDS:
+            with self.subTest(kind=kind):
+                for table, name in ((model.KIND_PREFIX, 'KIND_PREFIX'),
+                                    (model.POOL_NAME, 'POOL_NAME'),
+                                    (pm_cli.LIST_COLUMNS, 'cli.LIST_COLUMNS')):
+                    self.assertIn(kind, table,
+                                  f'{name} is not keyed on {kind!r} and '
+                                  f'model.FLOW_KINDS says it is a kind')
+                self.assertIn(kind, templates.GRAINS)
 
     def test_every_binding_field_is_one_the_templates_carry(self):
         """`BINDS_TO` says which field binds a kind; the shipped template has

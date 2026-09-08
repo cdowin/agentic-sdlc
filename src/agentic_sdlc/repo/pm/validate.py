@@ -130,7 +130,7 @@ def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
         return False
     found = index.get(ref)
     if found is not None:
-        return found.kind == 'feature'
+        return found.kind == model.GRAIN_FEATURE
     return None if _unverifiable(index, ref) else False
 
 
@@ -202,16 +202,18 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # grain (rule 4).
     for milestone in model.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(milestone.path, 'id')
-                           or not model.field_of(milestone.path, 'status')):
+        if 'V1' in on and (not model.field_of(milestone.path, model.FIELD_ID)
+                           or not model.field_of(milestone.path,
+                                                 model.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
         _check_refs(cfg, milestone.path, 'depends_on', on, bad, census)
 
-    for ffile in model._every(cfg, 'feature'):
+    for ffile in model._every(cfg, model.GRAIN_FEATURE):
         census['grains'] += 1
-        expect = model.unquote(model.field_of(ffile, 'id'))
-        if 'V1' in on and (not expect or not model.field_of(ffile, 'status')):
+        expect = model.unquote(model.field_of(ffile, model.FIELD_ID))
+        if 'V1' in on and (not expect or not model.field_of(ffile,
+                                                            model.FIELD_STATUS)):
             bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
         # The UNQUOTED id, because that is what a ref carries: keying the node
         # on the raw `id:` meant a quoted one matched none of its own.
@@ -223,18 +225,19 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                 # Which kind a ref names is a question about the GRAIN;
                 # counting slashes left the graph empty on a flat tree.
                 graph[expect].extend(ref for ref in resolved
-                                     if model.kind_of(cfg, ref) == 'feature')
+                                     if model.kind_of(cfg,
+                                                      ref) == model.GRAIN_FEATURE)
 
-    for sfile in model._every(cfg, 'story'):
+    for sfile in model._every(cfg, model.GRAIN_STORY):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(sfile, 'id')
-                           or not model.field_of(sfile, 'status')):
+        if 'V1' in on and (not model.field_of(sfile, model.FIELD_ID)
+                           or not model.field_of(sfile, model.FIELD_STATUS)):
             bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
         _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
     # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
     # only milestones, features and stories.
-    for bfile in model._every(cfg, 'bug'):
+    for bfile in model._every(cfg, model.GRAIN_BUG):
         _check_caused_by(cfg, bfile, on, bad, census)
 
     if 'V7' in on:

@@ -138,7 +138,7 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
 
 
 # `pm <kind> <status> <id>` — the form whose STATUS is the project's own word.
-# 0.6.0: the auto-loaded rule said `pm story reviewing`, which exits 2 because
+# The auto-loaded rule said `pm story reviewing`, which exits 2 because
 # the seed declares no review word for a STORY. A make target and a path were
 # already checked here; an INVOCATION is the same claim and nobody read it.
 _STATUS_FORM = re.compile(r'^pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')

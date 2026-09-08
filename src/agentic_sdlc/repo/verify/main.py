@@ -43,9 +43,13 @@ from typing import Callable, Sequence
 from agentic_sdlc.core import makefile
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.verify import cache, rules
 from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, MILESTONE,
                                             RUNGS, STORY, Ladder, rung_target)
+
+# A rung's cost is RECORDED in milliseconds, the ledger's unit.
+MS_PER_SECOND = 1000
 
 EXIT_OK = 0
 EXIT_FINDINGS = 1
@@ -54,7 +58,6 @@ RUNG_BLURB = {STORY: 'the edit', FEATURE: 'the feature', MILESTONE: 'the close'}
 
 # `--check` reads the Makefile as text, never `make -n` (rule 2).
 MAKEFILE = makefile.MAKEFILE
-MAKE_PROGRAM = 'make'
 
 USAGE = """usage: agentic-sdlc verify (--story|--feature|--milestone|--plan|--check)
                           [--no-cache]
@@ -223,7 +226,7 @@ def _run_rung(ladder: Ladder, root: Path, name: str,
     # the GATE's rather than one this verb invented (rule 4).
     mark = cache.ledger_size(root)
     code = _run(command, root)
-    elapsed = int((time.monotonic() - started) * 1000)
+    elapsed = int((time.monotonic() - started) * MS_PER_SECOND)
     if state is not None:
         _record(root, name, target, state, code, elapsed, mark)
     if code != 0:
@@ -297,7 +300,8 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
             row = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(row, dict) or row.get('kind') != 'gate':
+        if (not isinstance(row, dict)
+                or row.get(ledger.KIND_FIELD) != ledger.KIND_GATE):
             continue
         name, duration = row.get('gate'), row.get('duration_ms')
         if not isinstance(name, str) or not isinstance(duration, int) \

@@ -41,7 +41,7 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import init  # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape  # noqa: E402
-from agentic_sdlc.repo.pm import cli as pm_cli, skills  # noqa: E402
+from agentic_sdlc.repo.pm import cli as pm_cli, model, skills  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 SEED = init.seed_body(init.SEED_CONFIG[0])
@@ -89,6 +89,8 @@ VALUE_FROM_CODE = {
     ('checks', 'all'):
         lambda: tuple(name for name, on in top_cli.KNOWN_GATES.items() if on),
     ('grain_shape', 'caps'): lambda: dict(grain_shape.DEFAULT_CAPS),
+    # Keyed and valued by the grain vocabulary's constants, which do not fold.
+    ('pm', 'contains'): lambda: dict(model.DEFAULT_CONTAINS),
 }
 
 SECTION_LINE = re.compile(r'^# \[([a-z_]+)\]$')

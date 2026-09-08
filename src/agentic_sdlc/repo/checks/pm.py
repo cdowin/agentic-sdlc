@@ -66,6 +66,10 @@ from typing import NamedTuple
 
 from agentic_sdlc.repo.pm import model
 
+# How many row kinds the 'what IS recorded' census names before the fix
+# line; thirteen of them once pushed that fix behind 839 characters.
+CENSUS_TOP = 3
+
 # One word, so `check pm | grep never` is a consumer's whole reader.
 NEVER = 'never'
 # The pressure census: its criterion's third surface, after `pm` and a belt.
@@ -143,9 +147,9 @@ def _run() -> int:
     # cannot place.
     for path in model.stray_documents(cfg):
         report(f'{cfg.rel(path)} declares `id: '
-               f'{model.unquote(model.field_of(path, "id"))}` and sits in no '
+               f'{model.unquote(model.field_of(path, model.FIELD_ID))}` and sits in no '
                f'pool, so every reader walks past it — move it into '
-               f'{cfg.rel(model.pool_dir(cfg, model.unquote(model.field_of(path, "kind")) or "milestone"))}/')
+               f'{cfg.rel(model.pool_dir(cfg, model.unquote(model.field_of(path, model.FIELD_KIND)) or model.GRAIN_MILESTONE))}/')
 
     # No readable `id:`, and two documents claiming one, are V1's and are
     # reported from `validate.run` below, so `pm validate` and this gate cannot
@@ -243,7 +247,7 @@ class _Ready:
 
 def _feature_self(cfg: model.PmConfig, view, ready: _Ready) -> None:
     """The READY warnings a feature earns on its OWN document."""
-    live = ready.grading(cfg, 'feature', view.status)
+    live = ready.grading(cfg, model.GRAIN_FEATURE, view.status)
     if live is None:
         return
     frel = cfg.rel(view.path)
@@ -268,14 +272,14 @@ def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str,
                 ready: _Ready) -> None:
     """The READY warnings a story earns on its OWN document."""
     srel = cfg.rel(sfile)
-    live = ready.grading(cfg, 'story', sstat)
+    live = ready.grading(cfg, model.GRAIN_STORY, sstat)
     if live is None:
         return
     why = model.empty_section(sfile, model.ACCEPTANCE_HEADING)
     if why:
         ready.gap(live, f'story {sid} is {sstat!r} and {why} — past todo, and '
                         f'nothing says what must be true  [{srel}]')
-    if live and not model.unquote(model.field_of(sfile, 'owner')):
+    if live and not model.unquote(model.field_of(sfile, model.FIELD_OWNER)):
         # A LIVE BUG, not a tidy-up: two modules READ `owner:` and nothing
         # asked whether the claim had set it (`pm-execution.md` step 1).
         ready.gap(True, f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and '
@@ -294,18 +298,18 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
     """
     if not model.is_pooled(cfg):
         return
-    for kind in ('feature', 'story'):
+    for kind in (model.GRAIN_FEATURE, model.GRAIN_STORY):
         for path in model.pool_walk(cfg, kind):
             grain = model.read_grain(cfg, path, kind)
             if grain is None or grain.gid in seen:
                 continue
             rel = cfg.rel(path)
-            status = model.field_of(path, 'status')
+            status = model.field_of(path, model.FIELD_STATUS)
             if 'D4' in enabled:
                 reason = model.undeclared_status(cfg, kind, status)
                 if reason:
                     report(f'{kind} {grain.gid}: {reason}  [{rel}]')
-            if kind == 'feature':
+            if kind == model.GRAIN_FEATURE:
                 if 'D1' in enabled:
                     # A fact about ONE document, and it was in the descent only.
                     reason = model.drift_dangling_record(cfg, grain.gid)
@@ -332,13 +336,13 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
         # The DOCUMENT's parent, which in a pooled tree is the pool: there is
         # no per-milestone directory to take.
         mdir = mfile.parent
-        mid = model.field_of(mfile, 'id')
-        mstat = model.field_of(mfile, 'status')
-        m_cat = model.category_of(cfg, 'milestone', mstat)
-        m_live = ready.grading(cfg, 'milestone', mstat)
+        mid = model.field_of(mfile, model.FIELD_ID)
+        mstat = model.field_of(mfile, model.FIELD_STATUS)
+        m_cat = model.category_of(cfg, model.GRAIN_MILESTONE, mstat)
+        m_live = ready.grading(cfg, model.GRAIN_MILESTONE, mstat)
 
         if 'D4' in enabled:
-            reason = model.undeclared_status(cfg, 'milestone', mstat)
+            reason = model.undeclared_status(cfg, model.GRAIN_MILESTONE, mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
 
@@ -367,7 +371,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
         views = [model.read_feature(cfg, ffile)
                  for ffile in model.feature_files(cfg, mid)]
         # D6's census. The per-feature half went to D11 with D3.
-        finished = model.holds(cfg, 'feature',
+        finished = model.holds(cfg, model.GRAIN_FEATURE,
                                ((v.fid, v.status) for v in views),
                                model.DONE_CATEGORY)
         for view in views:
@@ -377,7 +381,8 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             n_stories += view.total
 
             if 'D4' in enabled:
-                reason = model.undeclared_status(cfg, 'feature', view.status)
+                reason = model.undeclared_status(cfg, model.GRAIN_FEATURE,
+                                                 view.status)
                 if reason:
                     report(f'feature {view.fid}: {reason}  [{frel}]')
 
@@ -390,21 +395,22 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             _feature_self(cfg, view, ready)
 
             for sfile in view.stories:
-                sid = model.unquote(model.field_of(sfile, 'id'))
+                sid = model.unquote(model.field_of(sfile, model.FIELD_ID))
                 seen.add(sid)
-                sstat = model.field_of(sfile, 'status')
+                sstat = model.field_of(sfile, model.FIELD_STATUS)
                 srel = cfg.rel(sfile)
                 if 'D4' in enabled:
-                    reason = model.undeclared_status(cfg, 'story', sstat)
+                    reason = model.undeclared_status(cfg, model.GRAIN_STORY,
+                                                     sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
                 _story_self(cfg, sfile, sid, sstat, ready)
                 if 'D5' in enabled and model.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     warn(f'story {sid} is {sstat!r} '
-                         f'({_cat(cfg, "story", sstat)}) but its feature '
+                         f'({_cat(cfg, model.GRAIN_STORY, sstat)}) but its feature '
                          f'{view.fid} is still {view.status!r} '
-                         f'({_cat(cfg, "feature", view.status)}) — the story '
+                         f'({_cat(cfg, model.GRAIN_FEATURE, view.status)}) — the story '
                          f'is at work and the feature says it has not '
                          f'started (two places in this tree disagree, D5)'
                          f'  [{srel}]')
@@ -413,7 +419,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                 reason = model.drift_stalled(cfg, view)
                 if reason:
                     warn(f'feature {view.fid}: {reason} '
-                         f'({_cat(cfg, "feature", view.status)}) — all '
+                         f'({_cat(cfg, model.GRAIN_FEATURE, view.status)}) — all '
                          f'{view.total} stories are {model.DONE_CATEGORY}; '
                          f'{ADVANCE_IT} (D2)  [{frel}]')
 
@@ -481,9 +487,10 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
     # arrived again, so the question is asked again (D3).
     answered: dict[tuple[object, object], object] = {}
     for _path, row in sorted(_ledger_rows(cfg)[0],
-                             key=lambda pair: str(pair[1].get('ts') or '')):
+                             key=lambda pair: str(pair[1].get(ledger.TS_FIELD) or '')):
         if arrive.disposition_of(row):
-            answered[(row.get('grain'), row.get('state'))] = row.get('answer')
+            answered[(row.get(ledger.GRAIN_FIELD),
+                      row.get('state'))] = row.get('answer')
     quiet = [g.gid for g in sorted(model.grain_index(cfg).values(),
                                    key=lambda g: g.gid)
              if g.kind in model.FLOW_KINDS
@@ -595,7 +602,7 @@ def wired_couriers(root: Path) -> Wiring:
 def _age_of(row: dict) -> str:
     """`3h ago`, or the named non-answer for a row this reader cannot date."""
     from agentic_sdlc.repo.pm import ledger
-    when = ledger.parse_ts(row.get('ts'))
+    when = ledger.parse_ts(row.get(ledger.TS_FIELD))
     if when is None:
         return UNDATEABLE
     # Clamped: a row stamped in the future is a clock disagreement, and
@@ -606,7 +613,8 @@ def _age_of(row: dict) -> str:
 
 def _kind_of(row: dict) -> str:
     """The row's `kind`, or '' — type-checked, see `UNDATEABLE` above."""
-    kind = row.get('kind')
+    from agentic_sdlc.repo.pm import ledger
+    kind = row.get(ledger.KIND_FIELD)
     return kind if isinstance(kind, str) else ''
 
 
@@ -649,11 +657,13 @@ def hook_recording(cfg: model.PmConfig) -> Recording:
     Ordered by the row's own `ts`, never the file's mtime or line order: a
     ledger is merged `union`, so the last line is not the last event in time.
     """
+    from agentic_sdlc.repo.pm import ledger
     rows, unreadable = _ledger_rows(cfg)
     written = [(path, row) for path, row in rows if _hook_written(row)]
     if not written:
         return Recording({}, '', 0, len(rows), tuple(unreadable))
-    path, last = max(written, key=lambda pair: str(pair[1].get('ts', '')))
+    path, last = max(written,
+                     key=lambda pair: str(pair[1].get(ledger.TS_FIELD, '')))
     return Recording(last, cfg.rel(path), len(written), len(rows),
                      tuple(unreadable))
 
@@ -792,7 +802,7 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
     kinds = '/'.join(dict.fromkeys(ledger.EVENT_KINDS.values()))
     if not rec.written:
         rows, _ = _ledger_rows(cfg)
-        held = _kind_census(rows, top=3) or 'no rows at all'
+        held = _kind_census(rows, top=CENSUS_TOP) or 'no rows at all'
         # THE FIX FIRST. It used to sit at the end of 839 characters, behind a
         # thirteen-kind census — the eleven wrapped lines this feature measured.
         warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
@@ -819,7 +829,7 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
 def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     """U3 — `[emit]` is declared and its sink has never been written to.
 
-    **The same trap as `recording-is-on-or-the-gate-is-red` (0.4.0) on a fresh
+    **The same trap as `recording-is-on-or-the-gate-is-red` on a fresh
     surface**: a declared `[emit]` whose sink was never written to looks exactly
     like a tree that opted out. Opting out stays quiet — a tree with no
     `[emit]` gets no line at all.
@@ -937,7 +947,7 @@ def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     for gid, grain in sorted(model.grain_index(cfg).items()):
         if grain.kind not in model.FLOW_KINDS:
             continue
-        status = model.field_of(grain.path, 'status')
+        status = model.field_of(grain.path, model.FIELD_STATUS)
         if model.category_of(cfg, grain.kind, status) != model.DONE_CATEGORY:
             continue
         if _shipped_parent(cfg, grain):
@@ -962,8 +972,8 @@ def _shipped_parent(cfg: model.PmConfig, grain) -> bool:
     parent = model.grain_index(cfg).get(mid)
     if parent is None:
         return False
-    return model.category_of(cfg, 'milestone',
-                             model.field_of(parent.path, 'status')
+    return model.category_of(cfg, model.GRAIN_MILESTONE,
+                             model.field_of(parent.path, model.FIELD_STATUS)
                              ) == model.DONE_CATEGORY
 
 
@@ -987,10 +997,10 @@ def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
         if parent is None:
             continue
         graded += 1
-        p_status = model.field_of(parent.path, 'status')
+        p_status = model.field_of(parent.path, model.FIELD_STATUS)
         if model.category_of(cfg, parent.kind, p_status) != model.DONE_CATEGORY:
             continue
-        c_status = model.field_of(child.path, 'status')
+        c_status = model.field_of(child.path, model.FIELD_STATUS)
         if model.category_of(cfg, child.kind, c_status) == model.DONE_CATEGORY:
             continue
         report(f'{parent.kind} {parent.gid} is {p_status!r} '
@@ -1030,7 +1040,7 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
     """Every container's `order` against what it holds — one walk, every level."""
     index = model.grain_index(cfg)
     # The ROOT is R1's, not this walk's: the plan has carried its own rule and
-    # its own line since 0.3.0, and two lines for one fact is a second
+    # its own line, and two lines for one fact is a second
     # scoreboard.
     #
     # `BINDS_TO` and NOT `[pm.contains]`: that key says what `pm add` may
@@ -1096,7 +1106,7 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
                  f'written, UNVERIFIABLE if it was retired (R1)')
         if seq.unsequenced:
             # COUNTED, not a finding: authoring a milestone and scheduling it
-            # are separate acts (0.4.0).
+            # are separate acts.
             print(f'  UNSEQUENCED  {len(seq.unsequenced)} milestone(s) are on '
                   f'no plan — {", ".join(seq.unsequenced)}; `agentic-sdlc pm '
                   f'add {root.gid} <milestone-id>` schedules one (R1)')
@@ -1145,15 +1155,16 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
             mfile = model.milestone_file(cfg, mid)
             if mfile is None:
                 continue
-            status = model.field_of(mfile, 'status')
+            status = model.field_of(mfile, model.FIELD_STATUS)
             report(f'{mid} sits at position {i + 1}, behind the last '
                    f'shipped release, and is {status!r} — its work went out '
                    f'under someone else\'s version and the record never '
                    f'moved (R6)')
         for version, mid in claims:
             mfile = model.milestone_file(cfg, mid)
-            status = model.field_of(mfile, 'status') if mfile else ''
-            done = model.category_of(cfg, 'milestone', status) == model.DONE_CATEGORY
+            status = model.field_of(mfile, model.FIELD_STATUS) if mfile else ''
+            done = model.category_of(cfg, model.GRAIN_MILESTONE,
+                                     status) == model.DONE_CATEGORY
             if done and mid not in scheduled:
                 report(f'milestone {mid} is {status!r}, claims version '
                        f'{version} and is on no plan — a milestone that '
@@ -1227,10 +1238,10 @@ def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
     """
     if model.is_pooled(cfg):
         return ', '.join(model.pool_census(cfg, kind, label) for kind, label in
-                         (('milestone', 'milestone(s)'),
-                          ('feature', 'feature(s)'),
-                          ('story', 'story/ies'),
-                          ('bug', 'bug(s)')))
+                         ((model.GRAIN_MILESTONE, 'milestone(s)'),
+                          (model.GRAIN_FEATURE, 'feature(s)'),
+                          (model.GRAIN_STORY, 'story/ies'),
+                          (model.GRAIN_BUG, 'bug(s)')))
     census = (f'{n_milestones} milestone(s), {n_features} feature(s), '
               f'{n_stories} story/ies')
     # `Walk` renders every narrowing itself, so a new filter discloses without an edit here.

@@ -14,6 +14,9 @@ from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple
 
+# How many names a finding lists before it says how many more there are.
+SHOWN_MAX = 5
+
 DEFAULT_ROOTS = ('tools',)
 SHEBANGS = ('#!/usr/bin/env bash', '#!/bin/bash', '#!/usr/bin/env sh', '#!/bin/sh')
 
@@ -55,8 +58,9 @@ def run() -> int:
         on_disk = sorted(
             rel for rel in _untracked_scripts(root, roots))
         if on_disk:
-            shown = ', '.join(on_disk[:5])
-            more = f' (+{len(on_disk) - 5} more)' if len(on_disk) > 5 else ''
+            shown = ', '.join(on_disk[:SHOWN_MAX])
+            more = (f' (+{len(on_disk) - SHOWN_MAX} more)'
+                    if len(on_disk) > SHOWN_MAX else '')
             print(f'[check:shell] FAIL — {len(on_disk)} shell script(s) under '
                   f'{", ".join(roots)}/ and none TRACKED, so this scanned '
                   f'nothing: {shown}{more}. `git add` them — this gate reads '

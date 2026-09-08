@@ -59,9 +59,9 @@ SUB_ROW_INDENT = '  '
 SIZE_FIELD = 'size'
 
 # Grain kinds, in the order their tables print.
-KIND_STORY = 'story'
-KIND_FEATURE = 'feature'
-KIND_BUG = ledger.GRAIN_BUG
+KIND_STORY = model.GRAIN_STORY
+KIND_FEATURE = model.GRAIN_FEATURE
+KIND_BUG = model.GRAIN_BUG
 KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
 
 # D3's snapshot buckets, by the kind of grain whose ids they hold;
@@ -112,6 +112,7 @@ SPLIT_NOTE = ('reported ONE total rather than the measured split — summed in '
 SPEND_COLUMNS = ('dispatches',) + tuple(
     USAGE_LABELS[key] for key in USAGE_KEYS) + (TOTAL_KEY,) + COUNT_KEYS
 GRAIN_COLUMN = 'grain'
+KIND_COLUMN = 'kind'
 SIZE_COLUMN = 'size'
 TOTAL_COLUMN = 'total_s'
 NO_GRAIN_TITLE = 'rows naming no grain'
@@ -121,6 +122,9 @@ NO_GRAIN_TITLE = 'rows naming no grain'
 ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
                   'milestone\'s work, read out of the tree\'s shared ledger; '
                   'not unattributed')
+
+# The payload key naming which milestone the report is OF — a key, not a kind.
+MILESTONE_KEY = 'milestone'
 
 # Section 2's columns; `verdict.DISPOSITION_KINDS` supplies the disposition
 # columns, so a new kind appears rather than counting into nothing.
@@ -507,7 +511,7 @@ class GitSource(Source):
         """The document in one pool DECLARING this id, at the rev — what
         `model.grain_index` answers on disk, for one id."""
         for path in self._grain_docs(model.pool_dir(cfg, kind)):
-            if model.unquote(self.field_of(path, 'id')) == gid:
+            if model.unquote(self.field_of(path, model.FIELD_ID)) == gid:
                 return path
         return None
 
@@ -518,7 +522,7 @@ class GitSource(Source):
         if not model.segment_is_literal(mid):
             return None
         if self.is_pooled(cfg):
-            return self._pool_grain(cfg, 'milestone', mid)
+            return self._pool_grain(cfg, model.GRAIN_MILESTONE, mid)
         for base in (cfg.roadmap, cfg.roadmap / model.ARCHIVE_DIR_NAME):
             for found in self._dirs(base, f'{mid}-*'):
                 return found
@@ -526,7 +530,7 @@ class GitSource(Source):
 
     def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
         if self.is_pooled(cfg):
-            return self._pool_grain(cfg, 'feature', fid)
+            return self._pool_grain(cfg, model.GRAIN_FEATURE, fid)
         mid, _, slug = fid.partition('/')
         if not model.segment_is_literal(slug):
             return None
@@ -547,7 +551,8 @@ class GitSource(Source):
         for path in self._grain_docs(model.pool_dir(cfg, kind)):
             if model.unquote(self.field_of(path, field)) != parent_id:
                 continue
-            found[model.unquote(self.field_of(path, 'id')) or path.stem] = path
+            found[model.unquote(self.field_of(path,
+                                              model.FIELD_ID)) or path.stem] = path
         parent = self._grain_at(cfg, parent_id)
         declared = (model.list_field_of(self._doc(parent), model.ORDER_KEY)
                     if parent is not None else [])
@@ -565,7 +570,7 @@ class GitSource(Source):
 
     def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, 'feature', mid)
+            return self._pool_children(cfg, model.GRAIN_FEATURE, mid)
         mdir = self.milestone_dir(cfg, mid)
         if mdir is None:
             return []
@@ -575,13 +580,13 @@ class GitSource(Source):
 
     def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, 'story', fid)
+            return self._pool_children(cfg, model.GRAIN_STORY, fid)
         ffile = self.feature_file(cfg, fid)
         return self._grain_docs(ffile.parent / STORIES_DIR) if ffile else []
 
     def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, 'bug', mid)
+            return self._pool_children(cfg, model.GRAIN_BUG, mid)
         mdir = self.milestone_dir(cfg, mid)
         return self._grain_docs(mdir / BUGS_DIR) if mdir is not None else []
 
@@ -696,7 +701,7 @@ def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
     """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
     which the report joins on), its kind, its `size:`; a missing id falls back
     to the path's."""
-    gid = model.unquote(src.field_of(path, 'id')) or fallback
+    gid = model.unquote(src.field_of(path, model.FIELD_ID)) or fallback
     return Grain(gid, kind, src.field_of(path, SIZE_FIELD))
 
 
@@ -748,7 +753,7 @@ def named_grains(row: dict, kinds: dict[str, str],
 
     Category keys when present; frozen keys only for an old-shape row.
     """
-    stated = row.get('grain')
+    stated = row.get(ledger.GRAIN_FIELD)
     if isinstance(stated, str) and stated:
         return {stated} | {fid for fid, stories in owned.items()
                            if stated in stories} if stated in kinds else set()
@@ -775,7 +780,7 @@ def stated_elsewhere(row: dict, kinds: dict[str, str]) -> bool:
     in the spend section rather than pooled with `rows naming no grain` — see
     `ELSEWHERE_NOTE`.
     """
-    stated = row.get('grain')
+    stated = row.get(ledger.GRAIN_FIELD)
     return isinstance(stated, str) and bool(stated) and stated not in kinds
 
 
@@ -786,7 +791,7 @@ def frozen_only_grains(row: dict, kinds: dict[str, str],
     silent (rule 4). Empty for an old-shape row, and for a row that STATES its
     grain: that is not a silent drop, the row said which grain it was.
     """
-    if is_legacy(row) or isinstance(row.get('grain'), str):
+    if is_legacy(row) or isinstance(row.get(ledger.GRAIN_FIELD), str):
         return set()
     return (_named_through(row, LEGACY_BUCKETS, kinds, owned)
             - _named_through(row, CATEGORY_BUCKETS, kinds, owned))
@@ -849,7 +854,7 @@ def in_time_order(rows: list) -> list:
     merged file order bills a negative stint.
     """
     return sorted(rows, key=lambda row: (
-        (stamp := ledger.parse_ts(row.data.get('ts'))) is None, stamp))
+        (stamp := ledger.parse_ts(row.data.get(ledger.TS_FIELD))) is None, stamp))
 
 
 def arrival_state(row: dict) -> str:
@@ -860,7 +865,7 @@ def arrival_state(row: dict) -> str:
     the clock hook-free."""
     if arrive.disposition_of(row):
         state = row.get('state')
-    elif row.get('kind') == ledger.KIND_STATUS:
+    elif row.get(ledger.KIND_FIELD) == ledger.KIND_STATUS:
         state = row.get('to')
     else:
         return ''
@@ -878,7 +883,7 @@ def arrivals(rows: list) -> list[tuple[datetime, str]]:
     marks: list[tuple[datetime, str]] = []
     for row in rows:
         state = arrival_state(row.data)
-        stamp = ledger.parse_ts(row.data.get('ts'))
+        stamp = ledger.parse_ts(row.data.get(ledger.TS_FIELD))
         if not state or stamp is None or (marks and marks[-1][1] == state):
             continue
         marks.append((stamp, state))
@@ -918,7 +923,7 @@ def open_charge(cfg: model.PmConfig, kind: str, rows: list,
 
 
 # --- the roll-up --------------------------------------------------------------
-# Roll-up is the FEATURE, not a view: membership is a field (0.4.0), so a
+# Roll-up is the FEATURE, not a view: membership is a field, so a
 # milestone's building time is a WALK of its features' and theirs of their
 # stories' — every level the one below plus its own, open charge included.
 CLOCK_TITLE = 'time per state'
@@ -931,7 +936,7 @@ ACTOR_COLUMN = 'actor'
 ARRIVALS_COLUMN = 'arrivals'
 GRAINS_COLUMN = 'grains'
 SECONDS_COLUMN = 'seconds'
-KIND_MILESTONE = 'milestone'
+KIND_MILESTONE = model.GRAIN_MILESTONE
 # What `--help` names, in order (rule 11's read side): "total review time for
 # this milestone" is `… | awk` over these, never a flag this verb grew.
 CLOCK_COLUMNS = (GRAIN_COLUMN, f'<state>{STATE_SUFFIX}', CLOSED_COLUMN,
@@ -959,7 +964,8 @@ def _actor_of(row: dict) -> str:
 def subtree(rows: list[dict], focus: str) -> list[dict]:
     """`focus`'s clock row and its descendants', re-based so it is the root:
     tree order and `depth` are the shape, so a LEVEL is a slice, not a walk."""
-    at = next((i for i, row in enumerate(rows) if row['grain'] == focus), None)
+    at = next((i for i, row in enumerate(rows) if row[GRAIN_COLUMN] == focus),
+              None)
     if at is None:
         return []
     base = rows[at]['depth']
@@ -983,7 +989,7 @@ def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
     kinds[mid] = KIND_MILESTONE
     mine: dict[str, list] = {}
     for row in rows:
-        gid = row.data.get('grain')
+        gid = row.data.get(ledger.GRAIN_FIELD)
         if isinstance(gid, str) and gid in kinds:
             mine.setdefault(gid, []).append(row)
     own = {gid: state_seconds(mine.get(gid, [])) for gid in kinds}
@@ -1007,7 +1013,7 @@ def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
     # Rolled over the milestone either way; the id says which level prints,
     # actors included or the two tables disagree.
     out = subtree(out, focus) if focus else out
-    named = {row['grain'] for row in out}
+    named = {row[GRAIN_COLUMN] for row in out}
     return {'rows': out,
             'actors': actor_rows({gid: kind for gid, kind in kinds.items()
                                   if not focus or gid in named}, mine)}
@@ -1018,7 +1024,7 @@ def _clock_row(gid: str, kind: str, depth: int, rolled: dict, open_s: dict,
     """One row of the roll-up: `state_s` is what the table prints (own plus
     every descendant's), `open_state` this grain's OWN state."""
     spent = rolled[gid]
-    return {'grain': gid, 'kind': kind, 'depth': depth,
+    return {GRAIN_COLUMN: gid, KIND_COLUMN: kind, 'depth': depth,
             'state_s': dict(spent),
             CLOSED_COLUMN: sum(spent.values()) if spent else None,
             OPEN_COLUMN: open_s[gid],
@@ -1038,7 +1044,7 @@ def actor_rows(kinds: dict[str, str], mine: dict[str, list]) -> list[dict]:
         for row in grain_rows:
             if not arrive.disposition_of(row.data):
                 continue
-            stamp = ledger.parse_ts(row.data.get('ts'))
+            stamp = ledger.parse_ts(row.data.get(ledger.TS_FIELD))
             entry = tally.setdefault(_actor_of(row.data),
                                      {ACTOR_COLUMN: _actor_of(row.data),
                                       ARRIVALS_COLUMN: 0, GRAINS_COLUMN: [],
@@ -1074,7 +1080,7 @@ def clock_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     headers = (GRAIN_COLUMN, *(f'{s}{STATE_SUFFIX}' for s in states),
                CLOSED_COLUMN, OPEN_COLUMN, OPEN_STATE_COLUMN)
     aligns = (LEFT,) + (RIGHT,) * (len(headers) - 2) + (LEFT,)
-    body = [(f'{SUB_ROW_INDENT * entry["depth"]}{entry["grain"]}',
+    body = [(f'{SUB_ROW_INDENT * entry["depth"]}{entry[GRAIN_COLUMN]}',
              *(_cell(entry['state_s'].get(state)) for state in states),
              _cell(entry[CLOSED_COLUMN]), _cell(entry[OPEN_COLUMN]),
              entry[OPEN_STATE_COLUMN] or DASH) for entry in rows]
@@ -1095,8 +1101,8 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     """Section 1 as data: one entry per grain, the strays, and the totals."""
     grains, owned = walk_grains(src, cfg, mid, mdir)
     kinds = {g.gid: g.kind for g in grains}
-    dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
-    status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS]
+    dispatch = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DISPATCH]
+    status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS]
     # The clock reads ARRIVALS, of which `status` is only half (D3/D6).
     arrived = [r for r in rows if arrival_state(r.data)]
     per_grain = {g.gid: _blank() for g in grains}
@@ -1135,16 +1141,16 @@ def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     for grain in sorted(grains, key=lambda g: (KIND_ORDER.index(g.kind),
                                                g.gid)):
         names = {grain.gid}
-        my_status = [r for r in status if r.data.get('grain') in names]
+        my_status = [r for r in status if r.data.get(ledger.GRAIN_FIELD) in names]
         # The category columns are now DERIVED from the state totals rather
         # than the only number: `building` and `reviewing` are both
         # `in_progress`, the distinction the clock block below stopped losing.
         placed, unplaced = category_seconds(
             cfg, grain.kind,
             state_seconds([r for r in arrived
-                           if r.data.get('grain') in names]))
+                           if r.data.get(ledger.GRAIN_FIELD) in names]))
         out.append({
-            'grain': grain.gid, 'kind': grain.kind,
+            GRAIN_COLUMN: grain.gid, KIND_COLUMN: grain.kind,
             'size': grain.size or None,
             **per_grain[grain.gid],
             'agent_types': [{'agent_type': agent, **spend}
@@ -1181,8 +1187,8 @@ def heading_id(data: dict) -> str:
     """The milestone id as a heading names it, plus ` — at <rev>` from git;
     every section heading carries it, the summary line does not."""
     rev = data.get('rev')
-    return f'{data["milestone"]}{AT_REV.format(rev=rev)}' if rev else str(
-        data['milestone'])
+    return f'{data[MILESTONE_KEY]}{AT_REV.format(rev=rev)}' if rev else str(
+        data[MILESTONE_KEY])
 
 
 def _cell(value: object) -> str:
@@ -1222,14 +1228,14 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
            f'{totals["status_rows"]} status row(s), '
            f'{totals["grains"]} grain(s)']
     for kind in KIND_ORDER:
-        entries = [e for e in data['grains'] if e['kind'] == kind]
+        entries = [e for e in data['grains'] if e[KIND_COLUMN] == kind]
         states = state_columns()
         headers = (GRAIN_COLUMN, SIZE_COLUMN, *SPEND_COLUMNS, *states,
                    TOTAL_COLUMN)
         aligns = (LEFT, LEFT) + (RIGHT,) * (len(headers) - 2)
         rows: list[tuple[str, ...]] = []
         for entry in entries:
-            rows.append((entry['grain'], entry['size'] or '',
+            rows.append((entry[GRAIN_COLUMN], entry['size'] or '',
                          *_spend_cells(entry),
                          *(_cell(entry['states'][state]) for state in states),
                          _cell(entry['total_s'])))
@@ -1243,17 +1249,17 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
         out.extend(_table(f'{kind} ({len(entries)})', headers, aligns, rows))
         # Disclosed under the table it is missing from, so it cannot read as
         # "no stint measured".
-        unplaced = [(e['grain'], e['unplaced_s']) for e in entries
+        unplaced = [(e[GRAIN_COLUMN], e['unplaced_s']) for e in entries
                     if e.get('unplaced_s')]
         for gid, spent in unplaced:
             out.append(f'   {gid} {UNPLACED_NOTE}: {spent} s')
         # Its dispatch-side twin: a frozen-key-only attribution is not "no row".
         for entry in entries:
             if entry.get('frozen_only'):
-                out.append(f'   {entry["grain"]} {FROZEN_ONLY_NOTE}: '
+                out.append(f'   {entry[GRAIN_COLUMN]} {FROZEN_ONLY_NOTE}: '
                            f'{entry["frozen_only"]} dispatch row(s)')
     for entry in data.get('in_flight') or []:
-        out.append(f'   {entry["in_flight"]} {entry["kind"]}(s) in flight — '
+        out.append(f'   {entry["in_flight"]} {entry[KIND_COLUMN]}(s) in flight — '
                    f'median {ledger.human_duration(entry["median_s"])}, worst '
                    f'{ledger.human_duration(entry["worst_s"])}')
     # Rule 4: a distribution over nothing says so, rather than reading as
@@ -1274,7 +1280,7 @@ def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     if data.get('stated_elsewhere'):
         out.append(f'   {data["stated_elsewhere"]} further row(s) {ELSEWHERE_NOTE}')
     out.append('')
-    out.append(f'{HEADING_PREFIX} {data["milestone"]} — '
+    out.append(f'{HEADING_PREFIX} {data[MILESTONE_KEY]} — '
                f'{_cell(totals["usage"]["output"])} out / '
                f'{_cell(totals["tool_calls"])} tool calls / '
                f'{_cell(totals["duration_s"])} s across '
@@ -1304,7 +1310,7 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
     """(feature id, the path as the report prints it, the path) per record."""
     out: list[tuple[str, str, Path]] = []
     for ffile in src.feature_files(cfg, mid):
-        fid = (model.unquote(src.field_of(ffile, 'id'))
+        fid = (model.unquote(src.field_of(ffile, model.FIELD_ID))
                or f'{mid}/{ffile.parent.name}')
         rel = src.review_record_for(cfg, fid)
         path = (cfg.root / rel) if rel else None
@@ -1391,16 +1397,16 @@ def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
     """
     by_grain: dict[str, list] = {}
     unplaceable = sum(1 for row in arrived
-                      if isinstance(row.data.get('grain'), str)
-                      and row.data.get('grain')
-                      and row.data['grain'] not in kinds)
+                      if isinstance(row.data.get(ledger.GRAIN_FIELD), str)
+                      and row.data.get(ledger.GRAIN_FIELD)
+                      and row.data[ledger.GRAIN_FIELD] not in kinds)
     for row in status:
-        gid = row.data.get('grain')
+        gid = row.data.get(ledger.GRAIN_FIELD)
         if isinstance(gid, str) and gid and gid in kinds:
             by_grain.setdefault(gid, []).append(row)
     ages: dict[str, list[int]] = {}
     for gid, rows in by_grain.items():
-        rows.sort(key=lambda r: str(r.data.get('ts') or ''))
+        rows.sort(key=lambda r: str(r.data.get(ledger.TS_FIELD) or ''))
         seconds = ledger.open_seconds(cfg, kinds[gid], rows)
         if seconds is not None:
             ages.setdefault(kinds[gid], []).append(seconds)
@@ -1408,7 +1414,7 @@ def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
     for kind in KIND_ORDER:
         found = sorted(ages.get(kind, ()))
         if found:
-            out.append({'kind': kind, 'in_flight': len(found),
+            out.append({KIND_COLUMN: kind, 'in_flight': len(found),
                         'median_s': found[len(found) // 2],
                         'worst_s': found[-1]})
     return out, unplaceable
@@ -1443,7 +1449,7 @@ def yield_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                     sorted(_tally(f.disposition_value for f in found
                                   if f.disposition_kind == verdict.DEFERRED
                                   ).items())]})
-        records.append({'feature': fid, 'record': rel, 'passes': passes})
+        records.append({FEATURE_COLUMN: fid, 'record': rel, 'passes': passes})
     return {SECTION_YIELD: {
         'records': records,
         'totals': {'records': len(records),
@@ -1458,18 +1464,19 @@ def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     records = section['records']
     # A record with no block keeps its one row; dropping it would read as every
     # record reviewed.
-    passes = [(r['feature'], r['record'], str(one['pass']), one['verdict'],
+    passes = [(r[FEATURE_COLUMN], r['record'], str(one['pass']),
+               one['verdict'],
                _cell(one['findings']),
                *(_cell(one['dispositions'][kind])
                  for kind in verdict.DISPOSITION_KINDS))
               if one else
-              (r['feature'], r['record'], DASH, NO_VERDICT, _cell(None),
+              (r[FEATURE_COLUMN], r['record'], DASH, NO_VERDICT, _cell(None),
                *(_cell(None) for _ in verdict.DISPOSITION_KINDS))
               for r in records for one in (r['passes'] or [None])]
-    severities = [(r['feature'], str(one['pass']), sev, str(n))
+    severities = [(r[FEATURE_COLUMN], str(one['pass']), sev, str(n))
                   for r in records for one in r['passes']
                   for sev, n in one['severities'].items()]
-    deferred = sorted((d['target'], r['feature'], str(one['pass']),
+    deferred = sorted((d['target'], r[FEATURE_COLUMN], str(one['pass']),
                        str(d['findings']))
                       for r in records for one in r['passes']
                       for d in one['deferred'])
@@ -1529,17 +1536,18 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         cause = src.field_of(bfile, CAUSED_BY_FIELD)
         if not cause:
             continue
-        gid = (model.unquote(src.field_of(bfile, 'id'))
+        gid = (model.unquote(src.field_of(bfile, model.FIELD_ID))
                or f'{mid}/{BUGS_DIR}/{_bug_slug(mdir, bfile)}')
         ffile = src.feature_file(cfg, cause)
-        fstatus = src.field_of(ffile, 'status') if ffile is not None else ''
+        fstatus = src.field_of(ffile,
+                               model.FIELD_STATUS) if ffile is not None else ''
         out.append({
-            'caused_by': cause, 'bug': gid,
-            'status': src.field_of(bfile, 'status') or None,
+            'caused_by': cause, BUG_COLUMN: gid,
+            STATUS_COLUMN: src.field_of(bfile, model.FIELD_STATUS) or None,
             'feature_status': fstatus or None,
             'feature_done': (None if not fstatus
                              else ledger.ends_grain(cfg, KIND_FEATURE, fstatus))})
-    out.sort(key=lambda e: (e['caused_by'], e['bug']))
+    out.sort(key=lambda e: (e['caused_by'], e[BUG_COLUMN]))
     return {SECTION_ESCAPES: {
         'bugs': out,
         'totals': {'bugs': len(out),
@@ -1549,7 +1557,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
 def escapes_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     """Section 4 as lines: cause, bug, the bug's state, the feature's."""
     section = data[SECTION_ESCAPES]
-    bugs = [(e['caused_by'], e['bug'], _cell(e['status']),
+    bugs = [(e['caused_by'], e[BUG_COLUMN], _cell(e[STATUS_COLUMN]),
              _cell(e['feature_status'])) for e in section['bugs']]
     totals = section['totals']
     return _section(
@@ -1590,11 +1598,11 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     """
     grains, owned = walk_grains(src, cfg, mid, mdir)
     kinds = {g.gid: g.kind for g in grains}
-    dispatch = [r for r in rows if r.data.get('kind') == ledger.KIND_DISPATCH]
-    status = [r for r in rows if r.data.get('kind') == ledger.KIND_STATUS
-              and isinstance(r.data.get('grain'), str)]
-    decisions = [r for r in rows if r.data.get('kind') == ledger.KIND_DECISION]
-    sessions = [r for r in rows if r.data.get('kind') == ledger.KIND_SESSION]
+    dispatch = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DISPATCH]
+    status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS
+              and isinstance(r.data.get(ledger.GRAIN_FIELD), str)]
+    decisions = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DECISION]
+    sessions = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_SESSION]
 
     stories = []
     for grain in sorted((g for g in grains if g.kind == KIND_STORY),
@@ -1603,7 +1611,7 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                 if grain.gid in named_grains(r.data, kinds, owned)]
         calls = [n for n in (_int(r.data.get(BEFORE_WRITE_KEY)) for r in mine)
                  if n is not None]
-        stories.append({'grain': grain.gid, 'dispatches': len(mine),
+        stories.append({GRAIN_COLUMN: grain.gid, 'dispatches': len(mine),
                         'before_first_write': sum(calls) if calls else None,
                         'calls': calls})
 
@@ -1613,31 +1621,31 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     # Every feature and the milestone itself, but only once something has been
     # decided; zeros under a ledger with no decision row would wear a
     # measurement's shape.
-    per_grain = ([{'grain': gid,
+    per_grain = ([{GRAIN_COLUMN: gid,
                    'decisions': sum(1 for r in decisions
-                                    if r.data.get('grain') == gid)}
+                                    if r.data.get(ledger.GRAIN_FIELD) == gid)}
                   for gid in [mid, *sorted(owned)]] if decisions else [])
     events = []
     for row in decisions:
-        gid = row.data.get('grain')
+        gid = row.data.get(ledger.GRAIN_FIELD)
         gid = gid if isinstance(gid, str) else None
         scope = scopes.get(gid, {gid} if gid else set())
-        moment = ledger.parse_ts(row.data.get('ts'))
+        moment = ledger.parse_ts(row.data.get(ledger.TS_FIELD))
         seconds = None
         if moment is not None:
-            later = [ts for ts in (ledger.parse_ts(r.data.get('ts'))
+            later = [ts for ts in (ledger.parse_ts(r.data.get(ledger.TS_FIELD))
                                    for r in status
-                                   if r.data['grain'] in scope)
+                                   if r.data[ledger.GRAIN_FIELD] in scope)
                      if ts is not None and ts > moment]
             if later:
                 seconds = int((min(later) - moment).total_seconds())
         entry = row.data.get('entry')
         title = row.data.get('title')
-        stamp = row.data.get('ts')
-        events.append({'grain': gid,
+        stamp = row.data.get(ledger.TS_FIELD)
+        events.append({GRAIN_COLUMN: gid,
                        'entry': entry if isinstance(entry, str) else None,
                        'title': title if isinstance(title, str) else None,
-                       'ts': stamp if isinstance(stamp, str) else None,
+                       TS_COLUMN: stamp if isinstance(stamp, str) else None,
                        'next_status_s': seconds})
 
     grouped: dict = {}
@@ -1648,10 +1656,10 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     deltas = []
     for sid in sorted(grouped, key=lambda s: (s is None, s or '')):
         for earlier, later in zip(grouped[sid], grouped[sid][1:]):
-            stamp = later.data.get('ts')
+            stamp = later.data.get(ledger.TS_FIELD)
             deltas.append({
                 'session_id': sid,
-                'ts': stamp if isinstance(stamp, str) else None,
+                TS_COLUMN: stamp if isinstance(stamp, str) else None,
                 'output': _delta(_usage_of(earlier.data, OUTPUT_KEY),
                                  _usage_of(later.data, OUTPUT_KEY)),
                 'tool_calls': _delta(earlier.data.get(TOOL_CALLS_KEY),
@@ -1667,15 +1675,15 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
 def overhead_lines(cfg: model.PmConfig, data: dict) -> list[str]:
     """Section 5 as lines: four blocks, one per thing the shape is made of."""
     section = data[SECTION_OVERHEAD]
-    stories = [(e['grain'], str(e['dispatches']),
+    stories = [(e[GRAIN_COLUMN], str(e['dispatches']),
                 _cell(e['before_first_write']),
                 LIST_SEPARATOR.join(str(n) for n in e['calls']) or DASH)
                for e in section['stories']]
-    decisions = [(e['grain'], str(e['decisions']))
+    decisions = [(e[GRAIN_COLUMN], str(e['decisions']))
                  for e in section['decisions']]
-    gaps = [(_cell(e['grain']), _cell(e['entry']), _cell(e['ts']),
+    gaps = [(_cell(e[GRAIN_COLUMN]), _cell(e['entry']), _cell(e[TS_COLUMN]),
              _cell(e['next_status_s'])) for e in section['gaps']]
-    deltas = [(_cell(e['session_id']), _cell(e['ts']), _cell(e['output']),
+    deltas = [(_cell(e['session_id']), _cell(e[TS_COLUMN]), _cell(e['output']),
                _cell(e['tool_calls'])) for e in section['sessions']]
     totals = section['totals']
     return _section(
@@ -1736,7 +1744,7 @@ def gates_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
     here is a ceiling or a budget.
     """
     gate_rows = [r.data for r in rows
-                 if r.data.get('kind') == ledger.KIND_GATE]
+                 if r.data.get(ledger.KIND_FIELD) == ledger.KIND_GATE]
     unusable, runs_of = [], {}
     for row in gate_rows:
         why = _gate_unusable(row)
@@ -1744,8 +1752,9 @@ def gates_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
             name = row.get(GATE_KEY)
             unusable.append({'gate': name if isinstance(name, str) and name
                              else None, 'why': why,
-                             'ts': row.get('ts') if isinstance(row.get('ts'),
-                                                               str) else None})
+                             TS_COLUMN: row.get(ledger.TS_FIELD)
+                             if isinstance(row.get(ledger.TS_FIELD), str)
+                             else None})
             continue
         runs_of.setdefault(row[GATE_KEY], []).append(row)
 
@@ -1790,7 +1799,7 @@ def gates_lines(cfg: model.PmConfig, data: dict) -> list[str]:
         cost.append((entry['gate'], str(entry['runs']),
                      _cell(entry['first_ms']), _cell(entry['last_ms']),
                      delta, _gate_census_cell(entry)))
-    unusable = [(_cell(e['gate']), e['why'], _cell(e['ts']))
+    unusable = [(_cell(e['gate']), e['why'], _cell(e[TS_COLUMN]))
                 for e in section['unusable']]
     totals = section['totals']
     return _section(
@@ -1827,7 +1836,7 @@ def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
     """
     src = DiskSource() if src is None else src
     rows = in_time_order(rows)
-    out: dict = {'milestone': mid}
+    out: dict = {MILESTONE_KEY: mid}
     if src.rev:
         out['rev'] = src.rev
     for section in SECTIONS:
@@ -1843,7 +1852,7 @@ def clock_report(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
     are the MILESTONE's questions and are not printed under it (rule 4)."""
     grains, owned = walk_grains(src, cfg, mid, mdir)
     arrived = [r for r in in_time_order(rows) if arrival_state(r.data)]
-    out = {'milestone': mid, 'focus': focus,
+    out = {MILESTONE_KEY: mid, 'focus': focus,
            'clock': clock_data(cfg, mid, grains, owned, arrived, focus=focus)}
     if src.rev:
         out['rev'] = src.rev

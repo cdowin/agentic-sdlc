@@ -1210,7 +1210,12 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('RECORDING', out)
-            self.assertIn('last hook-written row: dispatch, 1h ago', out)
+            # The kind and the magnitude, for the reason spelled out on the
+            # `2h` case above: the stamp is truncated to the second and the age
+            # is measured later, so `1h` and `1h 1s` are the same fact. This
+            # one kept the exact form and failed a feature-close belt on a
+            # loaded machine — the sibling had already learned it.
+            self.assertIn('last hook-written row: dispatch, 1h', out)
             self.assertIn('no settings file in this checkout', out)
 
     def test_the_per_user_override_is_wiring_and_an_allowlist_is_not(self):

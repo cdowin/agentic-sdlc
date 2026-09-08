@@ -32,6 +32,13 @@ KIND_STATUS = 'status'
 KIND_DECISION = 'decision'
 KIND_GATE = 'gate'
 
+# THE DURABLE ROW'S OWN THREE FIELDS, spelled once: every shape below stamps
+# them and every reader keys on them. `lessons.FIELDS` spelled the stamp `at`
+# while the readers keyed `ts`, and those rows sorted to the beginning of time.
+TS_FIELD = 'ts'
+KIND_FIELD = 'kind'
+GRAIN_FIELD = 'grain'
+
 # Stated rather than inherited: `isoformat()` spells the offset `+00:00`, a
 # second spelling of one instant.
 TS_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
@@ -56,13 +63,15 @@ def utc_now() -> str:
 def status_row(grain_id: str, frm: str, to: str, ts: str = '') -> dict:
     """One status TRANSITION — `cli._arrived` asks whether there was one, a
     `from == to` row being an arrival that did not happen."""
-    return {'ts': ts or utc_now(), 'kind': KIND_STATUS, 'grain': grain_id,
+    return {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_STATUS,
+            GRAIN_FIELD: grain_id,
             'from': frm, 'to': to}
 
 
 def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
     """One decision heading, as `pm decide` stamped it into `decisions.md`."""
-    return {'ts': ts or utc_now(), 'kind': KIND_DECISION, 'grain': grain_id,
+    return {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_DECISION,
+            GRAIN_FIELD: grain_id,
             'entry': entry, 'title': title}
 
 
@@ -71,7 +80,8 @@ def decision_row(grain_id: str, entry: str, title: str, ts: str = '') -> dict:
 # `close feature --skip review-recorded "…"` is one thing happening: the grain
 # arrived at `done`, and this is how its question was answered (0.5.0/D6).
 KIND_DISPOSITION = 'disposition'
-DISPOSITION_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'value',
+DISPOSITION_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
+                    'value',
                     'skipped')
 SKIPPED_KEYS = ('check', 'why')
 
@@ -89,14 +99,17 @@ KIND_LEAVE = 'rung.leave'
 # collides with a state word, beside the two words its readers render it as.
 READY_FIELD = 'ready'
 READY, NOT_READY = 'READY', 'NOT READY'
-ENTER_KEYS = ('ts', 'kind', 'grain', 'rung', READY_FIELD, 'blockers')
-VERDICT_KEYS = ('ts', 'kind', 'rung', 'grain', 'check', 'verdict', 'detail',
+ENTER_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'rung', READY_FIELD,
+              'blockers')
+VERDICT_KEYS = (TS_FIELD, KIND_FIELD, 'rung', GRAIN_FIELD, 'check', 'verdict',
+                'detail',
                 'ran')
 # `next_rung` is the belt that runs NEXT; the other two kinds put the rung that
 # RAN in `rung`, and one word meaning two things in one rendered table joins a
 # story's leave to a feature's verdicts (D6). `value` is LAST and unpaired: `leave_row` zips nine values against these ten
 # keys, so an answer that carried none leaves an absent key rather than a `''`.
-LEAVE_KEYS = ('ts', 'kind', 'grain', 'state', 'answer', 'next_rung',
+LEAVE_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'state', 'answer',
+              'next_rung',
               'next_checks', 'next_actions', 'have', 'value')
 EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
@@ -118,8 +131,8 @@ def disposition_row(grain_id: str, state: str, said: Said,
     validated HERE, as `deviation_row` validates its reason, so no path can
     mint a skip without one.
     """
-    row = {'ts': ts or utc_now(), 'kind': KIND_DISPOSITION,
-           'grain': grain_id, 'state': state, 'answer': said.answer}
+    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_DISPOSITION,
+           GRAIN_FIELD: grain_id, 'state': state, 'answer': said.answer}
     if said.value:
         row['value'] = said.value
     answered = []
@@ -158,7 +171,7 @@ def leave_row(grain_id: str, state: str, nxt: Next | None,
 # restates it — a paraphrase of the record is a second scoreboard — and
 # nothing here ranks, scores or infers (rule 9).
 KIND_LESSON = 'lesson'
-LESSON_KEYS = ('ts', 'kind', 'grain', 'rule', 'source', 'text')
+LESSON_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'rule', 'source', 'text')
 
 
 def lesson_row(grain_id: str, rule: str, source: str, text: str,
@@ -167,7 +180,7 @@ def lesson_row(grain_id: str, rule: str, source: str, text: str,
     lesson naming no grain and no rule surfaces nowhere, and one naming no
     source is the paraphrase this row exists not to be. `text` is graded like
     a deviation's reason — one line, bounded, and it must say something."""
-    for name, value in (('grain', grain_id), ('rule', rule),
+    for name, value in ((GRAIN_FIELD, grain_id), ('rule', rule),
                         ('source', source)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(
@@ -197,7 +210,8 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
                summary: str = '', ts: str = '') -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
     reader can tell "never recorded" from "recorded empty"."""
-    row = {'ts': ts or utc_now(), 'kind': KIND_RETIRE, 'grain': grain_id}
+    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_RETIRE,
+           GRAIN_FIELD: grain_id}
     for key, value in zip(RETIRE_FIELDS, (version, name, summary)):
         if value:
             row[key] = value
@@ -212,8 +226,9 @@ def retired_releases(cfg) -> dict[str, dict]:
     """
     out: dict[str, dict] = {}
     for row in read_rows(grainless_path(cfg.roadmap)):
-        gid = row.data.get('grain')
-        if row.data.get('kind') == KIND_RETIRE and isinstance(gid, str) and gid:
+        gid = row.data.get(GRAIN_FIELD)
+        if row.data.get(KIND_FIELD) == KIND_RETIRE and isinstance(gid,
+                                                                  str) and gid:
             out[gid] = row.data
     return out
 
@@ -234,7 +249,7 @@ def gate_row(gate: str, verdict: str, duration_ms: int | None,
              census: int | None = None, ts: str = '') -> dict:
     """One gate run, costed in whole milliseconds — most gates finish inside a
     second. An absent `census` is an absent key; nothing here judges."""
-    row = {'ts': ts or utc_now(), 'kind': KIND_GATE, 'gate': gate,
+    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_GATE, 'gate': gate,
            'verdict': verdict}
     for key, value in (('duration_ms', duration_ms), ('census', census)):
         if value is not None:
@@ -286,7 +301,7 @@ def verify_row(rung: str, gate: str, verdict: str, state: str,
         raise ValueError(f'refusing to mint a {KIND_VERIFY} row for {rung!r}: '
                          f'{verdict} with exit code {exit_code} — a verdict and '
                          f'an exit code that disagree cannot both be reported')
-    row = {'ts': ts or utc_now(), 'kind': KIND_VERIFY, 'rung': rung,
+    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_VERIFY, 'rung': rung,
            'gate': gate, 'verdict': verdict, 'exit_code': exit_code,
            'duration_ms': duration_ms, 'state': state, 'graded': graded}
     # Absent, never 0: a `0` census is the zero-file scan hard rule 4 names.
@@ -345,7 +360,7 @@ def test_row(tier: str, nodeid: str, duration_ms: int, rank: int,
     if not isinstance(rank, int) or rank < 1:
         raise ValueError(f'refusing to mint a test row for {nodeid!r}: rank '
                          f'{rank!r} is not a position in a list')
-    return {'ts': ts or utc_now(), 'kind': KIND_TEST, 'tier': tier,
+    return {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_TEST, 'tier': tier,
             'nodeid': nodeid, 'duration_ms': duration_ms, 'rank': rank}
 
 
@@ -360,7 +375,8 @@ def deviation_row(grain_id: str, operation: str, step: str, reason: str,
     if outcome not in OUTCOMES:
         raise ValueError(f'refusing to mint a {KIND_DEVIATION} row for '
                          f'{step!r}: {outcome!r} is not one of {OUTCOMES}')
-    return {'ts': ts or utc_now(), 'kind': KIND_DEVIATION, 'grain': grain_id,
+    return {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_DEVIATION,
+            GRAIN_FIELD: grain_id,
             'operation': operation, 'step': step, 'outcome': outcome,
             'reason': reason}
 
@@ -495,11 +511,18 @@ TYPE_TOOL_USE = 'tool_use'
 # through raw and gets decided.
 SYNTHETIC_MODEL = '<synthetic>'
 
+# A hand-recorded ONE TOTAL, beside `usage`'s measured split. Two keys because
+# they are two measurements: a caller who was told "1234 tokens" cannot say
+# which way they split, and a reader must be able to tell the two apart rather
+# than see a guess.
+TOTAL_KEY = 'tokens_total'
+
 # Every key a usage row may carry, in order.
-ROW_KEYS = ('ts', 'kind', 'grain', 'session_id', 'agent_id', 'agent_type',
+ROW_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'session_id', 'agent_id',
+            'agent_type',
             'model', 'started_at', 'ended_at', 'duration_s', 'messages',
             'tool_calls', 'tools', 'tool_calls_before_first_write', 'usage',
-            'tree')
+            TOTAL_KEY, 'tree')
 
 
 class TranscriptError(Exception):
@@ -658,8 +681,8 @@ def usage_row(kind: str, **fields: object) -> dict:
     """One `dispatch`/`session` row. `None` and `''` mean "the source did not
     say" and are omitted; `0`, `{}` and `[]` mean "the source said none" and
     are kept. `tree` carries the category keys and the frozen ones (D7)."""
-    fields['kind'] = kind
-    fields.setdefault('ts', utc_now())
+    fields[KIND_FIELD] = kind
+    fields.setdefault(TS_FIELD, utc_now())
     unknown = set(fields) - set(ROW_KEYS)
     if unknown:
         raise ValueError(f'not usage-row keys: {" ".join(sorted(unknown))}')
@@ -670,8 +693,7 @@ def usage_row(kind: str, **fields: object) -> dict:
 # --- where a grain ENDS (D8) --------------------------------------------------
 # Finished is the `done` category of the grain's own kind, asked of
 # `model.category_of` — the question the drift rules ask, so `show`, `report`
-# and the gate agree on where a grain ended.
-GRAIN_BUG = 'bug'
+# and the gate agree on where a grain ended; the kind WORDS live in `model`.
 
 
 def ends_grain(cfg, grain_kind: str, to_state) -> bool:
@@ -692,7 +714,7 @@ def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
     first, last = status[0], status[-1]
     if first is last:
         return None
-    start, end = parse_ts(first.data.get('ts')), parse_ts(last.data.get('ts'))
+    start, end = parse_ts(first.data.get(TS_FIELD)), parse_ts(last.data.get(TS_FIELD))
     if start is None or end is None:
         return None
     return int((end - start).total_seconds())
@@ -707,7 +729,7 @@ def open_seconds(cfg, grain_kind: str, status: list,
     """
     if not status or ends_grain(cfg, grain_kind, status[-1].data.get('to')):
         return None
-    start = parse_ts(status[0].data.get('ts'))
+    start = parse_ts(status[0].data.get(TS_FIELD))
     if start is None:
         return None
     when = datetime.now(timezone.utc) if now is None else now
@@ -733,7 +755,7 @@ def row_names(row: dict, names: set[str]) -> bool:
     """True when this row names the grain — in `grain`, or anywhere in `tree`.
     Every value is type-checked first: rows arrive from other branches and
     versions, and an unrecognisable row does not name the grain."""
-    if isinstance(row.get('grain'), str) and row['grain'] in names:
+    if isinstance(row.get(GRAIN_FIELD), str) and row[GRAIN_FIELD] in names:
         return True
     tree = row.get('tree')
     if not isinstance(tree, dict):

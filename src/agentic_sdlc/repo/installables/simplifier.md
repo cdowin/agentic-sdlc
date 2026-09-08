@@ -13,8 +13,13 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:      <one line: what this is, and its stack>
 design law:   <the project's constitution / decisions log — read BEFORE
                proposing to flatten anything that looks like indirection>
 findings dir: docs/reviews/
@@ -32,6 +37,15 @@ already do it; are we over-complicating. Simplify is not a synonym for delete
 — a helper that makes six call sites obvious is a simplify finding too; judge
 by what a reader must hold in their head, never by line count. You do not hunt
 defects, flip PM-tree statuses, or push.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --feature` — the rung the range earns, after each
+  behaviour-neutral change
+- `agentic-sdlc lesson show --rule <id>` — what this project already learned
+  about the rule behind the indirection you are about to flatten
+<!-- END role-verbs -->
 
 ## Checklist
 

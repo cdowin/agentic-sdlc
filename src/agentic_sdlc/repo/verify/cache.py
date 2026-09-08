@@ -221,7 +221,7 @@ def ledger_digest(raw: str) -> bytes | None:
         if not line:
             continue
         row = _row(line)
-        if row is not None and row.get('kind') in SELF_FILED_KINDS:
+        if row is not None and row.get(ledger.KIND_FIELD) in SELF_FILED_KINDS:
             continue
         _field(digest, line.encode('utf-8', 'surrogateescape'))
         kept += 1
@@ -283,7 +283,7 @@ def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
     found: Verdict | None = None
     for line in raw.splitlines():
         row = _row(line)
-        if row is not None and row.get('kind') == ledger.KIND_VERIFY:
+        if row is not None and row.get(ledger.KIND_FIELD) == ledger.KIND_VERIFY:
             got = _verdict(row)
             if got is not None and got.gate == gate and got.state == state:
                 found = got
@@ -339,7 +339,7 @@ def graded_of(raw: str) -> Graded:
     rows = 0
     for line in raw.splitlines():
         row = _row(line)
-        if row is None or row.get('kind') not in GRADED_KINDS:
+        if row is None or row.get(ledger.KIND_FIELD) not in GRADED_KINDS:
             continue
         _field(digest, line.strip().encode('utf-8', 'surrogateescape'))
         rows += 1
@@ -371,7 +371,7 @@ def census_since(root: Path, gate: str, offset: int) -> int | None:
     census = None
     for line in tail.decode('utf-8', 'replace').splitlines():
         row = _row(line)
-        if row is None or row.get('kind') != ledger.KIND_GATE:
+        if row is None or row.get(ledger.KIND_FIELD) != ledger.KIND_GATE:
             continue
         if row.get('gate') != gate:
             continue
@@ -398,14 +398,15 @@ def _verdict(row: dict) -> Verdict | None:
     """A `verify` row as a `Verdict`, or None when ANY field is missing or the
     wrong shape — the trust boundary. Rows arrive from other branches, versions
     and hands; a half-read row that became a PASS is rule 4's sin."""
-    if ledger.parse_ts(row.get('ts')) is None:
+    if ledger.parse_ts(row.get(ledger.TS_FIELD)) is None:
         return None
     if row.get('verdict') not in ledger.VERIFY_VERDICTS:
         return None
     fields = {}
     # `graded` is required, not defaulted: a row from a spelling that did not
     # digest what `check budget` grades cannot say whether it may be reused.
-    for name in ('ts', 'rung', 'gate', 'verdict', 'state', 'graded'):
+    for name in (ledger.TS_FIELD, 'rung', 'gate', 'verdict', 'state',
+                 'graded'):
         value = row.get(name)
         if not isinstance(value, str) or not value.strip():
             return None

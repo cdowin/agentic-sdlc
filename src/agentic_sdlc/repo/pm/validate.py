@@ -11,23 +11,30 @@ from pathlib import Path
 
 from agentic_sdlc.repo.pm import model
 
-_REF_KEYS = ('depends_on', 'consumed_by')
+# PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
+# shape `check pm` grades and cannot produce what this reader refuses (rule 4).
+REF_KEYS = ('depends_on', 'consumed_by')
 
-# A scalar, not a list: one bug has one cause; `caught_in:` holds the other
-# half.
+# A scalar, not a list: one bug has one cause, and it is not the binding.
 CAUSED_BY = 'caused_by'
+EMPTY = ('', '[]', 'null', '~')
 
 
 class Unparseable(Exception):
     """A ref list this parser cannot read — a finding, never an empty list."""
 
 
-def _refs(path: Path, key: str) -> list[str]:
+def render_refs(ids: list[str]) -> str:
+    """`ids` as the inline list `refs_in` reads back."""
+    return '[' + ', '.join(f'"{i}"' for i in ids) + ']'
+
+
+def refs_in(key: str, raw: str) -> list[str]:
     """The ids inside a `key: ["a", "b"]` inline list; any other shape is a
     finding.
     """
-    raw = model.field_of(path, key).strip()
-    if not raw or raw in ('[]', 'null', '~'):
+    raw = raw.strip()
+    if raw in EMPTY:
         return []
     if not (raw.startswith('[') and raw.endswith(']')):
         raise Unparseable(f'{key}: {raw!r} is not an inline list — write '
@@ -54,18 +61,18 @@ def _refs(path: Path, key: str) -> list[str]:
 
 def _safe_refs(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return _refs(path, key)
+        return refs_in(key, model.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
 
 
-def _scalar_ref(path: Path, key: str) -> list[str]:
+def scalar_ref_in(key: str, raw: str) -> list[str]:
     """The one id inside a `key: <id>` scalar, as a 0-or-1 list; a bracket,
     comma, quote or space in it is a finding.
     """
-    raw = model.field_of(path, key).strip()
-    if not raw or raw in ('[]', 'null', '~'):
+    raw = raw.strip()
+    if raw in EMPTY:
         return []
     if raw[0] in '[{' or raw[-1] in ']}':
         raise Unparseable(f'{key}: {raw!r} is a list or a mapping — {key} is '
@@ -78,7 +85,7 @@ def _scalar_ref(path: Path, key: str) -> list[str]:
 
 def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return _scalar_ref(path, key)
+        return scalar_ref_in(key, model.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -123,7 +130,7 @@ def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
         return False
     found = index.get(ref)
     if found is not None:
-        return found.kind == 'feature'
+        return found.kind == model.GRAIN_FEATURE
     return None if _unverifiable(index, ref) else False
 
 
@@ -195,39 +202,42 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # grain (rule 4).
     for milestone in model.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(milestone.path, 'id')
-                           or not model.field_of(milestone.path, 'status')):
+        if 'V1' in on and (not model.field_of(milestone.path, model.FIELD_ID)
+                           or not model.field_of(milestone.path,
+                                                 model.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
         _check_refs(cfg, milestone.path, 'depends_on', on, bad, census)
 
-    for ffile in model._every(cfg, 'feature'):
+    for ffile in model._every(cfg, model.GRAIN_FEATURE):
         census['grains'] += 1
-        expect = model.unquote(model.field_of(ffile, 'id'))
-        if 'V1' in on and (not expect or not model.field_of(ffile, 'status')):
+        expect = model.unquote(model.field_of(ffile, model.FIELD_ID))
+        if 'V1' in on and (not expect or not model.field_of(ffile,
+                                                            model.FIELD_STATUS)):
             bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
         # The UNQUOTED id, because that is what a ref carries: keying the node
         # on the raw `id:` meant a quoted one matched none of its own.
         if expect:
             graph[expect] = []
-        for key in _REF_KEYS:
+        for key in REF_KEYS:
             resolved = _check_refs(cfg, ffile, key, on, bad, census)
             if key == 'depends_on' and expect:
                 # Which kind a ref names is a question about the GRAIN;
                 # counting slashes left the graph empty on a flat tree.
                 graph[expect].extend(ref for ref in resolved
-                                     if model.kind_of(cfg, ref) == 'feature')
+                                     if model.kind_of(cfg,
+                                                      ref) == model.GRAIN_FEATURE)
 
-    for sfile in model._every(cfg, 'story'):
+    for sfile in model._every(cfg, model.GRAIN_STORY):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(sfile, 'id')
-                           or not model.field_of(sfile, 'status')):
+        if 'V1' in on and (not model.field_of(sfile, model.FIELD_ID)
+                           or not model.field_of(sfile, model.FIELD_STATUS)):
             bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
         _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
     # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
     # only milestones, features and stories.
-    for bfile in model._every(cfg, 'bug'):
+    for bfile in model._every(cfg, model.GRAIN_BUG):
         _check_caused_by(cfg, bfile, on, bad, census)
 
     if 'V7' in on:

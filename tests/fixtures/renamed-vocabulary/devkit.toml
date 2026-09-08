@@ -7,7 +7,7 @@
 # `dropped` finished-and-not; both are `done`, because a category is about
 # whether WORK REMAINS (docs/design/state-categories.md §4).
 [pm]
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", "D9", "D10",
+checks = ["D1", "D2", "D4", "D5", "D6", "D11", "D9", "D10",
           "V1", "V4", "V5"]
 
 [pm.states.milestone]

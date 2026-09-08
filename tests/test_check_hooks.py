@@ -27,6 +27,7 @@ that tree armed, which is why this one starts every hook.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import stat
@@ -458,3 +459,106 @@ def test_the_repair_the_gate_names_is_runnable_by_a_CONSUMER():
     install = (REPO_ROOT / 'src/agentic_sdlc/repo/install.py').read_text(encoding='utf-8')
     assert "'tools/setup-hooks.sh'" in install, 'the arm script must be an installable'
 
+
+
+# --- the OTHER arming, which is not git's ------------------------------------
+# `core.hooksPath` arms git's hooks and this module already proves the gate is
+# satisfiable by the repair it names. It arms no `cc-*` hook — git never execs
+# one — and the verdict said "armed" over the whole corpus anyway, which is the
+# tool asserting an outcome for five of seven entries that it never observed.
+# Measured while closing 0.6.0: three guard hooks registered, a session rooted
+# one directory above the checkout, and `git commit` with no pathspec reaching
+# git unblocked by the guard that exists to stop it. Nothing said a word.
+def test_a_cc_hook_registered_nowhere_is_NAMED_not_silently_counted_as_armed():
+    """`install-hooks` writes the corpus and no settings file, so this is the
+    state every fresh adoption is in."""
+    with hooked_repo(arm=True):
+        code, out = gate()
+    assert code == 0, out
+    assert 'REGISTERED' in out, out
+    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+    for rel in SHIPPED:
+        name = Path(rel).name
+        if name.startswith(hooks.CC_PREFIX):
+            assert name in out, f'{name} is registered nowhere and is not named'
+
+
+def test_write_settings_turns_the_registration_line_green_and_it_still_says_not_in_force():
+    """The repair the line names, run — and the half it must NOT claim.
+
+    A registration is a file on disk. Whether a harness READ that file depends
+    on the session's project root, which no file in a checkout can decide, so
+    the gate counts and never asserts (rule 4). If this line ever starts
+    saying a guard IS in force, that is the sin, not a nicer verdict.
+    """
+    with hooked_repo(arm=True) as root:
+        assert install.main('install-hooks', ['--write-settings']) == 0
+        assert (root / hooks.SETTINGS_FILES[0]).is_file()
+        code, out = gate()
+    assert code == 0, out
+    assert f'{CC_COUNT} of {CC_COUNT} {hooks.CC_PREFIX}hook(s) registered' in out, out
+    assert 'not IN FORCE' in out, out
+    assert "session's project root" in out, out
+
+
+def test_an_allowlist_entry_naming_a_hook_is_not_a_registration():
+    """The read is scoped to the `hooks` key, not to the file's TEXT. This
+    package's own next-step text tells consumers to allowlist the hook
+    commands, so a reader that searched the document for a hook's name would
+    report every one of them registered off a permissions list — a gate saying
+    a guard is armed because its name appears somewhere is rule 4's first sin
+    with extra steps.
+
+    PROVEN against that reader: planting `path.read_text()` in place of the
+    scoped walk turns this line into `5 of 5 registered` and this case red.
+    A structural walk over the whole DOCUMENT does not trip it — `allow` holds
+    strings, not `{command: ...}` nodes — so the text reader is the shape this
+    guards, and saying which one is the difference between a probe and a
+    claim."""
+    with hooked_repo(arm=True) as root:
+        settings = root / hooks.SETTINGS_FILES[0]
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({'permissions': {'allow': [
+            f'Bash(bash {HOOKS_DIR}/{name})' for name in
+            (Path(rel).name for rel in SHIPPED)]}}), encoding='utf-8')
+        code, out = gate()
+    assert code == 0, out
+    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+
+
+def test_a_command_node_outside_the_hooks_key_is_not_a_registration():
+    """Review S8: the other wrong reader, and the one a refactor reaches for.
+
+    `test_an_allowlist_entry_naming_a_hook_is_not_a_registration` catches a
+    TEXT search and cannot catch a structural walk over the whole document,
+    because `permissions.allow` holds strings rather than `{command: ...}`
+    nodes. But `.claude/settings.json` really does carry command-shaped nodes
+    outside `hooks` — `statusLine` is one — and `_commands` recurses over any
+    dict, so dropping the `hooks` lookup would pass every other case here.
+
+    PROVEN: with `_commands(data)` in place of `_commands(data['hooks'])` this
+    line reads `1 of 5 registered` and this case goes red.
+    """
+    with hooked_repo(arm=True) as root:
+        settings = root / hooks.SETTINGS_FILES[0]
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({'statusLine': {
+            'type': 'command',
+            'command': f'bash {HOOKS_DIR}/cc-stop-gate.sh --status'}}),
+            encoding='utf-8')
+        code, out = gate()
+    assert code == 0, out
+    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+
+
+def test_a_settings_file_that_is_not_json_is_reported_not_read_as_empty():
+    """Unreadable and opted-out look identical from here, and they are
+    different facts — the U4 shape, on this surface."""
+    with hooked_repo(arm=True) as root:
+        settings = root / hooks.SETTINGS_FILES[0]
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text('{not json', encoding='utf-8')
+        code, out = gate()
+    assert code == 0, out
+    assert 'could not be read' in out, out
+    assert 'it is not JSON' in out, out

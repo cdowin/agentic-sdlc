@@ -13,8 +13,13 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 
 ## Hard rules
 
-1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). A consumer's
-   hook must never break on a transitive dependency.
+1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). The reason is
+   the HOOK CORPUS: `tools/hooks/` parses its payload with bare `python3 -c`, a consumer's system
+   interpreter with no managed environment, so a transitive dependency there is a broken commit
+   on someone else's machine. The package's own runtime resolves through `uvx`/`uv run` and is
+   not exposed to that — the rule still binds it, and what actually blocks the tempting libraries
+   is **rule 3** (byte-exact preservation) and **rule 6** (line shapes), not this one. Recorded
+   with the audit at `ms-the-rule-reaches-the-work` D4.
 2. **Pure text — boots nothing.** Every verb reads git, markdown and shell as text; nothing starts
    a build, an import or a cache. Safe anywhere, any time, in parallel.
 3. **A write touches only what it was asked to touch.** `pm` rewrites ONE frontmatter line and
@@ -85,10 +90,12 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
   `config.py` decides what a config VALUE may be. It imports nothing from `repo/`.
 - **`src/agentic_sdlc/repo/`** is the tool — the `pm` tracker, the checks, the belts, `verify`,
   and `install.py` with the files it writes under `installables/`. It imports `core/`, never the
-  reverse. `cli.py` only routes; each verb module owns its behaviour and its `--help` docstring.
-- **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in `cli.py` + a
-  README row + a CHANGELOG line. **New verb** = module + route + README row + CHANGELOG line; a
-  verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
+  reverse. The router is `src/agentic_sdlc/cli.py`, a SIBLING of both: it only routes, and each
+  verb module owns its behaviour and its `--help` docstring.
+- **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in
+  `src/agentic_sdlc/cli.py` + a
+  README row + the grain's `changelog:`. **New verb** = module + route + README row + `changelog:`;
+  a verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
   first the search (rule 10), then the cheapest tier, then a row in the story's
   `## How this is proven` table.
 - **Every config value goes through `src/agentic_sdlc/core/config.py`.** Never
@@ -97,8 +104,9 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
   payloads and transcripts, versioned with the code that reads them. `unit` / `integration` /
   `test` select on the `shell` mark, DERIVED in `tests/conftest.py` from whether a module's
   source spawns; a hand-written mark is a collection refusal.
-- **`CHANGELOG.md` is hand-maintained.** A consumer-visible change goes into `## Unreleased` as
-  it lands. Rationale with a rejected alternative is `pm decide`, not a release note.
+- **`changelog:` is a field on the grain**, one consumer-visible sentence or the word `none`;
+  `agentic-sdlc changelog <id>` renders them in `order:`. `CHANGELOG.md` is retired (0.6.0).
+  Rationale with a rejected alternative is `pm decide`, not a release note.
 
 ## The ladder
 
@@ -109,16 +117,16 @@ Never hand-roll an incantation, and never run a rung wider than the thing you ch
 |---|---|
 | the PM tree, or a doc | `make check` |
 | code, inner loop | `agentic-sdlc verify --story` — `make unit`, the `[verify] story` target |
-| code, before a commit | `make precommit` — `check` + `unit` |
+| code, before a commit | `make precommit` |
 | closing a story | `agentic-sdlc close story <id>` |
-| closing a feature | `agentic-sdlc close feature <id>` — `make test`, both tiers, is `[verify] feature` |
-| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone`: `check` + `matrix` + `budget` |
+| closing a feature | `agentic-sdlc close feature <id>` — `make test` is `[verify] feature` |
+| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone` |
 
 `agentic-sdlc verify --plan` prints each rung with the cost it last took, from the ledger — ask it
 rather than guessing. **Never `pytest tests/<module>.py`** — selecting by path collects the module's
 spawning tier too, and those cases run `make` against this repo; `make unit` (or `-m "not shell"`)
-is the rung. Outside that tier a spawn now fails the test by nodeid, because prose did not hold it. Every gate prints ONE verdict line naming its log under `.gate-reports/`;
-`VERBOSE=1` streams it. A gate-semantics change needs a deliberately-broken probe: plant the drift
+is the rung. Outside that tier a spawn now fails the test by nodeid, because prose did not hold it.
+A gate-semantics change needs a deliberately-broken probe: plant the drift
 class in a scratch copy of a fixture and confirm the gate FAILS; a bad config value exits 2; a
 zero-file census FAILS. A write verb under test writes to scratch, never to a fixture in place.
 
@@ -149,7 +157,7 @@ This package runs its own tooling on its own tree, and that is a gate, not a dem
 - If a rule fails when pointed at this repo, the finding gets fixed. Turning a rule off is only
   right when it encodes a flow this package does not run, recorded with `pm decide`.
 - **Releases** go through the `/release` skill: `agentic-sdlc release <version>` on this tree,
-  then its `next:` lines by hand. Never tag by hand; never let the two version sites diverge.
+  then its `next:` lines by hand. Never tag by hand (rule 7 holds the two version sites).
 
 ## Reporting to Chris
 

@@ -13,8 +13,13 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:      <one line: what this is, and its stack>
 pm tree:      pm/roadmap/       (milestones/*.md + features/*.md — a feature
                names its milestone in `milestone:`, not by where it sits)
 findings dir: docs/reviews/
@@ -29,6 +34,15 @@ one question: is this execution-ready, and is it the right thing to build?
 Adversarial (assume it is wrong somewhere), generative (what is missing), and
 grounded (verify every load-bearing claim in the code, cited file:line). You
 edit no spec and no code; you may Write only your review.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm status <milestone-id>` — what is bound to this milestone,
+  and where is each grain?
+- `agentic-sdlc pm validate` — do the bindings, dependencies and refs resolve?
+- `agentic-sdlc pm roadmap` — what ships before this, and what after?
+<!-- END role-verbs -->
 
 ## Checklist
 

@@ -484,7 +484,7 @@ def no_features(root: Path) -> None:
 
 
 def open_bug(root: Path) -> None:
-    bug(root, 'crash', 'open', fix_milestone=f'"{MILESTONE}"')
+    bug(root, 'crash', 'open', milestone=f'"{MILESTONE}"')
 
 
 def pointer_to_nothing(root: Path) -> None:

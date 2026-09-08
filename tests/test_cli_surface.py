@@ -30,11 +30,14 @@ documentation and a second copy of itself.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import dataclasses
 import functools
+import inspect
 import io
 import re
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 
@@ -76,29 +79,197 @@ def documented_verbs() -> set[str]:
     return set(_INVOCATION.findall(cli.__doc__ or ''))
 
 
-def routed_verbs() -> set[str]:
-    """What `main()` dispatches, read off the router's own branches.
+# The rosters `main()` resolves rather than spells: `install_commands()` reads
+# the installer's `PLANS`, `conveyor_verbs()` the driver's `OPERATIONS`.
+# `CONVEYOR_VERBS` is a LAZY tuple — iterating it yields nothing, which is why
+# the branch is named here by the function behind it rather than read as a
+# value.
+_ROSTER_CALLS = {'install_commands': cli.install_commands,
+                 'conveyor_verbs': cli.conveyor_verbs}
+_ROSTER_NAMES = {'CONVEYOR_VERBS': cli.conveyor_verbs}
+_VERB = re.compile(r'^[a-z][a-z0-9-]*$')
 
-    The two ROSTERS are asked, never listed — `install_commands()` reads the
-    installer's `PLANS` and `conveyor_verbs()` reads the driver's `OPERATIONS`,
-    exactly as `main()` does. So a fifth installer or a third operation is
-    documented-or-flagged the moment it exists, with nothing to update here.
 
-    The singletons below are the branches `main()` writes out longhand. They
-    are the one hand-maintained list in this file, and the test that keeps them
-    honest is `test_a_documented_verb_is_not_answered_with_unknown_command`,
-    which asks the router rather than this set.
+def _resolve(node: ast.expr) -> tuple[set[str], list[str]]:
+    """(the verbs this comparator routes, the shapes that could not be read)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}, []
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        verbs: set[str] = set()
+        unread: list[str] = []
+        for element in node.elts:
+            found, missed = _resolve(element)
+            verbs |= found
+            unread += missed
+        return verbs, unread
+    if isinstance(node, ast.Name):
+        if node.id in _ROSTER_NAMES:
+            return set(_ROSTER_NAMES[node.id]()), []
+        value = getattr(cli, node.id, None)
+        if isinstance(value, str):
+            return {value}, []
+        return set(), [f'cli.{node.id}']
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in _ROSTER_CALLS):
+        return set(_ROSTER_CALLS[node.func.id]()), []
+    return set(), [ast.dump(node)[:60]]
 
-    `version` is here because of finding E2: it is routed at `cli.py`'s
-    `cmd in ('-V', '--version', 'version')` — a MEMBERSHIP test rather than an
-    equality branch, which is why the finding says *"routed_verbs() cannot see
-    it"* — and it was in no `--help` line at all. Documenting it without adding
-    it here would have turned a silent verb into a red build, which is the
-    finding's own point read backwards.
+
+ROUTER_SUBJECT = 'cmd'
+
+
+def _router_branches(source: str) -> tuple[set[str], list[str]]:
+    """(the verbs this router source dispatches, the shapes it could not read).
+
+    THE CLASSIFIER, and the only thing here that parses. Every `cmd == X` /
+    `cmd in X` comparison contributes its verbs; a comparator shape it cannot
+    resolve lands in the second half rather than dropping out silently, because
+    an unreadable branch is the defect and not an exemption from it.
     """
-    return {'pm', 'init', 'gates-extra', 'check', 'verify', 'version',
-            cli.LESSON_VERB,
-            *cli.install_commands(), *cli.conveyor_verbs()}
+    tree = ast.parse(textwrap.dedent(source))
+    verbs: set[str] = set()
+    unread: list[str] = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)
+                and node.left.id == ROUTER_SUBJECT):
+            for comparator in node.comparators:
+                found, missed = _resolve(comparator)
+                verbs |= found
+                unread += missed
+    return verbs, unread
+
+
+# Read ONCE, at import, and bound to a VALUE. The classifier is
+# `_router_branches` and `TheRouterReaderSeesEveryBranchShape` below owns its
+# violation corpus; everything else in this module consumes the roster. That
+# split is deliberate: making the reader reachable by name from four guard
+# classes would have demanded four copies of one corpus for a reader none of
+# them implements, and a corpus copied four times is the second scoreboard
+# `tests/test_guard_corpus.py` exists to prevent.
+_ROUTER_VERBS, _ROUTER_UNREAD = _router_branches(inspect.getsource(cli.main))
+
+
+def routed_verbs() -> set[str]:
+    """What `main()` dispatches, read off the router's own BRANCHES.
+
+    This used to be a hand-written set beside a docstring claiming another test
+    kept it honest. It did not: that test walks `documented_verbs()`, so a verb
+    missing from BOTH is invisible to both. Finding E2 caught `version` that
+    way once, by hand. 0.6.0 shipped `dispatch` and `changelog` routed and
+    undocumented, and every test stayed green — the same class, twice, in the
+    milestone whose northstar is that a gate which cannot fail is not a gate.
+
+    Flag spellings (`-V`, `--version`) are not verbs and are filtered by the
+    same grammar `--help` lines are read with.
+    """
+    assert not _ROUTER_UNREAD, (
+        f'the router reader cannot read {len(_ROUTER_UNREAD)} branch(es) of '
+        f'cli.main(): {_ROUTER_UNREAD}; teach it the shape rather than letting '
+        f'a verb go unseen')
+    assert len(_ROUTER_VERBS) > 5, (
+        f'the router census collapsed to {sorted(_ROUTER_VERBS)}')
+    return {verb for verb in _ROUTER_VERBS if _VERB.match(verb)}
+
+
+# --- the router reader's own violation corpus ---------------------------------
+# `tests/test_guard_corpus.py`'s population is AST-shaped guards, and this
+# module joined it the moment the hand-written roster became a reader. The
+# demand is right: a classifier can visit the wrong node type and still report
+# a count, which is exactly how the roster it replaced went wrong.
+_AN_EQUALITY_BRANCH = '''\
+def main(argv):
+    cmd, rest = argv[0], argv[1:]
+    if cmd == 'wombat':
+        return 0
+'''
+_A_MEMBERSHIP_TUPLE = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd in ('wombat', 'aardvark'):
+        return 0
+'''
+_A_KNOWN_ROSTER_CALL = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd in install_commands():
+        return 0
+'''
+_A_MODULE_CONSTANT = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd == LESSON_VERB:
+        return 0
+'''
+# The three silent-drop shapes. Each is a branch the router really dispatches
+# on and this reader cannot resolve — the exact way a verb goes unseen.
+_AN_UNKNOWN_ROSTER_CALL = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd in some_other_roster():
+        return 0
+'''
+_AN_UNKNOWN_CONSTANT = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd == WOMBAT_VERB:
+        return 0
+'''
+_A_COMPUTED_COMPARATOR = '''\
+def main(argv):
+    cmd = argv[0]
+    if cmd == PREFIX + 'wombat':
+        return 0
+'''
+# Not a router branch at all: the subject is not `cmd`. `main()` really holds
+# one of these (`args[0] in ('-h', '--help', 'help')`), so a reader that graded
+# it would import the help flags as verbs.
+_A_COMPARISON_ON_ANOTHER_SUBJECT = '''\
+def main(argv):
+    if argv[0] in ('-h', '--help'):
+        return 0
+'''
+
+# (readable source, must the reader report a shape it could not read)
+_SHAPES = (
+    (_AN_EQUALITY_BRANCH, {'wombat'}, False),
+    (_A_MEMBERSHIP_TUPLE, {'wombat', 'aardvark'}, False),
+    (_A_KNOWN_ROSTER_CALL, set(cli.install_commands()), False),
+    (_A_MODULE_CONSTANT, {cli.LESSON_VERB}, False),
+    (_A_COMPARISON_ON_ANOTHER_SUBJECT, set(), False),
+    (_AN_UNKNOWN_ROSTER_CALL, set(), True),
+    (_AN_UNKNOWN_CONSTANT, set(), True),
+    (_A_COMPUTED_COMPARATOR, set(), True),
+)
+
+
+class TheRouterReaderSeesEveryBranchShape:
+    """The corpus for `_router_branches`, replayed by `test_guard_corpus.py`.
+
+    Its failure mode is not a wrong answer, it is a QUIET one: a comparator
+    shape it does not know produces no verb and no complaint, and the census
+    that consumes it then compares `--help` against a router it only partly
+    read. So the graded question is *did the reader say it could not read
+    this*, and the positive half — that each readable shape yields the verbs it
+    should — is the case below, because a reader that reports every shape as
+    unreadable would pass the corpus alone.
+    """
+
+    CORPUS = tuple((source, unreadable) for source, _, unreadable in _SHAPES)
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        """Does the reader report a comparator shape it could not resolve?"""
+        return bool(_router_branches(planted)[1])
+
+    def test_every_readable_shape_yields_the_verbs_it_routes(self):
+        """The half a corpus of refusals cannot prove."""
+        wrong = {}
+        for source, expected, unreadable in _SHAPES:
+            found, missed = _router_branches(source)
+            if found != expected or bool(missed) is not unreadable:
+                wrong[source.strip().splitlines()[-1].strip()] = (
+                    sorted(found), sorted(expected), missed)
+        assert not wrong, wrong
 
 
 # --- the exit-code surface, enumerated the same way the verbs are ------------
@@ -414,6 +585,14 @@ class TestTheSurfaceSaysTelemetry:
         # whoever just learned it, not as part of moving a grain, so it is not
         # a `pm` subcommand.
         'lesson',
+        # 0.6.0/ft-the-dispatch-carries-the-contract: it renders a preamble at
+        # the moment a dispatch begins and moves no grain, so it is neither a
+        # `pm` subcommand nor a belt.
+        'dispatch',
+        # 0.6.0/ft-the-changelog-is-a-field-and-a-verb: `CHANGELOG.md` retired
+        # into `changelog:` on the grain, and rendering those in `order:` is a
+        # read over the whole tree rather than a read of one grain.
+        'changelog',
     }
 
     def test_this_feature_added_no_verb(self):

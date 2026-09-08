@@ -103,21 +103,21 @@ TABLE = """\
 [ledger:report] 0.1 — spend per grain — 3 dispatch row(s), 5 status row(s), 4 grain(s)
 
 -- story (2)
-grain         size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
-0.1/alpha/s0                 2  1200  38500        210000     9100000          37         812     -          720     -      720
-  developer                  1  1200  38000        210000     9100000          37         812
-  reviewer                   1     -    500             -           -           -           -
-0.1/alpha/s1  m              0     -      -             -           -           -           -     -            -     -        -
+grain         size  dispatches    in    out  cache_create  cache_read  tokens_total  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/alpha/s0                 2  1200  38500        210000     9100000             -          37         812     -          720     -      720
+  developer                  1  1200  38000        210000     9100000             -          37         812
+  reviewer                   1     -    500             -           -             -           -           -
+0.1/alpha/s1  m              0     -      -             -           -             -           -           -     -            -     -        -
 
 -- feature (1)
-grain        size  dispatches    in    out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
-0.1/alpha                   2  1200  38500        210000     9100000          37         812     -            -     -        -
-  developer                 1  1200  38000        210000     9100000          37         812
-  reviewer                  1     -    500             -           -           -           -
+grain        size  dispatches    in    out  cache_create  cache_read  tokens_total  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/alpha                   2  1200  38500        210000     9100000             -          37         812     -            -     -        -
+  developer                 1  1200  38000        210000     9100000             -          37         812
+  reviewer                  1     -    500             -           -             -           -           -
 
 -- bug (1)
-grain           size  dispatches  in  out  cache_create  cache_read  tool_calls  duration_s  todo  in_progress  done  total_s
-0.1/bugs/crash                 0   -    -             -           -           -           -     -           30     -       30
+grain           size  dispatches  in  out  cache_create  cache_read  tokens_total  tool_calls  duration_s  todo  in_progress  done  total_s
+0.1/bugs/crash                 0   -    -             -           -             -           -           -     -           30     -       30
 
 -- time per state (5)
 grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
@@ -130,8 +130,8 @@ grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
 -- time per actor (0)
 
 -- rows naming no grain (1)
-dispatches  in  out  cache_create  cache_read  tool_calls  duration_s
-         1   5    -             -           -           2           -
+dispatches  in  out  cache_create  cache_read  tokens_total  tool_calls  duration_s
+         1   5    -             -           -             -           2           -
 
 [ledger:report] 0.1 — 38500 out / 39 tool calls / 812 s across 3 dispatch row(s)"""
 
@@ -177,6 +177,37 @@ def test_the_seeded_ledger_prints_this_exact_table():
         code, out = report(root, '0.1')
     assert code == 0, out
     assert section_of(out, SPEND_TITLE) == TABLE
+
+
+def test_a_reported_total_is_summed_apart_from_the_split_and_says_so():
+    """The half the golden above cannot show: a hand-recorded dispatch that
+    reported ONE number.
+
+    Two rows on one grain, one of each kind. The claim is subtraction as much
+    as addition — `in`/`out` carry the measured split ALONE, `tokens_total`
+    carries the reported one alone, and neither cell moved when the other row
+    landed. Then the summary says which of the two its `out` came from and how
+    many rows it therefore does not cover: a reader who takes `out` for the
+    whole spend is the lie the flag exists to avoid.
+    """
+    with tree(story_statuses=('done', 'ready')) as root:
+        put_ledger(
+            root,
+            dispatch_line('2026-09-03T10:05:00Z', grain=STORY,
+                          usage={'input': 10, 'output': 20}),
+            dispatch_line('2026-09-03T10:06:00Z', grain=STORY,
+                          tokens_total=1234))
+        code, out = report(root, '0.1')
+    assert code == 0, out
+    row = [ln for ln in out.splitlines() if ln.startswith(STORY)][0].split()
+    # dispatches in out cache_create cache_read tokens_total …
+    assert row[1:7] == ['2', '10', '20', '-', '-', '1234'], row
+    assert '1 of those row(s) reported ONE total' in out
+    assert '1234 token(s)' in out
+    assert '`tokens_total`' in out
+    # The summary itself is unchanged: it still sums the split, and the total
+    # is disclosed beside it rather than folded into it.
+    assert '— 20 out / ' in out
 
 
 def test_the_report_prints_every_section_in_the_milestones_order():
@@ -325,10 +356,10 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
     dev = {'agent_type': 'developer', 'dispatches': 1,
            'usage': {'input': 1200, 'output': 38000,
                      'cache_creation': 210000, 'cache_read': 9100000},
-           'tool_calls': 37, 'duration_s': 812}
+           'tokens_total': None, 'tool_calls': 37, 'duration_s': 812}
     rev = {'agent_type': 'reviewer', 'dispatches': 1,
            'usage': dict(blank_usage(), output=500),
-           'tool_calls': None, 'duration_s': None}
+           'tokens_total': None, 'tool_calls': None, 'duration_s': None}
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
         code, out = report(root, '0.1', '--json')
@@ -343,23 +374,26 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
         'section': 'spend',
         'grains': [
             {'grain': STORY, 'kind': 'story', 'size': None,
-             'dispatches': 2, 'usage': full, 'tool_calls': 37,
+             'dispatches': 2, 'usage': full, 'tokens_total': None,
+             'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
              'states': {'todo': None, 'in_progress': 720, 'done': None},
              'unplaced_s': None, 'frozen_only': None,
              'total_s': 720},
             {'grain': QUIET, 'kind': 'story', 'size': 'm',
-             'dispatches': 0, 'usage': blank_usage(), 'tool_calls': None,
+             'dispatches': 0, 'usage': blank_usage(), 'tokens_total': None,
+             'tool_calls': None,
              'duration_s': None, 'agent_types': [],
              'states': EMPTY_STATES, 'unplaced_s': None, 'frozen_only': None,
              'total_s': None},
             {'grain': FEATURE, 'kind': 'feature', 'size': None,
-             'dispatches': 2, 'usage': full, 'tool_calls': 37,
+             'dispatches': 2, 'usage': full, 'tokens_total': None,
+             'tool_calls': 37,
              'duration_s': 812, 'agent_types': [dev, rev],
              'states': EMPTY_STATES, 'unplaced_s': None, 'frozen_only': None,
              'total_s': None},
             {'grain': BUG, 'kind': 'bug', 'size': None, 'dispatches': 0,
-             'usage': blank_usage(), 'tool_calls': None,
+             'usage': blank_usage(), 'tokens_total': None, 'tool_calls': None,
              'duration_s': None, 'agent_types': [],
              'states': {'todo': None, 'in_progress': 30, 'done': None},
              'unplaced_s': None, 'frozen_only': None, 'total_s': 30},
@@ -388,6 +422,7 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
             'actors': []},
         'unattributed': {'dispatches': 1,
                          'usage': dict(blank_usage(), input=5),
+                         'tokens_total': None,
                          'tool_calls': 2, 'duration_s': None},
         'legacy': {'rows': 0, 'unattributed': 0},
         'stated_elsewhere': 0,
@@ -398,9 +433,13 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
         # the emptiness is measured rather than merely reported.
         'in_flight': [],
         'in_flight_unplaceable': 0,
+        # `total_rows` is 0 and `tokens_total` is null on the same object:
+        # nothing here reported a total, and the summary's `out` is therefore
+        # the whole of what these rows say.
         'totals': {'dispatch_rows': 3, 'status_rows': 5, 'grains': 4,
-                   'usage': dict(full, input=1205), 'tool_calls': 39,
-                   'duration_s': 812},
+                   'total_rows': 0,
+                   'usage': dict(full, input=1205), 'tokens_total': None,
+                   'tool_calls': 39, 'duration_s': 812},
     }
     assert sorted(data) == sorted(SPEND_KEYS + SECTION_KEYS)
 
@@ -414,8 +453,9 @@ def test_json_prints_an_object_even_with_no_ledger_at_all():
         assert code == 0, out
         data = json.loads(out)
     assert data['totals'] == {
-        'dispatch_rows': 0, 'status_rows': 0, 'grains': 3,
-        'usage': blank_usage(), 'tool_calls': None, 'duration_s': None}
+        'dispatch_rows': 0, 'status_rows': 0, 'grains': 3, 'total_rows': 0,
+        'usage': blank_usage(), 'tokens_total': None, 'tool_calls': None,
+        'duration_s': None}
 
 
 def test_which_milestones_ledger_is_read():
@@ -486,18 +526,48 @@ def test_a_dropped_ARRIVAL_row_is_disclosed_whichever_kind_carries_it(frozen):
     so a ledger whose arrivals are DISPOSITIONS alone — the configuration this
     feature's own criterion asserts — dropped every row naming a renamed grain
     with nothing at all saying it had.
+
+    THE DISTRIBUTION BESIDE IT WAS DRIVEN BY NOTHING. `in_flight` was
+    asserted only as `[]` over a fixture where every grain is closed, so
+    `median_s`, `worst_s` and the line that renders them never executed in
+    either tier: swapping the median for the worst, or mangling the printed
+    sentence, stayed green across 1486 cases (0.4.0/every-grain-is-on-a-
+    stopwatch M3, `bg-a-proof-row-names-a-case-that-proves-half`). Both
+    numbers are one answer — a discard census over an empty distribution says
+    nothing about either — so the same trees now carry three OPEN stories an
+    hour apart, which is the cheapest fixture that tells a median from a
+    worst: with two, `found[len // 2]` and `found[-1]` are the same row.
+
+    Those ages are measured against the real clock rather than `frozen`'s, so
+    what is pinned is the SPACING this fixture chose, which no wall clock
+    moves.
     """
     gone = '0.1/alpha/renamed-away'
+    ages = ('2026-09-03T10:00:00Z', '2026-09-03T09:00:00Z',
+            '2026-09-03T08:00:00Z')
+    open_rows = [status_line(ts, f'0.1/alpha/s{i}', 'ready', 'building')
+                 for i, ts in enumerate(ages)]
     for carrier in (status_line('2026-09-03T10:00:00Z', gone, 'ready',
                                 'building'),
                     disposition_line('2026-09-03T10:00:00Z', gone,
                                      'building')):
-        with tree() as root:
-            put_ledger(root, carrier)
+        with tree(story_statuses=('building',) * len(ages)) as root:
+            put_ledger(root, carrier, *open_rows)
             data = json.loads(report(root, '0.1', '--json')[1])
             out = report(root, '0.1')[1]
         assert data['in_flight_unplaceable'] == 1, carrier
         assert f'1 arrival row(s) {pm_report.IN_FLIGHT_UNPLACEABLE}' in out
+        # The placeable half: three open stories, measured and rendered.
+        assert [row['kind'] for row in data['in_flight']] == ['story'], data
+        entry = data['in_flight'][0]
+        assert entry['in_flight'] == len(ages), entry
+        # The median is the MIDDLE row and the worst the oldest, an hour
+        # apart — so reading one for the other cannot render the same number
+        # by accident.
+        assert entry['worst_s'] - entry['median_s'] == 3600, entry
+        assert f'{len(ages)} story(s) in flight — median ' \
+               f'{ledger.human_duration(entry["median_s"])}, worst ' \
+               f'{ledger.human_duration(entry["worst_s"])}' in out, out
 
 
 def test_the_id_names_the_LEVEL_and_a_feature_reports_its_own_subtree(frozen):

@@ -3,8 +3,6 @@ id: bg-the-gate-census-column-is-always-absent
 milestone: ms-0.2.0
 name:
 status: closed
-caught_in: ms-0.2.0
-fix_milestone: ms-0.2.0
 caused_by: ft-every-gate-reports-its-cost
 kind: bug
 ---

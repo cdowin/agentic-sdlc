@@ -35,27 +35,31 @@ from agentic_sdlc.repo.pm import ledger, model, verdict
 # `story` and `feature` are subcommands of `close`, since `agentic-sdlc story`
 # would be a second spelling of `pm story`.
 CLOSE_VERB = 'close'
-CLOSE_OPERATIONS = ('story', 'feature')
+# An OPERATION name — a belt's, not a grain kind's; they share a spelling
+# because a belt is named for what it closes, and `_wrong_kind` holds one up.
+OP_STORY = 'story'
+OP_FEATURE = 'feature'
+CLOSE_OPERATIONS = (OP_STORY, OP_FEATURE)
 OPERATIONS = ('release', 'adopt', *CLOSE_OPERATIONS)
 VERBS = ('release', 'adopt', CLOSE_VERB)
 
 # The grain kind each operation writes; '' for the one that writes nothing.
-WRITES = {'release': 'milestone', 'story': 'story', 'feature': 'feature',
-          'adopt': ''}
+WRITES = {'release': model.GRAIN_MILESTONE, OP_STORY: model.GRAIN_STORY,
+          OP_FEATURE: model.GRAIN_FEATURE, 'adopt': ''}
 
 # Segment count, noun and shape of each operation's subject.
 SUBJECT = {
     'release': (1, 'version', '<version>'),
     'adopt': (1, 'version', '<version>'),
     # The count only separates a version subject from a grain one.
-    'story': (2, 'story id', '<story-id>'),
-    'feature': (2, 'feature id', '<feature-id>'),
+    OP_STORY: (2, 'story id', '<story-id>'),
+    OP_FEATURE: (2, 'feature id', '<feature-id>'),
 }
 
 # A milestone id is one path segment; `model.segment_is_literal` owns the
 # grammar.
 MAX_VERSION = 128
-MAX_SUBJECT = MAX_VERSION * len(SUBJECT['story'][2].split('/'))
+MAX_SUBJECT = MAX_VERSION * len(SUBJECT[OP_STORY][2].split('/'))
 # How much of a hostile argument is quoted back.
 QUOTE_LIMIT = 40
 
@@ -625,7 +629,8 @@ def _wrong_kind(cfg, operation: str, subject: str) -> str:
     The half of the old segment count that was real — `close story` given a
     FEATURE id answers the wrong question about a real file — asked off
     `kind:`, so it holds for any id shape."""
-    want = {'story': 'story', 'feature': 'feature'}.get(operation)
+    want = {OP_STORY: model.GRAIN_STORY,
+            OP_FEATURE: model.GRAIN_FEATURE}.get(operation)
     if want is None:
         return ''
     found = model.kind_of(cfg, subject)
@@ -638,7 +643,7 @@ def _wrong_kind(cfg, operation: str, subject: str) -> str:
 def grain_path(cfg, operation: str, subject: str) -> Path | None:
     """The file a close operation's subject names, or None, through `model`'s
     own resolvers."""
-    if operation == 'story':
+    if operation == OP_STORY:
         return model.story_file(cfg, subject)
     return model.feature_file(cfg, subject)
 
@@ -686,8 +691,9 @@ def _recorder(mledger: Path, operation: str, subject: str) -> Recorder:
         defect = ledger.reason_defect(reason)
         if defect:
             return defect
-        row = {'ts': ledger.utc_now(), 'kind': ledger.KIND_DEVIATION,
-               'grain': subject, 'operation': operation,
+        row = {ledger.TS_FIELD: ledger.utc_now(),
+               ledger.KIND_FIELD: ledger.KIND_DEVIATION,
+               ledger.GRAIN_FIELD: subject, 'operation': operation,
                'step': ', '.join(name for name, _ in false),
                'outcome': FORCED, 'reason': reason}
         try:

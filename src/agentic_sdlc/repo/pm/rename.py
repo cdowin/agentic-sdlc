@@ -16,9 +16,9 @@ from agentic_sdlc.repo.pm import model
 # Every frontmatter key whose value can be a grain id. `tests/test_pm_rename.py`
 # holds it to the shipped templates and to `BINDS_TO`/`ORDER_KEY`/`validate`'s
 # ref keys, so a template or a bound kind cannot grow a reference without
-# joining the sweep. `caught_in`/`fix_milestone` are `pm_migrate.py`'s misses.
+# joining the sweep.
 REF_FIELDS = ('depends_on', 'consumed_by', 'caused_by', 'reviewed', 'order',
-              'milestone', 'feature', 'caught_in', 'fix_milestone')
+              model.GRAIN_MILESTONE, model.GRAIN_FEATURE)
 
 # An unindented frontmatter key, which is the only shape the readers accept.
 _KEY = re.compile(r'^(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?P<rest>.*)$')
@@ -113,7 +113,7 @@ def reidentified(text: str, new: str) -> str:
         return ''
     for i in range(bounds[0] + 1, bounds[1]):
         match = _KEY.match(lines[i])
-        if match is None or match.group('key') != 'id':
+        if match is None or match.group('key') != model.FIELD_ID:
             continue
         rest = match.group('rest')
         value = model._without_trailing_comment(rest).strip()
@@ -216,7 +216,8 @@ def _take(cfg: model.PmConfig, out: Sweep, path: Path, is_target: bool) -> None:
         return
     swept, fields = rewritten(text, out.old, out.new)
     if is_target and swept:
-        swept, fields = reidentified(swept, out.new), ('id',) + fields
+        swept, fields = reidentified(swept,
+                                     out.new), (model.FIELD_ID,) + fields
     if not swept:
         # No fence to locate a field in. A document that never names `old` is
         # simply not a reference; one that does is a ref this verb cannot

@@ -249,10 +249,14 @@ def bug(root: Path, slug: str = 'crash', status: str = 'open',
 
     The canonical frontmatter a scaffolded bug carries, so a test that cares
     about ONE field (`caused_by:`) names that field and nothing else.
+
+    `milestone:` is the ONLY binding (0.6.0/D11). Pass `milestone=''` for a
+    POOLED bug — the opt-out `pm remove` writes — which gates nothing and is
+    counted.
     """
     path = root / 'pm/roadmap/bugs' / f'{slug}.md'
     front = {'id': f'0.1/bugs/{slug}', 'milestone': '"0.1"', 'name': '',
-             'status': status, 'caught_in': '"0.1"', 'fix_milestone': ''}
+             'status': status, 'caused_by': ''}
     front.update(extra)
     write(path, front)
     return path

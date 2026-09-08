@@ -18,7 +18,7 @@ from agentic_sdlc.repo.pm import ledger, model
 # the stamp every other reader keys on: spelled `at`, a row sorts as the empty
 # string and files at the beginning of time.
 KIND = ledger.KIND_LESSON
-FIELDS = ('grain', 'rule', 'source', 'text', 'ts')
+FIELDS = (ledger.GRAIN_FIELD, 'rule', 'source', 'text', ledger.TS_FIELD)
 COLUMNS = FIELDS
 
 # The line this module adds BESIDE a verdict; it never reshapes one (rule 6).
@@ -50,7 +50,7 @@ class Lesson(NamedTuple):
 def lesson_of(row: dict) -> Lesson | None:
     """The lesson this row IS, or None; typed, since a row from another version
     with a bad field must name nothing."""
-    if row.get('kind') != KIND:
+    if row.get(ledger.KIND_FIELD) != KIND:
         return None
     values = [row.get(name) for name in FIELDS]
     return Lesson(*[v if isinstance(v, str) else '' for v in values],
@@ -160,7 +160,8 @@ def event(tap: str, les: Lesson, *, operation: str, grain: str, scope: str,
           name: str, check: str = '') -> dict:
     """The row emitted beside the line; the lesson rides VERBATIM under one key,
     because this event says where it surfaced, never what it means."""
-    row = {'ts': ledger.utc_now(), 'kind': EVENT_KINDS[tap], 'grain': grain,
+    row = {ledger.TS_FIELD: ledger.utc_now(),
+           ledger.KIND_FIELD: EVENT_KINDS[tap], ledger.GRAIN_FIELD: grain,
            'rung': operation, 'scope': scope, 'matched': name}
     if check:
         row['check'] = check

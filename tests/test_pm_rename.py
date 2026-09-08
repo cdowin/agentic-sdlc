@@ -264,7 +264,15 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
     # Every other frontmatter key the templates carry, named rather than
     # pattern-matched — adding one is a decision about whether it is a ref.
     NOT_REFS = frozenset({'id', 'kind', 'name', 'status', 'owner', 'phase',
-                          'branch'})
+                          'branch',
+                          # 0.6.0: free prose a human wrote, not an id. A
+                          # sentence naming a renamed grain reads fine after
+                          # the rename; rewriting inside it would edit English.
+                          'changelog',
+                          # 0.6.0: a release string, not an id — no reader
+                          # resolves it to a grain, and two milestones may
+                          # legitimately spell the same one (R3 reports it).
+                          'version'})
 
     def test_every_template_key_is_swept_or_named_as_not_a_reference(self):
         with tree() as root:
@@ -282,6 +290,6 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
 
     def test_every_id_a_reader_resolves_is_swept(self):
         declared = ({model.ORDER_KEY, validate.CAUSED_BY}
-                    | set(validate._REF_KEYS)
+                    | set(validate.REF_KEYS)
                     | {field for _, field in model.BINDS_TO.values()})
         self.assertEqual(declared - set(rename.REF_FIELDS), set())

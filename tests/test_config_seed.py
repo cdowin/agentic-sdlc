@@ -41,7 +41,7 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import init  # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape  # noqa: E402
-from agentic_sdlc.repo.pm import cli as pm_cli, skills  # noqa: E402
+from agentic_sdlc.repo.pm import cli as pm_cli, model, skills  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 SEED = init.seed_body(init.SEED_CONFIG[0])
@@ -89,6 +89,8 @@ VALUE_FROM_CODE = {
     ('checks', 'all'):
         lambda: tuple(name for name, on in top_cli.KNOWN_GATES.items() if on),
     ('grain_shape', 'caps'): lambda: dict(grain_shape.DEFAULT_CAPS),
+    # Keyed and valued by the grain vocabulary's constants, which do not fold.
+    ('pm', 'contains'): lambda: dict(model.DEFAULT_CONTAINS),
 }
 
 SECTION_LINE = re.compile(r'^# \[([a-z_]+)\]$')
@@ -368,15 +370,58 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     _, declaration, _ = seed_sections()
     marked = {name for name, is_declaration in declaration.items()
               if is_declaration}
-    assert marked == {'verify'}, (
-        f'the seed marks {sorted(marked)} as DECLARATION; the only commented '
-        f'one is [verify] ([pm.states.*] is marked and written LIVE)')
+    assert marked == {'dispatch', 'verify'}, (
+        f'the seed marks {sorted(marked)} as DECLARATION; the commented ones '
+        f'are [verify] and [dispatch] ([pm.states.*] is marked and LIVE)')
     code = code_defaults()
     assert not [pair for pair in code if pair[0] in marked], (
         f'a section the seed calls a DECLARATION has a default behind it — '
         f'then it is a knob and belongs commented at that value')
+    # Each declaration's reader is ASKED, so "nothing behind it" is a fact
+    # about the code rather than a claim in the seed's comment.
     with pytest.raises(ConfigError):
         verify_rules.read({})
+    from agentic_sdlc.repo import dispatch as dispatch_verb
+    with pytest.raises(ConfigError):
+        dispatch_verb.settings({})
     assert any(DECLARATION_LINE.match(line) for line in SEED.splitlines()), (
         'the seed marks no DECLARATION at all — the split it states is then '
         'unreadable to anything but a human')
+
+
+# --- criterion 4: the arrival a dispatch starts at names the courier ----------
+# The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
+LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
+
+
+def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
+    """Rule 11, in the surface somebody is standing in: `pm feature|story
+    building <id> --by agent <type>` already records WHO, so it is where the
+    courier and the env var it needs get named. Measured before this line
+    existed: six dispatches, zero dispatch rows, on a tree whose couriers were
+    wired. The SEED's example and this repo's own declaration are one change,
+    never two — a consumer reads the seed to find out what a version can do.
+    """
+    live = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text(encoding='utf-8'))
+    for kind in (model.GRAIN_FEATURE, model.GRAIN_STORY):
+        node = live['pm'][model.ARRIVE_KEY][kind]['building']
+        named = {path: why for path, why in node[model.HAVE_KEY].items()
+                 if any(courier in path for courier in model.LEDGER_COURIERS)}
+        assert named, (
+            f'[pm.arrive.{kind}.building] have names no ledger courier; a '
+            f'dispatch starts here and nothing tells the operator it can be '
+            f'recorded: {sorted(node[model.HAVE_KEY])}')
+        for path, why in named.items():
+            assert (REPO_ROOT / path).is_file(), (
+                f'[pm.arrive.{kind}.building] have names {path}, which is not '
+                f'in this checkout — the line would read "DECLARED and not '
+                f'installed" forever')
+            assert LEDGER_GRAIN_ENV in why, (
+                f'[pm.arrive.{kind}.building] have.{path} does not name '
+                f'{LEDGER_GRAIN_ENV}: the courier reads it from its own '
+                f'environment and no hook event carries it, so a line naming '
+                f'the script without the variable names half the capability')
+    assert LEDGER_GRAIN_ENV in SEED, (
+        f'the seed\'s [pm.arrive.…] example does not name {LEDGER_GRAIN_ENV} '
+        f'while this repo\'s own declaration does — a consumer reads the seed '
+        f'to find out what a version can do')

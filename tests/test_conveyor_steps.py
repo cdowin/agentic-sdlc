@@ -265,22 +265,56 @@ def test_on_milestone_branch_reads_the_stamp_and_will_not_assume_without_one():
 
 
 # --- the changelog ------------------------------------------------------------
-@pytest.mark.parametrize('body,truth,why', [
-    (None, driver.Truth.UNVERIFIABLE, 'is not at'),
-    ('# Changelog\n\n## v0.1.0 — 2026-01-01\n\n- old\n', driver.Truth.FALSE,
-     'no `## Unreleased`'),
-    ('# Changelog\n\n## Unreleased\n\n## v0.1.0 — 2026-01-01\n\n- old\n',
-     driver.Truth.FALSE, 'no bullet'),
-    ('# Changelog\n\n## Unreleased\n\n- a\n\n## Unreleased\n\n- b\n',
-     driver.Truth.FALSE, '2 `## Unreleased`'),
-    ('# Changelog\n\n## Unreleased\n\n- a change\n', driver.Truth.TRUE,
-     '1 bullet'),
+# 0.6.0: the step grades GRAINS, not a file. It counted bullets in
+# `CHANGELOG.md` — one bullet passed a release of forty grains, and nothing
+# bound a bullet to the work it described. The file is retired; the parameter
+# table below moved from file bodies to tree states for that reason.
+# The grains this step grades, written into the scratch tree's pools.
+FEATURE_DOC = f'''---
+id: f-alpha
+kind: feature
+milestone: "{VERSION}"
+name: Alpha
+status: done
+reviewed:
+changelog:
+---
+
+# Alpha
+'''
+
+
+def _with_changelog(root: Path, entry: str) -> None:
+    """One closed feature under the scratch milestone, `changelog:` set.
+
+    THE NESTED SLOT (`<milestone>/features/<slug>/feature.md`), because this
+    fixture builds a nested tree — writing into `pm/roadmap/features/` creates
+    a POOL and flips the layout, after which the milestone itself stops
+    resolving. Written as bytes: `pm set` would spawn.
+    """
+    from agentic_sdlc.repo.pm import changelog as clog
+    path = root / MDIR / 'features' / 'alpha' / 'feature.md'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = FEATURE_DOC
+    if entry:
+        body = body.replace(f'{clog.FIELD}:', f'{clog.FIELD}: {entry}')
+    path.write_text(body, encoding='utf-8')
+
+
+@pytest.mark.parametrize('entry,truth,why', [
+    # The closed feature is silent — NAMED, with the two ways to answer.
+    ('', driver.Truth.FALSE, 'answered neither'),
+    # `none` is an ANSWER. That is the whole point of the word.
+    ('none', driver.Truth.TRUE, '1 declined'),
+    # And a sentence.
+    ('a change', driver.Truth.TRUE, '1 entry/ies'),
 ])
-def test_the_changelog_is_read_and_never_created_or_retitled(body, truth, why):
-    """Bites: a tag over empty notes, an ambiguous pair of headings picked
-    from, or a changelog the check created or rewrote."""
-    files = {'CHANGELOG.md': body} if body is not None else {}
-    with tree(files) as root:
+def test_the_changelog_step_grades_grains_and_writes_nothing(entry, truth,
+                                                             why):
+    """Bites: a release over a closed grain nobody wrote a line for, and the
+    `none` that must satisfy it. The step is a READER — it writes nothing."""
+    with tree({}) as root:
+        _with_changelog(root, entry)
         before = snapshot(root)
         answer = check('changelog-unreleased-nonempty', root)
         assert answer.truth is truth, answer
@@ -414,6 +448,9 @@ def test_no_devkit_toml_and_the_stock_list_declared_are_the_same_bytes():
      'never runs'),
     ('[release.commands]\nnot-a-step = "x"\n', 'names no registered check'),
     ('[release]\ncommand_timeout = "soon"\n', 'positive integer'),
+    # 0.6.0: the key named the FILE the changelog step counted bullets in. A
+    # consumer still declaring it would keep a path nothing reads.
+    ('[release]\nchangelog = "NOTES.md"\n', 'retired in 0.6.0'),
     ('release = "x"\n', ''),
 ])
 def test_the_config_refusal_matrix_is_exit_2_and_runs_no_check(config, expected):

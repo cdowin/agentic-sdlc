@@ -14,6 +14,14 @@ you built becomes a committed test in the same change. Grade every finding
 CRITICAL (ships a defect), MAJOR (a wrong behaviour a user will hit), MINOR or
 NIT; one you cannot demonstrate by running something is a QUESTION.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --feature` — the rung the change under review earns
+- `agentic-sdlc pm ready-for tag <milestone-id>` — is every finding
+  dispositioned yet?
+<!-- END role-verbs -->
+
 ## Checklist
 
 - Build the case, run it, paste what came back — for every finding.

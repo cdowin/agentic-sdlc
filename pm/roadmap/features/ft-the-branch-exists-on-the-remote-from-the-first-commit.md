@@ -3,10 +3,11 @@ id: ft-the-branch-exists-on-the-remote-from-the-first-commit
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: the branch exists on the remote from the first commit
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.6.0-the-branch-exists-on-the-remote.md
 depends_on: []
 consumed_by: []
+changelog: A milestone arriving at an in_progress state now reports whether its branch exists on a remote and prints the push command; the pressure line and `release`'s on-milestone-branch carry the same fact. The tool never pushes.
 ---
 
 # the branch exists on the remote from the first commit

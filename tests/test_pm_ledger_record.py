@@ -425,6 +425,12 @@ def test_the_archived_tree_is_not_the_live_tree():
     (dict(), ('--grain', STORY, '--tool-calls', '0', '--tokens-in', '0'),
      {'kind': 'dispatch', 'grain': STORY, 'tool_calls': 0,
       'usage': {'input': 0}, 'tree': STOCK_TREE}),
+    # ONE TOTAL, which is what a subagent completion actually reports: its own
+    # key, and no `usage` at all — a total split in half by this verb would be
+    # a measurement nobody made.
+    (dict(), ('--grain', STORY, '--tokens-total', '1234'),
+     {'kind': 'dispatch', 'grain': STORY, 'tokens_total': 1234,
+      'tree': STOCK_TREE}),
     # The grain recorded is the FILE's own id, unquoted — the string every
     # status row spells, or the report joins nothing to it.
     (dict(), ('--grain', '0.1'),
@@ -907,6 +913,16 @@ RECORD_REFUSALS = [
     (('--grain', '0.1/alpha/s*'), ''),
     ((STORY, '--tokens-in', '5'), 'takes flags only'),
     (('--grain', STORY, '--wombat', '5'), 'takes flags only'),
+    # A total and a split in one row is a row that can disagree with itself,
+    # so both spellings of "I have both" are refused before anything lands —
+    # the hand split, and a transcript that MEASURES one.
+    (('--grain', STORY, '--tokens-total', '5', '--tokens-in', '1'),
+     'exclusive'),
+    (('--grain', STORY, '--tokens-total', '5', '--tokens-out', '1'),
+     'exclusive'),
+    (('--grain', STORY, '--tokens-total', '5', '--from-transcript',
+      str(SUBAGENT), '--event', 'Stop'), 'exclusive'),
+    (('--grain', STORY, '--tokens-total=-1'), 'non-negative integer'),
 ]
 
 
@@ -1130,8 +1146,8 @@ def test_the_finished_rule_lives_in_ledger_py_and_is_the_done_category():
     assert ledger.ends_grain(cfg, 'story', 'obe')
     assert ledger.ends_grain(cfg, 'feature', 'done')
     assert ledger.ends_grain(cfg, 'milestone', 'done')
-    assert ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'closed')
-    assert not ledger.ends_grain(cfg, ledger.GRAIN_BUG, 'fixed')
+    assert ledger.ends_grain(cfg, model.GRAIN_BUG, 'closed')
+    assert not ledger.ends_grain(cfg, model.GRAIN_BUG, 'fixed')
     assert not ledger.ends_grain(cfg, 'story', 'reviewing')
     assert not ledger.ends_grain(cfg, 'story', 'shut')
     assert not ledger.ends_grain(cfg, 'story', {'to': 'done'})

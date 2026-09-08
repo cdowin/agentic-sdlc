@@ -33,7 +33,9 @@ import json
 import os
 import sys
 import tempfile
+import unittest
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -44,7 +46,7 @@ from support.pm import run_cli, tree as grain_tree  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo.pm import model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
 FULL = '\n'.join(
     f'[pm.states.{kind}]\n'
@@ -572,27 +574,229 @@ def test_every_symbol_the_census_deleted_is_gone():
         assert key in model.RETIRED_KEYS, f'[pm] {key} is not refused by name'
 
 
-def test_no_state_literal_survives_outside_the_seed():
-    """The census, enumerated: every string constant equal to a seed word, in
-    every census module, is in a SEED assignment — or it is named here."""
-    survivors = []
-    modules = _census_modules()
-    names = {dotted for dotted, _ in modules}
-    # The census is the claim (rule 4): one module from each side of the
-    # `core/` / `repo/` edge must be in it, or the walk is scanning the
-    # wrong root and every assertion below is over nothing.
-    assert {'pm.model', 'core.config', 'conveyor.driver'} <= names, sorted(names)
-    for dotted, path in modules:
+# --- the same census, three more vocabularies (0.6.0) --------------------------
+# The state words were the FIRST vocabulary spelled as bare literals, and only
+# one of four got a gate. The grain kinds, the frontmatter field names and the
+# durable row's own fields are the other three, and they are ROWS on this
+# harness rather than a second one: the same walk, the same
+# `module -> assignment target` exception table, the same fail-by-name.
+#
+# `POSITION` is the one thing that differs, and it is the honest part. A second
+# spelling is SILENT in a particular place — a `field_of` argument returns '',
+# a row key reads `None` and sorts to the beginning of time — and the same word
+# somewhere else is a git subcommand, a printed column header (rule 6) or an
+# English noun. So each vocabulary declares WHERE it is graded, and what is
+# outside that is stated rather than implied.
+
+ANYWHERE = 'anywhere'          # every string constant that is not a docstring
+FIELD_ARGUMENT = 'field argument'   # `field_of(path, X)` and its siblings
+MAPPING_KEY = 'mapping key'    # a dict-literal key, `.get(X)`, `d[X]`
+
+# The calls that take a FRONTMATTER field name. A wrong spelling here returns
+# '' from a document that has the field, which reads as "absent".
+FIELD_READERS = ('field_of', 'field_in', 'set_field', 'field')
+# The calls that take a MAPPING key, beside a dict literal and a subscript.
+KEY_READERS = ('get', 'setdefault', 'pop')
+
+GRAIN_WORDS = frozenset(model.FLOW_KINDS)
+FIELD_WORDS = frozenset({model.FIELD_ID, model.FIELD_KIND, model.FIELD_STATUS,
+                         model.FIELD_NAME, model.FIELD_OWNER})
+ROW_WORDS = frozenset({ledger.TS_FIELD, ledger.KIND_FIELD, ledger.GRAIN_FIELD})
+
+
+class Vocabulary(NamedTuple):
+    """One closed set of words, its one home, and where it is graded."""
+
+    words: frozenset
+    home: tuple                 # (module, name) the words are spelled at
+    position: str
+    # module -> the top-level assignment targets that MAY spell one, each an
+    # entry with a reason beside it. The `SEED_ASSIGNMENTS` shape, one vocab on.
+    elsewhere: dict
+    fstrings: bool = False      # grade a literal segment of an f-string too
+
+
+VOCABULARIES = {
+    'state': Vocabulary(SEED_WORDS, ('pm.model', 'DEFAULT_FLOWS'), ANYWHERE,
+                        SEED_ASSIGNMENTS, fstrings=True),
+    'grain kind': Vocabulary(
+        GRAIN_WORDS, ('pm.model', 'GRAIN_<KIND>'), ANYWHERE, {
+            'pm.model': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
+                                   'GRAIN_STORY', 'GRAIN_BUG'}),
+            # A BELT's name, not a grain kind's: a belt is named for what it
+            # closes. `conveyor/driver.py` is that vocabulary's home, and
+            # `pm/` may not import `conveyor/`, so `arrive` spells its own.
+            'conveyor.driver': frozenset({'OP_STORY', 'OP_FEATURE'}),
+            'pm.arrive': frozenset({'STORY_BELT', 'FEATURE_BELT'}),
+            # A MAKE target, which is a name in the consumer's Makefile.
+            'conveyor.steps': frozenset({'DEFAULT_RUNNER_TARGETS'}),
+            # `verify` reads no PM tree and must not import `pm.model` to
+            # spell the name of a make rung.
+            'verify.rules': frozenset({'STORY', 'FEATURE', 'MILESTONE'}),
+            # Printed COLUMN headers and payload keys — contract (rule 6), and
+            # a different vocabulary that happens to share four words.
+            'pm.cli': frozenset({'LIST_COLUMNS', 'ROADMAP_COLUMNS'}),
+            'pm.report': frozenset({'MILESTONE_KEY', 'FEATURE_COLUMN',
+                                    'STORY_COLUMN', 'BUG_COLUMN',
+                                    'BEFORE_WRITE_TITLE'}),
+        }),
+    'frontmatter field': Vocabulary(
+        FIELD_WORDS, ('pm.model', 'FIELD_<NAME>'), FIELD_ARGUMENT,
+        {'pm.model': frozenset({'FIELD_ID', 'FIELD_KIND', 'FIELD_STATUS',
+                                'FIELD_NAME', 'FIELD_OWNER'})}),
+    'row field': Vocabulary(
+        ROW_WORDS, ('pm.ledger', '<NAME>_FIELD'), MAPPING_KEY,
+        {'pm.ledger': frozenset({'TS_FIELD', 'KIND_FIELD', 'GRAIN_FIELD'})}),
+}
+
+
+def _graded(tree: ast.AST, position: str, fstrings: bool):
+    """(line, value) for every string constant this vocabulary is graded at."""
+    docstrings, interpolated, wanted = set(), set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                docstrings.add(id(body[0].value))
+        if isinstance(node, ast.JoinedStr):
+            interpolated |= {id(v) for v in node.values}
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = (func.attr if isinstance(func, ast.Attribute)
+                    else func.id if isinstance(func, ast.Name) else '')
+            if position == FIELD_ARGUMENT and name in FIELD_READERS:
+                wanted |= {id(a) for a in node.args}
+            if position == MAPPING_KEY and name in KEY_READERS and node.args:
+                wanted.add(id(node.args[0]))
+        if position == MAPPING_KEY:
+            if isinstance(node, ast.Dict):
+                wanted |= {id(k) for k in node.keys if k is not None}
+            elif isinstance(node, ast.Subscript):
+                wanted.add(id(node.slice))
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if id(node) in docstrings:
+            continue
+        if not fstrings and id(node) in interpolated:
+            continue
+        if position != ANYWHERE and id(node) not in wanted:
+            continue
+        yield node.lineno, node.value
+
+
+def _survivors(vocab: Vocabulary) -> list[str]:
+    """Every place a word of this vocabulary is spelled that is not its home
+    and not a named exception — `path:line 'word'`, never a count."""
+    out = []
+    for dotted, path in _census_modules():
         tree = ast.parse(path.read_text('utf-8'))
         where = _enclosing_names(tree)
-        for line, value in _string_constants(tree):
-            if value not in SEED_WORDS:
+        for line, value in _graded(tree, vocab.position, vocab.fstrings):
+            if value not in vocab.words:
                 continue
             target, _ = where.get(line, (None, None))
-            if target in SEED_ASSIGNMENTS.get(dotted, ()):
+            if target in vocab.elsewhere.get(dotted, ()):
                 continue
-            survivors.append(f'{path.relative_to(REPO_ROOT)}:{line} {value!r}')
+            out.append(f'{path.relative_to(REPO_ROOT)}:{line} {value!r}')
+    return out
+
+
+def _census_is_the_tree():
+    """The census is the claim (rule 4): one module from each side of the
+    `core/` / `repo/` edge must be in it, or the walk is scanning the wrong
+    root and every assertion over it is over nothing."""
+    names = {dotted for dotted, _ in _census_modules()}
+    assert {'pm.model', 'core.config', 'conveyor.driver'} <= names, sorted(names)
+
+
+def test_no_state_literal_survives_outside_the_seed():
+    """The census, enumerated: every string constant equal to a seed word, in
+    every census module, is in a SEED assignment — or it is named here. The
+    STATE row of `VOCABULARIES`; the other three are the class below."""
+    _census_is_the_tree()
+    survivors = _survivors(VOCABULARIES['state'])
     assert survivors == [], '\n'.join(survivors)
+
+
+# Planted modules, as (source, must the reader call it a survivor). The graded
+# POSITIONS are the part that can go quietly wrong — a reader that stopped
+# seeing dict keys reports an empty offender list, which is what a clean tree
+# reports too.
+_A_BARE_KIND = "def f(cfg):\n    return holds(cfg, 'feature', [])\n"
+_A_NAMED_KIND = "def f(cfg):\n    return holds(cfg, model.GRAIN_FEATURE, [])\n"
+_A_KIND_IN_A_MESSAGE = "def f():\n    return f'a {x} feature'\n"
+_A_BARE_FIELD_ARGUMENT = "def f(p):\n    return model.field_of(p, 'status')\n"
+_A_NAMED_FIELD_ARGUMENT = ("def f(p):\n"
+                           "    return model.field_of(p, model.FIELD_STATUS)\n")
+_A_FIELD_WORD_SOMEWHERE_ELSE = "def f():\n    return git_lines('status', '-s')\n"
+_A_BARE_ROW_GET = "def f(row):\n    return row.get('ts')\n"
+_A_BARE_ROW_KEY = "def f(gid):\n    return {'grain': gid}\n"
+_A_BARE_ROW_SUBSCRIPT = "def f(row):\n    return row['kind']\n"
+_A_NAMED_ROW_GET = "def f(row):\n    return row.get(ledger.TS_FIELD)\n"
+_A_ROW_WORD_AS_A_NOUN = "def f(k):\n    return f'a {k} names its ' + 'grain'\n"
+
+
+class NoVocabularyLiteralSurvivesOutsideItsHome(unittest.TestCase):
+    """Grain kinds, frontmatter fields and row fields, on the state census's
+    own harness.
+
+    `lessons.FIELDS` spelled the durable stamp `at` while every reader keyed
+    `ts`, so those rows sorted to the beginning of time and no test could see
+    it: neither spelling is wrong to a string. A constant makes the second
+    spelling a NameError at import.
+
+    **What this does NOT grade**, stated rather than implied: a frontmatter
+    field name outside a `field_of`/`field_in`/`set_field` argument, and a row
+    field outside a mapping key. Both are positions where the same four words
+    are a git subcommand, a printed column (rule 6) or an English noun, and a
+    census that cannot tell them apart forces a module to lie about what it
+    means. `tests/` is out of scope — its economics are `check budget`'s.
+    """
+
+    CORPUS = (
+        (_A_BARE_KIND, True),
+        (_A_NAMED_KIND, False),
+        # Prose in a rendered message, not the vocabulary.
+        (_A_KIND_IN_A_MESSAGE, False),
+        (_A_BARE_FIELD_ARGUMENT, True),
+        (_A_NAMED_FIELD_ARGUMENT, False),
+        # The same word as a git subcommand: outside the graded position.
+        (_A_FIELD_WORD_SOMEWHERE_ELSE, False),
+        # The three mapping-key shapes, each its own way for a reader to go
+        # blind while still reporting a count.
+        (_A_BARE_ROW_GET, True),
+        (_A_BARE_ROW_KEY, True),
+        (_A_BARE_ROW_SUBSCRIPT, True),
+        (_A_NAMED_ROW_GET, False),
+        (_A_ROW_WORD_AS_A_NOUN, False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        """Does any vocabulary but `state` report a survivor in this source?"""
+        tree = ast.parse(planted)
+        return any(value in vocab.words
+                   for name, vocab in VOCABULARIES.items() if name != 'state'
+                   for _, value in _graded(tree, vocab.position, vocab.fstrings))
+
+    def test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else(self):
+        _census_is_the_tree()
+        for name, vocab in VOCABULARIES.items():
+            with self.subTest(vocabulary=name):
+                self.assertNotEqual(frozenset(), vocab.words, name)
+                survivors = _survivors(vocab)
+                self.assertEqual(
+                    [], survivors,
+                    f'a {name} word spelled outside {vocab.home[0]}.'
+                    f'{vocab.home[1]}. A second spelling is not wrong to a '
+                    f'string — it is wrong at 3am, silently. Read it from its '
+                    f'home, or name the assignment in VOCABULARIES with the '
+                    f'reason it is a different word:\n  '
+                    + '\n  '.join(survivors))
 
 
 def test_the_belts_spell_no_state_word():

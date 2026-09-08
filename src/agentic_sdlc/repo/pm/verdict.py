@@ -78,10 +78,10 @@ IN_PLACE = 'in-place'
 # one file: the conveyor imports this rather than minting a second spelling of
 # "disposition", which would be the second scoreboard in miniature.
 #
-# `false` is not on this list on purpose. It is not a disposition — it is the
-# absence of one, the belt asking and nobody answering, and it writes nothing.
+# `false` is deliberately not a second word here. It is not a disposition — it
+# is the absence of one, the belt asking and nobody answering, and it writes
+# nothing.
 SKIPPED = 'skipped'
-CHECK_DISPOSITIONS = (SKIPPED,)
 
 # --- the shape ----------------------------------------------------------------
 MARKER = 'verdict'

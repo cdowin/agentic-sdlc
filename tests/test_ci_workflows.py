@@ -244,12 +244,75 @@ def _compare_step_script() -> str:
 
 
 def _milestone(root: Path, mid: str, status: str, quote: str = '"',
-               body: str = '') -> None:
+               body: str = '', version: str = '') -> None:
     mdir = root / 'pm/roadmap' / f'{mid}-m'
     mdir.mkdir(parents=True)
+    declares = f'version: {version}\n' if version else ''
     (mdir / 'milestone.md').write_text(
-        f'---\nid: {quote}{mid}{quote}\nname: M\nstatus: {status}\n---\n{body}',
+        f'---\nid: {quote}{mid}{quote}\nname: M\n{declares}status: {status}\n---\n{body}',
         encoding='utf-8')
+
+
+# --- the field a milestone declares its version IN ----------------------------
+# Every fixture above writes a milestone whose id IS a version string, which is
+# the layout `pm new milestone` stopped producing at 0.3.0: since
+# `ft-a-milestone-declares-its-version` the version is the `version:` FIELD, and
+# since 0.6.0's `bg-the-milestone-scaffold-still-mints-the-version` the id is a
+# slug minted from the name. Not one milestone in this repo's own tree — not
+# even `ms-0.4.0`, whose id carries the digits — has ever had `id == $PR`.
+#
+# So the gate's success path was DEAD in every layout the tool emits, and the
+# rows above could not see it, because they model a shape nothing writes any
+# more. A new writer met an old reader; the test fixture was the old reader's
+# alibi.
+MODERN = ('ms-the-slug', '0.99.0')
+
+
+def _run_compare(root: Path, script: Path, main: str, pr: str):
+    import subprocess
+    return subprocess.run(['bash', str(script)], cwd=root, capture_output=True,
+                          text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
+                                          'MAIN': main, 'PM_ROADMAP': 'pm/roadmap'})
+
+
+def test_a_milestone_declaring_its_version_in_a_field_is_a_release(tmp_path):
+    """The layout this package has shipped since 0.3.0, admitted and refused.
+
+    A slug-id milestone at `version: 0.99.0`, `done`, IS the release the gate
+    exists to admit — and a `building` one at the same version is the release
+    it exists to refuse. Both were invisible before: the loop asked `id` only,
+    so a slug id matched nothing, `legit` stayed empty, and a legitimate
+    release PR was told it was 'neither the id of a done milestone nor a
+    hotfix' — the one message that cannot be acted on, because the operator
+    cannot rename a milestone to a version without undoing 0.6.0.
+    """
+    mid, version = MODERN
+    script = tmp_path / 'compare.sh'
+    script.write_text(_compare_step_script(), encoding='utf-8')
+
+    closed = tmp_path / 'closed'
+    _milestone(closed, mid, 'done', version=version)
+    ok = _run_compare(closed, script, '0.98.0', version)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert f'done milestone {mid}' in ok.stdout, ok.stdout
+
+    building = tmp_path / 'building'
+    _milestone(building, mid, 'building', version=version)
+    refused = _run_compare(building, script, '0.98.0', version)
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+    assert "not done" in refused.stdout, refused.stdout
+
+
+def test_the_id_still_declares_the_version_on_a_tree_that_predates_the_field(tmp_path):
+    """The fallback, asserted rather than assumed: a pre-0.3.0 milestone whose
+    id IS the version still resolves, so reading the new field did not retire
+    the old shape out from under a tree that never migrated."""
+    script = tmp_path / 'compare.sh'
+    script.write_text(_compare_step_script(), encoding='utf-8')
+    _milestone(tmp_path, '0.99.0', 'done')
+    ok = _run_compare(tmp_path, script, '0.98.0', '0.99.0')
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert 'done milestone 0.99.0' in ok.stdout, ok.stdout
 
 
 COMPARE_ROWS = [
@@ -267,7 +330,7 @@ COMPARE_ROWS = [
     # The finding that made the first cut of this rule NOT RELEASE-SAFE: a
     # BUILDING milestone whose id is main + one integer read as a hotfix.
     ('0.90.3',   '0.90.3.2',   (),          ('0.90.3.2',), False, "whose status is 'building', not done"),
-    ('0.90.3',   '0.90.3.01',  ('0.90.2',),  (),           False, 'neither the id of a done milestone'),
+    ('0.90.3',   '0.90.3.01',  ('0.90.2',),  (),           False, 'the version or id of no done milestone'),
 ]
 
 
@@ -345,7 +408,7 @@ def test_the_compare_step_ignores_an_unclosed_fence_and_strips_trailing_space(tm
                               text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,
                                               'MAIN': '0.7', 'PM_ROADMAP': 'pm/roadmap'})
     unclosed = run('0.9')
-    assert unclosed.returncode == 1 and 'neither the id of a done milestone' in unclosed.stdout, unclosed.stdout
+    assert unclosed.returncode == 1 and 'the version or id of no done milestone' in unclosed.stdout, unclosed.stdout
     padded = run('0.8')
     assert padded.returncode == 0 and 'done milestone 0.8' in padded.stdout, padded.stdout
 

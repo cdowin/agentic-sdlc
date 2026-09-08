@@ -34,9 +34,10 @@ recreates that drift on day one.
 The belt writes the milestone's status and nothing else. After `ok`, in the
 order it prints them:
 
-- retitle the changelog's `## Unreleased` to `## v<version> — <ISO date>` and
-  open a fresh empty `## Unreleased` above it;
-- commit the roadmap directory and the changelog as the release commit;
+- commit the roadmap directory as the release commit — **there is no changelog
+  file to retitle (0.6.0)**: the changelog is a `changelog:` field on each grain
+  and `agentic-sdlc changelog <milestone-id>` renders the release notes in the
+  `order:` the milestone declares. Redirect it if you want a file;
 - push the branch — never the mainline;
 - open the PR and wait for the required checks (`[release.commands] pr-open`
   and `ci-green`, if this repo names them, are printed on the line);
@@ -85,7 +86,7 @@ repo from this session.
 
 Tag without the version-sync commit. Force-move a published tag — a bad
 release gets a new patch version, not a rewritten tag. Make a tag wait on
-another repo's working state. Tag a version whose `## Unreleased` section is
-empty. Write a milestone `done` over an open finding without `--force` saying
+another repo's working state. Tag a version whose grains answered the
+changelog question neither way — a sentence or `none`. Write a milestone `done` over an open finding without `--force` saying
 so. Every one of those is a check now, or a `next:` line; none of them is a
 thing to remember.

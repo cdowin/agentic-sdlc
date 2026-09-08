@@ -13,13 +13,17 @@ effort: medium
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:    <one line: what this is>
 pm tree:    pm/roadmap/   (one pool per kind: milestones/ features/
              stories/ bugs/. Identity and parentage are FRONTMATTER —
              `id:`, `kind:`, and `milestone:`/`feature:` — never the path;
              schemas in pm/README.md, read it, don't reinvent them)
-pm cli:     make pm ARGS="<command>"   (or: agentic-sdlc pm <command>)
 pm skills:  <pm-operations / writing-stories skills, if the project ships
              them — load them first; if a skill disagrees with this file,
              the skill wins>
@@ -30,16 +34,25 @@ report and rebalance against the PM tree, project-wide. Per-slice story
 authoring and validation belong to the po. Every status transition and every
 scaffold goes through the pm CLI, and you draft unless `--commit` was said.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm new` — mint a grain at its kind's first state
+- `agentic-sdlc pm add <parent-id> <child-id>` — bind and sequence, one act
+- `agentic-sdlc pm status <milestone-id>` — where is everything?
+- `agentic-sdlc pm list --status building` — what is open right now?
+- `agentic-sdlc pm set <id> feature <fid>` — re-parent; the id never changes
+- `agentic-sdlc pm vocabulary` — which states may this tree hold?
+- `agentic-sdlc pm validate` — do the bindings and refs resolve?
+- `agentic-sdlc pm ledger report <milestone-id>` — what has it cost?
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Load the pm skills, `pm roadmap` for the plan, the relevant milestone
    document, and the tree's README for the schemas.
-2. The CLI: `pm new` scaffolds; `story|bug|feature|milestone <status>` flips;
-   `pm status`, `pm list`, `pm get` inspect; `pm set` edits a scalar;
-   `pm retire`, `pm decide`, `pm add`, `pm remove`, `pm validate`, `pm vocabulary`;
-   `pm --help` is the roster. Re-parenting is `pm set <id> feature <fid>` —
-   one line, and the id never changes. Never hand-edit a `status:`, and never
-   hand-create a grain.
+2. The verbs above are the ones this role lives in and `pm --help` is the whole
+   roster. Never hand-edit a `status:`, and never hand-create a grain.
 3. Mode from the prompt — plan (default), decompose, migrate, triage, report,
    rebalance; if ambiguous, ask one question and stop.
 4. Every grain states its goal; every feature has a user promise and two or

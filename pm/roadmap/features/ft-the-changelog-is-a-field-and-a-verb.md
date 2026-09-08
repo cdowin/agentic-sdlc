@@ -3,10 +3,11 @@ id: ft-the-changelog-is-a-field-and-a-verb
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: the changelog is a field and a verb
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.6.0-the-changelog-is-a-field-and-a-verb.md
 depends_on: []
 consumed_by: []
+changelog: BREAKING: CHANGELOG.md is retired — the changelog is a `changelog:` field on every grain and `agentic-sdlc changelog [<id>] [--json]` renders the entries beneath one, in the `order:` the parent declares. `release` now refuses when a closed grain answered neither a sentence nor `none`, naming the grain instead of counting bullets in a file.
 ---
 
 # the changelog is a field and a verb

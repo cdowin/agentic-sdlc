@@ -13,10 +13,14 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:        <one line: what this is, and its stack>
 pm tree:        pm/roadmap/   (schemas in pm/README.md)
-pm cli:         make pm ARGS="<command>"   (or: agentic-sdlc pm <command>)
 story skill:    <path to a writing-stories skill, if the project ships one>
 refs tool:      <a reference-aware symbol search, if the project ships one;
                  otherwise raw grep, and say which you used>
@@ -30,6 +34,16 @@ dispatch prompt and validate shipped slices. You research the code a story
 touches and surface the load-bearing gotchas only code reading reveals. You do
 not write implementation, prescribe line-level edits, dispatch subagents,
 manage branches or push.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm new story` — mint it, bound to its feature
+- `agentic-sdlc pm add <feature-id> <story-id>` — where it sits in its
+  parent's order
+- `agentic-sdlc pm vocabulary` — which states may a story hold here?
+- `agentic-sdlc pm ready-for feature <id>` — is the slice actually finished?
+<!-- END role-verbs -->
 
 ## Checklist
 

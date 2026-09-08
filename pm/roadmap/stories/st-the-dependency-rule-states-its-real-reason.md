@@ -4,9 +4,10 @@ kind: story
 feature: ft-the-dispatch-carries-the-contract
 milestone: "ms-the-rule-reaches-the-work"
 name: the dependency rule states its real reason
-status: planning
+status: done
 owner:
 depends_on: []
+changelog: none
 ---
 
 # the dependency rule states its real reason
@@ -48,3 +49,12 @@ stdlib. That constraint is currently held by convention alone, which is the thin
 
 Taking a dependency. This adds nothing to `pyproject.toml`; it makes the next person argue against the
 right rule.
+
+## Evidence
+
+done: c0c8f68 — rule 1's sentence names the hook corpus as the surface its reason protects and
+distinguishes the package's own uvx-resolved runtime. The number did not move and what the rule
+permits did not change. D4 on the milestone carries the audit: PyYAML and ruamel.yaml are blocked by
+rule 3, a CLI framework by rule 6, a validation library by nothing and unnecessary. The one live
+trade — byte-exact to semantic preservation, ~165 lines of `model.py` — is recorded as **rule 3's**
+to make and is NOT taken here.

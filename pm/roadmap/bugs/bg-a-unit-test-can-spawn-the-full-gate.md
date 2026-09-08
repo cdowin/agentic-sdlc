@@ -4,7 +4,6 @@ milestone: ms-0.3.0
 name: a unit-tier test can spawn the full gate, and nothing says why
 status: closed
 severity: high
-caught_in: ms-0.3.0
 kind: bug
 ---
 

@@ -21,7 +21,7 @@ import os
 import tempfile
 import pathlib
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from support.pm import (
@@ -87,12 +87,20 @@ class StatusMoves(unittest.TestCase):
         # `status:` line rewritten by hand lands a story at `done` under a DONE
         # feature — a state the old graph refused from `todo` — and every rule
         # that reads an END STATE is satisfied by it.
+        #
+        # The replacement targets `status: ready`, which is what `tree()`
+        # WRITES. It read `status: todo` until 0.6.0 and matched nothing, so
+        # the hand-edit this case is named for never happened and the PASS it
+        # asserted was over an untouched tree — the case proved half of itself.
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('ready',)) as root:
             sf = root / STORY_REL
-            sf.write_text(sf.read_text(encoding='utf-8')
-                          .replace('status: todo', 'status: done'),
-                          encoding='utf-8')
+            edited = sf.read_text(encoding='utf-8').replace('status: ready',
+                                                            'status: done')
+            self.assertNotEqual(edited, sf.read_text(encoding='utf-8'),
+                                'the hand-edit this case is about did not '
+                                'happen — the fixture spelling moved')
+            sf.write_text(edited, encoding='utf-8')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
 
@@ -180,7 +188,10 @@ class StatusMoves(unittest.TestCase):
 
     def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
         # The advisory about the features left behind is gone (story 03);
-        # D3 asks that question of the tree it left, as a WARN naming both.
+        # D11 asks that question of the tree it left, naming both. It was D3's
+        # WARN until 0.6.0 and is a FINDING now: a milestone that closes over
+        # an unfinished feature makes its own census a lie, and a WARN could
+        # not redden the gate that would have said so.
         #
         # STDOUT ONLY, and that is the claim (amended 0.5.0/D3): an arrival
         # reports the tree's open work on STDERR, so the stream a consumer
@@ -193,8 +204,8 @@ class StatusMoves(unittest.TestCase):
                              ['[pm] milestone 0.1: building -> done'])
             self.assertEqual(model.field_of(root / MFILE, 'status'), 'done')
             code, out = run_gate(root)
-            self.assertEqual(code, 0, out)
-            self.assertIn("  WARN  milestone 0.1 is 'done' (done) but feature "
+            self.assertEqual(code, 1, out)
+            self.assertIn("  DRIFT  milestone 0.1 is 'done' (done) but feature "
                           "0.1/alpha is 'building' (in_progress)", out)
 
 
@@ -521,16 +532,38 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(self._stderr(out, 'have:'), [])
 
     # --- the pressure line ------------------------------------------------
+    # How far back the oldest grain is planted. Two whole units, so the
+    # rendering (`3d 5h`) is stable against the wall clock the case runs on.
+    AGED = timedelta(days=3, hours=5)
+
     def test_every_word_and_number_is_derived(self):
         """THE CASE THAT MATTERS. Every number on the pressure line traces to
         `[pm.states.*]`, to the ledger's own rows or to a frontmatter field,
         and every word of the fork traces to the declaration — so a hardcoded
-        question or a hardcoded count fails a test rather than a review."""
+        question or a hardcoded count fails a test rather than a review.
+
+        **Three of those numbers used to slip past it** (0.5.0/arrival N3, and
+        `bg-a-proof-row-names-a-case-that-proves-half`). The age was asserted
+        as `'oldest ' in census`, so `human_duration(99999)` hardcoded into
+        `Census.line` stayed green; the wip number as `str(cfg.wip) in census`,
+        so the whole clause could be deleted and the digit `1` was still
+        somewhere on the line; and the `reviewed record` clause only in its
+        ABSENT form, so deleting it from `Census.line` reddened nothing in
+        either tier. Each is pinned to its own derivation now, and the record
+        clause is asserted from BOTH sides on two trees.
+        """
         config = self._declared(extra='[pm]\nwip = 1\n')
         # A REAL move, because the age is measured from a `status` row and a
         # no-op mints none: a grain nobody moved is UNMEASURED, never young.
         with tree(feature_status='ready', story_statuses=('done', 'ready'),
                   config=config) as root:
+            # The oldest grain is planted at a KNOWN distance, so the duration
+            # on the line is one this fixture chose. Without it every grain is
+            # seconds old and any number renders plausibly.
+            planted = datetime.now(timezone.utc) - self.AGED
+            put_ledger(root, ledger.dumps(ledger.status_row(
+                '0.1', 'planning', 'building',
+                ts=planted.strftime(ledger.TS_FORMAT))))
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             cfg = loaded(root)
 
@@ -557,19 +590,46 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                         and model.category_of(cfg, g.kind, g.status)
                         == model.IN_PROGRESS]
             self.assertIn(f'{len(open_now)} {model.IN_PROGRESS}', census)
-            # the wip clause is the PROJECT's number, never this package's
-            self.assertIn(str(cfg.wip), census)
+            # the wip clause is the PROJECT's number, never this package's —
+            # bound to the WORD, because a bare `1` is on the line anyway
             self.assertEqual(cfg.wip, 1)
-            # the age is the ledger's own status rows, through the stopwatch
+            self.assertGreater(len(open_now), cfg.wip, census)
+            self.assertIn(f'wip of {cfg.wip}', census)
+            # the age is the ledger's own status rows, through the stopwatch:
+            # the planted row is the oldest, and the line renders ITS distance
             rows = [r for r in ledger_rows(root)
                     if r['kind'] == ledger.KIND_STATUS
                     and r['grain'] == '0.1/alpha']
             self.assertTrue(rows, 'no status row to derive an age from')
-            self.assertIn('oldest ', census)
+            aged = int((datetime.now(timezone.utc) - planted).total_seconds())
+            self.assertIn(f'oldest 0.1 {ledger.human_duration(aged)}', census)
             # and the artifact count is `reviewed:` resolving, off frontmatter
             self.assertEqual(model.review_record_for(cfg, '0.1/alpha'),
                              'docs/reviews/alpha.md')
             self.assertNotIn(f'{arrive.RECORD_FIELD} record', census)
+
+        # The other side of that clause, because an `assertNotIn` alone is
+        # green over a `Census.line` that never learned to say it: the same
+        # tree with the pointer unresolved, and the two counts read off the
+        # grains rather than typed in.
+        with tree(feature_status='ready', story_statuses=('done', 'ready'),
+                  with_record=False, config=config) as root:
+            _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
+            cfg = loaded(root)
+            census = self._stderr(out, 'open:')[0]
+            pool = [g for g in model.grain_index(cfg).values()
+                    if g.kind in model.FLOW_KINDS
+                    and model.category_of(cfg, g.kind, g.status)
+                    == model.IN_PROGRESS
+                    and arrive.RECORD_FIELD in model.document(g.path).fields]
+            missing = [g for g in pool
+                       if not model.record_resolves(
+                           cfg.root / model.document(g.path).field(
+                               arrive.RECORD_FIELD))]
+            self.assertTrue(missing, 'nothing is missing a record, so the '
+                                     'clause below cannot fire')
+            self.assertIn(f'{len(missing)} of {len(pool)} ', census)
+            self.assertIn(f'no {arrive.RECORD_FIELD} record', census)
 
     def test_the_census_is_silent_when_nothing_is_open_and_off_in_one_line(self):
         """A tree with nothing open prints nothing — a conveyor that makes you
@@ -982,8 +1042,7 @@ class ListFindsTheNail(unittest.TestCase):
             # A bug lists too, and `--owner` still belongs to stories alone.
             write(root / 'pm/roadmap/bugs/crash.md',
                   {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
-                   'name': 'C', 'status': 'open', 'caught_in': '"0.1"',
-                   'fix_milestone': '', 'caused_by': ''})
+                   'name': 'C', 'status': 'open', 'caused_by': ''})
             self.assertEqual(run_cli(root, 'list', '--kind', 'bug')[0], 0)
             code, out = run_cli(root, 'list', '--kind', 'bug', '--owner', 'ada')
             self.assertEqual(code, 2, out)
@@ -1210,6 +1269,55 @@ class FieldMutation(unittest.TestCase):
             self.assertEqual(len(after), len(lines) + 1)
             self.assertIn('risk: high', after)
             self.assertEqual([ln for ln in after if ln != 'risk: high'], lines)
+
+    def test_a_list_shaped_field_is_written_in_the_shape_the_gate_grades(self):
+        # `set … depends_on 0.1/alpha` wrote the SCALAR and exited 0, and
+        # `check pm` then failed the tree on it — one verb writing what another
+        # refuses, which is rule 4's second sin. The round trip closes here,
+        # and the probe at the end keeps the PASS from being vacuous.
+        with tree(story_statuses=('ready',)) as root:
+            sf = root / STORY_REL
+            for value in ('0.1/alpha', '["0.1/alpha"]', '  0.1/alpha  '):
+                with self.subTest(value=value):
+                    self.assertEqual(run_cli(root, 'set', '0.1/alpha/s0',
+                                             'depends_on', value)[0], 0)
+                    self.assertEqual(model.field_of(sf, 'depends_on'),
+                                     '["0.1/alpha"]')
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            before = sf.read_bytes()
+            run_cli(root, 'set', '0.1/alpha/s0', 'depends_on', '0.1/alpha')
+            self.assertEqual(sf.read_bytes(), before)   # idempotent
+            self.assertEqual(
+                run_cli(root, 'set', '0.1/alpha/s0', 'depends_on', '')[0], 0)
+            self.assertEqual(model.field_of(sf, 'depends_on'), '[]')
+            model.set_field(sf, 'depends_on', '0.1/alpha')   # the probe
+            code, out = run_gate(root)
+            self.assertEqual(code, 1, out)
+            self.assertIn('is not an inline list', out)
+
+    def test_a_value_of_the_WRONG_shape_is_refused_naming_the_shape(self):
+        # Both directions of the one sin: a list key handed something the
+        # gate's parser cannot read, a scalar key handed a list, and `order`,
+        # a BLOCK list `pm add` owns and `set_list_field` refuses to rewrite.
+        with tree(story_statuses=('ready',)) as root:
+            run_cli(root, 'new', 'bug', '0.1', 'oops')
+            for gid, key, value, rel, needle in (
+                    ('0.1/alpha/s0', 'depends_on', 'a b', STORY_REL,
+                     'contains a separator'),
+                    ('0.1/alpha/s0', 'consumed_by', '[[x]]', STORY_REL,
+                     'nests brackets'),
+                    ('bg-oops', 'caused_by', '["0.1/alpha"]',
+                     'pm/roadmap/bugs/bg-oops.md', 'is a list or a mapping'),
+                    ('0.1/alpha', 'order', '0.1/alpha/s0', FFILE,
+                     'is a sequence, not a field')):
+                with self.subTest(key=key):
+                    path = root / rel
+                    before = path.read_bytes()
+                    code, out = run_cli(root, 'set', gid, key, value)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(needle, out)
+                    self.assertEqual(path.read_bytes(), before)
 
 
 class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):

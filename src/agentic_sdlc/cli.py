@@ -24,6 +24,10 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
     agentic-sdlc adopt <version>    # a devkit PIN bump, not a grain: pin, installables, config
     agentic-sdlc close story|feature <id>
 
+Rendering (writes to stdout, runs nothing — paste it or pipe it):
+    agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
+    agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
+
 Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
     agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
     agentic-sdlc lesson show [--grain <id> | --rule <id>]
@@ -47,6 +51,8 @@ HELP_FLAGS = ('-h', '--help')
 # just learned it — a reviewer, a belt's caller — and never as part of moving a
 # grain, which is what everything under `pm` is.
 LESSON_VERB = 'lesson'
+CHANGELOG_VERB = 'changelog'
+DISPATCH_VERB = 'dispatch'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -56,7 +62,7 @@ KNOWN_GATES = {
     'budget': False,
 }
 
-# Empty since 0.2.0, kept because `_run_check` refuses an unknown flag through it.
+# Empty, and kept because `_run_check` refuses an unknown flag through it.
 FIXABLE_CHECKS: frozenset[str] = frozenset()
 
 
@@ -222,6 +228,12 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'verify':
         from agentic_sdlc.repo.verify import main as verify_main
         return verify_main.main(rest, _verify_section)
+    if cmd == DISPATCH_VERB:
+        from agentic_sdlc.repo import dispatch
+        return dispatch.main(rest)
+    if cmd == CHANGELOG_VERB:
+        from agentic_sdlc.repo.pm import changelog
+        return changelog.main(rest)
     if cmd == LESSON_VERB:
         from agentic_sdlc.repo.conveyor import lessons
         return lessons.main(rest)

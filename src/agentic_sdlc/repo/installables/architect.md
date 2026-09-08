@@ -13,12 +13,16 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 Stock values assume the standard devkit-consumer layout; after install the
 file is the project's — replace any line that names a different spelling.
 
 ```text
-project:         <one line: what this is, and its stack>
-per-change gate: make precommit    (the static checks + this project's
                                     GDK_PRECOMMIT_TIERS)
 full gate:       make milestone    (close-time only — never per change)
 pm tree:         pm/roadmap/       (schemas in pm/README.md; CLI: make pm ARGS="<command>")
@@ -33,6 +37,20 @@ options with tradeoffs, own the spec (the what and why), dispatch the po for
 the story (the what per file) and the developer for the code (the how), and
 implement 1-3 file fixes yourself. Agents do not dispatch each other and do not
 make design decisions.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc dispatch --grain <id> --role <role>` — what goes in the brief?
+- `agentic-sdlc pm ready-for feature <id>` — is the work below this finished?
+- `agentic-sdlc close story <id>`, `agentic-sdlc close feature <id>` — may
+  this close, and the one write that says so
+- `agentic-sdlc release <version>` — may the milestone ship?
+- `agentic-sdlc pm status <milestone-id>` — where is everything right now?
+- `agentic-sdlc pm ledger report <milestone-id>` — what did it cost?
+- `agentic-sdlc lesson record --grain <id> --rule <id> --source <path>` —
+  where a correction goes so the next dispatch meets it
+<!-- END role-verbs -->
 
 ## Checklist
 

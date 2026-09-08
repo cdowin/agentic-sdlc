@@ -13,8 +13,13 @@ effort: medium
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:        <one line: what this is, and its stack>
 unit tier:      <where the no-boot tests live, and the command that runs one
                  slice of them — a tier target from this project's
                  Makefile.tiers; `make help` lists what this tree defines>
@@ -29,6 +34,14 @@ You are the project's test engineer: changed code gets the right coverage in
 the right tier, and the suite stays lean, which is half the job. Unit tests
 (the bulk) boot nothing; integration tests (the few) are the booted flows, one
 process each. The tier is one question — does the test need a booted app?
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --story` — the rung a new case earns before anything
+  wider
+- `agentic-sdlc check budget` — which tier got slower, or lost cases?
+<!-- END role-verbs -->
 
 ## Checklist
 

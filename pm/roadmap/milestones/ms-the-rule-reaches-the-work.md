@@ -2,13 +2,15 @@
 id: "ms-the-rule-reaches-the-work"
 kind: milestone
 name: the rule reaches the work
-status: planning
+status: done
 depends_on: ["ms-a-move-is-an-event"]
-branch:
+branch: milestone/0.6.0-the-rule-reaches-the-work
 version: 0.6.0
 order:
+  - "bg-a-bug-is-a-grain-nested-in-a-parent"
   - "bg-pm-set-writes-a-scalar-its-own-gate-refuses"
   - "bg-the-milestone-scaffold-still-mints-the-version"
+  - "bg-the-package-docstring-names-another-project"
   - "ft-the-branch-exists-on-the-remote-from-the-first-commit"
   - "ft-the-dispatch-carries-the-contract"
   - "ft-a-guard-declares-its-violation-corpus"
@@ -18,6 +20,17 @@ order:
   - "ft-a-read-verb-is-a-declaration"
   - "ft-a-warning-is-actionable-where-it-fires"
   - "ft-the-vocabulary-is-constants-not-literals"
+  - "bg-a-hand-recorded-dispatch-cannot-carry-a-total"
+  - "bg-the-suite-can-flip-the-host-repo-to-bare"
+  - "bg-a-proof-row-names-a-case-that-proves-half"
+  - "bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty"
+  - "ft-a-surface-reaches-its-reader-or-it-is-decoration"
+  - "bg-the-semver-gate-reads-the-id-not-the-version"
+  - "bg-a-time-dependent-assertion-fails-a-belt-on-a-loaded-machine"
+  - "bg-the-prose-ceiling-has-no-headroom"
+  - "bg-the-release-belt-names-a-file-it-retired"
+changelog: 0.6.0 — the rule reaches the work. A dispatched agent now receives this project's contracts before its first tool call, from a surface the package renders rather than an operator retypes. Every source-shaped guard declares a violation corpus and a gate replays it. `CHANGELOG.md` is retired: the changelog is a `changelog:` field on the grain and a verb that renders it. A bug binds to its parent through `milestone:` alone, and no parent closes over an unresolved child. `check pm` went from 57 warnings to 10 without deleting a rule.
+reviewed: docs/reviews/2026-09-08-0.6.0-milestone-review.md
 ---
 
 # 0.6.0 — the rule reaches the work
@@ -26,9 +39,9 @@ order:
 > cannot fail is not a gate.** 0.5.0 spent a day finding second scoreboards in the CODE. Every one of
 > them had a twin in the INSTRUCTIONS, and nothing was looking there.
 
-0.5.0 closed thirteen features and found 93 review findings, 29 of them blocking. Sorting those
-findings by what would have prevented each is the whole brief for this milestone, because they were
-not random — they fell into four shapes, and three are mechanisable.
+0.5.0 closed fifteen features and found 114 review findings across thirteen records, 29 of them
+blocking. Sorting those findings by what would have prevented each is the whole brief for this
+milestone, because they were not random — they fell into four shapes, and three are mechanisable.
 
 ## What 0.5.0 measured, and could not act on
 
@@ -104,6 +117,37 @@ a tidy-up's clothes.
 **Do not grow the always-loaded file to fix this.** `CLAUDE.md` is 163 lines against a documented 200
 target, and over-long files are followed LESS well. The answer is placement, not volume.
 
+## Bugs open the order, and the first one is the model
+
+`order` opens with bugs rather than a feature, the way 0.5.0 put #6 and #7 ahead of its own theme.
+`pm status` and `agentic-sdlc changelog <id>` list them and this file does not, because a roster
+copied into prose is the second scoreboard 0.3.0 retired `ROADMAP.md` for.
+
+At planning time six were bound and four sat in the pool. **Both numbers moved during the build and
+this paragraph did not, which the milestone review filed as M1** — copying a TALLY into prose is the
+same defect as copying a roster, one size down, and it went unnoticed in the paragraph that forbids
+it. The count is a command's answer; ask it rather than reading it here.
+
+Two were found scaffolding this milestone, two closing 0.5.0, and two are inherited — carried off
+`ms-0.3.0` and `ms-0.4.0` under D1, which does not let a shipped milestone keep unresolved children.
+The rest of that inheritance went the other way: bugs that declare no milestone at all sit in the
+pool, gating nothing and counted there.
+
+**The first one runs first because it is the model, not a defect in it.** A bug is a grain nested in
+a parent — the same relationship a story has to a feature and a feature to a milestone — and it is
+the only kind that states that relationship three times, in `milestone:`, `caught_in:` and
+`fix_milestone:`. `ready_for_milestone` reads the copy nothing writes, so **`release` could not have
+refused on an open bug for four releases**, and 0.5.0's own record claims in plain words that it
+would have. That is rule 4's first cardinal sin, running green, on the tree that ships the rule.
+
+It leads the order because every other bug here sits inside the model it corrects: the field they
+are hand-stamped with today is the field it deletes, and D1 is the ruling it lands.
+
+**The fourth is the same defect as the changelog, one layer down.** `src/agentic_sdlc/__init__.py`
+has described Godot scene introspection since the extraction — a second copy of `pyproject.toml`'s
+`description`, in a file no gate reads, shipped in every release this package has cut. A document
+that cannot be checked against the tree is not a record, and a docstring is a document.
+
 ## Ship criterion
 
 A dispatched agent receives this project's contracts before its first tool call, from a surface the
@@ -117,6 +161,9 @@ No shipped file states what a verb does in prose that the verb does not generate
 `check pm`'s warnings are actionable at the rung they fire on — a warning nobody can act on where they
 are standing is a defect, not information.
 
+A bug is bound to its parent and to nothing else: `release` refuses while a bug nested under the
+milestone is outside `done`, and it refuses on the field the scaffold actually writes.
+
 ## Risks
 
 - **This milestone is about instructions, so its own instructions are the test case.** If 0.6.0 ships
@@ -124,4 +171,38 @@ are standing is a defect, not information.
 - **The temptation is a bigger `CLAUDE.md`.** Every measurement here says the opposite.
 - **`pm new milestone <ver>` still mints the VERSION as the id** — `ms-0.6.0`, renamed by hand to get
   this file. That is the unlanded half of #8, and it is this milestone's own scaffolding failing at the
-  thing 0.4.0 named.
+  thing 0.4.0 named. **CLOSED here** as `bg-the-milestone-scaffold-still-mints-the-version`: the slug
+  is the first positional and `--version` carries the version. The risk is retired, and it is left
+  standing with this line rather than deleted, because a risk that was real and got fixed is the one
+  worth being able to find again.
+
+## Closed — 2026-09-08
+
+`agentic-sdlc release 0.6.0`, every check green, `make milestone` exit 0 in 71 s. Twenty-two grains:
+ten features, twelve bugs. Eleven review records, 60 findings, none blocking at the tag. Eight
+decisions, each with its rejected alternative. What SHIPPED is
+`agentic-sdlc changelog ms-the-rule-reaches-the-work`; what it COST is
+`pm ledger report ms-the-rule-reaches-the-work`; neither is copied here.
+
+**The northstar held, and the sharpest evidence is that it caught this milestone.** Four gates that
+could not fail were found during the close, each in the tree's own suite: three tests blind to the
+two verbs 0.6.0 itself added; `semver-gate.yml`, whose success path had never once fired for any
+release in any layout, and which would have refused this PR; an `assertIn(x, X)` the reviewed commit
+created by making the two names aliases; and `check doc`'s invocation rule — the only mechanised
+slice of a ship criterion — reaching an operator through one line no test exercised. None was found
+by reading. Each was found by deleting something and watching what stayed green.
+
+**Two ship criteria were scoped rather than met, and both say so where somebody will look.** "No
+shipped file states what a verb does in prose that the verb does not generate" is not mechanisable
+in general; the sharp slice landed and `ft-prose-that-restates-a-verb-is-rendered-or-gone` names the
+half that did not. Sweep 4 of `ft-a-surface-reaches-its-reader` — the README — was dropped whole,
+with its measurement left as the brief for whoever takes it.
+
+**The one thing this milestone measured and cannot fix.** Every surface it is about — the
+always-loaded file, the path-scoped rule, the guard hooks, the ledger couriers — reaches the work
+only when the session's project root is the checkout, and none of them reached the session that
+closed it. Proven three times, by three agents, in three sessions (D8), and independently by running
+`git commit` with no pathspec and watching the guard that exists to stop it not stop it. The package
+NAMES it now, in `check pm` U4 and in `check hooks`'s REGISTERED line, and naming it is the whole of
+what a package that boots nothing can do. The next milestone inherits an environment fact, not a
+defect.

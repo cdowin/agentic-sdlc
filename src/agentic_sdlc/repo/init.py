@@ -308,10 +308,11 @@ def main(argv: list[str]) -> int:
     print('     and `make milestone` get their tiers. Without one they are '
           '`check` alone,')
     print('     and they say so.')
-    print('  7. `agentic-sdlc pm new milestone 0.1 "First Milestone"` (it mints '
-          'the id')
-    print('     `ms-0.1` — the kind prefix and your slug), then '
-          '`agentic-sdlc check pm`.')
+    print('  7. `agentic-sdlc pm new milestone first-light "First Milestone" '
+          '--version 0.1`')
+    print('     (it mints the id `ms-first-light` — the kind prefix and your '
+          'slug — and')
+    print('     stamps `version: 0.1`), then `agentic-sdlc check pm`.')
     print(f'  8. The hooks are on disk and NOT registered: a harness runs them '
           f'because')
     print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '

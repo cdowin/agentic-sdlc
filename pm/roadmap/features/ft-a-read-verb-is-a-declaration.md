@@ -3,10 +3,11 @@ id: ft-a-read-verb-is-a-declaration
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a read verb is a declaration
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-07-0.6.0-a-read-verb-is-a-declaration.md
 depends_on: []
 consumed_by: []
+changelog: One pointer resolver: `model.pointer_escapes` is the single predicate and four more callers route through it, closing three live cases where a path outside the checkout was accepted — including `pm feature done --review-record`, which checked that a record resolved but never that it was inside the tree. Every read verb's `--help` is now held to its own column declaration by one case rather than nine hand-written ones.
 ---
 
 # a read verb is a declaration
@@ -82,6 +83,33 @@ rather than a copy.
 
 At least `pm list`, `pm roadmap` and `changelog` collect through one primitive, and adding a column to
 any of them is one edit.
+
+## What landed, and what did not — 0.6.0
+
+The feature says out loud that its three consolidations are **independently landable** and that a
+grand unification in one pass is how a framework acquires a second scoreboard with better branding.
+Two landed. The third did not, and this section is that decision rather than a silence.
+
+**Landed — the pointer resolver.** `model.pointer_escapes` is the one predicate and three more
+callers now route through it. Two were live gaps of exactly F1's class, found by the gate rather than
+by reading: `conveyor/steps.py::_record_of` spelled its own `/`-and-`~` pair, which reads
+`../outside.md` as repo-relative; `pm/report.py` checked only `startswith('/')`. `pm feature done
+--review-record` checked no escape at all — it verified the file RESOLVED, so a path outside the
+checkout that happened to exist could be stamped. `model.py` also carried a hand-rolled copy of
+`record_path`'s body. `ready_for._pointer_defect` is KEPT: it is richer, naming which shape is wrong,
+and a case now binds it to the predicate so the two readers cannot disagree.
+
+**Landed — the columns-vs-help binding.** Five read verbs, one case shape, reading each declaration
+rather than a copy. T3's `CLOCK_COLUMNS` is covered by it rather than by its own hand-written case.
+Probed both directions: drop a column from a help line, or add one to a declaration only, and it
+reddens.
+
+**NOT landed — the collect-and-render primitive.** `pm list`, `pm roadmap` and `changelog` still each
+walk, pull and render. It is the largest of the three, it touches every read verb at once, and the
+tree it would land in already carried five other features today. Attempting it here would have been
+the grand unification the feature warns against, at the worst possible moment. **The two consolidations
+that shipped are the ones with a 0.5.0 finding as their test case**; the primitive's argument is
+maintainability, which is real and is not urgent.
 
 ## Proof budget
 

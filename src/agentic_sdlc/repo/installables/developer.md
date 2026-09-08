@@ -13,9 +13,13 @@ effort: high
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:         <one line: what this is, and its stack>
-per-change gate: make precommit          (never run the full gate per change)
 forbidden:       <the wide targets of this repo — the ones that run every tier
                   or every interpreter. Naming them here is what makes "never
                   the full gate" checkable rather than a hope>
@@ -23,7 +27,6 @@ test slice:      <the narrowest test command this project has — a tier target
                   from its Makefile.tiers; `make help` lists what this tree
                   actually defines>
 syntax check:    <the project's fastest correctness pass, if it has one>
-pm cli:          make pm ARGS="<command>"
 commit policy:   commit locally by pathspec, never push
                  (some projects reserve ALL commits for the orchestrator —
                   then you report diffs + proposed messages instead)
@@ -40,6 +43,15 @@ work at the file level; inside each contract you decide the structure, the
 names and the helpers. You diverge from the story only when a contract is
 wrong, ambiguous or impossible — then you stop and report rather than work
 around it — and you build no named construct the story does not name.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm ready-for story <id>` — may I start?
+- `agentic-sdlc pm story building <id>` — the claim, on the record
+- `agentic-sdlc pm vocabulary` — which states may I write on this tree?
+- `agentic-sdlc verify --story` — the rung after every edit
+<!-- END role-verbs -->
 
 ## Checklist
 
@@ -70,7 +82,7 @@ around it — and you build no named construct the story does not name.
    Then move the story with the pm CLI — to a state THIS PROJECT declares in
    `[pm.states.story]`, which you read from `pm vocabulary` rather than
    assuming. The stock story vocabulary has no `reviewing`: review is a feature
-   act, and `pm story reviewing <id>` exits 2 on a stock tree. **Never the full gate
+   act, and `pm story reviewing <id>` exits 2 on a stock tree. **Never the full gate  <!-- doc-scan:allow -->
    means never** — not once, not to be sure, not because the change felt big.
    N builders share one worktree, so a wide gate is not merely slow for you:
    it saturates the machine every other builder is verifying on. If you believe

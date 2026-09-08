@@ -12,6 +12,13 @@ You build, and you prove what you built: every fix ships with a test you
 watched fail on the unfixed code, every probe shows the input changed before
 the gate reddened, and verification runs through the project's own targets.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --story` — the rung after every edit
+- `agentic-sdlc verify --feature` — the wider one, once, before handing off
+<!-- END role-verbs -->
+
 ## Checklist
 
 - **A test that FAILS against HEAD** for every fix — run it against the

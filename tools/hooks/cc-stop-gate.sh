@@ -9,14 +9,13 @@ set -eu
 
 # --- project config (yours to edit after install — the file is your repo's) --
 # The static slice of the gate, run first; cheap enough to pay on every agent stop.
-# agentic-sdlc itself: `make check` then `make unit`, together `make precommit`.
 GATE_STATIC=(make check)
 # The unit tier, run as "${GATE_UNIT[@]}" SYS="<slices>"; an empty SYS is the whole tier.
 GATE_UNIT=(make unit)
 # A changed top-level dir <d> with a <UNIT_SLICE_ROOT>/<d>/ becomes a slice.
 UNIT_SLICE_ROOT="tests/unit"
 # The diff base when the scope marker records none.
-DEFAULT_BASE="main"
+DEFAULT_BASE="staging"
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------

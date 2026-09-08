@@ -104,6 +104,59 @@ class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
             self.assertIn('0.1/alpha/s0', out)
 
 
+class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
+    """Symptom 3 of 0.6.0/D11: the notice fired on a condition it never read.
+
+    Rebinding a child printed `<old-parent> still lists <child> in its `order`
+    — that entry is now DANGLING` off the child's PREVIOUS BINDING alone. When
+    the old parent's `order:` had never held the id, the notice was false AND
+    the `pm remove` it named then refused, because `remove` verifies membership
+    against the binding the rebind had just changed. **The command the tool
+    printed could not succeed at the moment it printed it** — a warning on a
+    false condition naming an impossible fix, which is the mirror of a gate
+    that cannot fail.
+    """
+
+    @staticmethod
+    def _second_milestone(root: Path) -> None:
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': '"0.2"', 'kind': 'milestone', 'name': 'Two',
+               'status': 'building'})
+
+    def test_a_rebind_off_a_parent_that_never_sequenced_it_stays_silent(self):
+        with tree(story_statuses=('ready',)) as root:
+            self._second_milestone(root)
+            # Bound to 0.1 and in NO `order:` — the normal state of a grain
+            # written and never sequenced.
+            write(root / 'pm/roadmap/bugs/crash.md',
+                  {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
+                   'name': 'C', 'status': 'open'})
+            code, out = run_cli(root, 'add', '0.2', 'bg-crash')
+            self.assertEqual(code, 0, out)
+            self.assertIn("milestone '0.1' -> '0.2'", out)
+            self.assertNotIn('DANGLING', out)
+            self.assertNotIn('noticed', out)
+
+    def test_a_rebind_off_a_parent_that_DID_sequence_it_still_notices(self):
+        """The other half — the notice is not simply deleted. Here the entry
+        really is left behind, and the `pm remove` it names RUNS."""
+        with tree(story_statuses=('ready',)) as root:
+            self._second_milestone(root)
+            write(root / 'pm/roadmap/bugs/crash.md',
+                  {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
+                   'name': 'C', 'status': 'open'})
+            self.assertEqual(run_cli(root, 'add', '0.1', 'bg-crash')[0], 0)
+            code, out = run_cli(root, 'add', '0.2', 'bg-crash')
+            self.assertEqual(code, 0, out)
+            self.assertIn('DANGLING', out)
+            self.assertIn('pm remove 0.1 bg-crash', out)
+            # THE REMEDY RUNS. This is the assertion the bug is about: a
+            # printed fix that refuses is worse than no fix printed.
+            code, out = run_cli(root, 'remove', '0.1', 'bg-crash')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(order_of(root, 'pm/roadmap/milestones/0.1.md'), [])
+
+
 class ThePlaceIsTheDecisionAndNeverAGuess(unittest.TestCase):
     """Bare `add` appends; a placement flag says where, and one that cannot be
     honoured refuses rather than picking a position."""

@@ -109,7 +109,7 @@ def _sink_file(cfg, sink: str, grain: str) -> Path | None:
 
 def _grain_of(row: dict) -> str:
     """The grain this row names, or '' — a merged row may hold any type."""
-    grain = row.get('grain')
+    grain = row.get(ledger.GRAIN_FIELD)
     return grain if isinstance(grain, str) else ''
 
 

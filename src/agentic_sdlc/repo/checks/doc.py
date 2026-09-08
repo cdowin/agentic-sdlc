@@ -61,6 +61,19 @@ def scope_files() -> list[Path]:
 def real_make_targets() -> set[str]:
     """Every recipe name `make` would resolve, includes followed (shared with `verify --check`)."""
     return set(makefile.targets(REPO_ROOT))
+def rel(path: Path) -> str:
+    """A finding's path, relative to the checkout where it is under it.
+
+    `REPO_ROOT` is captured at import, so `relative_to` RAISES on a scratch
+    tree — which is why this gate had no test module. Degrading here made one
+    possible; converting the constant is the vocabulary sweep's job.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def is_allowed(line: str) -> bool:
     return ALLOW_MARKER in line
 
@@ -88,7 +101,7 @@ def check_links(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
             if not path_part or target.startswith(URL_PREFIXES):
                 continue
             if not resolve_path(path_part, doc):
-                findings.append(f'{doc.relative_to(REPO_ROOT)}:{lineno}  dead link target: {target}')
+                findings.append(f'{rel(doc)}:{lineno}  dead link target: {target}')
     return findings
 
 
@@ -101,7 +114,7 @@ def check_make_targets(doc: Path, lines: list[tuple[int, str]], real_targets: se
             for match in MAKE_INVOCATION.finditer(span):
                 target = match.group(1)
                 if target not in real_targets:
-                    findings.append(f'{doc.relative_to(REPO_ROOT)}:{lineno}  unknown make target: `make {target}`')
+                    findings.append(f'{rel(doc)}:{lineno}  unknown make target: `make {target}`')
     return findings
 
 
@@ -120,7 +133,60 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
             if not PATH_CANDIDATE.match(span):
                 continue
             if not resolve_path(span, doc):
-                findings.append(f'{doc.relative_to(REPO_ROOT)}:{lineno}  dead path: `{span}`')
+                findings.append(f'{rel(doc)}:{lineno}  dead path: `{span}`')
+    return findings
+
+
+# `pm <kind> <status> <id>` — the form whose STATUS is the project's own word.
+# The auto-loaded rule said `pm story reviewing`, which exits 2 because
+# the seed declares no review word for a STORY. A make target and a path were
+# already checked here; an INVOCATION is the same claim and nobody read it.
+# The `agentic-sdlc ` prefix is OPTIONAL because both forms ship: the
+# auto-loaded rule writes `pm story reviewing`, the README and the agent
+# definitions write it out in full, and a rule anchored at `pm` read the
+# fuller half as prose. Found beside 0.6.0 review B1, which is the same
+# defect one layer out — a rule that is correct and cannot reach.
+_STATUS_FORM = re.compile(
+    r'^(?:agentic-sdlc\s+)?pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')
+
+
+def declared_states() -> dict[str, tuple[str, ...]]:
+    """{kind: every state the project declared}, or {} when the tree has no
+    flow — then this rule reports nothing rather than inventing a vocabulary."""
+    from agentic_sdlc.repo.pm import model
+    try:
+        cfg = model.load()
+    except SystemExit:
+        return {}
+    return {kind: flow.order for kind, flow in cfg.flows.items()}
+
+
+def check_invocations(doc: Path, lines: list[tuple[int, str]],
+                      states: dict[str, tuple[str, ...]]) -> list[str]:
+    """A shipped sentence naming a CLI call the CLI would refuse.
+
+    Only the STATUS form, and only against words the project declared: this
+    rule reads what the tree says rather than deciding what a verb should do
+    (rule 9). A kind the project never declared is skipped, not guessed at.
+    """
+    findings: list[str] = []
+    if not states:
+        return findings
+    for lineno, line in lines:
+        if is_allowed(line):
+            continue
+        for span in INLINE_CODE.findall(line):
+            match = _STATUS_FORM.match(span.strip())
+            if match is None:
+                continue
+            kind, status = match.group(1), match.group(2)
+            declared = states.get(kind)
+            if not declared or status in declared:
+                continue
+            findings.append(
+                f'{rel(doc)}:{lineno}  `{span.strip()}` '
+                f'names a state [pm.states.{kind}] does not declare — this '
+                f'exits 2. Declared: {" ".join(declared)}')
     return findings
 
 
@@ -132,6 +198,7 @@ def skill_entries() -> tuple[list[Path], list[Path]]:
 
 def run() -> int:
     real_targets = real_make_targets()
+    states = declared_states()
     findings: list[str] = []
     defects: list[str] = []
     skipped = 0
@@ -142,18 +209,19 @@ def run() -> int:
         skipped += len(text.split('\n')) - len(lines)
         if unterminated:
             defects.append(
-                f'{doc.relative_to(REPO_ROOT)}:{unterminated}  opens a code '
+                f'{rel(doc)}:{unterminated}  opens a code '
                 f'fence that is never terminated — the rest of the file was '
                 f'scanned UNMASKED; close the fence, or shorten the run of '
                 f'backticks if you meant an inline span')
         findings.extend(check_links(doc, lines))
         findings.extend(check_make_targets(doc, lines, real_targets))
         findings.extend(check_backtick_paths(doc, lines))
+        findings.extend(check_invocations(doc, lines, states))
 
     listed, flat = skill_entries()
     for skill in flat:
         findings.append(
-            f'{skill.relative_to(REPO_ROOT)}  a skill must be '
+            f'{rel(skill)}  a skill must be '
             f'<name>/{SKILL_FILENAME}; a flat .md does NOT load as a skill '
             f'(its description never fires)')
 

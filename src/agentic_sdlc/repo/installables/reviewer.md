@@ -30,9 +30,13 @@ sentence, not another hour of probing.
 
 ## Project config (yours to edit after install)
 
+**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+first.** It RENDERS this project's contract pointers, its ladder, its gate roster
+and its state vocabulary from `devkit.toml`, so none of that is retyped here and
+none of it can drift. What stays below is what the tool cannot derive — the
+project's own judgement calls.
+
 ```text
-project:         <one line: what this is, and its stack>
-per-change gate: make precommit   (a green diff that reddens it is CRITICAL)
 findings dir:    docs/reviews/    (create -> resolve -> delete lifecycle)
 invariants:      <where the project's architecture invariants live — usually
                   CLAUDE.md plus a constitution/design doc>
@@ -50,6 +54,16 @@ single story could see — cross-story duplication, functions that grew across
 passes, util extraction, architectural drift against the project's invariants.
 You do not flip PM-tree statuses, dispatch fixes, modify production code or
 block on style.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --feature` — the rung this commit range earns
+- `agentic-sdlc lesson show --rule <id>` — what has this rule already cost, so
+  you raise the recurrence and not the novelty?
+- `agentic-sdlc pm ready-for tag <milestone-id>` — is every finding you filed
+  dispositioned yet?
+<!-- END role-verbs -->
 
 ## Checklist
 

@@ -685,7 +685,15 @@ VEHICLE = ('.PHONY: pm\npm:\n\t@printf "milestone feature story bug\\n"\n')
 # that is not .PHONY is already satisfied and make never runs the recipe.
 NOT_PHONY = 'pm:\n\t@printf "milestone feature story bug\\n"\n'
 # Reached, and inert: the recipe runs and the CLI has nothing to answer with.
-INERT = '.PHONY: pm\npm:\n\t@echo "no [pm.states.*] declared" >&2; exit 2\n'
+# The refusal carries a marker that appears NOWHERE in the check's own
+# sentence, because `.PHONY` and `[pm.states.*]` are both static literals in
+# ONE f-string: asserting them proved the message exists, not that this run
+# was observed, so mode 2's assertion passed on mode 3's answer and deleting
+# `{_clip(out)}` from the detail left every case green
+# (0.4.0/telemetry-arrives-with-the-bump M5,
+# bg-a-proof-row-names-a-case-that-proves-half).
+INERT_SAID = 'devkit.toml declares no [pm.states.story]'
+INERT = f'.PHONY: pm\npm:\n\t@echo "{INERT_SAID}" >&2; exit 2\n'
 
 WIRED = ('{"hooks": {"Stop": [{"hooks": [{"command": "bash '
          'tools/hooks/cc-ledger-session.sh"}, {"command": "bash '
@@ -815,6 +823,10 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert '.PHONY' in answer.detail, answer.detail
+        # The recipe NEVER RAN, which is the whole of mode 2: nothing the
+        # stub prints is in the detail, and mode 3's marker is not either.
+        assert INERT_SAID not in answer.detail, answer.detail
+        assert 'milestone feature story bug' not in answer.detail, answer.detail
 
     # Mode 3 — reached, and inert: the recipe runs and the CLI refuses.
     with tree() as root:
@@ -824,6 +836,9 @@ def test_telemetry_live_names_which_of_the_three_ways_a_bump_records_nothing():
         answer = check('telemetry-live', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert '[pm.states.*]' in answer.detail, answer.detail
+        # ...and the vehicle's OWN words, which is the only part of this
+        # detail mode 2 cannot also produce.
+        assert INERT_SAID in answer.detail, answer.detail
 
     # Mode 4 — WIRED, the vehicle answers, and nothing has ever come through.
     # The failure this feature was filed for: whether the harness LOADS

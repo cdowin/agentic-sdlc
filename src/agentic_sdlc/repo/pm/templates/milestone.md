@@ -5,6 +5,8 @@ name: {name}
 status: planning
 depends_on: []
 branch:
+version:
+changelog:
 ---
 
 # {id} — {name}

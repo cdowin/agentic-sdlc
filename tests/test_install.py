@@ -147,7 +147,6 @@ AGENTS = ('.claude/agents/verification-reviewer.md',
           '.claude/agents/simplifier.md',
           '.claude/agents/test-writer.md',
           '.claude/agents/tech-writer.md',
-          '.claude/agents/changelog-writer.md',
           '.claude/agents/doc-hygiene.md',
           '.claude/agents/pm-operator.md')
 # The verification pair carries the review/build CONTRACT and predates the
@@ -302,7 +301,11 @@ def test_force_overwrites_every_entry(command):
 # "follow-up" — never prose that merely mentions the flag. CHANGELOG.md is
 # scoped to `## Unreleased`: a released section is a RECORD and is never
 # rewritten to satisfy a rule written after it.
-INSTRUCTION_SITES = ('CHANGELOG.md', '.claude/skills/release/SKILL.md')
+# `CHANGELOG.md` left this list at 0.6.0: it is frozen at v0.5.0 and nothing
+# writes to it. The live release notes are `changelog:` on each grain, and
+# `_grain_notes()` reads them so the rule follows its subject rather than the
+# file that used to hold it.
+INSTRUCTION_SITES = ('.claude/skills/release/SKILL.md',)
 INSTRUCTION_MARKER = 'follow-up'
 # The cost, in any of the words somebody would reach for. A closed list, so
 # what the gate accepts is reviewable rather than guessed at.
@@ -314,12 +317,25 @@ COST_FREE_CLAIMS = ('re-applying nothing', 're-applies nothing',
                     'nothing to re-apply')
 
 
-def unreleased(text: str) -> str:
-    """The section that becomes the next release's notes."""
-    at = text.index('## Unreleased')
-    rest = text[at + len('## Unreleased'):]
-    end = rest.find('\n## ')
-    return rest if end < 0 else rest[:end]
+def _grain_notes() -> list[tuple[str, str]]:
+    """[(where, sentence)] — every live `changelog:` in this repo's own tree.
+
+    The release notes moved onto the grains at 0.6.0, so the rule scans the
+    field. Read off the documents rather than through the CLI: this module is
+    in the `not shell` tier and must boot nothing.
+    """
+    out = []
+    for kind in ('milestones', 'features', 'stories', 'bugs'):
+        for path in sorted((REPO_ROOT / 'pm/roadmap' / kind).glob('*.md')):
+            for line in path.read_text(encoding='utf-8').split('\n'):
+                if line.startswith('---') and out:
+                    break
+                if line.startswith('changelog:'):
+                    text = line.split(':', 1)[1].strip()
+                    if text:
+                        out.append((f'{kind}/{path.name}', text))
+                    break
+    return out
 
 
 def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
@@ -331,9 +347,10 @@ def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
                  if len(entries) > 1}
     assert whole_set, 'no verb writes a set — this rule has no subject'
     checked = 0
-    for rel in INSTRUCTION_SITES:
-        text = (REPO_ROOT / rel).read_text(encoding='utf-8')
-        body = unreleased(text) if rel.endswith('CHANGELOG.md') else text
+    sites = [(rel, (REPO_ROOT / rel).read_text(encoding='utf-8'))
+             for rel in INSTRUCTION_SITES]
+    sites += [(where, note) for where, note in _grain_notes()]
+    for rel, body in sites:
         for number, para in enumerate(body.split('\n'), 1):
             named = [verb for verb in whole_set
                      if verb in para or 'install-*' in para]
@@ -352,7 +369,8 @@ def test_no_shipped_instruction_offers_force_without_naming_what_it_costs():
                 assert claim not in para, (
                     f'{where}: "{claim}" is false of a whole-set --force')
     assert checked, ('no consumer follow-up instruction was found in '
-                     f'{INSTRUCTION_SITES} — the rule scanned nothing')
+                     f'{INSTRUCTION_SITES} or any grain\'s `changelog:` — '
+                     'the rule scanned nothing')
 
 
 @pytest.mark.parametrize('command', VERBS)
@@ -411,18 +429,21 @@ THIS = install.__version__
 OLD_TARGET = 'a-target-withdrawn-long-ago'
 GONE_TARGET = 'a-target-a-split-dropped'
 GONE_FLAG = 'some-verb --a-flag-that-left'
+GONE_FILE = '.claude/agents/a-role-that-was-withdrawn.md'
 FIXTURE = (
     install.Retirement('0.0.2', 'install-gates', targets=(OLD_TARGET,)),
     install.Retirement(THIS, 'install-gates',
                        targets=(GONE_TARGET,), flags=(GONE_FLAG,)),
     install.Retirement(THIS, 'install-hooks', targets=('another-verbs-loss',)),
+    install.Retirement(THIS, 'install-agents', files=(GONE_FILE,)),
 )
 
 
 def reported(command: str, stamp: str | None) -> set[str]:
-    """Every target and flag the report would name, as one set."""
+    """Every target, flag and file the report would name, as one set."""
     found = install.retired_since(command, stamp, rows=FIXTURE)
-    return {name for row in found for name in row.targets + row.flags}
+    return {name for row in found
+            for name in row.targets + row.flags + row.files}
 
 
 @pytest.mark.parametrize('stamp,expected', [
@@ -452,12 +473,44 @@ def test_the_report_is_per_verb_and_says_so_when_nothing_was_withdrawn():
     lines = install.retirement_report('install-ci', None, rows=FIXTURE)
     assert len(lines) == 1, lines
     assert 'install-ci' in lines[0] and 'no longer shipped' not in lines[0]
-    assert 'withdrawn no make target and no verb flag' in lines[0]
-    # And the shipped table, empty, is honest the same way rather than silent.
+    assert 'withdrawn no make target, verb flag or file' in lines[0]
+    # And a verb the SHIPPED table has no row for is honest the same way.
     assert install.retirement_report('install-gates', None) == [
         install.NOTHING_WITHDRAWN.format(
             command='install-gates',
             span=install._span_phrase(None))]
+
+
+def test_a_withdrawn_FILE_is_named_because_an_install_never_deletes():
+    """The quiet retirement, and 0.6.0 is the first real one.
+
+    An install verb writes a SET and never deletes, so a file this package
+    stops shipping simply STAYS in a consumer's tree — correct-looking, and
+    pointed at nothing. A withdrawn make target announces itself the next time
+    `make` runs; a withdrawn agent definition announces itself never, until
+    somebody dispatches it.
+    """
+    lines = install.retirement_report('install-agents', None, rows=FIXTURE)
+    assert len(lines) == 1, lines
+    assert GONE_FILE in lines[0]
+    assert 'no longer written' in lines[0]
+    # The reason a consumer needs, in the line: nothing deleted it for them.
+    assert 'never deletes' in lines[0]
+
+
+def test_the_shipped_table_names_the_changelog_writer_at_0_6_0():
+    """The row is real, not a fixture. `ft-the-changelog-is-a-field-and-a-verb`
+    deleted `CHANGELOG.md`; the agent whose whole role was maintaining it went
+    with it, and a bumping consumer keeps the orphan unless told."""
+    rows = [r for r in install.RETIREMENTS if r.version == '0.6.0']
+    assert rows, 'the 0.6.0 retirement row is gone'
+    files = [f for r in rows for f in r.files]
+    assert '.claude/agents/changelog-writer.md' in files, files
+    # It reports at 0.6.0 and is silent before it.
+    after = install.retirement_report('install-agents', None, current='0.6.0')
+    assert any('changelog-writer' in line for line in after), after
+    before = install.retirement_report('install-agents', None, current='0.5.0')
+    assert not any('changelog-writer' in line for line in before), before
 
 
 # A version this cannot read is not a version this may narrow on: every one of
@@ -492,7 +545,7 @@ def test_every_declared_retirement_names_a_routed_verb_and_a_readable_version():
             f'{row.version} names {row.command}, which no verb routes')
         assert install._version_key(row.version) is not None, (
             f'{row.command} row {row.version!r} is not a version')
-        assert row.targets or row.flags, (
+        assert row.targets or row.flags or row.files, (
             f'{row.command} {row.version} withdrew nothing — a row with '
             f'nothing to say is a row that should not exist')
         checked += 1
@@ -1551,9 +1604,9 @@ class TestTheNameBothCommandsBlockIsOneWording:
 
     def test_the_agents_whose_work_has_no_inner_loop_do_not_carry_it(self):
         """A rule pasted where it does not apply is the noise that gets the
-        whole block deleted. `changelog-writer` and friends sync prose against
+        whole block deleted. `tech-writer` and friends sync prose against
         a known diff; there is no narrow command to name."""
-        for name in ('changelog-writer.md', 'doc-hygiene.md', 'tech-writer.md',
+        for name in ('doc-hygiene.md', 'tech-writer.md',
                      'pm-operator.md'):
             assert self.OPEN not in install.body_of(name), name
 
@@ -1667,6 +1720,8 @@ RETIRED_ELSEWHERE = {
     'ROADMAP.md': 'retired in 0.3.0 — `pm roadmap` + releases.md `order`',
     '<!-- pm:execution -->': 'retired in 0.4.0 with V6 — `order:` on the parent',
     '[[verify.narrow]]': 'retired — the story rung is a make target',
+    'CHANGELOG.md': 'retired in 0.6.0 — `changelog:` on the grain, '
+                    '`agentic-sdlc changelog` renders',
 }
 # A migration NOTE is the legitimate way to name a retired thing, and the seed
 # devkit.toml is full of them. So the allowance is exactly that: the line has to
@@ -1735,3 +1790,136 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
         f'{len(found)} shipped instruction(s) name something this package '
         f'retired; say "retired" on the line to keep it as a migration note:\n'
         + '\n'.join(f'    {row}' for row in found))
+
+
+# --- every definition names the verbs its ROLE reaches for --------------------
+# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1. Across the 12
+# shipped definitions `ready-for` appeared 0 times, `pm ledger` 0 and
+# `lesson record` 0 — a dispatched `developer` was never told the entry rung
+# exists, so six briefs this milestone hand-pasted a roster the package already
+# ships. That is rule 11's own test failed by this package's own surface.
+#
+# The section is a POINTER: the invocation, and in a few words what it ANSWERS.
+# Never what the verb does or how it behaves — that is
+# `ft-prose-that-restates-a-verb-is-rendered-or-gone`'s rule, and five sentences
+# drifted in one day the last time this package restated.
+#
+# The sibling above proves no definition names something RETIRED. This one is
+# the other half, and it is the load-bearing one: every verb a definition NAMES
+# resolves against the live CLI, asked of the code rather than of a list typed
+# here, so a citation goes RED the day its verb leaves.
+ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
+ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
+# A citation is BACKTICKED, so the answer beside it is never parsed as argv.
+# `[^`\n]` because a code span does not span lines here.
+CITATION = re.compile(r'`(agentic-sdlc [^`\n]+)`')
+
+
+def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
+    """{the token path resolved so far: what this package routes after it}.
+
+    Every value is asked of the shipped code. `routed_verbs()` is imported
+    rather than copied — it reads `cli.main()`'s branches by AST, so it cannot
+    miss a verb, and a second copy here would go stale the way the definitions
+    did. Cross-module import is this suite's established shape
+    (test_cli_surface itself imports from test_check_budget).
+    """
+    from test_cli_surface import routed_verbs
+    from agentic_sdlc import cli as root_cli
+    from agentic_sdlc.repo.conveyor import driver, lessons
+    from agentic_sdlc.repo.pm import cli as pm_cli, ready_for
+    from agentic_sdlc.repo.verify.main import MODES
+    return {(): tuple(sorted(routed_verbs())),
+            ('pm',): pm_cli.commands(),
+            ('pm', 'ready-for'): tuple(ready_for.KINDS),
+            # Review S4: `pm ledger report` is a shipped citation whose last
+            # token was graded as an argument, because this stopped one
+            # position short of a real sub-roster.
+            ('pm', 'ledger'): pm_cli.ledger_commands(),
+            ('check',): tuple(root_cli.KNOWN_GATES),
+            ('close',): tuple(driver.CLOSE_OPERATIONS),
+            ('lesson',): (lessons.RECORD, lessons.SHOW),
+            ('verify',): tuple(f'--{mode}' for mode in MODES)}
+
+
+def _unrouted(citation: str,
+              rosters: dict[tuple[str, ...], tuple[str, ...]]) -> str:
+    """The prefix of `citation` this package does not route, or `''`.
+
+    It walks only as deep as a ROSTER exists for. A token past the last one is
+    an argument — an id, a path, a state word this project declared in its own
+    `devkit.toml` — and grading it here would be inventing a claim rather than
+    reading one.
+    """
+    path: tuple[str, ...] = ()
+    for token in citation.split()[1:]:
+        roster = rosters.get(path)
+        if roster is None:
+            return ''
+        if token.startswith('-') and not any(o.startswith('-') for o in roster):
+            # A flag where the roster holds verbs: `pm --help`. This package
+            # publishes no roster of flags at that position, so it stops.
+            return ''
+        if token not in roster:
+            return ' '.join((*path, token))
+        path = (*path, token)
+    return ''
+
+
+def _role_verb_citations() -> dict[str, list[tuple[int, str]]]:
+    """{installable: [(line number in its SOURCE, citation)]} for the whole
+    file — not just the block. A retired citation in a config paragraph is the
+    same false instruction as one in the roster."""
+    found = {}
+    for name, _rel in install.PLANS['install-agents']:
+        body = install.body_of(name)
+        found[name] = [(number, citation)
+                       for number, line in enumerate(body.splitlines(), 1)
+                       for citation in CITATION.findall(line)]
+    return found
+
+
+def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
+    """(a) of the ship criterion: a definition with no verbs in it leaves every
+    dispatch to hand-paste them, which is the measurement that opened sweep 1.
+    An EMPTY section counts as none — a heading is not a pointer."""
+    plans = install.PLANS['install-agents']
+    assert len(plans) == len(AGENTS), 'the agent roster moved without this test'
+    bare: list[str] = []
+    for name, _rel in plans:
+        body = install.body_of(name)
+        if ROLE_VERBS_OPEN not in body or ROLE_VERBS_CLOSE not in body:
+            bare.append(f'{name} carries no {ROLE_VERBS_OPEN} section')
+            continue
+        start = body.index(ROLE_VERBS_OPEN) + len(ROLE_VERBS_OPEN)
+        block = body[start:body.index(ROLE_VERBS_CLOSE)]
+        if not CITATION.findall(block):
+            bare.append(f'{name} has the section and names no verb in it')
+    assert not bare, (
+        f'{len(bare)} shipped definition(s) name none of their role\'s verbs, '
+        f'so a dispatch into that role has to hand-paste them:\n'
+        + '\n'.join(f'    {row}' for row in bare))
+
+
+def test_every_verb_an_agent_definition_names_resolves_against_the_cli():
+    """(b), and the half that can go red on its own. Asked of the router, the
+    gate roster, the verify modes and the pm table — never of a list here."""
+    rosters = _verb_rosters()
+    assert len(rosters[()]) > 5, 'the router census collapsed — this graded nothing'
+    assert len(rosters[('pm',)]) > 5, 'the pm table collapsed'
+    cited = _role_verb_citations()
+    assert sum(len(rows) for rows in cited.values()), 'no citation was scanned'
+    unrouted: list[str] = []
+    for name, rows in cited.items():
+        for number, citation in rows:
+            bad = _unrouted(citation, rosters)
+            if bad:
+                unrouted.append(
+                    f'{INSTALLED_SOURCES[0]}/{name}:{number} cites '
+                    f'`{citation}` — this package routes no '
+                    f'`agentic-sdlc {bad}`')
+    assert not unrouted, (
+        f'{len(unrouted)} shipped definition(s) cite a verb this package does '
+        f'not route; a definition naming a retired verb is a false instruction '
+        f'to an operator who cannot check it:\n'
+        + '\n'.join(f'    {row}' for row in unrouted))

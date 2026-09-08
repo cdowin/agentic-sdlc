@@ -44,6 +44,15 @@ names and the helpers. You diverge from the story only when a contract is
 wrong, ambiguous or impossible — then you stop and report rather than work
 around it — and you build no named construct the story does not name.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm ready-for story <id>` — may I start?
+- `agentic-sdlc pm story building <id>` — the claim, on the record
+- `agentic-sdlc pm vocabulary` — which states may I write on this tree?
+- `agentic-sdlc verify --story` — the rung after every edit
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Read the story, its `feature.md`, `CLAUDE.md`, and every file in Scope;

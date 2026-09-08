@@ -1790,3 +1790,132 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
         f'{len(found)} shipped instruction(s) name something this package '
         f'retired; say "retired" on the line to keep it as a migration note:\n'
         + '\n'.join(f'    {row}' for row in found))
+
+
+# --- every definition names the verbs its ROLE reaches for --------------------
+# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1. Across the 12
+# shipped definitions `ready-for` appeared 0 times, `pm ledger` 0 and
+# `lesson record` 0 — a dispatched `developer` was never told the entry rung
+# exists, so six briefs this milestone hand-pasted a roster the package already
+# ships. That is rule 11's own test failed by this package's own surface.
+#
+# The section is a POINTER: the invocation, and in a few words what it ANSWERS.
+# Never what the verb does or how it behaves — that is
+# `ft-prose-that-restates-a-verb-is-rendered-or-gone`'s rule, and five sentences
+# drifted in one day the last time this package restated.
+#
+# The sibling above proves no definition names something RETIRED. This one is
+# the other half, and it is the load-bearing one: every verb a definition NAMES
+# resolves against the live CLI, asked of the code rather than of a list typed
+# here, so a citation goes RED the day its verb leaves.
+ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
+ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
+# A citation is BACKTICKED, so the answer beside it is never parsed as argv.
+# `[^`\n]` because a code span does not span lines here.
+CITATION = re.compile(r'`(agentic-sdlc [^`\n]+)`')
+
+
+def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
+    """{the token path resolved so far: what this package routes after it}.
+
+    Every value is asked of the shipped code. `routed_verbs()` is imported
+    rather than copied — it reads `cli.main()`'s branches by AST, so it cannot
+    miss a verb, and a second copy here would go stale the way the definitions
+    did. Cross-module import is this suite's established shape
+    (test_cli_surface itself imports from test_check_budget).
+    """
+    from test_cli_surface import routed_verbs
+    from agentic_sdlc import cli as root_cli
+    from agentic_sdlc.repo.conveyor import driver, lessons
+    from agentic_sdlc.repo.pm import cli as pm_cli, ready_for
+    from agentic_sdlc.repo.verify.main import MODES
+    return {(): tuple(sorted(routed_verbs())),
+            ('pm',): pm_cli.commands(),
+            ('pm', 'ready-for'): tuple(ready_for.KINDS),
+            ('check',): tuple(root_cli.KNOWN_GATES),
+            ('close',): tuple(driver.CLOSE_OPERATIONS),
+            ('lesson',): (lessons.RECORD, lessons.SHOW),
+            ('verify',): tuple(f'--{mode}' for mode in MODES)}
+
+
+def _unrouted(citation: str,
+              rosters: dict[tuple[str, ...], tuple[str, ...]]) -> str:
+    """The prefix of `citation` this package does not route, or `''`.
+
+    It walks only as deep as a ROSTER exists for. A token past the last one is
+    an argument — an id, a path, a state word this project declared in its own
+    `devkit.toml` — and grading it here would be inventing a claim rather than
+    reading one.
+    """
+    path: tuple[str, ...] = ()
+    for token in citation.split()[1:]:
+        roster = rosters.get(path)
+        if roster is None:
+            return ''
+        if token.startswith('-') and not any(o.startswith('-') for o in roster):
+            # A flag where the roster holds verbs: `pm --help`. This package
+            # publishes no roster of flags at that position, so it stops.
+            return ''
+        if token not in roster:
+            return ' '.join((*path, token))
+        path = (*path, token)
+    return ''
+
+
+def _role_verb_citations() -> dict[str, list[tuple[int, str]]]:
+    """{installable: [(line number in its SOURCE, citation)]} for the whole
+    file — not just the block. A retired citation in a config paragraph is the
+    same false instruction as one in the roster."""
+    found = {}
+    for name, _rel in install.PLANS['install-agents']:
+        body = install.body_of(name)
+        found[name] = [(number, citation)
+                       for number, line in enumerate(body.splitlines(), 1)
+                       for citation in CITATION.findall(line)]
+    return found
+
+
+def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
+    """(a) of the ship criterion: a definition with no verbs in it leaves every
+    dispatch to hand-paste them, which is the measurement that opened sweep 1.
+    An EMPTY section counts as none — a heading is not a pointer."""
+    plans = install.PLANS['install-agents']
+    assert len(plans) == len(AGENTS), 'the agent roster moved without this test'
+    bare: list[str] = []
+    for name, _rel in plans:
+        body = install.body_of(name)
+        if ROLE_VERBS_OPEN not in body or ROLE_VERBS_CLOSE not in body:
+            bare.append(f'{name} carries no {ROLE_VERBS_OPEN} section')
+            continue
+        start = body.index(ROLE_VERBS_OPEN) + len(ROLE_VERBS_OPEN)
+        block = body[start:body.index(ROLE_VERBS_CLOSE)]
+        if not CITATION.findall(block):
+            bare.append(f'{name} has the section and names no verb in it')
+    assert not bare, (
+        f'{len(bare)} shipped definition(s) name none of their role\'s verbs, '
+        f'so a dispatch into that role has to hand-paste them:\n'
+        + '\n'.join(f'    {row}' for row in bare))
+
+
+def test_every_verb_an_agent_definition_names_resolves_against_the_cli():
+    """(b), and the half that can go red on its own. Asked of the router, the
+    gate roster, the verify modes and the pm table — never of a list here."""
+    rosters = _verb_rosters()
+    assert len(rosters[()]) > 5, 'the router census collapsed — this graded nothing'
+    assert len(rosters[('pm',)]) > 5, 'the pm table collapsed'
+    cited = _role_verb_citations()
+    assert sum(len(rows) for rows in cited.values()), 'no citation was scanned'
+    unrouted: list[str] = []
+    for name, rows in cited.items():
+        for number, citation in rows:
+            bad = _unrouted(citation, rosters)
+            if bad:
+                unrouted.append(
+                    f'{INSTALLED_SOURCES[0]}/{name}:{number} cites '
+                    f'`{citation}` — this package routes no '
+                    f'`agentic-sdlc {bad}`')
+    assert not unrouted, (
+        f'{len(unrouted)} shipped definition(s) cite a verb this package does '
+        f'not route; a definition naming a retired verb is a false instruction '
+        f'to an operator who cannot check it:\n'
+        + '\n'.join(f'    {row}' for row in unrouted))

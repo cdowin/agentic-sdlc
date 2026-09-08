@@ -35,6 +35,16 @@ touches and surface the load-bearing gotchas only code reading reveals. You do
 not write implementation, prescribe line-level edits, dispatch subagents,
 manage branches or push.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm new story` — mint it, bound to its feature
+- `agentic-sdlc pm add <feature-id> <story-id>` — where it sits in its
+  parent's order
+- `agentic-sdlc pm vocabulary` — which states may a story hold here?
+- `agentic-sdlc pm ready-for feature <id>` — is the slice actually finished?
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Planning: read `feature.md` and the spec (flag a complex feature with

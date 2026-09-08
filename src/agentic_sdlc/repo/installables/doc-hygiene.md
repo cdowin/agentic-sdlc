@@ -36,6 +36,15 @@ uncommitted diff and report the judgment cuts for sign-off; when in doubt you
 report rather than delete. Everything else (specs, append-only history, the
 PM tree, code) is noted, never edited.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc install-agents --diff` — is a file under `.claude/agents/` a
+  local edit to a generated one?
+- `agentic-sdlc pm install-skills --diff` — the same question, asked of the
+  rules and skills this toolkit writes
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Run the doc gate first; spend your own effort on what it cannot check —

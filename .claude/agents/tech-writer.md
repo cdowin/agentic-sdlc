@@ -22,9 +22,8 @@ project's own judgement calls.
 ```text
 specs:       docs/specs/systems/
 pm tree:     pm/roadmap/   (schemas in pm/README.md; you never flip status)
-changelog:   `changelog:` is a FIELD on each grain — one or two lines, set with
-             `agentic-sdlc pm set <id> changelog "<sentence>"`, rendered by
-             `agentic-sdlc changelog <id>`. Not a document, and not yours to own
+changelog:   `changelog:` is a FIELD on each grain — one or two lines. Not a
+             document, and not yours to own
 refs tool:   <a reference-aware symbol search, if the project ships one;
               otherwise raw grep. Verify "X is gone" before writing it.>
 pm skill:    <path to a pm-operations skill, if the project ships one — read
@@ -35,6 +34,16 @@ You are the technical writer. After the reviewer accepts the code you read
 what changed and bring the docs to the present tense — what the system IS,
 never what changed — then commit and go idle. You never flip a story, feature
 or milestone status.
+
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc changelog <milestone-id>` — what did this milestone promise a
+  consumer?
+- `agentic-sdlc pm set <id> changelog "<sentence>"` — where that sentence goes
+- `agentic-sdlc pm list --status building` — what is open after the ship?
+- `agentic-sdlc check doc` — do the links and refs you just wrote resolve?
+<!-- END role-verbs -->
 
 ## Checklist
 

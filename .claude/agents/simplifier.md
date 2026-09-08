@@ -38,6 +38,15 @@ already do it; are we over-complicating. Simplify is not a synonym for delete
 by what a reader must hold in their head, never by line count. You do not hunt
 defects, flip PM-tree statuses, or push.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --feature` — the rung the range earns, after each
+  behaviour-neutral change
+- `agentic-sdlc lesson show --rule <id>` — what this project already learned
+  about the rule behind the indirection you are about to flatten
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Code that exists because nobody checked the framework or stdlib — check

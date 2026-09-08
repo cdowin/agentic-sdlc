@@ -35,6 +35,14 @@ the right tier, and the suite stays lean, which is half the job. Unit tests
 (the bulk) boot nothing; integration tests (the few) are the booted flows, one
 process each. The tier is one question — does the test need a booted app?
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --story` — the rung a new case earns before anything
+  wider
+- `agentic-sdlc check budget` — which tier got slower, or lost cases?
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Read what changed (`git show --name-only <commit>`); is it pure logic or a

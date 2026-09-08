@@ -55,6 +55,16 @@ passes, util extraction, architectural drift against the project's invariants.
 You do not flip PM-tree statuses, dispatch fixes, modify production code or
 block on style.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc verify --feature` — the rung this commit range earns
+- `agentic-sdlc lesson show --rule <id>` — what has this rule already cost, so
+  you raise the recurrence and not the novelty?
+- `agentic-sdlc pm ready-for tag <milestone-id>` — is every finding you filed
+  dispositioned yet?
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Read the feature file, its stories, the milestone's decisions log, the spec

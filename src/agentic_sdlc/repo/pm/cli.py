@@ -3050,6 +3050,31 @@ def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
+def _table() -> dict:
+    # Deferred: `ready_for` and `skills` import this module's shared
+    # vocabulary, so binding at call time keeps load order a non-question.
+    from agentic_sdlc.repo.pm import ready_for, skills
+    return {
+        'ready-for': ready_for.cmd_ready_for,
+        model.GRAIN_STORY: cmd_story, model.GRAIN_BUG: cmd_bug, model.GRAIN_FEATURE: cmd_feature,
+        model.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
+        'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
+        'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
+        'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
+        'rename': cmd_rename,
+        'templates': skills.cmd_templates,
+        'vocabulary': cmd_vocabulary, 'decide': cmd_decide,
+        'config': skills.cmd_config,
+        'ledger': cmd_ledger, 'add': cmd_add, 'remove': cmd_remove,
+        'next': cmd_next, 'roadmap': cmd_roadmap,
+    }
+
+
+def commands() -> tuple[str, ...]:
+    """The sub-verbs this router dispatches, off the router's own table."""
+    return tuple(_table())
+
+
 def main(argv: list[str], *, skipped: Skipped = ()) -> int:
     if not argv or argv[0] in ('-h', '--help', 'help'):
         print(USAGE)
@@ -3073,24 +3098,7 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
     if defect:
         print(f'[pm] ERROR — {defect}', file=sys.stderr)
         return 2
-    # Deferred: `ready_for` and `skills` import this module's shared
-    # vocabulary, so binding at call time keeps load order a non-question.
-    from agentic_sdlc.repo.pm import ready_for, skills
-    table = {
-        'ready-for': ready_for.cmd_ready_for,
-        model.GRAIN_STORY: cmd_story, model.GRAIN_BUG: cmd_bug, model.GRAIN_FEATURE: cmd_feature,
-        model.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
-        'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
-        'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
-        'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
-        'rename': cmd_rename,
-        'templates': skills.cmd_templates,
-        'vocabulary': cmd_vocabulary, 'decide': cmd_decide,
-        'config': skills.cmd_config,
-        'ledger': cmd_ledger, 'add': cmd_add, 'remove': cmd_remove,
-        'next': cmd_next, 'roadmap': cmd_roadmap,
-    }
-    fn = table.get(cmd)
+    fn = _table().get(cmd)
     if fn is None:
         # A retired verb is named with where it WENT. "Unknown command" reads
         # as a typo, and a consumer whose Makefile still calls one would go

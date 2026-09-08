@@ -38,6 +38,20 @@ the story (the what per file) and the developer for the code (the how), and
 implement 1-3 file fixes yourself. Agents do not dispatch each other and do not
 make design decisions.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc dispatch --grain <id> --role <role>` — what goes in the brief?
+- `agentic-sdlc pm ready-for feature <id>` — is the work below this finished?
+- `agentic-sdlc close story <id>`, `agentic-sdlc close feature <id>` — may
+  this close, and the one write that says so
+- `agentic-sdlc release <version>` — may the milestone ship?
+- `agentic-sdlc pm status <milestone-id>` — where is everything right now?
+- `agentic-sdlc pm ledger report <milestone-id>` — what did it cost?
+- `agentic-sdlc lesson record --grain <id> --rule <id> --source <path>` —
+  where a correction goes so the next dispatch meets it
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Start: read `CLAUDE.md`, `pm roadmap`, and the active milestone document,

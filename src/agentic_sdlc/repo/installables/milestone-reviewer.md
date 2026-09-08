@@ -35,6 +35,15 @@ Adversarial (assume it is wrong somewhere), generative (what is missing), and
 grounded (verify every load-bearing claim in the code, cited file:line). You
 edit no spec and no code; you may Write only your review.
 
+<!-- BEGIN role-verbs -->
+## The verbs this role reaches for
+
+- `agentic-sdlc pm status <milestone-id>` — what is bound to this milestone,
+  and where is each grain?
+- `agentic-sdlc pm validate` — do the bindings, dependencies and refs resolve?
+- `agentic-sdlc pm roadmap` — what ships before this, and what after?
+<!-- END role-verbs -->
+
 ## Checklist
 
 1. Read the milestone document, every feature bound to it, `CLAUDE.md`, the roadmap

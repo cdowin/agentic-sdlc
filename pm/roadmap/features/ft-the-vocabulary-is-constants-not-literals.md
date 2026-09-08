@@ -7,6 +7,7 @@ status: building
 reviewed:
 depends_on: []
 consumed_by: []
+changelog: none
 ---
 
 # the vocabulary is constants, not literals
@@ -94,6 +95,75 @@ docstrings, compare `ast.dump`. The prose passes in 0.5.0 used exactly this and 
 claim zero code change with a straight face.
 
 `make test` and every gate green at each landing, not only at the end.
+
+## What landed, and what did not — 0.6.0
+
+Four of the six sweeps landed. Two did not, and this section is that decision rather than a silence.
+
+**Landed — the vocabulary.** 603 bare literals of the four vocabularies became 62, and every one of
+the 62 is a top-level DECLARATION named in the gate with the reason it is a different word. Grain
+kinds have one home (`model.GRAIN_MILESTONE|FEATURE|STORY|BUG`, and `FLOW_KINDS` is built from them);
+frontmatter field names have one (`model.FIELD_ID|KIND|STATUS|NAME|OWNER`); the durable row's own
+three have one (`ledger.TS_FIELD|KIND_FIELD|GRAIN_FIELD`, and every key tuple and minter below them
+is built from those). Taps were already constants. **Five parallel declarations of the kind
+vocabulary collapsed**: `grain_shape.MILESTONE|FEATURE|STORY|BUG` and `report.KIND_*` became aliases,
+`templates.GRAINS` became `model.FLOW_KINDS`, `ledger.GRAIN_BUG` was deleted, and `verify/main.py`
+compared a row kind against a bare `'gate'` where `ledger.KIND_GATE` already existed.
+
+**Landed — the gate, as rows on the state census.** `tests/test_pm_flow.py` now holds a `VOCABULARIES`
+table of four rows; `test_no_state_literal_survives_outside_the_seed` keeps its name and is the STATE
+row, and `NoVocabularyLiteralSurvivesOutsideItsHome` is the other three, with a `CORPUS` and a
+`catches()` per `tests/test_guard_corpus.py`. **What it does NOT grade is stated in the class
+docstring**: a frontmatter field outside a `field_of`/`field_in`/`set_field` argument, and a row field
+outside a mapping key. Those are the positions where a second spelling is SILENT; the same words
+elsewhere are a git subcommand, a printed column (rule 6) and an English noun, and a census that
+cannot tell them apart forces a module to lie. Probed all four by planting drift in real source: each
+reports `path:line 'word'`, never a count.
+
+**Landed — the numbers.** `127`/`126`/`124` are not one concept with `120`: the first three are the
+SHELL's codes for a command that never ran (`NOT_ON_PATH`, `CANNOT_RUN`, `TIMED_OUT`), and `120` is
+`git`'s timeout in SECONDS (`GIT_TIMEOUT`). Naming them is what makes that visible. The `_clip`
+budgets, the census caps, the porcelain prefix and `MS_PER_SECOND` are named too.
+
+**NOT landed — exit code `2`, 88 sites.** 28 are `return 2`, ~37 are arity or index (`len(rest) != 2`,
+`seek(0, 2)`), and the rest are slices. Rule 6 already documents the exit codes and
+`verify/rules.EXIT_CONFIG` is a third spelling of one of them; a real fix is ONE `EXIT_*` home that
+`core/` and `repo/` can both reach, which is a module-level decision, not a rename. Named here rather
+than swept badly.
+
+**NOT landed — the `cli.py` / `model.py` split.** Deferred whole. Five features landed in `cli.py`
+today and splitting two modules that are 28% of `src/` at the end of a 17-grain milestone is the grand
+unification `ft-a-read-verb-is-a-declaration` warns against. Sweep 6 (one shape for a refusal) is
+deferred with it: it did not fall out of the constants work.
+
+**The archaeology finding.** 89 version references, 14 removed. The spec predicted most would be
+load-bearing and that is what the reading found: a version naming a decision (`0.5.0/D6`), a
+retirement a consumer's config still lists, a boundary an old pin sits on, or example data all teach
+something the sentence loses without them. **Removing the 14 bare ones freed ZERO prose-census lines**
+— a breadcrumb is a word inside a comment, not a comment — so sweep 4 is not a census lever, and
+saying so is more useful than the deletions were.
+
+**Dead constants, decided per constant.** DELETED: `model.ROADMAP_DOC` (nothing in `src/`, `tests/` or
+`docs/` read it, and its comment claimed a recognition behaviour no code implements);
+`verdict.CHECK_DISPOSITIONS` (a one-element tuple nobody read — `SKIPPED`, which the conveyor does
+import, is what the comment was about); `verify/main.MAKE_PROGRAM` (a second spelling of
+`rules.RUNG_PROGRAM`); `ledger.GRAIN_BUG` (a second spelling of a grain kind, read only by `report`).
+KEPT, each because a test pins it as the contract and hand-copying it into the test is the second
+scoreboard: `init.SEEDS` (the documented project-owned file set, read by `test_init_verb` and
+`test_install`), `cli.ROADMAP_COLUMNS` (the `--help` line and the row width), `ledger.DISPOSITION_KEYS`
+(the disposition row's key set), `report.CLOCK_COLUMNS` (already the named precedent). The
+`ROADMAP_COLUMNS` comment claimed a single-sourcing the code does not do and now says what is true.
+
+**The mechanical proof, and its limits.** `ast.dump` cannot be compared directly, because replacing
+`'feature'` with `GRAIN_FEATURE` is exactly what changed. What was compared instead: parse the HEAD
+source and the working source, strip every docstring, resolve every name in a declared roster of the
+new constants to its RUNTIME value in both trees, and diff the canonical `ast.unparse`. 33 of 46
+modules come back character-identical; the residual is 51 lines and every one is a constant
+declaration added, a constant deleted, an import line, the `ready_for` tuple split, or one hand-edited
+`cli.py` expression checked by eye. **What that proves**: each edit was a value-preserving
+substitution and nothing else in the parsed tree moved. **What it does not prove**: that a constant's
+VALUE is the one its reader wants (a test does that), that the 59 wrapped lines read better, or
+anything about `tests/`. Comments and formatting are outside an AST comparison by construction.
 
 ## Proof budget
 

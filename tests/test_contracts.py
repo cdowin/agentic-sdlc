@@ -368,7 +368,16 @@ class TheColumnsRoundTrip(unittest.TestCase):
                     self.assertIn(kind, table,
                                   f'{name} is not keyed on {kind!r} and '
                                   f'model.FLOW_KINDS says it is a kind')
-                self.assertIn(kind, templates.GRAINS)
+                # Review V3 (0.6.0): this asked `kind in templates.GRAINS`,
+                # and the same commit that collapsed the parallel kind
+                # declarations made `GRAINS` an alias OF `FLOW_KINDS` — so the
+                # assertion became `x in X for x in X` and could not fail. The
+                # fourth `KeyError` the docstring promises is a MISSING
+                # TEMPLATE FILE, so the file is what is asked for.
+                self.assertTrue(_shipped(kind).lstrip().startswith('---'),
+                                f'templates/{kind}.md ships no frontmatter '
+                                f'fence, so `pm new {kind}` scaffolds a grain '
+                                f'with nowhere to write a status')
 
     def test_every_binding_field_is_one_the_templates_carry(self):
         """`BINDS_TO` says which field binds a kind; the shipped template has

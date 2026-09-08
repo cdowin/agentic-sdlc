@@ -1,7 +1,7 @@
 ---
 id: ft-a-phase-declares-what-it-hands-an-agent
 kind: feature
-milestone: "ms-nothing-is-hand-rolled"
+milestone: 
 name: a phase declares what it hands an agent
 status: planning
 reviewed:

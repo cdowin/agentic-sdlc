@@ -1,7 +1,7 @@
 ---
 id: ft-the-record-is-harvested-not-pushed
 kind: feature
-milestone: "ms-nothing-is-hand-rolled"
+milestone: 
 name: the record is harvested, not pushed
 status: planning
 reviewed:

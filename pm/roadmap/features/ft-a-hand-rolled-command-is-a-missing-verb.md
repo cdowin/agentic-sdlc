@@ -1,7 +1,7 @@
 ---
 id: ft-a-hand-rolled-command-is-a-missing-verb
 kind: feature
-milestone: "ms-nothing-is-hand-rolled"
+milestone: 
 name: a hand-rolled command is a missing verb
 status: planning
 reviewed:

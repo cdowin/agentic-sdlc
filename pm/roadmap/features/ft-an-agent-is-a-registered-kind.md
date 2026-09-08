@@ -1,7 +1,7 @@
 ---
 id: ft-an-agent-is-a-registered-kind
 kind: feature
-milestone: "ms-nothing-is-hand-rolled"
+milestone: 
 name: an agent is a registered kind
 status: planning
 reviewed:

@@ -90,8 +90,10 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
   `config.py` decides what a config VALUE may be. It imports nothing from `repo/`.
 - **`src/agentic_sdlc/repo/`** is the tool — the `pm` tracker, the checks, the belts, `verify`,
   and `install.py` with the files it writes under `installables/`. It imports `core/`, never the
-  reverse. `cli.py` only routes; each verb module owns its behaviour and its `--help` docstring.
-- **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in `cli.py` + a
+  reverse. The router is `src/agentic_sdlc/cli.py`, a SIBLING of both: it only routes, and each
+  verb module owns its behaviour and its `--help` docstring.
+- **New check** = module in `src/agentic_sdlc/repo/checks/` + `KNOWN_GATES` in
+  `src/agentic_sdlc/cli.py` + a
   README row + the grain's `changelog:`. **New verb** = module + route + README row + `changelog:`;
   a verb that WRITES also needs a refusal path with a test, and an idempotence test. **New test** =
   first the search (rule 10), then the cheapest tier, then a row in the story's

@@ -468,6 +468,12 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'declares each one (U1)')
 
 
+def _asks_something(cfg: model.PmConfig, kind: str, state: str) -> bool:
+    """Does `[pm.arrive.<kind>.<state>]` type any answer to record?"""
+    arrival = model.arrival_at(cfg, kind, state)
+    return bool(arrival and arrival.answers)
+
+
 def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
                          census) -> None:
     """U5 — a grain whose CURRENT state was arrived at with no disposition.
@@ -477,6 +483,9 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
     stays visible after the move's own line scrolls away. `arrive.census` is
     the GUARD and is handed IN, so this rule, the line below it and a `pm`
     write are one derivation; the grains are NAMED, never tallied (rule 11).
+
+    A state that declares no answers has nothing to be unanswered about
+    (0.6.0/D5, with the rejected alternative).
     """
     if 'U5' not in enabled:
         return
@@ -495,6 +504,7 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
                                    key=lambda g: g.gid)
              if g.kind in model.FLOW_KINDS
              and model.category_of(cfg, g.kind, g.status) == model.IN_PROGRESS
+             and _asks_something(cfg, g.kind, g.status)
              and answered.get((g.gid, g.status)) in (None,
                                                      ledger.NO_DISPOSITION)]
     if not quiet:
@@ -609,6 +619,20 @@ def _age_of(row: dict) -> str:
     # rendering it as a negative age would read as a defect in this line.
     seconds = max(0, int((datetime.now(timezone.utc) - when).total_seconds()))
     return f'{ledger.human_duration(seconds)} ago'
+
+
+def _recording_span(rows: list[tuple[Path, dict]]) -> str:
+    """How long `never` has been true, off the OLDEST row these ledgers hold:
+    five milestones and one afternoon read alike. No stamp, no number."""
+    from agentic_sdlc.repo.pm import ledger
+    stamps = [when for when in (ledger.parse_ts(row.get(ledger.TS_FIELD))
+                                for _path, row in rows) if when is not None]
+    if not stamps:
+        return ''
+    seconds = max(0, int((datetime.now(timezone.utc)
+                          - min(stamps)).total_seconds()))
+    return (f' in the {ledger.human_duration(seconds)} these ledgers have '
+            f'been recording')
 
 
 def _kind_of(row: dict) -> str:
@@ -808,7 +832,8 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
         warn(f'{" and ".join(wired)} {"is" if len(wired) == 1 else "are"} '
              f'wired in {wiring.where} and no {kinds} row has EVER '
              f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
-             f'{recording_phrase(rec)}. `install-hooks --write-settings` lands '
+             f'{recording_phrase(rec)}{_recording_span(rows)}. '
+             f'`install-hooks --write-settings` lands '
              f'the block here, and `GDK_LEDGER_ROOT` points a session rooted '
              f'elsewhere at this tree: whether a harness fires the {events} '
              f'hook depends on the session\'s project root, not on '

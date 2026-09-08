@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
+
+from support.pm import run_cli, tree as pm_tree
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import dispatch
@@ -26,6 +29,8 @@ FLOW = model.render_seed()
 LADDER = '[verify]\nstory = "make unit"\nfeature = "make test"\nmilestone = "make milestone"\n'
 DECLARED = ('[dispatch]\nproject = "A worked example, and its stack."\n'
             'contracts = ["RULES.md"]\n')
+# The story `support.pm.tree` builds, in progress — the grain a dispatch is on.
+STORY = '0.1/alpha/s0'
 
 
 @contextmanager
@@ -49,6 +54,21 @@ def tree(config: str = DECLARED, contracts: dict[str, str] | None = None):
             yield root
         finally:
             os.chdir(previous)
+            repo_root.cache_clear()
+            load_config.cache_clear()
+
+
+@contextmanager
+def grain_tree():
+    """A REAL pool tree declaring `[dispatch]` — `--grain` resolves against
+    documents, so the stub above cannot serve a case about one."""
+    with pm_tree(config=DECLARED, story_statuses=('building',)) as root:
+        (root / 'RULES.md').write_text('# rules', encoding='utf-8')
+        repo_root.cache_clear()
+        load_config.cache_clear()
+        try:
+            yield root
+        finally:
             repo_root.cache_clear()
             load_config.cache_clear()
 
@@ -116,6 +136,49 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
         self.assertNotIn('make unit', after)
         self.assertIn('make quick', after)
         self.assertIn('make everything', after)
+
+
+class TheDispatchCanBeRECORDED(unittest.TestCase):
+    """Measured in this milestone: six agents dispatched, zero dispatch rows.
+
+    `GDK_LEDGER_GRAIN` is the one `GDK_LEDGER_*` value no hook payload carries,
+    so nothing exports it and nobody reached for `pm ledger record` once. This
+    verb stands at the moment a dispatch begins, so it is where both lines are
+    NAMED (rule 11). It renders them; the operator runs them (D1).
+    """
+
+    def test_the_export_and_the_record_line_arrive_with_the_grain(self):
+        with grain_tree():
+            code, out, err = run('--grain', STORY, '--role', 'developer')
+        self.assertEqual(code, 0, err)
+        self.assertIn(f'export GDK_LEDGER_GRAIN={STORY}', out)
+        self.assertIn(f'agentic-sdlc pm ledger record --grain {STORY} '
+                      f'--agent-type developer', out)
+
+    def test_the_record_line_it_prints_is_one_the_verb_ACCEPTS(self):
+        """A printed command that errors is worse than none, so the line is
+        lifted out of the preamble and RUN. Every number `pm ledger record`
+        takes is optional, which is why the pasteable form carries none."""
+        with grain_tree() as root:
+            _, out, err = run('--grain', STORY, '--role', 'developer')
+            self.assertEqual(err, '')
+            line = next(raw.strip() for raw in out.splitlines()
+                        if 'ledger record' in raw
+                        and not raw.strip().startswith('#'))
+            argv = shlex.split(line)
+            self.assertEqual(argv[:2], ['agentic-sdlc', 'pm'])
+            code, said = run_cli(root, *argv[2:])
+        self.assertEqual(code, 0, said)
+        self.assertIn('ledger dispatch row appended', said)
+
+    def test_no_grain_renders_no_record_line_at_all(self):
+        """`pm ledger record` with no `--grain` and no transcript REFUSES, and
+        a preamble that printed it anyway would teach the paste that errors."""
+        with tree():
+            code, out, _ = run()
+        self.assertEqual(code, 0)
+        self.assertNotIn('ledger record', out)
+        self.assertNotIn('GDK_LEDGER_GRAIN', out)
 
 
 class TheDeclarationIsRefusedByName(unittest.TestCase):

@@ -387,3 +387,41 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
     assert any(DECLARATION_LINE.match(line) for line in SEED.splitlines()), (
         'the seed marks no DECLARATION at all — the split it states is then '
         'unreadable to anything but a human')
+
+
+# --- criterion 4: the arrival a dispatch starts at names the courier ----------
+# The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
+LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
+
+
+def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
+    """Rule 11, in the surface somebody is standing in: `pm feature|story
+    building <id> --by agent <type>` already records WHO, so it is where the
+    courier and the env var it needs get named. Measured before this line
+    existed: six dispatches, zero dispatch rows, on a tree whose couriers were
+    wired. The SEED's example and this repo's own declaration are one change,
+    never two — a consumer reads the seed to find out what a version can do.
+    """
+    live = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text(encoding='utf-8'))
+    for kind in (model.GRAIN_FEATURE, model.GRAIN_STORY):
+        node = live['pm'][model.ARRIVE_KEY][kind]['building']
+        named = {path: why for path, why in node[model.HAVE_KEY].items()
+                 if any(courier in path for courier in model.LEDGER_COURIERS)}
+        assert named, (
+            f'[pm.arrive.{kind}.building] have names no ledger courier; a '
+            f'dispatch starts here and nothing tells the operator it can be '
+            f'recorded: {sorted(node[model.HAVE_KEY])}')
+        for path, why in named.items():
+            assert (REPO_ROOT / path).is_file(), (
+                f'[pm.arrive.{kind}.building] have names {path}, which is not '
+                f'in this checkout — the line would read "DECLARED and not '
+                f'installed" forever')
+            assert LEDGER_GRAIN_ENV in why, (
+                f'[pm.arrive.{kind}.building] have.{path} does not name '
+                f'{LEDGER_GRAIN_ENV}: the courier reads it from its own '
+                f'environment and no hook event carries it, so a line naming '
+                f'the script without the variable names half the capability')
+    assert LEDGER_GRAIN_ENV in SEED, (
+        f'the seed\'s [pm.arrive.…] example does not name {LEDGER_GRAIN_ENV} '
+        f'while this repo\'s own declaration does — a consumer reads the seed '
+        f'to find out what a version can do')

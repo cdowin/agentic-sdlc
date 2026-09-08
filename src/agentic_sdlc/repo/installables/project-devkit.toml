@@ -207,6 +207,9 @@
 #   answers = ["--by me", "--by agent <type>"]
 #   have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
 #
+#   [pm.arrive.story.building]
+#   have    = { "tools/hooks/cc-ledger-subagent.sh" = "this dispatch's spend, when GDK_LEDGER_GRAIN=<id> is exported before it" }
+#
 #   [pm.arrive.feature.reviewing]
 #   ask     = "what happens to it?"
 #   answers = ["--review agent <type>", "--skip review \"<why>\""]
@@ -215,7 +218,11 @@
 # answers typed is advice, and rule 9 forbids the tool having one. Every answer
 # opens with `--` and IS a flag the move accepts, so answering costs one paste;
 # a move at a state with no node prints no question. `have` is a CENSUS of
-# installed files — "this exists, here, now", never "you should run it".
+# installed files — "this exists, here, now", never "you should run it". The
+# courier above is the rule-11 line: arriving at `building --by agent <type>`
+# is where a dispatch starts, so it is where the one GDK_LEDGER_* value no hook
+# payload carries gets named, and `agentic-sdlc dispatch --grain <id>` renders
+# both that export and the `pm ledger record` line for the return.
 #
 # The states themselves are [pm.states.<kind>] below — the one section written
 # LIVE — and every question `pm` and `check pm` ask is asked of a state's

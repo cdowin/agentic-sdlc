@@ -1123,13 +1123,39 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root)
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
-            self.assertIn('last hook-written row: never', out)
+            self.assertIn('last hook-written row: never in the 3h these '
+                          'ledgers have been recording', out)
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.
             self.assertIn('1 status', out)
             # AND U2 is silent on this very tree — which is the gap.
             self.assertNotIn('recording NOTHING', out)
+
+    def test_how_long_never_has_been_true_is_read_off_the_oldest_row(self):
+        """*"never"* over five milestones and *"never"* over one afternoon are
+        different facts. The age is DERIVED from the oldest row the ledgers
+        hold, so the same tree one row older says a different number — and a
+        tree holding nothing dateable says none rather than inventing one.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            put_ledger(root, status_line(hours_ago(24 * 40), '0.1/alpha/s0',
+                                         'planning', 'ready'),
+                       status_line(hours_ago(1), '0.1/alpha/s0', 'ready',
+                                   'building'))
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            # The OLDEST row, not the newest: the span is how long the tree has
+            # been recording, and `1h` here would be the last thing it did.
+            self.assertIn('never in the 40d these ledgers have been '
+                          'recording', out)
+        with tree(story_statuses=('ready',)) as root:
+            self._settings(root, self.WIRED)
+            code, out = self._gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertIn('last hook-written row: never.', out)
+            self.assertNotIn('have been recording', out)
 
     def test_a_courier_row_is_named_with_its_kind_and_age(self):
         with tree(story_statuses=('ready',)) as root:
@@ -3153,9 +3179,22 @@ class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
     answer given at a state the grain has since LEFT does not answer the state
     it is in now. Arrival is the unit (D3), so a grain that bounced back has
     arrived again and the question is asked again.
+
+    **And the state has to ASK something.** `CHECKS` declares
+    `[pm.arrive.story.building]` because without it there is no question and
+    `answer: none` is the complete record — `ASKS_NOTHING` is that case, and
+    it is the defect this class was written over: every case here ran on a
+    tree that declared no arrival at all, so the rule was proven on exactly
+    the trees where it should stay quiet.
     """
 
-    CHECKS = '[pm]\nchecks = ["U5"]\n'
+    CHECKS = ('[pm]\nchecks = ["U5"]\n\n'
+              '[pm.arrive.story.building]\n'
+              'ask = "what is building this?"\n'
+              'answers = ["--by me", "--by agent <type>"]\n')
+    # The same roster with the question removed: a state nobody typed an answer
+    # for. Everything else about the tree is identical.
+    ASKS_NOTHING = '[pm]\nchecks = ["U5"]\n'
     STORY = '0.1/alpha/s0'
     LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
 
@@ -3213,6 +3252,23 @@ class U5AnArrivalNobodyAnsweredIsNamed(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn('(U5)', out)
         self.assertIn(self.STORY, out)
+
+    def test_a_state_that_asks_nothing_has_nothing_to_be_unanswered(self):
+        """Found on this package's own tree. `[pm.arrive.milestone.*]` is
+        undeclared here, so every milestone in flight was NAMED by a warning
+        telling the operator to re-run the move "with the answer its state
+        declares" — and `pm vocabulary` prints none to type. Following it is
+        impossible, which is `ft-a-warning-is-actionable-where-it-fires`'s
+        exact defect surviving inside the milestone that shipped that feature.
+
+        The same tree, the same bare move, the same missing row: the ONLY
+        difference from `test_a_bare_move_is_allowed_and_NAMED` is whether the
+        state types an answer."""
+        with self._only_the_story_moves() as root:
+            write_config(root, self.ASKS_NOTHING)
+            code, out = run_gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('(U5)', out)
 
     def test_every_run_reports_the_open_work_whatever_checks_are_on(self):
         """The THIRD surface the pressure line's criterion names, beside a

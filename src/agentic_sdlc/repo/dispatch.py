@@ -16,6 +16,7 @@ was not disobedience, it was no signal they existed.
 """
 from __future__ import annotations
 
+import shlex
 import sys
 
 from agentic_sdlc.core.config import (ConfigError, config_section,
@@ -25,15 +26,21 @@ from agentic_sdlc.core.project import repo_root
 SECTION = 'dispatch'
 PROJECT_KEY = 'project'
 CONTRACTS_KEY = 'contracts'
+# The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
+LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
 
 USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>]
 
   --grain <id>   name the grain in the preamble, with its status and document
-                 path, so the agent's first read is the brief and not a guess
-  --role <name>  name the role the brief is for; recorded in the header only
+                 path, so the agent's first read is the brief and not a guess —
+                 and render the GDK_LEDGER_GRAIN export this dispatch's rows
+                 need, beside the `pm ledger record` line for its return
+  --role <name>  name the role the brief is for; the header, and --agent-type
+                 on the record line
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
-pipe it. It spawns nothing, reads no network and writes no file.
+pipe it. It spawns nothing, reads no network and writes no file — the two
+commands under RECORDING are rendered for the operator to run (D1).
 
 WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], the
 gate roster from [checks], the state vocabulary from [pm.states.*] — so none of
@@ -153,6 +160,20 @@ def _grain(gid: str) -> list[str]:
             f'  brief    {cfg.rel(grain.path)}   <- READ THIS FIRST']
 
 
+def _recording(gid: str, role: str) -> list[str]:
+    """The export the couriers need and the row for the return, RENDERED —
+    only ever with a grain, because a `pm ledger record` naming none refuses
+    and a printed command that errors is worse than one nobody printed."""
+    record = f'agentic-sdlc pm ledger record --grain {shlex.quote(gid)}'
+    if role:
+        record += f' --agent-type {shlex.quote(role)}'
+    return ['', 'RECORDING THIS DISPATCH — rendered here, run by you:',
+            f'  export {LEDGER_GRAIN_ENV}={shlex.quote(gid)}',
+            '  # on return, add what the agent reported: --tokens-total N '
+            '--duration-s N --tool-calls N',
+            f'  {record}']
+
+
 def render(grain: str = '', role: str = '') -> str:
     project, contracts = settings()
     who = f' — for: {role}' if role else ''
@@ -163,6 +184,7 @@ def render(grain: str = '', role: str = '') -> str:
     out += [f'  {path}' for path in contracts]
     if grain:
         out += ['', 'THE GRAIN YOU ARE WORKING ON:'] + _grain(grain)
+        out += _recording(grain, role)
     out += ['', 'THE LADDER — never run a rung wider than what you changed:']
     out += _ladder()
     roster = _roster()

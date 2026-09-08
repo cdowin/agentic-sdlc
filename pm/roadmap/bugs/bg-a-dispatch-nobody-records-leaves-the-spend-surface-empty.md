@@ -5,7 +5,7 @@ milestone: "ms-the-rule-reaches-the-work"
 name:
 status: open
 caused_by:
-changelog:
+changelog: A dispatch can now be recorded from the surface it starts in: `pm story|feature building --by agent <type>` names the ledger courier and the `GDK_LEDGER_GRAIN` it needs on its `have:` line, `agentic-sdlc dispatch --grain <id>` renders the export and a pasteable `pm ledger record` line, and `check pm` U4 says how long "never" has been true.
 ---
 
 # a dispatch nobody records leaves the spend surface empty
@@ -75,3 +75,52 @@ Making the tool export anything, spawn anything, or fire a hook. Hard rule 2, an
 execute). The package tells you the command; the operator runs it.
 
 Fixing the harness's project-root behaviour. Not this package's, and U4 already names it.
+
+## What landed — 0.6.0
+
+All three, and none of them a new capability.
+
+**The `have:` line.** `[pm.arrive.feature.building]` and `[pm.arrive.story.building]` in
+`devkit.toml` gained a second entry, and the seed's commented example gained the matching node. What
+`pm story building <id> --by agent <type>` now prints, beside the worktree line it already printed:
+
+    have: tools/hooks/cc-ledger-subagent.sh is installed — records this dispatch's spend when
+    GDK_LEDGER_GRAIN=<id> is exported before the spawn; `pm ledger record --grain <id>` files it by
+    hand on return
+
+**`dispatch --grain` renders both commands.** `_recording()` in `dispatch.py`, emitted only with
+`--grain`, and it renders — the operator runs (D1, and hard rule 2):
+
+    RECORDING THIS DISPATCH — rendered here, run by you:
+      export GDK_LEDGER_GRAIN=<id>
+      # on return, add what the agent reported: --tokens-total N --duration-s N --tool-calls N
+      agentic-sdlc pm ledger record --grain <id> --agent-type <role>
+
+The printed line is proven to be one the verb ACCEPTS —
+`tests/test_dispatch.py::TheDispatchCanBeRECORDED::test_the_record_line_it_prints_is_one_the_verb_ACCEPTS`
+lifts the exact rendered string out of the preamble and runs it in a scratch tree. A printed command
+that errors is worse than none.
+
+**U4 says how long.** `_recording_span()` reads the oldest row already in the ledgers this branch
+walks — no new file, no new stamp:
+
+    last hook-written row: never in the 2d 9h these ledgers have been recording
+
+It says how long THESE LEDGERS have been recording, not how many milestones the tree has had, which
+is the fact the rows can actually support. The rule-4 probe is
+`test_how_long_never_has_been_true_is_read_off_the_oldest_row`: a 40d plant says `40d`, a 3h plant
+says `3h`, and a tree with nothing dateable says `never.` with no span rather than inventing one.
+
+## What this does NOT fix, and it is the larger half
+
+**The harness half is untouched and is not the package's.** Measured again while closing this
+milestone: this orchestrating session's project root is the checkout's PARENT, so this repo's
+`.claude/settings.json` was never loaded — proven independently by running `git commit` with no
+pathspec and watching it reach git unblocked by `cc-commit-pathspec.sh`. No `Stop` or `SubagentStop`
+hook fired for any of the agents dispatched during this close, and none could have.
+
+So the spend surface is still empty on this tree, and the honest claim is narrower than "fixed": a
+dispatch can now be recorded from the surface it starts in, by an operator who reads the line. Four
+agents were dispatched closing this milestone and their totals were recorded by hand from the lines
+this bug added. That is the reach half working; the harness half needs `GDK_LEDGER_ROOT` in the
+environment, which no file in this repo can set.

@@ -126,3 +126,35 @@ so the next person argues it against rule 3, where it lives.
 **Rule 1's NUMBER does not move and what it permits does not change.** Roughly 600 citations depend
 on the ordinals; the constraint section of this milestone's brief forbids renumbering. Only the
 sentence got more specific.
+
+## D5 — 2026-09-08 — a warning fires only where an answer exists
+
+**`check pm` U5 names a grain whose current state was arrived at with no disposition, so the
+operator can go back and answer it.** Its own sentence is the instruction: *"re-running the move with
+the answer its state declares records one, and `pm vocabulary` prints what each state asks."*
+
+**Found on this tree, closing this milestone:** `devkit.toml` declares no `[pm.arrive.milestone.*]`
+section at all, so `ms-the-rule-reaches-the-work` sat at `building` with nothing to answer and U5
+named it anyway. `pm vocabulary` prints no fork for a milestone. Following the instruction is not
+merely tedious, it is impossible — and the milestone being named is the one that shipped
+`ft-a-warning-is-actionable-where-it-fires`, whose whole argument is that a warning nobody can act
+on where they are standing is a defect rather than information. 351 of 359 warnings on a real
+consumer tree, one layer in, on the surface that measures the others.
+
+**The ruling: a state that declares no answers has nothing to be unanswered about.** `answer: none`
+is then the COMPLETE record of that arrival, not a gap in it. U5 asks `[pm.arrive.<kind>.<state>]`
+whether any answer is typed, and stays silent where none is.
+
+**The rejected alternative: declare `[pm.arrive.milestone.*]` here and leave the rule alone.** It
+would have made this tree green and left every consumer's tree wrong — the seed ships arrivals for
+`feature` and `story` only, so a stock adoption hits this on its first milestone. It also inverts
+which way the evidence points: the tree was not missing a declaration, the rule was asking a question
+of a state that had never been given one. Turning a rule off is a `pm decide` (CLAUDE.md,
+self-hosting); so is narrowing one, and this is the narrowing.
+
+**What did NOT change:** U5 still names a grain, never a count, and still fires on a state that DOES
+type answers — `test_a_state_that_asks_nothing_has_nothing_to_be_unanswered` differs from
+`test_a_bare_move_is_allowed_and_NAMED` in exactly one thing, whether the state declares an answer,
+and the two run on the same tree with the same missing row. The three cases that already covered U5
+were themselves running on a fixture that declared no arrival at all, which is why nothing caught
+this: **the rule was being proven on precisely the trees where it should have stayed quiet.**

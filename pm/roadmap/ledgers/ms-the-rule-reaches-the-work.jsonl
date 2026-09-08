@@ -347,3 +347,6 @@
 {"ts":"2026-09-08T02:08:05Z","kind":"disposition","grain":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty","state":"closed","answer":"none"}
 {"ts":"2026-09-08T02:08:05Z","kind":"rung.leave","grain":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
 {"ts":"2026-09-08T02:08:05Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"milestone","ready":true,"blockers":[]}
+{"ts":"2026-09-08T02:09:04Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"tag","ready":true,"blockers":[]}
+{"ts":"2026-09-08T02:09:16Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"tag","ready":true,"blockers":[]}
+{"ts":"2026-09-08T02:14:08Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"tag","ready":true,"blockers":[]}

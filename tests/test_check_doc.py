@@ -17,6 +17,10 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import run_check  # noqa: E402
+
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import doc
 from agentic_sdlc.repo.pm import model
@@ -128,3 +132,58 @@ class AnInvocationIsAClaimAboutTheTree(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TheRuleIsWiredIntoTheGate(unittest.TestCase):
+    """B1, the 0.6.0 milestone review's blocker: the six cases above prove the
+    RULE and nothing proved its WIRING.
+
+    Every one of them calls `doc.check_invocations` directly — a function call
+    before a temp tree, which is rule 10 and right. But the rule reaches an
+    operator through exactly one line in `run()`, and the reviewer deleted that
+    line in a scratch copy: all six stayed green, the unit tier stayed green,
+    and `check doc` printed `PASS — 0 unresolved claims` at exit 0 over the
+    precise 0.5.0 sentence the rule exists to catch.
+
+    A guard that is correct and unreachable is rule 4's first cardinal sin
+    wearing a passing test's clothes, and it sat under the ship criterion this
+    rule is the only mechanised slice of. So this case runs the GATE.
+
+    `doc.REPO_ROOT` is bound at import and `scope_files()` reads it, so a gate
+    run on a scratch tree would otherwise scan the real checkout — the same
+    structural knot that left this module untested until 0.6.0. It is rebound
+    for the duration rather than converted; converting it is the vocabulary
+    sweep's job and that sweep deferred it in writing.
+    """
+
+    # The sentence itself, from `bg-the-shipped-rules-name-retired-behaviour`:
+    # the seed declares no review word for a STORY, so this exits 2.
+    REFUSED = 'Move it on with `agentic-sdlc pm story reviewing <story-id>`.'
+
+    def _gate(self, root: Path) -> tuple[int, str]:
+        original = doc.REPO_ROOT
+        doc.REPO_ROOT = root
+        try:
+            return run_check(doc)
+        finally:
+            doc.REPO_ROOT = original
+
+    def test_the_gate_itself_reports_an_invocation_the_cli_would_refuse(self):
+        with tree() as root:
+            (root / 'CLAUDE.md').write_text(self.REFUSED + '\n',
+                                            encoding='utf-8')
+            code, out = self._gate(root)
+        self.assertEqual(code, 1, out)
+        self.assertIn('story reviewing', out)
+        self.assertIn('unresolved claim', out)
+
+    def test_the_same_gate_is_silent_on_a_state_the_project_DID_declare(self):
+        """The other direction, on the same tree and the same surface: without
+        it, a gate that reported every invocation would pass the case above."""
+        with tree() as root:
+            (root / 'CLAUDE.md').write_text(
+                'Move it on with `agentic-sdlc pm story building <story-id>`.\n',
+                encoding='utf-8')
+            code, out = self._gate(root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('story building', out)

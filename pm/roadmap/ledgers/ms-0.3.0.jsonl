@@ -800,3 +800,4 @@
 {"ts":"2026-09-06T23:47:38Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":87}
 {"ts":"2026-09-06T23:47:38Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":56947}
 {"ts":"2026-09-06T23:47:38Z","kind":"status","grain":"0.3.0","from":"building","to":"done"}
+{"ts":"2026-09-08T02:09:16Z","kind":"rung.enter","grain":"ms-0.3.0","rung":"tag","ready":true,"blockers":[]}

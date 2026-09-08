@@ -29,6 +29,7 @@ order:
   - "bg-a-time-dependent-assertion-fails-a-belt-on-a-loaded-machine"
   - "bg-the-prose-ceiling-has-no-headroom"
 changelog: 0.6.0 — the rule reaches the work. A dispatched agent now receives this project's contracts before its first tool call, from a surface the package renders rather than an operator retypes. Every source-shaped guard declares a violation corpus and a gate replays it. `CHANGELOG.md` is retired: the changelog is a `changelog:` field on the grain and a verb that renders it. A bug binds to its parent through `milestone:` alone, and no parent closes over an unresolved child. `check pm` went from 57 warnings to 10 without deleting a rule.
+reviewed: docs/reviews/2026-09-08-0.6.0-milestone-review.md
 ---
 
 # 0.6.0 — the rule reaches the work
@@ -118,13 +119,18 @@ target, and over-long files are followed LESS well. The answer is placement, not
 ## Bugs open the order, and the first one is the model
 
 `order` opens with bugs rather than a feature, the way 0.5.0 put #6 and #7 ahead of its own theme.
-Six are bound to this milestone; `pm status` lists them and this file does not, because a roster
+`pm status` and `agentic-sdlc changelog <id>` list them and this file does not, because a roster
 copied into prose is the second scoreboard 0.3.0 retired `ROADMAP.md` for.
+
+At planning time six were bound and four sat in the pool. **Both numbers moved during the build and
+this paragraph did not, which the milestone review filed as M1** — copying a TALLY into prose is the
+same defect as copying a roster, one size down, and it went unnoticed in the paragraph that forbids
+it. The count is a command's answer; ask it rather than reading it here.
 
 Two were found scaffolding this milestone, two closing 0.5.0, and two are inherited — carried off
 `ms-0.3.0` and `ms-0.4.0` under D1, which does not let a shipped milestone keep unresolved children.
-The rest of that inheritance went the other way: four bugs now declare no milestone at all and sit
-in the pool, gating nothing and counted there.
+The rest of that inheritance went the other way: bugs that declare no milestone at all sit in the
+pool, gating nothing and counted there.
 
 **The first one runs first because it is the model, not a defect in it.** A bug is a grain nested in
 a parent — the same relationship a story has to a feature and a feature to a milestone — and it is
@@ -164,4 +170,7 @@ milestone is outside `done`, and it refuses on the field the scaffold actually w
 - **The temptation is a bigger `CLAUDE.md`.** Every measurement here says the opposite.
 - **`pm new milestone <ver>` still mints the VERSION as the id** — `ms-0.6.0`, renamed by hand to get
   this file. That is the unlanded half of #8, and it is this milestone's own scaffolding failing at the
-  thing 0.4.0 named.
+  thing 0.4.0 named. **CLOSED here** as `bg-the-milestone-scaffold-still-mints-the-version`: the slug
+  is the first positional and `--version` carries the version. The risk is retired, and it is left
+  standing with this line rather than deleted, because a risk that was real and got fixed is the one
+  worth being able to find again.

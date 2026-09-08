@@ -141,7 +141,13 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
 # The auto-loaded rule said `pm story reviewing`, which exits 2 because
 # the seed declares no review word for a STORY. A make target and a path were
 # already checked here; an INVOCATION is the same claim and nobody read it.
-_STATUS_FORM = re.compile(r'^pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')
+# The `agentic-sdlc ` prefix is OPTIONAL because both forms ship: the
+# auto-loaded rule writes `pm story reviewing`, the README and the agent
+# definitions write it out in full, and a rule anchored at `pm` read the
+# fuller half as prose. Found beside 0.6.0 review B1, which is the same
+# defect one layer out — a rule that is correct and cannot reach.
+_STATUS_FORM = re.compile(
+    r'^(?:agentic-sdlc\s+)?pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')
 
 
 def declared_states() -> dict[str, tuple[str, ...]]:

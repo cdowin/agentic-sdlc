@@ -23,7 +23,10 @@ verify --plan                                         # the rungs, with measured
 Reading order: `ms-the-rule-reaches-the-work-decisions.md` **before any feature file** — D1 (a parent
 does not close over unresolved children), D2 (a retired FIELD is drift, not a config error), D3 (the
 remote reader reads refs and never spawns) and D4 (rule 1 names the surface its reason protects) each
-carry a rejected alternative that will otherwise be re-argued.
+carry a rejected alternative that will otherwise be re-argued. D5-D8 were taken at the CLOSE and
+each is a rule NARROWED or a measurement ruled on: a warning fires only where an answer exists;
+registration is counted, never asserted; a printed docstring is output; and the path-triggered tier
+reaches less than the always-loaded one.
 
 ## 3. Traps this milestone has already sprung
 
@@ -39,11 +42,18 @@ holds `src/` comments+docstrings under 1/3 of code. It failed on nearly every fe
 separate rounds of comment-trimming were spent on it — which is precisely what this milestone's own
 brief says not to do. **Two placements that are not trimming**: help text belongs in a module-level
 `USAGE` constant (a string assignment is CODE), and a rejected alternative belongs in `pm decide`.
-Filed as `bg-the-prose-ceiling-has-no-headroom`, unbound in the pool.
+Filed as `bg-the-prose-ceiling-has-no-headroom` — **bound and CLOSED at this milestone's own
+close (D7)**, after two more placement moves and nine lines still over. A printed `--help`
+docstring now counts as the output it is. 276 lines of headroom; the ceiling is still 1/3.
 
 **A shared worktree plus `git add -A` swept three agents' in-flight work into one commit.** Two of
 them reported it. **Commit by explicit pathspec while anything else is running**; the story belt's
-`committed` check says so and it is right.
+`committed` check says so and it is right. **The hook that enforces this was not running** and
+`check hooks` said `PASS — armed` over it for five milestones — `core.hooksPath` arms git's two
+hooks and nothing arms the five `cc-*` ones (D6). It is still not running here: a session rooted
+above the checkout loads no `.claude/settings.json`. Two agents also planted probes in `src/` during
+one review pass, each briefly visible to the other (0.6.0 review S9), so a reviewer asked to plant
+anything in this tree should expect company.
 
 **`check doc` had no test module and the reason was structural** — `REPO_ROOT` is captured at import,
 so `relative_to` raises on a scratch tree and no case could build one. A `rel()` helper at the five
@@ -56,8 +66,12 @@ slice landed and the grain says which half did not. The read-verb feature's coll
 primitive did not land at all, for the reason its own text gives. Both are written into their grain
 files under "What landed, and what did not" — **look there before assuming a criterion was met.**
 
-**The tree can measure everything except its own dispatches.** `pm ledger report` shows `0 dispatch
-row(s)` after six dispatched agents: every token, tool-call and duration column is `-`. Whether a
-harness fires `SubagentStop` here depends on the session's project root, not on
-`.claude/settings.json`, and nothing exports `GDK_LEDGER_GRAIN`. `check pm` U4 has said so correctly
-for five milestones. Filed as `bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty`.
+**The tree can measure everything except its own dispatches — the REACH half is fixed, the harness
+half is not.** `pm ledger report` showed `0 dispatch row(s)` after six dispatched agents. The
+arrival now names the courier and the env var on its `have:` line, `dispatch --grain` renders the
+export and a pasteable `pm ledger record`, and U4 says how long "never" has been true
+(`bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty`, closed). **The close's own four
+dispatches were recorded by hand off those lines — the first spend rows this tree has ever held.**
+No hook wrote any of them: whether a harness fires `SubagentStop` still depends on the session's
+project root, `GDK_LEDGER_ROOT` is what points a session rooted elsewhere at this tree, and nothing
+in a checkout can set it. Expect `0 dispatch row(s)` again unless somebody exports it.

@@ -5,7 +5,7 @@ milestone: "ms-the-rule-reaches-the-work"
 name: pm new milestone still mints the version as the id
 status: closed
 caused_by:
-changelog: BREAKING: `pm new milestone` takes the version on `--version <ver>` and stamps it on `version:`; the first positional is the slug the id is minted from, so a version no longer becomes a milestone's id.
+changelog: `pm new milestone <slug> <name...> --version <ver>` stamps the version on `version:` and mints the id from the slug, so a version is no longer what a milestone is called. Not breaking, and the milestone review corrected this line: the old positional form still parses and still mints the same id — what changed is where the version is RECORDED, and a caller who wants it in the field moves it onto the flag.
 ---
 
 # the-milestone-scaffold-still-mints-the-version

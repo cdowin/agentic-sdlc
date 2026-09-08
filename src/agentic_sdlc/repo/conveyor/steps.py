@@ -1720,9 +1720,14 @@ AFTER: dict[str, tuple[str, ...]] = {
         '<version>`',
     ),
     'release': (
-        'retitle the changelog: `## Unreleased` becomes `## v{version} — '
-        '<ISO date>`, with a fresh empty `## Unreleased` above it',
-        'commit the roadmap directory and the changelog as the release commit',
+        # `CHANGELOG.md` retired in 0.6.0 and this line survived it, telling
+        # the operator running THAT release to go retitle a section in a file
+        # it had just deleted. `agentic-sdlc changelog <milestone-id>` renders
+        # the notes from each grain's own field; redirect it if you want a file.
+        'render the release notes: `agentic-sdlc changelog <milestone-id>` — '
+        'they come off each grain\'s `changelog:` field, in the `order:` the '
+        'milestone declares, and no file is maintained',
+        'commit the roadmap directory as the release commit',
         'push the branch: `git push -u origin {branch}` — never the mainline',
         'open the PR from {branch} to {mainline}{pr_open}',
         'wait for the required checks on the PR to go green{ci_green}',

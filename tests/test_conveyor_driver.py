@@ -272,8 +272,17 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
     joined = '\n'.join(nexts)
     assert 'v1.0.0' in joined and 'milestone/1.0.0' in joined, joined
     assert '{' not in joined, 'an after-list placeholder was left unfilled'
-    for word in ('retitle', 'push', 'PR', 'tag', 'prove'):
+    # `retitle` was here until 0.6.0, and it is the reason this list is
+    # spelled out: `CHANGELOG.md` retired, and the belt went on telling the
+    # operator running that very release to retitle a section in the file it
+    # had just deleted. A `next:` line is an instruction, so a retired one is
+    # `bg-the-shipped-rules-name-retired-behaviour` on the surface an operator
+    # is standing on at the moment of the release.
+    for word in ('changelog', 'push', 'PR', 'tag', 'prove'):
         assert word in joined, word
+    assert 'Unreleased' not in joined, (
+        'the release belt still names a section of a file this package '
+        'retired in 0.6.0')
 
 
 def test_an_undeclared_done_category_is_exit_2_before_any_check_runs():

@@ -117,16 +117,16 @@ Never hand-roll an incantation, and never run a rung wider than the thing you ch
 |---|---|
 | the PM tree, or a doc | `make check` |
 | code, inner loop | `agentic-sdlc verify --story` — `make unit`, the `[verify] story` target |
-| code, before a commit | `make precommit` — `check` + `unit` |
+| code, before a commit | `make precommit` |
 | closing a story | `agentic-sdlc close story <id>` |
-| closing a feature | `agentic-sdlc close feature <id>` — `make test`, both tiers, is `[verify] feature` |
-| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone`: `check` + `matrix` + `budget` |
+| closing a feature | `agentic-sdlc close feature <id>` — `make test` is `[verify] feature` |
+| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone` |
 
 `agentic-sdlc verify --plan` prints each rung with the cost it last took, from the ledger — ask it
 rather than guessing. **Never `pytest tests/<module>.py`** — selecting by path collects the module's
 spawning tier too, and those cases run `make` against this repo; `make unit` (or `-m "not shell"`)
-is the rung. Outside that tier a spawn now fails the test by nodeid, because prose did not hold it. Every gate prints ONE verdict line naming its log under `.gate-reports/`;
-`VERBOSE=1` streams it. A gate-semantics change needs a deliberately-broken probe: plant the drift
+is the rung. Outside that tier a spawn now fails the test by nodeid, because prose did not hold it.
+A gate-semantics change needs a deliberately-broken probe: plant the drift
 class in a scratch copy of a fixture and confirm the gate FAILS; a bad config value exits 2; a
 zero-file census FAILS. A write verb under test writes to scratch, never to a fixture in place.
 
@@ -157,7 +157,7 @@ This package runs its own tooling on its own tree, and that is a gate, not a dem
 - If a rule fails when pointed at this repo, the finding gets fixed. Turning a rule off is only
   right when it encodes a flow this package does not run, recorded with `pm decide`.
 - **Releases** go through the `/release` skill: `agentic-sdlc release <version>` on this tree,
-  then its `next:` lines by hand. Never tag by hand; never let the two version sites diverge.
+  then its `next:` lines by hand. Never tag by hand (rule 7 holds the two version sites).
 
 ## Reporting to Chris
 

@@ -3,7 +3,7 @@ id: bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty
 kind: bug
 milestone: "ms-the-rule-reaches-the-work"
 name:
-status: open
+status: closed
 caused_by:
 changelog: A dispatch can now be recorded from the surface it starts in: `pm story|feature building --by agent <type>` names the ledger courier and the `GDK_LEDGER_GRAIN` it needs on its `have:` line, `agentic-sdlc dispatch --grain <id>` renders the export and a pasteable `pm ledger record` line, and `check pm` U4 says how long "never" has been true.
 ---

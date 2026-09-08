@@ -343,3 +343,7 @@
 {"ts":"2026-09-08T02:07:54Z","kind":"disposition","grain":"ft-a-surface-reaches-its-reader-or-it-is-decoration","state":"done","answer":"none"}
 {"ts":"2026-09-08T02:07:54Z","kind":"rung.leave","grain":"ft-a-surface-reaches-its-reader-or-it-is-decoration","state":"done","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["agentic-sdlc release <version>"],"have":[]}
 {"ts":"2026-09-08T02:07:59Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"milestone","ready":false,"blockers":[{"check":"features-done","why":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty is open — a bug nested in ms-the-rule-reaches-the-work"}]}
+{"ts":"2026-09-08T02:08:05Z","kind":"status","grain":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty","from":"open","to":"closed"}
+{"ts":"2026-09-08T02:08:05Z","kind":"disposition","grain":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty","state":"closed","answer":"none"}
+{"ts":"2026-09-08T02:08:05Z","kind":"rung.leave","grain":"bg-a-dispatch-nobody-records-leaves-the-spend-surface-empty","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-08T02:08:05Z","kind":"rung.enter","grain":"ms-the-rule-reaches-the-work","rung":"milestone","ready":true,"blockers":[]}

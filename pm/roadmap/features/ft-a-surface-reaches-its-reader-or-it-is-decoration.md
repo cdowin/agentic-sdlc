@@ -3,8 +3,8 @@ id: ft-a-surface-reaches-its-reader-or-it-is-decoration
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a surface reaches its reader, or it is decoration
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-08-0.6.0-a-surface-reaches-its-reader.md
 depends_on: []
 consumed_by: []
 changelog: Every shipped agent definition now names the verbs its role reaches for — the question each answers, never a restatement — and a test resolves all 71 citations against the live CLI, so a definition naming a verb this package does not route fails by file, line and verb; `pm cli.commands()` exposes the router's own table for it. `check hooks` stops calling the whole corpus armed: `core.hooksPath` arms the git hooks and a new REGISTERED line counts what a settings file registers for the `cc-*` half, saying in the same breath that registration is not in force.

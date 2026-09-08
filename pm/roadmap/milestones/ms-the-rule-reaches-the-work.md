@@ -175,3 +175,34 @@ milestone is outside `done`, and it refuses on the field the scaffold actually w
   is the first positional and `--version` carries the version. The risk is retired, and it is left
   standing with this line rather than deleted, because a risk that was real and got fixed is the one
   worth being able to find again.
+
+## Closed — 2026-09-08
+
+`agentic-sdlc release 0.6.0`, every check green, `make milestone` exit 0 in 71 s. Twenty-two grains:
+ten features, twelve bugs. Eleven review records, 60 findings, none blocking at the tag. Eight
+decisions, each with its rejected alternative. What SHIPPED is
+`agentic-sdlc changelog ms-the-rule-reaches-the-work`; what it COST is
+`pm ledger report ms-the-rule-reaches-the-work`; neither is copied here.
+
+**The northstar held, and the sharpest evidence is that it caught this milestone.** Four gates that
+could not fail were found during the close, each in the tree's own suite: three tests blind to the
+two verbs 0.6.0 itself added; `semver-gate.yml`, whose success path had never once fired for any
+release in any layout, and which would have refused this PR; an `assertIn(x, X)` the reviewed commit
+created by making the two names aliases; and `check doc`'s invocation rule — the only mechanised
+slice of a ship criterion — reaching an operator through one line no test exercised. None was found
+by reading. Each was found by deleting something and watching what stayed green.
+
+**Two ship criteria were scoped rather than met, and both say so where somebody will look.** "No
+shipped file states what a verb does in prose that the verb does not generate" is not mechanisable
+in general; the sharp slice landed and `ft-prose-that-restates-a-verb-is-rendered-or-gone` names the
+half that did not. Sweep 4 of `ft-a-surface-reaches-its-reader` — the README — was dropped whole,
+with its measurement left as the brief for whoever takes it.
+
+**The one thing this milestone measured and cannot fix.** Every surface it is about — the
+always-loaded file, the path-scoped rule, the guard hooks, the ledger couriers — reaches the work
+only when the session's project root is the checkout, and none of them reached the session that
+closed it. Proven three times, by three agents, in three sessions (D8), and independently by running
+`git commit` with no pathspec and watching the guard that exists to stop it not stop it. The package
+NAMES it now, in `check pm` U4 and in `check hooks`'s REGISTERED line, and naming it is the whole of
+what a package that boots nothing can do. The next milestone inherits an environment fact, not a
+defect.

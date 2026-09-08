@@ -165,7 +165,29 @@ budget = { unit = 20, integration = 130, test = 150 }
 # disclosure, the level an id names. That is rule 10 being obeyed, not bloat —
 # so the ceiling moves to fit the suite that exists, once, with the reason
 # written down. It does not move again without one.
-cases = { unit = 1130, integration = 430 }
+#
+# RAISED AGAIN 2026-09-08, at the close of 0.6.0, and this is that argument.
+# 1028 -> 1132 (+104, +10%) — a third of the previous rise, on a milestone that
+# shipped two verbs and three new gates. The gate caught it at +2 over the
+# ceiling on the LAST commit before the release belt, which is the gate working
+# at exactly the resolution it was set for.
+#
+#   test_contracts     +22  the shared-surface registry: every vocabulary
+#                           round-tripped from its writer to its reader, which
+#                           is the pair four of 0.5.0's blockers were
+#   test_guard_corpus  +12  the corpus harness itself, and it carries one
+#   test_pm_gate       +12  U4's age, U5 narrowed to states that ask something
+#   test_pm_remote     +11  the remote reader, which reads refs and never spawns
+#   test_dispatch      +11  a new verb, whole, plus the ledger lines it renders
+#   test_pm_changelog   +8  a new verb, whole
+#   test_check_doc      +8  the module this gate never had, and B1's wiring case
+#   test_check_hooks    +5  the cc-* arming half `core.hooksPath` never covered
+#
+# FOUR of them exist because a gate could not fail: the router read by AST,
+# `semver-gate.yml`'s success path, an `assertIn(x, X)` tautology, and
+# `check doc`'s rule wired by one unguarded line. Each pins a defect that
+# HAPPENED in this milestone and was watched failing before it was fixed.
+cases = { unit = 1140, integration = 430 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

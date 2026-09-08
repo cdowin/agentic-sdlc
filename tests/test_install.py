@@ -1832,6 +1832,10 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
     return {(): tuple(sorted(routed_verbs())),
             ('pm',): pm_cli.commands(),
             ('pm', 'ready-for'): tuple(ready_for.KINDS),
+            # Review S4: `pm ledger report` is a shipped citation whose last
+            # token was graded as an argument, because this stopped one
+            # position short of a real sub-roster.
+            ('pm', 'ledger'): pm_cli.ledger_commands(),
             ('check',): tuple(root_cli.KNOWN_GATES),
             ('close',): tuple(driver.CLOSE_OPERATIONS),
             ('lesson',): (lessons.RECORD, lessons.SHOW),

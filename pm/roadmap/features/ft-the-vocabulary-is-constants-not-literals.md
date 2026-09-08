@@ -3,8 +3,8 @@ id: ft-the-vocabulary-is-constants-not-literals
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: the vocabulary is constants, not literals
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-08-0.6.0-the-vocabulary-is-constants.md
 depends_on: []
 consumed_by: []
 changelog: none

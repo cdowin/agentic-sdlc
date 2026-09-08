@@ -254,3 +254,47 @@ it fails the day the ceiling becomes a growth gate again.
 roughly nine well-documented modules, not infinity — and it does nothing about the two candidates
 left on the table. If the census tightens again, the next argument is the delta, and it should be
 made on its own evidence rather than under a close.
+
+## D8 — 2026-09-08 — the path-triggered tier reaches less than the always-loaded one
+
+**`ft-a-surface-reaches-its-reader` asked whether a `paths:`-scoped rule fires on a Bash read, and
+made moving contracts into that tier conditional on the answer.** Measured three times, in three
+sessions, by three agents. Controlled A/B each time: the same file, back-to-back tool calls, only
+the tool differing, with the Bash call FIRST so it had the earlier chance at a one-shot load.
+
+    Bash `sed -n` on a file under pm/roadmap/      no injection            (n=3, unanimous)
+    `Read` on the SAME file, the very next call    the rule, in full       (n=3, unanimous)
+    `Read` on the repo-root CLAUDE.md              nothing                 (n=1)
+
+**A `paths:`-scoped rule fires on `Read` and does not fire on a Bash `sed -n`.** The third
+observation pins the trigger to the `paths: ["pm/roadmap/**"]` glob rather than to file reading in
+general. The orchestrating session saw the rule fire zero times across ~15 reads because it read
+everything with `sed`, not because the checkout's `.claude/` was unreachable.
+
+**The ruling: TRIGGERED is 0. No contract moves out of `CLAUDE.md` into `.claude/rules/`.** The
+tier's reach here is strictly WORSE than always-loaded, for two compounding reasons. `SDLC.md` §2
+makes dispatch the normal mode of work, and **every one of the three agents reports getting neither
+file at spawn** — a rule arriving on a qualifying tool call arrives after the agent has planned. And
+an operator instructed to read with `cat`/`sed` defeats the tier for a whole session, which is what
+happened here. Moving a contract there trades a fact that reaches every Read-using session for one
+that reaches fewer.
+
+**The supporting number cuts against the brief's framing.** `.claude/rules/pm-execution.md` churns
+20 of the last 150 commits against `CLAUDE.md`'s 17, and is 224 lines against 169. The rule file is
+longer, rots faster, and is the one that fails to reach Bash-reading agents. If there is a second
+act here it is `pm-execution.md`, not `CLAUDE.md`.
+
+**The rejected alternative: move the ladder and the vocabulary into the path-scoped rule, on the
+grounds that they are only needed when touching the tree.** It reads tidy and it would have made the
+always-loaded file shorter — the metric the brief already said was not the work. It fails on the
+measurement: the sessions that most need those facts are dispatched ones, and they get nothing at
+spawn.
+
+**One divergence worth carrying**, from the third observation: that session got the RULE injected on
+a qualifying Read and never the project `CLAUDE.md`. Worse for the always-loaded tier than the other
+two measured, not better, and n=1 — but it is the direction that matters, so nobody should assume
+`CLAUDE.md` reliably arrives either.
+
+**What is still owed.** Whether the guard hooks fire when the project root IS the checkout. None of
+the three sessions could test it — the only decisive probe is a `git commit` with no pathspec, and a
+reviewer forbidden to mutate git cannot run one. It is the control for D6 and it stays open.

@@ -526,6 +526,31 @@ def test_an_allowlist_entry_naming_a_hook_is_not_a_registration():
     assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
 
 
+def test_a_command_node_outside_the_hooks_key_is_not_a_registration():
+    """Review S8: the other wrong reader, and the one a refactor reaches for.
+
+    `test_an_allowlist_entry_naming_a_hook_is_not_a_registration` catches a
+    TEXT search and cannot catch a structural walk over the whole document,
+    because `permissions.allow` holds strings rather than `{command: ...}`
+    nodes. But `.claude/settings.json` really does carry command-shaped nodes
+    outside `hooks` — `statusLine` is one — and `_commands` recurses over any
+    dict, so dropping the `hooks` lookup would pass every other case here.
+
+    PROVEN: with `_commands(data)` in place of `_commands(data['hooks'])` this
+    line reads `1 of 5 registered` and this case goes red.
+    """
+    with hooked_repo(arm=True) as root:
+        settings = root / hooks.SETTINGS_FILES[0]
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({'statusLine': {
+            'type': 'command',
+            'command': f'bash {HOOKS_DIR}/cc-stop-gate.sh --status'}}),
+            encoding='utf-8')
+        code, out = gate()
+    assert code == 0, out
+    assert f'NONE of the {CC_COUNT} {hooks.CC_PREFIX}hook(s) is registered' in out, out
+
+
 def test_a_settings_file_that_is_not_json_is_reported_not_read_as_empty():
     """Unreadable and opted-out look identical from here, and they are
     different facts — the U4 shape, on this surface."""

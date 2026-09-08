@@ -2009,6 +2009,19 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
 # labels nothing; it refuses only input it cannot read, and the one question it
 # cannot answer — which ledger, when two milestones are building.
 SPLIT_FLAGS = ('--tokens-in', '--tokens-out')
+# The ledger's own sub-roster. Spelled once: the refusal used to carry
+# `(record, show, report)` as a literal beside the branches that implement it,
+# which is the second scoreboard this milestone kept finding — and it left
+# `tests/test_install.py`'s verb resolver blind to the family, so a definition
+# citing `pm ledger frobnicate` resolved silently (0.6.0 review S4).
+LEDGER_RECORD, LEDGER_SHOW, LEDGER_REPORT = 'record', 'show', 'report'
+
+
+def ledger_commands() -> tuple[str, ...]:
+    """The sub-verbs `pm ledger` dispatches, in the order its help names them."""
+    return (LEDGER_RECORD, LEDGER_SHOW, LEDGER_REPORT)
+
+
 TOTAL_FLAG = '--tokens-total'
 LEDGER_FLAGS = ('--from-transcript', '--event', '--agent-id', '--agent-type',
                 '--session-id', '--grain', *SPLIT_FLAGS, TOTAL_FLAG,
@@ -2124,13 +2137,12 @@ def cmd_ledger(cfg: model.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
     sub, rest = args[0], args[1:]
-    if sub == 'record':
-        return cmd_ledger_record(cfg, rest)
-    if sub == 'show':
-        return cmd_ledger_show(cfg, rest)
-    if sub == 'report':
-        return cmd_ledger_report(cfg, rest)
-    raise Usage(f'unknown ledger subcommand {sub!r} (record, show, report)')
+    table = {LEDGER_RECORD: cmd_ledger_record, LEDGER_SHOW: cmd_ledger_show,
+             LEDGER_REPORT: cmd_ledger_report}
+    if sub in table:
+        return table[sub](cfg, rest)
+    raise Usage(f'unknown ledger subcommand {sub!r} '
+                f'({", ".join(ledger_commands())})')
 
 
 def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:

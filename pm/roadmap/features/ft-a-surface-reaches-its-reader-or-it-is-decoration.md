@@ -3,7 +3,7 @@ id: ft-a-surface-reaches-its-reader-or-it-is-decoration
 kind: feature
 milestone: "ms-the-rule-reaches-the-work"
 name: a surface reaches its reader, or it is decoration
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
@@ -134,88 +134,88 @@ install, and rule 8 says this package knows nothing about which they keep.
 All four ship criteria are met. Sweep 4 is not, and is scoped in writing rather than left silent.
 
 **Criterion 1 — every shipped definition names its role's verbs, and a test resolves each one.**
-Landed. The measurement that opened this feature is closed: `ready-for` went 0/12 to named wherever
+Landed. **Sweep 1's table says 15 and the tree ships 12** — 12 was already 12 when the work began,
+so nothing was dropped; read every `n / 15` there as `n / 12` (review S11). The measurement that
+opened this feature is closed: `ready-for` went 0/12 to named wherever
 a role opens a rung, and `close story`/`close feature`, `pm ledger report` and `lesson record` each
 reached the role that needs them. Twelve `role-verbs` blocks, no two the same — a block pasted into
 all twelve would be the decoration this feature is named against — and each line is the QUESTION the
-verb answers, never a restatement of it. Two definitions got SHORTER: `pm-operator`'s roster was an
-unfindable prose run-on inside a checklist item, and `tech-writer`'s changelog verbs were in its
-project-config block, which is the project's to edit and these are not.
+verb answers, never a restatement of it. All twelve grew, by +7 to +14 (review S7 corrected an
+earlier claim that two shrank). **Two are the only ones with DELETIONS**, which is the fact worth
+keeping: `pm-operator`'s roster was an unfindable prose run-on inside a checklist item and
+`tech-writer`'s changelog verbs sat in its project-config block, which is the project's to edit and
+these are not. Both are +9 net after the prose came out.
 
-The test is the load-bearing half. It scans the whole file, not the block — a retired citation in a
-config paragraph is the same false instruction — and resolves 71 citations against the CODE at seven
-positions, walking only as deep as a roster exists so an argument is not graded as a verb. It needed
-one src change: `pm/cli.py`'s router table hoisted to a public `commands()`, because a test
-re-deriving a roster is the second scoreboard this milestone kept finding. Watched failing at HEAD
-on three plants, one per shape it must catch.
+The test is the load-bearing half: it scans the whole file, not the block, and resolves 71 citations
+against the CODE at seven roster positions. It needed one src change — `pm/cli.py`'s router table
+hoisted to a public `commands()`, because a test re-deriving a roster is the second scoreboard this
+milestone kept finding.
 
 **Criterion 2 — `CLAUDE.md` through the four questions.** Landed, and the honest result is that
 almost nothing moved. 100 facts inventoried mechanically; the split is CUT 5, POINTER 1,
-TRIGGERED 0, KEEP 94, FIX-IN-PLACE 1, and all 53 facts inside the hard rules are KEEP. Every
+TRIGGERED 0 and KEEP 94, of which one is FIX-IN-PLACE — a fact that stays and was WRONG. The
+buckets sum to 100 with FIX-IN-PLACE inside KEEP, and saying so is review S10's correction. All 53
+facts inside the hard rules are KEEP. Every
 derivation claimed was RUN: `make help` prints the tier compositions and the `.gate-reports/`
 verdict sentence near-verbatim, so those left; `agentic-sdlc --help` does NOT print the exit-code
 triple, so rule 6 stayed. Rule numbers 1-11 untouched — no renumber, no merge, no reorder.
 
-Four rosters left the file and one wrong answer did. **The line-count outcome is -1**, and that is
-the point: the file was already under its target, and each cut removes a line a normal feature
-forces somebody to edit, not a line of prose.
+Four rosters left the file and one wrong answer did. **The line-count outcome is 0 for the pass and
++2 for the feature** (169 lines before, 171 at close; the four-questions commit is 6 insertions and
+6 deletions, and the +2 is the path fix). Review S6 corrected an earlier claim of -1 here. The
+number is not the point and never was: each cut removes a line a normal feature forces somebody to
+edit, not a line of prose, and the file was already under its target before any of this.
 
 **FIX-IN-PLACE is the finding worth naming.** L93-94 named `cli.py` inside the bullet whose subject
-is `src/agentic_sdlc/repo/`, and `src/agentic_sdlc/repo/cli.py` does not exist. The failure is not
-benign: an agent resolving the bare name against the stated directory lands on
-`src/agentic_sdlc/repo/pm/cli.py`, which is a real file, is a router, and holds no `KNOWN_GATES`.
-The wrong answer was available, plausible and silent, in the section whose entire job is placement.
+is `src/agentic_sdlc/repo/`, and `src/agentic_sdlc/repo/cli.py` does not exist. An agent resolving
+the bare name against the stated directory lands on `src/agentic_sdlc/repo/pm/cli.py` — a real file,
+a real router, holding no `KNOWN_GATES`. The wrong answer was available, plausible and silent, in
+the section whose entire job is placement.
 
-**POINTER is 1 and it did NOT land**, because "move before you cut" forbids it. The installer roster
-would become `install-gates --help` — except that surface covers five of the six installers and
-`pm install-skills --help` exits 2 on an unknown flag. So the doc roster is not laziness; it is the
-only place the sixth installer describes itself. Filed to the pool as
-`bg-the-sixth-installer-cannot-describe-itself`, where the fix is a flag rather than a doc edit.
+**POINTER is 1 and it did NOT land**, because "move before you cut" forbids it: the installer roster
+would become `install-gates --help`, which covers five of six — `pm install-skills --help` exits 2
+on an unknown flag, so the doc roster is the only place the sixth describes itself. Filed to the
+pool as `bg-the-sixth-installer-cannot-describe-itself`, where the fix is a flag, not a doc edit.
 
 **Criterion 3 — measured, and the answer is not what the brief assumed.** A controlled A/B in this
-harness, same file, back-to-back tool calls, only the tool differing, with the Bash call FIRST so it
-had the earlier chance to trigger a one-shot load:
+harness, repeated in three sessions by three agents: the same file, back-to-back calls, only the
+tool differing, with the Bash call FIRST so it had the earlier chance at a one-shot load. Bash
+`sed -n` on a file under `pm/roadmap/` injects nothing; `Read` on that same file, the very next
+call, injects the rule in full. **A `paths:`-scoped rule fires on `Read` and not on a Bash `sed -n`.**
 
-    Bash `sed -n` on a file under pm/roadmap/     no injection
-    `Read` on the SAME file, the very next call   CLAUDE.md (169) AND pm-execution.md (224), in full
-
-**A `paths:`-scoped rule fires on `Read` and does not fire on a Bash `sed -n`. Doctrine confirmed.**
-The orchestrating session saw the rule fire zero times across ~15 reads because it read everything
-with `sed`, not because the checkout's `.claude/` was unreachable — the Read proves it was reachable
-from a session rooted at the PARENT directory.
-
-**And that is why TRIGGERED is 0, as a measured conclusion rather than a shrug.** The
-path-triggered tier's reach here is strictly WORSE than always-loaded, for two compounding reasons:
-`SDLC.md` §2 makes dispatch the normal mode of work and a dispatched agent gets neither file at
-spawn (re-measured, twice, this session); and an operator instructed to read with `cat`/`sed`
-defeats the tier for a whole session. Moving a contract there would trade a fact that reaches every
-Read-using session for one that reaches fewer. The supporting number cuts against the brief's
-framing: `pm-execution.md` churns 20 of the last 150 commits against `CLAUDE.md`'s 17 — the rule
-file is longer, rots faster, and is the one that fails to reach Bash-reading agents.
+**The ruling that follows is D8: TRIGGERED is 0, and nothing moves into `.claude/rules/`.** The
+reasoning, the third session's divergence and the rejected alternative are there rather than here,
+because a rejected alternative belongs in a decision record.
 
 **What was NOT controlled, and it is owed:** whether the guard hooks fire when the project root IS
 the checkout — neither session ran that. `Edit`, `Grep` and `Glob` were untested. Every probe is n=1.
 
-**Criterion 4 — one repeated correction, converted from prose into a gate.** The correction is
-*"commit by explicit pathspec while anything else is running"*, which this milestone's handoff
-records as paid for twice, and for which a hook already existed. **The hook was not running, and
-`check hooks` said PASS — armed.** `core.hooksPath` arms two of the seven entries; the five `cc-*`
-hooks are armed by a settings file, and the gate had never looked. Measured here: `git commit` with
-no pathspec reached git unblocked, while the gate reported the corpus armed. Landed as the
-REGISTERED line and `git-armed at <path>` (D6) — counted, never asserted, because whether a harness
-READ that file depends on the session's project root and no file in a checkout can decide it.
+**Criterion 4 — one repeated correction, converted from prose into a gate.** Met by
+`test_every_verb_an_agent_definition_names_resolves_against_the_cli`. The repeated correction is the
+one sweep 1 measured: six agents dispatched during this milestone, and every brief hand-pasted the
+role's verbs because no definition carried them. That was prose an orchestrator retyped six times.
+It is now a gate with two assertions — a definition naming none of its role's verbs, and a
+definition naming a verb this package does not route — and it FAILS, by file, line and verb, on
+7 of 7 planted probes.
 
-**NOT landed — sweep 4, the README, whole.** It carries no ship criterion, deliberately: the feature
-says the sweeps are independently landable. 401 lines, and its `## Verbs` table plainly restates
-`--help` for 25 verbs — which is a real finding and exactly the kind this milestone exists for. It
-is also a rewrite of the file a consumer meets first, proposed at the close of a 21-grain milestone,
-by the session that had already landed five changes that day. `ft-a-read-verb-is-a-declaration`
-warns against the grand unification in one pass and it applies here. Named rather than silently
-dropped; the measurement above is the brief for whoever takes it.
+**And the REGISTERED line is NOT that gate, which review S1 is right about.** It contributes nothing
+to `findings` and exits 0 in every case, including *"NONE of the 5 registered"* — a named line under
+rule 11, not a gate, and claiming criterion 4 with it was this milestone's own sentence used against
+itself. D6 gives the reason it must stay a count. **Its finding is still the sharp one**:
+`check hooks` printed `PASS — armed` over seven entries while `core.hooksPath` armed two, and the
+guard for *"commit by explicit pathspec"* was installed, self-tested and not running. Named where
+somebody stands, not gated, and this says so rather than counting it twice.
 
-**The larger half of the northstar is still unfixed, and it is not this package's.** Every surface
-this feature is about — the always-loaded file, the path-scoped rule, the guard hooks, the ledger
-couriers — reaches the work only if the session's project root is the checkout. All four failed to
-reach this session for one reason, and the package can name it (U4 does, REGISTERED now does) but
-cannot fix it. An instruction that does not reach the work is not an instruction; four of them
-did not reach this one, and the milestone that says so measured it on itself.
+**NOT landed — sweep 4, the README, whole.** It carries no ship criterion; the feature says the
+sweeps are independently landable. The finding is real — its `## Verbs` table restates `--help` for
+25 verbs, exactly the kind this milestone exists for — but acting on it is a rewrite of the file a
+consumer meets first, proposed at the close of a 21-grain milestone by the session that had already
+landed five changes. `ft-a-read-verb-is-a-declaration` warns against the grand unification in one
+pass. Named rather than dropped; sweep 4 above is the brief for whoever takes it.
+
+**The larger half of the northstar is still unfixed, and it is not this package's.** All four
+surfaces this feature is about — the always-loaded file, the path-scoped rule, the guard hooks, the
+ledger couriers — reach the work only if the session's project root is the checkout, and all four
+failed to reach this one for that single reason. The package can NAME it (U4 does; REGISTERED now
+does) and cannot fix it. The milestone that says an instruction which does not reach the work is not
+an instruction measured exactly that, on itself, four times.

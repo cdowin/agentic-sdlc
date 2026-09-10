@@ -121,7 +121,7 @@ Any change to what the storage layer DOES. Not one refusal, one default or one r
 
 ## Close
 
-done: (builder does not commit — pathspec commit pending) — `core/frontmatter.py` holds the 381
+done: bb78a49 — `core/frontmatter.py` holds the 381
 lines; `model.py` and fourteen other `src/` modules reach it by name, and no name is re-exported.
 
 **The decision this story left open: the module is `core/frontmatter.py`, and `sequence_defect`

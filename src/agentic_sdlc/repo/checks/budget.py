@@ -10,14 +10,23 @@ tier with no row is UNMEASURED: named, never counted as within its ceiling, and
 NOT a finding, because a tier nobody ran has not got slower. Ships no ceiling (a
 number is the project's), so with nothing declared it reports and exits 0.
 
+**That reason is about the CLOCK and does not carry to the COUNT.** A case count
+is a fact about the source, so a tier nobody ran can still have grown past its
+`[tests] cases` entry — which is how this repo's own integration tier sat two
+over its ceiling across a release with the gate green. A declared case limit
+with no count is therefore UNCOUNTED and a FINDING, while a declared time budget
+with no run stays merely unmeasured. Whatever grades a case limit must also
+MEASURE it: a milestone gate that runs `matrix` files a `matrix` row and no
+per-tier census, so the tiers it grades belong in its own tier list.
+
     [tests]
     budget = { unit = 15, integration = 120 }   # seconds, per tier
     cases  = { unit = 1250, integration = 800 } # case-count ceiling, per tier
     floor  = { unit = 1000, integration = 600 } # case-count floor, per tier
 
-Exit codes: 0 nothing is over its ceiling or under its floor, and a declared tier
-with no row is reported as unmeasured; 1 a tier is over, under its floor, or not
-graded; 2 usage or config.
+Exit codes: 0 nothing is over its ceiling or under its floor, and a declared time
+budget with no row is reported as unmeasured; 1 a tier is over, under its floor,
+not graded, or carries a declared case limit with no count; 2 usage or config.
 """
 from __future__ import annotations
 
@@ -271,10 +280,14 @@ def run() -> int:
         if data is None or (data.get('verdict') == GRADED_VERDICT
                             and not isinstance(count, int)):
             uncounted.append(tier)
-            lines.append(f'  UNCOUNTED   {tier} — {limit}, and '
-                         + ('no `gate` row for it in this tree\'s ledger'
-                            if data is None else
-                            'its newest `gate` row carries no census'))
+            lines.append(
+                f'  UNCOUNTED   {tier} — {limit}, and '
+                + ('no `gate` row for it in this tree\'s ledger'
+                   if data is None else
+                   'its newest `gate` row carries no census')
+                + '. A case COUNT is a fact about the source, not about a '
+                  'run, so a tier nobody ran can still have grown past this '
+                  'number — run the tier, or drop its `[tests] cases` entry')
             continue
         if data.get('verdict') != GRADED_VERDICT:
             continue
@@ -306,16 +319,23 @@ def run() -> int:
             nodeid, ms = worst
             print(f'  slowest    {tier} — {ms / MS_PER_SECOND:.1f}s  {nodeid}')
 
-    if over or ungraded:
+    if over or ungraded or uncounted:
         parts = []
         if over:
             parts.append(f'{len(over)} tier(s) over budget: {", ".join(over)}')
         if ungraded:
             parts.append(f'{len(ungraded)} tier(s) not graded: '
                          f'{", ".join(ungraded)}')
+        if uncounted:
+            parts.append(f'{len(uncounted)} tier(s) with a declared case '
+                         f'limit and no count: {", ".join(uncounted)}')
         why = ('A tier that got slower is a finding: it degrades a human\'s '
                'patience instead of a boolean, so nothing else in this gate '
                'set will ever notice.' if over else
+               'A declared case limit nobody measured is the census failing '
+               'open: the count moves when the SOURCE moves, so silence here '
+               'is a PASS over a number that was never read (rule 4).'
+               if uncounted and not ungraded else
                'A run that did not finish is not a measurement, and grading '
                'it would be printing PASS over what was not measured.')
         print(f'[check:{NAME}] FAIL — {"; ".join(parts)}. {why}')

@@ -3,9 +3,9 @@ id: bg-an-uncounted-tier-passes-the-case-ceiling
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: check budget exits 0 on a tier it has no case count for, and make milestone never measures one
-status: open
+status: fixed
 caused_by:
-changelog: none
+changelog: `check budget` now exits 1 on a tier that declares a `[tests] cases` limit and has no census to grade it against — a case count is a fact about the source, so an unmeasured one can drift; a declared `budget` (time) with no run stays merely unmeasured.
 ---
 
 # an uncounted tier passes the case ceiling
@@ -80,3 +80,33 @@ change and therefore a minor bump — which 0.7.0 already is — and leaving it
 would mean merging a milestone whose own full gate cannot see the thing it
 grades. The ceiling this bug exposed is raised at the close with its own
 argument, and the argument is only worth writing if the gate can enforce it.
+
+## What landed
+
+**Both halves, because the bug says landing one is worse than landing neither.**
+
+  * `check budget` now FAILS on a tier that declares a CASE limit and carries no
+    count. The time budget keeps its behaviour and its argument untouched — a
+    tier nobody ran has not got slower — and the docstring now says why that
+    reason stops at the clock. Probed: a `fuzz = 100` entry with no row reddens
+    the gate and names itself; `test_a_declared_case_limit_with_no_count_is_a_FINDING`
+    fails against HEAD and passes after.
+  * `GDK_MILESTONE_TIERS` is `test matrix budget`, so the gate MEASURES what it
+    grades. It was `matrix budget`, and `matrix` files a `matrix` row with no
+    per-tier census, which is how the count went unread across a release.
+
+**And the ceiling it exposed was restructured rather than raised**, because
+raising it would have re-armed the same trap. 0.7.0 moved 62 cases from
+`integration` to `unit` without writing or deleting one: the suite went 1,571
+-> 1,586 collected, real growth of 15, while the per-tier unit ceiling read +72
+over. **A per-tier count measures tier membership, not growth**, and it reddens
+hardest exactly when somebody corrects a tier boundary.
+
+The clock cannot replace it either — `unit` went 706 -> 1,212 cases (+72%) for
+8.2s -> 9.6s (+17%), so a tier really can double inside its time budget. So:
+**time per TIER** (what a human waits for, and it differs per tier), **count per
+SUITE** (`cases = { test = 1575 }`, one run, one census, immune to a case
+changing sides).
+
+`make milestone` on this tree: CHECK 5 PASS, TEST 1575 passed, MATRIX PASS on
+3.11 3.12 3.13 3.14, BUDGET 1 PASS.

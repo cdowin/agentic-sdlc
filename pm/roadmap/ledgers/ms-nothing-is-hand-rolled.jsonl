@@ -40,3 +40,6 @@
 {"ts":"2026-09-10T23:04:56Z","kind":"status","grain":"st-the-census-reads-both-roots","from":"building","to":"done"}
 {"ts":"2026-09-10T23:04:56Z","kind":"disposition","grain":"st-the-census-reads-both-roots","state":"done","answer":"none"}
 {"ts":"2026-09-10T23:04:56Z","kind":"rung.leave","grain":"st-the-census-reads-both-roots","state":"done","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["agentic-sdlc close feature <feature-id>"],"have":[]}
+{"ts":"2026-09-10T23:16:34Z","kind":"status","grain":"bg-an-uncounted-tier-passes-the-case-ceiling","from":"open","to":"fixed"}
+{"ts":"2026-09-10T23:16:34Z","kind":"disposition","grain":"bg-an-uncounted-tier-passes-the-case-ceiling","state":"fixed","answer":"none"}
+{"ts":"2026-09-10T23:16:34Z","kind":"rung.leave","grain":"bg-an-uncounted-tier-passes-the-case-ceiling","state":"fixed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}

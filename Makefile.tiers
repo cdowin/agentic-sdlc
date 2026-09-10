@@ -11,7 +11,18 @@
 # The tier is the `shell` mark, DERIVED by tests/conftest.py from what a
 # module's source reaches — never a list here.
 GDK_PRECOMMIT_TIERS := unit
-GDK_MILESTONE_TIERS := matrix budget
+# `test` before `matrix` so that `budget` LAST grades a census this run
+# produced, and `test` rather than `unit integration` because the case ceiling
+# is on the SUITE (devkit.toml `[tests] cases`) — one run, one census, immune
+# to a case moving between tiers. `matrix` files a `matrix` row and no per-tier census, so a
+# milestone gate of `matrix budget` alone graded whatever `make integration`
+# somebody happened to run days earlier — and this repo shipped 0.6.0 with its
+# integration tier two cases over its ceiling and the gate green, because there
+# was no row at all and an uncounted tier used to exit 0
+# (`bg-an-uncounted-tier-passes-the-case-ceiling`). Whatever grades a case
+# limit has to measure it; the floor run inside `matrix` covers the same cases
+# again, and that redundancy is the price of the census being real.
+GDK_MILESTONE_TIERS := test matrix budget
 
 # The package is stdlib-only at RUNTIME (hard rule 1). pytest and xdist are the
 # `dev` dependency group in pyproject.toml, and `uv run` syncs them into the

@@ -394,6 +394,19 @@ def _budget_unmeasured(tmp_path: Path) -> int:
         return budget_check()[0]
 
 
+def _budget_uncounted_case_limit(tmp_path: Path) -> int:
+    """`integration` declares a CASE ceiling and has no `gate` row.
+
+    The sibling of `_budget_unmeasured`, and the pair is the point: the same
+    absence is exit 0 for a clock and exit 1 for a count, because a count moves
+    when the source moves and a clock does not.
+    """
+    config = ('[tests]\nbudget = { unit = 10, integration = 60 }\n'
+              'cases = { unit = 1250, integration = 800 }\n')
+    with tree(tmp_path, [gate_row('unit', 1_000, census=1_100)], config):
+        return budget_check()[0]
+
+
 def _budget_not_graded(tmp_path: Path) -> int:
     """Both tiers have a row, and the newest `unit` one ended FAIL."""
     with tree(tmp_path, [gate_row('unit', 1_000, verdict='FAIL'),
@@ -419,8 +432,11 @@ def _gates_extra_unusable(tmp_path: Path) -> int:
 # prove it is not shaped around one docstring.
 CLAIMS = (
     ExitClaim('check budget --help',
-              'a declared tier with no row is reported as unmeasured',
+              'a declared time budget with no row is reported as unmeasured',
               _budget_unmeasured),
+    ExitClaim('check budget --help',
+              'carries a declared case limit with no count',
+              _budget_uncounted_case_limit),
     ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',
               _gates_extra_silent),

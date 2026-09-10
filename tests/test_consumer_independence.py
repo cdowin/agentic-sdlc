@@ -472,11 +472,19 @@ def test_the_full_gate_is_a_composition_of_self_contained_targets():
     members = match.group(1).split()
     assert members, 'the milestone tier list emptied out'
     for member in members:
-        recipe = re.search(rf'^{member}:[^\n]*\n((?:\t.*\n|\n)*)', tiers, re.M)
-        assert recipe and recipe.group(1).strip(), (
-            f'{member} has no recipe in Makefile.tiers')
-        assert not re.search(r'\.\./|~/|\$\(HOME\)|\$\$HOME', recipe.group(1)), (
-            f'`{member}` reaches outside the checkout: {recipe.group(1)!r}')
+        # EVERY block for the name, not the first. A tier may declare a
+        # target-specific variable before its recipe — `unit: export
+        # GDK_TEST_TIER = unit` sits above `unit:` proper — and a search that
+        # stopped at the first match read an empty recipe and called it
+        # missing. Concatenated, so the reach test grades all of them.
+        blocks = [m.group(1) for m in
+                  re.finditer(rf'^{member}:[^\n]*\n((?:\t.*\n|\n)*)',
+                              tiers, re.M)]
+        assert blocks, f'{member} is not a target in Makefile.tiers'
+        recipe = ''.join(blocks)
+        assert recipe.strip(), f'{member} has no recipe in Makefile.tiers'
+        assert not re.search(r'\.\./|~/|\$\(HOME\)|\$\$HOME', recipe), (
+            f'`{member}` reaches outside the checkout: {recipe!r}')
 
 
 # --------------------------------------------------------------------------

@@ -2912,3 +2912,48 @@
 {"ts":"2026-09-10T23:07:01Z","kind":"test","tier":"integration","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":3625,"rank":5}
 {"ts":"2026-09-10T23:07:01Z","kind":"gate","gate":"integration","verdict":"PASS","duration_ms":36982,"census":373}
 {"ts":"2026-09-10T23:07:05Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3362}
+{"ts":"2026-09-10T23:09:07Z","kind":"test","tier":"unit","nodeid":"tests/test_check_budget.py::test_a_census_under_its_floor_FAILS_and_every_count_carries_its_delta","duration_ms":3,"rank":1}
+{"ts":"2026-09-10T23:09:07Z","kind":"test","tier":"unit","nodeid":"tests/test_check_budget.py::test_a_tier_over_its_ceiling_FAILS_and_names_the_overage","duration_ms":2,"rank":2}
+{"ts":"2026-09-10T23:09:07Z","kind":"test","tier":"unit","nodeid":"tests/test_check_budget.py::test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs[{not json\\n-could not be read]","duration_ms":1,"rank":3}
+{"ts":"2026-09-10T23:09:07Z","kind":"test","tier":"unit","nodeid":"tests/test_check_budget.py::test_an_unreadable_ledger_FAILS_rather_than_reporting_no_costs[{\"ts\": \"yesterday\", \"kind\": \"gate\", \"gate\": \"unit\", \"verdict\": \"PASS\", \"duration_ms\": 1}\\n-ts 'yesterday' is not a timestamp]","duration_ms":1,"rank":4}
+{"ts":"2026-09-10T23:09:07Z","kind":"test","tier":"unit","nodeid":"tests/test_check_budget.py::test_an_empty_tree_says_nothing_yet_rather_than_zero","duration_ms":1,"rank":5}
+{"ts":"2026-09-10T23:09:30Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_flow.py::NoVocabularyLiteralSurvivesOutsideItsHome::test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else","duration_ms":1545,"rank":1}
+{"ts":"2026-09-10T23:09:30Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling","duration_ms":1246,"rank":2}
+{"ts":"2026-09-10T23:09:30Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":914,"rank":3}
+{"ts":"2026-09-10T23:09:30Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":886,"rank":4}
+{"ts":"2026-09-10T23:09:30Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":789,"rank":5}
+{"ts":"2026-09-10T23:09:30Z","kind":"gate","gate":"unit","verdict":"FAIL","duration_ms":9349,"census":1199}
+{"ts":"2026-09-10T23:09:34Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3358}
+{"ts":"2026-09-10T23:10:03Z","kind":"test","tier":"unit","nodeid":"tests/test_consumer_independence.py::test_the_full_gate_is_a_composition_of_self_contained_targets","duration_ms":0,"rank":1}
+{"ts":"2026-09-10T23:10:11Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[check budget --help::not graded]","duration_ms":2,"rank":1}
+{"ts":"2026-09-10T23:10:11Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[gates-extra --help::the value is not a usable roster]","duration_ms":0,"rank":2}
+{"ts":"2026-09-10T23:10:11Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[gates-extra --help::printed (possibly nothing)]","duration_ms":0,"rank":3}
+{"ts":"2026-09-10T23:10:28Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[check budget --help::a declared time budget with no row is r]","duration_ms":4,"rank":1}
+{"ts":"2026-09-10T23:10:28Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[check budget --help::carries a declared case limit with no c]","duration_ms":1,"rank":2}
+{"ts":"2026-09-10T23:10:28Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[check budget --help::not graded]","duration_ms":1,"rank":3}
+{"ts":"2026-09-10T23:10:28Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[gates-extra --help::the value is not a usable roster]","duration_ms":1,"rank":4}
+{"ts":"2026-09-10T23:10:28Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestTheDocumentedExitCodeIsTheOneThatRuns::test_the_documented_exit_code_is_the_one_the_code_returns[gates-extra --help::printed (possibly nothing)]","duration_ms":0,"rank":5}
+{"ts":"2026-09-10T23:10:41Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_flow.py::NoVocabularyLiteralSurvivesOutsideItsHome::test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else","duration_ms":1525,"rank":1}
+{"ts":"2026-09-10T23:10:41Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling","duration_ms":1256,"rank":2}
+{"ts":"2026-09-10T23:10:41Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":934,"rank":3}
+{"ts":"2026-09-10T23:10:41Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":889,"rank":4}
+{"ts":"2026-09-10T23:10:41Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":807,"rank":5}
+{"ts":"2026-09-10T23:10:42Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9845,"census":1202}
+{"ts":"2026-09-10T23:10:45Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3421}
+{"ts":"2026-09-10T23:13:07Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":6924,"rank":1}
+{"ts":"2026-09-10T23:13:07Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":5899,"rank":2}
+{"ts":"2026-09-10T23:13:07Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":4011,"rank":3}
+{"ts":"2026-09-10T23:13:07Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[exits-nonzero]@the-real-repo","duration_ms":3713,"rank":4}
+{"ts":"2026-09-10T23:13:07Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":3652,"rank":5}
+{"ts":"2026-09-10T23:13:08Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":43606,"census":1575}
+{"ts":"2026-09-10T23:13:57Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3346}
+{"ts":"2026-09-10T23:14:40Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":6990,"rank":1}
+{"ts":"2026-09-10T23:14:40Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":5928,"rank":2}
+{"ts":"2026-09-10T23:14:40Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_self_test_corpus_passes_and_reports_its_case_count[gdk_gate]","duration_ms":4093,"rank":3}
+{"ts":"2026-09-10T23:14:40Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_real_composition_run_files_one_row_per_slot_and_one_of_its_own@the-real-repo","duration_ms":3595,"rank":4}
+{"ts":"2026-09-10T23:14:40Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":3565,"rank":5}
+{"ts":"2026-09-10T23:14:40Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":43483,"census":1575}
+{"ts":"2026-09-10T23:15:55Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":74478}
+{"ts":"2026-09-10T23:15:55Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":145}
+{"ts":"2026-09-10T23:15:55Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":121983}
+{"ts":"2026-09-10T23:16:17Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3420}

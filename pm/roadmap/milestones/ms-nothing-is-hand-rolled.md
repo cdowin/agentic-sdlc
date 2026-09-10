@@ -2,7 +2,7 @@
 id: "ms-nothing-is-hand-rolled"
 kind: milestone
 name: nothing is hand-rolled
-status: planning
+status: building
 depends_on: ["ms-the-rule-reaches-the-work"]
 branch: milestone/0.7.0-nothing-is-hand-rolled
 version: 0.7.0

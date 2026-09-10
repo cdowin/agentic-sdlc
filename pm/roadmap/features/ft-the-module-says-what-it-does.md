@@ -3,7 +3,7 @@ id: ft-the-module-says-what-it-does
 kind: feature
 milestone: "ms-nothing-is-hand-rolled"
 name: the module says what it does
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

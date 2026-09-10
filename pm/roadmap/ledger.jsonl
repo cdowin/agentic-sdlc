@@ -2874,3 +2874,17 @@
 {"ts":"2026-09-10T23:04:02Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":797,"rank":5}
 {"ts":"2026-09-10T23:04:02Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9700,"census":1162}
 {"ts":"2026-09-10T23:04:02Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":9816,"state":"d93b9822b7e3900c44aadb0955cf81dbd896b5be0887f2b7a7afa2838343fbc5","graded":"64396adb28ada1e2b2aa1459a77575781e7bb519f736c7386078a9dfd9b5dd61","census":1162}
+{"ts":"2026-09-10T23:04:25Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_flow.py::NoVocabularyLiteralSurvivesOutsideItsHome::test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else","duration_ms":1594,"rank":1}
+{"ts":"2026-09-10T23:04:25Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":919,"rank":2}
+{"ts":"2026-09-10T23:04:25Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":911,"rank":3}
+{"ts":"2026-09-10T23:04:25Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":813,"rank":4}
+{"ts":"2026-09-10T23:04:25Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoTestSpawnsGitAgainstThisCheckout::test_no_test_module_spawns_git_against_this_checkout","duration_ms":702,"rank":5}
+{"ts":"2026-09-10T23:04:25Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":8966,"census":1162}
+{"ts":"2026-09-10T23:04:25Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":9093,"state":"8665a716c1ff1fad805a801bae38a62d74aedc2d0ae2898ec8f5c429175c2c1f","graded":"0ad3a990dfc746a163999b376e7a7070be27bf71fe3dfe96ed50f94a2760deb3","census":1162}
+{"ts":"2026-09-10T23:04:56Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_flow.py::NoVocabularyLiteralSurvivesOutsideItsHome::test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else","duration_ms":1534,"rank":1}
+{"ts":"2026-09-10T23:04:56Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling","duration_ms":1246,"rank":2}
+{"ts":"2026-09-10T23:04:56Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":925,"rank":3}
+{"ts":"2026-09-10T23:04:56Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":904,"rank":4}
+{"ts":"2026-09-10T23:04:56Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":818,"rank":5}
+{"ts":"2026-09-10T23:04:56Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9560,"census":1162}
+{"ts":"2026-09-10T23:04:56Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":9678,"state":"18854259b9f74d4bce36e33e58c5422f158b7dd8612f6b1595ed89f5308651ee","graded":"bbb7fbbfa7cc4b13bbad75dc97d5289a19aa5e7b4acc7454e75abf972a5cc10f","census":1162}

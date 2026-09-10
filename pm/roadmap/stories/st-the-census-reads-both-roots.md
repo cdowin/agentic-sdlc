@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-suite-is-measured-like-the-source
 milestone: "ms-nothing-is-hand-rolled"
 name: the census reads both roots
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog:
@@ -114,3 +114,30 @@ probing.
 
 Turning this census into a shipped verb — `st-every-census-this-milestone-argues-from-is-a-command`
 decides that, and it decides it with a written reason as a legitimate outcome.
+
+## Close
+
+done: fa6fbd1 — `modules()`, `published_docstrings()`, `census()` and `report()` each take a Root;
+the ceiling case is parametrized over `ROOTS`. `src/` 47 modules / 0.3159 against its 1/3 ceiling,
+`tests/` 61 modules / 0.5284 REPORTED and not graded, and the absence is named by
+`test_which_roots_are_graded_and_which_are_only_reported` rather than left silent.
+
+`src/`'s verdict is unchanged and it is proven, not asserted: the pre-change `census()` read from
+`git show HEAD:` returns the identical triple over the identical 47 paths. The walk moved off a
+hand-rolled `rglob` onto `core.walk.descendants`, which is also what carries the scope disclosure.
+
+**Three of this story's own claims were wrong and the code corrected them.** `test_guard_corpus`'s
+`UNCOVERED` keys on the SOURCE function name, not the pytest nodeid, so parametrizing left the
+roster byte-identical and gotcha 3's concurrency hazard did not exist. Only ONE of the two
+`src/`-shaped rule-4 guards inverts on a second root — `assert published` fails, `assert moved <
+prose` is trivially true and merely grades nothing, which is a different defect and is now written
+as one. And `tests/fixtures/` holds zero `.py`, so the declared narrowing removes nothing today; it
+is a walk filter precisely so it discloses on the day it bites.
+
+**Criterion 2 is a `warnings.warn` and that is a measured choice, not a preference.** Under `make
+unit`'s `-n auto`, a `print`, a `sys.stderr.write`, a `capsys.disabled()` block and the config's own
+terminal writer are ALL discarded from a PASSING test — xdist ships a worker's captured streams back
+only on failure. The warnings summary is the one channel pytest renders either way without reaching
+into `tests/conftest.py` or the Makefile. It costs the tier summary line two words and the
+Makefile's census extraction still reads the count correctly. `st-every-census-this-milestone-argues-from-is-a-command`
+is where this becomes a verb and the warning goes.

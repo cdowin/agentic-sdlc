@@ -42,6 +42,7 @@ from support.pm import (
     write_config,
 )
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.checks import pm as pm_check
 from agentic_sdlc.repo.pm import model
 
@@ -66,9 +67,9 @@ def building_milestone(root: Path, branch: str = '', version: str = '0.1'):
     """The tree D9/D10/R5 read: a `building` milestone, a `branch:` stamp and
     a `pyproject.toml` version."""
     mfile = root / 'pm/roadmap/milestones/0.1.md'
-    model.set_field(mfile, 'status', 'building')
+    frontmatter.set_field(mfile, 'status', 'building')
     if branch:
-        model.set_field(mfile, 'branch', branch)
+        frontmatter.set_field(mfile, 'branch', branch)
     if version:
         (root / 'pyproject.toml').write_text(
             f'[project]\nversion = "{version}"\n', encoding='utf-8')
@@ -86,21 +87,21 @@ class Frontmatter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'g.md'
             write(p, {'status': 'ready'}, body='status: done\n\nprose')
-            self.assertEqual(model.field_of(p, 'status'), 'ready')
+            self.assertEqual(frontmatter.field_of(p, 'status'), 'ready')
 
     def test_set_field_inserts_a_missing_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'g.md'
             write(p, {'id': 'a', 'status': 'ready'})
-            self.assertTrue(model.set_field(p, 'reviewed', 'docs/r.md'))
-            self.assertEqual(model.field_of(p, 'reviewed'), 'docs/r.md')
+            self.assertTrue(frontmatter.set_field(p, 'reviewed', 'docs/r.md'))
+            self.assertEqual(frontmatter.field_of(p, 'reviewed'), 'docs/r.md')
 
     def test_set_field_refuses_a_file_with_no_frontmatter(self):
         # Nowhere to put the key: refuse rather than silently drop it.
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'g.md'
             p.write_text('no fence here\n', encoding='utf-8')
-            self.assertFalse(model.set_field(p, 'status', 'done'))
+            self.assertFalse(frontmatter.set_field(p, 'status', 'done'))
             self.assertEqual(p.read_text(), 'no fence here\n')
 
 
@@ -119,17 +120,17 @@ class OneReadPerDocument(unittest.TestCase):
     def counting(self):
         """`model.read_raw`, wrapped to count the opens per path."""
         counts: dict[str, int] = {}
-        original = model.read_raw
+        original = frontmatter.read_raw
 
         def counted(path, *rest):
             counts[str(path)] = counts.get(str(path), 0) + 1
             return original(path, *rest)
 
-        model.read_raw = counted
+        frontmatter.read_raw = counted
         try:
             yield counts
         finally:
-            model.read_raw = original
+            frontmatter.read_raw = original
 
     def test_the_gate_opens_every_document_exactly_once(self):
         with tree(story_statuses=('ready', 'building', 'done')) as root:
@@ -148,16 +149,16 @@ class OneReadPerDocument(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'g.md'
             write(p, {'id': 'a', 'status': 'ready'})
-            self.assertEqual(model.field_of(p, 'status'), 'ready')
+            self.assertEqual(frontmatter.field_of(p, 'status'), 'ready')
             # Past every writer this module knows about, the way an editor or
             # another process writes.
             write(p, {'id': 'a', 'status': 'building'})
-            self.assertEqual(model.field_of(p, 'status'), 'building')
-            self.assertTrue(model.set_field(p, 'status', 'done'))
-            self.assertEqual(model.field_of(p, 'status'), 'done')
-            self.assertEqual(model.list_field_of(p, 'order'), [])
+            self.assertEqual(frontmatter.field_of(p, 'status'), 'building')
+            self.assertTrue(frontmatter.set_field(p, 'status', 'done'))
+            self.assertEqual(frontmatter.field_of(p, 'status'), 'done')
+            self.assertEqual(frontmatter.list_field_of(p, 'order'), [])
             p.unlink()
-            self.assertEqual(model.field_of(p, 'status'), '')
+            self.assertEqual(frontmatter.field_of(p, 'status'), '')
 
     def test_a_rev_blob_is_read_every_time_because_it_has_no_stat(self):
         """`pm report --rev` reads git BLOBS through `field_of`, and a blob is
@@ -175,18 +176,18 @@ class OneReadPerDocument(unittest.TestCase):
             def __str__(self):
                 return '<rev>:g.md'
 
-        held = model.documents_held()
+        held = frontmatter.documents_held()
         blob = Blob('---\nid: a\nstatus: ready\norder:\n  - "x"\n---\n\nbody\n')
-        self.assertEqual(model.field_of(blob, 'status'), 'ready')
-        self.assertEqual(model.list_field_of(blob, 'order'), ['x'])
+        self.assertEqual(frontmatter.field_of(blob, 'status'), 'ready')
+        self.assertEqual(frontmatter.list_field_of(blob, 'order'), ['x'])
         self.assertEqual(blob.reads, 2)
-        self.assertEqual(model.documents_held(), held)
+        self.assertEqual(frontmatter.documents_held(), held)
 
     def test_a_read_scope_walks_once_and_still_sees_a_write_inside_it(self):
         with tree() as root:
             cfg = cfg_for(root)
             story = root / STORY_REL
-            sid = model.unquote(model.field_of(story, 'id'))
+            sid = frontmatter.unquote(frontmatter.field_of(story, 'id'))
             with model.reading_tree():
                 first = model.grain_index(cfg)
                 with self.counting() as counts:
@@ -196,7 +197,7 @@ class OneReadPerDocument(unittest.TestCase):
                 # A write INSIDE a read scope is still seen: the snapshot is
                 # dropped by the mutation rather than held to the end of the
                 # block, so no verb can be answered off its own stale tree.
-                model.set_field(story, 'status', 'building')
+                frontmatter.set_field(story, 'status', 'building')
                 self.assertEqual(model.grain_index(cfg)[sid].status, 'building')
 
     def test_the_scope_does_not_outlive_its_block(self):
@@ -213,7 +214,7 @@ class OneReadPerDocument(unittest.TestCase):
     def test_two_gate_runs_in_one_process_read_the_tree_twice(self):
         with tree() as root:
             first_code, first_out = run_gate(root)
-            model.set_field(root / STORY_REL, 'status', 'wombat')
+            frontmatter.set_field(root / STORY_REL, 'status', 'wombat')
             second_code, second_out = run_gate(root)
             self.assertNotIn('wombat', first_out)
             self.assertIn('wombat', second_out)
@@ -2006,7 +2007,7 @@ class StructuralIntegrity(unittest.TestCase):
                       {'id': 'st-loose', 'kind': 'story', 'feature': '',
                        'milestone': '"0.1"', 'name': 'L',
                        'status': 'planning', 'owner': ''})
-                model.set_list_field(root / 'pm/roadmap/features/alpha.md',
+                frontmatter.set_list_field(root / 'pm/roadmap/features/alpha.md',
                                      'order', ['st-loose'])
                 code, out = run_gate(root)
                 self.assertEqual(code, 1, out)
@@ -2043,7 +2044,7 @@ class StructuralIntegrity(unittest.TestCase):
         # legitimately has many unbound grains, and a gate that reddens on
         # planning is a gate people switch off.
         with tree(story_statuses=('ready',)) as root:
-            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
+            frontmatter.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('UNBOUND  1 story(s) name no feature:', out)
@@ -2060,9 +2061,9 @@ class StructuralIntegrity(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             for rel, field in (('features/alpha.md', 'milestone'),
                                ('stories/s0.md', 'feature')):
-                model.set_field(root / 'pm/roadmap' / rel, field, '')
+                frontmatter.set_field(root / 'pm/roadmap' / rel, field, '')
             bug(root, 'crash')
-            model.set_field(root / 'pm/roadmap/bugs/crash.md', 'milestone', '')
+            frontmatter.set_field(root / 'pm/roadmap/bugs/crash.md', 'milestone', '')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             for line in ('1 feature(s) name no milestone:',
@@ -2076,7 +2077,7 @@ class StructuralIntegrity(unittest.TestCase):
         # finding that gives it meaning.
         with tree(story_statuses=('ready',)) as root:
             write_config(root, '[pm]\nchecks = ["D1","D4"]\n')
-            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
+            frontmatter.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('UNBOUND', out)
@@ -2086,7 +2087,7 @@ class StructuralIntegrity(unittest.TestCase):
         # grain of the wrong kind is a tree that reads as valid and rolls up
         # into nothing.
         with tree(story_statuses=('ready',)) as root:
-            model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '0.1')
+            frontmatter.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '0.1')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('which is a milestone and not a feature', out)
@@ -2122,7 +2123,7 @@ class Validate(unittest.TestCase):
         )
         for rule, rel, field, value, message in rows:
             with self.subTest(rule=rule), tree(story_statuses=('ready',)) as root:
-                model.set_field(root / 'pm/roadmap' / rel, field, value)
+                frontmatter.set_field(root / 'pm/roadmap' / rel, field, value)
                 findings, _ = self._run(root)
                 self.assertTrue(any(message in f for f in findings), findings)
 
@@ -2131,7 +2132,7 @@ class Validate(unittest.TestCase):
         # pruned is expected, so it is censused rather than failed.
         with tree() as root:
             ff = root / 'pm/roadmap/features/alpha.md'
-            model.set_field(ff, 'depends_on', '["0.0.9/long-gone"]')
+            frontmatter.set_field(ff, 'depends_on', '["0.0.9/long-gone"]')
             # A HIERARCHICAL id names its milestone, and `0.0.9` is not in the
             # tree. A flat id carries no such segment and would be a finding.
             findings, census = self._run(root)
@@ -2142,8 +2143,8 @@ class Validate(unittest.TestCase):
         with tree() as root:
             run_cli(root, 'new', 'feature', '0.1', 'beta', 'Beta')
             fdir = root / 'pm/roadmap/features'
-            model.set_field(fdir / 'alpha.md', 'depends_on', '["ft-beta"]')
-            model.set_field(fdir / 'ft-beta.md', 'depends_on', '["0.1/alpha"]')
+            frontmatter.set_field(fdir / 'alpha.md', 'depends_on', '["ft-beta"]')
+            frontmatter.set_field(fdir / 'ft-beta.md', 'depends_on', '["0.1/alpha"]')
             findings, _ = self._run(root)
             self.assertTrue(any('CYCLE' in f for f in findings), findings)
 
@@ -2165,7 +2166,7 @@ class Validate(unittest.TestCase):
         # One definition, two readers: a dangling ref must fail `check pm` too.
         with tree(story_statuses=('ready',)) as root:
             ff = root / 'pm/roadmap/features/alpha.md'
-            model.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
+            frontmatter.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
             code, out = run_gate(root)
             self.assertEqual(code, 1)
             self.assertIn('resolves to nothing', out)
@@ -2200,7 +2201,7 @@ class CausedBy(unittest.TestCase):
             self.assertEqual(census['refs'], 1)
 
             ff = root / 'pm/roadmap/features/alpha.md'
-            model.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
+            frontmatter.set_field(ff, 'depends_on', '["0.1/no-such-feature"]')
             dep = [f for f in self._validate(root)[0] if 'depends_on' in f]
             self.assertEqual(len(dep), 1)
             self.assertEqual(dep[0].split(': ', 1)[1].replace('depends_on', 'X'),
@@ -2240,7 +2241,7 @@ class CausedBy(unittest.TestCase):
         for raw, expect_findings, refs, unverifiable in rows:
             with self.subTest(raw=raw[:40]), tree(story_statuses=('ready',)) as root:
                 path = bug(root, 'seed-is-zero')
-                self.assertTrue(model.set_field(path, 'caused_by', raw))
+                self.assertTrue(frontmatter.set_field(path, 'caused_by', raw))
                 findings, census = self._validate(root)
                 self.assertEqual(bool(findings), expect_findings,
                                  f'{raw!r}: {findings}')
@@ -2304,7 +2305,7 @@ class RefParsing(unittest.TestCase):
 
     def _with(self, root: Path, raw: str):
         ff = root / 'pm/roadmap/features/alpha.md'
-        self.assertTrue(model.set_field(ff, 'depends_on', raw))
+        self.assertTrue(frontmatter.set_field(ff, 'depends_on', raw))
         from agentic_sdlc.repo.pm import validate
         return validate.run(model.PmConfig(root=root))
 
@@ -2325,7 +2326,7 @@ class RefParsing(unittest.TestCase):
     def test_the_ref_census_does_not_depend_on_which_rules_ran(self):
         with tree() as root:
             ff = root / 'pm/roadmap/features/alpha.md'
-            model.set_field(ff, 'depends_on', '["0.1/alpha"]')
+            frontmatter.set_field(ff, 'depends_on', '["0.1/alpha"]')
             from agentic_sdlc.repo.pm import validate
             cfg = model.PmConfig(root=root)
             self.assertEqual(validate.run(cfg, {'V1'})[1]['refs'],
@@ -2419,9 +2420,9 @@ class DamagedFrontmatter(unittest.TestCase):
                     sfile = root / STORY_REL
                     damage(sfile, form)
                     self.assertTrue(model._is_grain_doc(sfile))
-                    self.assertEqual(model.field_of(sfile, 'status'), '')
+                    self.assertEqual(frontmatter.field_of(sfile, 'status'), '')
                     before = sfile.read_bytes()
-                    self.assertFalse(model.set_field(sfile, 'status', 'building'))
+                    self.assertFalse(frontmatter.set_field(sfile, 'status', 'building'))
                     self.assertEqual(sfile.read_bytes(), before)
 
     # --- the controls: a genuine note stays OUT, and is DISCLOSED ---------
@@ -3024,7 +3025,7 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         # finding, and letting it into this census would make the two rules
         # argue about the same byte.
         with tree(milestone_status='building') as root:
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'status', 'wombat')
             write_config(root, '[pm]\nchecks = ["U1"]\n')
             code, out = run_gate(root)

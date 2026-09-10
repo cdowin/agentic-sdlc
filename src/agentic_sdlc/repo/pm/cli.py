@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo.pm import (arrive, ledger, model, rename, report,
                                    templates, validate)
 
@@ -562,14 +562,14 @@ def _was(path: Path) -> str:
     never gates on it, so a hand-edited word is repaired rather than
     refused. `(none)` when absent.
     """
-    return model.field_of(path, model.FIELD_STATUS) or '(none)'
+    return frontmatter.field_of(path, model.FIELD_STATUS) or '(none)'
 
 
 def _set_status(cfg: model.PmConfig, path: Path, value: str, note: str = '') -> None:
     """Write the `status:` line and validate nothing; every caller has already
     asked `_movable`.
     """
-    if not model.set_field(path, model.FIELD_STATUS, value):
+    if not frontmatter.set_field(path, model.FIELD_STATUS, value):
         raise Usage(f'could not rewrite status in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)'
                     + (f'. {note}' if note else ''))
@@ -585,7 +585,7 @@ def _ledger_id(path: Path, fallback: str,
     is absent. `src` may be `report.GitSource` for `ledger report --from`.
     """
     reader = report.DiskSource() if src is None else src
-    return model.unquote(reader.field_of(path, model.FIELD_ID)) or fallback
+    return frontmatter.unquote(reader.field_of(path, model.FIELD_ID)) or fallback
 
 
 def _ledger_of(cfg: model.PmConfig, gid: str) -> Path | None:
@@ -604,7 +604,7 @@ def _stamp(cfg: model.PmConfig, path: Path, *rows: dict) -> None:
     Varargs because ONE arrival mints two rows — the status and its
     disposition — and the ledger is resolved once for both: a grain no
     milestone owns is one WARNING about the event, not one per row."""
-    target = _ledger_of(cfg, model.unquote(model.field_of(path,
+    target = _ledger_of(cfg, frontmatter.unquote(frontmatter.field_of(path,
                                                           model.FIELD_ID)))
     if target is None:
         print(f'[pm] WARNING — no milestone owns {cfg.rel(path)}, so '
@@ -834,7 +834,7 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
                 f'feature {fid} -> {to}: review record {rec!r} names no file '
                 f'({cfg.rel(target)}). Nothing was written — stamping a pointer '
                 f'to nothing is the drift D1 reports.')
-        if not model.set_field(ff, 'reviewed', rec):
+        if not frontmatter.set_field(ff, 'reviewed', rec):
             raise Usage(f'could not stamp reviewed: in {cfg.rel(ff)}')
         _ok(f'feature {fid}: reviewed -> {rec}')
     record = model.review_record_for(cfg, fid)
@@ -956,10 +956,10 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         notices.append(f'{cfg.rel(mfile)} is missing')
         status, canonical_id, name = '', mid, ''
     else:
-        status = model.field_of(mfile, model.FIELD_STATUS)
-        canonical_id = model.unquote(model.field_of(mfile,
+        status = frontmatter.field_of(mfile, model.FIELD_STATUS)
+        canonical_id = frontmatter.unquote(frontmatter.field_of(mfile,
                                                     model.FIELD_ID)) or mid
-        name = model.field_of(mfile, model.FIELD_NAME)
+        name = frontmatter.field_of(mfile, model.FIELD_NAME)
         if not model.holds(cfg, model.GRAIN_MILESTONE, [(mid, status)],
                            model.DONE_CATEGORY):
             notices.append(f'milestone {mid} is {status or "(no status)"}, '
@@ -969,8 +969,8 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     open_features = sorted(
         name for name, _ in model.holds(
             cfg, model.GRAIN_FEATURE,
-            ((model.unquote(model.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
-              model.field_of(ff, model.FIELD_STATUS))
+            ((frontmatter.unquote(frontmatter.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
+              frontmatter.field_of(ff, model.FIELD_STATUS))
              for ff in model.feature_files(cfg, mid)),
             model.DONE_CATEGORY).blockers)
     if open_features:
@@ -980,7 +980,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     open_bugs = sorted(
         name for name, _ in model.holds(
             cfg, model.GRAIN_BUG,
-            ((bf.stem, model.field_of(bf, model.FIELD_STATUS))
+            ((bf.stem, frontmatter.field_of(bf, model.FIELD_STATUS))
              for bf in model.bug_files(cfg, mid)),
             model.DONE_CATEGORY).blockers)
     if open_bugs:
@@ -990,7 +990,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     # Whitespace collapsed at the WRITE, so the stored sentence can never forge
     # a column in the tab-separated row `pm roadmap` prints it in.
     summary = ' '.join(' '.join(summary_words).split())
-    version = model.field_of(mfile, 'version').strip() if mfile.is_file() else ''
+    version = frontmatter.field_of(mfile, 'version').strip() if mfile.is_file() else ''
     row = ledger.retire_row(canonical_id, version, name, summary)
     ledger_file = ledger.grainless_path(cfg.roadmap)
     # What outlives the documents, and where. `order` keeps the id; the ledger
@@ -1058,7 +1058,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
 def _known_feature_ids(cfg: model.PmConfig) -> list[str]:
     out = []
     for milestone in model.milestones(cfg):
-        out.extend(model.unquote(model.field_of(ff, model.FIELD_ID))
+        out.extend(frontmatter.unquote(frontmatter.field_of(ff, model.FIELD_ID))
                    or f'{milestone.gid}/{ff.parent.name}'
                    for ff in model.feature_files(cfg, milestone.gid))
     return sorted(out)
@@ -1149,7 +1149,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # REPORT — nothing is gated on it, because a ceiling on how long a
         # feature may stay open is this package having an opinion (rule 9).
         opened = _open_for(cfg, mid)
-        mstat = model.field_of(mfile, model.FIELD_STATUS)
+        mstat = frontmatter.field_of(mfile, model.FIELD_STATUS)
         print(f'milestone {mid:<10} [{mstat}]'
               + _age_cell(cfg, model.GRAIN_MILESTONE, mid, mstat, opened))
         rows = []
@@ -1247,8 +1247,8 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
             view = model.read_feature(cfg, ffile)
             for sfile in view.stories:
                 scanned += 1
-                status = model.field_of(sfile, model.FIELD_STATUS)
-                who = model.unquote(model.field_of(sfile, model.FIELD_OWNER))
+                status = frontmatter.field_of(sfile, model.FIELD_STATUS)
+                who = frontmatter.unquote(frontmatter.field_of(sfile, model.FIELD_OWNER))
                 if statuses and status not in statuses:
                     continue
                 if category and model.category_of(cfg, model.GRAIN_STORY,
@@ -1256,10 +1256,10 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
                     continue
                 if owner and who != owner:
                     continue
-                rows.append((model.unquote(model.field_of(sfile,
+                rows.append((frontmatter.unquote(frontmatter.field_of(sfile,
                                                           model.FIELD_ID)),
                              status, who or DASH, view.fid,
-                             model.unquote(model.field_of(sfile,
+                             frontmatter.unquote(frontmatter.field_of(sfile,
                                                           model.FIELD_NAME))
                              or DASH))
     _emit_rows(model.GRAIN_STORY, rows, as_json)
@@ -1325,8 +1325,8 @@ def _list_bound(cfg: model.PmConfig, kind: str, statuses: set[str],
         if grain.kind != kind:
             continue
         scanned += 1
-        status = model.field_of(grain.path, model.FIELD_STATUS)
-        bound = model.unquote(model.field_of(grain.path,
+        status = frontmatter.field_of(grain.path, model.FIELD_STATUS)
+        bound = frontmatter.unquote(frontmatter.field_of(grain.path,
                                              model.GRAIN_MILESTONE))
         if statuses and status not in statuses:
             continue
@@ -1336,8 +1336,8 @@ def _list_bound(cfg: model.PmConfig, kind: str, statuses: set[str],
             continue
         second = 'reviewed' if kind == model.GRAIN_FEATURE else 'caused_by'
         rows.append((gid, status or DASH, bound or DASH,
-                     model.unquote(model.field_of(grain.path, second)) or DASH,
-                     model.unquote(model.field_of(grain.path,
+                     frontmatter.unquote(frontmatter.field_of(grain.path, second)) or DASH,
+                     frontmatter.unquote(frontmatter.field_of(grain.path,
                                                   model.FIELD_NAME)) or DASH))
     _emit_rows(kind, rows, as_json)
     print(f'[pm] {len(rows)} of {scanned} {kind}(s)', file=sys.stderr)
@@ -1358,15 +1358,15 @@ def _list_milestones(cfg: model.PmConfig, statuses: set[str],
     rows = []
     for mdir, mid in known:
         mfile = model.milestone_doc(mdir)
-        status = model.field_of(mfile, model.FIELD_STATUS)
+        status = frontmatter.field_of(mfile, model.FIELD_STATUS)
         cat = model.category_of(cfg, model.GRAIN_MILESTONE, status)
         if statuses and status not in statuses:
             continue
         if category and cat != category:
             continue
         rows.append((mid or mdir.name, status or DASH, cat or DASH,
-                     model.unquote(model.field_of(mfile, 'branch')) or DASH,
-                     model.unquote(model.field_of(mfile,
+                     frontmatter.unquote(frontmatter.field_of(mfile, 'branch')) or DASH,
+                     frontmatter.unquote(frontmatter.field_of(mfile,
                                                   model.FIELD_NAME)) or DASH))
     _emit_rows(model.GRAIN_MILESTONE, rows, as_json)
     print(f'[pm] {len(rows)} of {len(known)} milestone(s)', file=sys.stderr)
@@ -1392,7 +1392,7 @@ def cmd_get(cfg: model.PmConfig, args: list[str]) -> int:
     if len(args) != 2:
         raise Usage(USAGE)
     gid, key = args
-    print(model.field_of(_grain_file(cfg, gid), key))
+    print(frontmatter.field_of(_grain_file(cfg, gid), key))
     return 0
 
 
@@ -1405,7 +1405,7 @@ def _binding_defect(cfg: model.PmConfig, gid: str, key: str,
     want = {field: parent for parent, field in model.BINDS_TO.values()}.get(key)
     if want is None or not value:
         return
-    found = model.grain_index(cfg).get(model.unquote(value))
+    found = model.grain_index(cfg).get(frontmatter.unquote(value))
     if found is None:
         raise Usage(f'{key}: {value!r} names no grain in {cfg.roadmap_dir} — '
                     f'a binding that resolves to nothing is drift, not a plan; '
@@ -1466,8 +1466,8 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     value = _shaped(key, value)
     path = _grain_file(cfg, gid)
     _binding_defect(cfg, gid, key, value)
-    before = model.field_of(path, key)
-    if not model.set_field(path, key, value):
+    before = frontmatter.field_of(path, key)
+    if not frontmatter.set_field(path, key, value):
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)')
     _ok(f'{gid}: {key} {before!r} -> {value!r}')
@@ -1643,7 +1643,7 @@ def _stamp_field(cfg: model.PmConfig, path: Path, gid: str, key: str,
     through `set_field` so a project's own template still gets it, and ECHO
     it: a field the caller asked for and never sees confirmed is one they have
     to go read the file to trust."""
-    if not model.set_field(path, key, value):
+    if not frontmatter.set_field(path, key, value):
         raise Refused(
             f'{cfg.rel(path)} was created, but {key}: could not be written '
             f'into it — its frontmatter has no `---` block to put the field '
@@ -1815,7 +1815,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if found is None and not name:
             raise _name_required(model.GRAIN_MILESTONE, mid, slug)
         target = found or _mint_path(cfg, model.GRAIN_MILESTONE, mid, name)
-        name = name or model.field_of(target, model.FIELD_NAME)
+        name = name or frontmatter.field_of(target, model.FIELD_NAME)
         code = _scaffold(cfg, model.GRAIN_MILESTONE, target,
                          {model.FIELD_ID: mid,
                           model.FIELD_KIND: model.GRAIN_MILESTONE, model.FIELD_NAME: name})
@@ -1833,7 +1833,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if found is None and not name:
             raise _name_required(model.GRAIN_FEATURE, fid, f'{mid} {slug}')
         target = found or _mint_path(cfg, model.GRAIN_FEATURE, fid, name, mid)
-        name = name or model.field_of(target, model.FIELD_NAME)
+        name = name or frontmatter.field_of(target, model.FIELD_NAME)
         return _scaffold(cfg, model.GRAIN_FEATURE, target,
                          {model.FIELD_ID: fid,
                           model.FIELD_KIND: model.GRAIN_FEATURE, model.GRAIN_MILESTONE: mid,
@@ -1848,7 +1848,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
             raise Usage(f'no feature resolves from id {fid!r}')
         # The milestone comes from the feature's own frontmatter, never
         # re-derived from the id.
-        mid = model.field_of(ffile, model.GRAIN_MILESTONE)
+        mid = frontmatter.field_of(ffile, model.GRAIN_MILESTONE)
         sid, claimed = _claim(cfg, model.GRAIN_STORY, slug, fid)
         if claimed is not None:
             raise Refused(f'story id {sid!r} is already held by '
@@ -1915,7 +1915,7 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
                 templates.load(cfg,
                                model.SLOT_TEMPLATE[model.HANDOFF_FILE_NAME]),
                 {model.FIELD_ID: mid,
-                 model.FIELD_NAME: model.field_of(grain.path,
+                 model.FIELD_NAME: frontmatter.field_of(grain.path,
                                                   model.FIELD_NAME)})
         except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
             raise Usage(f'the handoff template cannot be read ({err}) — '
@@ -1946,13 +1946,13 @@ def _decision_log(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
     gdir = log.parent
     if log.is_file():
         try:
-            return log, model.read_raw(log)
+            return log, frontmatter.read_raw(log)
         except (OSError, UnicodeDecodeError) as err:
             raise Usage(f'cannot read {cfg.rel(log)} ({err})') from err
     try:
         return log, templates.render(
             templates.load(cfg, model.SLOT_TEMPLATE[model.DECISION_FILE_NAME]),
-            {model.FIELD_ID: gid, model.FIELD_NAME: model.field_of(
+            {model.FIELD_ID: gid, model.FIELD_NAME: frontmatter.field_of(
                 gdir / (model.MILESTONE_DOC if depth == 0
                         else model.FEATURE_DOC), model.FIELD_NAME)})
     except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
@@ -1992,7 +1992,7 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
     eid = model.next_entry_id(text)
     when = datetime.now(timezone.utc).date().isoformat()
     try:
-        model.write_raw(log, model.append_heading(text, eid, when, title))
+        frontmatter.write_raw(log, model.append_heading(text, eid, when, title))
     except OSError as err:
         raise Usage(f'could not append to {cfg.rel(log)} ({err})') from err
     _ok(f'{cfg.rel(log)}: {eid} — {when} — {title}')
@@ -2074,7 +2074,7 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
                           f'there is no ledger a row naming no grain belongs '
                           f'to; no row was written')
         return ledger.grainless_path(cfg.roadmap)
-    found = _ledger_of(cfg, model.unquote(model.field_of(path,
+    found = _ledger_of(cfg, frontmatter.unquote(frontmatter.field_of(path,
                                                          model.FIELD_ID)))
     if found is None:
         raise Refused(f'{cfg.rel(path)} names no milestone, so there is no '
@@ -2098,7 +2098,7 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
     }
 
     def add(snap: dict, bucket: str, path: Path) -> None:
-        gid = model.unquote(model.field_of(path, model.FIELD_ID))
+        gid = frontmatter.unquote(frontmatter.field_of(path, model.FIELD_ID))
         if gid:
             snap[bucket].append(gid)
 
@@ -2107,13 +2107,13 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
 
     for _milestone in model.milestones(cfg):
         mfile = _milestone.path
-        mstat = model.field_of(mfile, model.FIELD_STATUS)
+        mstat = frontmatter.field_of(mfile, model.FIELD_STATUS)
         if in_progress(model.GRAIN_MILESTONE, mstat):
             add(live, 'milestones_in_progress', mfile)
         if mstat == model.BUILDING:
             add(frozen, 'milestones_building', mfile)
         for ffile in model.feature_files(cfg, _milestone.gid):
-            fstat = model.field_of(ffile, model.FIELD_STATUS)
+            fstat = frontmatter.field_of(ffile, model.FIELD_STATUS)
             if in_progress(model.GRAIN_FEATURE, fstat):
                 add(live, 'features_in_progress', ffile)
             if fstat == model.BUILDING:
@@ -2121,8 +2121,8 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
             elif fstat == model.REVIEWING:
                 add(frozen, 'features_review', ffile)
             for sfile in model.story_files(
-                    cfg, model.unquote(model.field_of(ffile, model.FIELD_ID))):
-                sstat = model.field_of(sfile, model.FIELD_STATUS)
+                    cfg, frontmatter.unquote(frontmatter.field_of(ffile, model.FIELD_ID))):
+                sstat = frontmatter.field_of(sfile, model.FIELD_STATUS)
                 if in_progress(model.GRAIN_STORY, sstat):
                     add(live, ledger.STORIES_IN_PROGRESS, sfile)
                 if sstat == model.BUILDING:
@@ -2417,7 +2417,7 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
         raise Usage(USAGE)
     gid = rest[0]
     path = _grain_file(cfg, gid)
-    owner = _ledger_of(cfg, model.unquote(model.field_of(path,
+    owner = _ledger_of(cfg, frontmatter.unquote(frontmatter.field_of(path,
                                                          model.FIELD_ID)) or gid)
     if owner is None:
         raise Usage(f'{cfg.rel(path)} names no milestone, so no ledger owns '
@@ -2769,7 +2769,7 @@ def _mint_plan(cfg: model.PmConfig) -> Path:
     if not path.is_file():
         # Through `core.apply`, like every other mutation.
         apply.raise_on_error(apply.make_dir(path.parent))
-        model.write_raw(path, _PLAN_SCAFFOLD)
+        frontmatter.write_raw(path, _PLAN_SCAFFOLD)
     return path
 
 
@@ -2795,10 +2795,10 @@ def _parent(cfg: model.PmConfig, gid: str) -> tuple[model.Grain, bool]:
 
 def _sequence(cfg: model.PmConfig, parent: model.Grain) -> list[str]:
     """The parent's declared `order`, refusing a list this writer cannot rewrite."""
-    defect = model.sequence_defect(parent.path)
+    defect = frontmatter.sequence_defect(parent.path, model.ORDER_KEY)
     if defect:
         raise Refused(f'{cfg.rel(parent.path)} {defect} — nothing was written')
-    return model.list_field_of(parent.path, model.ORDER_KEY)
+    return frontmatter.list_field_of(parent.path, model.ORDER_KEY)
 
 
 def _placed(entries: list[str], child: str, where: tuple[str, str],
@@ -2883,9 +2883,9 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
     wrote = []
     if bind is not None:
         field = bind[1]
-        before = model.unquote(model.field_of(child.path, field))
+        before = frontmatter.unquote(frontmatter.field_of(child.path, field))
         if before != parent.gid:
-            if not model.set_field(child.path, field, parent.gid):
+            if not frontmatter.set_field(child.path, field, parent.gid):
                 raise Refused(f'{cfg.rel(child.path)} has no frontmatter block '
                               f'to put `{field}:` in — nothing was written')
             wrote.append(f'{child.gid}: {field} {before!r} -> {parent.gid!r}')
@@ -2899,7 +2899,7 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
 
     # THE SEQUENCE — the parent's list, through the byte-honest writer.
     if placed != entries:
-        if not model.set_list_field(parent.path, model.ORDER_KEY, placed):
+        if not frontmatter.set_list_field(parent.path, model.ORDER_KEY, placed):
             raise Refused(f'{rel} could not be rewritten — it has no '
                           f'frontmatter block'
                           + (f'; {"; ".join(wrote)} DID land'
@@ -2926,7 +2926,7 @@ def cmd_remove(cfg: model.PmConfig, args: list[str]) -> int:
     entries = _sequence(cfg, parent)
     bind = model.BINDS_TO.get(child.kind)
     field = bind[1] if bind is not None else ''
-    bound = (model.unquote(model.field_of(child.path, field))
+    bound = (frontmatter.unquote(frontmatter.field_of(child.path, field))
              if field else '')
     elsewhere = bool(field and bound and bound != parent.gid)
     if elsewhere and child.gid not in entries:
@@ -2934,12 +2934,12 @@ def cmd_remove(cfg: model.PmConfig, args: list[str]) -> int:
                       f'{parent.gid} — nothing was written')
     wrote = []
     if field and bound and not elsewhere:
-        if not model.set_field(child.path, field, ''):
+        if not frontmatter.set_field(child.path, field, ''):
             raise Refused(f'{cfg.rel(child.path)} could not be rewritten — '
                           f'nothing was written')
         wrote.append(f'{child.gid}: {field} {bound!r} -> \'\'')
     if child.gid in entries:
-        if not model.set_list_field(parent.path, model.ORDER_KEY,
+        if not frontmatter.set_list_field(parent.path, model.ORDER_KEY,
                                     [g for g in entries if g != child.gid]):
             raise Refused(f'{rel} could not be rewritten'
                           + (f'; {"; ".join(wrote)} DID land'
@@ -3012,9 +3012,9 @@ def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
                 continue
             version = model.milestone_version(cfg, mid)
             state = ('shipped' if model.entry_is_shipped(cfg, mid)
-                     else model.field_of(mfile, model.FIELD_STATUS) or DASH)
+                     else frontmatter.field_of(mfile, model.FIELD_STATUS) or DASH)
             print(_roadmap_row((version or NO_VERSION, mid, state,
-                                model.unquote(model.field_of(mfile,
+                                frontmatter.unquote(frontmatter.field_of(mfile,
                                                              model.FIELD_NAME)),
                                 '')))
     scheduled = set(entries)
@@ -3027,8 +3027,8 @@ def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
             mfile = model.milestone_file(cfg, mid)
             print(_roadmap_row((
                 model.milestone_version(cfg, mid), mid,
-                model.field_of(mfile, model.FIELD_STATUS) if mfile else '',
-                model.unquote(model.field_of(mfile,
+                frontmatter.field_of(mfile, model.FIELD_STATUS) if mfile else '',
+                frontmatter.unquote(frontmatter.field_of(mfile,
                                              model.FIELD_NAME)) if mfile else '',
                 '')))
     return 0
@@ -3058,7 +3058,7 @@ def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
         return 0
     mfile = model.milestone_file(cfg, mid)
     print(f'{model.milestone_version(cfg, mid) or NO_VERSION}\t{mid}\t'
-          f'{model.field_of(mfile, model.FIELD_STATUS) if mfile else ""}')
+          f'{frontmatter.field_of(mfile, model.FIELD_STATUS) if mfile else ""}')
     return 0
 
 

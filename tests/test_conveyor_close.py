@@ -30,6 +30,7 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
@@ -142,7 +143,7 @@ def close(*args: str) -> int:
 
 
 def status_of(root: Path, rel: str) -> str:
-    return model.field_of(root / rel, 'status')
+    return frontmatter.field_of(root / rel, 'status')
 
 
 def rows(root: Path) -> list[dict]:

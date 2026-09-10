@@ -65,7 +65,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agentic_sdlc.core import apply, walk
+from agentic_sdlc.core import apply, frontmatter, walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.repo.pm import model, validate
 
@@ -195,26 +195,26 @@ def plan(cfg: model.PmConfig) -> Planned:
 
     for mdir in nested:
         mfile = mdir / model.MILESTONE_DOC
-        mid = model.unquote(model.field_of(mfile, 'id')) or mdir.name
+        mid = frontmatter.unquote(frontmatter.field_of(mfile, 'id')) or mdir.name
         ms_id = take('milestone', mfile, mid, '')
         feature_ids: list[tuple[tuple, str]] = []
         for ffile in model._nested_feature_files(mdir):
-            fid = model.unquote(model.field_of(ffile, 'id'))
+            fid = frontmatter.unquote(frontmatter.field_of(ffile, 'id'))
             ft_id = take('feature', ffile, fid or ffile.parent.name, ms_id)
             # `phase:` grouped features within a milestone; it flattens into
             # the milestone's order in phase reading order and stops being a
             # field the tool interprets.
-            phase = _phase_key(model.field_of(ffile, 'phase'))
+            phase = _phase_key(frontmatter.field_of(ffile, 'phase'))
             feature_ids.append(((phase, ft_id), ft_id))
             story_ids: list[tuple[tuple, str]] = []
             for sfile in model._nested_story_files(ffile):
-                sid = model.unquote(model.field_of(sfile, 'id'))
+                sid = frontmatter.unquote(frontmatter.field_of(sfile, 'id'))
                 st_id = take('story', sfile, sid or sfile.stem, ft_id)
                 story_ids.append((_ordinal_of(sfile), st_id))
             if story_ids:
                 out.orders[ffile] = [i for _, i in sorted(story_ids)]
         for bfile in model._nested_bug_files(mdir):
-            bid = model.unquote(model.field_of(bfile, 'id'))
+            bid = frontmatter.unquote(frontmatter.field_of(bfile, 'id'))
             take('bug', bfile, bid or bfile.stem, ms_id)
         if feature_ids:
             out.orders[mfile] = [i for _, i in sorted(feature_ids)]
@@ -267,8 +267,8 @@ def _rewritten(text: str, renames: dict[str, str]) -> str:
     `- a` lines, all four are the same scan, and `0.1/alpha` is not a ref
     inside `0.1/alphabet` by construction rather than by punctuation.
     """
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
@@ -367,7 +367,7 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     lines = []
     for move in staged.moves:
         try:
-            text = model.read_raw(move.old_path)
+            text = frontmatter.read_raw(move.old_path)
         except (OSError, UnicodeDecodeError) as err:
             return 1, [f'[pm] REFUSED — {cfg.rel(move.old_path)} could not be '
                        f'read ({err.__class__.__name__}); nothing was written']
@@ -420,26 +420,26 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
 def _with_fields(text: str, fields: dict[str, str]) -> str:
     """`set_fields`' logic over a string, because the migration stages every
     write in memory and commits them in one pass."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
     for key, value in fields.items():
         for i in range(open_i + 1, close_i):
             if lines[i].startswith(f'{key}:'):
-                lines[i] = f'{key}: {value}{model._eol(lines[i])}'
+                lines[i] = f'{key}: {value}{frontmatter._eol(lines[i])}'
                 break
         else:
-            lines.insert(close_i, f'{key}: {value}{model._eol(lines[close_i])}')
+            lines.insert(close_i, f'{key}: {value}{frontmatter._eol(lines[close_i])}')
             close_i += 1
     return '\n'.join(lines)
 
 
 def _with_order(text: str, ids: list[str]) -> str:
     """The parent's `order` block, built from the nesting being deleted."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     _open_i, close_i = bounds

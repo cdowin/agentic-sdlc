@@ -28,6 +28,7 @@ from support.pm import FLOW_TOML  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
@@ -253,7 +254,7 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
         assert changed == {'pm/roadmap/milestones/1.0.0.md',
                            'pm/roadmap/ledgers/1.0.0.jsonl'}, changed
         want = driver.done_state(model.load(), 'milestone')
-        assert model.field_of(root / 'pm/roadmap/milestones/1.0.0.md',
+        assert frontmatter.field_of(root / 'pm/roadmap/milestones/1.0.0.md',
                               'status') == want
         rows = [r.data for r in
                 ledger.read_rows(root / 'pm/roadmap/ledgers/1.0.0.jsonl')]
@@ -368,7 +369,7 @@ def test_release_with_no_argument_takes_the_current_version_from_the_plan():
         _claim(root, '0.9.0', '0.9.0', 'done')
         # The fixture's own milestone must CLAIM 1.0.0: an entry nothing claims
         # is unverifiable, and the resolver refuses to guess (review F1).
-        model.set_field(root / 'pm/roadmap/milestones/1.0.0.md',
+        frontmatter.set_field(root / 'pm/roadmap/milestones/1.0.0.md',
                         'version', '"1.0.0"')
         code, out = _release(['release'], root)
         assert code == 0, out
@@ -381,7 +382,7 @@ def test_a_version_that_is_not_current_is_refused_naming_both():
     with _tree(FLOW_TOML) as root:
         _plan(root, '0.9.0', '1.0.0')
         _claim(root, '0.9.0', '0.9.0', 'building')
-        model.set_field(root / 'pm/roadmap/milestones/1.0.0.md',
+        frontmatter.set_field(root / 'pm/roadmap/milestones/1.0.0.md',
                         'version', '"1.0.0"')
         code, out = _release(['release', '1.0.0'], root)
         assert code == 2, out

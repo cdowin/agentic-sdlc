@@ -63,6 +63,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import model
 
 # How many row kinds the 'what IS recorded' census names before the fix
@@ -146,9 +147,9 @@ def _run() -> int:
     # cannot place.
     for path in model.stray_documents(cfg):
         report(f'{cfg.rel(path)} declares `id: '
-               f'{model.unquote(model.field_of(path, model.FIELD_ID))}` and sits in no '
+               f'{frontmatter.unquote(frontmatter.field_of(path, model.FIELD_ID))}` and sits in no '
                f'pool, so every reader walks past it — move it into '
-               f'{cfg.rel(model.pool_dir(cfg, model.unquote(model.field_of(path, model.FIELD_KIND)) or model.GRAIN_MILESTONE))}/')
+               f'{cfg.rel(model.pool_dir(cfg, frontmatter.unquote(frontmatter.field_of(path, model.FIELD_KIND)) or model.GRAIN_MILESTONE))}/')
 
     # No readable `id:`, and two documents claiming one, are V1's and are
     # reported from `validate.run` below, so `pm validate` and this gate cannot
@@ -278,7 +279,7 @@ def _story_self(cfg: model.PmConfig, sfile, sid: str, sstat: str,
     if why:
         ready.gap(live, f'story {sid} is {sstat!r} and {why} — past todo, and '
                         f'nothing says what must be true  [{srel}]')
-    if live and not model.unquote(model.field_of(sfile, model.FIELD_OWNER)):
+    if live and not frontmatter.unquote(frontmatter.field_of(sfile, model.FIELD_OWNER)):
         # A LIVE BUG, not a tidy-up: two modules READ `owner:` and nothing
         # asked whether the claim had set it (`pm-execution.md` step 1).
         ready.gap(True, f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and '
@@ -303,7 +304,7 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
             if grain is None or grain.gid in seen:
                 continue
             rel = cfg.rel(path)
-            status = model.field_of(path, model.FIELD_STATUS)
+            status = frontmatter.field_of(path, model.FIELD_STATUS)
             if 'D4' in enabled:
                 reason = model.undeclared_status(cfg, kind, status)
                 if reason:
@@ -335,8 +336,8 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
         # The DOCUMENT's parent, which in a pooled tree is the pool: there is
         # no per-milestone directory to take.
         mdir = mfile.parent
-        mid = model.field_of(mfile, model.FIELD_ID)
-        mstat = model.field_of(mfile, model.FIELD_STATUS)
+        mid = frontmatter.field_of(mfile, model.FIELD_ID)
+        mstat = frontmatter.field_of(mfile, model.FIELD_STATUS)
         m_cat = model.category_of(cfg, model.GRAIN_MILESTONE, mstat)
         m_live = ready.grading(cfg, model.GRAIN_MILESTONE, mstat)
 
@@ -346,7 +347,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
 
         if m_live is not None:
-            if not model.unquote(model.field_of(mfile, 'branch')):
+            if not frontmatter.unquote(frontmatter.field_of(mfile, 'branch')):
                 ready.gap(m_live, f'milestone {mid} is {mstat!r} with no '
                                   f'branch: — past todo, and a fresh checkout '
                                   f'cannot find where its work lives  '
@@ -394,9 +395,9 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], mfiles,
             _feature_self(cfg, view, ready)
 
             for sfile in view.stories:
-                sid = model.unquote(model.field_of(sfile, model.FIELD_ID))
+                sid = frontmatter.unquote(frontmatter.field_of(sfile, model.FIELD_ID))
                 seen.add(sid)
-                sstat = model.field_of(sfile, model.FIELD_STATUS)
+                sstat = frontmatter.field_of(sfile, model.FIELD_STATUS)
                 srel = cfg.rel(sfile)
                 if 'D4' in enabled:
                     reason = model.undeclared_status(cfg, model.GRAIN_STORY,
@@ -949,13 +950,13 @@ def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     for gid, grain in sorted(model.grain_index(cfg).items()):
         if grain.kind not in model.FLOW_KINDS:
             continue
-        status = model.field_of(grain.path, model.FIELD_STATUS)
+        status = frontmatter.field_of(grain.path, model.FIELD_STATUS)
         if model.category_of(cfg, grain.kind, status) != model.DONE_CATEGORY:
             continue
         if _shipped_parent(cfg, grain):
             continue
         graded += 1
-        if model.unquote(model.field_of(grain.path, clog.FIELD)).strip():
+        if frontmatter.unquote(frontmatter.field_of(grain.path, clog.FIELD)).strip():
             continue
         silent += 1
         warn(f'{grain.kind} {gid} is {status!r} ({model.DONE_CATEGORY}) and '
@@ -975,7 +976,7 @@ def _shipped_parent(cfg: model.PmConfig, grain) -> bool:
     if parent is None:
         return False
     return model.category_of(cfg, model.GRAIN_MILESTONE,
-                             model.field_of(parent.path, model.FIELD_STATUS)
+                             frontmatter.field_of(parent.path, model.FIELD_STATUS)
                              ) == model.DONE_CATEGORY
 
 
@@ -999,10 +1000,10 @@ def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
         if parent is None:
             continue
         graded += 1
-        p_status = model.field_of(parent.path, model.FIELD_STATUS)
+        p_status = frontmatter.field_of(parent.path, model.FIELD_STATUS)
         if model.category_of(cfg, parent.kind, p_status) != model.DONE_CATEGORY:
             continue
-        c_status = model.field_of(child.path, model.FIELD_STATUS)
+        c_status = frontmatter.field_of(child.path, model.FIELD_STATUS)
         if model.category_of(cfg, child.kind, c_status) == model.DONE_CATEGORY:
             continue
         report(f'{parent.kind} {parent.gid} is {p_status!r} '
@@ -1015,7 +1016,7 @@ def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
           f'parent (D11)')
     for gid, grain in sorted(index.items()):
         # PRESENCE, not value: an empty one is the shape that gated nothing.
-        present = model.document(grain.path).fields
+        present = frontmatter.document(grain.path).fields
         for field, why in sorted(model.RETIRED_FIELDS.items()):
             if field not in present:
                 continue
@@ -1157,14 +1158,14 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
             mfile = model.milestone_file(cfg, mid)
             if mfile is None:
                 continue
-            status = model.field_of(mfile, model.FIELD_STATUS)
+            status = frontmatter.field_of(mfile, model.FIELD_STATUS)
             report(f'{mid} sits at position {i + 1}, behind the last '
                    f'shipped release, and is {status!r} — its work went out '
                    f'under someone else\'s version and the record never '
                    f'moved (R6)')
         for version, mid in claims:
             mfile = model.milestone_file(cfg, mid)
-            status = model.field_of(mfile, model.FIELD_STATUS) if mfile else ''
+            status = frontmatter.field_of(mfile, model.FIELD_STATUS) if mfile else ''
             done = model.category_of(cfg, model.GRAIN_MILESTONE,
                                      status) == model.DONE_CATEGORY
             if done and mid not in scheduled:

@@ -36,6 +36,7 @@ from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
 
@@ -122,7 +123,7 @@ def dispositions(root: Path) -> list[dict]:
 
 
 def status(root: Path) -> str:
-    return model.field_of(root / MFILE, 'status')
+    return frontmatter.field_of(root / MFILE, 'status')
 
 
 # --- criterion 3 --------------------------------------------------------------

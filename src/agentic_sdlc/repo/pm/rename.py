@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo.pm import model
 
 # Every frontmatter key whose value can be a grain id. `tests/test_pm_rename.py`
@@ -50,8 +50,8 @@ def _swapped(raw: str, old: str, new: str) -> str | None:
     """One value token — spacing, quotes and trailing comment kept — with `old`
     become `new`; None when the token does not name `old`. WHOLE-token, never a
     substring: `0.1/alpha/s0` and `0.1/alphabet` are not refs to `0.1/alpha`."""
-    value = model._without_trailing_comment(raw).strip()
-    if model.unquote(value) != old:
+    value = frontmatter._without_trailing_comment(raw).strip()
+    if frontmatter.unquote(value) != old:
         return None
     quote = value[0] if value[:1] in ('"', "'") else ''
     return raw.replace(value, f'{quote}{new}{quote}', 1)
@@ -73,8 +73,8 @@ def _inline(rest: str, old: str, new: str) -> str | None:
 def rewritten(text: str, old: str, new: str) -> tuple[str, tuple[str, ...]]:
     """One document's frontmatter with every ref to `old` naming `new`, and
     the keys that moved. `('', ())` when there is no readable fence."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return '', ()
     open_i, close_i = bounds
@@ -93,7 +93,7 @@ def rewritten(text: str, old: str, new: str) -> tuple[str, tuple[str, ...]]:
                 lines[i] = f'{key}:{swapped}'
                 moved.append(key)
             continue
-        item = model._LIST_ITEM.match(line)
+        item = frontmatter._LIST_ITEM.match(line)
         if item is None or key not in REF_FIELDS:
             continue
         # The bullet is the first `-`, so a dashed id cannot be split on.
@@ -107,8 +107,8 @@ def rewritten(text: str, old: str, new: str) -> tuple[str, tuple[str, ...]]:
 
 def reidentified(text: str, new: str) -> str:
     """The grain's own `id:` line, rewritten; '' when it has none to rewrite."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return ''
     for i in range(bounds[0] + 1, bounds[1]):
@@ -116,7 +116,7 @@ def reidentified(text: str, new: str) -> str:
         if match is None or match.group('key') != model.FIELD_ID:
             continue
         rest = match.group('rest')
-        value = model._without_trailing_comment(rest).strip()
+        value = frontmatter._without_trailing_comment(rest).strip()
         if not value:
             return ''
         quote = value[0] if value[:1] in ('"', "'") else ''
@@ -209,7 +209,7 @@ def sweep(cfg: model.PmConfig, old: str, new: str) -> Sweep:
 def _take(cfg: model.PmConfig, out: Sweep, path: Path, is_target: bool) -> None:
     """One document's share of the sweep, staged or reported."""
     try:
-        text = model.read_raw(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError) as err:
         out.blockers.append(f'{cfg.rel(path)} could not be read '
                             f'({err.__class__.__name__})')

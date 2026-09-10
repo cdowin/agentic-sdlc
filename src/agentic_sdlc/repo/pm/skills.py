@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo import install
 from agentic_sdlc.repo.pm import model, templates
 from agentic_sdlc.repo.pm.cli import USAGE, Refused, Usage, _ok
@@ -178,7 +178,7 @@ def install_flow(cfg: model.PmConfig) -> str:
     existing = ''
     if target.is_file():
         try:
-            existing = model.read_raw(target)
+            existing = frontmatter.read_raw(target)
         except (OSError, UnicodeDecodeError) as err:
             raise Refused(f'{CONFIG_FILE} could not be read ({err}) — the '
                           f'flow was not written') from err

@@ -25,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import frontmatter, walk
 from agentic_sdlc.core.config import (ConfigError, config_section, number_table,
                                       relpath)
 from agentic_sdlc.core.project import repo_root
@@ -104,7 +104,7 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     # a grain; the two shared docs open no frontmatter, so they cannot say
     # anything and fall through to the name.
     if lines is not None:
-        declared = model.unquote(model.field_in(lines, model.FIELD_KIND))
+        declared = frontmatter.unquote(frontmatter.field_in(lines, model.FIELD_KIND))
         if declared in _DECLARED:
             return _DECLARED[declared]
     slot = _slot_named(name, lines)
@@ -144,8 +144,8 @@ def _repair_verb(shared: Path) -> str:
         if not shared.name.endswith(f'-{slot}'):
             continue
         grain = shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix)
-        kind = model.unquote(model.field_of(grain, model.FIELD_KIND))
-        gid = model.unquote(model.field_of(grain, model.FIELD_ID))
+        kind = frontmatter.unquote(frontmatter.field_of(grain, model.FIELD_KIND))
+        gid = frontmatter.unquote(frontmatter.field_of(grain, model.FIELD_ID))
         if kind and gid:
             return f'`pm new {kind} {gid}`'
         break
@@ -179,7 +179,7 @@ def _header_line(lines: list[str]) -> str:
 
 def _body_lines(lines: list[str]) -> int:
     """Body length in lines; a damaged frontmatter block makes the whole file the body."""
-    bounds = model._fence_bounds(lines)
+    bounds = frontmatter._fence_bounds(lines)
     body = list(lines) if bounds is None else lines[bounds[1] + 1:]
     while body and not body[-1].strip():
         body.pop()
@@ -190,7 +190,7 @@ def _read(path: Path, lines_of: dict[Path, list[str] | None]) -> list[str] | Non
     """The file's lines, read once into `lines_of`; None when it cannot be opened."""
     if path not in lines_of:
         try:
-            lines_of[path] = model._split(model.read_raw(path))
+            lines_of[path] = frontmatter._split(frontmatter.read_raw(path))
         except (OSError, UnicodeDecodeError):
             lines_of[path] = None
     return lines_of[path]

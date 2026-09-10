@@ -72,6 +72,14 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_check_doc.py',
+    # 0.7.0: split from `test_ci_workflows.py`, which asked two questions and
+    # paid the higher tier for both. The parse half reads the workflow YAML
+    # with the indentation reader and spawns nothing; the six cases that run
+    # the semver-gate's `run:` body under bash are `test_ci_compare_step.py`
+    # and stay marked. It reached `subprocess` twice — once for the compare
+    # half, once as a function-local import used ZERO times, which is the
+    # dead-import shape the header above already records at 419 cases.
+    'test_ci_workflows.py',
     'test_cli_surface.py',
     'test_config_seed.py',
     'test_consumer_independence.py',

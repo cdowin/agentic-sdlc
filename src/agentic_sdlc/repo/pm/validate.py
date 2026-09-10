@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import model
 
 # PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
@@ -61,7 +62,7 @@ def refs_in(key: str, raw: str) -> list[str]:
 
 def _safe_refs(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return refs_in(key, model.field_of(path, key))
+        return refs_in(key, frontmatter.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -85,7 +86,7 @@ def scalar_ref_in(key: str, raw: str) -> list[str]:
 
 def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
     try:
-        return scalar_ref_in(key, model.field_of(path, key))
+        return scalar_ref_in(key, frontmatter.field_of(path, key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -202,8 +203,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # grain (rule 4).
     for milestone in model.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(milestone.path, model.FIELD_ID)
-                           or not model.field_of(milestone.path,
+        if 'V1' in on and (not frontmatter.field_of(milestone.path, model.FIELD_ID)
+                           or not frontmatter.field_of(milestone.path,
                                                  model.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
@@ -211,8 +212,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
 
     for ffile in model._every(cfg, model.GRAIN_FEATURE):
         census['grains'] += 1
-        expect = model.unquote(model.field_of(ffile, model.FIELD_ID))
-        if 'V1' in on and (not expect or not model.field_of(ffile,
+        expect = frontmatter.unquote(frontmatter.field_of(ffile, model.FIELD_ID))
+        if 'V1' in on and (not expect or not frontmatter.field_of(ffile,
                                                             model.FIELD_STATUS)):
             bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
         # The UNQUOTED id, because that is what a ref carries: keying the node
@@ -230,8 +231,8 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
 
     for sfile in model._every(cfg, model.GRAIN_STORY):
         census['grains'] += 1
-        if 'V1' in on and (not model.field_of(sfile, model.FIELD_ID)
-                           or not model.field_of(sfile, model.FIELD_STATUS)):
+        if 'V1' in on and (not frontmatter.field_of(sfile, model.FIELD_ID)
+                           or not frontmatter.field_of(sfile, model.FIELD_STATUS)):
             bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
         _check_refs(cfg, sfile, 'depends_on', on, bad, census)
 
@@ -263,7 +264,7 @@ def _unbound_findings(cfg: model.PmConfig) -> list[str]:
         if bind is None:
             continue
         want_kind, field = bind
-        ref = model.unquote(model.field_of(grain.path, field))
+        ref = frontmatter.unquote(frontmatter.field_of(grain.path, field))
         rel = cfg.rel(grain.path)
         if not ref:
             # NOT a finding: a grain nobody has bound yet is a plan in

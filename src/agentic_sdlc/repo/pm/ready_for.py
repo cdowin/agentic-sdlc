@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import ledger, model, verdict
 from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
 
@@ -164,7 +165,7 @@ def _kind_of(path: Path) -> str:
     for a document that declares none — it used to come from the FILENAME,
     which is the path being schema.
     """
-    found = model.unquote(model.field_of(path, model.FIELD_KIND))
+    found = frontmatter.unquote(frontmatter.field_of(path, model.FIELD_KIND))
     if not found:
         # A nested tree's documents declare no `kind:`; there the slot name IS
         # the kind — the derivation 0.4.0 deletes, surviving here alone.
@@ -412,14 +413,14 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
                    "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
     # it: membership is the child's field.
-    kept = model.story_files(cfg, model.unquote(model.field_of(ffile,
+    kept = model.story_files(cfg, frontmatter.unquote(frontmatter.field_of(ffile,
                                                                model.FIELD_ID))
                              or fid)
     held = model.holds(
         cfg, model.GRAIN_STORY,
-        ((model.unquote(model.field_of(sfile,
+        ((frontmatter.unquote(frontmatter.field_of(sfile,
                                        model.FIELD_ID)) or cfg.rel(sfile),
-          model.field_of(sfile, model.FIELD_STATUS) or '(no status:)')
+          frontmatter.field_of(sfile, model.FIELD_STATUS) or '(no status:)')
          for sfile in kept),
         DONE)
     check = _check_answered_by(FEATURE)
@@ -443,8 +444,8 @@ def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
     Takes the DOCUMENT, not a directory: a pooled tree has none, and membership
     is the child's field.
     """
-    mid = model.unquote(model.field_of(mfile, model.FIELD_ID))
-    return [(model.unquote(model.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
+    mid = frontmatter.unquote(frontmatter.field_of(mfile, model.FIELD_ID))
+    return [(frontmatter.unquote(frontmatter.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
              ff)
             for ff in model.feature_files(cfg, mid)]
 
@@ -457,9 +458,9 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     POOL is the second number, not a scan total — it separates
     zero-because-none-nested from zero-because-none-matched.
     """
-    against = [(model.unquote(model.field_of(bfile,
+    against = [(frontmatter.unquote(frontmatter.field_of(bfile,
                                              model.FIELD_ID)) or cfg.rel(bfile),
-                model.field_of(bfile, model.FIELD_STATUS) or '(no status:)')
+                frontmatter.field_of(bfile, model.FIELD_STATUS) or '(no status:)')
                for bfile in model.bug_files(cfg, mid)]
     return against, len(model.unbound(cfg, model.GRAIN_BUG))
 
@@ -484,7 +485,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     # Asked of the feature flow, not the story flow.
     held = model.holds(
         cfg, model.GRAIN_FEATURE,
-        ((fid, model.field_of(ffile, model.FIELD_STATUS) or '(no status:)')
+        ((fid, frontmatter.field_of(ffile, model.FIELD_STATUS) or '(no status:)')
          for fid, ffile in features),
         DONE)
     unfinished = dict(held.blockers)
@@ -493,7 +494,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
         if fid in unfinished:
             blockers.append(Blocker(check, f'{fid} is {unfinished[fid]}'))
             continue
-        _, defect = _record(cfg, model.unquote(model.field_of(ffile, 'reviewed')))
+        _, defect = _record(cfg, frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed')))
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
     bugs, pooled = _bugs_against(cfg, mid)
@@ -515,9 +516,9 @@ def _pointers(cfg: model.PmConfig, mid: str,
               mfile: Path) -> list[tuple[str, str]]:
     """(owner, pointer) for every record this milestone points at: the
     features' plus the milestone's own, never a `review_dir` sweep."""
-    owned = [(fid, model.unquote(model.field_of(ffile, 'reviewed')))
+    owned = [(fid, frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed')))
              for fid, ffile in _features(cfg, mfile)]
-    owned.append((mid, model.unquote(model.field_of(mfile, 'reviewed'))))
+    owned.append((mid, frontmatter.unquote(frontmatter.field_of(mfile, 'reviewed'))))
     return owned
 
 

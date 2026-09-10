@@ -94,6 +94,42 @@ DEFAULT_OPEN_MODE = 'r'
 # other module is too.
 APPEND_ONLY_MODULE = 'repo/pm/ledger.py'
 APPEND_MODES = ('a', 'ab')
+# --- primitive 9: one frontmatter ---------------------------------------------
+# The third of the family above, and it sits here rather than at the end of the
+# file because it is the same shape: ONE module, an exact allowlist, an empty
+# offender list. The NUMBER is assignment order — the banners below were
+# numbered as they were added and 6 is already used twice — so 9 beside 1 and 2
+# is a label, not a reading order.
+#
+# `repo/pm/model.py` held 385 lines of frontmatter I/O in the middle of the PM
+# invariants: the fence scan, the per-process document cache, the field readers
+# and the three byte-exact writers. Nothing said they belonged together, so a
+# caller that wanted the bytes back reached past them and opened the file —
+# `conveyor/steps._read` was a second `read_raw`, character for character.
+#
+# Rule 3 is what a second reader breaks: `newline=''` disables universal-newline
+# translation both ways, `_split` is `str.split('\n')` and NOT `splitlines()`
+# (which also breaks on U+2028, U+2029, form feed and lone CR), and `_eol`
+# carries the CR half of a CRLF. Every one of those is invisible until a CRLF
+# grain round-trips through a writer that skipped one.
+FRONTMATTER_MODULE = 'core/frontmatter.py'
+# The name every caller imports the owner under, so `frontmatter.read_raw` is
+# reaching the owner and a module-level `read_raw` is a second one.
+FRONTMATTER_OWNER = 'frontmatter'
+# The mechanics that must have exactly one home. A module can only spell one of
+# these by BINDING it — `def`, `class`, an assignment or an import — so binding
+# is the whole question, and a re-export (`from ...frontmatter import read_raw`)
+# is a binding like any other. Class-body `def`s are NOT bindings here:
+# `report.Source` declares `read_raw` as one of a fourteen-read source seam and
+# `DiskSource` delegates it to the owner, which is the shape this rule wants.
+FRONTMATTER_INTERNALS = ('_split', '_fence_bounds', '_eol', 'read_raw',
+                         'write_raw', 'parse_document', '_remember',
+                         '_DOCUMENTS')
+# The other half, because a hand-rolled reader need not reuse a name. A READ
+# `open()` carrying `newline=` is the byte-exact read and cannot be anything
+# else; the write side is primitive 2's, so `apply.py`'s `'w'` and the ledger's
+# `'a'` need no exemption here and this roster stays empty.
+OPEN_NEWLINE_KEYWORD = 'newline'
 
 
 def _sources() -> list[tuple[str, Path]]:
@@ -229,6 +265,65 @@ def _mutation_sites(rel: str, tree: ast.Module) -> list[str]:
     return out
 
 
+def _module_level_bindings(tree: ast.Module):
+    """(name, lineno) for every name this module binds at MODULE level.
+
+    Module level only, and that is the narrowing the source seam asks for: a
+    `def read_raw` inside a `class` body is a method on `report.Source`, which
+    declares fourteen reads and delegates them, while one at column 0 is a
+    second module-level function of that name.
+
+    An `import` yields BOTH halves — the name imported and the name it was
+    bound under. `from ...frontmatter import write_raw as put` binds `put`, so
+    a reader that only looked at the binding waved the re-export through, and
+    the corpus said so before this file was trusted.
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            yield node.name, node.lineno
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    yield target.id, node.lineno
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            yield node.target.id, node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                yield alias.name, node.lineno
+                if alias.asname:
+                    yield alias.asname, node.lineno
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                yield (alias.asname or alias.name).split('.')[0], node.lineno
+
+
+def _is_raw_frontmatter_read(node: ast.Call) -> bool:
+    """True for a READ `open(...)` that disables newline translation.
+
+    The mode decides, through `_open_mode` rather than a second reading of it:
+    a WRITE with `newline=` is `core/apply.py`'s and the ledger's, and both are
+    primitive 2's business. A read that asks for the bytes as they are on disk
+    has exactly one home.
+    """
+    if not _is_an_open_call(node):
+        return False
+    if _is_write_open(node):
+        return False
+    return any(kw.arg == OPEN_NEWLINE_KEYWORD for kw in node.keywords)
+
+
+def _frontmatter_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every second spelling of the frontmatter mechanics in one module."""
+    out = []
+    for name, lineno in _module_level_bindings(tree):
+        if name in FRONTMATTER_INTERNALS:
+            out.append(f'{rel}:{lineno}: binds {name} at module level')
+    for node in _calls(tree):
+        if _is_raw_frontmatter_read(node):
+            out.append(f'{rel}:{node.lineno}: open(..., newline=…) in read mode')
+    return out
+
+
 class TheCensusIsTheRealTree(unittest.TestCase):
     """Before either allowlist means anything, it has to have scanned the tree.
 
@@ -330,6 +425,85 @@ class OneApply(unittest.TestCase):
     def test_the_apply_module_does_write(self):
         sites = _mutation_sites(APPLY_MODULE, _tree(SRC / APPLY_MODULE))
         self.assertGreaterEqual(len(sites), 4, sites)
+
+
+class OneStorage(unittest.TestCase):
+    """PRIMITIVE 9 — frontmatter I/O lives in exactly one module.
+
+    The allowlist is EXACTLY `FRONTMATTER_MODULE` and there is no exemption
+    roster: the two implementations of `report.Source` reach the owner rather
+    than the file, and the write side's `newline=` belongs to primitive 2. An
+    empty roster is why there is no stale-entry case here — there is no entry
+    to go stale.
+    """
+
+    CORPUS = (
+        # A second module-level spelling of the mechanics, by any binding.
+        ("def read_raw(path):\n    return path.read_text()", True),
+        ("def _split(text):\n    return text.splitlines()", True),
+        ('def _fence_bounds(lines):\n    return None', True),
+        ('_DOCUMENTS = {}', True),
+        # A re-export is a binding like any other — this is the exact line
+        # `model.field_of` would have survived behind.
+        ('from agentic_sdlc.core.frontmatter import read_raw', True),
+        ('from agentic_sdlc.core.frontmatter import write_raw as put', True),
+        # The reader that reuses no name at all.
+        ("with open(path, encoding='utf-8', newline='') as fh:\n    pass", True),
+        ("text = p.open('r', newline='').read()", True),
+        # Reaching the owner is the point of the owner.
+        ('text = frontmatter.read_raw(path)', False),
+        ('from agentic_sdlc.core import frontmatter', False),
+        # A method on the declared source seam, delegating to the owner.
+        ('class DiskSource(Source):\n'
+         '    def read_raw(self, path):\n'
+         '        return frontmatter.read_raw(path)', False),
+        # The write side, and a plain read: primitive 2's and nobody's.
+        ("p.open('w', newline='')", False),
+        ("text = p.read_text(encoding='utf-8')", False),
+        ("HELP = 'read_raw and write_raw and _split'", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_frontmatter_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_only_the_storage_module_parses_frontmatter(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel == FRONTMATTER_MODULE:
+                continue
+            offenders.extend(_frontmatter_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'frontmatter I/O outside ' + FRONTMATTER_MODULE + '. A second '
+            'reader gets `newline=` or `splitlines()` wrong and a CRLF grain '
+            'comes back LF; a second writer holds a parse the first one has '
+            'already invalidated, which is a gate answering off bytes that '
+            'moved on. Route it through `core.frontmatter`, which reads each '
+            'document once and rewrites the line it was asked for:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_storage_module_does_read_and_write(self):
+        """The allowlist must not be vacuously satisfiable by a module that
+        stopped storing — then every offender would move somewhere else and the
+        test would still pass. Both halves, because reading is where rule 3 is
+        lost and writing is where rule 4 is."""
+        tree = _tree(SRC / FRONTMATTER_MODULE)
+        bound = {name for name, _ in _module_level_bindings(tree)}
+        self.assertEqual(
+            (), tuple(n for n in FRONTMATTER_INTERNALS if n not in bound),
+            f'{FRONTMATTER_MODULE} no longer holds every internal the '
+            f'allowlist names, so the allowlist is checking a name nothing '
+            f'implements')
+        reads = [n for n in _calls(tree) if _is_raw_frontmatter_read(n)]
+        self.assertGreaterEqual(len(reads), 1, 'the owner makes no raw read')
+        writes = [n for n in _calls(tree)
+                  if isinstance(n.func, ast.Attribute)
+                  and isinstance(n.func.value, ast.Name)
+                  and n.func.value.id == 'apply']
+        self.assertGreaterEqual(len(writes), 1,
+                                'the owner reaches no writer, so nothing here '
+                                'is a write at all')
 
 
 # Every spelling of `open` the classifier has to get right, as

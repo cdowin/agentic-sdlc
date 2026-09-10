@@ -20,10 +20,15 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from support.pm import cfg_for, frontmatter, run_cli, run_gate, write_config
+# The helper is aliased, not the module: `frontmatter` is the storage
+# module every other caller spells, and a test file is not the place to
+# teach a second name for it.
+from support.pm import cfg_for, frontmatter as frontmatter_lines
+from support.pm import run_cli, run_gate, write_config
 from support.pm import git_tree as tree
 
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import cli, model, templates
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
@@ -65,8 +70,8 @@ class Scaffolding(unittest.TestCase):
             ff = root / 'pm/roadmap/features/ft-beta.md'
             # The MINTED id is the kind prefix and the slug; the parent is the
             # BINDING and is not in it.
-            self.assertEqual(model.field_of(ff, 'id'), 'ft-beta')
-            self.assertEqual(model.field_of(ff, 'milestone'), '0.1')
+            self.assertEqual(frontmatter.field_of(ff, 'id'), 'ft-beta')
+            self.assertEqual(frontmatter.field_of(ff, 'milestone'), '0.1')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
@@ -151,7 +156,7 @@ class Scaffolding(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             pool = root / MILESTONES
             legacy = pool / '0.1-DECISIONS.md'
-            model.write_raw(legacy, LEGACY_LOG)
+            frontmatter.write_raw(legacy, LEGACY_LOG)
             code, out = run_cli(root, 'new', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn('REFUSED', out)
@@ -165,7 +170,7 @@ class Scaffolding(unittest.TestCase):
             self.assertEqual(entries.get('0.1-DECISIONS.md'), 'file')
             self.assertNotIn('0.1-decisions.md', entries)
             self.assertNotIn('0.1-handoff.md', entries)
-            self.assertEqual(model.read_raw(legacy), LEGACY_LOG)
+            self.assertEqual(frontmatter.read_raw(legacy), LEGACY_LOG)
 
     def test_new_refuses_a_file_slot_that_exists_as_a_directory(self):
         # Rule 6 reserves exit 1 for FINDINGS, so an uncaught IsADirectoryError
@@ -189,8 +194,8 @@ class Scaffolding(unittest.TestCase):
         with tree(story_statuses=('ready',)) as root:
             handoff = shared(root, '0.1', 'handoff.md')
             decisions = shared(root, '0.1', 'decisions.md')
-            model.write_raw(handoff, 'legacy prose\n')
-            model.write_raw(decisions, LEGACY_LOG)
+            frontmatter.write_raw(handoff, 'legacy prose\n')
+            frontmatter.write_raw(decisions, LEGACY_LOG)
             handoff.chmod(0o444)
             try:
                 code, out = run_cli(root, 'new', 'milestone', '0.1')
@@ -198,7 +203,7 @@ class Scaffolding(unittest.TestCase):
                 self.assertIn('is not writable', out)
                 self.assertIn('nothing was written', out)
                 self.assertNotIn('Traceback', out)
-                self.assertEqual(model.read_raw(decisions), LEGACY_LOG)
+                self.assertEqual(frontmatter.read_raw(decisions), LEGACY_LOG)
             finally:
                 handoff.chmod(0o644)
             # And it goes through once the mode allows it.
@@ -253,13 +258,13 @@ class Scaffolding(unittest.TestCase):
         # pointed at. A write verb stays inside the grain it was asked to fill.
         with tree(story_statuses=('ready',)) as root:
             outside = root / 'outside.md'
-            model.write_raw(outside, 'OUTSIDE\n')
+            frontmatter.write_raw(outside, 'OUTSIDE\n')
             shared(root, '0.1', 'decisions.md').symlink_to(outside)
             code, out = run_cli(root, 'new', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn('is a SYMLINK', out)
             self.assertIn('nothing was written', out)
-            self.assertEqual(model.read_raw(outside), 'OUTSIDE\n')
+            self.assertEqual(frontmatter.read_raw(outside), 'OUTSIDE\n')
             self.assertFalse(shared(root, '0.1', 'handoff.md').exists())
 
     def test_new_mints_no_shared_doc_and_repairs_the_header_of_one_present(self):
@@ -488,7 +493,7 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                     self.assertEqual(gid, f'{model.KIND_PREFIX[kind]}-{slug}')
                     path = root / doc / f'{gid}.md'
                     self.assertTrue(path.is_file(), out)
-                    self.assertEqual(model.unquote(model.field_of(path, 'id')),
+                    self.assertEqual(frontmatter.unquote(frontmatter.field_of(path, 'id')),
                                      gid)
                     # The PARENT is not in it, at any level.
                     self.assertNotIn('/', gid)
@@ -496,8 +501,8 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
             # of fact as a parent — a field the scaffold writes, never a piece
             # of the id it mints.
             mfile = root / MILESTONES / 'ms-later.md'
-            self.assertEqual(model.field_of(mfile, 'version'), '9.9')
-            self.assertNotIn('9.9', model.unquote(model.field_of(mfile, 'id')))
+            self.assertEqual(frontmatter.field_of(mfile, 'version'), '9.9')
+            self.assertNotIn('9.9', frontmatter.unquote(frontmatter.field_of(mfile, 'id')))
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
     def test_the_parent_is_the_binding_field_and_re_parenting_is_one_set(self):
@@ -510,13 +515,13 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                 run_cli(root, 'new', 'feature', '0.1', 'census', 'C')[0], 0)
             ff = root / FEATURES / 'ft-census.md'
             self.assertEqual(
-                model.unquote(model.field_of(ff, 'milestone')), '0.1')
-            before = model.unquote(model.field_of(ff, 'id'))
+                frontmatter.unquote(frontmatter.field_of(ff, 'milestone')), '0.1')
+            before = frontmatter.unquote(frontmatter.field_of(ff, 'id'))
             self.assertEqual(
                 run_cli(root, 'set', 'ft-census', 'milestone', 'ms-later')[0], 0)
             self.assertEqual(
-                model.unquote(model.field_of(ff, 'milestone')), 'ms-later')
-            self.assertEqual(model.unquote(model.field_of(ff, 'id')), before)
+                frontmatter.unquote(frontmatter.field_of(ff, 'milestone')), 'ms-later')
+            self.assertEqual(frontmatter.unquote(frontmatter.field_of(ff, 'id')), before)
 
     def test_a_version_is_optional_idempotent_and_refused_whole(self):
         # The write verb's three obligations for the new flag, on one tree:
@@ -528,18 +533,18 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
             backlog = root / MILESTONES / 'ms-backlog.md'
             code, out = run_cli(root, 'new', 'milestone', 'backlog', 'Backlog')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(backlog, 'version'), '')
+            self.assertEqual(frontmatter.field_of(backlog, 'version'), '')
 
             code, out = run_cli(root, 'new', 'milestone', 'backlog',
                                 '--version', '0.2')
             self.assertEqual(code, 0, out)
             self.assertIn('stamped on', out)
-            stamped = model.read_raw(backlog)
-            self.assertEqual(model.field_of(backlog, 'version'), '0.2')
+            stamped = frontmatter.read_raw(backlog)
+            self.assertEqual(frontmatter.field_of(backlog, 'version'), '0.2')
             code, out = run_cli(root, 'new', 'milestone', 'backlog',
                                 '--version', '0.2')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.read_raw(backlog), stamped)
+            self.assertEqual(frontmatter.read_raw(backlog), stamped)
 
             code, out = run_cli(root, 'new', 'milestone', 'oops', 'Oops',
                                 '--version', '0.3\nowner: someone-else')
@@ -567,7 +572,7 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
             code, out = run_cli(root, 'bug', 'fixed', 'bg-oops')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / 'pm/roadmap/bugs/bg-oops.md', 'status'),
+                frontmatter.field_of(root / 'pm/roadmap/bugs/bg-oops.md', 'status'),
                 'fixed')
             # And the kind guard the id-shape test stood in for still holds:
             # a FEATURE id cannot be written through the bug flow.
@@ -644,7 +649,7 @@ class TheScaffolderNeverMintsATwiceClaimedId(unittest.TestCase):
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', '01-boots', 'B')[0], 0)
             sf = root / 'pm/roadmap/stories/st-01-boots.md'
-            self.assertEqual(model.field_of(sf, 'id'), 'st-01-boots')
+            self.assertEqual(frontmatter.field_of(sf, 'id'), 'st-01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(
                 run_cli(root, 'story', 'building', 'st-01-boots')[0], 0)
@@ -677,7 +682,7 @@ class BugNamesItsCause(unittest.TestCase):
         # bug leaves `validate` and the gate clean.
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'unattributed')[0], 0)
-            self.assertEqual(frontmatter(root / self.BUGS / 'bg-unattributed.md'), [
+            self.assertEqual(frontmatter_lines(root / self.BUGS / 'bg-unattributed.md'), [
                 'id: bg-unattributed',
                 # 0.4.0: a grain states its own kind, so nothing has to infer
                 # one from where the file happens to sit.
@@ -691,7 +696,7 @@ class BugNamesItsCause(unittest.TestCase):
             code, out = run_cli(root, 'new', 'bug', '0.1', 'seed-is-zero',
                                 '--caused-by', '0.1/alpha')
             self.assertEqual(code, 0, out)
-            self.assertEqual(frontmatter(root / self.BUGS / 'bg-seed-is-zero.md'), [
+            self.assertEqual(frontmatter_lines(root / self.BUGS / 'bg-seed-is-zero.md'), [
                 'id: bg-seed-is-zero',
                 'kind: bug',
                 'milestone: "0.1"',
@@ -704,7 +709,7 @@ class BugNamesItsCause(unittest.TestCase):
             self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'joined',
                                      '--caused-by=0.1/alpha')[0], 0)
             self.assertEqual(
-                model.field_of(root / self.BUGS / 'bg-joined.md', 'caused_by'),
+                frontmatter.field_of(root / self.BUGS / 'bg-joined.md', 'caused_by'),
                 '0.1/alpha')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(run_gate(root)[0], 0)
@@ -808,12 +813,12 @@ class Templates(unittest.TestCase):
             tdir = root / 'pm/templates'
             tdir.mkdir(parents=True)
             mine = 'MINE — a customised decisions template\n'
-            model.write_raw(tdir / 'DECISIONS.md', mine)
+            frontmatter.write_raw(tdir / 'DECISIONS.md', mine)
             code, out = run_cli(root, 'templates')
             self.assertEqual(code, 0, out)
             self.assertIn('is a case variant of decisions.md', out)
             self.assertIn('git mv --force', out)
-            self.assertEqual(model.read_raw(tdir / 'DECISIONS.md'), mine)
+            self.assertEqual(frontmatter.read_raw(tdir / 'DECISIONS.md'), mine)
             self.assertNotIn('decisions.md', model.dir_entries(tdir))
 
             # The same rule for a template that is merely CUSTOMISED: copying
@@ -828,7 +833,7 @@ class Templates(unittest.TestCase):
             (tdir / 'x.tmp').rename(tdir / 'decisions.md')
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.3', 'Third')[0], 0)
             self.assertEqual(run_cli(root, 'decide', 'ms-0.3', 'a choice')[0], 0)
-            self.assertIn('MINE', model.read_raw(
+            self.assertIn('MINE', frontmatter.read_raw(
                 shared(root, 'ms-0.3', 'decisions.md')))
 
     def test_a_project_template_is_used_verbatim_and_owns_only_its_own_grain(self):
@@ -849,8 +854,8 @@ class Templates(unittest.TestCase):
             self.assertEqual(
                 run_cli(root, 'new', 'story', '0.1/alpha', 's', 'S')[0], 0)
             sf = root / 'pm/roadmap/stories/st-s.md'
-            self.assertEqual(model.field_of(sf, 'house_field'), 'yes')
-            self.assertEqual(model.field_of(sf, 'status'), 'done')
+            self.assertEqual(frontmatter.field_of(sf, 'house_field'), 'yes')
+            self.assertEqual(frontmatter.field_of(sf, 'status'), 'done')
             # feature.md is not in the project's dir: the packaged one is used.
             self.assertEqual(run_cli(root, 'new', 'feature', '0.1', 'z', 'Z')[0], 0)
 

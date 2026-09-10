@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-from agentic_sdlc.core import makefile
+from agentic_sdlc.core import frontmatter, makefile
 from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
@@ -237,7 +237,7 @@ def decision_index() -> dict[str, tuple[str, set[str]]]:
         return index
     from agentic_sdlc.repo.pm import model
     for grain in model.milestones(cfg):
-        version = model.unquote(model.field_of(grain.path, 'version')).strip()
+        version = frontmatter.unquote(frontmatter.field_of(grain.path, 'version')).strip()
         decisions = model.shared_doc(cfg, grain, model.DECISION_FILE_NAME)
         if not version or not decisions.is_file():
             continue

@@ -18,7 +18,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from agentic_sdlc import __version__
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import frontmatter, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       relpath_tuple, str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
@@ -240,12 +240,6 @@ def _clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
     salient = [ln for ln in lines if _SALIENT.search(ln)]
     flat = ' '.join(' '.join(salient or lines).split())
     return flat if len(flat) <= limit else flat[:limit] + '…'
-
-
-def _read(path: Path) -> str:
-    """A file's text with its line endings INTACT."""
-    with open(path, encoding='utf-8', newline='') as handle:
-        return handle.read()
 
 
 def _pm_cfg(ctx: Context) -> 'model.PmConfig':
@@ -774,7 +768,7 @@ def check_on_milestone_branch(ctx: Context) -> Answer:
     if path is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')
-    declared = model.field_of(path, 'branch')
+    declared = frontmatter.field_of(path, 'branch')
     if not declared:
         return Answer.unverifiable(
             f'{cfg.rel(path)} carries no `branch:` stamp — D9 exists so a '
@@ -861,7 +855,7 @@ def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:
     if not path.is_file():
         return None, f'{rel} is not in this checkout'
     compiled = re.compile(pattern)
-    for line in _read(path).split('\n'):
+    for line in frontmatter.read_raw(path).split('\n'):
         match = compiled.match(line.strip())
         if match:
             return match.group(1), ''
@@ -920,7 +914,7 @@ def check_pin_bumped(ctx: Context) -> Answer:
             f'`DEVKIT_VERSION := {want}` above `include {FRAMEWORK_MAKEFILE}`, '
             f'or point [{ctx.operation}] pin_file at the file that carries it')
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{rel} could not be read as text')
     for number, line in enumerate(text.split('\n'), start=1):
@@ -1409,7 +1403,7 @@ def check_evidence_written(ctx: Context) -> Answer:
             f'no story document for {ctx.version} — nothing to read evidence '
             f'from')
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
     lines = [m.group('body').strip()
@@ -1484,7 +1478,7 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str]:
     `verdict.parse`'s rulings inherited whole."""
     cfg = _pm_cfg(ctx)
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return [], f'{cfg.rel(path)} could not be read as text'
     try:

@@ -31,6 +31,7 @@ from pathlib import Path
 from support import REPO_ROOT
 from support.pm import cfg_for, tree, write
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import model
 
 # NOT importable as a package: the script lives outside `src/` on purpose (it
@@ -150,7 +151,7 @@ class TheMigrationSaysWhatHappenedToTheRefs(unittest.TestCase):
             self.assertIn('refs: 3 -> 3; UNVERIFIABLE: 1 -> 1', out)
             self.assertNotIn('WARNING', out)
             self.assertEqual(
-                model.field_of(root / POOLS / 'features' / 'ft-beta.md',
+                frontmatter.field_of(root / POOLS / 'features' / 'ft-beta.md',
                                'depends_on'),
                 '[ft-alpha,0.99/gone]', out)
 

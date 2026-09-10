@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.repo import emit
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import ledger, model, remote
 
 # The BELT names. Their home is `conveyor/driver.py` and `pm/` may not import
@@ -339,7 +340,7 @@ def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
         # The artifact a close requires is the pointer the grain's own
         # document carries; a grain with no such key is not counted.
         try:
-            document = model.document(grain.path)
+            document = frontmatter.document(grain.path)
         except (OSError, UnicodeDecodeError):
             continue
         if RECORD_FIELD in document.fields:

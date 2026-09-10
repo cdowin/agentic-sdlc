@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agentic_sdlc.core import apply, walk
+from agentic_sdlc.core import apply, frontmatter, walk
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.core.config import (ConfigError, config_section, number,
@@ -1062,390 +1062,6 @@ def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     return out
 
 
-# --- frontmatter --------------------------------------------------------------
-# Split on '\n' only: `splitlines()` also breaks on U+2028, U+2029, form feed
-# and lone CR, and would rewrite them on join (rule 3).
-_FENCE = re.compile(r'^---[ \t]*\r?$')
-
-
-def _split(text: str) -> list[str]:
-    return text.split('\n')
-
-
-# `newline=''` disables universal-newline translation both ways, so a CRLF file
-# stays CRLF; `Path.read_text` only gained the parameter in 3.13.
-def read_raw(path: Path) -> str:
-    with path.open('r', encoding='utf-8', newline='') as fh:
-        return fh.read()
-
-
-def write_raw(path: Path, text: str) -> None:
-    """The grain-file write, through `core.apply` with the same disabled
-    newline translation; a failure comes back as `OSError`."""
-    try:
-        apply.raise_on_error(apply.write(path, text))
-    finally:
-        # However the write ended, the parse held here is a claim about
-        # bytes that may be gone.
-        forget_document(path)
-
-
-def _eol(line: str) -> str:
-    """The CR half of a CRLF terminator, so a rewritten line keeps the file's
-    convention."""
-    return '\r' if line.endswith('\r') else ''
-
-
-def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
-    """Index of the opening and closing `---` of the leading block, or None."""
-    if not lines or not _FENCE.match(lines[0]):
-        return None
-    for i in range(1, len(lines)):
-        if _FENCE.match(lines[i]):
-            return 0, i
-    return None
-
-
-def field_in(lines: Sequence[str], key: str) -> str:
-    """`field_of` over lines already read."""
-    bounds = _fence_bounds(lines)
-    if bounds is None:
-        return ''
-    for line in lines[bounds[0] + 1:bounds[1]]:
-        if line.startswith(f'{key}:'):
-            # .strip() also removes the CRLF carriage return.
-            return unquote(line[len(key) + 1:].strip())
-    return ''
-
-
-# --- ONE READ PER DOCUMENT ----------------------------------------------------
-# Every field used to be its own `open()` plus a re-split of the whole file —
-# 2.1M opens over a 700-document tree, `make check` at 87s
-# (bg-check-pm-reopens-every-file-per-field).
-#
-# PER PROCESS and nothing else: a module dict, never written anywhere. Every hit
-# re-`stat`s the file and re-parses when the stamp moved, and `write_raw` drops
-# what it rewrote — a gate answering off bytes that have moved on is rule 4's
-# first cardinal sin wearing a speedup.
-
-
-@dataclass(frozen=True)
-class Document:
-    """One document read once. `lines` is a TUPLE because the cache hands one
-    object to every reader, and a reader that could edit it would be editing
-    the next reader's answer.
-    """
-
-    lines: tuple[str, ...]
-    bounds: tuple[int, int] | None
-    fields: dict[str, str]
-
-    @property
-    def text(self) -> str:
-        """The bytes as read — `_split` is `str.split`, so the join is exact."""
-        return '\n'.join(self.lines)
-
-    def field(self, key: str) -> str:
-        """`field_in`'s answer, off the parsed dict. A key carrying a `:`
-        cannot be keyed on — `a:b` matches the line `a:b: v`, whose key is
-        `a` — so the scan itself answers that one."""
-        if ':' in key:
-            return field_in(self.lines, key)
-        return self.fields.get(key, '')
-
-    def list_field(self, key: str) -> list[str]:
-        """`list_field_of`'s answer, off the bounds already found."""
-        return _list_in(self.lines, self.bounds, key)
-
-
-def parse_document(text: str) -> Document:
-    """One document's text, parsed. The scalars are read exactly as `field_in`
-    reads them — first line wins, the key is what precedes the first `:` at
-    column 0 — so the dict answers what a scan would answer."""
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
-    fields: dict[str, str] = {}
-    if bounds is not None:
-        for line in lines[bounds[0] + 1:bounds[1]]:
-            key, sep, value = line.partition(':')
-            if sep:
-                fields.setdefault(key, unquote(value.strip()))
-    return Document(lines=tuple(lines), bounds=bounds, fields=fields)
-
-
-# A cap rather than an unbounded dict: a tree big enough for the cache to
-# matter must not turn a gate into a memory hog. Entries leave oldest-first.
-DOCUMENT_CACHE_MAX_CHARS = 64_000_000
-
-# {str(path): (stamp, characters, the parse)}; `_stamp` says what a stamp is.
-_DOCUMENTS: dict[str, tuple[tuple[int, ...], int, Document]] = {}
-_DOCUMENT_CHARS = 0
-
-
-def _stamp(path) -> tuple[int, ...] | None:
-    """What must be unchanged for a parse to still be this file's, or None when
-    the thing read is not a file on disk. `pm report --rev` reads git BLOBS
-    through these functions and a blob has no `stat`, so those reads are never
-    cached rather than cached under a key nothing could invalidate."""
-    stat = getattr(path, 'stat', None)
-    if stat is None:
-        return None
-    st = stat()
-    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_dev)
-
-
-def document(path) -> Document:
-    """This file's parse — from the cache when the file has not moved since.
-    Raises what `read_raw` raises, which every caller here already answers."""
-    key = str(path)
-    try:
-        stamp = _stamp(path)
-    except OSError:
-        forget_document(path)
-        raise
-    if stamp is not None:
-        held = _DOCUMENTS.get(key)
-        if held is not None and held[0] == stamp:
-            return held[2]
-    text = read_raw(path)
-    doc = parse_document(text)
-    if stamp is not None:
-        _remember(key, stamp, len(text), doc)
-    return doc
-
-
-def _remember(key: str, stamp: tuple[int, ...], chars: int,
-              doc: Document) -> None:
-    global _DOCUMENT_CHARS
-    replaced = _DOCUMENTS.pop(key, None)
-    if replaced is not None:
-        _DOCUMENT_CHARS -= replaced[1]
-    _DOCUMENTS[key] = (stamp, chars, doc)
-    _DOCUMENT_CHARS += chars
-    while _DOCUMENT_CHARS > DOCUMENT_CACHE_MAX_CHARS and len(_DOCUMENTS) > 1:
-        # Insertion order is eviction order; the entry just added stays.
-        _DOCUMENT_CHARS -= _DOCUMENTS.pop(next(iter(_DOCUMENTS)))[1]
-
-
-def forget_document(path) -> None:
-    """Drop one document's parse. Every write through `write_raw` comes here."""
-    global _DOCUMENT_CHARS
-    dropped = _DOCUMENTS.pop(str(path), None)
-    if dropped is not None:
-        _DOCUMENT_CHARS -= dropped[1]
-
-
-def documents_held() -> int:
-    """How many parses the cache is holding — the only way to ask."""
-    return len(_DOCUMENTS)
-
-
-def field_of(path: Path, key: str) -> str:
-    """Scalar value of `key` inside the leading frontmatter block, or '' —
-    never from the prose body."""
-    try:
-        return document(path).field(key)
-    except (OSError, UnicodeDecodeError):
-        return ''
-
-
-def unquote(value: str) -> str:
-    """Strip the quotes a milestone id carries (`id: "0.28"` -> `0.28`)."""
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-        return value[1:-1]
-    return value
-
-
-# A block-style list is the only non-scalar frontmatter this package reads:
-# reordering is the main edit and a block diff shows what MOVED (0.4.0/D4).
-def _without_trailing_comment(value: str) -> str:
-    """`"0.1.0"  # the first` -> `"0.1.0"`.
-
-    An inline comment was read INTO the value, which then failed to unquote and
-    left the quotes on — one annotated entry silently changed the spelling of
-    every version the reader returned (review A3). Only a `#` OUTSIDE the
-    quotes ends the value.
-    """
-    value = value.strip()
-    if value[:1] in ('"', "'"):
-        close = value.find(value[0], 1)
-        if close != -1:
-            return value[:close + 1]
-        return value
-    head = value.split('#', 1)[0]
-    return head.strip() or value
-
-
-_LIST_ITEM = re.compile(r'^[ \t]+-[ \t]*(?P<value>.*?)[ \t]*\r?$')
-
-
-def list_field_of(path: Path, key: str) -> list[str]:
-    """Block-style list under `key` in the leading frontmatter, or []. `key:`
-    must carry nothing but a comment on its own line; a scalar on it is a
-    different shape and reads as no list at all, never a one-element one.
-    """
-    try:
-        doc = document(path)
-    except (OSError, UnicodeDecodeError):
-        return []
-    return doc.list_field(key)
-
-
-def _list_in(lines: Sequence[str], bounds: tuple[int, int] | None,
-             key: str) -> list[str]:
-    """`list_field_of` over lines and bounds already found."""
-    if bounds is None:
-        return []
-    open_i, close_i = bounds
-    for i in range(open_i + 1, close_i):
-        if not lines[i].startswith(f'{key}:'):
-            continue
-        rest = lines[i][len(key) + 1:].strip()
-        if rest and not rest.startswith('#'):
-            return []
-        out: list[str] = []
-        for line in lines[i + 1:close_i]:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                # Blank lines SPACE a long plan and comment lines ANNOTATE
-                # one. Truncating at either dropped every entry below it —
-                # silently, and `--append` then wrote a duplicate and reported
-                # a successful append (review A2).
-                continue
-            m = _LIST_ITEM.match(line)
-            if m is None:
-                break
-            out.append(unquote(_without_trailing_comment(m.group('value'))))
-        return out
-    return []
-
-
-def sequence_defect(path: Path) -> str:
-    """Why `order:` here cannot be rewritten as a block list, or ''."""
-    try:
-        doc = document(path)
-    except (OSError, UnicodeDecodeError) as err:
-        return f'could not be read as UTF-8 text ({err.__class__.__name__})'
-    lines, bounds = doc.lines, doc.bounds
-    if bounds is None:
-        return 'has no frontmatter block to hold `order:`'
-    open_i, close_i = bounds
-    for i in range(open_i + 1, close_i):
-        if lines[i].startswith(f'{ORDER_KEY}:'):
-            rest = lines[i][len(ORDER_KEY) + 1:].strip()
-            if rest and not rest.startswith('#'):
-                return (f'carries `{ORDER_KEY}:` as a scalar ({rest!r}) rather '
-                        f'than a block list — one `- "<id>"` per line')
-    return ''
-
-
-def set_field(path: Path, key: str, value: str) -> bool:
-    """Set-or-insert one frontmatter scalar, preserving every other byte;
-    False without writing when there is no frontmatter block or the write
-    fails."""
-    return set_fields(path, {key: value})
-
-
-def set_fields(path: Path, updates: dict[str, str]) -> bool:
-    """Set-or-insert several frontmatter scalars in one read and one write, so
-    a multi-key rewrite (`pm move`'s three) cannot land half (rule 3)."""
-    try:
-        text = read_raw(path)
-    except (OSError, UnicodeDecodeError):
-        return False
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
-    if bounds is None:
-        return False
-    open_i, close_i = bounds
-    for key, value in updates.items():
-        for i in range(open_i + 1, close_i):
-            if lines[i].startswith(f'{key}:'):
-                lines[i] = f'{key}: {value}{_eol(lines[i])}'
-                break
-        else:
-            lines.insert(close_i, f'{key}: {value}{_eol(lines[close_i])}')
-            close_i += 1
-    try:
-        write_raw(path, '\n'.join(lines))
-    except OSError:
-        return False
-    return True
-
-
-def set_list_field(path: Path, key: str, values: list[str]) -> bool:
-    """Rewrite the block list under `key`, preserving every other byte.
-
-    The writer that has to be byte-honest: a diff showing what MOVED is why the
-    plan is a grain and not TOML. Indent and quote character come from the first
-    item already there. An empty `values` leaves the key with no items, never
-    deletes it.
-    """
-    try:
-        text = read_raw(path)
-    except (OSError, UnicodeDecodeError):
-        return False
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
-    if bounds is None:
-        return False
-    open_i, close_i = bounds
-
-    key_i = None
-    for i in range(open_i + 1, close_i):
-        if lines[i].startswith(f'{key}:'):
-            rest = lines[i][len(key) + 1:].strip()
-            if rest and not rest.startswith('#'):
-                # A scalar sits there. Rewriting it as a block would be this
-                # writer deciding the file meant something else.
-                return False
-            key_i = i
-            break
-
-    indent, quote, eol = '  ', '"', ''
-    kept: list[str] = []
-    if key_i is None:
-        # A plan that has no `order` yet: mint the key at the end of the block.
-        eol = _eol(lines[close_i])
-        key_i = close_i
-        head = [f'{key}:{eol}']
-        tail_from = close_i
-    else:
-        eol = _eol(lines[key_i])
-        end_i = key_i
-        for j in range(key_i + 1, close_i):
-            stripped = lines[j].strip()
-            if not stripped or stripped.startswith('#'):
-                # The READER spans these (`_list_in`, review A2), so the
-                # writer must too: spanned lines are kept ahead of the
-                # rewritten items, so annotations survive the edit.
-                kept.append(lines[j])
-                continue
-            m = _LIST_ITEM.match(lines[j])
-            if m is None:
-                break
-            if end_i == key_i:
-                # Copy the file's own shape off its first item.
-                raw = lines[j]
-                indent = raw[:len(raw) - len(raw.lstrip(' \t'))]
-                value = m.group('value')
-                if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-                    quote = value[0]
-                else:
-                    quote = ''
-            end_i = j
-        head = [lines[key_i]]
-        tail_from = end_i + 1
-
-    items = [f'{indent}- {quote}{v}{quote}{eol}' for v in values]
-    rewritten = lines[:key_i] + head + kept + items + lines[tail_from:]
-    try:
-        write_raw(path, '\n'.join(rewritten))
-    except OSError:
-        return False
-    return True
-
-
 # --- id <-> path --------------------------------------------------------------
 # Milestone dirs carry a human suffix (`0.28-chronicle`); the id is the
 # version, globbed active tree first, then the archive.
@@ -1629,17 +1245,17 @@ def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     declares no id.
     """
     try:
-        doc = document(path)
+        doc = frontmatter.document(path)
     except (OSError, UnicodeDecodeError):
         return None
-    gid = unquote(doc.field(FIELD_ID))
+    gid = frontmatter.unquote(doc.field(FIELD_ID))
     if not gid:
         return None
-    declared = unquote(doc.field(FIELD_KIND)) or kind
+    declared = frontmatter.unquote(doc.field(FIELD_KIND)) or kind
     field = BINDS_TO.get(declared, ('', ''))[1]
     return Grain(gid=gid, kind=declared, path=path,
                  status=doc.field(FIELD_STATUS),
-                 binding=unquote(doc.field(field)) if field else '')
+                 binding=frontmatter.unquote(doc.field(field)) if field else '')
 
 
 def is_pooled(cfg: PmConfig) -> bool:
@@ -1689,11 +1305,11 @@ def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
     out: dict[str, Grain] = {}
 
     def take(path: Path, kind: str, binding: str) -> str:
-        gid = unquote(field_of(path, FIELD_ID))
+        gid = frontmatter.unquote(frontmatter.field_of(path, FIELD_ID))
         if not gid:
             return ''
         out.setdefault(gid, Grain(gid=gid, kind=kind, path=path,
-                                  status=field_of(path, FIELD_STATUS),
+                                  status=frontmatter.field_of(path, FIELD_STATUS),
                                   binding=binding))
         return gid
 
@@ -1843,7 +1459,7 @@ def undeclared_kinds(cfg: PmConfig) -> list[tuple[Path, str]]:
     out = []
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            declared = unquote(field_of(path, FIELD_KIND))
+            declared = frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND))
             if declared and declared not in FLOW_KINDS:
                 out.append((path, declared))
     return out
@@ -1960,7 +1576,7 @@ def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
     """
     found = {g.gid: g.path for g in children(cfg, kind, parent_id)}
     parent = grain_index(cfg).get(parent_id)
-    declared = (list_field_of(parent.path, ORDER_KEY)
+    declared = (frontmatter.list_field_of(parent.path, ORDER_KEY)
                 if parent is not None else [])
     out = [found.pop(gid) for gid in declared if gid in found]
     return out + [found[gid] for gid in sorted(found)]
@@ -2002,7 +1618,7 @@ def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
     seen: dict[str, list[Path]] = {}
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            gid = unquote(field_of(path, FIELD_ID))
+            gid = frontmatter.unquote(frontmatter.field_of(path, FIELD_ID))
             if gid:
                 seen.setdefault(gid, []).append(path)
     return [(gid, paths) for gid, paths in sorted(seen.items())
@@ -2020,7 +1636,7 @@ def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
         bind = BINDS_TO.get(grain.kind)
         if bind is None:
             continue
-        if not unquote(field_of(grain.path, bind[1])):
+        if not frontmatter.unquote(frontmatter.field_of(grain.path, bind[1])):
             out.setdefault(grain.kind, []).append(gid)
     return out
 
@@ -2041,7 +1657,7 @@ def stray_documents(cfg: PmConfig) -> list[Path]:
             continue
         if any(pool == path.parent or pool in path.parents for pool in pools):
             continue
-        if _is_grain_doc(path) and unquote(field_of(path, FIELD_ID)):
+        if _is_grain_doc(path) and frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)):
             out.append(path)
     return sorted(out)
 
@@ -2054,15 +1670,15 @@ def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     out: list[tuple[Path, str]] = []
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            if not unquote(field_of(path, FIELD_ID)):
+            if not frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)):
                 out.append((path, 'declares no `id:`, so nothing can key on '
                                   'it'))
                 continue
-            if not field_of(path, FIELD_STATUS):
+            if not frontmatter.field_of(path, FIELD_STATUS):
                 out.append((path, 'declares no `status:` — it is in the tree '
                                   'and no question about it can be answered'))
                 continue
-            declared = unquote(field_of(path, FIELD_KIND))
+            declared = frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND))
             if declared and declared not in FLOW_KINDS:
                 out.append((path, f'declares kind {declared!r}, which this '
                                   f'project does not have '
@@ -2109,7 +1725,7 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
     """
     if is_pooled(cfg):
         return [(g.path, g.gid) for g in milestones(cfg)]
-    return [(mdir, unquote(field_of(mdir / MILESTONE_DOC, FIELD_ID)))
+    return [(mdir, frontmatter.unquote(frontmatter.field_of(mdir / MILESTONE_DOC, FIELD_ID)))
             for mdir in milestone_dirs(cfg)]
 
 
@@ -2125,7 +1741,7 @@ def _opens_frontmatter(lines: Sequence[str]) -> bool:
         probe = line.lstrip(BOM)
         if not probe.strip():
             continue
-        return _FENCE.match(probe.lstrip(' \t')) is not None
+        return frontmatter._FENCE.match(probe.lstrip(' \t')) is not None
     return False
 
 
@@ -2135,7 +1751,7 @@ def _is_grain_doc(path: Path) -> bool:
     for the rules; so does a file that cannot be read.
     """
     try:
-        return _opens_frontmatter(document(path).lines)
+        return _opens_frontmatter(frontmatter.document(path).lines)
     except (OSError, UnicodeDecodeError):
         return True
 
@@ -2214,7 +1830,7 @@ def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     ffile = feature_file(cfg, fid)
     if ffile is None:
         return None
-    pointer = unquote(field_of(ffile, 'reviewed'))
+    pointer = frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed'))
     if pointer and pointer != 'null':
         # Repo-relative, always (hard rule 8): an absolute pointer is a
         # record nobody reviewing this repo can read.
@@ -2235,8 +1851,8 @@ def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     for milestone in milestones(cfg):
         if category_of(cfg, GRAIN_MILESTONE, milestone.status) != IN_PROGRESS:
             continue
-        out.append((field_of(milestone.path, FIELD_ID),
-                    field_of(milestone.path, 'branch'), milestone.path))
+        out.append((frontmatter.field_of(milestone.path, FIELD_ID),
+                    frontmatter.field_of(milestone.path, 'branch'), milestone.path))
     return out
 
 
@@ -2257,7 +1873,7 @@ def shipped_version(cfg: PmConfig) -> str | None:
         return None
     pattern = re.compile(cfg.version_pattern)
     try:
-        for line in read_raw(path).split('\n'):
+        for line in frontmatter.read_raw(path).split('\n'):
             m = pattern.match(line.strip())
             if m:
                 return m.group(1)
@@ -2281,8 +1897,8 @@ def root_grain(cfg: PmConfig) -> Grain | None:
     path = releases_file(cfg)
     if not path.is_file():
         return None
-    return Grain(gid=unquote(field_of(path, FIELD_ID)) or ROOT_ID,
-                 kind=unquote(field_of(path, FIELD_KIND)) or ROOT_KIND,
+    return Grain(gid=frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)) or ROOT_ID,
+                 kind=frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND)) or ROOT_KIND,
                  path=path)
 
 
@@ -2298,7 +1914,7 @@ def plan_defect(cfg: PmConfig) -> str | None:
     if not path.is_file():
         return None
     try:
-        doc = document(path)
+        doc = frontmatter.document(path)
     except (OSError, UnicodeDecodeError) as err:
         return f'could not be read as UTF-8 text ({err.__class__.__name__})'
     lines = doc.lines
@@ -2308,12 +1924,12 @@ def plan_defect(cfg: PmConfig) -> str | None:
             # that is there behind three invisible bytes (review B5).
             return ('opens with a UTF-8 BOM before its `---`, so the '
                     'frontmatter block is not the first line — strip the BOM')
-        opens = bool(lines) and _FENCE.match(lines[0]) is not None
+        opens = bool(lines) and frontmatter._FENCE.match(lines[0]) is not None
         return ('has an opening `---` with no closing one'
                 if opens else
                 'has no frontmatter block — the plan is a grain, and `order` '
                 'lives in its frontmatter')
-    open_i, close_i = _fence_bounds(lines)
+    open_i, close_i = frontmatter._fence_bounds(lines)
     for i in range(open_i + 1, close_i):
         if not lines[i].startswith(f'{ORDER_KEY}:'):
             continue
@@ -2331,14 +1947,14 @@ def declared_order(cfg: PmConfig) -> list[str]:
     Ids, not versions (0.4.0/D4): a milestone that re-versions never touches
     the plan, and `pm rename` sweeps the entry with every other reference.
     """
-    return list_field_of(releases_file(cfg), ORDER_KEY)
+    return frontmatter.list_field_of(releases_file(cfg), ORDER_KEY)
 
 
 def milestone_version(cfg: PmConfig, mid: str) -> str:
     """The version a milestone declares it ships as, or '' — it is optional,
     and a milestone without one is BACKLOG, never a finding (R2)."""
     mfile = milestone_file(cfg, mid)
-    return field_of(mfile, 'version').strip() if mfile is not None else ''
+    return frontmatter.field_of(mfile, 'version').strip() if mfile is not None else ''
 
 
 def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
@@ -2349,7 +1965,7 @@ def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
     for handle, mid in known_milestones(cfg):
         mfile = handle if handle.is_file() else handle / MILESTONE_DOC
         # `.strip()`: a whitespace-only `version:` is not a claim.
-        version = field_of(mfile, 'version').strip()
+        version = frontmatter.field_of(mfile, 'version').strip()
         if version:
             out.append((version, mid))
     return out
@@ -2374,7 +1990,7 @@ def entry_is_shipped(cfg: PmConfig, mid: str) -> bool:
     mfile = milestone_file(cfg, mid)
     if mfile is None:
         return False
-    return category_of(cfg, GRAIN_MILESTONE, field_of(mfile,
+    return category_of(cfg, GRAIN_MILESTONE, frontmatter.field_of(mfile,
                                                       FIELD_STATUS)) == DONE_CATEGORY
 
 
@@ -2524,7 +2140,7 @@ def sequence_census(cfg: PmConfig, parent: Grain,
     grading MANY parents passes the index it already walked."""
     index = grain_index(cfg) if index is None else index
     held = {g.gid for g in contained(cfg, parent, index)}
-    declared = list_field_of(parent.path, ORDER_KEY)
+    declared = frontmatter.list_field_of(parent.path, ORDER_KEY)
     return Sequence(
         dangling=[gid for gid in declared
                   if gid not in held and gid in index],
@@ -2552,7 +2168,7 @@ def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     ffile = feature_file(cfg, fid)
     if ffile is None:
         return None
-    pointer = unquote(field_of(ffile, 'reviewed'))
+    pointer = frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed'))
     if not pointer or pointer == 'null':
         return None
     target = record_path(cfg, pointer)
@@ -2602,13 +2218,13 @@ class FeatureView:
 
 def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
     view = FeatureView(
-        fid=unquote(field_of(ffile, FIELD_ID)),
-        status=field_of(ffile, FIELD_STATUS),
+        fid=frontmatter.unquote(frontmatter.field_of(ffile, FIELD_ID)),
+        status=frontmatter.field_of(ffile, FIELD_STATUS),
         path=ffile,
-        stories=story_files(cfg, unquote(field_of(ffile, FIELD_ID))),
+        stories=story_files(cfg, frontmatter.unquote(frontmatter.field_of(ffile, FIELD_ID))),
     )
     finished = holds(cfg, GRAIN_STORY,
-                     ((s, field_of(s, FIELD_STATUS)) for s in view.stories),
+                     ((s, frontmatter.field_of(s, FIELD_STATUS)) for s in view.stories),
                      DONE_CATEGORY)
     view.done_n = finished.counted - len(finished.blockers)
     return view
@@ -2618,7 +2234,7 @@ def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
 def header_of(path: Path) -> str:
     """The file's first non-blank line, stripped — its canonical header slot."""
     try:
-        lines = document(path).lines
+        lines = frontmatter.document(path).lines
     except (OSError, UnicodeDecodeError):
         return ''
     for line in lines:
@@ -2645,7 +2261,7 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     # The POOL: a bug nobody has bound was counted and asked nothing.
     for bfile in _every(cfg, GRAIN_BUG):
         scanned += 1
-        bstat = field_of(bfile, FIELD_STATUS)
+        bstat = frontmatter.field_of(bfile, FIELD_STATUS)
         if category_of(cfg, GRAIN_BUG, bstat) is None:
             # The bug line's shape is grepped (rule 6), so it is kept verbatim.
             out.append((bfile, f'bug status {bstat!r} is not in '
@@ -2663,7 +2279,7 @@ def _every(cfg: PmConfig, kind: str) -> list[Path]:
         return [f for m in milestones(cfg) for f in feature_files(cfg, m.gid)]
     return [s for m in milestones(cfg)
             for f in feature_files(cfg, m.gid)
-            for s in story_files(cfg, unquote(field_of(f, FIELD_ID)))]
+            for s in story_files(cfg, frontmatter.unquote(frontmatter.field_of(f, FIELD_ID)))]
 
 
 def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
@@ -2692,7 +2308,7 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
         count(GRAIN_MILESTONE, milestone.status)
     for kind in (GRAIN_FEATURE, GRAIN_STORY, GRAIN_BUG):
         for path in _every(cfg, kind):
-            count(kind, field_of(path, FIELD_STATUS))
+            count(kind, frontmatter.field_of(path, FIELD_STATUS))
     return used
 
 
@@ -2731,7 +2347,7 @@ _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 def section_lines(text: str, heading: str) -> list[str] | None:
     """The lines under `## <heading>`, up to the next heading; None when the
     heading is absent, which is a different sentence from "empty"."""
-    return section_lines_in(_split(text), heading)
+    return section_lines_in(frontmatter._split(text), heading)
 
 
 def section_lines_in(lines: Sequence[str], heading: str) -> list[str] | None:
@@ -2777,7 +2393,7 @@ def section_is_empty(lines: list[str]) -> bool:
 
 def empty_section(path: Path, heading: str) -> str | None:
     """'' when `## <heading>` is present and written; else why it is not."""
-    lines = section_lines_in(document(path).lines, heading)
+    lines = section_lines_in(frontmatter.document(path).lines, heading)
     if lines is None:
         return f'has no `## {heading}` section'
     if section_is_empty(lines):
@@ -2797,7 +2413,7 @@ def next_entry_id(text: str) -> str:
     prefix follows the last id-shaped heading, and numbering is per file by
     design.
     """
-    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in _split(text)) if m]
+    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter._split(text)) if m]
     if not seen:
         return f'{DECISION_PREFIX}1'
     prefix = seen[-1].group(1)

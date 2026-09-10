@@ -40,6 +40,7 @@ from support.pm import (
     write_config,
 )
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import arrive, cli, ledger, model, skills
 
 FFILE = 'pm/roadmap/features/alpha.md'
@@ -184,7 +185,7 @@ class StatusMoves(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertEqual(out.strip().splitlines(),
                                  [f'[pm] feature 0.1/alpha: ready -> {to}'])
-                self.assertEqual(model.field_of(root / FFILE, 'status'), to)
+                self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), to)
 
     def test_milestone_done_prints_what_it_wrote_and_the_gate_WARNS(self):
         # The advisory about the features left behind is gone (story 03);
@@ -202,7 +203,7 @@ class StatusMoves(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(out.strip().splitlines(),
                              ['[pm] milestone 0.1: building -> done'])
-            self.assertEqual(model.field_of(root / MFILE, 'status'), 'done')
+            self.assertEqual(frontmatter.field_of(root / MFILE, 'status'), 'done')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn("  DRIFT  milestone 0.1 is 'done' (done) but feature "
@@ -264,7 +265,7 @@ class StatusVerbQuartet(unittest.TestCase):
                     code, out = run_cli(root, kind, state, gid)
                     self.assertEqual(code, 0, out)
                     self.assertEqual(
-                        model.field_of(root / rel, 'status'), state)
+                        frontmatter.field_of(root / rel, 'status'), state)
 
     def test_a_state_outside_the_vocabulary_is_a_usage_error_naming_the_set(self):
         """The half that IS a fact: `banana` is not a status in any vocabulary,
@@ -284,7 +285,7 @@ class StatusVerbQuartet(unittest.TestCase):
                     self.assertNotIn('replaced it', out)
                     for state in self._states(kind):
                         self.assertIn(state, out)
-                    self.assertEqual(model.field_of(root / rel, 'status'),
+                    self.assertEqual(frontmatter.field_of(root / rel, 'status'),
                                      initial)
 
     def test_idempotent_noop_succeeds(self):
@@ -363,7 +364,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                     StatusVerbQuartet._grain_tree(kind) as root:
                 code, out = run_cli(root, kind, state, gid)
                 self.assertEqual(code, 0, out)
-                self.assertEqual(model.field_of(root / rel, 'status'), state)
+                self.assertEqual(frontmatter.field_of(root / rel, 'status'), state)
                 rows = self._dispositions(root)
                 self.assertEqual(len(rows), 1, rows)
                 self.assertEqual(rows[0]['answer'],
@@ -477,7 +478,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
                                 '--by', 'me\nand you')
             self.assertEqual(code, 2, out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'ready')
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'ready')
             self.assertEqual(self._dispositions(root), [])
             # A state with no node accepts no answer, and says so.
             code, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha',
@@ -621,10 +622,10 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                     if g.kind in model.FLOW_KINDS
                     and model.category_of(cfg, g.kind, g.status)
                     == model.IN_PROGRESS
-                    and arrive.RECORD_FIELD in model.document(g.path).fields]
+                    and arrive.RECORD_FIELD in frontmatter.document(g.path).fields]
             missing = [g for g in pool
                        if not model.record_resolves(
-                           cfg.root / model.document(g.path).field(
+                           cfg.root / frontmatter.document(g.path).field(
                                arrive.RECORD_FIELD))]
             self.assertTrue(missing, 'nothing is missing a record, so the '
                                      'clause below cannot fire')
@@ -658,7 +659,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                          config=f'[pm]\nwip = {wip}\n') as root:
                 code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
                 self.assertEqual(code, 0, out)
-                self.assertEqual(model.field_of(root / FFILE, 'status'),
+                self.assertEqual(frontmatter.field_of(root / FFILE, 'status'),
                                  'building')
                 census = self._stderr(out, 'open:')[0]
                 self.assertEqual(f'wip of {wip}' in census, over, census)
@@ -747,7 +748,7 @@ class TheArrivalDeclarationIsReadOrRefused(unittest.TestCase):
                 code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
                 self.assertEqual(code, 2, out)
                 self.assertIn(named, out)
-                self.assertEqual(model.field_of(root / FFILE, 'status'),
+                self.assertEqual(frontmatter.field_of(root / FFILE, 'status'),
                                  'building')
 
     def test_a_tree_that_declares_none_still_moves_and_asks_nothing(self):
@@ -774,7 +775,7 @@ class FeatureClose(unittest.TestCase):
             before = {p.name: p.read_bytes() for p in sorted(sdir.iterdir())}
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'done')
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'done')
             self.assertEqual({p.name: p.read_bytes()
                               for p in sorted(sdir.iterdir())}, before)
             # ...and it does not narrate what it left alone any more (story
@@ -815,7 +816,7 @@ class FeatureClose(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'obe', '0.1/alpha',
                                 '--review-record', 'docs/reviews/alpha.md')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'obe')
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'obe')
             self.assertIn('reviewed -> docs/reviews/alpha.md', out)
 
     def test_a_record_pointer_naming_no_file_is_refused_and_writes_nothing(self):
@@ -866,7 +867,7 @@ class FeatureClose(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('no review record', out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'done')
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'done')
 
         with tree(feature_status='reviewing', story_statuses=('reviewing',),
                   with_record=False) as root:
@@ -876,7 +877,7 @@ class FeatureClose(unittest.TestCase):
             code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
                                 '--review-record', 'docs/reviews/f.md')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(root / FFILE, 'status'), 'done')
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'done')
 
 
 class ListFindsTheNail(unittest.TestCase):
@@ -943,7 +944,7 @@ class ListFindsTheNail(unittest.TestCase):
         `--json` payload keeps the byte; only the tab-separated form
         substitutes."""
         with tree() as root:
-            model.set_field(root / MFILE, 'name', 'Two\tParts')
+            frontmatter.set_field(root / MFILE, 'name', 'Two\tParts')
             code, plain = run_cli(root, 'list', '--kind', 'milestone')
             self.assertEqual(code, 0, plain)
             self.assertEqual(len(self._rows(plain)[0]), 5)
@@ -966,7 +967,7 @@ class ListFindsTheNail(unittest.TestCase):
         """
         from agentic_sdlc.repo.pm.cli import LIST_COLUMNS
         with tree(milestone_status='building') as root:
-            model.set_field(root / MFILE, 'branch', 'milestone/0.1')
+            frontmatter.set_field(root / MFILE, 'branch', 'milestone/0.1')
             for kind in ('story', 'milestone'):
                 argv = ('list', '--kind', kind)
                 code, plain = run_cli(root, *argv)
@@ -996,7 +997,7 @@ class ListFindsTheNail(unittest.TestCase):
         filter, and `pm list | grep '<some name>'` returned nothing."""
         with tree(milestone_status='building') as root:
             mfile = root / MFILE
-            model.set_field(mfile, 'branch', 'milestone/0.1')
+            frontmatter.set_field(mfile, 'branch', 'milestone/0.1')
             write(root / 'pm/roadmap/milestones/0.2.md',
                   {'id': '"0.2"', 'name': 'Later', 'status': 'planning'})
             code, out = run_cli(root, 'list', '--kind', 'milestone')
@@ -1141,19 +1142,23 @@ class WriteFidelity(unittest.TestCase):
     def test_the_only_bytes_that_change_are_the_ones_asked_for(self):
         # CRLF is the one every editor on Windows produces. The exotic set is
         # the one `str.splitlines()` breaks on — U+2028, form feed and a lone
-        # CR — where joining back on '\n' would rewrite all three. Compare
-        # BYTES: `read_text()` does its own newline translation and would hide
-        # exactly this defect.
+        # CR — where joining back on '\n' would rewrite all three. The third is
+        # the terminator that is not there: `_split` on '\n' yields a final ''
+        # for a file that ends in a newline and does not for one that does not,
+        # so a writer that appended one would grow the file by a byte nobody
+        # asked for. Compare BYTES: `read_text()` does its own newline
+        # translation and would hide exactly this defect.
         cases = (
             ('crlf', b'---\r\nid: a\r\nstatus: ready\r\n---\r\n\r\nbody\r\n'),
             ('exotic', '---\nid: a\nstatus: ready\n---\n\n'
                        'A B\npage\x0cbreak\ncr-only\rtail\n'.encode()),
+            ('no-final-newline', b'---\nid: a\nstatus: ready\n---\n\nbody'),
         )
         for name, raw in cases:
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
                 p = Path(tmp) / 'g.md'
                 p.write_bytes(raw)
-                self.assertTrue(model.set_field(p, 'status', 'building'))
+                self.assertTrue(frontmatter.set_field(p, 'status', 'building'))
                 self.assertEqual(p.read_bytes(),
                                  raw.replace(b'status: ready',
                                              b'status: building'))
@@ -1166,7 +1171,7 @@ class WriteFidelity(unittest.TestCase):
             write(p, {'id': 'a', 'status': 'ready'})
             p.chmod(0o444)
             try:
-                self.assertFalse(model.set_field(p, 'status', 'building'))
+                self.assertFalse(frontmatter.set_field(p, 'status', 'building'))
             finally:
                 p.chmod(0o644)
 
@@ -1253,10 +1258,10 @@ class FieldMutation(unittest.TestCase):
             sf = root / STORY_REL
             self.assertEqual(
                 run_cli(root, 'set', '0.1/alpha/s0', 'owner', 'dev-1')[0], 0)
-            self.assertEqual(model.field_of(sf, 'owner'), 'dev-1')
+            self.assertEqual(frontmatter.field_of(sf, 'owner'), 'dev-1')
             self.assertEqual(
                 run_cli(root, 'set', '0.1/alpha/s0', 'owner', '')[0], 0)
-            self.assertEqual(model.field_of(sf, 'owner'), '')
+            self.assertEqual(frontmatter.field_of(sf, 'owner'), '')
 
     def test_set_replaces_or_inserts_and_changes_nothing_else(self):
         with tree() as root:
@@ -1283,7 +1288,7 @@ class FieldMutation(unittest.TestCase):
                 with self.subTest(value=value):
                     self.assertEqual(run_cli(root, 'set', '0.1/alpha/s0',
                                              'depends_on', value)[0], 0)
-                    self.assertEqual(model.field_of(sf, 'depends_on'),
+                    self.assertEqual(frontmatter.field_of(sf, 'depends_on'),
                                      '["0.1/alpha"]')
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
@@ -1292,8 +1297,8 @@ class FieldMutation(unittest.TestCase):
             self.assertEqual(sf.read_bytes(), before)   # idempotent
             self.assertEqual(
                 run_cli(root, 'set', '0.1/alpha/s0', 'depends_on', '')[0], 0)
-            self.assertEqual(model.field_of(sf, 'depends_on'), '[]')
-            model.set_field(sf, 'depends_on', '0.1/alpha')   # the probe
+            self.assertEqual(frontmatter.field_of(sf, 'depends_on'), '[]')
+            frontmatter.set_field(sf, 'depends_on', '0.1/alpha')   # the probe
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn('is not an inline list', out)
@@ -1360,7 +1365,7 @@ class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):
             code, out = run_cli(root, 'set', '0.1/alpha/s0', 'feature', '')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / STORY_REL, 'feature'), '')
+                frontmatter.field_of(root / STORY_REL, 'feature'), '')
 
     def test_every_other_key_is_written_without_an_opinion(self):
         # `set` stays generic: only the fields `BINDS_TO` names are asked.
@@ -1368,7 +1373,7 @@ class ABindingIsRefusedWhenItNamesNothing(unittest.TestCase):
             code, out = run_cli(root, 'set', '0.1/alpha/s0', 'owner', 'wombat')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / STORY_REL, 'owner'), 'wombat')
+                frontmatter.field_of(root / STORY_REL, 'owner'), 'wombat')
 
 
 class PmMoveIsRetiredByName(unittest.TestCase):
@@ -1422,7 +1427,7 @@ class StoryResolution(unittest.TestCase):
             code, out = run_cli(root, 'story', 'building', '0.1/alpha/s2')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / self.FDIR / 'parked/s2.md', 'status'),
+                frontmatter.field_of(root / self.FDIR / 'parked/s2.md', 'status'),
                 'building')
 
     @unittest.skipUnless(CASE_SENSITIVE_TMP, 'case-insensitive filesystem')
@@ -1510,7 +1515,7 @@ class TheOrdinalPrefixRetiredByName(unittest.TestCase):
                                 'Boots')
             self.assertEqual(code, 0, out)
             sf = root / 'pm/roadmap/stories/st-01-boots.md'
-            self.assertEqual(model.field_of(sf, 'id'), 'st-01-boots')
+            self.assertEqual(frontmatter.field_of(sf, 'id'), 'st-01-boots')
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
 
@@ -1583,7 +1588,7 @@ class Decide(unittest.TestCase):
             for eid in ('## D1 ', '## D2 ', '## D3 '):
                 self.assertIn(eid, body)
             log = root / self.MLOG
-            model.write_raw(log, f'{model.SLOT_HEADER["decisions.md"]}\n\n'
+            frontmatter.write_raw(log, f'{model.SLOT_HEADER["decisions.md"]}\n\n'
                                  f'## M27 — 2026-01-01 — an older choice\n')
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
             self.assertIn('## M28 — ', self._log(root))
@@ -1606,7 +1611,7 @@ class Decide(unittest.TestCase):
                     'Free prose, no fields, several  \nlines of it.\n')
             before = (f'{model.SLOT_HEADER["decisions.md"]}\n\n{hand}'
                       .replace('\n', '\r\n'))
-            model.write_raw(log, before)
+            frontmatter.write_raw(log, before)
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
             today = datetime.now(timezone.utc).date().isoformat()
             self.assertEqual(
@@ -1737,13 +1742,13 @@ class BugStatus(unittest.TestCase):
                     code, out = run_cli(root, 'bug', 'fixed', gid)
                     self.assertEqual(code, 2, (gid, out))
                     self.assertIn('no bug resolves', out)
-                    self.assertEqual(model.field_of(victim, 'status'), 'building')
+                    self.assertEqual(frontmatter.field_of(victim, 'status'), 'building')
             # `pm set` rides the same resolver — the same id must refuse.
             code, out = run_cli(root, 'set',
                                 '0.1/bugs/../features/alpha/feature',
                                 'status', 'PWNED')
             self.assertEqual(code, 2, out)
-            self.assertEqual(model.field_of(victim, 'status'), 'building')
+            self.assertEqual(frontmatter.field_of(victim, 'status'), 'building')
 
     def test_a_nested_bug_id_resolves(self):
         with tree() as root:
@@ -1753,7 +1758,7 @@ class BugStatus(unittest.TestCase):
             code, out = run_cli(root, 'bug', 'fixed',
                                 '0.1/bugs/spatial/seed-is-zero')
             self.assertEqual(code, 0, out)
-            self.assertEqual(model.field_of(bug, 'status'), 'fixed')
+            self.assertEqual(frontmatter.field_of(bug, 'status'), 'fixed')
 
 
 class Retire(unittest.TestCase):
@@ -1832,7 +1837,7 @@ class Retire(unittest.TestCase):
         """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'version', '"0.1.0"')
             self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
             code, out = run_cli(root, 'retire', '0.1', 'shipped', 'the',
@@ -1842,7 +1847,7 @@ class Retire(unittest.TestCase):
             self.assertFalse((root / MFILE).exists())
             # The plan kept the entry; the ledger kept the record.
             self.assertEqual(
-                model.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
+                frontmatter.list_field_of(root / 'pm/roadmap/releases.md', 'order'),
                 ['0.1'])
             rows = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
                     if r['kind'] == ledger.KIND_RETIRE]
@@ -1879,7 +1884,7 @@ class Retire(unittest.TestCase):
         and the line says what it holds."""
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md', 'name', '')
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md', 'name', '')
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('nothing else to keep', out)
@@ -2123,10 +2128,10 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
 
     def test_an_append_rewrites_only_the_list(self):
         with self._plan() as path:
-            self.assertTrue(model.set_list_field(
+            self.assertTrue(frontmatter.set_list_field(
                 path, 'order', ['0.1.0', '0.2.0', '0.3.0']))
             after = path.read_text(encoding='utf-8')
-            self.assertEqual(model.list_field_of(path, 'order'),
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.2.0', '0.3.0'])
             for kept in ('goal: ship the thing', 'owner: chris', '# The plan',
                          'Prose the writer must not touch.'):
@@ -2138,17 +2143,17 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
 
     def test_insert_and_remove_move_one_entry_and_nothing_else(self):
         with self._plan() as path:
-            model.set_list_field(path, 'order', ['0.1.0', '0.1.5', '0.2.0'])
-            self.assertEqual(model.list_field_of(path, 'order'),
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.1.5', '0.2.0'])
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.1.5', '0.2.0'])
-            model.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
             self.assertEqual(path.read_text(encoding='utf-8'), self.PLAN)
 
     def test_the_write_is_idempotent(self):
         with self._plan() as path:
-            model.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
             once = path.read_bytes()
-            model.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.3.0'])
             self.assertEqual(path.read_bytes(), once)
 
     def test_a_crlf_plan_stays_crlf(self):
@@ -2156,18 +2161,18 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
         # authored on Windows must not come back with mixed endings.
         crlf = self.PLAN.replace('\n', '\r\n')
         with self._plan(crlf) as path:
-            model.set_list_field(path, 'order', ['0.1.0', '0.2.0', '0.3.0'])
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.2.0', '0.3.0'])
             raw = path.read_bytes()
             self.assertNotIn(b'\r\r', raw)
             self.assertEqual(raw.count(b'\n'), raw.count(b'\r\n'))
-            self.assertEqual(model.list_field_of(path, 'order'),
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.2.0', '0.3.0'])
 
     def test_the_files_own_indent_and_quoting_survive(self):
         # A hand-edited plan is not reformatted underneath its author.
         plain = '---\norder:\n    - 0.1.0\n---\n'
         with self._plan(plain) as path:
-            model.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
+            frontmatter.set_list_field(path, 'order', ['0.1.0', '0.2.0'])
             after = path.read_text(encoding='utf-8')
             self.assertIn('    - 0.1.0', after)
             self.assertIn('    - 0.2.0', after)
@@ -2175,8 +2180,8 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
 
     def test_the_key_is_minted_when_the_plan_has_none(self):
         with self._plan('---\ngoal: ship\n---\n\nBody\n') as path:
-            self.assertTrue(model.set_list_field(path, 'order', ['9.9']))
-            self.assertEqual(model.list_field_of(path, 'order'), ['9.9'])
+            self.assertTrue(frontmatter.set_list_field(path, 'order', ['9.9']))
+            self.assertEqual(frontmatter.list_field_of(path, 'order'), ['9.9'])
             self.assertIn('goal: ship', path.read_text(encoding='utf-8'))
             self.assertIn('Body', path.read_text(encoding='utf-8'))
 
@@ -2186,7 +2191,7 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
         # result refuses and says why.
         scalar = '---\norder: 0.1.0\n---\n'
         with self._plan(scalar) as path:
-            self.assertFalse(model.set_list_field(path, 'order', ['x']))
+            self.assertFalse(frontmatter.set_list_field(path, 'order', ['x']))
             self.assertEqual(path.read_text(encoding='utf-8'), scalar)
 
     def test_a_comment_or_a_blank_line_never_truncates_the_plan(self):
@@ -2204,13 +2209,13 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
                      'owner: chris\n'
                      '---\n')
         with self._plan(annotated) as path:
-            self.assertEqual(model.list_field_of(path, 'order'),
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.2.0'])
-            self.assertTrue(model.set_list_field(
+            self.assertTrue(frontmatter.set_list_field(
                 path, 'order', ['0.1.0', '0.2.0', '0.3.0']))
             after = path.read_text(encoding='utf-8')
             # No duplicate, the annotation kept, the neighbour untouched.
-            self.assertEqual(model.list_field_of(path, 'order'),
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.2.0', '0.3.0'])
             self.assertEqual(after.count('- "0.2.0"'), 1, after)
             self.assertIn('# shipped', after)
@@ -2222,10 +2227,10 @@ class TheListWriterKeepsEveryOtherByte(unittest.TestCase):
         # reader returned.
         with self._plan('---\norder:\n  - "0.1.0"  # the first\n'
                         '  - "0.2.0"\n---\n') as path:
-            self.assertEqual(model.list_field_of(path, 'order'),
+            self.assertEqual(frontmatter.list_field_of(path, 'order'),
                              ['0.1.0', '0.2.0'])
 
     def test_no_frontmatter_is_refused(self):
         with self._plan('no fence here\n') as path:
-            self.assertFalse(model.set_list_field(path, 'order', ['x']))
+            self.assertFalse(frontmatter.set_list_field(path, 'order', ['x']))
             self.assertEqual(path.read_text(encoding='utf-8'), 'no fence here\n')

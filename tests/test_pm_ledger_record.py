@@ -46,6 +46,7 @@ import pytest
 from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
                         tree, write)
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import arrive, ledger
 from agentic_sdlc.repo.pm import model
 
@@ -1246,7 +1247,7 @@ def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
               {'id': '"0.2"', 'name': 'Next', 'status': kwargs['milestone_status'],
                'version': '"0.2.0"'})
         if plan:
-            _model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                              'version', '"0.1.0"')
             (root / 'pm/roadmap/releases.md').write_text(
                 '---\norder:\n  - "0.1.0"\n  - "0.2.0"\n---\n\nThe plan.\n',

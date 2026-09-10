@@ -11,7 +11,7 @@ import os
 from importlib import resources
 from pathlib import Path
 
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo.pm import model
 
 # grain -> template filename; shared docs are addressed by slot name, so there
@@ -39,7 +39,7 @@ def load(cfg: model.PmConfig, name: str) -> str:
         # Exact name from a listing: `Path.is_file()` is case-insensitive on
         # macOS and not on Linux.
         if model.dir_entries(tdir).get(f'{name}.md') == 'file':
-            return model.read_raw(tdir / f'{name}.md')
+            return frontmatter.read_raw(tdir / f'{name}.md')
     text = _packaged(name)
     if text is None:
         raise MissingTemplate(
@@ -91,11 +91,11 @@ def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None
     if not want:
         return
     try:
-        body = model.read_raw(path)
+        body = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return
     eol = '\r\n' if '\r\n' in body else '\n'
-    model.write_raw(path, f'{want}{eol}{eol}{body}')
+    frontmatter.write_raw(path, f'{want}{eol}{eol}{body}')
     actions.append(('restored the header line of', path))
 
 

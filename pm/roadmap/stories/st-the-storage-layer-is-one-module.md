@@ -7,7 +7,7 @@ name: the storage layer is one module
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: none
 ---
 
 # the storage layer is one module
@@ -118,3 +118,41 @@ the SDLC vocabulary from the work provider — `st-the-work-provider-leaves-the-
 tax with no payer, and what this story buys is reachability, not a seam anybody crosses.
 
 Any change to what the storage layer DOES. Not one refusal, one default or one return type moves.
+
+## Close
+
+done: (builder does not commit — pathspec commit pending) — `core/frontmatter.py` holds the 381
+lines; `model.py` and fourteen other `src/` modules reach it by name, and no name is re-exported.
+
+**The decision this story left open: the module is `core/frontmatter.py`, and `sequence_defect`
+takes its key as an argument.** `repo/pm/frontmatter.py` is not reachable with the signature
+intact: `model.py` makes 58 calls into the block, so the import has to run model -> frontmatter,
+and a frontmatter that still read `ORDER_KEY` would import `model` back — a cycle that resolves
+only on the luck of which module is imported first. Parameterising is not a workaround for that
+either: `order` is PM vocabulary and the function answers a question about a KEY, so once the key
+is the caller's word the module imports nothing above `core/` and belongs beside `walk` and
+`apply`, where every other family-blind primitive already lives. `cli.py` passes `model.ORDER_KEY`
+at the one call site, and every branch of the message now spells the key it was handed rather than
+naming `order:` in one and interpolating in the others.
+
+AST residual (criterion 8): 135 lines over 31 files, of which **10 are inside a moved body and all
+ten are `sequence_defect`'s key**. 64 are the new guard, 14 are `steps.py` below, 8 a name
+collision in `test_pm_scaffold.py`, 3 the third byte-exactness row, and the remaining 36 are
+`import frontmatter` lines. Nothing else inside the 381 moved lines changed.
+
+finding: `conveyor/steps._read` was `read_raw` character for character — a second byte-exact
+reader nothing named. Primitive 9's `newline=`-in-read-mode half found it on its first run, and
+its four call sites now reach the owner.
+
+finding: the `may touch` list above is a `src/`-only census. Twelve test modules and
+`tools/dev/pm_migrate.py` — 188 more call sites — spell these names too, and the unit tier is red
+until they move; the same mechanical transform repointed them.
+
+finding: criterion 6's pointer is wrong. `tests/test_fuzz_markdown.py` fuzzes `core/markdown.py`'s
+CommonMark fence scanner, not a round-trip. What already covered CRLF and U+2028 is
+`test_pm_verbs.py::WriteFidelity`, so `no-final-newline` is a third row on it — and it is the only
+one of the three that catches a writer which ENSURES a final terminator rather than appending one.
+
+finding: the corpus caught this story's own guard. `from ...frontmatter import write_raw as put`
+binds `put`, so a classifier reading only the bound name waved the re-export through;
+`test_guard_corpus.py` failed on that row before the guard was trusted.

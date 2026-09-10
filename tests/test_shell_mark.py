@@ -63,7 +63,7 @@ SUPPORT = TESTS / 'support'
 # 19 at 0.6.0: `test_pm_remote.py` joined, and it is the DELIBERATE shape — the
 # reader under it spawns nothing (that is its contract), while the cases spawn
 # git to build a real tree with real refs.
-MARKED_MODULES = 19
+MARKED_MODULES = 18
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -107,6 +107,10 @@ UNMARKED_MODULES = (
     'test_pm_order.py',
     'test_pm_ready_for.py',
     'test_pm_rename.py',
+    # 0.7.0: was `git_tree as tree` on one import line, which bought all 38
+    # cases a `git init` the module never used — it asks git no question, and
+    # `repo_root` walks up for a `.git` directory rather than shelling out.
+    'test_pm_scaffold.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',

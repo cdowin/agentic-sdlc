@@ -8,13 +8,17 @@ per-kind and per-verb re-proofs of one templating rule — a slot filled for a
 milestone and again for a feature, a header repaired and again not stacked, an
 undecodable template refused by `new` and again by `decide`. What survives is
 the shape rule 3 is about: **a refusal that writes NOTHING**, and a second run
-that is a no-op. Every case here that builds a tree pays a `git init`, so a
-case that re-proves a rule one kind over costs a spawn and buys no coverage.
+that is a no-op.
+
+**0.7.0: this module builds through `tree`, not `git_tree`.** It asks git no
+question — `repo_root` walks up for a `.git` directory and no longer shells
+out, so a marker is all a tree needs to be found (`support.pm._mark`). The
+alias `git_tree as tree` used to sit on line 28 and bought every case here a
+process it never used, which put 38 cases in the `shell` tier.
 """
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
 import unittest
 import unittest.mock
@@ -25,7 +29,7 @@ from pathlib import Path
 # teach a second name for it.
 from support.pm import cfg_for, frontmatter as frontmatter_lines
 from support.pm import run_cli, run_gate, write_config
-from support.pm import git_tree as tree
+from support.pm import tree
 
 
 from agentic_sdlc.core import frontmatter
@@ -946,7 +950,7 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
             root.mkdir()
-            subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+            (root / '.git').mkdir()  # a MARKER: `repo_root` walks for it
             previous = Path.cwd()
             os.chdir(root)
             try:

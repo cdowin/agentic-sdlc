@@ -1,7 +1,7 @@
 ---
 id: bg-an-uncounted-tier-passes-the-case-ceiling
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: check budget exits 0 on a tier it has no case count for, and make milestone never measures one
 status: open
 caused_by:
@@ -73,8 +73,10 @@ Landing only the first half is worse than landing neither.
 
 The time budget's UNMEASURED rule, which is correct as written and argued.
 
-## Not fixed here
+## Taken into 0.7.0
 
-0.7.0 is the structural milestone and this is a gate-semantics change (rule 6,
-a minor bump of its own). Recorded rather than taken, and the ceiling this bug
-exposed is raised at 0.7.0's close with its own argument.
+Bound to `ms-nothing-is-hand-rolled` on 2026-09-10. It is a gate-semantics
+change and therefore a minor bump — which 0.7.0 already is — and leaving it
+would mean merging a milestone whose own full gate cannot see the thing it
+grades. The ceiling this bug exposed is raised at the close with its own
+argument, and the argument is only worth writing if the gate can enforce it.

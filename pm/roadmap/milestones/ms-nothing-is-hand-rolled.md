@@ -12,6 +12,8 @@ order:
   - "bg-the-brief-undercounts-the-coupling-it-argues-from"
   - "ft-the-module-says-what-it-does"
   - "ft-the-suite-is-measured-like-the-source"
+  - "bg-the-integration-tier-counts-fixtures-not-integration"
+  - "bg-an-uncounted-tier-passes-the-case-ceiling"
 ---
 
 # 0.7.0 — nothing is hand-rolled

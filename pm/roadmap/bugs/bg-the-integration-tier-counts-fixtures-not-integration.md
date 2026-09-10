@@ -1,7 +1,7 @@
 ---
 id: bg-the-integration-tier-counts-fixtures-not-integration
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: 125 of 436 integration cases spawn nothing or only a fixture git
 status: open
 caused_by:
@@ -88,6 +88,14 @@ met by deleting coverage of the shipped shell.
     cases from the executing ones and the whole module stops being integration.
 
 Neither changes what is asserted. Both are moves.
+
+## Taken into 0.7.0
+
+Bound to `ms-nothing-is-hand-rolled` on 2026-09-10, to land before dev
+complete. It belongs to this milestone rather than a later one for the reason
+the milestone's own northstar gives: a module whose fixture choice is hidden
+behind an import alias does not say what it does, and the tier census is a
+number this milestone argues from.
 
 ## Out of scope
 

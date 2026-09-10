@@ -2699,3 +2699,4 @@
 {"ts":"2026-09-10T22:02:21Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":606,"rank":4}
 {"ts":"2026-09-10T22:02:21Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoTestSpawnsGitAgainstThisCheckout::test_the_git_census_is_the_real_suite","duration_ms":576,"rank":5}
 {"ts":"2026-09-10T22:02:21Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6760,"census":1136}
+{"ts":"2026-09-10T22:02:48Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2671}

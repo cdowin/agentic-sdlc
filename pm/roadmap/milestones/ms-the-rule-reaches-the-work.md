@@ -109,10 +109,11 @@ against the tree is not a record.**
 
 ## Constraints this milestone must respect
 
-**The hard-rule NUMBERS are a public API.** Roughly 600 citations across source, tests and hooks —
-`rule 4` alone appears 194 times. The list cannot be renumbered, reordered or merged; trimming happens
-INSIDE a rule and anything new appends. Any plan that reorganises them is a 600-site migration wearing
-a tidy-up's clothes.
+**The hard-rule NUMBERS are a public API.** 1,151 citations, `rule 4` alone 323 — measured 2026-09-10,
+REPRODUCIBLE not remembered: `git ls-files '*.py' '*.md' '*.sh' '*.toml' | grep -v worktrees | xargs
+grep -hoiE '\brule [0-9]+\b' | wc -l`. The list cannot be renumbered, reordered or merged; trimming
+happens INSIDE a rule and anything new appends, and a reorganisation is a four-figure migration in a
+tidy-up's clothes. **This read "roughly 600 ... 194" for three milestones — hand-counted once, ~2x low.**
 
 **Do not grow the always-loaded file to fix this.** `CLAUDE.md` is 163 lines against a documented 200
 target, and over-long files are followed LESS well. The answer is placement, not volume.

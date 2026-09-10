@@ -2671,3 +2671,5 @@
 {"ts":"2026-09-10T21:45:07Z","kind":"test","tier":"unit","nodeid":"tests/test_boundaries.py::NoTestSpawnsGitAgainstThisCheckout::test_no_test_module_spawns_git_against_this_checkout","duration_ms":548,"rank":5}
 {"ts":"2026-09-10T21:45:07Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":6898,"census":1136}
 {"ts":"2026-09-10T21:45:07Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":9881}
+{"ts":"2026-09-10T21:46:49Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2539}
+{"ts":"2026-09-10T21:47:08Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2669}

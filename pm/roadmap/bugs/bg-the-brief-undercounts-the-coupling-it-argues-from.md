@@ -3,7 +3,7 @@ id: bg-the-brief-undercounts-the-coupling-it-argues-from
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: the brief undercounts the coupling it argues from
-status: open
+status: fixed
 caused_by:
 changelog: none
 ---
@@ -43,6 +43,26 @@ Two halves, and the second is the one that matters.
   * Correct the number where it is quoted.
   * **Make it askable.** `ft-a-hand-rolled-command-is-a-missing-verb` owns this: a verb that reports
     the citation census per rule, so the next brief quotes a command's output rather than a memory.
+
+## What landed, and what did not
+
+**Landed: the number, and the reason it stops being a number.** The sentence now
+reads 1,151 / `rule 4` 323, measured 2026-09-10, and carries the one-liner that
+produces it. **Correcting one hand-count to another hand-count would have
+reproduced the defect**, so the paragraph names the command instead — the
+milestone's own northstar, applied to the document that argues from it.
+
+**The measurement had ALREADY drifted again before it was corrected.** The bug
+records 476 files / 1,107 / `rule 4` 314; the same census on this branch reads
+499 / 1,151 / 323, because 0.7.0's own planning commits added 23 files. Four
+commits. That is the argument, not an embarrassment: a citation census is a
+moving number and the only honest form of it is a command.
+
+**Did NOT land: the verb.** `ft-a-hand-rolled-command-is-a-missing-verb` owns
+it and the milestone brief deliberately moved that feature to the POOL ("not the
+conveyor"), so `pm` still cannot answer *how many times is rule N cited, and
+where* — a shell pipeline can, and the brief now carries it. The second half of
+this fix is still open, in the pool, by design rather than by oversight.
 
 ## Out of scope
 

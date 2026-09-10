@@ -181,6 +181,8 @@ class Scaffolding(unittest.TestCase):
             self.assertFalse(shared(root, '0.1', 'handoff.md').exists())
 
     def test_new_refuses_a_slot_it_cannot_prepend_a_header_to(self):
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+            return  # permission bits are not an obstruction as root
         # `_fill_header` guarded the READ and not the write, so a read-only
         # legacy doc raised `PermissionError` — a traceback, exit 1, and the
         # remaining slots never created. Writability is inspectable up front.

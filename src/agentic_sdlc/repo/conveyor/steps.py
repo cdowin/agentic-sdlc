@@ -325,10 +325,10 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
                          text=True, env=env,
                          timeout=_timeout(ctx.operation))
     except spawn.TimeoutExpired:
-        return TIMED_OUT, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
+        return TIMED_OUT, (f'`{vehicle.command(*argv)}` did not finish inside '
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
-        return CANNOT_RUN, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
+        return CANNOT_RUN, f'`{vehicle.command(*argv)}` could not be run ({err})', argv
     return done.returncode, done.stdout + done.stderr, argv
 
 
@@ -339,7 +339,7 @@ def _own_verdict(ctx: Context, *argv: str, found: str = '',
     `after(output)` appends a clause to a TRUE detail, after the clip."""
     code, printed, _ = _own_cli(ctx, *argv)
     said = _clip(printed)
-    spoken = f'`agentic-sdlc {" ".join(argv)}`'
+    spoken = f'`{vehicle.command(*argv)}`'
     if code == 0:
         return Answer.yes(f'{spoken} exited 0{f" — {found}" if found else ""}'
                           + (f': {said}' if said else '')
@@ -836,8 +836,9 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
         listed = (f': {", ".join(closed[:SHOWN_MAX])}{more}' if closed else '')
         return Answer.no(
             f'{" and ".join(who)} answered neither{listed} — '
-            f'`{vehicle.command("pm", "set", ID, clog.FIELD, "<sentence>")}`, '
-            f'or `{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
+            f'`{vehicle.command("pm", "set", ID, clog.FIELD, "<sentence>")}` '
+            f'({vehicle.FREE_TEXT_NOTE}), or `{clog.NEEDS_NONE}` to say it '
+            f'earned no consumer-visible line')
     said = clog.rows(entries)
     # Rule 4: `declined` is what a grain SAID, never the arithmetic remainder —
     # a grain that is simply not closed yet answered nothing and is neither.
@@ -1749,7 +1750,7 @@ STEP_DOC: dict[str, str] = {
         'the composed gate targets resolve under `make -n`; an empty tier '
         'list passes and says so.',
     'checks-pass':
-        'this package\'s `agentic-sdlc check all` exits 0 — not '
+        'this package\'s `check all` exits 0 — not '
         '`make check`, which verifies your code against your rules. Its '
         '`ok:` line names what it did NOT run — every gate outside the '
         'roster, every `[gates] extra` target — and `[adopt.commands] '
@@ -1759,7 +1760,7 @@ STEP_DOC: dict[str, str] = {
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
     'story-verified':
-        '`agentic-sdlc verify --story` exits 0 — the make target '
+        '`verify --story` exits 0 — the make target '
         '`[verify] story` names, the way `feature-verified` runs its rung.',
     'committed':
         'nothing is uncommitted outside the roadmap directory; it names what '
@@ -1778,7 +1779,7 @@ STEP_DOC: dict[str, str] = {
     'findings-landed':
         'no finding in that record sits at `disposition: open`.',
     'feature-verified':
-        '`agentic-sdlc verify --feature` exits 0; not in the shipped list, '
+        '`verify --feature` exits 0; not in the shipped list, '
         'add it to `[feature] steps`.',
 }
 
@@ -1807,6 +1808,16 @@ def ran_of(check: str, commands: dict[str, str]) -> str:
     """What this check RAN: the project's command, the shipped one, or the
     literal. `commands` is `commands_for(operation)`, already merged."""
     return commands.get(check) or SHIPPED_ACTION.get(check) or READS_THE_TREE
+
+
+def shown_action(action: str) -> str:
+    """A `SHIPPED_ACTION` value as a person runs it (review M3)."""
+    prefix = f'{vehicle.PROGRAM} '
+    if not action.startswith(prefix):
+        return action
+    return vehicle.command(*(vehicle.Slot(word) if word.startswith('<')
+                             else word
+                             for word in action[len(prefix):].split()))
 
 # What the caller does after a write, printed on success and rendered into the
 # document; `{version}`, `{branch}` and `{mainline}` are filled by the driver.

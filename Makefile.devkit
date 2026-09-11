@@ -38,10 +38,10 @@ export GDK_LEDGER_CMD ?= $(DEVKIT)
 #   ARGS — passthrough              make sdlc ARGS='dispatch --grain <id>'
 # Read with $(value ARGS), so a `$` in free text is never make's to expand; the
 # recipe's shell parses it once more, so quote free text in single quotes.
-# Unexported, and the verb runs with MAKEFLAGS emptied: a sub-make a belt spawns
-# never sees your ARGS, through the environment or through MAKEFLAGS.
+# The verb runs with ARGS unset and MAKEFLAGS emptied: a sub-make a belt spawns
+# never sees your ARGS, through the environment or through MAKEFLAGS. Only the
+# `pm` and `sdlc` recipes drop it; your own targets still see `$ARGS`.
 ARGS ?=
-unexport ARGS
 
 # Set by `check` when it re-enters itself through a sub-make. See `check`.
 GDK_IN_CHECK ?=
@@ -91,10 +91,10 @@ help: ## Show this help (authoritative target list)
 	@echo 'Gates print ONE verdict line naming .gate-reports/<gate>.log; VERBOSE=1 streams it.'
 
 pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS='story building <id>'
-	@MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),$(value ARGS),--help)
+	@unset ARGS; MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),$(value ARGS),--help)
 
 sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
-	@MAKEFLAGS= $(DEVKIT) $(if $(value ARGS),$(value ARGS),--help)
+	@unset ARGS; MAKEFLAGS= $(DEVKIT) $(if $(value ARGS),$(value ARGS),--help)
 
 # --- Aggregate gates ----------------------------------------------------------
 # `check` is the devkit roster then this project's `[gates] extra`, read once

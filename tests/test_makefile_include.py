@@ -768,6 +768,11 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
         done = paste("make sdlc ARGS='verify --story --no-cache'")
         assert 'nested ARGS=[] env=[unset]' in done.stdout, (
             done.stdout + done.stderr)
+        # Only the verb's recipes drop it (review M4): a consumer's own target,
+        # and a script it calls, still read `$ARGS` as make always exported it.
+        done = paste('make leak ARGS=hello')
+        assert 'nested ARGS=[hello] env=[hello]' in done.stdout, (
+            done.stdout + done.stderr)
 
 
 # --- T1: a tier shadowed by a file or directory of the same name --------------

@@ -2532,16 +2532,14 @@ VERSION_LINE = re.compile(r'agentic-sdlc v?\{__version__\}')
 USAGE_NAME = re.compile(r'(?:^|_)USAGE$')
 # Code the CLI never renders as an instruction, by module and symbol, and why.
 PROGRAM_OUT = {
+    # Review M3: `_own_cli` SPAWNS `python -m agentic_sdlc.cli`, so this is
+    # the record of a subprocess, not of an in-process call; what a person
+    # reads — a verdict, the protocol's `runs` cell and its sentence — is
+    # `shown_action`'s vehicle line or the bare verb, and `_own_cli`,
+    # `_own_verdict` and `STEP_DOC` are no longer exempt.
     ('repo/conveyor/steps.py', 'SHIPPED_ACTION'):
-        'record: what a belt check RAN when no command is configured — the '
-        'belt runs its own CLI in-process, and the `ran` field of every '
-        '`check.verdict` row carries this',
-    ('repo/conveyor/steps.py', 'STEP_DOC'):
-        'record: the sentence beside that same check in the rendered protocol',
-    ('repo/conveyor/steps.py', '_own_cli'):
-        'record: the subprocess this package ran, named in its own verdict',
-    ('repo/conveyor/steps.py', '_own_verdict'):
-        'record: the subprocess this package ran, named in its own verdict',
+        'record: what a belt check spawned when no command is configured — '
+        'the `ran` field of every `check.verdict` row carries this',
     ('repo/conveyor/driver.py', '_synopsis'): 'usage: a belt\'s --help synopsis',
     ('repo/pm/cli.py', 'PROG'): 'usage: the prefix of pm\'s usage and errors',
     ('repo/pm/vocabulary.py', 'RETIRED_SLOT_HEADERS'):

@@ -1080,3 +1080,10 @@ class TestTheCitationCensusIsAskable:
             if code != 2 or repr(argument) not in out.err or out.out:
                 refused[argument] = (code, out.out[:80], out.err[:120])
         assert not refused, refused
+        # Review M6: the pipeline the refusal hands over runs where it is
+        # pasted. `grep -P` is usage and exit 2 on BSD grep; POSIX awk is not.
+        import shlex
+        from agentic_sdlc.repo import vehicle
+        line, _, stage = out.err.split('`')[-2].partition(' | ')
+        assert vehicle.argv_of(line) == [cite.VERB, cite.SITES_FLAG], line
+        assert shlex.split(stage) == ['awk', '-F\\t', '$1 == 4'], stage

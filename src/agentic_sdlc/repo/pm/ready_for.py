@@ -349,7 +349,8 @@ def _entry_condition(operation: str) -> Derived:
     commands = step_defs.commands_for(operation, names, known)
     derived = Derived([], [], [], names)
     for name in names:
-        runs = commands.get(name) or step_defs.SHIPPED_ACTION.get(name, '')
+        runs = commands.get(name) or step_defs.shown_action(
+            step_defs.SHIPPED_ACTION.get(name, ''))
         if name not in step_defs.ENTRY_CONDITIONS:
             derived.not_declared.append(
                 name + (f' (by `{runs}`)' if runs else ''))

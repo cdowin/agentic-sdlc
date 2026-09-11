@@ -144,12 +144,19 @@ class TheGatesReadIt(unittest.TestCase):
             hint = next(ln for ln in out.splitlines()
                         if f'feature {FEATURE} ' in ln)
             line = re.search(r'`(make pm [^`]*)`', hint).group(1)
-            argv = vehicle.argv_of(line.replace('<sentence>', 'costs $5'))
+            # Review M5: typed as-is, PAIRED apostrophes vanish at exit 0; the
+            # hint says how a `'` is typed, and typed that way it lands.
+            typed = re.search(r"each `'` in the sentence is typed `([^`]*)`",
+                              hint)
+            self.assertIsNotNone(typed, hint)
+            sentence = "costs $5 in the 'costs' key"
+            argv = vehicle.argv_of(line.replace(
+                '<sentence>', sentence.replace("'", typed.group(1))))
             self.assertEqual(argv[0], 'pm')
             self.assertEqual(run_cli(root, *argv[1:])[0], 0)
             entries = {e.gid: e for e in changelog.collect(loaded(root),
                                                            MILESTONE)}
-            self.assertEqual(entries[FEATURE].text, 'costs $5')
+            self.assertEqual(entries[FEATURE].text, sentence)
 
     def test_D12_goes_quiet_on_a_sentence_AND_on_none(self):
         """The probe for the rule's own vacuity: it must go quiet for the right

@@ -162,7 +162,12 @@ def check_make_targets(doc: Path, lines: list[tuple[int, str]], real_targets: se
         for match in MAKE_INVOCATION.finditer(span):
             target = match.group(1)
             if target not in real_targets:
-                findings.append(f'{rel(doc)}:{lineno}  unknown make target: `make {target}`')
+                fix = (f' — `Makefile.devkit` defines it; '
+                       f'`{vehicle.pinned("install-gates", "--force")}` '
+                       f'writes the one that does'
+                       if target in vehicle.TARGETS else '')
+                findings.append(f'{rel(doc)}:{lineno}  unknown make target: '
+                                f'`make {target}`{fix}')
     return findings
 
 

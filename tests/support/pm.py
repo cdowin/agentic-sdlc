@@ -224,6 +224,11 @@ def tree(milestone_status='building', feature_status='building',
             yield root
         finally:
             os.chdir(previous)
+            # Left filled, the caches name this deleted tree to the next case
+            # on the worker that reads config without clearing them.
+            from agentic_sdlc.core.project import load_config, repo_root
+            repo_root.cache_clear()
+            load_config.cache_clear()
 
 
 @contextlib.contextmanager

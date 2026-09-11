@@ -30,6 +30,13 @@ class Slot(str):
     text: a placeholder for a sentence is a plain string, and is quoted."""
 
 
+# A `'` typed in a free-text slot is reopened for the recipe's shell, then each
+# of THOSE quotes again for the operator's (review M5).
+_REOPENED = "'\"'\"'"
+APOSTROPHE = _REOPENED.replace("'", _REOPENED)
+FREE_TEXT_NOTE = f"each `'` in the sentence is typed `{APOSTROPHE}`"
+
+
 def _joined(argv: tuple[str, ...]) -> str:
     return ' '.join(arg if isinstance(arg, Slot) else shlex.quote(arg)
                     for arg in argv)
@@ -39,6 +46,9 @@ def command(*argv: str) -> str:
     """`make pm ARGS=…` for a `pm` verb, `make sdlc ARGS=…` for every other."""
     if not argv:
         raise ValueError('a vehicle line needs a verb')
+    if any('\n' in arg for arg in argv):
+        raise ValueError(f'a vehicle line cannot carry a newline, which make '
+                         f'splits the recipe at: {argv!r}')
     target, rest = ((PM_TARGET, argv[1:]) if argv[0] == PM_TARGET
                     else (SDLC_TARGET, argv))
     if not rest:

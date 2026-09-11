@@ -399,6 +399,15 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
                 'and `GDK_TIERS=unit make wombat`.'), start=1))
             targets = doc.check_make_targets(path, lines, {'unit'})
             paths = doc.check_backtick_paths(path, lines)
+            # Review N11: a vehicle target the include lacks is one stale
+            # `Makefile.devkit` behind every such span, so each finding names
+            # the pinned write that adds it; any other target stays bare.
+            stale = doc.check_make_targets(
+                path, [(1, "Run `make sdlc ARGS='check doc'`.")], {'unit'})
+        from agentic_sdlc.repo import vehicle
+        self.assertEqual(len(stale), 1, stale)
+        self.assertIn(f'`{vehicle.pinned("install-gates", "--force")}`',
+                      stale[0])
         self.assertEqual(shown(path, targets), [
             f'DOC.md:{n}  unknown make target: `make wombat`'
             for n in (1, 12, 13, 14)])

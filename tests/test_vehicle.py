@@ -26,7 +26,10 @@ SRC = REPO_ROOT / 'src' / 'agentic_sdlc'
 HOSTILE = ('costs $5', '$(touch pwned)', '`pm list` gains a column', "it's",
            'a "quoted" word', '!bang', 'back\\slash', 'semi; colon', 'a | b',
            'x && y', '  padded  ', '', 'tab\there', '<sentence>', 'naïve',
-           'w' * 300)
+           'w' * 300, 'line one\nline two')
+# Survives `shlex` both ways, and make splits the recipe at it (review N8):
+# `command()` refuses it, which is the one outcome graded for it.
+REFUSED = tuple(value for value in HOSTILE if '\n' in value)
 # Call sites at the time of writing; a census that shrank is a sweep undone.
 SITES_FLOOR = 58
 
@@ -74,6 +77,14 @@ def rejected(sites, verbs: set[str]) -> list[str]:
     for where, kind, args in sites:
         for i in range(max((len(a) for a in args), default=1)):
             argv = [a[i % len(a)] for a in args]
+            if kind == 'command' and any(a in REFUSED for a in argv):
+                try:
+                    vehicle.command(*argv)
+                except ValueError:
+                    continue
+                out.append(f'{where}: {argv!r} carries a newline and was '
+                           f'rendered')
+                continue
             line = getattr(vehicle, kind)(*argv)
             back = (shlex.split(line)[4:] if kind == 'pinned'
                     else vehicle.argv_of(line))
@@ -114,6 +125,11 @@ class EveryVehicleLineRoundTrips(unittest.TestCase):
         for value in HOSTILE:
             for argv in (['pm', 'set', 'st-x', 'changelog', value],
                          ['close', 'story', value], [value]):
+                if value in REFUSED:
+                    with self.subTest(refused=argv), \
+                            self.assertRaises(ValueError):
+                        vehicle.command(*argv)
+                    continue
                 line = vehicle.command(*argv)
                 with self.subTest(argv=argv, line=line):
                     self.assertEqual(vehicle.argv_of(line), argv)

@@ -147,12 +147,21 @@ def test_the_rendered_protocol_carries_every_check_the_write_and_the_after_list(
         assert listed(body) == list(steps.DEFAULT_STEPS[operation]), operation
         for name in steps.DEFAULT_STEPS[operation]:
             assert steps.STEP_DOC[name].split('.')[0][:40] in body, name
+        # Review M3: the column is headed `runs`, so a reader pastes it; the
+        # bare program is `command not found` in every stock consumer.
+        runs = [row.split(' | ')[2] for row in body.splitlines()
+                if re.match(r'^\| \d+ \|', row)]
+        bare = [cell for cell in runs if 'agentic-sdlc' in cell]
+        assert bare == [], (operation, bare)
         kind = driver.WRITES[operation]
         if kind:
             assert f'[pm.states.{kind}] done' in body, (operation, body[-900:])
             assert f'`pm {kind} <state> <id>`' in body, operation
         else:
             assert 'writes nothing' in body, body[-400:]
+        if operation == 'story':
+            assert ("`make sdlc ARGS='verify --story'` *(shipped)*"
+                    in runs), runs
         commands = steps.commands_for(operation)
         for line in steps.after_lines(operation, commands, version='<version>',
                                       branch='<branch>', mainline='<mainline>'):
@@ -337,7 +346,20 @@ def test_this_repos_own_protocol_document_is_byte_current_and_describes_d12():
     assert target.is_file(), (
         f'{DEST} is not in this repo — run `agentic-sdlc install-sdlc`')
     rendered = target.read_text(encoding='utf-8')
-    assert rendered == sdlc_doc.render(), (
+    # THIS repo's config, named rather than inherited: a case before this one
+    # on the worker can leave `repo_root` cached at its own deleted tree, and
+    # the render then took the stock config and failed by order alone.
+    previous = Path.cwd()
+    os.chdir(REPO_ROOT)
+    repo_root.cache_clear()
+    load_config.cache_clear()
+    try:
+        ours = sdlc_doc.render()
+    finally:
+        os.chdir(previous)
+        repo_root.cache_clear()
+        load_config.cache_clear()
+    assert rendered == ours, (
         f'{DEST} differs from the renderer — re-run '
         f'`agentic-sdlc install-sdlc --force`')
     surfaces = {

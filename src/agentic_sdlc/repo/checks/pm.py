@@ -1114,8 +1114,8 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         # a `$` or a backtick in what the operator types reaches the verb.
         warn(f'{grain.kind} {gid} is {status!r} ({vocabulary.DONE_CATEGORY}) and '
              f'carries no `{clog.FIELD}:` — '
-             f'`{vehicle.command("pm", "set", gid, clog.FIELD, "<sentence>")}`, '
-             f'or `{clog.NEEDS_NONE}` to say it '
+             f'`{vehicle.command("pm", "set", gid, clog.FIELD, "<sentence>")}` '
+             f'({vehicle.FREE_TEXT_NOTE}), or `{clog.NEEDS_NONE}` to say it '
              f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
     print(f'  CHANGELOG  {graded - silent} of {graded} closed grain(s) '
           f'answered, shipped milestones excluded (D12)')

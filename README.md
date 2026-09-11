@@ -368,7 +368,7 @@ my-scan: ## a gate this project owns
 `make sdlc ARGS='close story <id>'` runs any verb and `make pm ARGS='story building <id>'` any `pm`
 verb, and every command the CLI prints for you to run is spelled that way. `ARGS` is parsed by a
 second shell, so put free text in single quotes, as the printed lines do:
-`make pm ARGS='set <id> changelog '"'"'costs $5'"'"''`. Through make, any nonzero exit is make's
+`make pm ARGS='set <id> changelog '"'"'costs $5'"'"''`, and each `'` INSIDE that free text is typed `'"'"'"'"'"'"'"'"'` (it has to survive both shells). Through make, any nonzero exit is make's
 2, and the verb's own code is the N in make's `Error N` line.
 
 `Makefile.devkit` is devkit-owned: `help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`. Your build and

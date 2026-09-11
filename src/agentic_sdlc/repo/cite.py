@@ -31,6 +31,8 @@ VERB = 'cite'
 PREFIX = f'[{VERB}]'
 HELP_WORDS = ('-h', '--help', 'help')
 SITES_FLAG = '--sites'
+# One rule's rows, on a POSIX awk: BSD grep, macOS's, has no `-P` (review M6).
+SITE_FILTER = "awk -F'\\t' '$1 == 4'"
 
 # `\s+` rather than a literal space, because a citation WRAPS: six of this
 # tree's own — `hard rule\n4` — are invisible to a line-based grep, which is
@@ -175,7 +177,7 @@ def main(argv: list[str]) -> int:
         print(f'agentic-sdlc {VERB}: unexpected argument {arg!r} — this verb '
               f'takes {SITES_FLAG} and nothing else. One rule is a grep on the '
               f'first column, not a flag: '
-              f'`{vehicle.command(VERB, SITES_FLAG)} | grep -P "^4\\t"`',
+              f'`{vehicle.command(VERB, SITES_FLAG)} | {SITE_FILTER}`',
               file=sys.stderr)
         return 2
     root = repo_root()

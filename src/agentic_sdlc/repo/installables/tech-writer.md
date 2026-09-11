@@ -40,7 +40,8 @@ or milestone status.
 
 - `make sdlc ARGS='changelog <milestone-id>'` — what did this milestone promise a
   consumer?
-- `make pm ARGS='set <id> changelog '"'"'<sentence>'"'"''` — where that sentence goes
+- `make pm ARGS='set <id> changelog '"'"'<sentence>'"'"''` — where that sentence goes;
+  each `'` in the sentence is typed `'"'"'"'"'"'"'"'"'`
 - `make pm ARGS='list --category in_progress'` — what is open after the ship?
 - `make sdlc ARGS='check doc'` — do the links and refs you just wrote resolve?
 <!-- END role-verbs -->

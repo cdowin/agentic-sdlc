@@ -26,7 +26,7 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo import emit  # noqa: E402
+from agentic_sdlc.repo import emit, vehicle  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
@@ -342,6 +342,10 @@ def test_the_changelog_step_grades_grains_and_writes_nothing(
         answer = check('changelog-unreleased-nonempty', root)
         assert answer.truth is truth, answer
         assert why in answer.detail, answer.detail
+        if truth is driver.Truth.FALSE:
+            # Review M5: the template's free text loses paired apostrophes
+            # typed as-is; the refusal says how one is typed.
+            assert vehicle.FREE_TEXT_NOTE in answer.detail, answer.detail
         assert snapshot(root) == before
 
 
@@ -440,6 +444,10 @@ def test_a_callee_that_exits_2_is_UNVERIFIABLE_and_never_a_finding(monkeypatch):
     answer = steps._own_verdict(context, 'verify', '--story', 'x')
     assert answer.truth is driver.Truth.UNVERIFIABLE, answer
     assert 'nothing was decided' in answer.detail and 'got 42' in answer.detail
+    # Review M3: the detail is what someone reproducing the red check pastes,
+    # so it names the vehicle line, never the bare program.
+    assert answer.detail.startswith(
+        "`make sdlc ARGS='verify --story x'` exited 2"), answer.detail
 
 
 # --- config -------------------------------------------------------------------

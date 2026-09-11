@@ -371,10 +371,12 @@ done        = ["closed"]
 # DECLARATION — nothing stands behind these two keys and the reader refuses BY
 # NAME when the section is absent. `contracts` is POINTED AT, never copied: a
 # 163-line paste in every brief is volume, and the fix is placement. A declared
-# path that resolves to nothing is exit 2.
+# path that resolves to nothing is exit 2. The second path is the PM rule
+# `pm install-skills` writes (and `pm init` runs): it is `paths:`-scoped, so a
+# dispatched agent that has not yet opened the tree reaches it only from here.
 # [dispatch]
 # project   = "<one line: what this is, and its stack>"
-# contracts = ["CLAUDE.md"]
+# contracts = ["CLAUDE.md", ".claude/rules/pm-execution.md"]
 
 # --- more words that mean FINISHED --------------------------------------------
 # `ready-for feature` asks "is every story in the `done` CATEGORY", not "is

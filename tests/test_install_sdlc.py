@@ -24,6 +24,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import REPO_ROOT  # noqa: E402
 
@@ -162,30 +164,113 @@ RETIRED_INPUTS = (('CHANGELOG.md', 'Unreleased')
                   + tuple(sorted(vocabulary.RETIRED_FIELDS)))
 
 
-def test_every_registry_sentence_names_what_its_check_reads_and_nothing_retired():
+def _reads() -> dict[str, tuple[str, ...]]:
+    """{check: what its sentence must name}, for EVERY shipped check.
+
+    Where the code publishes the input — the command a check runs when none is
+    configured, the field the changelog reader grades — the token is asked of
+    it. The rest is typed, and each names the input or the "never" the check's
+    own docstring states: a sentence that drops it is a different check."""
+    from agentic_sdlc.repo.pm import changelog as clog
+    typed = {
+        'telemetry-live': ('`.claude/settings.json`',
+                           '`.claude/settings.local.json`'),
+        'tree-clean': ('`git status --porcelain`', 'roadmap directory'),
+        'on-milestone-branch': ('`branch:`',),
+        'changelog-unreleased-nonempty': (f'`{clog.FIELD}:`',
+                                          '`done` category'),
+        # Review M4: a feature done with a blank `reviewed:` blocks, and so
+        # does a bug at `fixed`; "no open bug" undersold both.
+        'features-done': ('`reviewed:`', 'every bug', '`done` category'),
+        'findings-resolved': ('`open`',),
+        'version-sync': ('version site', 'never bumped'),
+        'gate': ('gate command',),
+        'pin-bumped': ('`DEVKIT_VERSION`',),
+        'installables-current': ('`[<op>] ours`', '`install-* --diff`'),
+        'config-updated': ('devkit.toml',),
+        'hooks-self-test': (),
+        'runner-targets-resolve': (),
+        'checks-pass': (),
+        'pm-validates': (),
+        'story-exists': ('exactly one document',),
+        'story-verified': ('`[verify] story`',),
+        'committed': ('roadmap directory', 'never commits'),
+        'evidence-written': ('`done:', 'never written'),
+        'stories-done': ('`done` category',),
+        'review-recorded': ('`reviewed:`', 'verdict block'),
+        'findings-landed': ('`disposition: open`',),
+        'feature-verified': (),
+    }
+    for name, action in steps.SHIPPED_ACTION.items():
+        # `agentic-sdlc pm ready-for feature <id>` -> `pm ready-for feature`:
+        # the words before the first placeholder or assignment.
+        words = []
+        for word in action.split():
+            if word.startswith('<') or '=' in word:
+                break
+            words.append(word)
+        if words[0] == 'agentic-sdlc':
+            words = words[1:]
+        typed[name] = (*typed.get(name, ()), ' '.join(words))
+    return typed
+
+
+def _misreads(name: str, sentence: str | None) -> list[str]:
+    """What is wrong with `sentence` as `name`'s description, or `[]`."""
+    reads = _reads()
+    if sentence is None:
+        return [f'{name} has no STEP_DOC sentence']
+    if name not in reads:
+        return [f'{name} has no entry in _reads() — name what it reads']
+    if not reads[name]:
+        return [f'{name} holds its sentence to nothing']
+    return ([f'names retired input {retired!r}' for retired in RETIRED_INPUTS
+             if retired in sentence]
+            + [f'omits {token!r}' for token in reads[name]
+               if token not in sentence])
+
+
+# Sentences each check has shipped with, or nearly, that were FALSE: the grader
+# above must refuse every one. The first is #33 itself; the next two are the
+# review's probe, which the five-check table this replaced passed; the last is
+# `features-done` before review M4.
+PLANTED = (
+    ('changelog-unreleased-nonempty',
+     'the changelog\'s `## Unreleased` section holds at least one bullet.'),
+    ('version-sync',
+     'every configured version site is BUMPED to the release version and '
+     'committed.'),
+    ('stories-done', 'the feature file lists its stories and each is ticked.'),
+    ('features-done',
+     '`pm ready-for milestone <milestone>` exits 0 — every feature is in the '
+     '`done` category and no open bug names the milestone.'),
+)
+SHIPPED_CHECKS = sorted(set(steps.STEP_DOC).union(
+    *(registry for registry in steps.REGISTRIES.values())))
+
+
+@pytest.mark.parametrize(
+    'name, sentence, true',
+    [(name, steps.STEP_DOC.get(name), True) for name in SHIPPED_CHECKS]
+    + [(name, sentence, False) for name, sentence in PLANTED],
+    ids=[*SHIPPED_CHECKS, *(f'planted-{name}' for name, _ in PLANTED)])
+def test_every_registry_sentence_names_what_its_check_reads_and_nothing_retired(
+        name, sentence, true):
     """Bites: a check re-pointed at a new input keeping its old sentence.
     `changelog-unreleased-nonempty` has graded each closed grain's
     `changelog:` field since 0.6.0, and `install-sdlc` went on rendering it as
     counting bullets under `## Unreleased` (#33). The step id stays — an id is
-    contract — so only the sentence can tell a consumer what runs.
+    contract — so only the sentence can tell a consumer what runs. Every
+    shipped check is a row, so a new one with no entry in `_reads()` fails by
+    name; the PLANTED rows prove the grader refuses what did ship false.
 
     Here, not in test_conveyor_steps.py: that module spawns, so a case in it
     runs only in the `shell` tier, and this one reads a dict."""
-    from agentic_sdlc.repo.pm import changelog as clog
-    for name, sentence in steps.STEP_DOC.items():
-        for retired in RETIRED_INPUTS:
-            assert retired not in sentence, (name, retired, sentence)
-    # What each release check reads, spelled as its sentence must name it.
-    reads = {
-        'tree-clean': '`git status --porcelain`',
-        'on-milestone-branch': '`branch:`',
-        'changelog-unreleased-nonempty': f'`{clog.FIELD}:`',
-        'features-done': '`pm ready-for milestone',
-        'findings-resolved': '`pm ready-for tag',
-    }
-    for name, token in reads.items():
-        assert token in steps.STEP_DOC[name], (name, token,
-                                              steps.STEP_DOC[name])
+    wrong = _misreads(name, sentence)
+    if true:
+        assert not wrong, (name, wrong, sentence)
+    else:
+        assert wrong, f'{name}: the grader passed a sentence that is false'
 
 
 def test_a_configured_command_is_shown_and_an_unconfigured_one_is_not():

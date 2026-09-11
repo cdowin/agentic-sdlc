@@ -41,7 +41,7 @@ or milestone status.
 - `agentic-sdlc changelog <milestone-id>` — what did this milestone promise a
   consumer?
 - `agentic-sdlc pm set <id> changelog "<sentence>"` — where that sentence goes
-- `agentic-sdlc pm list --status building` — what is open after the ship?
+- `agentic-sdlc pm list --category in_progress` — what is open after the ship?
 - `agentic-sdlc check doc` — do the links and refs you just wrote resolve?
 <!-- END role-verbs -->
 
@@ -58,8 +58,10 @@ or milestone status.
    never built.
 4. PM tree: shipping notes on done stories (gates, verdict, hashes,
    follow-ups); file post-ship bugs as bug grains — a bug's `milestone:` is
-   its parent, and that milestone cannot close while the bug is open; a story
-   stuck in `building` after work shipped is surfaced, not fixed.
+   its parent: `release` refuses that milestone until the bug is in a
+   `done`-category state (`closed` in the seed), and `check pm` D11 fails a
+   milestone moved to `done` first; a story stuck in `building` after work
+   shipped is surfaced, not fixed.
 5. README only when the feature changes something user-facing.
 6. Bullets, present tense, no emojis, read the code rather than guess.
 7. Commit pathspec-limited (or report where commits are the orchestrator's);

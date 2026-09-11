@@ -2153,6 +2153,11 @@ RETIRED_ELSEWHERE = {
     '[[verify.narrow]]': 'retired — the story rung is a make target',
     'CHANGELOG.md': 'retired in 0.6.0 — `changelog:` on the grain, '
                     '`agentic-sdlc changelog` renders',
+    # A project may still choose it in its own fence; the kit may not ship it,
+    # because the stock pm-operations skill binds a bug to the milestone that
+    # will fix it and the brief says the skill wins (0.8.0 review M1).
+    'milestone-of-catch': 'retired as the stock `bugs bind:` in 0.8.0 — the '
+                          'stock policy is the milestone that will fix it',
 }
 # A migration NOTE is the legitimate way to name a retired thing, and the seed
 # devkit.toml is full of them. So the allowance is exactly that: the line has to

@@ -8,6 +8,7 @@ branch: milestone/0.9.0-the-ledger-is-a-stamp
 version: 0.9.0
 changelog:
 order:
+  - "ft-the-flow-is-boring-by-construction"
   - "ft-a-milestone-reports-only-its-own-rows"
   - "ft-work-is-stamped-with-its-issue-and-agent"
   - "ft-a-concurrent-dispatch-attributes-itself"

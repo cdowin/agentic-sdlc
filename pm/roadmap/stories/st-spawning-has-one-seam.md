@@ -7,7 +7,7 @@ name: spawning has one seam
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: none
 ---
 
 # spawning has one seam

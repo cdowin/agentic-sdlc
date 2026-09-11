@@ -8,12 +8,11 @@ and reports each refusal rather than stopping at the first.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
 from agentic_sdlc import __version__
-from agentic_sdlc.core import apply
+from agentic_sdlc.core import apply, spawn
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo import install
 
@@ -178,8 +177,8 @@ def _arm_hooks(root: Path) -> int:
     if not script.is_file():
         _say(f'{SETUP_HOOKS} is not present — the hooks were NOT armed')
         return 1
-    done = subprocess.run(['bash', str(script)], cwd=root,
-                          capture_output=True, text=True)
+    done = spawn.run(['bash', str(script)], cwd=root,
+                     capture_output=True, text=True)
     for line in done.stdout.splitlines():
         if line.strip():
             _say(line.strip())

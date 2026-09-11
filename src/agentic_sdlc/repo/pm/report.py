@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import fnmatch
 import io
-import subprocess
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from agentic_sdlc.core import frontmatter
+from agentic_sdlc.core import frontmatter, spawn
 from agentic_sdlc.repo.pm import arrive, ledger, model, verdict
 
 # The two line shapes a consumer greps (rule 6); both carry the milestone id.
@@ -396,8 +395,8 @@ class GitSource(Source):
         """One git run in the repo root, stdout as bytes — `text=True` would
         apply newline translation and the locale's encoding."""
         try:
-            done = subprocess.run([GIT, '-C', str(self.root), *args],
-                                  capture_output=True, check=False)
+            done = spawn.run([GIT, '-C', str(self.root), *args],
+                             capture_output=True, check=False)
         except FileNotFoundError as err:
             raise GitError(GIT_MISSING) from err
         if done.returncode != 0:

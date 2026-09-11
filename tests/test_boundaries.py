@@ -38,7 +38,10 @@ from pathlib import Path
 # The derivation that puts the `shell` mark on a spawning module. Imported
 # rather than re-implemented: primitive 5 below holds `repo/emit.py` to the
 # SAME no-subprocess question the tier definition is built on, and two
-# spellings of one question is how they drift apart.
+# spellings of one question is how they drift apart. Since primitive 11 that
+# question is necessary and NOT sufficient — one module in `src/` imports
+# `subprocess`, so it answers False everywhere else whatever the file does —
+# and primitive 5 asks it beside the reach to the seam, never instead of it.
 from conftest import module_spawns
 from support import REPO_ROOT
 
@@ -94,6 +97,43 @@ DEFAULT_OPEN_MODE = 'r'
 # other module is too.
 APPEND_ONLY_MODULE = 'repo/pm/ledger.py'
 APPEND_MODES = ('a', 'ab')
+# --- primitive 11: one spawn --------------------------------------------------
+# The third of the family above, and the one hard rule 2 had no home for.
+# `apply.py` owns the mutation and `walk.py` owns the enumeration; sixteen call
+# sites across nine modules each imported `subprocess` for themselves, so "this
+# package boots nothing" was a claim about nine files and a reviewer's memory.
+#
+# The NUMBER is assignment order, like primitive 9's: 11 beside 1 and 2 is a
+# label, not a reading order.
+SPAWN_SEAM = 'core/spawn.py'
+# The library that owns process start-up, and the constructors that reach it.
+# Spelled the way `tests/conftest.py` derives the `shell` mark —
+# `subprocess.<attr>` — so the tier definition, primitive 8 below and this
+# allowlist police one chokepoint. Declared here and read in both places, for
+# the reason OS_SPAWNERS is.
+#
+# `SPAWNERS` is also what makes the owner an owner: the companion case asserts
+# the seam still makes one of these calls, so the allowlist cannot be satisfied
+# by a module that stopped spawning — and asserts it makes it ATTRIBUTE-style
+# off the module, because `tests/conftest.py` enforces the unit tier by
+# rebinding `subprocess.Popen`, and a `from subprocess import Popen` here would
+# hold its own reference and unarm that guard for the whole suite.
+SPAWN_MODULE = 'subprocess'
+SPAWNERS = ('run', 'Popen', 'call', 'check_output', 'check_call')
+# The `os.<name>` spellings that start a process WITHOUT importing
+# `subprocess`, and therefore without the `shell` derivation, the runtime tier
+# guard or the allowlist above seeing anything at all. Declared here because
+# primitive 11 bans them across `src/` and primitive 5 bans them on the emit
+# path: ONE roster, two readers, so neither can be widened behind the other.
+OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
+               'execl', 'execle', 'execlp', 'execlpe', 'spawnv', 'spawnve',
+               'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'posix_spawn',
+               'posix_spawnp', 'fork', 'forkpty', 'startfile')
+# The name every caller imports the owner under, and the dotted module behind
+# it. A module reaching EITHER is reaching a process, which is what primitive 5
+# has to ask now that `import subprocess` answers False everywhere but one file.
+SPAWN_OWNER = 'spawn'
+SPAWN_DOTTED = 'agentic_sdlc.core.spawn'
 # --- primitive 9: one frontmatter ---------------------------------------------
 # The third of the family above, and it sits here rather than at the end of the
 # file because it is the same shape: ONE module, an exact allowlist, an empty
@@ -402,6 +442,66 @@ def _called_name(node: ast.Call) -> tuple[str, str]:
     return '', ''
 
 
+def _spawn_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every way this module could start a process without the seam.
+
+    Three routes, because `import subprocess` alone is not the whole question:
+    the import in any spelling, an attribute off the `subprocess` name (which is
+    what a `sys.modules` lookup or a rebind would leave behind), and the
+    `os.<name>` spawners, which import nothing and so are invisible to every
+    reader built on that import.
+
+    `ast.walk` and not `tree.body`: a deferred `import subprocess` inside a
+    function is still an import, and "we only do it lazily" is exactly how a
+    second spawner would arrive.
+    """
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend(f'{rel}:{node.lineno}: import {alias.name}'
+                       for alias in node.names
+                       if alias.name.split('.')[0] == SPAWN_MODULE)
+        elif (isinstance(node, ast.ImportFrom)
+                and (node.module or '').split('.')[0] == SPAWN_MODULE):
+            out.extend(f'{rel}:{node.lineno}: from {node.module} '
+                       f'import {alias.name}' for alias in node.names)
+        elif (isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == SPAWN_MODULE):
+            out.append(f'{rel}:{node.lineno}: {SPAWN_MODULE}.{node.attr}')
+    out.extend(f'{rel}:{node.lineno}: os.{node.func.attr}()'
+               for node in _calls(tree)
+               if isinstance(node.func, ast.Attribute)
+               and isinstance(node.func.value, ast.Name)
+               and node.func.value.id == 'os'
+               and node.func.attr in OS_SPAWNERS)
+    return sorted(set(out))
+
+
+def _seam_reach_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every way this module reaches `core/spawn.py` — the import, or a call.
+
+    The question primitive 5 has to ask once the seam exists. "Does this module
+    import `subprocess`" was the right question while nine modules did; with
+    exactly one owner it answers False for every other file in the package, and
+    an emit path calling `spawn.run(...)` forty times passes it.
+    """
+    out: list[str] = []
+    bound: set[str] = set()
+    for name, source, lineno in _import_bindings(rel, tree):
+        if source == SPAWN_DOTTED or source.startswith(SPAWN_DOTTED + '.'):
+            bound.add(name)
+            out.append(f'{rel}:{lineno}: imports {source}')
+    out.extend(f'{rel}:{node.lineno}: '
+               f'{".".join(part for part in _called_name(node) if part)}()'
+               for node in _calls(tree)
+               if (isinstance(node.func, ast.Attribute)
+                   and isinstance(node.func.value, ast.Name)
+                   and node.func.value.id in bound | {SPAWN_OWNER})
+               or (isinstance(node.func, ast.Name) and node.func.id in bound))
+    return sorted(set(out))
+
+
 def _path_addressed_sites(rel: str, tree: ast.Module) -> list[str]:
     """Every read in one module that ASKS A PATH what a grain says.
 
@@ -559,6 +659,118 @@ class OneApply(unittest.TestCase):
     def test_the_apply_module_does_write(self):
         sites = _mutation_sites(APPLY_MODULE, _tree(SRC / APPLY_MODULE))
         self.assertGreaterEqual(len(sites), 4, sites)
+
+
+class OneSpawn(unittest.TestCase):
+    """PRIMITIVE 11 — starting a process lives in exactly one module.
+
+    The allowlist is EXACTLY `SPAWN_SEAM`, with no exemption roster: every
+    one of the sixteen call sites takes its argv, its cwd and its timeout from
+    the caller, so none of them needed anything the seam does not pass through.
+    """
+
+    PROTECTS = (
+        'every process this package starts comes through core/spawn.py, so '
+        'hard rule 2 — pure text, boots nothing, safe anywhere in parallel — '
+        'is a question with ONE file to ask rather than nine',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'spawn added anywhere else changes no result any behaviour test can '
+        'see. It is a gate that stops being pure text, a unit test that starts '
+        'running `make`, or a hook that hangs on the network, and all three '
+        'report green until somebody times them',
+    )
+
+    CORPUS = (
+        # The import, in every spelling — including the deferred one inside a
+        # function, which is how "we only do it lazily" arrives.
+        ('import subprocess', True),
+        ('import subprocess as sp', True),
+        ('from subprocess import run', True),
+        ('def go():\n    import subprocess\n    return subprocess', True),
+        # The attribute off the name, with no import in this snippet at all:
+        # what a `sys.modules` lookup or a rebind leaves behind.
+        ('done = subprocess.Popen(argv)', True),
+        # The `os` spellings, which import nothing and so are invisible to
+        # every reader built on the import.
+        ('os.system(command)', True),
+        ('os.execvp(argv[0], argv)', True),
+        ('pid = os.fork()', True),
+        # Reaching the owner is the point of the owner.
+        ('from agentic_sdlc.core import spawn', False),
+        ('done = spawn.run(argv, cwd=root, capture_output=True)', False),
+        ('try:\n    go()\nexcept spawn.TimeoutExpired:\n    pass', False),
+        # An `os` call that starts nothing, and prose.
+        ("root = os.environ.get('PWD')", False),
+        ("HELP = 'never subprocess.run, never os.system'", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_spawn_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_only_the_spawn_module_starts_a_process(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel == SPAWN_SEAM:
+                continue
+            offenders.extend(_spawn_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'a process started outside ' + SPAWN_SEAM + '. Hard rule 2 is '
+            'what lets any verb run from a git hook and from CI without a '
+            'sandbox, and it is only checkable while there is one file to '
+            'check. Route it through `core.spawn`, which passes argv, cwd and '
+            'timeout straight through and adds nothing:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_spawn_module_does_spawn(self):
+        """The allowlist must not be vacuously satisfiable by a module that
+        stopped spawning — then every offender would move somewhere else and
+        the test would still pass."""
+        sites = _spawn_sites(SPAWN_SEAM, _tree(SRC / SPAWN_SEAM))
+        self.assertGreaterEqual(len(sites), 4, sites)
+        self.assertIn(SPAWN_SEAM, {rel for rel, _ in _sources()},
+                      f'{SPAWN_SEAM} is not in the census — the allowlist '
+                      f'above is asserting emptiness over a module that moved')
+
+    def test_the_seam_reaches_subprocess_by_attribute(self):
+        """The trap this seam is one line away from, and it unarms the SUITE.
+
+        `tests/conftest.py` enforces the unit tier by rebinding
+        `subprocess.Popen` as a MODULE ATTRIBUTE, on the argument that it is
+        the class every caller constructs. A `from subprocess import Popen`
+        here would hold its own reference, the rebinding would never reach it,
+        and the runtime guard would stop firing for every test in the suite
+        with no symptom but `make unit` getting slower.
+        """
+        tree = _tree(SRC / SPAWN_SEAM)
+        plain = [alias.name for node in ast.walk(tree)
+                 if isinstance(node, ast.Import) for alias in node.names
+                 if alias.name == SPAWN_MODULE and alias.asname is None]
+        self.assertEqual(
+            [SPAWN_MODULE], plain,
+            f'{SPAWN_SEAM} does not `import {SPAWN_MODULE}` plainly. The '
+            f'module attribute is the only reference tests/conftest.py can '
+            f'rebind')
+        renamed = [f'from {node.module} import {alias.name}'
+                   for node in ast.walk(tree)
+                   if isinstance(node, ast.ImportFrom)
+                   and (node.module or '').split('.')[0] == SPAWN_MODULE
+                   for alias in node.names]
+        self.assertEqual(
+            [], renamed,
+            f'{SPAWN_SEAM} binds a name out of {SPAWN_MODULE} directly. '
+            f'That reference is the real object forever, so the unit tier '
+            f'stops being enforced and nothing says so: ' + ', '.join(renamed))
+        started = [node.func.attr for node in _calls(tree)
+                   if isinstance(node.func, ast.Attribute)
+                   and isinstance(node.func.value, ast.Name)
+                   and node.func.value.id == SPAWN_MODULE
+                   and node.func.attr in SPAWNERS]
+        self.assertTrue(
+            started,
+            f'{SPAWN_SEAM} makes no `{SPAWN_MODULE}.<starter>` call, so it '
+            f'is not the owner and the allowlist is policing an empty room')
 
 
 class OneStorage(unittest.TestCase):
@@ -1240,12 +1452,10 @@ EXECUTORS = ('eval', 'exec', 'compile', '__import__', 'import_module',
 # imported module with no import statement for the allowlist to see. Banned by
 # name, because "impossible to route around" has to be literal.
 MODULE_MAP_OWNER, MODULE_MAP_ATTR = 'sys', 'modules'
-# The `os.<name>` spellings that start a process WITHOUT importing `subprocess`
-# — invisible to the `shell` derivation, because none of them imports it.
-OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
-               'execl', 'execle', 'execlp', 'execlpe', 'spawnv', 'spawnve',
-               'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'posix_spawn',
-               'posix_spawnp', 'fork', 'forkpty', 'startfile')
+# `OS_SPAWNERS` — the spellings that start a process without importing
+# `subprocess`, and so invisible to the `shell` derivation — is declared with
+# primitive 11 above and read here too. One roster, because two copies of a ban
+# list are two things to widen and one of them is always the quiet one.
 # What the emit path must still BE, so this class cannot pass over a file that
 # was emptied or moved: it appends to a sink and it reads its own section.
 EMIT_MUST_CALL = ('append_to', 'config_section')
@@ -1260,6 +1470,27 @@ EMIT_EXECUTION_SPELLINGS = (
     ("getattr(mod, sink)()", True),
     ("os.system(cmd)", True),
     ("print(line, file=sys.stderr)", False),
+)
+# (source, does it reach a process) — the OTHER half, and the reason this one
+# exists. The question here was `module_spawns(emit.py)`: *does this module's
+# source import `subprocess`*. That was the whole question while nine modules
+# did; with primitive 11 above there is exactly ONE importer in the package, so
+# it answers False for every other file and the case would pass over an emit
+# path calling `spawn.run(...)` forty times. A gate that cannot fail is rule
+# 4's first sin, so the question is re-pointed: reaching the SEAM is reaching a
+# process. The first three rows are the planted emit paths that prove the new
+# form catches what the old one did; the import spelling is graded too, because
+# an emit path that only imports the seam is one line from calling it.
+EMIT_SPAWN_SPELLINGS = (
+    ('done = spawn.run(argv, cwd=root)', True),
+    ('from agentic_sdlc.core import spawn', True),
+    ('from agentic_sdlc.core.spawn import run', True),
+    # The old question, still asked: a direct import is still a spawn.
+    ('import subprocess', True),
+    ('done = subprocess.run(argv)', True),
+    # What the emit path really does, and prose about what it must not.
+    ('ledger.append_to(sink, row)', False),
+    ("HELP = 'never spawn.run, never subprocess'", False),
 )
 
 
@@ -1619,22 +1850,51 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
         'list over the shipped module in the same case is not',
     )
 
-    CORPUS = EMIT_EXECUTION_SPELLINGS
+    CORPUS = EMIT_EXECUTION_SPELLINGS + EMIT_SPAWN_SPELLINGS
 
     @staticmethod
     def catches(planted: str) -> bool:
-        return bool(_execution_sites(EMIT_MODULE, ast.parse(planted)))
+        tree = ast.parse(planted)
+        return bool(_execution_sites(EMIT_MODULE, tree)
+                    or _spawn_sites(EMIT_MODULE, tree)
+                    or _seam_reach_sites(EMIT_MODULE, tree))
 
     def test_the_emit_path_never_spawns_a_process(self):
-        """The same question `tests/conftest.py` derives the `shell` mark
-        from, asked of a SHIPPED module — plus the `os` spellings that
-        derivation cannot see, because none of them imports `subprocess`."""
-        self.assertFalse(
-            module_spawns(SRC / EMIT_MODULE),
-            f'{EMIT_MODULE} reaches `subprocess`. An event is WRITTEN here, '
+        """Three questions, because one of them stopped being able to fail.
+
+        `module_spawns` is the question `tests/conftest.py` derives the `shell`
+        mark from, and it is still asked so the two spellings cannot drift —
+        but since primitive 11 it is NECESSARY AND NOT SUFFICIENT: one module
+        in `src/` imports `subprocess`, so it answers False for every other
+        file whatever that file does. The seam reach is what it has become, and
+        the `os` spellings are what neither of them can see.
+        """
+        for source, reaches in EMIT_SPAWN_SPELLINGS:
+            with self.subTest(source=source):
+                planted = ast.parse(source)
+                sites = (_spawn_sites(EMIT_MODULE, planted)
+                         + _seam_reach_sites(EMIT_MODULE, planted))
+                self.assertEqual(
+                    reaches, bool(sites),
+                    f'{source!r} classified as '
+                    f'{"harmless" if reaches else "a reach to a process"} — '
+                    f'the offender list below is only worth what this can '
+                    f'still see')
+        tree = _tree(SRC / EMIT_MODULE)
+        offenders = (_spawn_sites(EMIT_MODULE, tree)
+                     + _seam_reach_sites(EMIT_MODULE, tree))
+        self.assertEqual(
+            [], offenders,
+            f'{EMIT_MODULE} reaches a process. An event is WRITTEN here, '
             f'never run (0.5.0/D1): the moment one verb spawns a '
             f'consumer-named command, no caller can tell which verbs are safe '
-            f'to run from a git hook, and hard rule 2 is gone for all of them.')
+            f'to run from a git hook, and hard rule 2 is gone for all of '
+            f'them:\n  ' + '\n  '.join(offenders))
+        self.assertFalse(
+            module_spawns(SRC / EMIT_MODULE),
+            f'{EMIT_MODULE} imports `subprocess` — which is now the seam\'s '
+            f'alone, and would make the emit path the second module in the '
+            f'package that can start one.')
 
     def test_the_emit_path_resolves_no_string_to_a_callable(self):
         for source, is_execution in EMIT_EXECUTION_SPELLINGS:
@@ -2317,11 +2577,10 @@ TESTS_DIR = REPO_ROOT / 'tests'
 # writing) and well over zero.
 MIN_TEST_MODULES = 30
 MIN_GIT_SPAWNS = 20
-# The one module a spawn crosses, and the constructors that reach it. Spelled
-# the way `tests/conftest.py` derives the `shell` mark — `subprocess.<attr>` —
-# so the tier definition and this boundary police one chokepoint.
-SPAWN_MODULE = 'subprocess'
-SPAWNERS = ('run', 'Popen', 'call', 'check_output', 'check_call')
+# `SPAWN_MODULE` and `SPAWNERS` — the one module a spawn crosses and the
+# constructors that reach it — are declared with primitive 11 above and read
+# here too, since primitive 11 is the rule that a spawn crosses that module and
+# this one is the rule about where it may point.
 GIT = 'git'
 # What `tests/support` calls a path inside this checkout. A `cwd=` naming any of
 # them is the host repository: git discovers upward, so `tests/fixtures` is this

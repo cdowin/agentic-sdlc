@@ -435,6 +435,45 @@ class TheGuardBehindTheDerivation(unittest.TestCase):
             self.assertIn('test_reaches_a_spawn_indirectly', out)
             self.assertIn('module_spawns', out)
 
+    # The same reach, through `core/spawn.py`. Since 0.7.0 exactly one module
+    # in `src/` imports `subprocess`, so a caller's source names no spawn
+    # spelling at all — which puts EVERY library path this package has on the
+    # far side of the static mark, where only this guard can see it. It sees it
+    # because the seam does `import subprocess` and calls `subprocess.run`
+    # ATTRIBUTE-style: `run` looks the class up as a module global, so the
+    # rebinding above reaches it. A seam written `from subprocess import Popen`
+    # would hold its own reference, and this case is what goes red if one ever
+    # is — with the whole suite's tier enforcement gone and nothing else to say
+    # so.
+    SEAM_IMPORT = (
+        'import sys\n'
+        'sys.path.insert(0, {src!r})\n'
+        'from agentic_sdlc.core import spawn\n'
+        '\n\n'
+        'def test_reaches_a_process_through_the_seam():\n'
+        '    spawn.run(["true"])\n'
+    )
+
+    def test_a_spawn_through_the_seam_fails_by_nodeid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            (root / 'test_seam.py').write_text(
+                self.SEAM_IMPORT.format(src=str(REPO_ROOT / 'src')),
+                encoding='utf-8')
+            self.assertFalse(
+                conftest.module_spawns(root / 'test_seam.py'),
+                'the derivation marked the module, so this proves nothing '
+                'about the runtime guard')
+            code, out = ScratchSuite.run(root, '-m', 'not shell', 'test_seam.py')
+            self.assertEqual(code, 1, out)
+            self.assertIn('tried to spawn a process', out)
+            self.assertIn('test_reaches_a_process_through_the_seam', out)
+            self.assertIn('module_spawns', out)
+            # The argv the seam passed, so the refusal is this call and not
+            # some other process the scratch run happened to start.
+            self.assertIn("['true']", out)
+
     def test_the_same_spawn_is_allowed_once_the_module_is_marked(self):
         # The guard enforces the TIER, not a ban: a module the derivation marks
         # spawns freely, which is what `make test` and the floor interpreter run.

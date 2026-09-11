@@ -21,11 +21,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentic_sdlc.core import spawn
 from agentic_sdlc.repo.pm import ledger
 
 # The TAG versions the digest's INPUTS: change what goes in and no row written
@@ -158,9 +158,9 @@ def _git(root: Path, *args: str) -> bytes | None:
     `core.project.git_lines`: `-z` output has no lines, and a filename carrying
     a newline must not become two entries."""
     try:
-        done = subprocess.run(('git', *args), cwd=str(root),
-                              capture_output=True, timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.SubprocessError):
+        done = spawn.run(('git', *args), cwd=str(root),
+                         capture_output=True, timeout=GIT_TIMEOUT_S)
+    except (OSError, spawn.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None
 

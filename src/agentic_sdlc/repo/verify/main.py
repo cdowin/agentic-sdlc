@@ -33,14 +33,13 @@ config. A target's own exit 2 is reported as 1, with its code beside it.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from agentic_sdlc.core import makefile
+from agentic_sdlc.core import makefile, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo.pm import ledger
@@ -184,8 +183,8 @@ def _run(command: str, root: Path) -> int:
     """One rung's target through a shell in the repo root — `rules.py`
     already refused every spelling that is not `make <target>`."""
     print(f'  $ {command}', flush=True)
-    return subprocess.run(command, shell=True, cwd=str(root),
-                          check=False).returncode
+    return spawn.run(command, shell=True, cwd=str(root),
+                     check=False).returncode
 
 
 def _run_rung(ladder: Ladder, root: Path, name: str,

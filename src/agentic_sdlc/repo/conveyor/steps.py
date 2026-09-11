@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
 
 from agentic_sdlc import __version__
-from agentic_sdlc.core import frontmatter, walk
+from agentic_sdlc.core import frontmatter, spawn, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       relpath_tuple, str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
@@ -250,11 +249,11 @@ def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
     """`git` in the checkout; a missing git is an exit code. `strip=False`
     keeps porcelain columns whose leading space carries meaning."""
     try:
-        done = subprocess.run(('git',) + args, cwd=str(ctx.root),
-                              capture_output=True, text=True, timeout=GIT_TIMEOUT)
+        done = spawn.run(('git',) + args, cwd=str(ctx.root),
+                         capture_output=True, text=True, timeout=GIT_TIMEOUT)
     except FileNotFoundError:
         return NOT_ON_PATH, 'git is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, 'git timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -271,11 +270,11 @@ def _run(ctx: Context, argv: list[str]) -> tuple[int, str]:
     """Any command in the checkout, with `_make`'s failure vocabulary — a
     missing binary is an exit code, never a crash."""
     try:
-        done = subprocess.run(argv, cwd=str(ctx.root), capture_output=True,
-                              text=True, timeout=_timeout(ctx.operation))
+        done = spawn.run(argv, cwd=str(ctx.root), capture_output=True,
+                         text=True, timeout=_timeout(ctx.operation))
     except FileNotFoundError:
         return NOT_ON_PATH, f'{argv[0]} is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, f'{argv[0]} timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -294,12 +293,12 @@ def _read_text(path) -> str:
 def _make(ctx: Context, *args: str) -> tuple[int, str]:
     """`make` in the checkout. A missing make is an exit code, never a crash."""
     try:
-        done = subprocess.run(('make',) + args, cwd=str(ctx.root),
-                              capture_output=True, text=True,
-                              timeout=_timeout(ctx.operation))
+        done = spawn.run(('make',) + args, cwd=str(ctx.root),
+                         capture_output=True, text=True,
+                         timeout=_timeout(ctx.operation))
     except FileNotFoundError:
         return NOT_ON_PATH, 'make is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, 'make timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -318,10 +317,10 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
     env['PYTHONPATH'] = f'{parent}{os.pathsep}{existing}' if existing else parent
     command = (sys.executable, '-m', 'agentic_sdlc.cli') + argv
     try:
-        done = subprocess.run(command, cwd=str(ctx.root), capture_output=True,
-                              text=True, env=env,
-                              timeout=_timeout(ctx.operation))
-    except subprocess.TimeoutExpired:
+        done = spawn.run(command, cwd=str(ctx.root), capture_output=True,
+                         text=True, env=env,
+                         timeout=_timeout(ctx.operation))
+    except spawn.TimeoutExpired:
         return TIMED_OUT, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
@@ -644,10 +643,10 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
     """Run `command` in the checkout; exit 0 is true and nothing else is, with
     the output bounded into the detail."""
     try:
-        done = subprocess.run(command, cwd=str(ctx.root), shell=True,
-                              capture_output=True, text=True,
-                              timeout=_timeout(ctx.operation))
-    except subprocess.TimeoutExpired:
+        done = spawn.run(command, cwd=str(ctx.root), shell=True,
+                         capture_output=True, text=True,
+                         timeout=_timeout(ctx.operation))
+    except spawn.TimeoutExpired:
         return Answer.no(
             f'`{_clip(command, COMMAND_LIMIT)}` did not finish inside '
             f'{_timeout(ctx.operation)}s')

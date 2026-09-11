@@ -97,6 +97,10 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 
 - **`src/agentic_sdlc/core/`** knows no family: `project.py` finds the repo and loads config,
   `config.py` decides what a config VALUE may be. It imports nothing from `repo/`.
+  **It also holds THE PRIMITIVES, each the one place this package does one thing** — `walk.py`
+  enumerates, `apply.py` mutates, `frontmatter.py` reads and writes a frontmatter block, `spawn.py`
+  starts a process. Reach for one before writing the operation; `tests/test_boundaries.py` holds
+  each with an exact allowlist and an empty offender list, so a second implementation fails by path.
 - **`src/agentic_sdlc/repo/`** is the tool — the `pm` tracker, the checks, the belts, `verify`,
   and `install.py` with the files it writes under `installables/`. It imports `core/`, never the
   reverse. The router is `src/agentic_sdlc/cli.py`, a SIBLING of both: it only routes, and each

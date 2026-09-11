@@ -47,14 +47,17 @@ the hook corpus (armed), the agent roster, the CI workflows, the rendered SDLC d
 overwritten by `--force`; `devkit.toml`, `Makefile`, `CLAUDE.md` and the tree are yours from the
 first write and never touched again.
 
-**Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, read the release notes
-(`agentic-sdlc changelog <milestone-id>` on the source tree, where `agentic-sdlc pm roadmap` prints
-each release's version beside its milestone id — the changelog is a `changelog:` field
-on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only in the retired
-file at its tag, and `git show v0.5.0:CHANGELOG.md` in a clone of this repo prints v0.5.0 back to
-v0.2.0), run
-`install-* --diff` to see what the release would change, take what you want, re-run `pm init`
-once, and `agentic-sdlc adopt <version>` to read the result.
+**Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, then **take `Makefile.devkit`
+first**, with the pinned form, because every other command below goes through the targets it
+defines (a `Makefile.devkit` from before 0.8.0 has no `sdlc` target):
+`uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc install-gates --force`.
+Read the release notes (`agentic-sdlc changelog <milestone-id>` on the source tree, where
+`agentic-sdlc pm roadmap` prints each release's version beside its milestone id — the changelog is a
+`changelog:` field on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only
+in the retired file at its tag, and `git show v0.5.0:CHANGELOG.md` in a clone of this repo prints
+v0.5.0 back to v0.2.0), run `make sdlc ARGS='install-agents --diff'` (and each other `install-*`) to
+see what the release would change, take what you want, re-run `make pm ARGS=init` once, and
+`make sdlc ARGS='adopt <version>'` to read the result.
 
 ## The ladder — one verb, one scope
 
@@ -63,12 +66,12 @@ Nothing runs a rung wider than the thing you changed.
 | You are | Run |
 |---|---|
 | editing the PM tree or a doc | `make check` |
-| editing code, inner loop | `agentic-sdlc verify --story` — the make target `[verify] story` names, e.g. `make unit` |
+| editing code, inner loop | `make sdlc ARGS='verify --story'` — the make target `[verify] story` names, e.g. `make unit` |
 | about to commit | `make precommit` — `check` + your `GDK_PRECOMMIT_TIERS` |
-| closing a story | `agentic-sdlc close story <id>` |
-| closing a feature | `agentic-sdlc close feature <id>` — its check runs what `[verify] feature` names |
-| closing a milestone | `agentic-sdlc release <version>` — its `gate` check runs `make milestone` |
-| bumping the devkit pin | `agentic-sdlc adopt <version>` — the adoption, never your own gates |
+| closing a story | `make sdlc ARGS='close story <id>'` |
+| closing a feature | `make sdlc ARGS='close feature <id>'` — its check runs what `[verify] feature` names |
+| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check runs `make milestone` |
+| bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 
 `agentic-sdlc verify --plan` prints the three `verify` rungs with the cost each one last took, read
 from your ledger. Ask it instead of guessing.

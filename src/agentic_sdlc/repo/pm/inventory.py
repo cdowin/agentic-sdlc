@@ -26,12 +26,16 @@ from pathlib import Path
 from agentic_sdlc.core import apply, frontmatter, walk
 from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm.vocabulary import (
     ARCHIVE_DIR_NAME, BINDS_TO, BUGS_DIR, DONE_CATEGORY, FEATURES_DIR,
     FEATURE_DOC, FIELD_ID, FIELD_KIND, FIELD_STATUS, FLOW_KINDS, GRAIN_BUG,
     GRAIN_FEATURE, GRAIN_MILESTONE, GRAIN_STORY, IN_PROGRESS, MILESTONE_DOC,
     ORDER_KEY, PmConfig, RELEASES_DOC, ROOT_ID, ROOT_KIND, SLOT_HEADER,
     STORIES_DIR, TODO, VERSION_AT_START, category_of, flow_of, holds)
+
+# The placeholder every "put a milestone on the plan" hint takes.
+MILESTONE_SLOT = vehicle.Slot('<milestone-id>')
 
 # --- id <-> path --------------------------------------------------------------
 # Milestone dirs carry a human suffix (`0.28-chronicle`); the id is the
@@ -1110,9 +1114,10 @@ def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
                           'names no milestone in the tree')
         version = milestone_version(cfg, mid)
         if not version:
+            stamp = vehicle.command('pm', 'set', mid, 'version',
+                                    vehicle.Slot('<x.y.z>'))
             return None, (f'{mid} is the current entry in `order` and declares '
-                          f'no `version:` — `agentic-sdlc pm set {mid} version '
-                          f'<x.y.z>` says which release it is')
+                          f'no `version:` — `{stamp}` says which release it is')
         return version, ''
     shipped = [mid for mid in order if entry_is_shipped(cfg, mid)]
     if not shipped:
@@ -1164,7 +1169,7 @@ def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
     if not order:
         return None, (f'{cfg.rel(releases_file(cfg))} declares no `order`, so '
                       f'there is no current release to file against — '
-                      f'`agentic-sdlc pm add {root_id(cfg)} <milestone-id>` '
+                      f'`{vehicle.command("pm", "add", root_id(cfg), MILESTONE_SLOT)}` '
                       f'writes the plan')
     # Read off the plan rather than asserted (review C4): an entry naming
     # nothing is stepped over, and "everything shipped" would be false.
@@ -1172,8 +1177,9 @@ def release_milestone(cfg: PmConfig) -> tuple[Path | None, str]:
     if dangling:
         return None, (f'{dangling[0]} is in {cfg.rel(releases_file(cfg))} '
                       f'`order` and names no milestone in the tree, so there '
-                      f'is no ledger to file against — `agentic-sdlc pm '
-                      f'roadmap` shows the plan against the tree')
+                      f'is no ledger to file against — '
+                      f'`{vehicle.command("pm", "roadmap")}` shows the plan '
+                      f'against the tree')
     return None, (f'every release in {cfg.rel(releases_file(cfg))} has shipped, '
                   f'so there is no release in progress to file against')
 

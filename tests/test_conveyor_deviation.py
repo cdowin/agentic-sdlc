@@ -283,9 +283,12 @@ def test_the_belt_hands_the_arrivals_report_on_as_LINES():
         assert status(root) == want
     lines = out.splitlines()
     assert [ln for ln in lines if ln.startswith('[release] write: ')], out
-    for answer in ANSWERS:
-        paste = f'agentic-sdlc pm milestone {want} {VERSION} {answer}'
-        assert [ln for ln in lines if ln.endswith(paste)], (answer, out)
+    # Through the stock wiring, each answer INSIDE the one ARGS value; a
+    # placeholder stays bare so the line reads as its synopsis.
+    for paste in (f"make pm ARGS='milestone {want} {VERSION} --by me'",
+                  f"make pm ARGS='milestone {want} {VERSION} --by agent "
+                  f"<type>'"):
+        assert [ln for ln in lines if ln.endswith(paste)], (paste, out)
     assert ASK in ' '.join(lines), out
 
 

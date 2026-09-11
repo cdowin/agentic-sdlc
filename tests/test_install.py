@@ -1873,8 +1873,8 @@ def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_th
             install.body_of(Path(hook).name), 'GATE_STATIC='), encoding='utf-8')
         verdict, answer = graded(root)
         assert answer.is_true, answer.detail
-        assert (f'{hook} lacks `GATE_STATIC=` (`agentic-sdlc install-hooks '
-                f'--diff`)') in answer.detail, answer.detail
+        assert (f"{hook} lacks `GATE_STATIC=` (`make sdlc ARGS='install-hooks "
+                f"--diff'`)") in answer.detail, answer.detail
         (root / hook).unlink()
         (root / BRIEF).write_text(a_070_brief(packaged), encoding='utf-8')
         verdict, answer = graded(root)

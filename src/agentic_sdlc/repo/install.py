@@ -39,6 +39,7 @@ from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.repo import vehicle
 
 PACKAGE = 'agentic_sdlc.repo.installables'
 
@@ -228,7 +229,8 @@ _NEXT_STEP = {
                      'nothing ever runs. THESE ENTRIES ARE NOT YET IN FORCE '
                      'until one of those two happens, and until then the '
                      'couriers are on disk and nothing fires them — '
-                     '`agentic-sdlc adopt` and `check pm` U2 both report that. '
+                     f'`{vehicle.command("adopt", vehicle.Slot("<version>"))}` '
+                     'and `check pm` U2 both report that. '
                      'Next, the couriers take the TREE from GDK_LEDGER_ROOT '
                      'when the session cwd is not inside it: a session rooted '
                      'at a parent directory derives no repo and files no row, '
@@ -264,7 +266,10 @@ _NEXT_STEP = {
                      '<tag>` and then `include Makefile.devkit` — plus your '
                      'own targets; your own gates join `check` through '
                      '`[gates] extra` in devkit.toml, never a fork of the '
-                     'include. A language kit\'s own installer writes '
+                     'include. Every verb is then reached at your pin as '
+                     f'`{vehicle.command("dispatch", "--grain", vehicle.Slot("<id>"))}`, '
+                     'the spelling every command this tool prints uses. '
+                     'A language kit\'s own installer writes '
                      'Makefile.tiers beside it and sets GDK_PRECOMMIT_TIERS / '
                      'GDK_MILESTONE_TIERS; without one, `precommit` and '
                      '`milestone` are `check` and say so. Then gitignore '
@@ -283,7 +288,8 @@ _NEXT_STEP = {
                     'this verb with --force. Link to it from your own SDLC '
                     'document rather than restating the checks there: a '
                     'second copy of an ordered list is the drift this verb '
-                    'exists to end. Then run `agentic-sdlc release <version>` '
+                    'exists to end. Then run '
+                    f'`{vehicle.command("release", vehicle.Slot("<version>"))}` '
                     '— every check runs and prints, all true → the milestone '
                     'is written `done` and the `next:` lines say what is yours '
                     '(retitle, push, PR, tag, prove), any false → nothing is '

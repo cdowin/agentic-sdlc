@@ -432,13 +432,31 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         assert current.is_true, current
         assert CLAIMED_CLAUSE not in current.detail, (
             'a repo claiming nothing must print what it always printed')
-        fork(root, GATE_MK)
+        # A tree coming from 0.7.0: its include has no `sdlc` target, so a
+        # remedy spelled `make sdlc …` is `No rule to make target` (C1). And a
+        # second installer drifted beside it, ahead of it in plan order.
+        mk = root / GATE_MK
+        mk.write_text(re.sub(r'\nsdlc:.*\n\t.*\n', '\n',
+                             mk.read_text(encoding='utf-8')), encoding='utf-8')
+        assert 'sdlc:' not in mk.read_text(encoding='utf-8')
+        ci = '.github/workflows/verify.yml'
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-ci', []) == 0, buf.getvalue()
+        fork(root, ci)
         drifted = check('installables-current', root)
         assert drifted.truth is driver.Truth.FALSE, drifted
-        assert GATE_MK in drifted.detail
-        assert 'install-gates --diff' in drifted.detail, drifted.detail
+        pinned = (f'{GATE_MK} (differs; `uvx --from "git+https://github.com/'
+                  f'cdowin/agentic-sdlc@v{__version__}" agentic-sdlc '
+                  f'install-gates --force`)')
+        assert pinned in drifted.detail, drifted.detail
+        # FIRST, because every other remedy runs through the file it writes.
+        assert drifted.detail.index(GATE_MK) < drifted.detail.index(ci)
+        assert f"{ci} (differs; `make sdlc ARGS='install-ci --diff'`)" in (
+            drifted.detail)
         assert GATE_LIB_REL not in drifted.detail, (
             'a current file was named as drifted')
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-ci', ['--force']) == 0
         reconfigure(root, f'[adopt]\nours = ["{GATE_MK}"]\n')
         claimed = check('installables-current', root)
         assert claimed.is_true, claimed
@@ -469,7 +487,8 @@ def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():
         answer = check('installables-current', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert f'{GATE_LIB_REL} (differs' in answer.detail, answer.detail
-        assert 'install-gates --diff' in answer.detail, answer.detail
+        assert 'agentic-sdlc install-gates --force`' in answer.detail, (
+            answer.detail)
         assert f'{GATE_MK} (differs' not in answer.detail, (
             'a claimed file was graded anyway: ' + answer.detail)
         assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in answer.detail, answer.detail

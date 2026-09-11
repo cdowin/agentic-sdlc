@@ -70,13 +70,13 @@ PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/features=PackedStringArray("4.6")\n')
 ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 
-# THE STANDARD SET, spelled out: what `install-gates` writes is these five and
+# THE STANDARD SET, spelled out: what `install-gates` writes is these six and
 # two internal announce targets, everything a language kit contributes arriving
 # behind the `-include $(GDK_TIERS_MK)` seam (0.2.0/D1). The set is asserted as
 # an EQUALITY, which is stronger than a count: a target quietly dropped from the
 # include would shrink the sweep and still pass a count somebody remembered to
 # lower, and a target ADDED without a line here fails too.
-STANDARD = ('help', 'pm', 'check', 'precommit', 'milestone')
+STANDARD = ('help', 'pm', 'sdlc', 'check', 'precommit', 'milestone')
 DOCUMENTED = re.compile(r'^([a-z][a-z0-9-]*):.*?## ', re.MULTILINE)
 
 

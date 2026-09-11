@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import io
 import os
-import shlex
 import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
@@ -21,8 +20,9 @@ from pathlib import Path
 
 from support.pm import run_cli, tree as pm_tree
 
+from agentic_sdlc.cli import stock_roster
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.repo import dispatch
+from agentic_sdlc.repo import dispatch, vehicle
 from agentic_sdlc.repo.pm import vocabulary
 
 FLOW = vocabulary.render_seed()
@@ -76,7 +76,7 @@ def grain_tree():
 def run(*args) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
-        code = dispatch.main(list(args))
+        code = dispatch.main(list(args), stock_roster())
     return code, out.getvalue(), err.getvalue()
 
 
@@ -96,6 +96,15 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
             # DERIVED from `[pm.states.*]`.
             self.assertIn('open | fixed | closed', out)
             self.assertIn('0 pass   1 findings   2 usage or config error', out)
+            # Through make, the verb's code is make's `Error N` (D2, M1).
+            self.assertIn("the verb's own code is the N in make's `Error N`",
+                          out)
+            # m4: nothing declared is the STOCK roster, named as such, and
+            # both lists `make check` runs are there (criteria 4, 9).
+            self.assertIn(f'[checks] all   {" ".join(stock_roster())}   '
+                          f'(the stock roster', out)
+            self.assertIn('[gates] extra  (none declared)', out)
+            self.assertNotIn('agentic-sdlc check', out)
 
     def test_the_contract_is_POINTED_AT_and_never_copied(self):
         """The whole placement argument. A 163-line paste in every brief is the
@@ -112,7 +121,9 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
         would pass the case above and fail this one."""
         with tree(config=DECLARED):
             _, before, _ = run()
-        moved = ('[dispatch]\nproject = "p"\ncontracts = ["RULES.md"]\n')
+        moved = ('[dispatch]\nproject = "p"\ncontracts = ["RULES.md"]\n'
+                 '[checks]\nall = ["doc", "pm"]\n'
+                 '[gates]\nextra = ["my-lint", "my-scan"]\n')
         ladder = ('[verify]\nstory = "make quick"\nfeature = "make wide"\n'
                   'milestone = "make everything"\n')
         with tempfile.TemporaryDirectory() as tmp:
@@ -136,6 +147,11 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
         self.assertNotIn('make unit', after)
         self.assertIn('make quick', after)
         self.assertIn('make everything', after)
+        # STATIC GATES follows BOTH lists `make check` runs: an agent that
+        # trusted `[checks] all` alone ran 4 of one consumer's 25 gates (#22).
+        self.assertIn('[checks] all   doc pm\n', after)
+        self.assertIn('[gates] extra  my-lint my-scan\n', after)
+        self.assertNotIn('stock roster', after)
 
 
 class TheDispatchCanBeRECORDED(unittest.TestCase):
@@ -152,8 +168,10 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
             code, out, err = run('--grain', STORY, '--role', 'developer')
         self.assertEqual(code, 0, err)
         self.assertIn(f'export GDK_LEDGER_GRAIN={STORY}', out)
-        self.assertIn(f'agentic-sdlc pm ledger record --grain {STORY} '
-                      f'--agent-type developer', out)
+        # Through the stock wiring: nothing on a consumer's PATH is named
+        # `agentic-sdlc` (#36).
+        self.assertIn(f"make pm ARGS='ledger record --grain {STORY} "
+                      f"--agent-type developer'", out)
 
     def test_the_record_line_it_prints_is_one_the_verb_ACCEPTS(self):
         """A printed command that errors is worse than none, so the line is
@@ -165,9 +183,9 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
             line = next(raw.strip() for raw in out.splitlines()
                         if 'ledger record' in raw
                         and not raw.strip().startswith('#'))
-            argv = shlex.split(line)
-            self.assertEqual(argv[:2], ['agentic-sdlc', 'pm'])
-            code, said = run_cli(root, *argv[2:])
+            argv = vehicle.argv_of(line)
+            self.assertEqual(argv[0], 'pm')
+            code, said = run_cli(root, *argv[1:])
         self.assertEqual(code, 0, said)
         self.assertIn('ledger dispatch row appended', said)
 

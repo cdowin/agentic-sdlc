@@ -54,7 +54,7 @@ INSTALLABLES = INCLUDE.parent
 # The framework set, spelled out so this file READS as the contract. It is
 # cross-checked against the include below, so it cannot become a second roster
 # that quietly disagrees.
-STANDARD = ('help', 'pm', 'check', 'precommit', 'milestone')
+STANDARD = ('help', 'pm', 'sdlc', 'check', 'precommit', 'milestone')
 
 # Framework targets with no `## ` line: they exist to be depended ON, never to
 # be typed, so `help` must not list them — but `.PHONY` must.
@@ -686,6 +686,88 @@ def test_the_pin_is_the_projects_and_reaches_the_cli():
     with project() as root:
         done = make(root, '-n', 'pm')
     assert 'v0.0.0-fixture' in done.stdout, done.stdout
+
+
+# --- the vehicle: a printed command runs in a stock consumer (#22, #36) -------
+# The tools a pasted line needs, and nothing else: a PATH holding the builder's
+# own `agentic-sdlc` would pass this file for a reason no consumer has.
+VEHICLE_TOOLS = ('make', 'bash', 'sh', 'env', 'git')
+VEHICLE_STORY = '0.1/alpha/s0'
+
+
+def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
+    """Criteria 3, 5, 7 and 10 of the vehicle story, on the README's wiring.
+
+    `DEVKIT` is this checkout (M8: the pin is not tagged, and uvx would run old
+    code), reached through the ENVIRONMENT so the Makefile stays the two lines
+    the README prints. The RECORDING line is lifted out of a preamble rendered
+    through the vehicle itself and pasted into bash as printed; a sentence
+    carrying `$5` is written through it and read back byte-exact (M2); and the
+    sub-make a verb spawns sees no `ARGS`, by environment or by MAKEFLAGS.
+    """
+    from support.pm import ledger_rows, tree as pm_tree
+
+    from agentic_sdlc.core import frontmatter
+    from agentic_sdlc.repo import vehicle
+
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    for tool in VEHICLE_TOOLS:
+        found = shutil.which(tool)
+        assert found, f'{tool} is not on this machine'
+        (bin_dir / tool).symlink_to(found)
+    env = {'PATH': str(bin_dir), 'HOME': str(tmp_path), 'LC_ALL': 'C',
+           'DEVKIT': f'env PYTHONPATH={REPO_ROOT / "src"} {sys.executable} '
+                     f'-m agentic_sdlc.cli'}
+    config = ('[dispatch]\nproject = "A worked example."\n'
+              'contracts = ["RULES.md"]\n'
+              '[verify]\nstory = "make leak"\nmilestone = "make leak"\n')
+    with pm_tree(config=config, story_statuses=('building',)) as root:
+        (root / 'RULES.md').write_text('# rules\n', encoding='utf-8')
+        for name, rel in install.PLANS['install-gates']:
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(install.body_of(name), encoding='utf-8')
+        (root / 'Makefile').write_text(
+            'DEVKIT_VERSION := v0.0.0-fixture\ninclude Makefile.devkit\n\n'
+            'leak:\n\t@echo "nested ARGS=[$(ARGS)] env=[$${ARGS-unset}]"\n',
+            encoding='utf-8')
+
+        def paste(line: str) -> subprocess.CompletedProcess:
+            return subprocess.run(['bash', '-c', line], cwd=root, env=env,
+                                  text=True, capture_output=True, timeout=120)
+
+        # Criterion 5: the proof cannot pass on the builder's PATH.
+        assert paste('command -v agentic-sdlc').stdout == ''
+
+        rendered = paste(vehicle.command('dispatch', '--grain', VEHICLE_STORY,
+                                         '--role', 'developer'))
+        assert rendered.returncode == 0, rendered.stdout + rendered.stderr
+        lines = [ln.strip() for ln in rendered.stdout.splitlines()]
+        export = next(ln for ln in lines if ln.startswith('export '))
+        record = next(ln for ln in lines
+                      if 'ledger record' in ln and not ln.startswith('#'))
+        assert record.startswith('make pm '), record
+        done = paste(f'{export}\n{record}')
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert 'ledger dispatch row appended' in done.stdout + done.stderr
+        rows = [r for r in ledger_rows(root) if r.get('kind') == 'dispatch']
+        assert [r.get('grain') for r in rows] == [VEHICLE_STORY], rows
+
+        story = root / 'pm/roadmap/stories/s0.md'
+        done = paste("make sdlc ARGS='pm set " + VEHICLE_STORY
+                     + " changelog '\"'\"'costs $5'\"'\"''")
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert frontmatter.field_of(story, 'changelog') == 'costs $5'
+        # The spelling the CLI renders, for the other target and quote kind.
+        sentence = '`pm list` gains "a" column'
+        done = paste(vehicle.command('pm', 'set', VEHICLE_STORY, 'changelog',
+                                     sentence))
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert frontmatter.field_of(story, 'changelog') == sentence
+
+        done = paste("make sdlc ARGS='verify --story --no-cache'")
+        assert 'nested ARGS=[] env=[unset]' in done.stdout, (
+            done.stdout + done.stderr)
 
 
 # --- T1: a tier shadowed by a file or directory of the same name --------------

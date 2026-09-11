@@ -151,7 +151,7 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             code, out = run_cli(root, 'add', '0.2', 'bg-crash')
             self.assertEqual(code, 0, out)
             self.assertIn('DANGLING', out)
-            self.assertIn('pm remove 0.1 bg-crash', out)
+            self.assertIn("`make pm ARGS='remove 0.1 bg-crash'`", out)
             # THE REMEDY RUNS. This is the assertion the bug is about: a
             # printed fix that refuses is worse than no fix printed.
             code, out = run_cli(root, 'remove', '0.1', 'bg-crash')
@@ -370,7 +370,8 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
         # A retired verb read as "unknown command" reads as a typo and sends
         # the reader hunting for a misspelling instead of for the replacement.
         with tree(story_statuses=('ready',)) as root:
-            for argv, needle in ((('order', '--append', '0.1.0'), 'pm add'),
+            for argv, needle in ((('order', '--append', '0.1.0'),
+                                  "make pm ARGS='add <plan-id> <milestone-id>'"),
                                  (('sync',), 'order:')):
                 with self.subTest(argv=argv):
                     code, out = run_cli(root, *argv)
@@ -498,7 +499,8 @@ class ThePlanIsRead(unittest.TestCase):
             for argv in (('roadmap',), ('next',)):
                 code, out = run_cli(root, *argv)
                 self.assertEqual(code, 0, out)
-                self.assertIn('pm add roadmap <milestone-id>', out)
+                self.assertIn("`make pm ARGS='add roadmap <milestone-id>'`",
+                              out)
 
     def test_every_release_shipped_is_said_rather_than_guessed_at(self):
         with tree(milestone_status='done', story_statuses=('ready',)) as root:

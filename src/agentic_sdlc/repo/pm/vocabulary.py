@@ -24,6 +24,10 @@ from agentic_sdlc.core.config import (ConfigError, config_section, flag,
                                       number, pointer_escapes, relpath,
                                       section_declared, str_tuple,
                                       str_tuple_table, table, text)
+from agentic_sdlc.repo import vehicle
+
+# The verb that writes the flow, as every refusal below names it.
+INIT_COMMAND = vehicle.command('pm', 'init')
 
 # --- the flow a project DECLARES ----------------------------------------------
 # The closed set, and the engine's whole opinion about states: three categories
@@ -590,7 +594,7 @@ def _load_flows(sect: dict) -> dict[str, Flow]:
             f'[pm.states] declares {", ".join(sorted(out))} and not '
             f'{", ".join(missing)} — a partial flow is worse than none, '
             f'because the kinds it omits fall back to words the project '
-            f'never chose. Run `agentic-sdlc pm init` to write the rest.')
+            f'never chose. Run `{INIT_COMMAND}` to write the rest.')
     return out
 
 
@@ -739,7 +743,7 @@ def _load_arrivals(sect: dict,
             raise ConfigError(
                 f'[pm.{ARRIVE_KEY}.{kind}] declares what arriving asks, and '
                 f'[pm.states.{kind}] declares no states for it to arrive at — '
-                f'run `agentic-sdlc pm init` to write the flow first')
+                f'run `{INIT_COMMAND}` to write the flow first')
         for state, node in states.items():
             if flow.category(state) is None:
                 raise ConfigError(
@@ -844,7 +848,7 @@ def flow_of(cfg: PmConfig, kind: str) -> Flow:
             f'devkit.toml, and there is no default — the states are how '
             f'THIS project works, so the engine reads them and never '
             f'assumes them (CLAUDE.md hard rule 5). Run '
-            f'`agentic-sdlc pm init` to write them; it appends to a '
+            f'`{INIT_COMMAND}` to write them; it appends to a '
             f'devkit.toml it did not create and rewrites nothing.')
     return flow
 
@@ -884,8 +888,10 @@ RETIRED_KEYS = {
     'story_ordinal_prefix':
         'a story\'s FILE name is not its identity — `id:` is, and the file may '
         'be called anything. What the `NN-` prefix was sequencing is now the '
-        'feature\'s own `order:` list, written by `agentic-sdlc pm add '
-        '<feature-id> <story-id> [--position N | --before <id> | --after <id>]`',
+        'feature\'s own `order:` list, written by '
+        f'`{vehicle.command("pm", "add", vehicle.Slot("<feature-id>"), vehicle.Slot("<story-id>"))}`'
+        ', at `--position N`, `--before <id>` or `--after <id>` inside the '
+        'quotes',
     'review_slug_fallback': 'a review record is the `reviewed:` pointer and '
                             'nothing else — a record found by glob was the '
                             'engine guessing which file a review was',
@@ -948,7 +954,7 @@ def missing_flow_defect(sect: dict | None = None) -> str:
             f'{"is" if len(absent) == 1 else "are"} not in devkit.toml, and '
             f'there is no default — the states are how THIS project works, so '
             f'the engine reads them and never assumes them (CLAUDE.md hard '
-            f'rule 5). Run `agentic-sdlc pm init` to write them; it appends to '
+            f'rule 5). Run `{INIT_COMMAND}` to write them; it appends to '
             f'a devkit.toml it did not create and rewrites nothing.')
 
 

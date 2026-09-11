@@ -25,7 +25,10 @@ from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+
+ID = vehicle.Slot('<id>')
 
 # --- the shipped defaults -----------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -562,8 +565,8 @@ def _changelog_retired(operation: str) -> None:
         raise ConfigError(
             f'[{operation}] changelog was retired in 0.6.0 — the step grades '
             f'every grain\'s `changelog:` field instead of counting bullets '
-            f'in a file, so there is no path to name. `agentic-sdlc changelog '
-            f'<id>` renders them. Remove the key')
+            f'in a file, so there is no path to name. '
+            f'`{vehicle.command("changelog", ID)}` renders them. Remove the key')
 
 
 def _pin_file_of(operation: str) -> str:
@@ -833,8 +836,8 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
         listed = (f': {", ".join(closed[:SHOWN_MAX])}{more}' if closed else '')
         return Answer.no(
             f'{" and ".join(who)} answered neither{listed} — '
-            f'`agentic-sdlc pm set <id> {clog.FIELD} "<sentence>"`, or '
-            f'`{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
+            f'`{vehicle.command("pm", "set", ID, clog.FIELD, "<sentence>")}`, '
+            f'or `{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
     said = clog.rows(entries)
     # Rule 4: `declined` is what a grain SAID, never the arithmetic remainder —
     # a grain that is simply not closed yet answered nothing and is neither.
@@ -930,13 +933,29 @@ def check_pin_bumped(ctx: Context) -> Answer:
 
 def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
     """(verb, plan) for all SIX installers, not the five in one module:
-    the guidance files drifted invisibly here (review O2)."""
+    the guidance files drifted invisibly here (review O2). `BOOTSTRAP_VERB`
+    first, because every other remedy is spelled through what it writes."""
     from agentic_sdlc.repo import install
 
     from agentic_sdlc.repo.pm import skills
 
-    return [(verb, list(plan)) for verb, plan in install.PLANS.items()] + [
+    plans = [(verb, list(plan)) for verb, plan in install.PLANS.items()] + [
         (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
+    return sorted(plans, key=lambda pair: pair[0] != BOOTSTRAP_VERB)
+
+
+# The installer that writes `Makefile.devkit`, the file the vehicle lives in. A
+# tree coming from a release before it has no `sdlc` target until this runs, so
+# its remedy is the pinned uvx form at this tool's version, and it comes first
+# (feature D2); every other installer's remedy is spelled through the vehicle.
+BOOTSTRAP_VERB = 'install-gates'
+
+
+def remedy(verb: str) -> str:
+    """The command that takes one installer's drifted files."""
+    if verb == BOOTSTRAP_VERB:
+        return vehicle.pinned(verb, '--force')
+    return vehicle.command(*verb.split(), '--diff')
 
 
 # `./x`, a directory, a glob or `//` passes `ours_of` and claims NOTHING:
@@ -1015,7 +1034,7 @@ def _lacks_clause(graded: list[tuple[str, str, str, list[str]]]) -> str:
     """Each kept header lacking a packaged name (review M6): not drift, but
     a hook reading an unset name fails OPEN, so a pass names it."""
     lacking = [f'{rel} lacks ' + ', '.join(f'`{name}`' for name in names)
-               + f' (`agentic-sdlc {verb} --diff`)'
+               + f' (`{remedy(verb)}`)'
                for verb, rel, _verdict, names in graded if names]
     if not lacking:
         return ''
@@ -1063,8 +1082,8 @@ def check_installables_current(ctx: Context) -> Answer:
         return Answer.no(
             f'{len(stale)} of {counted} installed file(s) differ from what '
             f'{__version__} ships: '
-            + _clip(', '.join(f'{rel} ({verdict}; `agentic-sdlc {verb} '
-                              f'--diff`)' for verb, rel, verdict in stale))
+            + _clip(', '.join(f'{rel} ({verdict}; `{remedy(verb)}`)'
+                              for verb, rel, verdict in stale))
             + claims)
     if not counted:
         # Review O1, and milestone risk 2 as written: "a project can silence
@@ -1301,7 +1320,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'no ledger setup for this tree, no telemetry — the vehicle '
             f'answers, nothing in this checkout registers '
             f'{", ".join(unwired)}, and no courier row has ever landed. '
-            f'`install-hooks {install.SETTINGS_FLAG}` writes '
+            f'`{vehicle.command("install-hooks", install.SETTINGS_FLAG)}` writes '
             f'{vocabulary.AGENT_SETTINGS} when nothing is in the way, and prints '
             f'the block for whatever settings file your harness actually reads '
             f'when something is; a session rooted outside this tree also needs '
@@ -1336,8 +1355,9 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
         return run_command(ctx, 'runner-targets-resolve', command)
     if not (ctx.root / FRAMEWORK_MAKEFILE).is_file():
         return Answer.no(
-            f'{FRAMEWORK_MAKEFILE} is not in this checkout — `install-gates` '
-            f'writes it and this check installs nothing; run the verb, or drop '
+            f'{FRAMEWORK_MAKEFILE} is not in this checkout — '
+            f'`{vehicle.pinned(BOOTSTRAP_VERB)}` writes it and this check '
+            f'installs nothing; run the verb, or drop '
             f'`runner-targets-resolve` from [{ctx.operation}] steps')
     targets = _runner_targets_of(ctx.operation)
     # `-n` composes everything and RUNS nothing.
@@ -1794,21 +1814,22 @@ AFTER: dict[str, tuple[str, ...]] = {
     OP_STORY: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
-        'when every story of the feature is done: `agentic-sdlc close feature '
-        '<feature-id>`',
+        'when every story of the feature is done: '
+        f'`{vehicle.command("close", OP_FEATURE, vehicle.Slot("<feature-id>"))}`',
     ),
     OP_FEATURE: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
-        'when every feature of the milestone is done: `agentic-sdlc release '
-        '<version>`',
+        'when every feature of the milestone is done: '
+        f'`{vehicle.command("release", vehicle.Slot("<version>"))}`',
     ),
     'release': (
         # `CHANGELOG.md` retired in 0.6.0 and this line survived it, telling
         # the operator running THAT release to go retitle a section in a file
         # it had just deleted. `agentic-sdlc changelog <milestone-id>` renders
         # the notes from each grain's own field; redirect it if you want a file.
-        'render the release notes: `agentic-sdlc changelog <milestone-id>` — '
+        'render the release notes: '
+        f'`{vehicle.command("changelog", vehicle.Slot("<milestone-id>"))}` — '
         'they come off each grain\'s `changelog:` field, in the `order:` the '
         'milestone declares, and no file is maintained',
         'commit the roadmap directory as the release commit',

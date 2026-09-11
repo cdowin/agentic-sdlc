@@ -17,12 +17,13 @@ an opinion and does not ship.
 """
 from __future__ import annotations
 
+import shlex
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, remote, vocabulary
 
 # The BELT names. Their home is `conveyor/driver.py` and `pm/` may not import
@@ -119,11 +120,30 @@ def fork_lines(cfg: vocabulary.PmConfig, node: vocabulary.Arrival | None, gid: s
     """
     if node is None or not node.ask or not cfg.pressure or said:
         return []
-    move = f'agentic-sdlc pm {node.kind} {node.state} {gid}'
     lines = ['', node.ask]
     for index, answer in enumerate(node.answers):
-        lines.append(f'  {chr(ord("a") + index)}) {move} {answer}')
+        move = vehicle.command('pm', node.kind, node.state, gid,
+                               *answer_argv(answer))
+        lines.append(f'  {chr(ord("a") + index)}) {move}')
     return lines
+
+
+def answer_argv(answer: str) -> list[str]:
+    """A declared answer (`--why "<reason>"`) as argv: a word the project
+    QUOTED is free text and stays quoted, a bare `<x>` stays a placeholder."""
+    try:
+        words = shlex.split(answer, posix=False)
+    except ValueError:
+        return answer.split()
+    out: list[str] = []
+    for word in words:
+        if word[:1] in ('"', "'"):
+            out.extend(shlex.split(word))
+        elif word.startswith('<') and word.endswith('>'):
+            out.append(vehicle.Slot(word))
+        else:
+            out.append(word)
+    return out
 
 
 def disposition_of(row: dict) -> bool:
@@ -147,7 +167,7 @@ class Next:
     @property
     def action(self) -> str:
         """The command a caller can copy, with the belt's own argument shape."""
-        return f'agentic-sdlc {self.verb} {self.subject}'
+        return vehicle.command(*self.verb.split(), _subject_arg(self.subject))
 
 
 def derive_next(cfg: vocabulary.PmConfig, kind: str, to: str) -> Next | None:
@@ -388,9 +408,17 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
     from agentic_sdlc.repo.conveyor import driver
     verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
     subject = _subject_of(cfg, belt, grain.binding)
-    return (f'ready: `agentic-sdlc {verb} {subject}` — this write made '
+    move = vehicle.command(*verb.split(), _subject_arg(subject))
+    return (f'ready: `{move}` — this write made '
             f'{grain.binding} READY (every {kind} is in {vocabulary.DONE_CATEGORY}: '
             f'{held.counted} of {held.counted})')
+
+
+def _subject_arg(subject: str) -> str:
+    """`driver.SUBJECT`'s placeholder stays bare; a real subject is quoted."""
+    if subject.startswith('<') and subject.endswith('>'):
+        return vehicle.Slot(subject)
+    return subject
 
 
 def _subject_of(cfg: vocabulary.PmConfig, belt: str, parent_id: str) -> str:

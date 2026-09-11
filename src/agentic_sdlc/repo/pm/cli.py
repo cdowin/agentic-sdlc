@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
                                   templates, validate, vocabulary)
 
@@ -544,15 +545,18 @@ way. `pm config --seed` shows the whole declaration with an example.
 # A verb this package used to route, named so it errors rather than reading as
 # a typo. Each entry names its replacement.
 RETIRED_COMMANDS = {
-    'move': 're-parenting is one line now — `agentic-sdlc pm set <story-id> '
-            'feature <feature-id>` — because membership is a FIELD and the id '
+    'move': 're-parenting is one line now — '
+            f'`{vehicle.command("pm", "set", vehicle.Slot("<story-id>"), vocabulary.GRAIN_FEATURE, vehicle.Slot("<feature-id>"))}`'
+            ' — because membership is a FIELD and the id '
             'never changes, so there is nothing to rewrite. `pm move` renamed '
             'the file and did NOT rewrite the refs pointing AT the moved '
             'story; `pm rename <old> <new>` is the verb that sweeps those',
     'order': 'the plan is `order` on pm/roadmap/releases.md like any other '
-             'parent\'s, so `agentic-sdlc pm add <plan-id> <milestone-id> '
-             '[--position N | --before <id> | --after <id>]` schedules a '
-             'release and `pm remove` takes one off. The plan lists MILESTONE '
+             'parent\'s, so '
+             f'`{vehicle.command("pm", "add", vehicle.Slot("<plan-id>"), vehicle.Slot("<milestone-id>"))}`'
+             ' schedules a release (at `--position N`, `--before <id>` or '
+             '`--after <id>` inside the quotes) and `pm remove` takes one '
+             'off. The plan lists MILESTONE '
              'IDS now, not versions — each milestone\'s own `version:` says '
              'which release it is. Reading the plan is still `pm roadmap`',
     'sync': 'the generated execution list (`<!-- pm:execution -->`) is retired '
@@ -1065,8 +1069,8 @@ def _plan_note(cfg: vocabulary.PmConfig, mid: str, *,
                 f'to the `order:` list in '
                 f'{cfg.rel(inventory.releases_file(cfg))} by hand')
     return (f'; {mid} is on no plan, so `pm roadmap` will not print it — '
-            f'`agentic-sdlc pm add {inventory.root_id(cfg)} {mid}` before '
-            f'retiring gives it a row there')
+            f'`{vehicle.command("pm", "add", inventory.root_id(cfg), mid)}` '
+            f'before retiring gives it a row there')
 
 
 def _near_key(text: str) -> str:
@@ -1867,7 +1871,8 @@ def cmd_vocabulary(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         print('devkit.toml, and there is no default behind it — the states are')
         print('how THIS project works (hard rule 5). Every verb that creates,')
         print('moves or locates work refuses by name until it is there.')
-        print('`agentic-sdlc pm init` writes exactly this, appending to a')
+        print(f'`{vehicle.command("pm", "init")}` writes exactly this, '
+              f'appending to a')
         print('devkit.toml it did not create:')
         print()
         # Indented by two so it is not mistaken for the tree's own config;
@@ -2105,8 +2110,9 @@ def _name_required(kind: str, gid: str, typed: str) -> 'Usage':
     """The refusal for a CREATE with no name, leading with the ARGUMENT that
     was omitted: *"feature 'x' does not exist yet"* read as *this grain is
     missing from your tree* and sent readers looking for a lost file."""
-    return Usage(f'{NAME_ARG} is required: `agentic-sdlc pm new {kind} {typed} '
-                 f'{NAME_ARG}`. Nothing in this tree declares {gid!r}, so this '
+    create = vehicle.command('pm', 'new', kind, typed, vehicle.Slot(NAME_ARG))
+    return Usage(f'{NAME_ARG} is required: `{create}`. Nothing in this tree '
+                 f'declares {gid!r}, so this '
                  f'call CREATES a {kind} rather than filling the missing slots '
                  f'of one that is already there, and the name is the one slot '
                  f'that cannot be derived')
@@ -2228,7 +2234,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             # The no-name form stays: scripts written against it exit 0 and a
             # refusal would break them (rule 7). The gap is NAMED instead (rule
             # 11), on stderr, so stdout stays the one line the write wrote.
-            print(f"[pm] next: `pm set {bid} name '<name>'` — `name:` is "
+            name = vehicle.command('pm', 'set', bid, 'name', '<name>')
+            print(f'[pm] next: `{name}` — `name:` is '
                   f'empty, so the bug is addressable by its id alone',
                   file=sys.stderr)
         if cause:
@@ -2330,8 +2337,8 @@ def cmd_decide(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Refused(
             f'the heading ends with {title[-1]!r} — a shell cut it there and '
             f'the rest never reached this process; nothing was written. Quote '
-            f'the whole title: make pm ARGS=\'decide {gid} "first half; '
-            f'second half"\'')
+            f'the whole title: '
+            f'{vehicle.command("pm", "decide", gid, "first half; second half")}')
     log, text = _decision_log(cfg, gid)
     eid = inventory.next_entry_id(text)
     when = datetime.now(timezone.utc).date().isoformat()
@@ -2687,8 +2694,8 @@ def _resolved_grain(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain | Non
         # single candidate that will not resolve was the silent third case.
         print(f'[pm] the tree named a grain this verb could not resolve '
               f'({err}) — the row is filed without one and lands in `rows '
-              f'naming no grain`; `agentic-sdlc check pm` reports the tree '
-              f'defect', file=sys.stderr)
+              f'naming no grain`; `{vehicle.command("check", "pm")}` reports '
+              f'the tree defect', file=sys.stderr)
         return None
 
 
@@ -3239,7 +3246,7 @@ def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             if former is not None and child.gid in _sequence(cfg, former):
                 wrote.append(f'  noticed: {before} still lists {child.gid} in '
                              f'its `order` — that entry is now DANGLING; '
-                             f'`agentic-sdlc pm remove {before} {child.gid}` '
+                             f'`{vehicle.command("pm", "remove", before, child.gid)}` '
                              f'takes it out')
 
     # THE SEQUENCE — the parent's list, through the byte-honest writer.
@@ -3342,7 +3349,7 @@ def cmd_roadmap(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Usage(f'{err}') from err
     if not entries:
         print(f'[pm] {cfg.rel(path)} declares no order — '
-              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
+              f'`{vehicle.command("pm", "add", inventory.root_id(cfg), inventory.MILESTONE_SLOT)}` '
               f'starts the plan')
     else:
         print(f'[pm] {len(entries)} scheduled release(s) in {cfg.rel(path)}')
@@ -3383,7 +3390,7 @@ def cmd_next(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     entries = inventory.declared_order(cfg)
     if not entries:
         print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
-              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
+              f'`{vehicle.command("pm", "add", inventory.root_id(cfg), inventory.MILESTONE_SLOT)}` '
               f'starts the plan')
         return 0
     # ONE resolver. `pm next` answering differently from what `release` and the

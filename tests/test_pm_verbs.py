@@ -507,15 +507,16 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             self.assertIn(self.ASK, out)
             for answer in self.ANSWERS:
+                # Through the stock wiring, the answer inside ARGS.
                 self.assertIn(
-                    f'agentic-sdlc pm feature building 0.1/alpha {answer}', out)
+                    f"make pm ARGS='feature building 0.1/alpha {answer}'", out)
             # No node -> no question. `reviewing` declares nothing here.
             _, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
             self.assertNotIn(self.ASK, out)
         one = self._node('feature', 'building', self.ASK, (self.ONE_ANSWER,))
         with tree(feature_status='ready', config=one) as root:
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            offered = [ln for ln in out.splitlines() if ') agentic-sdlc' in ln]
+            offered = [ln for ln in out.splitlines() if ') make pm ' in ln]
             self.assertEqual(len(offered), 1, offered)
 
     # --- 4: the capability census -----------------------------------------
@@ -685,8 +686,8 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(code, 0, out)
             crossed = self._stderr(out, 'READY')
             self.assertEqual(len(crossed), 1, out)
-            self.assertIn(f'agentic-sdlc {driver.CLOSE_VERB} feature '
-                          f'0.1/alpha', crossed[0])
+            self.assertIn(f"`make sdlc ARGS='{driver.CLOSE_VERB} feature "
+                          f"0.1/alpha'`", crossed[0])
             self.assertIn('2 of 2', crossed[0])
 
         # One grain up, the line is the PARENT's own entry edge and never a
@@ -711,7 +712,8 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                     # The line's shape is contract (rule 6): unchanged by
                     # which predicate decides whether it prints.
                     self.assertRegex(
-                        crossed[0], r'^\[pm\] ready: `agentic-sdlc release \S+` '
+                        crossed[0], r"^\[pm\] ready: `make sdlc ARGS='release "
+                                    r"[^'\s]+'` "
                                     r'— this write made 0\.1 READY \(every '
                                     r'feature is in done: 1 of 1\)$')
 
@@ -1445,7 +1447,8 @@ class PmMoveIsRetiredByName(unittest.TestCase):
             code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/beta')
             self.assertEqual(code, 2, out)
             self.assertIn('move was retired', out)
-            self.assertIn('pm set <story-id> feature', out)
+            self.assertIn("make pm ARGS='set <story-id> feature "
+                          "<feature-id>'", out)
             self.assertNotIn('unknown command', out)
 
     def test_the_router_does_not_carry_it(self):
@@ -1638,14 +1641,15 @@ class TheOrdinalPrefixRetiredByName(unittest.TestCase):
 
     def test_the_key_is_refused_by_name_with_its_replacement(self):
         self.assertIn('story_ordinal_prefix', vocabulary.RETIRED_KEYS)
-        self.assertIn('pm add', vocabulary.RETIRED_KEYS['story_ordinal_prefix'])
+        self.assertIn("make pm ARGS='add <feature-id> <story-id>'",
+                      vocabulary.RETIRED_KEYS['story_ordinal_prefix'])
         with tree(story_statuses=()) as root:
             write_config(root, '[pm]\nstory_ordinal_prefix = true\n')
             code, out = run_cli(root, 'validate')
             self.assertEqual(code, 2, out)
             self.assertIn('story_ordinal_prefix', out)
             self.assertIn('was retired', out)
-            self.assertIn('pm add', out)
+            self.assertIn("make pm ARGS='add <feature-id> <story-id>'", out)
 
     def test_a_leading_ordinal_is_now_just_part_of_the_slug(self):
         with tree(story_statuses=()) as root:
@@ -2071,7 +2075,7 @@ class Retire(unittest.TestCase):
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('on no plan', out)
-            self.assertIn('pm add roadmap 0.1', out)
+            self.assertIn("`make pm ARGS='add roadmap 0.1'`", out)
 
     def test_the_summary_is_normalised_so_it_cannot_forge_a_column(self):
         """`pm roadmap` prints the summary in a TAB-separated row, so a tab or

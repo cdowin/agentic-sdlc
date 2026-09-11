@@ -146,7 +146,7 @@ question the tree answers.
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
 | `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, doc-hygiene, pm-operator — each pointing at `agentic-sdlc dispatch` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install |
 | `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE, shell-quoted script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. An absolute path names one machine, so a shared checkout puts the block in the gitignored `.claude/settings.local.json` — `check pm` and `adopt` read both. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
-| `install-gates` | `Makefile.devkit` (`help`, `pm`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library |
+| `install-gates` | `Makefile.devkit` (`help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library. `sdlc` reaches every verb at your pin, and it is how every command the CLI prints is spelled |
 | `install-sdlc` | `docs/sdlc-protocol.md`, **rendered** from your `[story]` / `[feature]` / `[release]` / `[adopt]` check lists and the `done` state each belt writes |
 | `version` | This package's version |
 
@@ -361,7 +361,14 @@ my-scan: ## a gate this project owns
 	@bash tools/dev/checks/my_scan.sh
 ```
 
-`Makefile.devkit` is devkit-owned: `help`, `pm`, `check`, `precommit`, `milestone`. Your build and
+**The stock wiring never puts `agentic-sdlc` on PATH; `make` reaches it at your pin.**
+`make sdlc ARGS='close story <id>'` runs any verb and `make pm ARGS='story building <id>'` any `pm`
+verb, and every command the CLI prints for you to run is spelled that way. `ARGS` is parsed by a
+second shell, so put free text in single quotes, as the printed lines do:
+`make pm ARGS='set <id> changelog '"'"'costs $5'"'"''`. Through make, any nonzero exit is make's
+2, and the verb's own code is the N in make's `Error N` line.
+
+`Makefile.devkit` is devkit-owned: `help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`. Your build and
 test tiers arrive through `Makefile.tiers`, a file you (or a language kit) write beside it: it
 defines the tier targets and declares which compositions they join with `GDK_PRECOMMIT_TIERS` and
 `GDK_MILESTONE_TIERS`. With no tier file, `precommit` and `milestone` are `check` alone and say so.

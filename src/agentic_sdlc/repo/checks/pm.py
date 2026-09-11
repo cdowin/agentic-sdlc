@@ -93,7 +93,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, vocabulary
+
+ID = vehicle.Slot('<id>')
 
 # How many row kinds the 'what IS recorded' census names before the fix
 # line; thirteen of them once pushed that fix behind 839 characters.
@@ -544,19 +547,23 @@ def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
         warn(f'{len(ready.stories)} story/ies ready for `close story` — each '
              f'carries a `done:` line the story belt\'s evidence-written '
              f'accepts and is not in `{done}`: {named(ready.stories)}; next: '
-             f'`agentic-sdlc close story <id>`, one per story (CLOSE)')
+             f'`{vehicle.command("close", vocabulary.GRAIN_STORY, ID)}`, one '
+             f'per story '
+             f'(CLOSE)')
     if ready.unreviewed:
+        record = vehicle.command('pm', 'set', ID, 'reviewed',
+                                 vehicle.Slot('<path>'))
         warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
              f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
              f'review-recorded finds none: {named(ready.unreviewed)}; '
-             f'next: the review, then `agentic-sdlc pm set <id> reviewed '
-             f'<path>` (CLOSE)')
+             f'next: the review, then `{record}` (CLOSE)')
     if ready.closable:
         warn(f'{len(ready.closable)} feature(s) ready for `close feature` — '
              f'every story in `{done}`, and review-recorded and '
              f'findings-landed both accept the record: '
-             f'{named(ready.closable)}; next: `agentic-sdlc close feature '
-             f'<id>` (CLOSE)')
+             f'{named(ready.closable)}; next: '
+             f'`{vehicle.command("close", vocabulary.GRAIN_FEATURE, ID)}` '
+             f'(CLOSE)')
 
 
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
@@ -955,13 +962,13 @@ def _hook_recording_findings(cfg: vocabulary.PmConfig, enabled: set[str],
              f'wired in {wiring.where} and no {kinds} row has EVER '
              f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
              f'{recording_phrase(rec)}{_recording_span(rows)}. '
-             f'`install-hooks --write-settings` lands '
+             f'`{vehicle.command("install-hooks", "--write-settings")}` lands '
              f'the block here, and `GDK_LEDGER_ROOT` points a session rooted '
              f'elsewhere at this tree: whether a harness fires the {events} '
              f'hook depends on the session\'s project root, not on '
              f'{wiring.where}. The ledgers hold {held}, which this checkout '
-             f'writes itself; `agentic-sdlc pm ledger report` breaks them '
-             f'down (U4)')
+             f'writes itself; `{vehicle.command("pm", "ledger", "report")}` '
+             f'breaks them down (U4)')
         return
     # COUNTED, never a finding: the age is what tells live telemetry from
     # telemetry that stopped.
@@ -1103,9 +1110,12 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         if grain.field(clog.FIELD).strip():
             continue
         silent += 1
+        # The sentence is FREE TEXT, so it is single-quoted at both parses:
+        # a `$` or a backtick in what the operator types reaches the verb.
         warn(f'{grain.kind} {gid} is {status!r} ({vocabulary.DONE_CATEGORY}) and '
-             f'carries no `{clog.FIELD}:` — `agentic-sdlc pm set {gid} '
-             f'{clog.FIELD} "<sentence>"`, or `{clog.NEEDS_NONE}` to say it '
+             f'carries no `{clog.FIELD}:` — '
+             f'`{vehicle.command("pm", "set", gid, clog.FIELD, "<sentence>")}`, '
+             f'or `{clog.NEEDS_NONE}` to say it '
              f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
     print(f'  CHANGELOG  {graded - silent} of {graded} closed grain(s) '
           f'answered, shipped milestones excluded (D12)')
@@ -1155,8 +1165,8 @@ def _containment(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:
                f'({vocabulary.DONE_CATEGORY}) but {child.kind} {child.gid} is '
                f'{c_status!r} ({_cat(cfg, child.kind, c_status)}) — a parent '
                f'does not close over an unresolved child; finish it, or '
-               f'`agentic-sdlc pm remove {parent.gid} {child.gid}` returns it '
-               f'to the pool (D11)  [{cfg.rel(child.path)}]')
+               f'`{vehicle.command("pm", "remove", parent.gid, child.gid)}` '
+               f'returns it to the pool (D11)  [{cfg.rel(child.path)}]')
     print(f'  CONTAINMENT  {graded} bound child/ren graded against their '
           f'parent (D11)')
 
@@ -1194,7 +1204,8 @@ def _omitted_stock_rules(cfg: vocabulary.PmConfig) -> None:
         print(f'  ROSTER  [pm] checks omits {len(omitted)} of '
               f'{len(vocabulary.DEFAULT_CHECKS)} stock-on rule(s): '
               f'{", ".join(omitted)} — none of them runs on this tree; name '
-              f'one in [pm] checks to run it (`pm vocabulary` lists every rule)')
+              f'one in [pm] checks to run it '
+              f'(`{vehicle.command("pm", "vocabulary")}` lists every rule)')
 
 
 def _unbound_rows(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
@@ -1206,9 +1217,9 @@ def _unbound_rows(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> 
         return
     for kind, ids in sorted(inventory.unbound_grains(cfg).items()):
         field = vocabulary.BINDS_TO[kind][1]
+        add = vehicle.command('pm', 'add', vehicle.Slot(f'<{field}-id>'), ID)
         print(f'  UNBOUND  {len(ids)} {kind}(s) name no {field}: — '
-              f'{", ".join(ids)}; `agentic-sdlc pm add <{field}-id> <id>` '
-              f'binds and sequences one (V7)')
+              f'{", ".join(ids)}; `{add}` binds and sequences one (V7)')
     _sequence_rows(cfg, report, warn)
 
 
@@ -1235,8 +1246,8 @@ def _sequence_rows(cfg: vocabulary.PmConfig, report, warn) -> None:
                    f'does not hold it — {gid} names '
                    + (f'{child.binding or "no " + bind[0]}' if bind
                       else 'no parent')
-                   + f'; `agentic-sdlc pm add {parent.gid} {gid}` binds it, '
-                     f'`pm remove` takes the entry out (V7)')
+                   + f'; `{vehicle.command("pm", "add", parent.gid, gid)}` '
+                     f'binds it, `pm remove` takes the entry out (V7)')
         for gid in seq.unverifiable:
             warn(f'UNVERIFIABLE: {parent.gid} sequences {gid} in its `order` '
                  f'and no grain in this tree declares that id — DANGLING if it '
@@ -1251,9 +1262,10 @@ def _sequence_rows(cfg: vocabulary.PmConfig, report, warn) -> None:
     for kind, n in sorted(unsequenced.items()):
         # COUNTED: `order` is optional per container, so a child nobody has
         # placed is a decision not taken — never a finding.
+        place = vehicle.command('pm', 'add', vehicle.Slot('<parent-id>'), ID)
         print(f'  UNSEQUENCED  {n} {kind}(s) are bound and in no parent\'s '
-              f'`order` — `agentic-sdlc pm add <parent-id> <id> [--position N '
-              f'| --before <id> | --after <id>]` places one (V7)')
+              f'`order` — `{place}` places one, at `--position N`, '
+              f'`--before <id>` or `--after <id>` inside the quotes (V7)')
 
 
 def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str],
@@ -1283,9 +1295,11 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
         if seq.unsequenced:
             # COUNTED, not a finding: authoring a milestone and scheduling it
             # are separate acts.
+            schedule = vehicle.command('pm', 'add', root.gid,
+                                       vehicle.Slot('<milestone-id>'))
             print(f'  UNSEQUENCED  {len(seq.unsequenced)} milestone(s) are on '
-                  f'no plan — {", ".join(seq.unsequenced)}; `agentic-sdlc pm '
-                  f'add {root.gid} <milestone-id>` schedules one (R1)')
+                  f'no plan — {", ".join(seq.unsequenced)}; `{schedule}` '
+                  f'schedules one (R1)')
 
     if 'R2' in enabled:
         # Backlog: a named, counted line, never a finding — a healthy tree has
@@ -1319,7 +1333,7 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
                 if first_open is not None:
                     report(f'history is not a prefix: {mid} has shipped and '
                            f'sits AFTER {first_open}, which has not — '
-                           f'`agentic-sdlc pm add` re-sequences the plan (R4)')
+                           f'`{_resequence(cfg)}` re-sequences the plan (R4)')
             elif first_open is None and not inventory.entry_is_dangling(cfg, mid):
                 first_open = mid
 
@@ -1348,6 +1362,18 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
                        f'release (R6)')
 
 
+def _schedule(cfg: vocabulary.PmConfig) -> str:
+    """The move that puts a milestone on the plan."""
+    return vehicle.command('pm', 'add', inventory.root_id(cfg),
+                           vehicle.Slot('<milestone-id>'))
+
+
+def _resequence(cfg: vocabulary.PmConfig) -> str:
+    """The move that puts a milestone ahead of another in the plan."""
+    return vehicle.command('pm', 'add', inventory.root_id(cfg),
+                           vehicle.Slot('<milestone-id>'), '--before', ID)
+
+
 def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
     the version file against the CURRENT release — a POSITION in `order`, never
@@ -1372,8 +1398,7 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
         # consumer gets switched off.
         warn(f'R5 is enabled and {cfg.rel(inventory.releases_file(cfg))} declares '
              f'no `order` — nothing to grade {cfg.version_file} against; '
-             f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
-             f'writes the plan')
+             f'`{_schedule(cfg)}` writes the plan')
         return
     accepted, why = inventory.graded_release_accepts(cfg)
     current = accepted[0] if accepted else None

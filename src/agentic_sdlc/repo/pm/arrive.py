@@ -360,7 +360,8 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
     """'' unless this write made the grain's PARENT ready, else the line
     saying so and naming the belt that closes it. Derivable on the write that
     caused it, so READY stops being a question somebody must remember to ask
-    (0.3.0 made it prose in a document instead)."""
+    (0.3.0 made it prose in a document instead). READY is the parent's own
+    `ready-for` verdict; the same-kind siblings only supply the count."""
     if not cfg.pressure:
         return ''
     grain = inventory.grain_index(cfg).get(gid)
@@ -376,6 +377,13 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
     held = vocabulary.holds(cfg, kind, [(c.gid, c.status) for c in children],
                        vocabulary.DONE_CATEGORY)
     if not held:
+        return ''
+    # Imported here: `ready_for` imports `pm/cli.py`, which imports this.
+    from agentic_sdlc.repo.pm import ready_for
+    try:
+        if ready_for.blockers(cfg, parent_kind, grain.binding):
+            return ''
+    except Exception:  # noqa: BLE001 — an edge that cannot answer is not READY
         return ''
     from agentic_sdlc.repo.conveyor import driver
     verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'

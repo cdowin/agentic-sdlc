@@ -3,7 +3,7 @@ id: bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the arrival ready line says READY where ready-for says NOT READY
-status: fixed
+status: closed
 caused_by:
 changelog: An arrival's `ready:` line now prints only when the parent's own `pm ready-for` says READY — it used to announce a milestone READY over an open bug that `release` then refused on.
 ---

@@ -416,3 +416,27 @@
 {"ts":"2026-09-11T17:41:19Z","kind":"disposition","grain":"ms-a-consumer-can-take-the-bump","state":"reviewing","answer":"none"}
 {"ts":"2026-09-11T17:41:19Z","kind":"rung.leave","grain":"ms-a-consumer-can-take-the-bump","state":"reviewing","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["make sdlc ARGS='release <version>'"],"have":[]}
 {"ts":"2026-09-11T18:11:07Z","kind":"dispatch","grain":"ms-a-consumer-can-take-the-bump","agent_type":"reviewer","duration_s":1746,"tool_calls":150,"tokens_total":220625,"tree":{"milestones_building":[],"features_building":[],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["ms-a-consumer-can-take-the-bump"],"features_in_progress":[],"stories_in_progress":[]}}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-the-release-belt-and-the-render-verb-disagree-about-changelog","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-the-release-belt-and-the-render-verb-disagree-about-changelog","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:02Z","kind":"rung.leave","grain":"bg-the-release-belt-and-the-render-verb-disagree-about-changelog","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:02Z","kind":"rung.leave","grain":"bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-a-close-the-tree-is-ready-for-is-named-by-nothing","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-a-close-the-tree-is-ready-for-is-named-by-nothing","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:02Z","kind":"rung.leave","grain":"bg-a-close-the-tree-is-ready-for-is-named-by-nothing","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:02Z","kind":"rung.leave","grain":"bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-the-suite-run-in-a-worktree-mutates-the-host-repo","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-the-suite-run-in-a-worktree-mutates-the-host-repo","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:02Z","kind":"rung.leave","grain":"bg-the-suite-run-in-a-worktree-mutates-the-host-repo","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:02Z","kind":"status","grain":"bg-check-hooks-calls-a-linked-worktree-misdirected","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:02Z","kind":"disposition","grain":"bg-check-hooks-calls-a-linked-worktree-misdirected","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:03Z","kind":"rung.leave","grain":"bg-check-hooks-calls-a-linked-worktree-misdirected","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:03Z","kind":"status","grain":"bg-check-doc-reads-into-quoted-prose","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:03Z","kind":"disposition","grain":"bg-check-doc-reads-into-quoted-prose","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:03Z","kind":"rung.leave","grain":"bg-check-doc-reads-into-quoted-prose","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
+{"ts":"2026-09-11T18:13:03Z","kind":"status","grain":"bg-the-gate-help-names-one-of-its-four-rule-families","from":"fixed","to":"closed"}
+{"ts":"2026-09-11T18:13:03Z","kind":"disposition","grain":"bg-the-gate-help-names-one-of-its-four-rule-families","state":"closed","answer":"none"}
+{"ts":"2026-09-11T18:13:03Z","kind":"rung.leave","grain":"bg-the-gate-help-names-one-of-its-four-rule-families","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}

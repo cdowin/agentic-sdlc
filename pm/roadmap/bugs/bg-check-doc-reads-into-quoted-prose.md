@@ -3,7 +3,7 @@ id: bg-check-doc-reads-into-quoted-prose
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: check doc reads a make target out of quoted prose and misses a span inside a blockquote
-status: fixed
+status: closed
 caused_by: ft-a-gate-verdict-is-true-of-the-tree
 changelog: `check doc` no longer reads `make <word>` out of prose quoted inside a code span (only an invocation at the span's start, after a shell separator, quote, prompt or `NAME=value` prefix), and it now reads a status call wrapped inside a `>` blockquote.
 ---

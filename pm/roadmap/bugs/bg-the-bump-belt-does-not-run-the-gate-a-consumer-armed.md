@@ -3,7 +3,7 @@ id: bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed
 kind: bug
 milestone: ms-a-consumer-can-take-the-bump
 name: adopt reports checks-pass while an opt-in gate the consumer armed exits 1
-status: fixed
+status: closed
 caused_by:
 changelog: `adopt`'s `ok: checks-pass` line now ends `; NOT run: …`, naming every gate outside the `check all` roster, every `[gates] extra` target, and the `[adopt.commands] checks-pass` key that would run them; the verdict is unchanged.
 ---

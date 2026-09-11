@@ -3,7 +3,7 @@ id: bg-a-close-the-tree-is-ready-for-is-named-by-nothing
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a close the tree is ready for is named by nothing
-status: fixed
+status: closed
 caused_by:
 changelog: `check pm` names the close a tree is ready for and never ran — a story carrying `done:` evidence that is not done, a feature whose stories are all done with no review record, a feature whose record is fully dispositioned but not closed — each on a counted `CLOSE` WARN line with the one next command, and `pm status` marks the same grains.
 ---

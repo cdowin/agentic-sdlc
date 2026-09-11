@@ -3,7 +3,7 @@ id: bg-the-gate-help-names-one-of-its-four-rule-families
 kind: bug
 milestone: ms-a-consumer-can-take-the-bump
 name: check pm's opening line names the drift family and not the other three it runs
-status: fixed
+status: closed
 caused_by:
 changelog: `check pm --help` opens on all four of its rule families and states the default roster the code actually runs — D12 on, U2–U5 opt-in — with V1, V4 and V5 now listed.
 ---

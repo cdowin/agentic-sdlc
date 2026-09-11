@@ -3,7 +3,7 @@ id: bg-the-suite-run-in-a-worktree-mutates-the-host-repo
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the suite run inside a linked worktree can flip the host repo bare and commit into it
-status: fixed
+status: closed
 caused_by:
 changelog: none
 ---

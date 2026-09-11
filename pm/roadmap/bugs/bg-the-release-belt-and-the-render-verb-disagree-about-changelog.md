@@ -3,7 +3,7 @@ id: bg-the-release-belt-and-the-render-verb-disagree-about-changelog
 kind: bug
 milestone: ms-a-consumer-can-take-the-bump
 name: release blesses a release note whose first sentence is missing, because its check asks a narrower question than changelog does
-status: fixed
+status: closed
 caused_by:
 changelog: `release` now exits 1 when the milestone's own `changelog:` is blank — `changelog-unreleased-nonempty` grades the milestone being released whatever its status, as well as every closed grain under it, and names it.
 ---

@@ -3,7 +3,7 @@ id: bg-check-hooks-calls-a-linked-worktree-misdirected
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: check hooks calls every linked worktree MISDIRECTED
-status: fixed
+status: closed
 caused_by:
 changelog: `check hooks` in a linked worktree whose `core.hooksPath` is the MAIN worktree's `tools/hooks` — what an agent-worktree harness writes — is armed, named on a `note` line saying git runs the main corpus there, instead of failing MISDIRECTED.
 ---

@@ -13,7 +13,7 @@ effort: medium
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -38,11 +38,11 @@ or milestone status.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc changelog <milestone-id>` — what did this milestone promise a
+- `make sdlc ARGS='changelog <milestone-id>'` — what did this milestone promise a
   consumer?
-- `agentic-sdlc pm set <id> changelog "<sentence>"` — where that sentence goes
-- `agentic-sdlc pm list --category in_progress` — what is open after the ship?
-- `agentic-sdlc check doc` — do the links and refs you just wrote resolve?
+- `make pm ARGS='set <id> changelog '"'"'<sentence>'"'"''` — where that sentence goes
+- `make pm ARGS='list --category in_progress'` — what is open after the ship?
+- `make sdlc ARGS='check doc'` — do the links and refs you just wrote resolve?
 <!-- END role-verbs -->
 
 ## Checklist

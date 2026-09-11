@@ -7,10 +7,10 @@
 Run it — one verb per level, and none of them is "run the biggest thing":
 
 ```
-agentic-sdlc close story   <story-id>      the inner loop, seconds
-agentic-sdlc close feature <feature-id>    once its stories are done
-agentic-sdlc release       <version>       once its features are done
-agentic-sdlc adopt         <version>       a devkit pin bump, scoped to the adoption
+make sdlc ARGS='close story <story-id>'       the inner loop, seconds
+make sdlc ARGS='close feature <feature-id>'   once its stories are done
+make sdlc ARGS='release <version>'            once its features are done
+make sdlc ARGS='adopt <version>'              a devkit pin bump, scoped to the adoption
 ```
 
 **A belt is its checks, then one write or a clean error** (D12). Every check
@@ -25,7 +25,7 @@ A check that cannot be decided prints `unverifiable:` and counts as false.
 Nothing else is written, moved, bumped, pushed or tagged; what is yours to do
 after a write is printed as `next:` lines and listed under each belt below.
 Whether a false check should stop you is YOUR question — that is what
-`--force` is for, on the record; `agentic-sdlc check <gate>` is what FAILS a
+`--force` is for, on the record; `make sdlc ARGS='check <gate>'` is what FAILS a
 tree, in CI and pre-push.
 
 ## `release` — the checks
@@ -131,7 +131,7 @@ The table is the BELT's own kinds, not a census of the sink. Other kinds ride
 the same three taps with their own shape — `lesson.enter` and `lesson.verdict`
 carry the lessons surfaced at a move — so a courier keys on the TAP and treats
 the payload as the kind's. A `lesson` row itself is recorded by hand
-(`agentic-sdlc lesson record`) and read back beside the check it names.
+(`make sdlc ARGS='lesson record'`) and read back beside the check it names.
 
 ## Not checks, and why
 
@@ -148,4 +148,4 @@ A check earns its place by having something to READ in the tree. What follows is
 ## Changing this document
 
 Edit `[<operation>] steps` (or `[<operation>.commands]`) in `devkit.toml` and
-re-run `agentic-sdlc install-sdlc --force`; every line above is derived.
+re-run `make sdlc ARGS='install-sdlc --force'`; every line above is derived.

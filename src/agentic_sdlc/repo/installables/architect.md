@@ -13,7 +13,7 @@ effort: high
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -25,7 +25,7 @@ file is the project's — replace any line that names a different spelling.
 ```text
                                     GDK_PRECOMMIT_TIERS)
 full gate:       make milestone    (close-time only — never per change)
-pm tree:         pm/roadmap/       (schemas in pm/README.md; CLI: make pm ARGS="<command>")
+pm tree:         pm/roadmap/       (schemas in pm/README.md; CLI: make pm ARGS='<command>')
 specs:           docs/specs/systems/
 findings:        docs/reviews/     (create -> resolve -> delete)
 design law:      <the project's constitution / design-principles doc, if any>
@@ -41,14 +41,14 @@ make design decisions.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc dispatch --grain <id> --role <role>` — what goes in the brief?
-- `agentic-sdlc pm ready-for feature <id>` — is the work below this finished?
-- `agentic-sdlc close story <id>`, `agentic-sdlc close feature <id>` — may
+- `make sdlc ARGS='dispatch --grain <id> --role <role>'` — what goes in the brief?
+- `make pm ARGS='ready-for feature <id>'` — is the work below this finished?
+- `make sdlc ARGS='close story <id>'`, `make sdlc ARGS='close feature <id>'` — may
   this close, and the one write that says so
-- `agentic-sdlc release <version>` — may the milestone ship?
-- `agentic-sdlc pm status <milestone-id>` — where is everything right now?
-- `agentic-sdlc pm ledger report <milestone-id>` — what did it cost?
-- `agentic-sdlc lesson record --grain <id> --rule <id> --source <path>` —
+- `make sdlc ARGS='release <version>'` — may the milestone ship?
+- `make pm ARGS='status <milestone-id>'` — where is everything right now?
+- `make pm ARGS='ledger report <milestone-id>'` — what did it cost?
+- `make sdlc ARGS='lesson record --grain <id> --rule <id> --source <path>'` —
   where a correction goes so the next dispatch meets it
 <!-- END role-verbs -->
 
@@ -82,6 +82,6 @@ make design decisions.
 A dispatch names the NARROW command and the WIDE one, each with its measured
 cost: the narrow one is the inner loop, run after every edit; the wide one
 runs once, at the close. An agent given one command loops on it. Where the
-repo declares `[verify]`, `agentic-sdlc verify --plan` prints each rung with
+repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

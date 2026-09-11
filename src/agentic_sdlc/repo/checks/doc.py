@@ -25,6 +25,7 @@ from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple, str_tuple
+from agentic_sdlc.repo import vehicle
 
 REPO_ROOT = repo_root()
 # Read per run, never at import, or a config error depends on import order.
@@ -188,8 +189,26 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
 # definitions write it out in full, and a rule anchored at `pm` read the
 # fuller half as prose. Found beside 0.6.0 review B1, which is the same
 # defect one layer out — a rule that is correct and cannot reach.
+# 0.8.0 spelled every shipped call through the stock wiring's vehicle, `make pm
+# ARGS='story building <id>'` (or `pm` and its words handed to `make sdlc`), and
+# a rule anchored at `pm` read none of them: the sweep would have blinded it (C2).
+# So a vehicle span is read as the argv the verb receives, both parses undone
+# by the helper that spells it — either quote style, since both reach the verb.
 _STATUS_FORM = re.compile(
-    r'^(?:agentic-sdlc\s+)?pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')
+    rf'^(?:{re.escape(vehicle.PROGRAM)}\s+)?pm\s+(story|feature|milestone|bug)'
+    r'\s+([a-z-]+)')
+
+
+def _as_invoked(span: str) -> str:
+    """The span as the CLI would receive it: a vehicle line becomes its argv,
+    joined; anything else is itself. A `make` line the vehicle cannot read is
+    not an invocation this rule can name, so it is returned unread."""
+    if span.split(None, 1)[:1] != [vehicle.MAKE]:
+        return span
+    try:
+        return ' '.join(vehicle.argv_of(span))
+    except ValueError:
+        return span
 
 
 def declared_states() -> dict[str, tuple[str, ...]]:
@@ -215,7 +234,7 @@ def check_invocations(doc: Path, lines: list[tuple[int, str]],
     if not states:
         return findings
     for lineno, span, _ in code_spans(lines):
-        match = _STATUS_FORM.match(span.strip())
+        match = _STATUS_FORM.match(_as_invoked(span.strip()))
         if match is None:
             continue
         kind, status = match.group(1), match.group(2)

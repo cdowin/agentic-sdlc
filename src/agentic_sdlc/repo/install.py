@@ -709,7 +709,19 @@ def kept_lacks(existing: str, body: str) -> str:
 CLAIM_OPERATION = 'adopt'
 CLAIM = f'[{CLAIM_OPERATION}] ours'
 CLAIMED_SKIP = ('{rel} left alone — ' + CLAIM + ' claims it; name it to take '
-                'it: agentic-sdlc {command} --force {rel}')
+                'it: {take}')
+
+
+def claimed_skip(rel: str, command: str) -> str:
+    """`CLAIMED_SKIP` for one path. The command that takes it is spelled the
+    way `conveyor.steps.remedy` spells an installer's: the pinned uvx form for
+    the one that writes `Makefile.devkit`, which a claimed copy may carry
+    without the vehicle's target, and `make …` for every other (feature D2)."""
+    from agentic_sdlc.repo.conveyor.steps import BOOTSTRAP_VERB
+    argv = (*command.split(), '--force', rel)
+    take = (vehicle.pinned(*argv) if command == BOOTSTRAP_VERB
+            else vehicle.command(*argv))
+    return CLAIMED_SKIP.format(rel=rel, take=take)
 CLAIMED_MARK = (' — claimed by ' + CLAIM + ': a run leaves it alone unless '
                 'it is named')
 # The census, printed only when something was claimed: a repo that claims
@@ -1189,7 +1201,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             if rel in blocked:
                 _say(f'{rel} CANNOT be written — the refusal on stderr says why')
             elif rel in claimed:
-                _say(CLAIMED_SKIP.format(rel=rel, command=command))
+                _say(claimed_skip(rel, command))
             elif rel in collisions:
                 _say(f'{rel} exists and differs; nothing was written because '
                      f'another destination is unusable')
@@ -1221,7 +1233,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         elif kind == 'withheld':
             _say(WITHHELD.format(rel=rel))
         elif kind == 'claimed':
-            _say(CLAIMED_SKIP.format(rel=rel, command=command))
+            _say(claimed_skip(rel, command))
         elif kind == 'header-kept':
             _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:

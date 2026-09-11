@@ -354,8 +354,10 @@ SLOT_TEMPLATE = {
 # The instruction line each shared doc opens with, restored by `pm new`: a
 # file's own first line is the one channel that reaches a dispatched subagent.
 SLOT_HEADER = {
-    'decisions.md': 'Append with `agentic-sdlc pm decide <grain-id>` — never by '
-                    'hand; the command stamps the date and the next ordinal.',
+    'decisions.md': ('Append with `'
+                     + vehicle.command('pm', 'decide', vehicle.Slot('<grain-id>'))
+                     + '` — never by hand; the command stamps the date and the '
+                     'next ordinal.'),
     'handoff.md': 'Cold-start only. Everything derivable is a command — never '
                   'restate `pm status`, `git log` or `pm ledger report`.',
 }
@@ -366,6 +368,9 @@ SLOT_HEADER = {
 # consumer's tree on upgrade day.
 RETIRED_SLOT_HEADERS = frozenset({
     'Cold-start only. Never restate what `pm status` computes.',
+    # 0.8.0: the command is spelled through the stock wiring's vehicle.
+    'Append with `agentic-sdlc pm decide <grain-id>` — never by hand; the '
+    'command stamps the date and the next ordinal.',
 })
 
 KNOWN_SLOT_HEADERS = frozenset(SLOT_HEADER.values()) | RETIRED_SLOT_HEADERS

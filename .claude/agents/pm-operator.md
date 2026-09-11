@@ -13,7 +13,7 @@ effort: medium
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -39,14 +39,14 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc pm new` — mint a grain at its kind's first state
-- `agentic-sdlc pm add <parent-id> <child-id>` — bind and sequence, one act
-- `agentic-sdlc pm status <milestone-id>` — where is everything?
-- `agentic-sdlc pm list --category in_progress` — what is open right now?
-- `agentic-sdlc pm set <id> feature <fid>` — re-parent; the id never changes
-- `agentic-sdlc pm vocabulary` — which states may this tree hold?
-- `agentic-sdlc pm validate` — do the bindings and refs resolve?
-- `agentic-sdlc pm ledger report <milestone-id>` — what has it cost?
+- `make pm ARGS=new` — mint a grain at its kind's first state
+- `make pm ARGS='add <parent-id> <child-id>'` — bind and sequence, one act
+- `make pm ARGS='status <milestone-id>'` — where is everything?
+- `make pm ARGS='list --category in_progress'` — what is open right now?
+- `make pm ARGS='set <id> feature <fid>'` — re-parent; the id never changes
+- `make pm ARGS=vocabulary` — which states may this tree hold?
+- `make pm ARGS=validate` — do the bindings and refs resolve?
+- `make pm ARGS='ledger report <milestone-id>'` — what has it cost?
 <!-- END role-verbs -->
 
 ## Checklist

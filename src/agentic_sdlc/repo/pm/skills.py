@@ -429,8 +429,7 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         if kind == 'current':
             install._say(install.IS_CURRENT.format(rel=rel))
         elif kind == 'claimed':
-            install._say(install.CLAIMED_SKIP.format(rel=rel,
-                                                     command=GUIDANCE_VERB))
+            install._say(install.claimed_skip(rel, GUIDANCE_VERB))
         elif rel in landed:
             install._say(f'wrote {rel}')
         else:

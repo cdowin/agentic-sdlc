@@ -30,15 +30,20 @@ files at all.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
+import fnmatch
 import io
+import itertools
 import json
 import os
 import shlex
 import sys
 import tempfile
+import unittest
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -48,7 +53,7 @@ from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo import install  # noqa: E402
+from agentic_sdlc.repo import install, vehicle  # noqa: E402
 from agentic_sdlc.repo.checks import pm as pm_check  # noqa: E402
 
 
@@ -467,8 +472,7 @@ def test_force_leaves_a_claimed_file_alone_and_a_named_path_takes_it():
             install.body_of('po.md'))
         for rel in (CLAIMED, CLAIMED_ABSENT):
             assert dispositions(out, command)[rel] == [
-                f'{at} ' + install.CLAIMED_SKIP.format(rel=rel,
-                                                       command=command)], out
+                f'{at} ' + install.claimed_skip(rel, command)], out
         one_each(out, command)
         assert [line for line in headers(out)
                 if line.startswith(f'{at} {command} left ')] == [
@@ -2321,7 +2325,7 @@ def test_the_sixth_installer_reads_the_same_claim_list():
         # Generated and merely stale: the plain run updates it, no --force.
         (root / sibling).write_text(skills.guidance_body(_other) + 'stale\n',
                                     encoding='utf-8')
-        skip = f'{at} ' + install.CLAIMED_SKIP.format(rel=rel, command=verb)
+        skip = f'{at} ' + install.claimed_skip(rel, verb)
         for argv in ((), ('--force',)):
             code, out = pm('install-skills', *argv)
             assert code == 0, (argv, out)
@@ -2339,9 +2343,11 @@ def test_the_sixth_installer_reads_the_same_claim_list():
             code, out = pm('install-skills', '--force', bad)
             assert code == 2, (bad, code, out)
             assert snapshot(root) == before, f'{bad!r} wrote to the tree'
-        # The skip line's own command, run as printed: that one file.
-        printed = skip.split('name it to take it: agentic-sdlc pm ', 1)[1]
-        code, out = pm(*shlex.split(printed))
+        # The skip line's own command, run as printed: that one file. It is a
+        # vehicle line, so both of its shell parses are undone before pm runs.
+        printed = vehicle.argv_of(skip.split('name it to take it: ', 1)[1])
+        assert printed[:2] == ['pm', 'install-skills'], printed
+        code, out = pm(*printed[1:])
         assert code == 0, out
         assert (root / rel).read_text(encoding='utf-8') == (
             skills.guidance_body(name))
@@ -2462,27 +2468,154 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
         + '\n'.join(f'    {row}' for row in found))
 
 
-# --- every definition names the verbs its ROLE reaches for --------------------
-# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1. Across the 12
-# shipped definitions `ready-for` appeared 0 times, `pm ledger` 0 and
-# `lesson record` 0 — a dispatched `developer` was never told the entry rung
-# exists, so six briefs this milestone hand-pasted a roster the package already
-# ships. That is rule 11's own test failed by this package's own surface.
+# --- every shipped citation resolves through the stock wiring -----------------
+# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1 gave every agent
+# definition a role-verbs block, and this module graded each backticked
+# `agentic-sdlc <verb>` in them against the router. Every one of them graded
+# green and not one could run: the stock wiring puts nothing on PATH (#22), so
+# `agentic-sdlc dispatch --grain <id>`, the pm-operator's FIRST instruction, was
+# `command not found` in every consumer wired as the README says. The router
+# was the wrong authority; the wiring is the right one.
 #
-# The section is a POINTER: the invocation, and in a few words what it ANSWERS.
-# Never what the verb does or how it behaves — that is
-# `ft-prose-that-restates-a-verb-is-rendered-or-gone`'s rule, and five sentences
-# drifted in one day the last time this package restated.
+# `st-every-shipped-citation-resolves-through-the-stock-wiring` swept the
+# shipped words to the vehicle (`repo/vehicle.py`, feature D1/D2) and REWROTE
+# the pair, because a backtick-bound `agentic-sdlc` pattern matches nothing
+# after the sweep and would have passed on an empty census. The census now
+# reads EVERY file the package ships, prose and code, a line at a time and not
+# backtick-bound, for two things:
 #
-# The sibling above proves no definition names something RETIRED. This one is
-# the other half, and it is the load-bearing one: every verb a definition NAMES
-# resolves against the live CLI, asked of the code rather than of a list typed
-# here, so a citation goes RED the day its verb leaves.
+# - a VEHICLE line, `make pm|sdlc [ARGS=…]`. It must come apart through
+#   `vehicle.argv_of` (both shell parses undone), be byte for byte what
+#   `vehicle.command` renders for that argv — so the spelling is the helper's
+#   and never a hand-rolled second one — and name a verb the router routes.
+# - the PROGRAM followed by a word. That is a call no stock consumer can make,
+#   so it is a finding by file and line unless it sits in one of the OUT
+#   classes named in `PROGRAM_OUT`, each of which NAMES the CLI rather than
+#   telling anyone to run it (the story's M3 amendment).
+SHIPPED = REPO_ROOT / 'src' / 'agentic_sdlc'
 ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
 ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
-# A citation is BACKTICKED, so the answer beside it is never parsed as argv.
-# `[^`\n]` because a code span does not span lines here.
-CITATION = re.compile(r'`(agentic-sdlc [^`\n]+)`')
+# One shell word: quoted runs and bare runs, no whitespace between them. A
+# backtick ends it (the code span closes) and so does prose punctuation.
+_SHELL_WORD = r"(?:'[^'\n]*'|\"[^\"\n]*\"|[^\s'\"`),;])+"
+VEHICLE_LINE = re.compile(
+    rf'(?<![\w-]){re.escape(vehicle.MAKE)}[ \t]+'
+    rf'(?:{"|".join(map(re.escape, vehicle.TARGETS))})(?![\w-])'
+    rf'(?:[ \t]+{vehicle.VAR}=(?:{_SHELL_WORD}|[^\n`]*))?')
+# `make pm ARGS=…` NAMES the vehicle's shape, the way a synopsis names a verb.
+VEHICLE_SHAPE = (f'{vehicle.VAR}=…', f"{vehicle.VAR}='…'")
+PROGRAM_WORD = re.compile(
+    rf'(?<![\w/@-]){re.escape(vehicle.PROGRAM)}(?![\w-])[ \t]+(?=[A-Za-z{{<])')
+# A placeholder, never a value: `<id>`, `install-*`, `story|feature`, `…`.
+PLACEHOLDER = re.compile(r'<[^<>]+>|[*|…]')
+# The program's name used as a noun in a sentence, verbatim.
+NOUNS = ('agentic-sdlc config', 'agentic-sdlc repo', 'agentic-sdlc run',
+         'agentic-sdlc PM tree')
+# The verb that WROTE this file, named in its own header or description.
+HEADER = re.compile(
+    r'(?:GENERATED|Installed) by agentic-sdlc|Written by `agentic-sdlc '
+    r'|`agentic-sdlc [\w -]+` (?:wrote|writes) (?:it|this)'
+    r'|appended by `agentic-sdlc |\(agentic-sdlc init\)')
+ERROR_PREFIX = re.compile(r'agentic-sdlc (?:[\w-]+|\{[^}]*\}):')
+VERSION_LINE = re.compile(r'agentic-sdlc v?\{__version__\}')
+USAGE_NAME = re.compile(r'(?:^|_)USAGE$')
+# Code the CLI never renders as an instruction, by module and symbol, and why.
+PROGRAM_OUT = {
+    ('repo/conveyor/steps.py', 'SHIPPED_ACTION'):
+        'record: what a belt check RAN when no command is configured — the '
+        'belt runs its own CLI in-process, and the `ran` field of every '
+        '`check.verdict` row carries this',
+    ('repo/conveyor/steps.py', 'STEP_DOC'):
+        'record: the sentence beside that same check in the rendered protocol',
+    ('repo/conveyor/steps.py', '_own_cli'):
+        'record: the subprocess this package ran, named in its own verdict',
+    ('repo/conveyor/steps.py', '_own_verdict'):
+        'record: the subprocess this package ran, named in its own verdict',
+    ('repo/conveyor/driver.py', '_synopsis'): 'usage: a belt\'s --help synopsis',
+    ('repo/pm/cli.py', 'PROG'): 'usage: the prefix of pm\'s usage and errors',
+    ('repo/pm/vocabulary.py', 'RETIRED_SLOT_HEADERS'):
+        'retired: a wording recognised in an old document, never written',
+}
+
+
+class Census(NamedTuple):
+    files: int
+    vehicle_lines: int
+    out: dict[str, int]
+    findings: list[str]
+
+
+def _python_out(source: str, rel: str) -> list[tuple[int, int, str]]:
+    """(first line, last line, class) for every span of a module that NAMES
+    the CLI: a docstring (a verb's --help body), a `*USAGE` constant, and the
+    symbols `PROGRAM_OUT` names."""
+    spans = []
+    for node in ast.walk(ast.parse(source)):
+        body = getattr(node, 'body', None)
+        if (isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef))
+                and body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            spans.append((body[0].lineno, body[0].end_lineno, 'help'))
+        if isinstance(node, ast.FunctionDef):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target,
+                                                             ast.Name):
+            names = [node.target.id]
+        else:
+            names = []
+        for name in names:
+            if USAGE_NAME.search(name):
+                spans.append((node.lineno, node.end_lineno, 'usage'))
+            why = PROGRAM_OUT.get((rel, name))
+            if why:
+                spans.append((node.lineno, node.end_lineno, why.split(':')[0]))
+    return spans
+
+
+def _program_class(line: str, at: int, number: int, is_python: bool,
+                   spans: list[tuple[int, int, str]]) -> str:
+    """The OUT class of the program named at `line[at:]`, or '' for IN."""
+    tail = line[at:]
+    if HEADER.search(line):
+        return 'header'
+    if any(tail.startswith(noun) for noun in NOUNS):
+        return 'noun'
+    if not is_python:
+        return ''
+    if ERROR_PREFIX.match(tail):
+        return 'error-prefix'
+    if VERSION_LINE.match(tail):
+        return 'version'
+    if line.lstrip().startswith('#'):
+        return 'comment'
+    if 'usage:' in line:
+        return 'usage'
+    return next((cls for first, last, cls in spans if first <= number <= last),
+                '')
+
+
+def _placeholder(token: str) -> bool:
+    return bool(PLACEHOLDER.search(token))
+
+
+def _spelled_by_the_helper(line: str, argv: list[str]) -> bool:
+    """Is `line` what `vehicle.command` renders for `argv`, each placeholder
+    either a `Slot` (bare) or free text (quoted)? Nothing else is accepted, so
+    a hand-quoted line that happens to parse is still a second spelling."""
+    if not argv:
+        return line == f'{vehicle.MAKE} {vehicle.SDLC_TARGET}'
+    slots = [i for i, token in enumerate(argv) if _placeholder(token)]
+    for mask in itertools.product((False, True), repeat=len(slots)):
+        marked = list(argv)
+        for i, bare in zip(slots, mask):
+            if bare:
+                marked[i] = vehicle.Slot(marked[i])
+        if vehicle.command(*marked) == line:
+            return True
+    return False
 
 
 def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
@@ -2506,23 +2639,26 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
             # token was graded as an argument, because this stopped one
             # position short of a real sub-roster.
             ('pm', 'ledger'): pm_cli.ledger_commands(),
-            ('check',): tuple(root_cli.KNOWN_GATES),
+            # `all` is the router's own branch (`_dispatch_check`), and
+            # `_unknown_check` lists it beside the gates the same way.
+            ('check',): (*root_cli.KNOWN_GATES, 'all'),
             ('close',): tuple(driver.CLOSE_OPERATIONS),
             ('lesson',): (lessons.RECORD, lessons.SHOW),
             ('verify',): tuple(f'--{mode}' for mode in MODES)}
 
 
-def _unrouted(citation: str,
+def _unrouted(argv: list[str],
               rosters: dict[tuple[str, ...], tuple[str, ...]]) -> str:
-    """The prefix of `citation` this package does not route, or `''`.
+    """The prefix of `argv` this package does not route, or `''`.
 
     It walks only as deep as a ROSTER exists for. A token past the last one is
     an argument — an id, a path, a state word this project declared in its own
     `devkit.toml` — and grading it here would be inventing a claim rather than
-    reading one.
+    reading one. A placeholder stops the walk too, after its alternatives or
+    its glob are held to the roster it stands in.
     """
     path: tuple[str, ...] = ()
-    for token in citation.split()[1:]:
+    for token in argv:
         roster = rosters.get(path)
         if roster is None:
             return ''
@@ -2530,29 +2666,180 @@ def _unrouted(citation: str,
             # A flag where the roster holds verbs: `pm --help`. This package
             # publishes no roster of flags at that position, so it stops.
             return ''
+        if _placeholder(token):
+            if '<' in token or '…' in token:
+                return ''
+            missing = [alt for alt in token.split('|')
+                       if not fnmatch.filter(roster, alt)]
+            return ' '.join((*path, missing[0])) if missing else ''
         if token not in roster:
             return ' '.join((*path, token))
         path = (*path, token)
     return ''
 
 
-def _role_verb_citations() -> dict[str, list[tuple[int, str]]]:
-    """{installable: [(line number in its SOURCE, citation)]} for the whole
-    file — not just the block. A retired citation in a config paragraph is the
-    same false instruction as one in the roster."""
-    found = {}
-    for name, _rel in install.PLANS['install-agents']:
-        body = install.body_of(name)
-        found[name] = [(number, citation)
-                       for number, line in enumerate(body.splitlines(), 1)
-                       for citation in CITATION.findall(line)]
-    return found
+def citation_census(root: Path) -> Census:
+    """Every citation under `root`, classed; `root` is `SHIPPED` or a corpus."""
+    rosters = _verb_rosters()
+    out: dict[str, int] = {}
+    findings: list[str] = []
+    files = vehicle_lines = 0
+    for path in sorted(root.rglob('*')):
+        if (not path.is_file() or path.suffix == '.pyc'
+                or '__pycache__' in path.parts):
+            continue
+        files += 1
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding='utf-8', errors='replace')
+        is_python = path.suffix == '.py'
+        spans = _python_out(text, rel) if is_python else []
+        for number, line in enumerate(text.splitlines(), 1):
+            where = f'{root.name}/{rel}:{number}'
+            for match in VEHICLE_LINE.finditer(line):
+                cited = match.group(0).rstrip('.:')
+                if cited.endswith(VEHICLE_SHAPE):
+                    out['shape'] = out.get('shape', 0) + 1
+                    continue
+                vehicle_lines += 1
+                try:
+                    argv = vehicle.argv_of(cited)
+                except ValueError as err:
+                    findings.append(f'{where} `{cited}` does not come apart as '
+                                    f'a vehicle line: {err}')
+                    continue
+                if not _spelled_by_the_helper(cited, argv):
+                    helper = vehicle.command(*(
+                        vehicle.Slot(a) if _placeholder(a) else a
+                        for a in argv)) if argv else cited
+                    findings.append(f'{where} `{cited}` is spelled by hand; '
+                                    f'`vehicle.command` renders `{helper}`')
+                bad = _unrouted(argv, rosters)
+                if bad:
+                    findings.append(f'{where} `{cited}` reaches no verb: this '
+                                    f'package routes no `{bad}`')
+            for match in PROGRAM_WORD.finditer(line):
+                cls = _program_class(line, match.start(), number, is_python,
+                                     spans)
+                if cls:
+                    out[cls] = out.get(cls, 0) + 1
+                    continue
+                cited = line[match.start():].split('`')[0].strip()[:70]
+                findings.append(
+                    f'{where} cites `{cited}` — `{vehicle.PROGRAM}` is on no '
+                    f'stock consumer\'s PATH; spell it through '
+                    f'`{vehicle.MAKE} {vehicle.PM_TARGET}|{vehicle.SDLC_TARGET} '
+                    f'{vehicle.VAR}=…` (repo/vehicle.py)')
+    return Census(files, vehicle_lines, out, findings)
+
+
+class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
+    """Criteria 2 and 3 of the story: the census over the shipped tree, and the
+    deliberately broken probe as a corpus — each line planted in a scratch copy
+    of a shipped brief, which is otherwise clean, so every finding is
+    attributable to its plant."""
+
+    PROTECTS = (
+        'every command a shipped file tells a person or an agent to run reaches '
+        'a verb through the stock wiring, spelled by repo/vehicle.py',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        '0.6.0 pair graded every citation green against the router while not '
+        'one of them could run in a stock consumer, and a backtick-bound '
+        'pattern read nothing at all once the words were swept',
+    )
+
+    CORPUS = (
+        # The story's own probe, and its unbacktick twin in a config block.
+        ("- `agentic-sdlc lesson show --rule <id>` — planted", True),
+        ('doc gate:     agentic-sdlc lesson record   (planted)', True),
+        # Parses, reaches the verb, and is not the helper's spelling.
+        ('- `make pm ARGS="story building <id>"` — planted', True),
+        # The helper's spelling of a verb nothing routes.
+        ("- `make sdlc ARGS='lessons show'` — planted", True),
+        ("- `make pm ARGS='ready-for story|sprint <id>'` — planted", True),
+        # A quote that never closes: no argv comes out of it.
+        ("- `make sdlc ARGS='verify --story` — planted", True),
+        # What the sweep writes, and what names the CLI without instructing.
+        ("- `make sdlc ARGS='lesson show --rule <id>'` — planted", False),
+        ("- `make pm ARGS='set <id> changelog '\"'\"'<sentence>'\"'\"''`", False),
+        ("- `make sdlc ARGS='install-* --diff'` and `make pm` — planted", False),
+        ('<!-- GENERATED by agentic-sdlc — `agentic-sdlc install-agents`. -->',
+         False),
+        ('the agentic-sdlc PM tree, and `make pm ARGS=…` its shape', False),
+    )
+    # What each caught plant is named as, beside its file and line.
+    SAID = {
+        CORPUS[0][0]: 'cites `agentic-sdlc lesson show',
+        CORPUS[1][0]: 'cites `agentic-sdlc lesson record',
+        CORPUS[2][0]: "is spelled by hand; `vehicle.command` renders "
+                      "`make pm ARGS='story building <id>'`",
+        CORPUS[3][0]: 'routes no `lessons`',
+        CORPUS[4][0]: 'routes no `pm ready-for sprint`',
+        CORPUS[5][0]: 'does not come apart',
+    }
+    # The vehicle lines at the time of writing. A census that shrank below it is
+    # a sweep undone or a reader that stopped reading; raise it, never lower it
+    # without the reason in the commit.
+    VEHICLE_FLOOR = 105
+
+    @staticmethod
+    def planted(line: str) -> tuple[int, list[str]]:
+        """(the line number the plant lands on, the census's findings) for a
+        scratch copy of `pm-operator.md` with `line` appended."""
+        brief = install.body_of('pm-operator.md')
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / 'corpus'
+            corpus.mkdir()
+            (corpus / 'pm-operator.md').write_text(f'{brief}{line}\n',
+                                                   encoding='utf-8')
+            return len(brief.splitlines()) + 1, citation_census(corpus).findings
+
+    @classmethod
+    def catches(cls, planted: str) -> bool:
+        return bool(cls.planted(planted)[1])
+
+    def test_the_shipped_tree_cites_nothing_the_wiring_cannot_reach(self):
+        census = citation_census(SHIPPED)
+        self.assertGreater(census.files, 20, (
+            f'the citation census read {census.files} file(s) under {SHIPPED} — '
+            f'a census of nothing passes everything'))
+        self.assertGreaterEqual(census.vehicle_lines, self.VEHICLE_FLOOR, (
+            f'{census.vehicle_lines} vehicle line(s) in the shipped files, '
+            f'below the {self.VEHICLE_FLOOR} this census was written against'))
+        self.assertEqual([], census.findings, (
+            f'{len(census.findings)} shipped citation(s) the stock wiring '
+            f'cannot reach — the reader is told to run what `make` will not:\n'
+            + '\n'.join(f'    {row}' for row in census.findings)))
+
+    def test_each_plant_is_named_by_file_and_line_and_nothing_else_is(self):
+        self.assertEqual([], self.planted('')[1],
+                         'the clean copy is not clean, so no plant is '
+                         'attributable to itself')
+        for line, caught in self.CORPUS:
+            with self.subTest(line):
+                number, found = self.planted(line)
+                if not caught:
+                    self.assertEqual([], found)
+                    continue
+                self.assertEqual(1, len(found), found)
+                self.assertTrue(
+                    found[0].startswith(f'corpus/pm-operator.md:{number} '),
+                    found)
+                self.assertIn(self.SAID[line], found[0])
+
+    def test_a_census_of_no_files_reads_nothing_and_says_so(self):
+        """The floor under the shipped case: pointed at an empty tree the
+        census reports zero files rather than a clean bill."""
+        with tempfile.TemporaryDirectory() as tmp:
+            census = citation_census(Path(tmp))
+        self.assertEqual((0, 0, []), (census.files, census.vehicle_lines,
+                                      census.findings))
 
 
 def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
     """(a) of the ship criterion: a definition with no verbs in it leaves every
     dispatch to hand-paste them, which is the measurement that opened sweep 1.
-    An EMPTY section counts as none — a heading is not a pointer."""
+    An EMPTY section counts as none — a heading is not a pointer, and a verb
+    spelled any way but the vehicle's is not one either."""
     plans = install.PLANS['install-agents']
     assert len(plans) == len(AGENTS), 'the agent roster moved without this test'
     bare: list[str] = []
@@ -2563,33 +2850,9 @@ def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
             continue
         start = body.index(ROLE_VERBS_OPEN) + len(ROLE_VERBS_OPEN)
         block = body[start:body.index(ROLE_VERBS_CLOSE)]
-        if not CITATION.findall(block):
+        if not VEHICLE_LINE.search(block):
             bare.append(f'{name} has the section and names no verb in it')
     assert not bare, (
         f'{len(bare)} shipped definition(s) name none of their role\'s verbs, '
         f'so a dispatch into that role has to hand-paste them:\n'
         + '\n'.join(f'    {row}' for row in bare))
-
-
-def test_every_verb_an_agent_definition_names_resolves_against_the_cli():
-    """(b), and the half that can go red on its own. Asked of the router, the
-    gate roster, the verify modes and the pm table — never of a list here."""
-    rosters = _verb_rosters()
-    assert len(rosters[()]) > 5, 'the router census collapsed — this graded nothing'
-    assert len(rosters[('pm',)]) > 5, 'the pm table collapsed'
-    cited = _role_verb_citations()
-    assert sum(len(rows) for rows in cited.values()), 'no citation was scanned'
-    unrouted: list[str] = []
-    for name, rows in cited.items():
-        for number, citation in rows:
-            bad = _unrouted(citation, rosters)
-            if bad:
-                unrouted.append(
-                    f'{INSTALLED_SOURCES[0]}/{name}:{number} cites '
-                    f'`{citation}` — this package routes no '
-                    f'`agentic-sdlc {bad}`')
-    assert not unrouted, (
-        f'{len(unrouted)} shipped definition(s) cite a verb this package does '
-        f'not route; a definition naming a retired verb is a false instruction '
-        f'to an operator who cannot check it:\n'
-        + '\n'.join(f'    {row}' for row in unrouted))

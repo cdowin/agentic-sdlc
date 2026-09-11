@@ -154,9 +154,9 @@ auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
 ## Sequence — `order:` on the parent, written by `pm add`
 
 A milestone big enough to need ordering lists its features in its own `order:` block,
-and a feature lists its stories the same way: `agentic-sdlc pm add <parent-id>
-<child-id> [--position N | --before <id> | --after <id>]` binds the child and places
-it in one act. `pm status` reads that order; anything unsequenced prints after it.
+and a feature lists its stories the same way: `make pm ARGS='add <parent-id> <child-id>'`
+binds the child and places it in one act, and `--position N`, `--before <id>` or
+`--after <id>` inside the quotes says where. `pm status` reads that order; anything unsequenced prints after it.
 The list is OPTIONAL — a small milestone declares none and reports as before, and a
 bound child nobody has placed is a counted line, never a finding. Sequence is a
 DECISION somebody made; the dependency graph (`depends_on`) is a different reading of

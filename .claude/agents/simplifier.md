@@ -13,7 +13,7 @@ effort: high
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -41,9 +41,9 @@ defects, flip PM-tree statuses, or push.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc verify --feature` — the rung the range earns, after each
+- `make sdlc ARGS='verify --feature'` — the rung the range earns, after each
   behaviour-neutral change
-- `agentic-sdlc lesson show --rule <id>` — what this project already learned
+- `make sdlc ARGS='lesson show --rule <id>'` — what this project already learned
   about the rule behind the indirection you are about to flatten
 <!-- END role-verbs -->
 

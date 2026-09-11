@@ -113,18 +113,16 @@ still goes open → complete → reviewed → closed, and the belt runs the mome
                                              deferred:<bug> / rejected:<why>), close feature <id>,
                                              close its GitHub issues — then the next feature
 
-**SERIAL IS THE DEFAULT: one builder at a time, directly on the milestone branch.** The whole git
-surface is `git add <paths>`, `git commit -m … -- <paths>` and `git push`, plus the release's one
-merge. There are no worktrees, no side branches and no other merges. A review runs when nothing else
-does, so it reads the branch as it stands and its record is committed on arrival.
-
-Why, measured on 0.8.0: parallel builders in one tree starved the story belt (its `committed` check is
-false while ANY builder has files in flight; 15 stories built, 0 `done`, after 1h8m). Moving them into
-worktrees traded that for merges, worktrees born off the wrong base, a harness that rewrote
-`core.hooksPath`, and an orchestrator `git bisect` in a linked worktree that flipped the repo to
-`core.bare = true`. Agents ran about 2.5× in parallel, and the wall clock was dominated by review,
-rework and coordination anyway. **Parallelism is an explicit opt-in** for large features on disjoint
-files, and it has exactly one mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
+**Two modes, one contract, and the milestone document declares which.** SERIAL: one builder at a
+time, directly on the milestone branch; the git surface is `git add <paths>`, `git commit -m … --
+<paths>` and `git push`, plus the release's one merge. PARALLEL: for features on disjoint files, each
+builder in its own worktree. **Parallel builders never share one tree**, because the story belt's
+`committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
+after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
+the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
+`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.9.0 runs PARALLEL,
+by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
+mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
 harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
 branch, not the milestone's). The AGENT owns the whole loop: `agent-worktree.sh new <slug>` (based
 on the in-progress milestone's declared `branch:`, with the Stop gate's scope marker written), build,

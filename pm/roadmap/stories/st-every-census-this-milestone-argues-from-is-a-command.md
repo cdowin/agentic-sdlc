@@ -177,7 +177,7 @@ codes against the code's). Five planted defects, each watched failing: a loosene
 of zero returning 0, a help naming three of four columns, a swallowed bad argument, and the README
 row removed — `TestACapabilityIsCitedWhereItsOperatorStands` FAILS naming `cite`.
 
-done: — `agentic-sdlc cite [--sites]`: rows on stdout, census on stderr, so one rule is a `grep` and
+done: 217e9a2 — `agentic-sdlc cite [--sites]`: rows on stdout, census on stderr, so one rule is a `grep` and
 no `--rule` flag exists. Criterion 1 is NOT met and is reported rather than narrowed — three files
 quote SEVEN families of number, not four; the four that stayed hand-rolled each have a written
 reason, and three of them are "a gate already reads it, and a second reader is the second scoreboard".

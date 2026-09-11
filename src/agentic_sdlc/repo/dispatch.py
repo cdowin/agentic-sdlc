@@ -22,6 +22,7 @@ import sys
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared)
 from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.repo import vehicle
 
 SECTION = 'dispatch'
 PROJECT_KEY = 'project'
@@ -42,9 +43,11 @@ Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
 pipe it. It spawns nothing, reads no network and writes no file — the two
 commands under RECORDING are rendered for the operator to run (D1).
 
-WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], the
-gate roster from [checks], the state vocabulary from [pm.states.*] — so none of
-it is retyped and none of it can drift.
+WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], both
+lists `make check` runs from [checks] all (or the stock roster) and [gates]
+extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
+none of it can drift. Every command in it is spelled through the stock wiring,
+`make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
 
 WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files.
 They are named, never copied. A declared path that resolves to nothing is exit
@@ -164,17 +167,22 @@ def _recording(gid: str, role: str) -> list[str]:
     """The export the couriers need and the row for the return, RENDERED —
     only ever with a grain, because a `pm ledger record` naming none refuses
     and a printed command that errors is worse than one nobody printed."""
-    record = f'agentic-sdlc pm ledger record --grain {shlex.quote(gid)}'
+    argv = ['pm', 'ledger', 'record', '--grain', gid]
     if role:
-        record += f' --agent-type {shlex.quote(role)}'
+        argv += ['--agent-type', role]
+    record = vehicle.command(*argv)
     return ['', 'RECORDING THIS DISPATCH — rendered here, run by you:',
             f'  export {LEDGER_GRAIN_ENV}={shlex.quote(gid)}',
-            '  # on return, add what the agent reported: --tokens-total N '
-            '--duration-s N --tool-calls N',
+            '  # on return, add inside the quotes what the agent reported: '
+            '--tokens-total N --duration-s N --tool-calls N',
             f'  {record}']
 
 
-def render(grain: str = '', role: str = '') -> str:
+def render(grain: str = '', role: str = '', *,
+           stock_gates: tuple[str, ...]) -> str:
+    """The preamble. `stock_gates` is what `check all` runs when `[checks]
+    all` is undeclared, handed down by the router that owns the roster:
+    `repo/` reaching up for it is the import `test_boundaries.py` refuses."""
     project, contracts = settings()
     who = f' — for: {role}' if role else ''
     out = [f'=== PROJECT CONTRACT{who} ===', '', project, '',
@@ -187,34 +195,52 @@ def render(grain: str = '', role: str = '') -> str:
         out += _recording(grain, role)
     out += ['', 'THE LADDER — never run a rung wider than what you changed:']
     out += _ladder()
-    roster = _roster()
-    if roster:
-        out += ['', 'STATIC GATES (`agentic-sdlc check <name>`):',
-                '  ' + ' '.join(roster)]
+    out += ['', 'STATIC GATES — `make check` runs the devkit gates, then this '
+                'project\'s own:']
+    out += _static_gates(stock_gates)
     out += ['', 'THE PM VOCABULARY — every question is asked of a CATEGORY, '
                 'never a word:']
     out += _vocabulary()
     out += ['', 'EXIT CODES ARE CONTRACT:  0 pass   1 findings   '
-                '2 usage or config error', '=== END CONTRACT ===']
+                '2 usage or config error',
+            f'  through `{vehicle.MAKE} {vehicle.PM_TARGET}` and '
+            f'`{vehicle.MAKE} {vehicle.SDLC_TARGET}`, any nonzero exit is '
+            f'make\'s 2 — the verb\'s own code is the N in make\'s `Error N` '
+            f'line',
+            '=== END CONTRACT ===']
     return '\n'.join(out)
 
 
-def _roster() -> tuple[str, ...]:
-    """`[checks] all`, read as a config VALUE — not through `cli.all_roster`.
+def _static_gates(stock: tuple[str, ...]) -> list[str]:
+    """Both lists `make check` runs, in its order: `[checks] all`, else the
+    stock roster, then `[gates] extra`.
 
-    This package's layers point downward and `repo/` reaching up into the
-    router is the import `test_boundaries.py` refuses. Validating the NAMES
-    stays the router's job; a preamble that named an unknown gate is a typo
-    the operator sees, not a gate that silently stopped running.
+    Validating the NAMES stays each list's own reader's job; a preamble naming
+    an unknown gate is a typo the operator sees, not a gate that silently
+    stopped running. A list that cannot be read is NAMED, never dropped (m4):
+    an agent that trusts a short list runs a short gate.
     """
     from agentic_sdlc.core.config import str_tuple
+    from agentic_sdlc.repo import gates_extra
     try:
-        return str_tuple(config_section('checks'), 'checks', 'all', ())
-    except ConfigError:
-        return ()
+        section = config_section('checks')
+        devkit = ' '.join(str_tuple(section, 'checks', 'all', stock))
+        if 'all' not in section:
+            devkit += '   (the stock roster: devkit.toml declares no [checks] all)'
+    except ConfigError as err:
+        devkit = f'(unreadable, and `make check` refuses it: {err})'
+    try:
+        extra = gates_extra.targets()
+        own = ' '.join(extra) if extra else '(none declared)'
+    except ConfigError as err:
+        own = f'(unreadable, and `make check` refuses it: {err})'
+    return [f'  [checks] all   {devkit}',
+            f'  [gates] extra  {own}',
+            '  one devkit gate alone: '
+            + vehicle.command('check', vehicle.Slot('<name>'))]
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
     if argv and argv[0] in HELP_WORDS:
         print(USAGE)
         return 0
@@ -237,7 +263,7 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
     try:
-        print(render(grain, role))
+        print(render(grain, role, stock_gates=stock_gates))
     except ConfigError as err:
         print(f'agentic-sdlc dispatch: {err}', file=sys.stderr)
         return 2

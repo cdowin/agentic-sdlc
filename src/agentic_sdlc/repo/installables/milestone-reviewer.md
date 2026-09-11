@@ -11,9 +11,9 @@ effort: high
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -38,10 +38,10 @@ edit no spec and no code; you may Write only your review.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc pm status <milestone-id>` — what is bound to this milestone,
+- `make pm ARGS='status <milestone-id>'` — what is bound to this milestone,
   and where is each grain?
-- `agentic-sdlc pm validate` — do the bindings, dependencies and refs resolve?
-- `agentic-sdlc pm roadmap` — what ships before this, and what after?
+- `make pm ARGS=validate` — do the bindings, dependencies and refs resolve?
+- `make pm ARGS=roadmap` — what ships before this, and what after?
 <!-- END role-verbs -->
 
 ## Checklist

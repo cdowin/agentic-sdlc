@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import json
 import sys
+import unicodedata
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
                                   templates, validate, vocabulary)
 
@@ -90,6 +92,26 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            status or live children rather than
                                            refusing on their account — refuses
                                            only when the id is missing)
+  retire <milestone-id> --version <ver> --name <name> [<summary...>]
+         [--dry-run]
+                                          (the BACKFILL form, for a milestone
+                                           pruned before retire filed rows: no
+                                           document is left to read, so YOU
+                                           supply the version and the name,
+                                           both required, and the row is marked
+                                           `backfilled: true` so it never reads
+                                           as a recorded retirement. Accepted
+                                           ONLY for an id no grain in the tree
+                                           claims — one that is there, or a
+                                           near miss of one (case, `.md`, a
+                                           kind prefix), is refused naming
+                                           it. A value or word led by `-` is
+                                           refused as a flag. The same
+                                           backfill twice is one row; a
+                                           different one supersedes a
+                                           backfilled row and never a recorded
+                                           one. `pm roadmap` prints it
+                                           `retired` once the id is in `order`)
   status [<milestone>]
   list [--status <s>[,<s>…]] [--owner <name>] [--milestone <id>]
        [--category todo|in_progress|done] [--json]
@@ -238,7 +260,11 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            what replaced the hand-maintained
                                            ROADMAP.md. Writes nothing)
   validate                                (structural + referential integrity)
-  install-skills [--force] [--diff]       (write the shared rule + operations skill)
+  install-skills [--force] [--diff] [<path>...]
+                                          (write the shared rule + operations skill;
+                                           a file [adopt] ours claims is left
+                                           alone and named — name its path to
+                                           take it)
   init                                    (scaffold a fresh tree + install guidance)
   new milestone <slug> <name...> [--version <ver>]
                                           (mints id `ms-<slug>` — the kind
@@ -274,12 +300,21 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `check pm` warns on once a milestone is
                                            in progress. Never clobbers an existing
                                            one)
-  new bug <milestone> <slug> [--caused-by <feature-id>]
+  new bug <milestone> <slug> [<name...>] [--caused-by <feature-id>]
                                           (mints `bg-<slug>`; <milestone> is the
                                            PARENT, written to `milestone:`
                                            alone; it must close before the
                                            milestone does, and `pm remove`
-                                           returns it to the pool.
+                                           returns it to the pool. <name...>
+                                           is stamped on `name:` after the
+                                           render, so a template with no
+                                           {name} slot still gets it; omitted,
+                                           `name:` is left empty and a `next:`
+                                           line names it. A bug is ONE
+                                           authored file: a second `new bug`
+                                           for its id refuses and writes
+                                           nothing — `pm set <bug-id> name` is
+                                           the edit.
                                            --caused-by stamps caused_by: — the
                                            feature whose change produced the
                                            bug, any status; it must resolve, and
@@ -510,15 +545,18 @@ way. `pm config --seed` shows the whole declaration with an example.
 # A verb this package used to route, named so it errors rather than reading as
 # a typo. Each entry names its replacement.
 RETIRED_COMMANDS = {
-    'move': 're-parenting is one line now — `agentic-sdlc pm set <story-id> '
-            'feature <feature-id>` — because membership is a FIELD and the id '
+    'move': 're-parenting is one line now — '
+            f'`{vehicle.command("pm", "set", vehicle.Slot("<story-id>"), vocabulary.GRAIN_FEATURE, vehicle.Slot("<feature-id>"))}`'
+            ' — because membership is a FIELD and the id '
             'never changes, so there is nothing to rewrite. `pm move` renamed '
             'the file and did NOT rewrite the refs pointing AT the moved '
             'story; `pm rename <old> <new>` is the verb that sweeps those',
     'order': 'the plan is `order` on pm/roadmap/releases.md like any other '
-             'parent\'s, so `agentic-sdlc pm add <plan-id> <milestone-id> '
-             '[--position N | --before <id> | --after <id>]` schedules a '
-             'release and `pm remove` takes one off. The plan lists MILESTONE '
+             'parent\'s, so '
+             f'`{vehicle.command("pm", "add", vehicle.Slot("<plan-id>"), vehicle.Slot("<milestone-id>"))}`'
+             ' schedules a release (at `--position N`, `--before <id>` or '
+             '`--after <id>` inside the quotes) and `pm remove` takes one '
+             'off. The plan lists MILESTONE '
              'IDS now, not versions — each milestone\'s own `version:` says '
              'which release it is. Reading the plan is still `pm roadmap`',
     'sync': 'the generated execution list (`<!-- pm:execution -->`) is retired '
@@ -781,8 +819,10 @@ def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
     _movable(cfg, vocabulary.GRAIN_STORY, to)
     story = inventory.story_grain(cfg, sid)
     if story is None:
-        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid,
-                          'expected <milestone>/<feature-slug>/<story-slug>')
+        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid, 'expected ' + (
+            inventory.mint_id(vocabulary.GRAIN_STORY, '<slug>')
+            if inventory.is_pooled(cfg)
+            else '<milestone>/<feature-slug>/<story-slug>'))
     cur = _was(story)
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
@@ -1010,6 +1050,162 @@ def _retired_files(cfg: vocabulary.PmConfig, milestone) -> list[Path]:
     return [p for p in out if p.is_file()]
 
 
+# The BACKFILL form of `pm retire` (#31): the two facts nothing else holds once
+# a milestone's documents are gone, supplied by the caller because the tree
+# no longer can.
+RETIRE_VERSION_FLAG = '--version'
+RETIRE_NAME_FLAG = '--name'
+BACKFILL_FLAGS = (RETIRE_VERSION_FLAG, RETIRE_NAME_FLAG)
+
+
+def _plan_note(cfg: vocabulary.PmConfig, mid: str, *,
+               has_grain: bool = True) -> str:
+    """'' when `mid` is on the plan, else the line saying `pm roadmap` will not
+    print it and what would. `pm add` resolves its child to a grain, so for an
+    id no grain claims it is not the answer, and the line does not offer it."""
+    if mid in inventory.declared_order(cfg):
+        return ''
+    if not has_grain:
+        return (f'; {mid} is on no plan, so `pm roadmap` will not print it — '
+                f'`pm add` schedules only an id a grain claims, so add {mid} '
+                f'to the `order:` list in '
+                f'{cfg.rel(inventory.releases_file(cfg))} by hand')
+    return (f'; {mid} is on no plan, so `pm roadmap` will not print it — '
+            f'`{vehicle.command("pm", "add", inventory.root_id(cfg), mid)}` '
+            f'before retiring gives it a row there')
+
+
+def _near_key(text: str) -> str:
+    """`text` as a near miss compares: format (Cf) characters dropped — a
+    zero-width space is invisible where it is typed — casefolded, and a `.md`
+    suffix, the file an id was read off, stripped."""
+    key = ''.join(ch for ch in text
+                  if unicodedata.category(ch) != 'Cf').casefold()
+    return key[:-3] if key.endswith('.md') else key
+
+
+def _held_near(cfg: vocabulary.PmConfig,
+               mid: str) -> tuple[inventory.Grain | None, bool]:
+    """(the grain holding `mid` or a near miss of it, whether it was exact).
+    A backfilled row can never be removed, so a typo of an id in the tree is
+    refused as surely as the id: the same key, or the key with a kind prefix
+    (`foo` for `ms-foo`)."""
+    index = inventory.grain_index(cfg)
+    if mid in index:
+        return index[mid], True
+    key = _near_key(mid)
+    wanted = {key, *(inventory.mint_id(kind, key)
+                     for kind in inventory.KIND_PREFIX)}
+    for gid, held in index.items():
+        if _near_key(gid) in wanted:
+            return held, False
+    return None, False
+
+
+def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
+                     pairs: list[tuple[str, str]], summary_words: list[str],
+                     dry_run: bool) -> int:
+    """File the `retire` row a milestone pruned before 0.5.0 never got.
+
+    Every fact in it is the CALLER'S and the tree cannot check one, which is
+    close to rule 4's second sin — a write that looks legitimate and is not.
+    So before anything is written: the id resolves to NO grain (one that does
+    takes the normal path, which reads its version and name off the
+    document); `--version` and `--name` are both given, once each, and
+    well-formed; and the row carries `backfilled: true`, so a reader can tell
+    a recorded retirement from a reconstructed one. The same backfill twice is
+    one row; a backfill never supersedes a RECORDED row.
+    """
+    # Deferred: `pm/` imports nothing from `conveyor/` at load. The VERSION's
+    # grammar is the one the belts join onto the tree; the id's is an id's,
+    # less `/`, which no milestone id has (N8 of the 0.8.0 review).
+    from agentic_sdlc.repo.conveyor import driver
+    defect = inventory.id_defect(mid) or (
+        f'{mid!r} carries a "/" or whitespace, which no milestone id has'
+        if '/' in mid or any(ch.isspace() for ch in mid) else '')
+    if defect:
+        raise Usage(f'retire: {defect} — nothing was written')
+    held, exact = _held_near(cfg, mid)
+    if held is not None:
+        said = (f'{mid!r} is a {held.kind or "grain"} in this tree'
+                if exact else f'{mid!r} is a near miss of {held.gid!r}, a '
+                f'{held.kind or "grain"} in this tree')
+        normal = vehicle.command('pm', 'retire', held.gid,
+                                 vehicle.Slot('[<summary...>]'))
+        advice = (f'Retire it the normal way, which reads its version and name '
+                  f'off the document: `{normal}`'
+                  if held.kind == vocabulary.GRAIN_MILESTONE
+                  else f'It is not a milestone, and retire takes only a '
+                  f'milestone')
+        raise Usage(
+            f'{said} ({cfg.rel(held.path)}), so there is nothing to backfill — '
+            f'{RETIRE_VERSION_FLAG} and {RETIRE_NAME_FLAG} are for a milestone '
+            f'whose documents are already gone. {advice}. Nothing was written')
+    given: dict[str, str] = {}
+    for flag, value in pairs:
+        if flag in given:
+            raise Usage(f'{flag} given twice — a backfill records one value '
+                        f'per fact. Nothing was written')
+        given[flag] = value
+    missing = [flag for flag in BACKFILL_FLAGS if not given.get(flag, '').strip()]
+    if missing:
+        raise Usage(
+            f'the backfill form needs both {RETIRE_VERSION_FLAG} <version> and '
+            f'{RETIRE_NAME_FLAG} <name> — the two facts nothing else holds '
+            f'once the documents are gone; missing or empty: '
+            f'{", ".join(missing)}. Nothing was written')
+    version = given[RETIRE_VERSION_FLAG]
+    defect = driver.version_defect(version)
+    if defect:
+        raise Usage(f'{RETIRE_VERSION_FLAG}: {defect} — nothing was written')
+    if '\n' in given[RETIRE_NAME_FLAG] or '\r' in given[RETIRE_NAME_FLAG]:
+        raise Usage(f'{RETIRE_NAME_FLAG}: a name is one line — nothing was '
+                    f'written')
+    # Collapsed at the WRITE, like the summary: both print in the
+    # tab-separated row `pm roadmap` reads back.
+    name = ' '.join(given[RETIRE_NAME_FLAG].split())
+    summary = ' '.join(' '.join(summary_words).split())
+    ledger_file = ledger.grainless_path(cfg.roadmap)
+    try:
+        prior = ledger.retired_releases(cfg).get(mid)
+    except ledger.LedgerError as err:
+        raise Usage(f'{err}') from err
+    row = ledger.retire_row(mid, version, name, summary, backfilled=True)
+    facts = ', '.join(f'{key} {row[key]!r}' for key in ledger.RETIRE_FIELDS
+                      if key in row)
+    plan_note = _plan_note(cfg, mid, has_grain=False)
+    superseded = ''
+    if prior is not None:
+        if all(prior.get(key, '') == row.get(key, '')
+               for key in ledger.RETIRE_FIELDS):
+            _ok(f'{cfg.rel(ledger_file)} already records {mid} retired with '
+                f'{facts} — nothing was written (no-op){plan_note}')
+            return 0
+        when = prior.get(ledger.TS_FIELD, '?')
+        if not prior.get(ledger.BACKFILLED_FIELD):
+            raise Refused(
+                f'{mid} already has a RECORDED retire row ({when}), written by '
+                f'`pm retire` off the document itself; a backfill never '
+                f'supersedes one. Nothing was written')
+        # A backfilled row is the caller's word, and `pm roadmap` reads the
+        # LAST row: correcting one is appending one, and the line says so.
+        superseded = f'; it supersedes the backfilled row of {when}'
+    if dry_run:
+        _ok(f'[dry-run] would backfill a retire row for {mid} in '
+            f'{cfg.rel(ledger_file)}: {facts}{superseded}{plan_note}')
+        return 0
+    try:
+        ledger.append_to(ledger_file, row)
+    except OSError as err:
+        raise Refused(f'{cfg.rel(ledger_file)} could not be appended to '
+                      f'({err}) — nothing was written') from err
+    _ok(f'milestone {mid}: retire row BACKFILLED — no grain in this tree '
+        f'claims the id; {cfg.rel(ledger_file)} keeps {facts}, marked '
+        f'`{ledger.BACKFILLED_FIELD}: true` because the caller supplied them '
+        f'and the tree cannot check them{superseded}{plan_note}')
+    return 0
+
+
 def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Retire a finished milestone: remove its grains, and FILE what outlived
     them.
@@ -1021,10 +1217,25 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     `ledger.jsonl`, which this verb removes nothing from
     (`bg-retire-drops-the-summary-it-accepts`). Refuses only on an unresolvable
     id; an unfinished milestone is reported. `--dry-run` writes nothing.
+
+    `--version` and `--name` are the BACKFILL form, for a milestone whose
+    documents were pruned before this verb filed rows (#31) — see
+    `_backfill_retire`.
     """
+    pairs, args = _take_flags(args, BACKFILL_FLAGS, noun='a value')
     dry_run = False
     mid = ''
     summary_words: list[str] = []
+    # A flag-shaped value or word is a flag, never data — on BOTH paths: a
+    # `--dry-run` taken as a `--version`, or a `--dryrun` typo taken as a
+    # summary word, was a real retirement and a permanent ledger row.
+    for a in ([value for _, value in pairs]
+              + [word for word in args if word != '--dry-run']):
+        if a.startswith('-'):
+            raise Usage(f'{a!r} looks like a flag — retire takes --dry-run, '
+                        f'{RETIRE_VERSION_FLAG} <ver> and {RETIRE_NAME_FLAG} '
+                        f'<name>, and no value or summary word may start with '
+                        f'"-". Nothing was written')
     for a in args:
         if a == '--dry-run':
             dry_run = True
@@ -1034,6 +1245,8 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             summary_words.append(a)
     if not mid:
         raise Usage(USAGE)
+    if pairs:
+        return _backfill_retire(cfg, mid, pairs, summary_words, dry_run)
     grain = inventory.grain_index(cfg).get(mid)
     if grain is None or grain.kind != vocabulary.GRAIN_MILESTONE:
         known = _known_milestone_ids(cfg)
@@ -1090,11 +1303,7 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             else f'{cfg.rel(ledger_file)} keeps the id and the date — this '
                  f'milestone declares no version and no name, and no summary '
                  f'was given, so there is nothing else to keep')
-    plan_note = ('' if canonical_id in inventory.declared_order(cfg)
-                 else f'; {canonical_id} is on no plan, so `pm roadmap` will '
-                      f'not print it — `agentic-sdlc pm add '
-                      f'{inventory.root_id(cfg)} {canonical_id}` before retiring '
-                      f'gives it a row there')
+    plan_note = _plan_note(cfg, canonical_id)
 
     if dry_run:
         _ok(f'[dry-run] would remove '
@@ -1201,6 +1410,17 @@ def _age_cell(cfg: vocabulary.PmConfig, kind: str, gid: str, status: str,
     return f'  open {opened.get(gid) or ledger.human_duration(None)}'
 
 
+def _close_mark(ready, view) -> str:
+    """The inline form of `check pm`'s CLOSE lines, off the same read."""
+    if any(fid == view.fid for fid, _ in ready.closable):
+        return '  <WARN: ready for `close feature`>'
+    if any(fid == view.fid for fid, _ in ready.unreviewed):
+        return '  <WARN: needs a review record>'
+    ids = {sid for sid, _ in ready.stories}
+    n = sum(1 for s in view.stories if s.field(vocabulary.FIELD_ID) in ids)
+    return f'  <WARN: {n} story/ies ready for `close story`>' if n else ''
+
+
 def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     only = args[0] if args else ''
     # Rule 4: a scan that saw nothing says so instead of an empty print at exit
@@ -1218,6 +1438,9 @@ def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # prints whole.
     width = max(len(word) for word in vocabulary.flow_of(cfg,
                                                     vocabulary.GRAIN_FEATURE).order)
+    # `check pm`'s CLOSE lines, marked on the row they are about — one read.
+    from agentic_sdlc.repo.checks import pm as pm_check
+    ready = pm_check.close_ready(cfg)
     for mdir, milestone in known:
         mid = milestone.gid
         if only and only != mid:
@@ -1238,7 +1461,8 @@ def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             dangling = inventory.drift_dangling_record(cfg, view.fid)
             stalled = inventory.drift_stalled(cfg, view)
             drift = (f'  <DRIFT: {dangling}>' if dangling
-                     else f'  <WARN: {stalled}>' if stalled else '')
+                     else f'  <WARN: {stalled}>' if stalled
+                     else _close_mark(ready, view))
             rows.append((view,
                          f'  feature {_short(mid, view.fid):<40} '
                          f'[{view.status:<{width}}] stories '
@@ -1530,14 +1754,18 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         # and a verb for a kind nobody declared would be a worse hint than a
         # generic one.
         kind = _grain_kind(cfg, gid) or vocabulary.GRAIN_STORY
-        raise Usage(f'status is a move, not a field: run `{PROG} {kind} '
-                    f'{value} {gid}` — the {kind} verb checks {value!r} '
+        raise Usage(f'status is a move, not a field: run '
+                    f'`{vehicle.command("pm", kind, value, gid)}` — the '
+                    f'{kind} verb checks {value!r} '
                     f'against [pm.states.{kind}] and stamps the ledger; '
                     f'`set` would do neither')
     if key == vocabulary.ORDER_KEY:
-        raise Usage(f'{key} is a sequence, not a field: run `{PROG} add '
-                    f'<parent-id> <child-id> [--position N | --before <id> | '
-                    f'--after <id>]` (or `{PROG} remove`) — `{key}` is a BLOCK '
+        pair = (vehicle.Slot('<parent-id>'), vehicle.Slot('<child-id>'))
+        raise Usage(f'{key} is a sequence, not a field: run '
+                    f'`{vehicle.command("pm", "add", *pair)}` (at '
+                    f'`--position N`, `--before <id>` or `--after <id>` inside '
+                    f'the quotes), or `{vehicle.command("pm", "remove", *pair)}`'
+                    f' — `{key}` is a BLOCK '
                     f'list, and the scalar `set` writes is a form `pm add` '
                     f'refuses and every reader of the sequence sees as empty')
     if '\n' in value or '\r' in value:
@@ -1651,7 +1879,8 @@ def cmd_vocabulary(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         print('devkit.toml, and there is no default behind it — the states are')
         print('how THIS project works (hard rule 5). Every verb that creates,')
         print('moves or locates work refuses by name until it is there.')
-        print('`agentic-sdlc pm init` writes exactly this, appending to a')
+        print(f'`{vehicle.command("pm", "init")}` writes exactly this, '
+              f'appending to a')
         print('devkit.toml it did not create:')
         print()
         # Indented by two so it is not mistaken for the tree's own config;
@@ -1861,12 +2090,42 @@ def _claim(cfg: vocabulary.PmConfig, kind: str, slug: str,
     return minted, None
 
 
-def _name_required(kind: str, gid: str, typed: str) -> 'Usage':
+def _name_words(kind: str, words: list[str]) -> str:
+    """The `<name...>` every create takes, joined — or a refusal at exit 2
+    before anything is written (`bg-a-scaffold-name-injects-frontmatter`).
+    A CR or LF would write a second frontmatter line, so a grain could be born
+    reading `done`; a first word led by `-` is a flag no create takes (`--name
+    T` was stamped as `name: --name T`). Whitespace collapses, as the retire
+    backfill's name does: a tab would shift a `pm list` column."""
+    name = ' '.join(words)
+    if '\n' in name or '\r' in name:
+        # The same bar `pm set` holds: a multi-line scalar injects lines into
+        # the frontmatter it is stamped on.
+        raise Usage(f'{NAME_ARG}: a frontmatter scalar is one line — nothing '
+                    f'was written')
+    name = ' '.join(name.split())
+    if name.startswith('-'):
+        # The form's USAGE line, less its parenthetical: ONE text.
+        synopsis = (verb_help('new', [kind]).splitlines()[0].strip()
+                    .split(' (', 1)[0].rstrip())
+        # The synopsis is USAGE's own text: its `<…>` and `[…]` words are
+        # placeholders, and bare.
+        form = vehicle.command('pm', *(
+            vehicle.Slot(word) if set(word) & set('<[]') else word
+            for word in synopsis.split()))
+        raise Usage(f'{name.split()[0]!r} looks like a flag — `pm new {kind}` '
+                    f'takes the name positionally, as its last words: '
+                    f'`{form}` — nothing was written')
+    return name
+
+
+def _name_required(kind: str, gid: str, *typed: str) -> 'Usage':
     """The refusal for a CREATE with no name, leading with the ARGUMENT that
     was omitted: *"feature 'x' does not exist yet"* read as *this grain is
     missing from your tree* and sent readers looking for a lost file."""
-    return Usage(f'{NAME_ARG} is required: `agentic-sdlc pm new {kind} {typed} '
-                 f'{NAME_ARG}`. Nothing in this tree declares {gid!r}, so this '
+    create = vehicle.command('pm', 'new', kind, *typed, vehicle.Slot(NAME_ARG))
+    return Usage(f'{NAME_ARG} is required: `{create}`. Nothing in this tree '
+                 f'declares {gid!r}, so this '
                  f'call CREATES a {kind} rather than filling the missing slots '
                  f'of one that is already there, and the name is the one slot '
                  f'that cannot be derived')
@@ -1890,7 +2149,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         if not rest:
             raise Usage(USAGE)
         version = _version(pairs)
-        slug, name = _check_slug('milestone slug', rest[0]), ' '.join(rest[1:])
+        name = _name_words(vocabulary.GRAIN_MILESTONE, rest[1:])
+        slug = _check_slug('milestone slug', rest[0])
         mid, found = _claim(cfg, vocabulary.GRAIN_MILESTONE, slug)
         if found is None and not name:
             raise _name_required(vocabulary.GRAIN_MILESTONE, mid, slug)
@@ -1908,13 +2168,13 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:
             raise Usage(USAGE)
+        name = _name_words(vocabulary.GRAIN_FEATURE, rest[2:])
         mid, slug = rest[0], _check_slug('feature slug', rest[1])
-        name = ' '.join(rest[2:])
         if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
         fid, found = _claim(cfg, vocabulary.GRAIN_FEATURE, slug, mid)
         if found is None and not name:
-            raise _name_required(vocabulary.GRAIN_FEATURE, fid, f'{mid} {slug}')
+            raise _name_required(vocabulary.GRAIN_FEATURE, fid, mid, slug)
         target = (found.path if found is not None
                   else _mint_path(cfg, vocabulary.GRAIN_FEATURE, fid, name, mid))
         name = name or found.field(vocabulary.FIELD_NAME)
@@ -1925,8 +2185,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if grain == vocabulary.GRAIN_STORY:
         if len(rest) < 3:
             raise Usage(USAGE)
+        name = _name_words(vocabulary.GRAIN_STORY, rest[2:])
         fid, slug = rest[0], _check_slug('story slug', rest[1])
-        name = ' '.join(rest[2:])
         feature = inventory.grain(cfg, fid, vocabulary.GRAIN_FEATURE)
         if feature is None:
             raise Usage(f'no feature resolves from id {fid!r}')
@@ -1951,11 +2211,12 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         return 0
     if grain == vocabulary.GRAIN_BUG:
         pairs, rest = _take_flags(rest, (CAUSED_BY_FLAG,), noun='a feature id')
-        if len(rest) != 2:
+        if len(rest) < 2:
             raise Usage(USAGE)
         # Resolved before the slug guard and any write: a bug with an
         # unresolvable cause is not created.
         cause = _caused_by(cfg, pairs)
+        name = _name_words(vocabulary.GRAIN_BUG, rest[2:])
         mid, slug = rest[0], _check_slug('bug slug', rest[1])
         if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
@@ -1965,13 +2226,31 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         bf = _mint_path(cfg, vocabulary.GRAIN_BUG, bid, '', mid)
         if _exists(bf):
             raise Refused(f'{cfg.rel(bf)} already exists')
-        # The argument is the PARENT, written to `milestone:` alone.
-        body = templates.render(
-            templates.load(cfg, vocabulary.GRAIN_BUG),
-            {vocabulary.FIELD_ID: bid, vocabulary.FIELD_KIND: vocabulary.GRAIN_BUG,
-             vocabulary.GRAIN_MILESTONE: mid, 'slug': slug})
+        # The argument is the PARENT, written to `milestone:` alone. `{name}`
+        # is offered to a template that has the slot, and the name is STAMPED
+        # after the render either way: the packaged bug.md has no slot, nor
+        # does any copy `pm templates` wrote out, and a render alone would drop
+        # the name for every one of those trees without a word. Offered EMPTY
+        # too, so a slot renders to what the `next:` line says rather than a
+        # literal `{name}`.
+        values = {vocabulary.FIELD_ID: bid,
+                  vocabulary.FIELD_KIND: vocabulary.GRAIN_BUG,
+                  vocabulary.GRAIN_MILESTONE: mid, 'slug': slug,
+                  vocabulary.FIELD_NAME: name}
+        body = templates.render(templates.load(cfg, vocabulary.GRAIN_BUG),
+                                values)
         _mint(cfg, bf, body)
         _ok(f'created {cfg.rel(bf)}')
+        if name:
+            _stamp_field(cfg, bf, bid, vocabulary.FIELD_NAME, name)
+        elif cfg.breadcrumbs:
+            # The no-name form stays: scripts written against it exit 0 and a
+            # refusal would break them (rule 7). The gap is NAMED instead (rule
+            # 11), on stderr, so stdout stays the one line the write wrote.
+            name = vehicle.command('pm', 'set', bid, 'name', '<name>')
+            print(f'[pm] next: `{name}` — `name:` is '
+                  f'empty, so the bug is addressable by its id alone',
+                  file=sys.stderr)
         if cause:
             _stamp_field(cfg, bf, bid, CAUSED_BY, cause)
         return 0
@@ -2071,8 +2350,8 @@ def cmd_decide(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Refused(
             f'the heading ends with {title[-1]!r} — a shell cut it there and '
             f'the rest never reached this process; nothing was written. Quote '
-            f'the whole title: make pm ARGS=\'decide {gid} "first half; '
-            f'second half"\'')
+            f'the whole title: '
+            f'{vehicle.command("pm", "decide", gid, "first half; second half")}')
     log, text = _decision_log(cfg, gid)
     eid = inventory.next_entry_id(text)
     when = datetime.now(timezone.utc).date().isoformat()
@@ -2428,8 +2707,8 @@ def _resolved_grain(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain | Non
         # single candidate that will not resolve was the silent third case.
         print(f'[pm] the tree named a grain this verb could not resolve '
               f'({err}) — the row is filed without one and lands in `rows '
-              f'naming no grain`; `agentic-sdlc check pm` reports the tree '
-              f'defect', file=sys.stderr)
+              f'naming no grain`; `{vehicle.command("check", "pm")}` reports '
+              f'the tree defect', file=sys.stderr)
         return None
 
 
@@ -2838,11 +3117,12 @@ The order releases ship in. It is a DECISION, not a sort: `order` lists the
 MILESTONE IDS, in sequence, and each milestone's own `version:` says which
 release it is — so a milestone that re-versions never touches this file.
 
-`agentic-sdlc pm add <this-id> <milestone-id>` schedules one, exactly as it
+`{add}` schedules one, exactly as it
 sequences a feature under a milestone or a story under a feature. Authoring and
 scheduling stay separate acts: a milestone declares `version:` without joining
 the plan.
-"""
+""".format(add=vehicle.command('pm', 'add', vehicle.Slot('<this-id>'),
+                              vehicle.Slot('<milestone-id>')))
 
 
 def _plan_path(cfg: vocabulary.PmConfig) -> Path:
@@ -2980,7 +3260,7 @@ def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             if former is not None and child.gid in _sequence(cfg, former):
                 wrote.append(f'  noticed: {before} still lists {child.gid} in '
                              f'its `order` — that entry is now DANGLING; '
-                             f'`agentic-sdlc pm remove {before} {child.gid}` '
+                             f'`{vehicle.command("pm", "remove", before, child.gid)}` '
                              f'takes it out')
 
     # THE SEQUENCE — the parent's list, through the byte-honest writer.
@@ -3083,7 +3363,7 @@ def cmd_roadmap(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Usage(f'{err}') from err
     if not entries:
         print(f'[pm] {cfg.rel(path)} declares no order — '
-              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
+              f'`{vehicle.command("pm", "add", inventory.root_id(cfg), inventory.MILESTONE_SLOT)}` '
               f'starts the plan')
     else:
         print(f'[pm] {len(entries)} scheduled release(s) in {cfg.rel(path)}')
@@ -3124,7 +3404,7 @@ def cmd_next(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     entries = inventory.declared_order(cfg)
     if not entries:
         print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
-              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
+              f'`{vehicle.command("pm", "add", inventory.root_id(cfg), inventory.MILESTONE_SLOT)}` '
               f'starts the plan')
         return 0
     # ONE resolver. `pm next` answering differently from what `release` and the
@@ -3170,10 +3450,101 @@ def commands() -> tuple[str, ...]:
     return tuple(_table())
 
 
+# `<verb> --help` / `-h`. Not the bare word `help`: that is a legal value in a
+# title, a summary or a name. The two flags are READ anywhere after the verb,
+# so no write is ever reached past one, but they are SUCCESS only as the
+# verb's first argument (or its sub-form's, `new bug --help`). Later they may
+# be words someone meant — `decide` refuses only a title LED by `--` — so
+# there the verb's block goes to stderr at exit 2, and a script never reads a
+# dropped write as done.
+HELP_FLAGS = ('-h', '--help')
+
+
+def _sub_forms(verb: str) -> set[str]:
+    """The second words USAGE gives `verb` a form of its own under (`new bug`,
+    `ledger report`, `ready-for story|feature|…`) — a word, never a slot."""
+    out: set[str] = set()
+    for block in _usage_blocks():
+        words = block[0].split()
+        if words[0] == verb and len(words) > 1:
+            alts = words[1].split('|')
+            if all(a.replace('-', '').isalpha() and a.islower() for a in alts):
+                out.update(alts)
+    return out
+
+# The block `<kind> <status> <id> [<answer>...]` in USAGE describes every verb
+# that ARRIVES, so each of those verbs' help carries it.
+_GENERIC_ARRIVAL_HEAD = '<kind>'
+
+
+def _usage_blocks() -> list[list[str]]:
+    """USAGE cut into its entries: a line at a two-space indent opens one, a
+    deeper line continues it, and a blank or any other line closes it."""
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in USAGE.splitlines():
+        if line.startswith('  ') and not line.startswith('   '):
+            current = [line]
+            blocks.append(current)
+        elif current is not None and line.startswith('   '):
+            current.append(line)
+        else:
+            current = None
+    return blocks
+
+
+def verb_help(verb: str, rest: Sequence[str] = ()) -> str:
+    """`verb`'s own entries out of USAGE — the router's help, one verb at a
+    time, so there is ONE text and it cannot drift from the full roster. A
+    second word that names a sub-form (`new bug`, `ledger report`) narrows to
+    that form's entries. '' when USAGE documents no entry for the verb."""
+    words = [(b, b[0].split()) for b in _usage_blocks()]
+    mine = [(b, w) for b, w in words
+            if w[0] == verb
+            or (w[0] == _GENERIC_ARRIVAL_HEAD and verb in ARRIVES)]
+    sub = next((a for a in rest if not a.startswith('-')), '')
+    narrowed = [(b, w) for b, w in mine if len(w) > 1 and w[1] == sub]
+    chosen = narrowed or mine
+    return '\n\n'.join('\n'.join(b) for b, _ in chosen)
+
+
+def _own_help() -> dict[str, str]:
+    """A verb whose module carries a fuller help than its USAGE entry, printed
+    AFTER the entry. Deferred for the same reason `_table` is."""
+    from agentic_sdlc.repo.pm import skills
+    return {'config': skills.CONFIG_USAGE}
+
+
+def _help_for(verb: str, rest: Sequence[str]) -> str:
+    entry = verb_help(verb, rest)
+    if not entry:
+        # A verb the table routes and USAGE never describes: the whole roster
+        # rather than nothing, and `tests/test_pm_verbs.py` fails on it by name.
+        return USAGE
+    own = _own_help().get(verb, '')
+    return (f'usage: {PROG}\n\n{entry}\n'
+            + (f'\n{own}\n' if own else '')
+            + f'\n`{vehicle.command("pm", "--help")}` prints every verb.')
+
+
 def main(argv: list[str], *, skipped: Skipped = ()) -> int:
+    if argv[:1] == ['help'] and argv[1:2] and argv[1] in _table():
+        print(_help_for(argv[1], argv[2:]))
+        return 0
     if not argv or argv[0] in ('-h', '--help', 'help'):
         print(USAGE)
         return 0 if argv else 2
+    # Before the config is read: help is answered from constants, so it works
+    # in a tree that declares nothing, and a `retire 0.1 --help` never retires.
+    at = next((i for i, a in enumerate(argv[1:], 1) if a in HELP_FLAGS), 0)
+    if argv[0] in _table() and at:
+        if at == 1 or (at == 2 and argv[1] in _sub_forms(argv[0])):
+            print(_help_for(argv[0], argv[1:]))
+            return 0
+        print(_help_for(argv[0], argv[1:]), file=sys.stderr)
+        print(f'[pm] ERROR — {argv[at]!r} was read as a help flag, nothing was '
+              f'written; quote the words to use it as text', file=sys.stderr)
+        return 2
     try:
         cfg = vocabulary.load()
     except vocabulary.ConfigError as err:
@@ -3214,6 +3585,8 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
     except (Usage, inventory.AmbiguousStory, vocabulary.ConfigError) as err:
         # `ConfigError` here is the declaration's lazy half — `flow_of` refuses
         # mid-walk — and it must be one line at exit 2, since a traceback at
-        # exit 1 reads as findings.
-        print(f'[pm] ERROR — {err}', file=sys.stderr)
+        # exit 1 reads as findings. An arity refusal raises the whole roster;
+        # it is answered with the verb's own block instead.
+        said = _help_for(cmd, rest) if str(err) == USAGE else err
+        print(f'[pm] ERROR — {said}', file=sys.stderr)
         return 2

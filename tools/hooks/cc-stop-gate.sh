@@ -15,10 +15,18 @@ GATE_UNIT=(make unit)
 # A changed top-level dir <d> with a <UNIT_SLICE_ROOT>/<d>/ becomes a slice.
 UNIT_SLICE_ROOT="tests/unit"
 # The diff base when the scope marker records none.
-DEFAULT_BASE="staging"
+# Empty = the remote's HEAD, read by `git symbolic-ref --short refs/remotes/origin/HEAD`.
+DEFAULT_BASE=""
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------
+
+# A header carried from an older install may lack a key: it runs at its stock value.
+declare -p GATE_STATIC >/dev/null 2>&1 || GATE_STATIC=(make check)
+declare -p GATE_UNIT >/dev/null 2>&1 || GATE_UNIT=(make unit)
+declare -p UNIT_SLICE_ROOT >/dev/null 2>&1 || UNIT_SLICE_ROOT="tests/unit"
+declare -p DEFAULT_BASE >/dev/null 2>&1 || DEFAULT_BASE=""
+declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
 
 # Inline, not sourced: a library the repo may lack would fail the hook.
 is_agent_context() {
@@ -76,7 +84,15 @@ if [ -f "${REPO_ROOT}/${SCOPE_MARKER}" ]; then
 	b="$(grep -E '^base=' "${REPO_ROOT}/${SCOPE_MARKER}" | head -1 | cut -d= -f2-)"
 	[ -n "$b" ] && base_branch="$b"
 fi
-if git rev-parse --verify --quiet "$base_branch" >/dev/null 2>&1; then
+# An empty base is READ from the remote's HEAD, never guessed; a remote with no
+# HEAD leaves the name `origin/HEAD`, which the check below names.
+if [ -z "$base_branch" ]; then
+	base_branch="$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+	[ -n "$base_branch" ] || base_branch="origin/HEAD"
+fi
+if ! git rev-parse --verify --quiet "$base_branch" >/dev/null 2>&1; then
+	echo "cc-stop-gate: base '${base_branch}' does not resolve — running the WHOLE unit tier (set DEFAULT_BASE in tools/hooks/cc-stop-gate.sh, or the marker's base=)" >&2
+else
 	changed_dirs="$(git diff --name-only "$base_branch"...HEAD 2>/dev/null \
 		| awk -F/ 'NF>1 {print $1}' | sort -u)"
 	for d in $changed_dirs; do

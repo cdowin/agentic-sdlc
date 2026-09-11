@@ -70,13 +70,13 @@ PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/features=PackedStringArray("4.6")\n')
 ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 
-# THE STANDARD SET, spelled out: what `install-gates` writes is these five and
+# THE STANDARD SET, spelled out: what `install-gates` writes is these six and
 # two internal announce targets, everything a language kit contributes arriving
 # behind the `-include $(GDK_TIERS_MK)` seam (0.2.0/D1). The set is asserted as
 # an EQUALITY, which is stronger than a count: a target quietly dropped from the
 # include would shrink the sweep and still pass a count somebody remembered to
 # lower, and a target ADDED without a line here fails too.
-STANDARD = ('help', 'pm', 'check', 'precommit', 'milestone')
+STANDARD = ('help', 'pm', 'sdlc', 'check', 'precommit', 'milestone')
 DOCUMENTED = re.compile(r'^([a-z][a-z0-9-]*):.*?## ', re.MULTILINE)
 
 
@@ -236,6 +236,14 @@ def test_the_installed_contracts_do_not_redden_a_consumers_gates():
         project.load_config.cache_clear()
         try:
             assert install.main('install-agents', []) == 0
+            # Since 0.8.0 every command a definition cites is a target of
+            # the stock wiring (`make sdlc`/`make pm`, feature D1), so the
+            # consumer is the README's: a pin, an include, and the include.
+            # Without it `check doc` is RIGHT to call `make sdlc` unknown.
+            assert install.main('install-gates', []) == 0
+            (root / 'Makefile').write_text(
+                'DEVKIT_VERSION := v0.0.0\ninclude Makefile.devkit\n',
+                encoding='utf-8')
         finally:
             os.chdir(previous)
             project.repo_root.cache_clear()

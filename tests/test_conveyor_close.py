@@ -305,7 +305,7 @@ def test_all_true_writes_exactly_the_first_done_state_and_nothing_else(capsys):
     lines = out.strip().split('\n')
     assert f'[story] ok — {STORY_ID} → {want}' in lines, out
     assert any(line.startswith('next: ') for line in lines), out
-    assert '[story] ok: story-verified — `agentic-sdlc verify --story` exited 0' in out
+    assert "[story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0" in out
 
 
 def test_close_story_runs_the_story_rung_and_reports_its_exit(capsys):
@@ -320,7 +320,7 @@ def test_close_story_runs_the_story_rung_and_reports_its_exit(capsys):
         code = close('story', STORY_ID)
         out = capsys.readouterr().out
         assert code == 1, out
-        assert '[story] error: story-verified: `agentic-sdlc verify --story` exited 1' in out, out
+        assert "[story] error: story-verified: `make sdlc ARGS='verify --story'` exited 1" in out, out
         assert snapshot(root) == before, 'the belt wrote over a red rung'
         assert rows(root) == []
 

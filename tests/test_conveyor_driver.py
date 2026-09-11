@@ -318,7 +318,7 @@ def test_the_version_refusal_matrix_is_exit_2(value, capsys):
     capsys.readouterr()
 
 
-def test_help_exits_zero_for_every_verb(capsys):
+def test_help_exits_zero_for_every_verb(capsys, monkeypatch):
     """Rule 11's read side: `--skip` is a capability, and a capability nobody
     can find is a capability you do not have. Bites: the flag shipped and
     named nowhere the operator stands — which is how the thirteenth grain got
@@ -336,6 +336,26 @@ def test_help_exits_zero_for_every_verb(capsys):
     assert driver.main(['adopt', '-h']) == 0
     adopt = capsys.readouterr().out
     assert 'neither is accepted here' in adopt, adopt
+    # #25: adopt's help described the WRITING belt — `<version>` as "a grain
+    # id", `ok — <grain> → <state>`, `forced`, `next:` "after a write" — while
+    # saying it writes nothing. Every line it names is one it can print.
+    for claim in ('a grain id', 'forced', '→', 'after a write', 'skipped:'):
+        assert claim not in adopt, claim
+    for line in ('[adopt] ok — N check(s) true; nothing to write',
+                 '[adopt] error — N check(s) false; no status written',
+                 'a version — '):
+        assert line in adopt, line
+    # And off `WRITES`, never off the belt's name: `release` declared
+    # checks-only is described as one, so the next such belt needs no case.
+    assert '[release] forced — <version> → <state>' in driver.render_usage(
+        'release')
+    # A writing belt over a grain already there exits 0 having written nothing
+    # (`pm story done`'s no-op), and its help says so.
+    assert '0 written (or nothing to write)' in driver.render_usage(driver.OP_STORY)
+    monkeypatch.setitem(driver.WRITES, 'release', '')
+    checks_only = driver.render_usage('release')
+    assert 'forced' not in checks_only and 'after a write' not in checks_only
+    assert '[release] ok — N check(s) true; nothing to write' in checks_only
 
 
 # --- the plan supplies the version, and refuses one out of order -------------
@@ -404,7 +424,7 @@ def test_no_plan_and_no_argument_is_refused_naming_pm_order():
         assert code == 2, out
         # The remedy a refusal names must itself be a live verb: `pm
         # order` retired into `pm add` against the root.
-        assert 'pm add' in out
+        assert "`make pm ARGS='add roadmap <milestone-id>'`" in out
         assert 'pm order' not in out
 
 
@@ -416,7 +436,7 @@ def test_every_entry_shipped_and_no_argument_is_refused_rather_than_guessed():
         assert code == 2, out
         # The remedy a refusal names must itself be a live verb: `pm
         # order` retired into `pm add` against the root.
-        assert 'pm add' in out
+        assert "`make pm ARGS='add roadmap <milestone-id>'`" in out
         assert 'pm order' not in out
 
 

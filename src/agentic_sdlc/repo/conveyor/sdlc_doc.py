@@ -62,7 +62,7 @@ def _table(operation: str) -> list[str]:
         if command:
             shown = f'`{_cell(command)}`'
         elif shipped:
-            shown = f'`{_cell(shipped)}` *(shipped)*'
+            shown = f'`{_cell(steps.shown_action(shipped))}` *(shipped)*'
         else:
             shown = '— *(reads the tree)*'
         doc = steps.STEP_DOC.get(
@@ -91,7 +91,10 @@ def _events() -> list[str]:
     words = ', '.join(f'`{word}`' for word in driver.VERDICT_WORDS.values())
     out.append('')
     out.append(f'`verdict` is one of {words}. `ran` is the command in the '
-               f'operation\'s table above, or the literal '
+               f'operation\'s table above — a *(shipped)* one as this package '
+               f'spawned it, the program\'s name and then the argv its make '
+               f'line hands the verb, `pm` first for a `make pm` line — or the '
+               f'literal '
                f'`{steps.READS_THE_TREE}`. Every field is derived: the ids '
                f'from the invocation, the categories from `[pm.states.*]`, '
                f'the names from the registry that ran them.')

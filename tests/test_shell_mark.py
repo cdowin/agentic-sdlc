@@ -63,7 +63,10 @@ SUPPORT = TESTS / 'support'
 # 19 at 0.6.0: `test_pm_remote.py` joined, and it is the DELIBERATE shape — the
 # reader under it spawns nothing (that is its contract), while the cases spawn
 # git to build a real tree with real refs.
-MARKED_MODULES = 18
+# 19 at 0.8.0: `test_host_guard.py` joined — its cases run a child pytest over a
+# copy of tests/conftest.py, inside a throwaway repo, because the guard it
+# proves is what a session does to its own environment.
+MARKED_MODULES = 19
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -114,6 +117,9 @@ UNMARKED_MODULES = (
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',
+    # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
+    # one case in `test_makefile_include.py`.
+    'test_vehicle.py',
     'test_verdict.py',
     # The reuse trust boundary — a row read or refused, a ledger row in the
     # state or out of it — proven by CALL, so the rung that runs on every edit

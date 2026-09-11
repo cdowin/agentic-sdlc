@@ -17,8 +17,8 @@ NIT; one you cannot demonstrate by running something is a QUESTION.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc verify --feature` — the rung the change under review earns
-- `agentic-sdlc pm ready-for tag <milestone-id>` — is every finding
+- `make sdlc ARGS='verify --feature'` — the rung the change under review earns
+- `make pm ARGS='ready-for tag <milestone-id>'` — is every finding
   dispositioned yet?
 <!-- END role-verbs -->
 

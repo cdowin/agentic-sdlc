@@ -11,9 +11,9 @@ effort: medium
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -38,11 +38,12 @@ or milestone status.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc changelog <milestone-id>` — what did this milestone promise a
+- `make sdlc ARGS='changelog <milestone-id>'` — what did this milestone promise a
   consumer?
-- `agentic-sdlc pm set <id> changelog "<sentence>"` — where that sentence goes
-- `agentic-sdlc pm list --status building` — what is open after the ship?
-- `agentic-sdlc check doc` — do the links and refs you just wrote resolve?
+- `make pm ARGS='set <id> changelog '"'"'<sentence>'"'"''` — where that sentence goes;
+  each `'` in the sentence is typed `'"'"'"'"'"'"'"'"'`
+- `make pm ARGS='list --category in_progress'` — what is open after the ship?
+- `make sdlc ARGS='check doc'` — do the links and refs you just wrote resolve?
 <!-- END role-verbs -->
 
 ## Checklist
@@ -57,8 +58,11 @@ or milestone status.
    spec for deletion, and file a bug where the spec promised what the code
    never built.
 4. PM tree: shipping notes on done stories (gates, verdict, hashes,
-   follow-ups); file post-ship bugs under the milestone-of-catch; a story
-   stuck in `building` after work shipped is surfaced, not fixed.
+   follow-ups); file post-ship bugs as bug grains — a bug's `milestone:` is
+   its parent: `release` refuses that milestone until the bug is in a
+   `done`-category state (`closed` in the seed), and `check pm` D11 fails a
+   milestone moved to `done` first; a story stuck in `building` after work
+   shipped is surfaced, not fixed.
 5. README only when the feature changes something user-facing.
 6. Bullets, present tense, no emojis, read the code rather than guess.
 7. Commit pathspec-limited (or report where commits are the orchestrator's);

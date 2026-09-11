@@ -55,8 +55,8 @@ OPEN_VERSION = '0.1.0'
 # Where the scratch project records the bump: a milestone of its own, or a
 # feature bound to `OPEN_VERSION` and no milestone carrying `9.9.9` anywhere.
 AS_MILESTONE, AS_FEATURE = 'milestone', 'feature'
-# What the belts say when no milestone carries the id — the writing belt
-# refuses with it, the checks-only belt reports it and runs anyway.
+# What a writing belt says when no milestone carries the id, refusing. The
+# checks-only belt does not say it: a milestone is no place it could write.
 NOWHERE = f'no milestone {VERSION!r} in pm/roadmap/'
 # Pooled: one ledger per milestone, in a table of its own named by id.
 LEDGER_REL = f'pm/roadmap/{ledger.LEDGERS_POOL}/{VERSION}.jsonl'
@@ -234,24 +234,29 @@ def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert 'refused' not in out, out
-        # It says THAT it recorded: nowhere, because it writes nothing.
+        # It says it writes nothing, and that no milestone is needed.
         assert driver.NOTHING_RECORDED in out, out
         assert driver.ANYWHERE in out, out
-        assert NOWHERE in out, out
+        assert f'milestone carrying {VERSION}' in out, out
+        assert NOWHERE not in out, out
         assert snapshot(root) == before, 'adopt wrote into the tree'
 
 
-def test_adopt_names_the_ledger_when_the_bump_is_tracked_as_a_milestone():
-    """The other half of the same sentence: with a milestone carrying the
-    version, the run says WHERE a row would land — the ledger named for that
-    id, not one buried under a slug — and still that none did, because `adopt`
-    writes nothing (D12)."""
+def test_adopt_names_no_ledger_when_the_bump_is_tracked_as_a_milestone():
+    """The other half of the same sentence. It used to say WHERE a row would
+    land — `a row would land in <ledger>` — which read as a write this belt
+    might make, and the no-milestone form (`there is no milestone … to land
+    one in`) as a write it would make if one existed (#25). A checks-only belt
+    says the same sentence over either tree, and writes nothing (D12)."""
     with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
         code, out = adopt()
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert driver.NOTHING_RECORDED in out, out
-        assert LEDGER_REL in out, out
+        assert f'milestone carrying {VERSION}' in out, out
+        assert LEDGER_REL not in out, out
+        said = [ln for ln in out.splitlines() if driver.NOTHING_RECORDED in ln]
+        assert len(said) == 1 and 'land' not in said[0], said
         assert not (root / LEDGER_REL).exists(), (
             'a belt that writes nothing minted a ledger')
 
@@ -303,16 +308,27 @@ MAKEFILE_SENTINEL = (
     '\t@touch EXTRA-GATE-RAN\n' % __version__)
 
 
+# What `check all` prints over the stock roster, in its own line shapes.
+RAN = ('doc', 'shell', 'grain-shape')
+CHECK_ALL_SAID = '\n\n'.join(f'[check:{gate}] PASS — scratch' for gate in RAN)
+
+
 def test_checks_pass_never_runs_make(monkeypatch):
     """Bites: the one line that regresses the first time somebody makes
     adoption 'more thorough' — `checks-pass` reaching for the consumer's
     `make check`. The recorder sees what RAN; the sentinel proves the
-    consumer's targets did not."""
+    consumer's targets did not.
+
+    And the other half (0.8.0): it SAYS what it did not run. `ok: checks-pass`
+    beside a red `check budget` the consumer armed as a make target was the
+    belt staying quiet — so the TRUE line names every gate outside the roster
+    `check all` printed, every `[gates] extra` target, and the key that would
+    run them. The verdict does not move."""
     recorded: list[tuple[str, ...]] = []
 
     def recorder(context, *argv):
         recorded.append(argv)
-        return 0, 'recorded', ('agentic-sdlc',) + argv
+        return 0, CHECK_ALL_SAID, ('agentic-sdlc',) + argv
 
     config = ('[adopt]\nsteps = ["checks-pass"]\n\n'
               '[gates]\nextra = ["my-gate"]\n')
@@ -324,6 +340,12 @@ def test_checks_pass_never_runs_make(monkeypatch):
             f'checks-pass ran {recorded!r} — adoption verifies the ADOPTION')
         assert not (root / 'MAKE-CHECK-RAN').exists()
         assert not (root / 'EXTRA-GATE-RAN').exists()
+    off = sorted(steps.gate_universe() - set(RAN))
+    assert 'budget' in off, off
+    assert answer.detail.endswith(
+        f'; NOT run: {len(off)} gate(s) outside the roster ({", ".join(off)}) '
+        f'and 1 [gates] extra target(s) (my-gate) — `[adopt.commands] '
+        f'checks-pass` is the command that would run them'), answer.detail
 
 
 def test_the_whole_belt_writes_nothing_and_touches_no_repo_but_this_one():
@@ -410,13 +432,31 @@ def test_installables_current_names_a_drifted_file_and_the_verb_that_shows_it():
         assert current.is_true, current
         assert CLAIMED_CLAUSE not in current.detail, (
             'a repo claiming nothing must print what it always printed')
-        fork(root, GATE_MK)
+        # A tree coming from 0.7.0: its include has no `sdlc` target, so a
+        # remedy spelled `make sdlc …` is `No rule to make target` (C1). And a
+        # second installer drifted beside it, ahead of it in plan order.
+        mk = root / GATE_MK
+        mk.write_text(re.sub(r'\nsdlc:.*\n\t.*\n', '\n',
+                             mk.read_text(encoding='utf-8')), encoding='utf-8')
+        assert 'sdlc:' not in mk.read_text(encoding='utf-8')
+        ci = '.github/workflows/verify.yml'
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-ci', []) == 0, buf.getvalue()
+        fork(root, ci)
         drifted = check('installables-current', root)
         assert drifted.truth is driver.Truth.FALSE, drifted
-        assert GATE_MK in drifted.detail
-        assert 'install-gates --diff' in drifted.detail, drifted.detail
+        pinned = (f'{GATE_MK} (differs; `uvx --from "git+https://github.com/'
+                  f'cdowin/agentic-sdlc@v{__version__}" agentic-sdlc '
+                  f'install-gates --force`)')
+        assert pinned in drifted.detail, drifted.detail
+        # FIRST, because every other remedy runs through the file it writes.
+        assert drifted.detail.index(GATE_MK) < drifted.detail.index(ci)
+        assert f"{ci} (differs; `make sdlc ARGS='install-ci --diff'`)" in (
+            drifted.detail)
         assert GATE_LIB_REL not in drifted.detail, (
             'a current file was named as drifted')
+        with contextlib.redirect_stdout(buf):
+            assert install.main('install-ci', ['--force']) == 0
         reconfigure(root, f'[adopt]\nours = ["{GATE_MK}"]\n')
         claimed = check('installables-current', root)
         assert claimed.is_true, claimed
@@ -436,14 +476,19 @@ def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():
     with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
               config=config) as root:
         buf = io.StringIO()
+        # Named, because a claimed file is never written by a plain run — even
+        # an absent one (`test_force_leaves_a_claimed_file_alone…`); naming a
+        # path is how a claimed file is taken, and this case needs it on disk.
         with contextlib.redirect_stdout(buf):
-            assert install.main('install-gates', []) == 0, buf.getvalue()
+            assert install.main('install-gates',
+                                [GATE_LIB_REL, GATE_MK]) == 0, buf.getvalue()
         fork(root, GATE_MK)
         fork(root, GATE_LIB_REL)
         answer = check('installables-current', root)
         assert answer.truth is driver.Truth.FALSE, answer
         assert f'{GATE_LIB_REL} (differs' in answer.detail, answer.detail
-        assert 'install-gates --diff' in answer.detail, answer.detail
+        assert 'agentic-sdlc install-gates --force`' in answer.detail, (
+            answer.detail)
         assert f'{GATE_MK} (differs' not in answer.detail, (
             'a claimed file was graded anyway: ' + answer.detail)
         assert f'1 {CLAIMED_CLAUSE}: {GATE_MK}' in answer.detail, answer.detail

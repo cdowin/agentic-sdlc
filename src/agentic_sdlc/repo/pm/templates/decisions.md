@@ -1,4 +1,4 @@
-Append with `agentic-sdlc pm decide <grain-id>` — never by hand; the command stamps the date and the next ordinal.
+Append with `make pm ARGS='decide <grain-id>'` — never by hand; the command stamps the date and the next ordinal.
 
 # {id} {name} — decisions
 

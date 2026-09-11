@@ -26,11 +26,13 @@ from pathlib import Path
 from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
+from agentic_sdlc.repo import vehicle
 
 HOOKS_DIR = 'tools/hooks'
 CC_PREFIX = 'cc-'
 # A consumer must be able to run the repair; no make target wraps it.
 ARM_COMMAND = 'bash tools/setup-hooks.sh'
+INSTALL_COMMAND = vehicle.command('install-hooks')
 
 # Every Claude Code hook promises exit 0 and a reason on stderr for this.
 UNREADABLE_PAYLOAD = 'not json {{{'
@@ -152,6 +154,20 @@ def _hooks_path(root: Path) -> str:
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
+def _main_worktree(root: Path) -> Path | None:
+    """The main worktree when `root` is a LINKED one, else None. Linked
+    worktrees share the common config, and a harness that makes agent
+    worktrees (Claude Code does) writes an ABSOLUTE `core.hooksPath` naming
+    the main worktree's corpus — armed there, not misdirected."""
+    done = spawn.run(['git', 'rev-parse', '--path-format=absolute',
+                      '--git-common-dir'], cwd=root, capture_output=True,
+                     text=True)
+    common = Path(done.stdout.strip()) if done.returncode == 0 else None
+    if common is None or common.name != '.git' or common.parent == root:
+        return None
+    return common.parent
+
+
 def _runs(path: Path, root: Path) -> str:
     """'' when the hook started and answered; the finding text when it did not."""
     if path.name.startswith(CC_PREFIX):
@@ -209,6 +225,15 @@ def run() -> int:
             'UNARMED',
             f'core.hooksPath is unset, so git runs nothing under {HOOKS_DIR}/ '
             f'whatever is in it — `{ARM_COMMAND}`'))
+    elif Path(os.path.normpath(root / configured)) != hooks and (
+            (main := _main_worktree(root)) is not None
+            # resolve(): git answers /private/var where the config says /var
+            and (root / configured).resolve() == (main / HOOKS_DIR).resolve()):
+        # Not a finding, and never silent: git here runs the MAIN worktree's
+        # corpus, which may differ from this checkout's copy (rule 11).
+        print(f'[check:hooks] note — a linked worktree: core.hooksPath is the '
+              f'main worktree\'s {main / HOOKS_DIR}, which is the corpus git '
+              f'runs here; the entries below are this checkout\'s {HOOKS_DIR}/')
     elif Path(os.path.normpath(root / configured)) != hooks:
         findings.append((
             'MISDIRECTED',
@@ -218,14 +243,14 @@ def run() -> int:
 
     if not hooks.is_dir():
         print(f'[check:hooks] FAIL — there is no {HOOKS_DIR}/ directory; '
-              f'`agentic-sdlc install-hooks` ships the corpus and '
+              f'`{INSTALL_COMMAND}` ships the corpus and '
               f'`{ARM_COMMAND}` arms it')
         return 1
     entries = _entries(hooks)
     census = entries.census(f'hook(s) under {HOOKS_DIR}/')
     if not entries.kept:
         print(f'[check:hooks] FAIL — {census}, so this reports on nothing; '
-              f'`agentic-sdlc install-hooks` ships the corpus')
+              f'`{INSTALL_COMMAND}` ships the corpus')
         return 1
     if shutil.which('bash') is None:
         # The corpus is bash, so no bash is the finding, not a caveat.

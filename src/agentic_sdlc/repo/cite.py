@@ -25,11 +25,14 @@ from pathlib import Path
 from typing import Iterable, Mapping, NamedTuple
 
 from agentic_sdlc.core.project import git_lines, repo_root
+from agentic_sdlc.repo import vehicle
 
 VERB = 'cite'
 PREFIX = f'[{VERB}]'
 HELP_WORDS = ('-h', '--help', 'help')
 SITES_FLAG = '--sites'
+# One rule's rows, on a POSIX awk: BSD grep, macOS's, has no `-P` (review M6).
+SITE_FILTER = "awk -F'\\t' '$1 == 4'"
 
 # `\s+` rather than a literal space, because a citation WRAPS: six of this
 # tree's own — `hard rule\n4` — are invisible to a line-based grep, which is
@@ -173,8 +176,9 @@ def main(argv: list[str]) -> int:
             continue
         print(f'agentic-sdlc {VERB}: unexpected argument {arg!r} — this verb '
               f'takes {SITES_FLAG} and nothing else. One rule is a grep on the '
-              f'first column, not a flag: `agentic-sdlc {VERB} {SITES_FLAG} | '
-              f'grep -P "^4\\t"`', file=sys.stderr)
+              f'first column, not a flag: '
+              f'`{vehicle.command(VERB, SITES_FLAG)} | {SITE_FILTER}`',
+              file=sys.stderr)
         return 2
     root = repo_root()
     texts, skipped = tracked_texts(root)

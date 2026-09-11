@@ -11,9 +11,9 @@ effort: medium
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -38,9 +38,9 @@ process each. The tier is one question — does the test need a booted app?
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc verify --story` — the rung a new case earns before anything
+- `make sdlc ARGS='verify --story'` — the rung a new case earns before anything
   wider
-- `agentic-sdlc check budget` — which tier got slower, or lost cases?
+- `make sdlc ARGS='check budget'` — which tier got slower, or lost cases?
 <!-- END role-verbs -->
 
 ## Checklist
@@ -71,6 +71,6 @@ process each. The tier is one question — does the test need a booted app?
 A dispatch names the NARROW command and the WIDE one, each with its measured
 cost: the narrow one is the inner loop, run after every edit; the wide one
 runs once, at the close. An agent given one command loops on it. Where the
-repo declares `[verify]`, `agentic-sdlc verify --plan` prints each rung with
+repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

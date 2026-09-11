@@ -1,15 +1,29 @@
-"""check pm — the active PM tree's statuses do not contradict each other.
+"""check pm — the active PM tree's status drift (D), integrity (V), usage (U) and plan (R).
+
+D: statuses that contradict each other. V: frontmatter, and bindings that
+resolve to a grain of the right kind. U: a declared state or capability the
+tree never used or recorded. R: the plan and the releases held to each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
 predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
-(default: D1/D2/D4/D5/D6/D11 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R
-family are opt-in). D3 retired INTO D11 — `pm vocabulary` names where it went.
+(default: D1/D2/D4/D5/D6/D11/D12 + U1 + V1/V4/V5/V7; U2/U3/U4/U5, D9/D10 and
+R1/R2/R3/R4/R5/R6 are opt-in). A declared list REPLACES the default, and a
+stock-on rule it omits is named on the ROSTER line. D3 retired INTO D11 and D8
+into R5; a roster still naming a retired id is refused at exit 2, told which
+rule replaces it. `pm vocabulary` lists every rule id `[pm] checks` may name.
+
+NEVER GATED by `[pm] checks` (each FAILs, naming the path):
+  a document that declares an `id:` and sits in no pool; a retired field
+  (`fix_milestone:`, `caught_in:`) on any grain — delete the line by hand, since
+  no `pm` verb removes a field
+  ROSTER  a declared `[pm] checks` omitting a stock-on rule: one counted line
+      naming each, never the exit code — the roster is the project's own
 
 DRIFT (each FAILs, naming the path):
   D1  a `reviewed:` pointer naming a file that is not there
   D4  a status the project never declared, for any grain kind
-  D11 a parent in `done` over a child that is not, every level off `BINDS_TO`,
-      and a retired binding field on any grain. `pm remove` is the opt-out
+  D11 a parent in `done` over a child that is not, every level off `BINDS_TO`.
+      `pm remove` is the opt-out
   D12 (WARN) a grain in `done` carrying no `changelog:` and no `none` — the
       release belt refuses on it; this names it while there is time to write one
   R1  an `order` entry naming no milestone in the tree (WARN); a milestone on
@@ -25,8 +39,11 @@ WARN (a line, never the exit code; both grains and both categories named):
   D2  a feature in `todo` while all its stories are `done`
   D5  a story out of `todo` under a feature still in it
   D6  a milestone in `todo` whose features are all `done`
-  U1  a DECLARED state no grain of that kind has ever held — ONE line for every
-      kind, each naming its unused states beside its count in use
+  U1  a DECLARED state no grain of that kind holds now AND no ledger `status`
+      (`from`/`to`) or `disposition` (`state`) row names — ONE line for every
+      kind, each naming those states beside its count held; a row naming an id
+      no grain declares (retired, or renamed — `pm rename` does not rewrite the
+      ledger) has no kind to read and is skipped, counted
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
   U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
@@ -40,19 +57,32 @@ WARN (a line, never the exit code; both grains and both categories named):
   U5  a grain whose CURRENT state was arrived at with no disposition, by name. A
       bare move is allowed and records `answer: none` (D3) — never blocked, and
       never invisible either
-  V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
-      not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
-      its parent does not hold is DANGLING (FAIL), one naming no grain at all
-      UNVERIFIABLE (WARN). An EMPTY binding is UNBOUND and a bound child in no
-      `order` is UNSEQUENCED — COUNTED lines, never findings, because *nothing
-      said* is a plan and *something wrong said* is drift
   READY  an IN_PROGRESS grain with an empty scaffolded section (`## Ship criterion`,
          `## Acceptance criteria`, `## Proof budget`), no stories, no `owner:`, no
          `branch:`, or (a milestone) no `handoff.md` — never auto-minted, so
          `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
          that was 45 of this repo's 57 warnings
+  CLOSE  a close the tree is ready for, asked through the belts' own checks
+         and never gated by `[pm] checks`: one counted line per case, naming
+         the grains and the next command — stories whose `done:` line
+         evidence-written accepts, not in `done` (`close story`); `in_progress`
+         features over all-`done` stories with no review record (the review,
+         then `pm set <id> reviewed <path>`); features whose record
+         review-recorded and findings-landed accept (`close feature`). `pm
+         status` marks the same features inline
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
+INTEGRITY (each FAILs, naming the path; `pm validate` asks the same questions):
+  V1  frontmatter is well-formed — every document declares an `id:` and a
+      `status:`, and no two documents claim one id
+  V4  refs resolve — `depends_on`, `consumed_by`, and a bug's `caused_by`
+  V5  the feature `depends_on` graph is acyclic
+  V7  MEMBERSHIP and SEQUENCE, each in both directions. A binding naming a grain
+      not in the tree or of the wrong kind FAILS; an `order` entry naming a grain
+      its parent does not hold is DANGLING (FAIL), one naming no grain at all
+      UNVERIFIABLE (WARN). An EMPTY binding is UNBOUND and a bound child in no
+      `order` is UNSEQUENCED — COUNTED lines, never findings, because *nothing
+      said* is a plan and *something wrong said* is drift
 
 Archived milestones are out of scope; a zero census FAILS.
 """
@@ -63,7 +93,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, vocabulary
+
+ID = vehicle.Slot('<id>')
 
 # How many row kinds the 'what IS recorded' census names before the fix
 # line; thirteen of them once pushed that fix behind 839 characters.
@@ -149,6 +182,8 @@ def _run() -> int:
                f'{stray.field(vocabulary.FIELD_ID)}` and sits in no '
                f'pool, so every reader walks past it — move it into '
                f'{cfg.rel(inventory.pool_dir(cfg, stray.field(vocabulary.FIELD_KIND) or vocabulary.GRAIN_MILESTONE))}/')
+    _retired_fields(cfg, report)
+    _omitted_stock_rules(cfg)
 
     # No readable `id:`, and two documents claiming one, are V1's and are
     # reported from `validate.run` below, so `pm validate` and this gate cannot
@@ -167,6 +202,7 @@ def _run() -> int:
 
     _unreached_self(cfg, enabled, seen, report, ready)
     ready.report()
+    _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
@@ -431,25 +467,130 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
     return n_features, n_stories, seen
 
 
+class CloseReady(NamedTuple):
+    """The closes the tree is READY for, each read through the belt's own
+    check, so this and the belt cannot disagree. `(id, status)` pairs."""
+
+    stories: list[tuple[str, str]]      # evidence-written, not in `done`
+    unreviewed: list[tuple[str, str]]   # in_progress, stories done, no record
+    closable: list[tuple[str, str]]     # stories done, record read, findings landed
+
+
+def close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
+    """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`. A belt prints
+    its `next:` lines only when it is run, so one that is never run tells
+    nobody anything — 15 stories carried a `done:` line and 0 were `done`.
+
+    Nothing here is a second grammar: `review-recorded` and `findings-landed`
+    are the belts' own check functions, asked with the context the belt would
+    build; `evidence-written` is its own grammar, `steps.evidence_in`, handed
+    the text off this gate's single read; and `stories-done` is `pm ready-for
+    feature`'s two reads, `story_grains` and `holds`, which
+    `inventory.feature_view` composes (the verb itself prints and emits
+    `rung.enter`, so a gate cannot call it). An UNVERIFIABLE answer is no
+    answer: it lands in no list. Its own read scope, for `pm status`.
+    """
+    with inventory.reading_tree():
+        return _close_ready(cfg)
+
+
+def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.conveyor import steps as belt
+
+    def answer(check, operation: str, gid: str) -> 'driver.Answer':
+        return driver.ask(driver.Check(check.__name__, check),
+                          driver.Context(root=cfg.root, operation=operation,
+                                         version=gid))
+
+    ready = CloseReady([], [], [])
+    for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
+        status = story.field(vocabulary.FIELD_STATUS)
+        if not story.gid or vocabulary.category_of(
+                cfg, vocabulary.GRAIN_STORY, status) == vocabulary.DONE_CATEGORY:
+            continue
+        try:
+            text = story.text
+        except (OSError, UnicodeDecodeError):
+            continue    # unreadable is no answer; V1 is that finding's owner
+        if belt.evidence_in(cfg.rel(story.path), text).is_true:
+            ready.stories.append((story.gid, status))
+    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
+        view = inventory.feature_view(cfg, feature)
+        category = vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE,
+                                          view.status)
+        if (not view.fid or category in (None, vocabulary.DONE_CATEGORY)
+                or view.done_n != view.total):
+            continue
+        recorded = answer(belt.check_review_recorded, driver.OP_FEATURE,
+                          view.fid)
+        if recorded.truth is driver.Truth.FALSE:
+            if category == vocabulary.IN_PROGRESS:
+                ready.unreviewed.append((view.fid, view.status))
+        elif recorded.is_true and answer(belt.check_findings_landed,
+                                         driver.OP_FEATURE, view.fid).is_true:
+            ready.closable.append((view.fid, view.status))
+    return ready
+
+
+def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
+    """CLOSE — one counted line per ready close, naming the grains and the ONE
+    next command, the handoff WARN's shape. Never the exit code, and never
+    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent."""
+    ready = close_ready(cfg)
+    done = vocabulary.DONE_CATEGORY
+
+    def named(pairs: list[tuple[str, str]]) -> str:
+        return ', '.join(f'{gid} ({status!r})' for gid, status in pairs)
+
+    if ready.stories:
+        warn(f'{len(ready.stories)} story/ies ready for `close story` — each '
+             f'carries a `done:` line the story belt\'s evidence-written '
+             f'accepts and is not in `{done}`: {named(ready.stories)}; next: '
+             f'`{vehicle.command("close", vocabulary.GRAIN_STORY, ID)}`, one '
+             f'per story '
+             f'(CLOSE)')
+    if ready.unreviewed:
+        record = vehicle.command('pm', 'set', ID, 'reviewed',
+                                 vehicle.Slot('<path>'))
+        warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
+             f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
+             f'review-recorded finds none: {named(ready.unreviewed)}; '
+             f'next: the review, then `{record}` (CLOSE)')
+    if ready.closable:
+        warn(f'{len(ready.closable)} feature(s) ready for `close feature` — '
+             f'every story in `{done}`, and review-recorded and '
+             f'findings-landed both accept the record: '
+             f'{named(ready.closable)}; next: '
+             f'`{vehicle.command("close", vocabulary.GRAIN_FEATURE, ID)}` '
+             f'(CLOSE)')
+
+
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
-    """U1 — a state the project DECLARED and no grain has ever held.
+    """U1 — a state the project DECLARED that no grain holds now and no ledger
+    row names.
 
     A WARN with the count, never a finding: a tree mid-adoption legitimately has
     unused states, and a rule that reddens every fresh consumer is undone within
     a version. What it buys is the fact staying VISIBLE after the install
     scrolls away.
 
+    It says what it READ and stops there (#30, rule 9): "a flow the project is
+    not running" was an inference from a snapshot, and one consumer narrowed its
+    ladder over it while the ledger held the rows saying otherwise.
+
     ONE line for every kind: three near-identical paragraphs saying one sentence
     about `[pm.states.*]` is how a line somebody could act on gets scrolled past.
     """
     if 'U1' not in enabled:
         return
+    history = inventory.state_history(cfg)
     clauses, unused_total, declared_total = [], 0, 0
     for kind in vocabulary.FLOW_KINDS:
-        counts = inventory.state_usage(cfg).get(kind)
+        counts = history.usage.get(kind)
         if not counts:
             continue
-        unused = [state for state, n in counts.items() if n == 0]
+        unused = history.never(kind)
         if not unused or len(unused) == len(counts):
             # All unused means the tree holds no grain of this kind — a
             # different fact, and not this rule's to report.
@@ -457,13 +598,25 @@ def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
         unused_total += len(unused)
         declared_total += len(counts)
         clauses.append(f'{kind}: {len(counts) - len(unused)} of {len(counts)} '
-                       f'in use, {", ".join(unused)} never held')
+                       f'held, {", ".join(unused)} never held')
     if not clauses:
         return
-    warn(f'{unused_total} of {declared_total} declared state(s) have never been '
-         f'held by any grain in this tree — {"; ".join(clauses)} — declared and '
-         f'unused is a flow the project is not running; `[pm.states.<kind>]` '
-         f'declares each one (U1)')
+    # No row COUNT: a row naming a state already held adds no fact, and the
+    # line must not move for it (`test_pm_ledger`'s byte-identity case).
+    read = ('read from every grain\'s current status plus the ledger\'s '
+            'status and disposition rows')
+    # Retired or renamed is written nowhere, so both are said (M1, rule 9).
+    placed = ''
+    if history.skipped:
+        placed = ' it could place'
+        read += (f', {history.skipped} ledger row(s) naming '
+                 f'{inventory.UNPLACED_ID} skipped')
+    if history.unreadable:
+        read += (f', {len(history.unreadable)} ledger(s) unreadable and not '
+                 f'read ({", ".join(history.unreadable)})')
+    warn(f'{unused_total} of {declared_total} declared state(s) are held by no '
+         f'grain and named by no ledger row{placed} — {"; ".join(clauses)} — '
+         f'{read}; `[pm.states.<kind>]` declares each one (U1)')
 
 
 def _asks_something(cfg: vocabulary.PmConfig, kind: str, state: str) -> bool:
@@ -809,13 +962,13 @@ def _hook_recording_findings(cfg: vocabulary.PmConfig, enabled: set[str],
              f'wired in {wiring.where} and no {kinds} row has EVER '
              f'landed in {cfg.roadmap_dir}/ — last hook-written row: '
              f'{recording_phrase(rec)}{_recording_span(rows)}. '
-             f'`install-hooks --write-settings` lands '
+             f'`{vehicle.command("install-hooks", "--write-settings")}` lands '
              f'the block here, and `GDK_LEDGER_ROOT` points a session rooted '
              f'elsewhere at this tree: whether a harness fires the {events} '
              f'hook depends on the session\'s project root, not on '
              f'{wiring.where}. The ledgers hold {held}, which this checkout '
-             f'writes itself; `agentic-sdlc pm ledger report` breaks them '
-             f'down (U4)')
+             f'writes itself; `{vehicle.command("pm", "ledger", "report")}` '
+             f'breaks them down (U4)')
         return
     # COUNTED, never a finding: the age is what tells live telemetry from
     # telemetry that stopped.
@@ -957,9 +1110,12 @@ def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> No
         if grain.field(clog.FIELD).strip():
             continue
         silent += 1
+        # The sentence is FREE TEXT, so it is single-quoted at both parses:
+        # a `$` or a backtick in what the operator types reaches the verb.
         warn(f'{grain.kind} {gid} is {status!r} ({vocabulary.DONE_CATEGORY}) and '
-             f'carries no `{clog.FIELD}:` — `agentic-sdlc pm set {gid} '
-             f'{clog.FIELD} "<sentence>"`, or `{clog.NEEDS_NONE}` to say it '
+             f'carries no `{clog.FIELD}:` — '
+             f'`{vehicle.command("pm", "set", gid, clog.FIELD, "<sentence>")}` '
+             f'({vehicle.FREE_TEXT_NOTE}), or `{clog.NEEDS_NONE}` to say it '
              f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
     print(f'  CHANGELOG  {graded - silent} of {graded} closed grain(s) '
           f'answered, shipped milestones excluded (D12)')
@@ -981,10 +1137,11 @@ def _shipped_parent(cfg: vocabulary.PmConfig, grain) -> bool:
 def _containment(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:
     """D11 — a parent in `done` over a child that is not, at every level.
 
-    ONE walk off `BINDS_TO`; a FINDING unconditionally, because a parent
+    ONE walk off `BINDS_TO`; a FINDING, never a WARN, because a parent
     closing over an open child makes its own census a lie (rule 4). No opt-out
     FIELD — `fix_milestone:` was one and defaulted to opted-out, silently. The
-    opt-out is the BINDING, and V7 counts what it returns to the pool.
+    opt-out is the BINDING, and V7 counts what it returns to the pool. The rule
+    itself is `[pm] checks`' to turn off, and ROSTER names it when it is.
     """
     if 'D11' not in enabled:
         return
@@ -1008,17 +1165,47 @@ def _containment(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:
                f'({vocabulary.DONE_CATEGORY}) but {child.kind} {child.gid} is '
                f'{c_status!r} ({_cat(cfg, child.kind, c_status)}) — a parent '
                f'does not close over an unresolved child; finish it, or '
-               f'`agentic-sdlc pm remove {parent.gid} {child.gid}` returns it '
-               f'to the pool (D11)  [{cfg.rel(child.path)}]')
+               f'`{vehicle.command("pm", "remove", parent.gid, child.gid)}` '
+               f'returns it to the pool (D11)  [{cfg.rel(child.path)}]')
     print(f'  CONTAINMENT  {graded} bound child/ren graded against their '
           f'parent (D11)')
-    for gid, grain in sorted(index.items()):
+
+
+def _retired_fields(cfg: vocabulary.PmConfig, report) -> None:
+    """A retired frontmatter field on any grain — NEVER gated by `checks`.
+
+    It rode inside D11 until #19, so a roster that dropped D11 dropped this
+    too, and one consumer's PASS covered 117 `fix_milestone:` lines. Still a
+    DRIFT finding at exit 1, never a config error (0.6.0 D2): a retired field
+    is a fact about the tree, and exit 2 would stop every other rule running.
+    """
+    for gid, grain in sorted(inventory.grain_index(cfg).items()):
         # PRESENCE, not value: an empty one is the shape that gated nothing.
         for field, why in sorted(vocabulary.RETIRED_FIELDS.items()):
             if not grain.declares(field):
                 continue
-            report(f'{grain.kind} {gid} carries `{field}:` — {why} (D11)  '
+            report(f'{grain.kind} {gid} carries `{field}:` — {why}; delete the '
+                   f'line by hand, no `pm` verb removes a field  '
                    f'[{cfg.rel(grain.path)}]')
+
+
+def _omitted_stock_rules(cfg: vocabulary.PmConfig) -> None:
+    """ROSTER — a declared `[pm] checks` that omits a STOCK-ON rule, which is
+    `vocabulary.DEFAULT_CHECKS` and nothing else.
+
+    A COUNTED line, never the exit code: the roster is the project's
+    declaration (rule 9). But a declared list REPLACES the stock one, so a rule
+    added to the stock roster in a later release, or one a retirement message
+    said to remove, is off with nothing saying so — rule 11's silence. A tree
+    that declares no roster runs the stock one and prints nothing here.
+    """
+    omitted = [c for c in vocabulary.DEFAULT_CHECKS if c not in cfg.checks]
+    if omitted:
+        print(f'  ROSTER  [pm] checks omits {len(omitted)} of '
+              f'{len(vocabulary.DEFAULT_CHECKS)} stock-on rule(s): '
+              f'{", ".join(omitted)} — none of them runs on this tree; name '
+              f'one in [pm] checks to run it '
+              f'(`{vehicle.command("pm", "vocabulary")}` lists every rule)')
 
 
 def _unbound_rows(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
@@ -1030,9 +1217,9 @@ def _unbound_rows(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> 
         return
     for kind, ids in sorted(inventory.unbound_grains(cfg).items()):
         field = vocabulary.BINDS_TO[kind][1]
+        add = vehicle.command('pm', 'add', vehicle.Slot(f'<{field}-id>'), ID)
         print(f'  UNBOUND  {len(ids)} {kind}(s) name no {field}: — '
-              f'{", ".join(ids)}; `agentic-sdlc pm add <{field}-id> <id>` '
-              f'binds and sequences one (V7)')
+              f'{", ".join(ids)}; `{add}` binds and sequences one (V7)')
     _sequence_rows(cfg, report, warn)
 
 
@@ -1059,8 +1246,8 @@ def _sequence_rows(cfg: vocabulary.PmConfig, report, warn) -> None:
                    f'does not hold it — {gid} names '
                    + (f'{child.binding or "no " + bind[0]}' if bind
                       else 'no parent')
-                   + f'; `agentic-sdlc pm add {parent.gid} {gid}` binds it, '
-                     f'`pm remove` takes the entry out (V7)')
+                   + f'; `{vehicle.command("pm", "add", parent.gid, gid)}` '
+                     f'binds it, `pm remove` takes the entry out (V7)')
         for gid in seq.unverifiable:
             warn(f'UNVERIFIABLE: {parent.gid} sequences {gid} in its `order` '
                  f'and no grain in this tree declares that id — DANGLING if it '
@@ -1075,9 +1262,10 @@ def _sequence_rows(cfg: vocabulary.PmConfig, report, warn) -> None:
     for kind, n in sorted(unsequenced.items()):
         # COUNTED: `order` is optional per container, so a child nobody has
         # placed is a decision not taken — never a finding.
+        place = vehicle.command('pm', 'add', vehicle.Slot('<parent-id>'), ID)
         print(f'  UNSEQUENCED  {n} {kind}(s) are bound and in no parent\'s '
-              f'`order` — `agentic-sdlc pm add <parent-id> <id> [--position N '
-              f'| --before <id> | --after <id>]` places one (V7)')
+              f'`order` — `{place}` places one, at `--position N`, '
+              f'`--before <id>` or `--after <id>` inside the quotes (V7)')
 
 
 def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str],
@@ -1107,9 +1295,11 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
         if seq.unsequenced:
             # COUNTED, not a finding: authoring a milestone and scheduling it
             # are separate acts.
+            schedule = vehicle.command('pm', 'add', root.gid,
+                                       vehicle.Slot('<milestone-id>'))
             print(f'  UNSEQUENCED  {len(seq.unsequenced)} milestone(s) are on '
-                  f'no plan — {", ".join(seq.unsequenced)}; `agentic-sdlc pm '
-                  f'add {root.gid} <milestone-id>` schedules one (R1)')
+                  f'no plan — {", ".join(seq.unsequenced)}; `{schedule}` '
+                  f'schedules one (R1)')
 
     if 'R2' in enabled:
         # Backlog: a named, counted line, never a finding — a healthy tree has
@@ -1143,7 +1333,7 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
                 if first_open is not None:
                     report(f'history is not a prefix: {mid} has shipped and '
                            f'sits AFTER {first_open}, which has not — '
-                           f'`agentic-sdlc pm add` re-sequences the plan (R4)')
+                           f'`{_resequence(cfg)}` re-sequences the plan (R4)')
             elif first_open is None and not inventory.entry_is_dangling(cfg, mid):
                 first_open = mid
 
@@ -1172,6 +1362,18 @@ def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str
                        f'release (R6)')
 
 
+def _schedule(cfg: vocabulary.PmConfig) -> str:
+    """The move that puts a milestone on the plan."""
+    return vehicle.command('pm', 'add', inventory.root_id(cfg),
+                           vehicle.Slot('<milestone-id>'))
+
+
+def _resequence(cfg: vocabulary.PmConfig) -> str:
+    """The move that puts a milestone ahead of another in the plan."""
+    return vehicle.command('pm', 'add', inventory.root_id(cfg),
+                           vehicle.Slot('<milestone-id>'), '--before', ID)
+
+
 def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
     the version file against the CURRENT release — a POSITION in `order`, never
@@ -1196,8 +1398,7 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
         # consumer gets switched off.
         warn(f'R5 is enabled and {cfg.rel(inventory.releases_file(cfg))} declares '
              f'no `order` — nothing to grade {cfg.version_file} against; '
-             f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
-             f'writes the plan')
+             f'`{_schedule(cfg)}` writes the plan')
         return
     accepted, why = inventory.graded_release_accepts(cfg)
     current = accepted[0] if accepted else None

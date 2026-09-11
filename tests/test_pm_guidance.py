@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.pm import run_cli, tree, write
+from support.pm import put_ledger, run_cli, status_line, tree, write
 
 from agentic_sdlc.repo.pm import cli, skills, vocabulary
 
@@ -264,6 +264,13 @@ class Guidance(unittest.TestCase):
                 code, out = run_cli(root, 'init')
                 self.assertEqual(code, 0, out)
                 self.assertIn('wrote the flow into devkit.toml', out)
+                # Review R6: the printed roster dropped the stock
+                # `grain-shape`, and the count said two files for three.
+                from agentic_sdlc.cli import stock_roster
+                roster = ', '.join(f'"{g}"' for g in (*stock_roster(), 'pm'))
+                self.assertIn(f'all = [{roster}]', out)
+                self.assertIn(
+                    f'The {len(skills.GUIDANCE_PLAN)} installed files', out)
                 config = (root / 'devkit.toml').read_text(encoding='utf-8')
                 self.assertTrue(config.endswith(vocabulary.render_seed()), config)
                 # The flow init tells the user to run must actually work.
@@ -303,8 +310,30 @@ class Guidance(unittest.TestCase):
             # fixture holds one milestone, one feature and one story.
             self.assertIn('milestone  declares 8; this tree uses 1 (building)', out)
             self.assertIn('never held:', out)
-            # And the sentence that makes it a MEANING rather than a write.
-            self.assertIn('a flow you are not running', out)
+            # And the sentence that makes it a MEANING rather than a write —
+            # what was READ, since #30; "a flow you are not running" was an
+            # inference from a snapshot, and one consumer narrowed its ladder
+            # over it.
+            self.assertIn('current status plus the ledger', out)
+            self.assertNotIn('a flow you are not running', out)
+            story = [ln for ln in out.splitlines()
+                     if ln.startswith('  story ')]
+            self.assertIn('this tree uses 1 (ready)', story[0])
+            # #30: a state a ledger row shows was held is not "never held".
+            self.assertNotIn('it could place', out)
+            put_ledger(root, status_line('2026-09-01T00:00:00Z', '0.1/alpha/s0',
+                                         'planning', 'ready'),
+                       # An id no grain declares — retired, or renamed (M1).
+                       status_line('2026-09-02T00:00:00Z', 'st-gone',
+                                   'planning', 'ready'))
+            code, out = run_cli(root, 'init')
+            self.assertEqual(code, 0, out)
+            self.assertIn('story      declares 5; this tree uses 2 '
+                          '(planning, ready)', out)
+            self.assertIn('status and disposition rows it could place.', out)
+            self.assertIn('1 ledger row(s) name an id no grain in the tree '
+                          'declares (retired, or renamed: `pm rename` does not '
+                          'rewrite the ledger) and were skipped.', out)
 
     def test_the_ladder_says_a_kind_has_no_grains_rather_than_all_unused(self):
         """Review P3: `U1` skips a kind with no grains because "every state

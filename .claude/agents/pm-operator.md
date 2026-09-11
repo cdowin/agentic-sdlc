@@ -11,9 +11,9 @@ effort: medium
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -24,6 +24,8 @@ pm tree:    pm/roadmap/   (one pool per kind: milestones/ features/
              stories/ bugs/. Identity and parentage are FRONTMATTER —
              `id:`, `kind:`, and `milestone:`/`feature:` — never the path;
              schemas in pm/README.md, read it, don't reinvent them)
+bugs bind:  the milestone that will fix it   (this project's POLICY for
+             which milestone a new bug's `milestone:` names; overwrite it here)
 pm skills:  <pm-operations / writing-stories skills, if the project ships
              them — load them first; if a skill disagrees with this file,
              the skill wins>
@@ -37,14 +39,14 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc pm new` — mint a grain at its kind's first state
-- `agentic-sdlc pm add <parent-id> <child-id>` — bind and sequence, one act
-- `agentic-sdlc pm status <milestone-id>` — where is everything?
-- `agentic-sdlc pm list --status building` — what is open right now?
-- `agentic-sdlc pm set <id> feature <fid>` — re-parent; the id never changes
-- `agentic-sdlc pm vocabulary` — which states may this tree hold?
-- `agentic-sdlc pm validate` — do the bindings and refs resolve?
-- `agentic-sdlc pm ledger report <milestone-id>` — what has it cost?
+- `make pm ARGS=new` — mint a grain at its kind's first state
+- `make pm ARGS='add <parent-id> <child-id>'` — bind and sequence, one act
+- `make pm ARGS='status <milestone-id>'` — where is everything?
+- `make pm ARGS='list --category in_progress'` — what is open right now?
+- `make pm ARGS='set <id> feature <fid>'` — re-parent; the id never changes
+- `make pm ARGS=vocabulary` — which states may this tree hold?
+- `make pm ARGS=validate` — do the bindings and refs resolve?
+- `make pm ARGS='ledger report <milestone-id>'` — what has it cost?
 <!-- END role-verbs -->
 
 ## Checklist
@@ -59,11 +61,17 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
    more stories; every story has criteria phrased as user observation; every
    issue has a milestone; titles are user-facing; a new named construct
    carries its existing-construct audit line.
-5. Bugs file under the milestone-of-catch. A report interprets `pm status`,
-   never dumps grep output. A rebalance maps every cross-reference and
-   previews the move list before `--commit`.
+5. A bug's `milestone:` is its parent: `release` refuses that milestone until
+   the bug is in a `done`-category state (`closed` in the seed), and `check pm`
+   D11 fails a milestone moved to `done` first. Which one it names is the
+   `bugs bind:` line in Project config; a header kept from an older install
+   has none, and then the milestone is not obvious (item 7). A report
+   interprets `pm status`, never dumps grep output. A rebalance maps every
+   cross-reference and previews the move list before `--commit`.
 6. Previews show the YAML you would write; report paths, not pasted bodies;
-   never claim a transition you did not re-read.
+   never claim a transition you did not re-read; never hand-maintain a story
+   list in a feature or a feature list in a milestone — sequence is `order:`,
+   written by `pm add`.
 7. Stop and ask when the milestone is not obvious, two distinct stories
    cannot be generated, `--commit` lacks a verbatim-approved draft, or a
    schema field is unknown; drift the skills should reflect is reported, not

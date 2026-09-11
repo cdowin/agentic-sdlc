@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from agentic_sdlc.core.config import ConfigError
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 
@@ -78,10 +78,11 @@ SKIP_ARITY = 2
 # carries it as a field on the one row that arrival mints (0.5.0/D6).
 # The word an UNVERIFIABLE answer is named by on the line.
 UNVERIFIABLE_WORD = 'unverifiable'
-# What a checks-only belt says about the record, before its first check: it
-# writes nothing (D12), so the milestone directory is where a row WOULD land
-# and never a condition for running.
-NOTHING_RECORDED = 'nothing recorded, because this belt writes nothing'
+# What a checks-only belt says before its first check: it writes nothing
+# (D12), whatever the tree holds, so nothing in the line can read as a write
+# that a different tree would have made.
+NOTHING_RECORDED = ('checks only — this belt sets no status and files no row '
+                    'of its own')
 ANYWHERE = 'the bump may be tracked as a feature, as a story, or nowhere'
 
 
@@ -400,31 +401,85 @@ def run(registry: Mapping[str, Check], names: Sequence[str], ctx: Context,
 USAGE = """\
 {synopsis}
 
-Run every check in the {state} list, print each one, then write ONCE or not
-at all: {writes}
+{run}
 
   {subject}
-              a grain id — the same grammar `pm` uses, segment for segment
+              {subject_is}
 {flags}
 One line per check — `ok: <check> — <detail>`, `error: <check>: <what is
-false>`, `unverifiable: <check>: <why>` (counts as false), or `skipped:
-<check> — "<why>"` (you answered it) — then one of:
+false>`, `unverifiable: <check>: <why>` (counts as false){skipped_line} —
+then one of:
 
-    [{state}] ok — <grain> → <state>
-    [{state}] error — N check(s) false; no status written
-    [{state}] forced — <grain> → <state> over N false check(s)
+{verdicts}
 
-and, after a write, `next:` lines saying what is yours to do. Nothing else
-is written, moved, bumped, retitled, pushed or tagged.
+{after}
 
-A `lesson` row recorded against this grain, or against a check's name, is
+A `lesson` row recorded against the subject's grain, or a check's name, is
 printed beside that verdict with its `source` path and emitted on the
 `[emit]` sink. It is a record, never a gate: it changes no verdict and no
 exit code.
 
-Exit codes: 0 written (or nothing to write), 1 a check is false and nothing
-was written, 2 the declaration could not be read.\
+Exit codes: {exits}\
 """
+
+# What each kind of subject IS, keyed by its segment count in SUBJECT: one
+# segment is a version, anything else a grain id.
+SUBJECT_IS = {
+    1: 'a version — the release this belt is about: one literal path\n'
+       '              segment, with no whitespace, glob, separator, scheme or\n'
+       '              "." / ".." segment',
+    2: 'a grain id — the same grammar `pm` uses, segment for segment',
+}
+
+# The parts of the help that differ between a belt that WRITES and one that
+# is checks only, keyed by whether it writes. The renderer asks `WRITES`, never
+# the operation's name, so the next checks-only belt is described correctly by
+# being declared one.
+HELP_PARTS = {
+    True: {
+        'run': 'Run every check in the {state} list, print each one, then '
+               'write ONCE or not\nat all: {writes}',
+        'skipped_line': ', or `skipped:\n<check> — "<why>"` (you answered it)',
+        'verdicts': '    [{state}] ok — {subject} → <state>\n'
+                    '    [{state}] error — N check(s) false; no status written\n'
+                    '    [{state}] forced — {subject} → <state> over N false '
+                    'check(s)',
+        'after': 'and, after a write, `next:` lines saying what is yours to '
+                 'do. Nothing else\nis written, moved, bumped, retitled, '
+                 'pushed or tagged.',
+        'exits': '0 written (or nothing to write), 1 a check is false and '
+                 'nothing was\nwritten, 2 the input was refused or the '
+                 'declaration could not be read.',
+    },
+    False: {
+        'run': 'Run every check in the {state} list and print each one. It '
+               'writes nothing —\nit is checks only: it sets no status and '
+               'files no row of its own, so the\nverdict is the exit code and '
+               'the lines above it. Where `[emit]` declares a\nsink, each '
+               'verdict is emitted there, as on every belt.',
+        'skipped_line': '',
+        'verdicts': '    [{state}] ok — N check(s) true; nothing to write\n'
+                    '    [{state}] error — N check(s) false; no status written',
+        'after': 'and, when every check is true, `next:` lines saying what is '
+                 'yours to do.\nNothing is moved, bumped, retitled, pushed or '
+                 'tagged.',
+        'exits': '0 every check true, 1 a check is false, 2 the input\nwas '
+                 'refused or the declaration could not be read.',
+    },
+}
+
+
+def render_usage(operation: str) -> str:
+    """The belt's `--help`, off `WRITES` and `SUBJECT` alone."""
+    parts = HELP_PARTS[bool(WRITES[operation])]
+    subject = SUBJECT[operation][2]
+    words = {'state': operation, 'subject': subject,
+             'writes': _writes(operation)}
+    return USAGE.format(
+        synopsis=_synopsis(operation), subject=subject,
+        subject_is=SUBJECT_IS[1 if SUBJECT[operation][0] == 1 else 2],
+        flags=_flags(operation).format(state=operation),
+        **{key: text.format(**words) for key, text in parts.items()})
 
 CLOSE_USAGE = f"""\
 agentic-sdlc {CLOSE_VERB} story   <story-id>     [{SKIP_FLAG} <check> "<why>"] [--force]
@@ -460,7 +515,7 @@ def _spoken(operation: str) -> str:
 def _writes(operation: str) -> str:
     kind = WRITES[operation]
     if not kind:
-        return 'this one writes nothing — it is checks only.'
+        return 'It writes nothing — it is checks only.'
     return (f'the {kind}\'s status, set to the first state of '
             f'[pm.states.{kind}] done. Any check false → exit 1 and no write.')
 
@@ -588,6 +643,12 @@ def _refuse(message: str) -> int:
 def _quote(value: str) -> str:
     shown = value if len(value) <= QUOTE_LIMIT else value[:QUOTE_LIMIT] + '…'
     return repr(shown)
+
+
+def _plan_move(*flags: str) -> str:
+    """The `pm add` that puts a milestone on the plan, through the vehicle."""
+    return vehicle.command('pm', 'add', vocabulary.ROOT_ID,
+                           inventory.MILESTONE_SLOT, *flags)
 
 
 def version_defect(value: str) -> str:
@@ -783,19 +844,15 @@ def main(argv: Sequence[str], *, root: Path | None = None,
             return _refuse(
                 f'unknown grain {rest[0]!r} — `{CLOSE_VERB}` closes one of '
                 f'{", ".join(CLOSE_OPERATIONS)}. A milestone closes through '
-                f'`agentic-sdlc release <version>`, which is the belt above '
-                f'these two')
+                f'`{vehicle.command("release", vehicle.Slot("<version>"))}`, '
+                f'which is the belt above these two')
         operation, rest = rest[0], rest[1:]
     if operation not in OPERATIONS:
         return _refuse(f'unknown operation {operation!r} '
                        f'(expected: {", ".join(OPERATIONS)})')
     spoken = _spoken(operation)
     if any(a in ('-h', '--help', 'help') for a in rest):
-        print(USAGE.format(op=spoken, state=operation,
-                           subject=SUBJECT[operation][2],
-                           writes=_writes(operation),
-                           synopsis=_synopsis(operation),
-                           flags=_flags(operation).format(state=operation)))
+        print(render_usage(operation))
         return 0
 
     force, skips, positional, flag_defect = parse_flags(rest)
@@ -803,9 +860,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
     if not positional and operation != 'release':
+        example = '0.2.0' if segments == 1 else vehicle.Slot(shape)
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
-                       f'`agentic-sdlc {spoken} '
-                       f'{"0.2.0" if segments == 1 else shape}`')
+                       f'`{vehicle.command(*spoken.split(), example)}`')
     if len(positional) > 1:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')
@@ -875,8 +932,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                     f'{spoken} needs a version, and the plan cannot supply one: '
                     f'{cfg.rel(inventory.releases_file(cfg))} declares no `order` '
                     f'(or every entry in it has shipped). Name the version, or '
-                    f'schedule the milestone that carries it: `agentic-sdlc pm '
-                    f'add {vocabulary.ROOT_ID} <milestone-id>`')
+                    f'schedule the milestone that carries it: '
+                    f'`{_plan_move()}`')
             subject = current
             defect = subject_defect(operation, subject)
             if defect:
@@ -892,9 +949,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'{spoken} {subject}: the current release is {current!r} — '
                 f'shipping out of the order declared in '
                 f'{cfg.rel(inventory.releases_file(cfg))} is refused, and nothing '
-                f'was written. Re-sequence the plan with `agentic-sdlc pm add '
-                f'{vocabulary.ROOT_ID} <milestone-id> --before <id>` if {subject} '
-                f'really goes first')
+                f'was written. Re-sequence the plan with '
+                f'`{_plan_move("--before", vehicle.Slot("<id>"))}` '
+                f'if {subject} really goes first')
 
     mid = _milestone_id(cfg, operation, subject)
     # The GRAIN, not a directory: what a belt needs is the milestone's document
@@ -915,13 +972,13 @@ def main(argv: Sequence[str], *, root: Path | None = None,
               f'nothing was written', file=sys.stderr)
         return 1
     if not kind:
-        # Checks only (D12): the milestone is the LEDGER's home, so its
-        # absence is not an entry condition. WHERE the project tracks the bump
-        # is the project's business, the same way `[pm.states.*]` is.
-        print(f'[{operation}] {NOTHING_RECORDED} — '
-              + (f'a row would land in {cfg.rel(mledger)}'
-                 if mledger is not None
-                 else f'there is {nowhere} to land one in; {ANYWHERE}'))
+        # Checks only (D12): a milestone carrying the version is neither an
+        # entry condition nor a place this run could write to. WHERE the
+        # project tracks the bump is the project's business, the same way
+        # `[pm.states.*]` is. One sentence either way — "a row would land in
+        # <ledger>" read as a write this belt might make (#25).
+        print(f'[{operation}] {NOTHING_RECORDED}, with or without a '
+              f'milestone carrying {subject}; {ANYWHERE}')
 
     ctx = Context(root=cfg.root, operation=operation, version=subject)
     # ONE grain for both taps: the row a lesson surfaces against and the row a

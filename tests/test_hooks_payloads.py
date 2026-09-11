@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -207,6 +208,54 @@ def test_stop_gate_does_not_loop_on_its_own_block(tmp_path):
     (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
     write_makefile(root, check_ok=False)
     assert fire_stop(root, stop_hook_active=True).returncode == 0
+
+
+def plant_origin_head(root: Path, at: str = 'HEAD') -> None:
+    """What a CLONE has and `git init` does not: `origin/main` and an
+    `origin/HEAD` pointing at it — the ref an empty `FALLBACK_BASE` /
+    `DEFAULT_BASE` reads. Planted, not fetched; no `staging` anywhere."""
+    assert git(root, 'update-ref', 'refs/remotes/origin/main', at).returncode == 0
+    assert git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD',
+               'refs/remotes/origin/main').returncode == 0
+
+
+STOP_UNRESOLVED = ("cc-stop-gate: base '{}' does not resolve — running the "
+                   "WHOLE unit tier (set DEFAULT_BASE in "
+                   "tools/hooks/cc-stop-gate.sh, or the marker's base=)")
+
+
+def test_stop_gate_names_a_base_that_does_not_resolve(tmp_path):
+    """#37. The stock base is the remote's HEAD, READ, never a branch the
+    kit's flow never creates. A base that does not resolve used to be
+    swallowed — the gate ran the whole unit tier on every agent stop and said
+    nothing; now it names the base and proceeds as before. Once `origin/HEAD`
+    is there, the same marker slices off it and the line is gone."""
+    root = corpus_repo(tmp_path)
+    corpus = git(root, 'rev-parse', 'HEAD').stdout.strip()
+    for rel in ('src/a.txt', 'tests/unit/src/.keep'):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text('x\n', encoding='utf-8')
+    assert git(root, 'add', 'src', 'tests').returncode == 0
+    assert git(root, 'commit', '-q', '-m', 'feat: src',
+               '--', 'src', 'tests').returncode == 0
+    (root / 'Makefile').write_text(
+        "check:\n\t@true\nunit:\n\t@printf '%s' '$(SYS)' > sys.out\n",
+        encoding='utf-8')
+    sys_out = root / 'sys.out'
+    for marker, named in (('branch=feat/x\n', 'origin/HEAD'),
+                          ('branch=feat/x\nbase=nope\n', 'nope')):
+        (root / MARKER).write_text(marker, encoding='utf-8')
+        done = fire_stop(root)
+        assert done.returncode == 0, done.stderr
+        assert STOP_UNRESOLVED.format(named) in done.stderr.splitlines(), \
+            done.stderr
+        assert sys_out.read_text(encoding='utf-8') == '', 'not the whole tier'
+    plant_origin_head(root, at=corpus)
+    (root / MARKER).write_text('branch=feat/x\n', encoding='utf-8')
+    done = fire_stop(root)
+    assert done.returncode == 0, done.stderr
+    assert 'does not resolve' not in done.stderr, done.stderr
+    assert sys_out.read_text(encoding='utf-8') == 'src'
 
 
 def test_stop_gate_fails_open_without_a_makefile_and_on_garbage(tmp_path):
@@ -411,17 +460,91 @@ def test_pre_push_does_not_gate_a_tag_only_push(tmp_path):
     assert done.returncode == 0, done.stderr
 
 
+# --- a header carried from an older install still runs (review R1) -----------
+# The v0.4.0 `prepare-commit-msg` header, byte for byte: it has no `TRAILER_RE=`.
+V040_PREPARE_HEADER = (
+    "# --- project config (yours to edit after install — the file is your "
+    "repo's) --\n"
+    '# The trailer; keep it in step with the model line your agent prompts '
+    'name.\n'
+    'TRAILER="Co-Authored-By: Claude <noreply@anthropic.com>"\n'
+    '# The per-agent worktree marker written by tools/dev/agent-worktree.sh.\n'
+    'SCOPE_MARKER=".agent-scope"\n'
+    '# ' + '-' * 77 + '\n')
+ASSIGNMENT = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=(\(?)')
+DEFAULTED = re.compile(r'^declare -p ([A-Za-z_][A-Za-z0-9_]*) >/dev/null 2>&1 \|\| ')
+# Every installed file whose packaged header declares a key its body reads.
+HEADERED = tuple(
+    (name, rel) for name, rel in install.PLANS['install-hooks']
+    if (span := install.config_block_span(install.body_of(name)))
+    and any(ASSIGNMENT.match(line) for line in
+            install.body_of(name).splitlines()[span[0]:span[1]]))
+
+
+def _settled(text: str, names: list[str], defaulted: bool) -> str:
+    """`declare -p` of `names` once `text` has run through its header's close,
+    or through its last stock default."""
+    lines = text.splitlines()
+    upto = (max(n for n, line in enumerate(lines) if DEFAULTED.match(line))
+            if defaulted else install.config_block_span(text)[1]) + 1
+    script = '\n'.join(lines[:upto] + ['declare -p ' + ' '.join(names)])
+    return subprocess.run(['bash', '-c', script], capture_output=True, text=True,
+                          env=CLEAN_ENV).stdout
+
+
+def test_the_census_of_headered_hooks_is_the_six_that_read_a_key():
+    assert [rel for _name, rel in HEADERED] == [
+        STOP_GATE, LEDGER_SUBAGENT, LEDGER_SESSION, 'tools/hooks/pre-push',
+        'tools/hooks/prepare-commit-msg', WORKTREE]
+
+
+@pytest.mark.parametrize('name,rel', HEADERED, ids=[rel for _n, rel in HEADERED])
+def test_a_header_lacking_a_key_runs_the_body_on_its_stock_value(name, rel):
+    """Review R1: `--force` carries an older header byte for byte (D1), and a
+    body reading a key that header lacks aborted under `set -u`. The body
+    defaults every key: with NO key in the header each settles at the packaged
+    header's value, and a key the header sets — emptied, here — stays set."""
+    body = install.body_of(name)
+    lines = body.splitlines(keepends=True)
+    start, end = install.config_block_span(body)
+    names = [m.group(1) for line in lines[start:end]
+             if (m := ASSIGNMENT.match(line))]
+    assert [m.group(1) for line in lines if (m := DEFAULTED.match(line))] == names
+
+    def carried(swap) -> str:
+        return install.carry_config_block(''.join(
+            line if (m := ASSIGNMENT.match(line)) is None else swap(m)
+            for line in lines[:end + 1]), body)
+    stock = _settled(body, names, defaulted=False)
+    assert stock.count('declare ') == len(names), stock
+    assert _settled(carried(lambda m: ''), names, defaulted=True) == stock
+    emptied = carried(lambda m: m.group(1) + ('=()\n' if m.group(2) else "=''\n"))
+    kept = _settled(emptied, names, defaulted=True)
+    assert kept == _settled(emptied, names, defaulted=False) != stock, kept
+
+
 # --- prepare-commit-msg: agents stamped, the human never -----------------------
 def last_message(root: Path) -> str:
     return git(root, 'log', '-1', '--format=%B').stdout
 
 
 def test_prepare_commit_msg_stamps_agent_commits(tmp_path):
+    """The second commit is review R1's walk: `install-hooks --force` carries
+    a v0.4.0 header, which declares no `TRAILER_RE=`, and the body read it
+    under `set -eu` — `TRAILER_RE: unbound variable`, every agent commit
+    aborted."""
     root = corpus_repo(tmp_path)
     (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
     assert git(root, 'commit', '-q', '--allow-empty',
                '-m', 'feat: x').returncode == 0
     assert 'Co-Authored-By: Claude' in last_message(root)
+    hook = root / 'tools/hooks/prepare-commit-msg'
+    hook.write_text(install.carry_config_block(
+        V040_PREPARE_HEADER, hook.read_text(encoding='utf-8')),
+        encoding='utf-8')
+    committed = git(root, 'commit', '-q', '--allow-empty', '-m', 'feat: y')
+    assert committed.returncode == 0, committed.stderr
+    assert last_message(root).count('Co-Authored-By: Claude') == 1
 
 
 def test_prepare_commit_msg_never_stamps_the_trunk(tmp_path):
@@ -449,23 +572,68 @@ def worktree(root: Path, *argv: str) -> subprocess.CompletedProcess:
 
 
 def test_worktree_new_creates_branch_marker_and_prints_the_path(tmp_path):
+    """A clone following the kit's flow — `main`, a remote, its HEAD, no
+    `staging` — bases off the remote's HEAD, and the branch does NOT track
+    it (`--no-track`): a remote-tracking base would otherwise become its
+    upstream."""
     root = corpus_repo(tmp_path)
-    assert git(root, 'branch', 'staging').returncode == 0
+    with_origin(root, tmp_path)
+    plant_origin_head(root)
     done = worktree(root, 'new', 'sluga')
     assert done.returncode == 0, done.stderr
     path = Path(done.stdout.strip())
     assert path == root / '.claude/worktrees/sluga'
     marker = (path / MARKER).read_text(encoding='utf-8')
     assert 'branch=feat/sluga' in marker
-    assert 'base=staging' in marker
+    assert 'base=origin/main' in marker
     assert git(path, 'branch', '--show-current').stdout.strip() == 'feat/sluga'
+    upstream = git(root, 'rev-parse', '--abbrev-ref', 'feat/sluga@{u}')
+    assert upstream.returncode != 0, upstream.stdout
+
+
+WORKTREE_UNRESOLVED = ("agent-worktree: base '{}' does not resolve — set "
+                       "FALLBACK_BASE in tools/dev/agent-worktree.sh, pass "
+                       "[base-branch], or run git remote set-head origin "
+                       "--auto")
+
+
+def test_worktree_new_refuses_a_base_that_does_not_resolve_without_a_write(
+        tmp_path):
+    """#37. A `git remote add` tree — `origin/main` fetched, NO `origin/HEAD`
+    — is the accepted cost of reading the remote's HEAD: `new` refuses,
+    naming the base it tried and where to set one, before `git worktree add`.
+    It never GUESSES `origin/main` or `main`, both of which are right there.
+    The same line for a `[base-branch]` that does not resolve, each spelling
+    refused with no branch, no directory and no registered worktree."""
+    root = corpus_repo(tmp_path)
+    with_origin(root, tmp_path)
+    assert git(root, 'update-ref', 'refs/remotes/origin/main',
+               'HEAD').returncode == 0
+    registered = git(root, 'worktree', 'list', '--porcelain').stdout
+    for argv, named in ((('new', 'x'), 'origin/HEAD'),
+                        (('new', 'x', ''), 'origin/HEAD'),
+                        (('new', 'x', 'staging'), 'staging'),
+                        (('new', 'x', 'main..main'), 'main..main'),
+                        (('new', 'x', '--all'), '--all'),
+                        (('new', 'x', ' main'), ' main'),
+                        (('new', '--no-warm', 'x', 'nope'), 'nope')):
+        done = worktree(root, *argv)
+        assert done.returncode == 1, (argv, done.stderr)
+        assert done.stderr.splitlines()[-1] == \
+            WORKTREE_UNRESOLVED.format(named), (argv, done.stderr)
+        assert done.stdout == '', argv
+        assert git(root, 'show-ref', '--verify', '--quiet',
+                   'refs/heads/feat/x').returncode != 0, argv
+        assert not (root / '.claude/worktrees/x').exists(), argv
+        assert git(root, 'worktree', 'list',
+                   '--porcelain').stdout == registered, argv
 
 
 def test_worktree_done_refuses_while_work_is_uncommitted(tmp_path):
     """The property the tool exists for: teardown must never eat work. The
     planted marker itself must NOT count as dirt — only real files do."""
     root = corpus_repo(tmp_path)
-    assert git(root, 'branch', 'staging').returncode == 0
+    plant_origin_head(root)
     path = Path(worktree(root, 'new', 'dirty').stdout.strip())
     (path / 'half-done.gd').write_text('# wip\n', encoding='utf-8')
     done = worktree(root, 'done', 'dirty')
@@ -480,7 +648,8 @@ def test_worktree_done_refuses_while_work_is_uncommitted(tmp_path):
 def test_worktree_done_keeps_an_unmerged_branch_and_deletes_a_merged_one(
         tmp_path):
     root = corpus_repo(tmp_path)
-    assert git(root, 'branch', 'staging').returncode == 0
+    with_origin(root, tmp_path)
+    plant_origin_head(root)
     path = Path(worktree(root, 'new', 'keeper').stdout.strip())
     (path / 'landed.gd').write_text('# done\n', encoding='utf-8')
     assert git(path, 'add', 'landed.gd').returncode == 0
@@ -488,18 +657,20 @@ def test_worktree_done_keeps_an_unmerged_branch_and_deletes_a_merged_one(
                '--', 'landed.gd').returncode == 0
     done = worktree(root, 'done', 'keeper')
     assert done.returncode == 0, done.stderr
-    assert 'NOT merged' in done.stderr
+    assert 'NOT merged into origin/main' in done.stderr
     assert git(root, 'show-ref', '--verify',
                'refs/heads/feat/keeper').returncode == 0, 'commits were lost'
-    # Merge it, re-run done: now the branch goes too.
-    assert git(root, 'checkout', '-q', 'staging').returncode == 0
+    # Merge it into the trunk: `branch -d` asks HEAD, because `new` set no
+    # upstream — a tracked `origin/main` would refuse it as unmerged.
+    assert git(root, 'checkout', '-q', 'main').returncode == 0
     assert git(root, 'merge', '-q', 'feat/keeper').returncode == 0
     assert git(root, 'branch', '-d', 'feat/keeper').returncode == 0
 
 
-def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML) -> None:
+def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML,
+             branch: str = 'feat/integration') -> None:
     """A PM tree the worktree script can ASK about: one milestone at `status`
-    declaring `branch: feat/integration`, the flow, and the `make pm` target
+    declaring `branch: <branch>`, the flow, and the `make pm` target
     the script's `PM_CMD` runs — routed to the CLI from source, the same
     Makefile `ledger_repo` below plants."""
     (root / 'devkit.toml').write_text(flow, encoding='utf-8')
@@ -509,7 +680,7 @@ def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML) -> None:
     milestone = root / 'pm/roadmap/milestones/0.1.0.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text(f'---\nid: "0.1.0"\nstatus: {status}\n'
-                         f'branch: feat/integration\n---\n', encoding='utf-8')
+                         f'branch: {branch}\n---\n', encoding='utf-8')
 
 
 def test_worktree_new_bases_off_the_in_progress_milestones_branch(tmp_path):
@@ -524,19 +695,26 @@ def test_worktree_new_bases_off_the_in_progress_milestones_branch(tmp_path):
     case the old script could not pass: it found no `building`, based the
     agent off the trunk, and said nothing. `pm list --kind milestone
     --category in_progress` answers both trees the same way.
+
+    The third tree declares `branch: staging`. `staging` is no longer a
+    trunk name the scan skips — the trunk is `main` or the fallback — so a
+    declared `staging` is honoured, never swapped for `origin/main` in
+    silence (#37).
     """
-    for status, flow in (('building', FLOW_TOML),
-                         ('doing', FLOW_TOML.replace('"building"',
-                                                     '"doing"'))):
-        root = corpus_repo(tmp_path, name=f'repo-{status}')
-        assert git(root, 'branch', 'staging').returncode == 0
-        assert git(root, 'branch', 'feat/integration').returncode == 0
-        _pm_tree(root, status, flow)
+    for status, flow, branch in (
+            ('building', FLOW_TOML, 'feat/integration'),
+            ('doing', FLOW_TOML.replace('"building"', '"doing"'),
+             'feat/integration'),
+            ('building', FLOW_TOML, 'staging')):
+        root = corpus_repo(tmp_path, name=f'repo-{status}-{branch[:4]}')
+        plant_origin_head(root)
+        assert git(root, 'branch', branch).returncode == 0
+        _pm_tree(root, status, flow, branch)
         done = worktree(root, 'new', 'based')
         assert done.returncode == 0, done.stderr
         marker = (Path(done.stdout.strip()) / MARKER).read_text(
             encoding='utf-8')
-        assert 'base=feat/integration' in marker, (status, done.stderr)
+        assert f'base={branch}' in marker, (status, done.stderr)
         assert 'could not answer' not in done.stderr, done.stderr
 
 
@@ -547,7 +725,7 @@ def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
     records means. A milestone the CLI cannot read (no flow declared) is the
     same answer, said the same way, never a silent trunk base."""
     root = corpus_repo(tmp_path)
-    assert git(root, 'branch', 'staging').returncode == 0
+    plant_origin_head(root)
     milestone = root / 'pm/roadmap/milestones/0.1.0.md'
     milestone.parent.mkdir(parents=True)
     milestone.write_text('---\nid: "0.1.0"\nstatus: building\n'
@@ -555,9 +733,9 @@ def test_worktree_new_falls_back_when_the_cli_cannot_answer(tmp_path):
     done = worktree(root, 'new', 'unasked')
     assert done.returncode == 0, done.stderr
     assert 'could not answer' in done.stderr, done.stderr
-    assert 'basing off staging' in done.stderr, done.stderr
+    assert 'basing off origin/main' in done.stderr, done.stderr
     marker = (Path(done.stdout.strip()) / MARKER).read_text(encoding='utf-8')
-    assert 'base=staging' in marker
+    assert 'base=origin/main' in marker
 
 
 # --- fail-open posture, the PreToolUse hook -----------------------------------

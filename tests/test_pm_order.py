@@ -18,10 +18,11 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from support.pm import cfg_for, run_cli, run_gate, tree, write, write_config
+from support.pm import (cfg_for, ledger_rows, run_cli, run_gate, tree, write,
+                        write_config)
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import cli, inventory, vocabulary
+from agentic_sdlc.repo.pm import cli, inventory, ledger, vocabulary
 
 PLAN_REL = 'pm/roadmap/releases.md'
 
@@ -150,7 +151,7 @@ class TheDanglingNoticeReadsTheParentsOrder(unittest.TestCase):
             code, out = run_cli(root, 'add', '0.2', 'bg-crash')
             self.assertEqual(code, 0, out)
             self.assertIn('DANGLING', out)
-            self.assertIn('pm remove 0.1 bg-crash', out)
+            self.assertIn("`make pm ARGS='remove 0.1 bg-crash'`", out)
             # THE REMEDY RUNS. This is the assertion the bug is about: a
             # printed fix that refuses is worse than no fix printed.
             code, out = run_cli(root, 'remove', '0.1', 'bg-crash')
@@ -369,7 +370,8 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
         # A retired verb read as "unknown command" reads as a typo and sends
         # the reader hunting for a misspelling instead of for the replacement.
         with tree(story_statuses=('ready',)) as root:
-            for argv, needle in ((('order', '--append', '0.1.0'), 'pm add'),
+            for argv, needle in ((('order', '--append', '0.1.0'),
+                                  "make pm ARGS='add <plan-id> <milestone-id>'"),
                                  (('sync',), 'order:')):
                 with self.subTest(argv=argv):
                     code, out = run_cli(root, *argv)
@@ -432,7 +434,7 @@ class ThePlanIsRead(unittest.TestCase):
             self.assertIn('0.1.0\t0.1\tretired\tDemo\tthe pools landed', out)
             self.assertNotIn('DANGLING', out)
 
-    def test_an_entry_no_retire_row_explains_is_still_DANGLING(self):
+    def test_an_entry_no_retire_row_explains_is_DANGLING_until_one_is_backfilled(self):
         # The other half, so `retired` cannot become the answer for every
         # entry that names no grain.
         with tree(story_statuses=('ready',)) as root:
@@ -442,6 +444,43 @@ class ThePlanIsRead(unittest.TestCase):
             code, out = run_cli(root, 'roadmap')
             self.assertEqual(code, 0, out)
             self.assertIn('-\tgone\tDANGLING\t-\t-', out)
+            # #31: a milestone pruned before 0.5.0 has no document to retire
+            # from, so the caller supplies the two facts, and the row says it
+            # was BACKFILLED rather than recorded. Twice is one row.
+            backfill = ('retire', 'gone', '--version', '0.3.0', '--name',
+                        'The Gone One', 'it', 'shipped')
+            for _ in range(2):
+                code, out = run_cli(root, *backfill)
+                self.assertEqual(code, 0, out)
+            self.assertIn('nothing was written (no-op)', out)
+            rows = [r for r in ledger_rows(root, 'pm/roadmap/ledger.jsonl')
+                    if r['kind'] == ledger.KIND_RETIRE]
+            self.assertEqual(len(rows), 1, rows)
+            self.assertIs(rows[0][ledger.BACKFILLED_FIELD], True)
+            code, out = run_cli(root, 'roadmap')
+            self.assertEqual(code, 0, out)
+            self.assertIn('0.3.0\tgone\tretired\tThe Gone One\tit shipped', out)
+            self.assertNotIn('DANGLING', out)
+            # A CORRECTION of a backfill is a second row — `pm roadmap` reads
+            # the last — and says whom it supersedes; `--dry-run` writes none.
+            fix = ('retire', 'gone', '--version', '0.3.1', '--name', 'Gone')
+            self.assertEqual(run_cli(root, *fix, '--dry-run')[0], 0)
+            self.assertEqual(len(ledger_rows(root, 'pm/roadmap/ledger.jsonl')), 1)
+            code, out = run_cli(root, *fix)
+            self.assertEqual(code, 0, out)
+            self.assertIn('supersedes the backfilled row', out)
+            self.assertIn('0.3.1\tgone\tretired\tGone\t-',
+                          run_cli(root, 'roadmap')[1])
+            # Off the plan it says so — and not with `pm add`, which refuses
+            # an id no grain claims.
+            code, out = run_cli(root, 'retire', 'lost', '--version', '0.2.0',
+                                '--name', 'Lost')
+            self.assertEqual(code, 0, out)
+            self.assertIn('lost is on no plan', out)
+            self.assertNotIn('pm add roadmap lost', out)
+            # The id is held to the ID grammar, whose limit is 200 (N8).
+            self.assertEqual(run_cli(root, 'retire', 'x' * 150, '--version',
+                                     '0.2.0', '--name', 'L', '--dry-run')[0], 0)
 
     def test_next_is_the_first_unshipped_entry(self):
         with tree(story_statuses=('ready',)) as root:
@@ -460,7 +499,8 @@ class ThePlanIsRead(unittest.TestCase):
             for argv in (('roadmap',), ('next',)):
                 code, out = run_cli(root, *argv)
                 self.assertEqual(code, 0, out)
-                self.assertIn('pm add roadmap <milestone-id>', out)
+                self.assertIn("`make pm ARGS='add roadmap <milestone-id>'`",
+                              out)
 
     def test_every_release_shipped_is_said_rather_than_guessed_at(self):
         with tree(milestone_status='done', story_statuses=('ready',)) as root:

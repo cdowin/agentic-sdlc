@@ -26,9 +26,9 @@
 #     before you use the ladder.
 #
 # That rule decides the next key rather than being re-argued per key.
-# `agentic-sdlc pm config --seed` prints this file as the PINNED tool holds
+# `make pm ARGS='config --seed'` prints this file as the PINNED tool holds
 # it — the surface for a bump, where `init` serves only a new repo.
-# `agentic-sdlc check <gate> --help` prints that gate's contract, its section
+# `make sdlc ARGS='check <gate> --help'` prints that gate's contract, its section
 # and its honest scope.
 #
 # A key this package no longer honours is NAMED at exit 2, never ignored; a
@@ -36,7 +36,7 @@
 # because a gate quietly scanning nothing is worse than a gate that stops.
 
 # --- which gates run ----------------------------------------------------------
-# The roster `agentic-sdlc check all` runs HERE. Seven gates exist — `doc`,
+# The roster `make sdlc ARGS='check all'` runs HERE. Seven gates exist — `doc`,
 # `shell`, `grain-shape`, `repo-hygiene`, `pm`, `hooks`, `budget` — and three
 # are in the stock aggregate.
 # A repo holding NONE of a gate's file kind gets a 0-file census, and that gate
@@ -91,7 +91,7 @@
 # protected = "^(main|staging|archive/.*)$"
 
 # --- the PM tree --------------------------------------------------------------
-# `agentic-sdlc pm` and its drift gate `check pm`. The states are closed sets
+# `make pm` and its drift gate `check pm`. The states are closed sets
 # and the transitions are open: any value in a grain's vocabulary is reachable,
 # and the gate reports a tree that contradicts itself. `pm vocabulary` prints
 # the rule ids in full.
@@ -221,7 +221,7 @@
 # installed files — "this exists, here, now", never "you should run it". The
 # courier above is the rule-11 line: arriving at `building --by agent <type>`
 # is where a dispatch starts, so it is where the one GDK_LEDGER_* value no hook
-# payload carries gets named, and `agentic-sdlc dispatch --grain <id>` renders
+# payload carries gets named, and `make sdlc ARGS='dispatch --grain <id>'` renders
 # both that export and the `pm ledger record` line for the return.
 #
 # The states themselves are [pm.states.<kind>] below — the one section written
@@ -339,7 +339,7 @@ done        = ["closed"]
 # kit owns, and it configures itself in its own section of this file.
 
 # --- the ladder ---------------------------------------------------------------
-# `agentic-sdlc verify --story | --feature | --milestone` runs the make target
+# `make sdlc ARGS='verify --story'` (or `--feature`, `--milestone`) runs the make target
 # named here — three rungs, one shape, and the Makefile stays the authority on
 # what a target RUNS. `close story` runs the story rung; `release`'s `gate`
 # check runs `make milestone`. `verify --check` holds each target to existing
@@ -359,7 +359,7 @@ done        = ["closed"]
 # milestone = "make milestone"
 
 # --- what a DISPATCHED AGENT is told before its first tool call ---------------
-# `agentic-sdlc dispatch` renders a preamble: this project's contract POINTERS,
+# `make sdlc ARGS=dispatch` renders a preamble: this project's contract POINTERS,
 # then its ladder, gate roster and state vocabulary read from the sections
 # above — so the derived half is never retyped and cannot drift.
 #
@@ -371,10 +371,12 @@ done        = ["closed"]
 # DECLARATION — nothing stands behind these two keys and the reader refuses BY
 # NAME when the section is absent. `contracts` is POINTED AT, never copied: a
 # 163-line paste in every brief is volume, and the fix is placement. A declared
-# path that resolves to nothing is exit 2.
+# path that resolves to nothing is exit 2. The second path is the PM rule
+# `pm install-skills` writes (and `pm init` runs): it is `paths:`-scoped, so a
+# dispatched agent that has not yet opened the tree reaches it only from here.
 # [dispatch]
 # project   = "<one line: what this is, and its stack>"
-# contracts = ["CLAUDE.md"]
+# contracts = ["CLAUDE.md", ".claude/rules/pm-execution.md"]
 
 # --- more words that mean FINISHED --------------------------------------------
 # `ready-for feature` asks "is every story in the `done` CATEGORY", not "is

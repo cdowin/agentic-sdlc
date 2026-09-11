@@ -1,11 +1,11 @@
 ---
 id: bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed
 kind: bug
-milestone:
+milestone: ms-a-consumer-can-take-the-bump
 name: adopt reports checks-pass while an opt-in gate the consumer armed exits 1
-status: open
+status: closed
 caused_by:
-changelog: none
+changelog: `adopt`'s `ok: checks-pass` line now ends `; NOT run: …`, naming every gate outside the `check all` roster, every `[gates] extra` target, and the `[adopt.commands] checks-pass` key that would run them; the verdict is unchanged.
 ---
 
 # the bump belt does not run the gate a consumer armed
@@ -65,3 +65,14 @@ The tightening itself. `check budget` failing an ungraded declared ceiling is th
 
 `check doc`'s matching tightening — same class, and its aggregate line is in
 `ms-nothing-is-hand-rolled`'s `changelog:`. `doc` IS in stock `[checks] all`, so `adopt` catches it.
+
+## The option this bug missed (0.8.0 spec scout, M6) — the one to take
+
+`[adopt.commands] checks-pass` ALREADY overrides the command (`steps.py:1321-1323`, `commands_for`
+at `:466`, documented at `README.md:275-279`). The cheapest rule-11 fix: `checks-pass`'s `ok:` detail
+names what it did NOT run. That means the `[gates] extra` targets (already read at `steps.py:1052`),
+the `KNOWN_GATES` that are off, and the `[adopt.commands] checks-pass` override that would run them.
+Reading a make file to find the armed gates is rejected (rule 9). Serialized after the changelog bug
+on `steps.py`.
+
+Known, not changed: `check_checks_pass`'s `found='the roster this version ships'` is wrong when a consumer declares `[checks] all` (the roster is then theirs). Rewording it is a line-shape change for little gain; left for the milestone review to weigh.

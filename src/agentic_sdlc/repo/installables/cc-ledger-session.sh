@@ -24,6 +24,9 @@ MAKE_PM=(make -s pm)
 # inside it. Unset falls back to that cwd; a value naming no tree is a note.
 # -----------------------------------------------------------------------------
 
+# A header carried from an older install may lack a key: it runs at its stock value.
+declare -p MAKE_PM >/dev/null 2>&1 || MAKE_PM=(make -s pm)
+
 # The event is a CONSTANT, not `hook_event_name` off the payload: a mis-wired
 # entry must not file a session row for a dispatch stop.
 HOOK_NAME="cc-ledger-session"

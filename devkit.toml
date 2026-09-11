@@ -231,7 +231,27 @@ budget = { unit = 20, integration = 130, test = 150 }
 #
 # 1,627 is the suite that exists today, with no headroom on purpose: growth is
 # meant to be argued, not absorbed. Re-set at each close, once, with a reason.
-cases = { test = 1627 }
+#
+# RE-SET at the close of 0.8.0: 1,627 -> 1,696 (+69, +4.2%). Every case added
+# failed at HEAD before its fix. Measured per module against a `git archive
+# 4dae916` copy:
+#
+#   test_install_sdlc  +27  ONE parametrised case holding all 23 belt
+#                           descriptions to what their checks read, plus 4
+#                           planted falsehoods (#33 had no such guard)
+#   test_install       +12  [adopt] ours claims, the header carry, the markdown
+#                           fence (D2), the withdrawal census, the citation
+#                           census through the stock wiring (#20 #21 #22)
+#   test_pm_gate        +6  the ROSTER line, the retired field ungated, U1 over
+#                           the ledger, the help roster, the CLOSE WARN
+#   test_check_doc      +6  spans across a paragraph, backtick pairing,
+#                           blockquotes, wrapper words, quoted prose (#26)
+#   test_host_guard     +3  the suite scrubs git's env and holds the host still
+#   + 15 more, one or two each, across 8 modules
+#
+# Integration wall clock is unchanged (paired same-machine runs: v0.7.0 49-51s,
+# 0.8.0 50-52s; the milestone review's R11).
+cases = { test = 1696 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

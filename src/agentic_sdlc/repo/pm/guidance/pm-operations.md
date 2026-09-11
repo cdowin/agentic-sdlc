@@ -58,7 +58,7 @@ pm/roadmap/
                                  (both optional — they appear on first write)
   features/<slug>.md             milestone: <milestone-id>   ← its binding
   stories/<slug>.md              feature: <feature-id>
-  bugs/<slug>.md                 milestone: the one that will FIX it
+  bugs/<slug>.md                 milestone: <milestone-id>   ← its parent (which one: `bugs bind:`)
   ledgers/<milestone-id>.jsonl   that milestone's rows
   ledger.jsonl                   rows naming no grain
 ```
@@ -80,6 +80,9 @@ idempotent: re-run one on an existing grain and it fills the missing slots witho
 touching an existing byte. It does NOT mint a shared doc — `decisions.md` appears
 when `pm decide` records the first one, `handoff.md` and `review.md` when somebody
 writes one. An empty one in every grain is sprawl the tool made.
+The name is the LAST words of every create, `bug` included (`pm new bug <milestone>
+<slug> <name...>`); there is no `--name`, and a name led by `-` or holding a newline is
+refused at exit 2 with nothing written.
 
 **Read the id `pm new` printed before you cite it.** Through v0.4.0 it takes the parent
 positionally and bakes it INTO the id — `pm new feature <mid> <slug>` gives
@@ -151,9 +154,9 @@ auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
 ## Sequence — `order:` on the parent, written by `pm add`
 
 A milestone big enough to need ordering lists its features in its own `order:` block,
-and a feature lists its stories the same way: `agentic-sdlc pm add <parent-id>
-<child-id> [--position N | --before <id> | --after <id>]` binds the child and places
-it in one act. `pm status` reads that order; anything unsequenced prints after it.
+and a feature lists its stories the same way: `make pm ARGS='add <parent-id> <child-id>'`
+binds the child and places it in one act, and `--position N`, `--before <id>` or
+`--after <id>` inside the quotes says where. `pm status` reads that order; anything unsequenced prints after it.
 The list is OPTIONAL — a small milestone declares none and reports as before, and a
 bound child nobody has placed is a counted line, never a finding. Sequence is a
 DECISION somebody made; the dependency graph (`depends_on`) is a different reading of
@@ -186,10 +189,10 @@ until 0.4.0 and retired with the generated execution list.)
   milestone with no `branch:` — or a parent and child that disagree (D2, D5, D6: a story at work under
   a `todo` feature, a `todo` feature over finished stories), both grains and both categories named.
   The same gap on a grain that has CLOSED is COUNTED on one `  READY  ` line instead of
-  named, because a shipped grain's criterion is nobody's next action.
-  A parent in `done` over a child that is not is D11, and it FAILS rather than warning. Counted on the verdict
-  line, never in the exit code; you read it and decide. `pm <kind> ready <id>` is the
-  only stamp; write the section, then stamp.
+  named, because a shipped grain's criterion is nobody's next action. Counted on the
+  verdict line, never in the exit code; you read it and decide.
+  `pm <kind> ready <id>` is the only stamp; write the section, then stamp. A parent
+  in `done` over a child that is not is D11, and it FAILS rather than warning.
 
 ## Retiring a closed milestone — git history is the archive
 
@@ -211,6 +214,8 @@ typed — the three facts nothing else in the tree has a copy of. `pm roadmap` p
 that entry as `retired` with all three: the shipped half of the ROADMAP.md retired in
 0.3.0. Schedule a milestone with `pm add <plan-id> <milestone-id>` before retiring it
 or `pm roadmap` has no row to print it on; `pm retire` says which of the two you are
-in. And anything load-bearing that a live
+in. A milestone pruned before that row existed gets one BACKFILLED: `pm retire <id>
+--version <ver> --name <name> [<why>]`, marked `backfilled: true`, and refused for an
+id a grain still claims or a near miss of one. And anything load-bearing that a live
 document links gets PROMOTED out of the tree first rather than left to rot behind a
 dangling link.

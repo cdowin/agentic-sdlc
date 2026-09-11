@@ -26,7 +26,7 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo import emit  # noqa: E402
+from agentic_sdlc.repo import emit, vehicle  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
 from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
@@ -284,8 +284,10 @@ changelog:
 '''
 
 
-def _with_changelog(root: Path, entry: str) -> None:
-    """One closed feature under the scratch milestone, `changelog:` set.
+def _with_changelog(root: Path, entry: str, milestone: str = 'a release',
+                    status: str = 'done') -> None:
+    """One feature under the scratch milestone at `status`, `changelog:` set
+    on both — the milestone's own line is `milestone`.
 
     THE NESTED SLOT (`<milestone>/features/<slug>/feature.md`), because this
     fixture builds a nested tree — writing into `pm/roadmap/features/` creates
@@ -293,32 +295,57 @@ def _with_changelog(root: Path, entry: str) -> None:
     resolving. Written as bytes: `pm set` would spawn.
     """
     from agentic_sdlc.repo.pm import changelog as clog
+    (root / MDIR / 'milestone.md').write_text(
+        MILESTONE.replace('status: building\n',
+                          f'status: building\n{clog.FIELD}: {milestone}\n'),
+        encoding='utf-8')
     path = root / MDIR / 'features' / 'alpha' / 'feature.md'
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = FEATURE_DOC
+    body = FEATURE_DOC.replace('status: done\n', f'status: {status}\n')
     if entry:
         body = body.replace(f'{clog.FIELD}:', f'{clog.FIELD}: {entry}')
     path.write_text(body, encoding='utf-8')
 
 
-@pytest.mark.parametrize('entry,truth,why', [
+# The milestone is `building` in every row: the belt grades it BEFORE it writes
+# its `done`, which is the state the milestone is in when anyone runs this.
+MILESTONE_ITSELF = f'{VERSION}, the milestone this release is for,'
+
+
+@pytest.mark.parametrize('milestone,entry,status,truth,why', [
     # The closed feature is silent — NAMED, with the two ways to answer.
-    ('', driver.Truth.FALSE, 'answered neither'),
+    ('a release', '', 'done', driver.Truth.FALSE,
+     '1 closed grain(s) answered neither: f-alpha'),
     # `none` is an ANSWER. That is the whole point of the word.
-    ('none', driver.Truth.TRUE, '1 declined'),
+    ('none', 'none', 'done', driver.Truth.TRUE, '2 declined'),
     # And a sentence.
-    ('a change', driver.Truth.TRUE, '1 entry/ies'),
+    ('a release', 'a change', 'done', driver.Truth.TRUE, '2 entry/ies'),
+    # 0.8.0: the MILESTONE is silent and every child answered. `changelog`
+    # counts it unanswered; this check passed it, because it asked only of
+    # CLOSED grains and the milestone is not closed until the belt writes it.
+    ('', 'a change', 'done', driver.Truth.FALSE,
+     f'{MILESTONE_ITSELF} answered neither — '),
+    ('', '', 'done', driver.Truth.FALSE,
+     f'{MILESTONE_ITSELF} and 1 closed grain(s) answered neither: f-alpha'),
+    # A child still in motion is NOT graded — `features-done` names it.
+    ('a release', '', 'building', driver.Truth.TRUE,
+     f'every closed grain answered, and so did {VERSION}'),
 ])
-def test_the_changelog_step_grades_grains_and_writes_nothing(entry, truth,
-                                                             why):
-    """Bites: a release over a closed grain nobody wrote a line for, and the
-    `none` that must satisfy it. The step is a READER — it writes nothing."""
+def test_the_changelog_step_grades_grains_and_writes_nothing(
+        milestone, entry, status, truth, why):
+    """Bites: a release over a closed grain nobody wrote a line for, a release
+    over a milestone whose own line is blank, and the `none` that must satisfy
+    either. The step is a READER — it writes nothing."""
     with tree({}) as root:
-        _with_changelog(root, entry)
+        _with_changelog(root, entry, milestone, status)
         before = snapshot(root)
         answer = check('changelog-unreleased-nonempty', root)
         assert answer.truth is truth, answer
         assert why in answer.detail, answer.detail
+        if truth is driver.Truth.FALSE:
+            # Review M5: the template's free text loses paired apostrophes
+            # typed as-is; the refusal says how one is typed.
+            assert vehicle.FREE_TEXT_NOTE in answer.detail, answer.detail
         assert snapshot(root) == before
 
 
@@ -417,6 +444,10 @@ def test_a_callee_that_exits_2_is_UNVERIFIABLE_and_never_a_finding(monkeypatch):
     answer = steps._own_verdict(context, 'verify', '--story', 'x')
     assert answer.truth is driver.Truth.UNVERIFIABLE, answer
     assert 'nothing was decided' in answer.detail and 'got 42' in answer.detail
+    # Review M3: the detail is what someone reproducing the red check pastes,
+    # so it names the vehicle line, never the bare program.
+    assert answer.detail.startswith(
+        "`make sdlc ARGS='verify --story x'` exited 2"), answer.detail
 
 
 # --- config -------------------------------------------------------------------

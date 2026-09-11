@@ -207,9 +207,15 @@ KIND_RETIRE = 'retire'
 # The three fields the tree has no other copy of once the documents are gone.
 RETIRE_FIELDS = ('version', 'name', 'summary')
 
+# Present, and `true`, only on a row `pm retire --version --name` BACKFILLED
+# for a milestone pruned before this row existed (#31): its facts are the
+# caller's, not read off a document, and a reader must be able to tell.
+BACKFILLED_FIELD = 'backfilled'
+
 
 def retire_row(grain_id: str, version: str = '', name: str = '',
-               summary: str = '', ts: str = '') -> dict:
+               summary: str = '', ts: str = '', *,
+               backfilled: bool = False) -> dict:
     """One retirement. An empty field is an ABSENT KEY, never `''`, so a
     reader can tell "never recorded" from "recorded empty"."""
     row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_RETIRE,
@@ -217,6 +223,8 @@ def retire_row(grain_id: str, version: str = '', name: str = '',
     for key, value in zip(RETIRE_FIELDS, (version, name, summary)):
         if value:
             row[key] = value
+    if backfilled:
+        row[BACKFILLED_FIELD] = True
     return row
 
 

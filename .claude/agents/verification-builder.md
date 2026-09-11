@@ -15,8 +15,8 @@ the gate reddened, and verification runs through the project's own targets.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc verify --story` — the rung after every edit
-- `agentic-sdlc verify --feature` — the wider one, once, before handing off
+- `make sdlc ARGS='verify --story'` — the rung after every edit
+- `make sdlc ARGS='verify --feature'` — the wider one, once, before handing off
 <!-- END role-verbs -->
 
 ## Checklist
@@ -46,6 +46,6 @@ the gate reddened, and verification runs through the project's own targets.
 A dispatch names the NARROW command and the WIDE one, each with its measured
 cost: the narrow one is the inner loop, run after every edit; the wide one
 runs once, at the close. An agent given one command loops on it. Where the
-repo declares `[verify]`, `agentic-sdlc verify --plan` prints each rung with
+repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

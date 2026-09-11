@@ -4,9 +4,11 @@
 Over `[doc] scope` (default CLAUDE.md, .claude/rules/*.md, .claude/agents/*.md): a dead
 path in a backtick span, a `make <target>` no Makefile or include declares, a dead
 markdown link, a flat `.claude/skills/<name>.md` that never loads. Fenced blocks are
-skipped; an unterminated fence is reported and masks nothing. A line ending in
-`<!-- doc-scan:allow -->` is never flagged. `[doc] ephemeral` names directories whose
-cited files are expected to be gone.
+skipped; an unterminated fence is reported and masks nothing. A backtick span is
+read across the line breaks of its paragraph and reported on the line it starts on.
+A line ending in `<!-- doc-scan:allow -->` is never flagged, and neither is a span
+starting on it. `[doc] ephemeral` names directories whose cited files are expected
+to be gone.
 
     agentic-sdlc check doc
 """
@@ -14,13 +16,16 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from agentic_sdlc.core import makefile
-from agentic_sdlc.core.markdown import non_fenced_lines
+from agentic_sdlc.core.markdown import (
+    code_span_matches, non_fenced_lines, paragraphs, span_text)
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple, str_tuple
+from agentic_sdlc.repo import vehicle
 
 REPO_ROOT = repo_root()
 # Read per run, never at import, or a config error depends on import order.
@@ -32,10 +37,17 @@ ALLOW_MARKER = 'doc-scan:allow'
 SKILL_DIR = '.claude/skills'
 SKILL_FILENAME = 'SKILL.md'
 
-INLINE_CODE = re.compile(r'`([^`]+)`')
-MD_LINK_TEXT = re.compile(r'`[^`]+`\]\(')  # [`text`](href): the claim is the href
 MD_LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
-MAKE_INVOCATION = re.compile(r'\bmake\s+([a-zA-Z][a-zA-Z0-9_-]*)')
+# `make` opening the span or a command (`;&|(`, a quote, `$ `, `X=y `): read
+# anywhere, a wrapped `No rule to make target` read as `make target`. A
+# wrapper word and its flags (`sudo -u root`, `nice -n 5`) may stand between
+# the two, as v0.7.0 read them (review R4).
+_MAKE_WRAPPER = (r'(?:time|sudo|nice|env|command|exec|nohup)'
+                 r'(?:\s+-\S+(?:\s+\w+)?)*')
+MAKE_INVOCATION = re.compile(
+    r'(?:^|[;&|(`"\'$])\s*'
+    r'(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|' + _MAKE_WRAPPER + r')\s+)*'
+    r'make\s+([a-zA-Z][a-zA-Z0-9_-]*)')
 PATH_CANDIDATE = re.compile(r'^[A-Za-z0-9_./-]+\.(gd|tscn|tres|py|sh|md)$')
 PLACEHOLDER_CHARS = ('<', '>', '*', '$')
 URL_PREFIXES = ('http://', 'https://', 'mailto:')
@@ -129,35 +141,52 @@ def check_links(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
     return findings
 
 
+def code_spans(lines: list[tuple[int, str]]) -> Iterator[tuple[int, str, bool]]:
+    """(the line a span STARTS on, its text, is it a link's text) for every
+    code span the three span rules read — undeclared state, path, make target.
+
+    Paired across a PARAGRAPH, never a line (#26): `pm feature` + newline +
+    `reviewing <id>` is one span, and a line-at-a-time reader both missed it
+    and paired every backtick after it with the wrong partner. A finding names
+    the line the span starts on, and so does `doc-scan:allow`: a span starting
+    on a marked line is not read, and a marker on any other line it covers
+    suppresses nothing — the line a finding names is the line its marker goes on.
+    """
+    for para in paragraphs(lines):
+        for start, end, raw in code_span_matches(para.text):
+            lineno, line = para.at(start)
+            if is_allowed(line):
+                continue
+            # [`text`](href): the claim is the href, read by the link rule
+            yield lineno, span_text(raw), para.text.startswith('](', end)
+
+
 def check_make_targets(doc: Path, lines: list[tuple[int, str]], real_targets: set[str]) -> list[str]:
     findings: list[str] = []
-    for lineno, line in lines:
-        if is_allowed(line):
-            continue
-        for span in INLINE_CODE.findall(line):
-            for match in MAKE_INVOCATION.finditer(span):
-                target = match.group(1)
-                if target not in real_targets:
-                    findings.append(f'{rel(doc)}:{lineno}  unknown make target: `make {target}`')
+    for lineno, span, _ in code_spans(lines):
+        for match in MAKE_INVOCATION.finditer(span):
+            target = match.group(1)
+            if target not in real_targets:
+                fix = (f' — `Makefile.devkit` defines it; '
+                       f'`{vehicle.pinned("install-gates", "--force")}` '
+                       f'writes the one that does'
+                       if target in vehicle.TARGETS else '')
+                findings.append(f'{rel(doc)}:{lineno}  unknown make target: '
+                                f'`make {target}`{fix}')
     return findings
 
 
 def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
     findings: list[str] = []
-    for lineno, line in lines:
-        if is_allowed(line):
+    for lineno, span, link_text in code_spans(lines):
+        if link_text:
             continue
-        link_text_ends = {m.end() for m in MD_LINK_TEXT.finditer(line)}
-        for match in INLINE_CODE.finditer(line):
-            if match.end() + 2 in link_text_ends:  # `text`](  — the '](' follows right after
-                continue
-            span = match.group(1)
-            if '/' not in span or any(ch in span for ch in PLACEHOLDER_CHARS):
-                continue
-            if not PATH_CANDIDATE.match(span):
-                continue
-            if not resolve_path(span, doc):
-                findings.append(f'{rel(doc)}:{lineno}  dead path: `{span}`')
+        if '/' not in span or any(ch in span for ch in PLACEHOLDER_CHARS):
+            continue
+        if not PATH_CANDIDATE.match(span):
+            continue
+        if not resolve_path(span, doc):
+            findings.append(f'{rel(doc)}:{lineno}  dead path: `{span}`')
     return findings
 
 
@@ -170,8 +199,26 @@ def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
 # definitions write it out in full, and a rule anchored at `pm` read the
 # fuller half as prose. Found beside 0.6.0 review B1, which is the same
 # defect one layer out — a rule that is correct and cannot reach.
+# 0.8.0 spelled every shipped call through the stock wiring's vehicle, `make pm
+# ARGS='story building <id>'` (or `pm` and its words handed to `make sdlc`), and
+# a rule anchored at `pm` read none of them: the sweep would have blinded it (C2).
+# So a vehicle span is read as the argv the verb receives, both parses undone
+# by the helper that spells it — either quote style, since both reach the verb.
 _STATUS_FORM = re.compile(
-    r'^(?:agentic-sdlc\s+)?pm\s+(story|feature|milestone|bug)\s+([a-z-]+)')
+    rf'^(?:{re.escape(vehicle.PROGRAM)}\s+)?pm\s+(story|feature|milestone|bug)'
+    r'\s+([a-z-]+)')
+
+
+def _as_invoked(span: str) -> str:
+    """The span as the CLI would receive it: a vehicle line becomes its argv,
+    joined; anything else is itself. A `make` line the vehicle cannot read is
+    not an invocation this rule can name, so it is returned unread."""
+    if span.split(None, 1)[:1] != [vehicle.MAKE]:
+        return span
+    try:
+        return ' '.join(vehicle.argv_of(span))
+    except ValueError:
+        return span
 
 
 def declared_states() -> dict[str, tuple[str, ...]]:
@@ -196,21 +243,18 @@ def check_invocations(doc: Path, lines: list[tuple[int, str]],
     findings: list[str] = []
     if not states:
         return findings
-    for lineno, line in lines:
-        if is_allowed(line):
+    for lineno, span, _ in code_spans(lines):
+        match = _STATUS_FORM.match(_as_invoked(span.strip()))
+        if match is None:
             continue
-        for span in INLINE_CODE.findall(line):
-            match = _STATUS_FORM.match(span.strip())
-            if match is None:
-                continue
-            kind, status = match.group(1), match.group(2)
-            declared = states.get(kind)
-            if not declared or status in declared:
-                continue
-            findings.append(
-                f'{rel(doc)}:{lineno}  `{span.strip()}` '
-                f'names a state [pm.states.{kind}] does not declare — this '
-                f'exits 2. Declared: {" ".join(declared)}')
+        kind, status = match.group(1), match.group(2)
+        declared = states.get(kind)
+        if not declared or status in declared:
+            continue
+        findings.append(
+            f'{rel(doc)}:{lineno}  `{span.strip()}` '
+            f'names a state [pm.states.{kind}] does not declare — this '
+            f'exits 2. Declared: {" ".join(declared)}')
     return findings
 
 

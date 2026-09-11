@@ -11,6 +11,7 @@ import ast
 import functools
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -292,3 +293,158 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         terminalreporter.write_line(
             f'[tier:{tier}] could not record slow-test rows: '
             f'{type(err).__name__}: {err}')
+
+
+# --- the suite never reaches the repository it is gating ----------------------
+# 0.8.0 (bg-the-suite-run-in-a-worktree-mutates-the-host-repo): `git bisect run`
+# EXPORTS `GIT_DIR` into its child, and in a linked worktree that is
+# `.git/worktrees/<name>`. Every `git init -q <tmp>` in the suite then
+# re-initialised THAT repository instead of the temp tree — and because the path
+# does not end in `/.git`, git guesses the result is bare and writes
+# `core.bare = true` into the COMMON config, which every checkout shares. The
+# `git add -A; git commit -qm scratch` after it committed the temp tree onto the
+# worktree's HEAD. All 12 git-spawning modules, each run so, flipped the bit;
+# the per-call `cwd=` the boundary test enforces does not help, because
+# `GIT_DIR` outranks cwd. A `pre-commit` hook is the same hazard: measured on
+# git 2.50.1, it inherits `GIT_INDEX_FILE` everywhere and, in a linked
+# worktree, `GIT_DIR` as well.
+#
+# So the session removes what git itself says to clear before reaching a
+# repository other than the one it was started for — `git rev-parse
+# --local-env-vars`, which `tests/test_host_guard.py` holds this list to — plus
+# `GIT_NAMESPACE`, which that list omits and which still re-roots a ref write.
+# And it sets `GIT_CEILING_DIRECTORIES` to the temp root, so a spawn in a temp
+# tree that never ran `git init` cannot walk up into a repository that holds
+# the temp directory. Done at `pytest_configure`, before collection, because a
+# support module may spawn at import; xdist workers inherit the result.
+GIT_LOCAL_ENV = (
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS',
+    'GIT_CONFIG_COUNT', 'GIT_OBJECT_DIRECTORY', 'GIT_DIR', 'GIT_WORK_TREE',
+    'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE', 'GIT_INDEX_FILE',
+    'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE', 'GIT_PREFIX',
+    'GIT_SHALLOW_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE',
+)
+CEILING = 'GIT_CEILING_DIRECTORIES'
+
+
+def scrub_git_env(environ) -> None:
+    for name in GIT_LOCAL_ENV:
+        environ.pop(name, None)
+    temp_root = os.path.realpath(tempfile.gettempdir())
+    ceilings = [c for c in environ.get(CEILING, '').split(os.pathsep) if c]
+    if temp_root not in ceilings:
+        environ[CEILING] = os.pathsep.join([*ceilings, temp_root])
+
+
+def pytest_configure(config) -> None:
+    scrub_git_env(os.environ)
+
+
+# --- and a session that moved it anyway FAILS, by name ------------------------
+# The guard removes the one mechanism reproduced. The ratchet catches the next
+# one: the host's `core.bare`, its `HEAD` and the branch `HEAD` names are read at
+# session start and again at the end, and any that moved turns the session red
+# naming the field. READ AS TEXT, never by spawning git: a `git` pointed at this
+# checkout is exactly what `NoTestSpawnsGitAgainstThisCheckout` refuses, and
+# reading three files boots nothing in the unit tier. The HOST is the checkout
+# this conftest sits in, so a copy of it under a scratch repo holds that repo.
+HOST = TESTS.parent
+HOST_AT_START = pytest.StashKey[dict]()
+
+
+def _text(path: Path) -> str:
+    try:
+        return path.read_text(encoding='utf-8').strip()
+    except (OSError, UnicodeDecodeError):
+        return ''
+
+
+def _gitdirs(root: Path) -> tuple[Path, Path] | None:
+    """(this checkout's gitdir, the common dir). A linked worktree's `.git` is
+    a FILE naming its gitdir, whose `commondir` names where config and
+    branches live."""
+    dot = root / '.git'
+    if dot.is_dir():
+        return dot, dot
+    pointed = _text(dot)
+    if not pointed.startswith('gitdir:'):
+        return None
+    gitdir = (root / pointed[len('gitdir:'):].strip()).resolve()
+    common = _text(gitdir / 'commondir')
+    return gitdir, (gitdir / common).resolve() if common else gitdir
+
+
+def _core_bare(config: str) -> str:
+    """The last `bare` under `[core]`, as written — or `unset`."""
+    section, value = '', 'unset'
+    for raw in config.splitlines():
+        line = raw.strip()
+        if line.startswith('['):
+            section = (line[1:].split(']', 1)[0].split() or [''])[0].lower()
+            continue
+        key, sep, rest = line.partition('=')
+        if section == 'core' and key.strip().lower() == 'bare':
+            value = rest.split('#', 1)[0].split(';', 1)[0].strip() if sep else 'true'
+    return value
+
+
+def host_state(root: Path) -> dict[str, str]:
+    """`core.bare`, `HEAD`, and the branch HEAD names — each as its file says."""
+    dirs = _gitdirs(root)
+    if dirs is None:
+        return {'.git': f'no git checkout at {root}'}
+    gitdir, common = dirs
+    head = _text(gitdir / 'HEAD')
+    state = {'core.bare': _core_bare(_text(common / 'config')), 'HEAD': head}
+    if head.startswith('ref:'):
+        ref = head[len('ref:'):].strip()
+        packed = [line.split(' ', 1)[0]
+                  for line in _text(common / 'packed-refs').splitlines()
+                  if line.endswith(f' {ref}')]
+        state[ref] = _text(common / ref) or ''.join(packed[-1:]) or 'unreadable'
+    return state
+
+
+def host_moved(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    return [f'  {field}: {before.get(field, "absent")} -> {after.get(field, "absent")}'
+            for field in dict.fromkeys([*before, *after])
+            if before.get(field) != after.get(field)]
+
+
+def pytest_sessionstart(session) -> None:
+    if not hasattr(session.config, 'workerinput'):
+        session.config.stash[HOST_AT_START] = host_state(HOST)
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:
+    """Under xdist this fires on every worker too; only the controller holds
+    a snapshot, and it runs after the workers are done."""
+    before = session.config.stash.get(HOST_AT_START, None)
+    if before is None:
+        return
+    reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+
+    def write(line: str) -> None:
+        if reporter is None:
+            print(line)
+            return
+        reporter.ensure_newline()
+        reporter.write_line(line)
+
+    unheld = [f'{k} ({v})' for k, v in before.items() if k == '.git' or v == 'unreadable']
+    if unheld:
+        write(f'host ratchet: nothing held for {", ".join(unheld)}')
+    moved = host_moved(before, host_state(HOST))
+    if not moved:
+        return
+    write(f'THE SUITE MOVED ITS HOST REPOSITORY — {HOST}')
+    for line in moved:
+        write(line)
+    write('A test reached this checkout with git: an inherited GIT_DIR, a spawn '
+          'with no cwd=, a temp tree that never ran `git init`. This ratchet '
+          'reads state, not authorship — a commit YOU made here during the run '
+          'moves HEAD too; `git log -1 <sha>` says whose it is. A flipped bare '
+          'is restored with `git config core.bare false`.')
+    if session.exitstatus in (pytest.ExitCode.OK,
+                              pytest.ExitCode.NO_TESTS_COLLECTED):
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED

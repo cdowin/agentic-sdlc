@@ -30,6 +30,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -121,6 +122,32 @@ def test_a_hooks_path_pointing_somewhere_else_names_both_paths():
     assert code == 1, out
     assert 'MISDIRECTED' in out, out
     assert '.githooks' in out and HOOKS_DIR in out, out
+
+
+def test_a_linked_worktree_armed_at_the_main_worktrees_corpus_is_not_misdirected():
+    """What a harness that makes agent worktrees does (Claude Code, measured
+    2026-09-11): it writes an ABSOLUTE core.hooksPath naming the main
+    worktree's tools/hooks into the SHARED config. From a linked worktree that
+    is armed, and MISDIRECTED was a red line no repair could clear. It is a
+    named note instead, because git runs the MAIN corpus there."""
+    with hooked_repo(arm=True) as root:
+        subprocess.run(['git', 'config', 'core.hooksPath',
+                        str(root / HOOKS_DIR)], cwd=root, check=True)
+        subprocess.run(['git', '-c', 'user.email=t@t', '-c', 'user.name=t',
+                        'commit', '-q', '--allow-empty', '-m', 'base'],
+                       cwd=root, check=True)
+        linked = root.parent / 'linked'
+        subprocess.run(['git', 'worktree', 'add', '-q', '--detach',
+                        str(linked)], cwd=root, check=True)
+        shutil.copytree(root / HOOKS_DIR, linked / HOOKS_DIR)
+        os.chdir(linked)
+        repo_root.cache_clear()
+        code, out = gate()
+        os.chdir(root)
+        repo_root.cache_clear()
+    assert 'MISDIRECTED' not in out, out
+    assert 'a linked worktree' in out, out
+    assert code == 0, out
 
 
 # --- armed is not the same as working ----------------------------------------

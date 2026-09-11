@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-from support.pm import loaded, run_gate, tree, write
+from support.pm import loaded, run_cli, run_gate, tree, write
 
 from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import changelog, inventory, vocabulary
 
 MILESTONE = '0.1'
@@ -135,6 +137,26 @@ class TheGatesReadIt(unittest.TestCase):
             self.assertIn(f'carries no `{changelog.FIELD}:`', out)
             self.assertIn('(D12)', out)
             self.assertIn('CHANGELOG  0 of 2 closed grain(s) answered', out)
+            # The hint printed 157 times on one consumer tree named a binary
+            # no consumer has (#22). Filled in the way an operator fills it,
+            # with a `$` a double-quoted template would have eaten (M2), the
+            # line the gate printed must write exactly that sentence.
+            hint = next(ln for ln in out.splitlines()
+                        if f'feature {FEATURE} ' in ln)
+            line = re.search(r'`(make pm [^`]*)`', hint).group(1)
+            # Review M5: typed as-is, PAIRED apostrophes vanish at exit 0; the
+            # hint says how a `'` is typed, and typed that way it lands.
+            typed = re.search(r"each `'` in the sentence is typed `([^`]*)`",
+                              hint)
+            self.assertIsNotNone(typed, hint)
+            sentence = "costs $5 in the 'costs' key"
+            argv = vehicle.argv_of(line.replace(
+                '<sentence>', sentence.replace("'", typed.group(1))))
+            self.assertEqual(argv[0], 'pm')
+            self.assertEqual(run_cli(root, *argv[1:])[0], 0)
+            entries = {e.gid: e for e in changelog.collect(loaded(root),
+                                                           MILESTONE)}
+            self.assertEqual(entries[FEATURE].text, sentence)
 
     def test_D12_goes_quiet_on_a_sentence_AND_on_none(self):
         """The probe for the rule's own vacuity: it must go quiet for the right

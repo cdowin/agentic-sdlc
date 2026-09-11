@@ -6,8 +6,16 @@ as agent definitions), `install-hooks` (the guard corpus and the script that arm
 rendered from the step lists). A destination that exists and differs is refused by
 name, with `--force` and moving it aside as the remedies; an entry with nothing in the
 way is still written, and the run exits 1 because a replacement was withheld. A
-difference confined to the `project config` header is reported as one. No manifest,
-no merge, no sync: after the write the file is the repo's.
+difference confined to the `project config` header is CURRENT: named as one, exit 0,
+nothing written. No manifest, no merge, no sync: after the write the file is the
+repo's.
+
+Two things `--force` does NOT take, because this package already knows they are the
+project's: a file named in `[adopt] ours` (read through `conveyor.steps.ours_of`, the
+belt's own reader) is left alone unless it is named on the command line, and a
+project-config block present on both sides is carried into the new body line for line
+(feature D1 — lines carried, nothing computed). In an agent brief that block is the
+```text fence inside `## Project config`, not the section (feature D2).
 
 Two things the report owes a consumer, and both are about SILENCE: every destination
 gets ONE `[install]` line whatever its disposition, because `grep '^\\[install\\]'` is
@@ -31,6 +39,7 @@ from agentic_sdlc import __version__
 from agentic_sdlc.core import apply
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.repo import vehicle
 
 PACKAGE = 'agentic_sdlc.repo.installables'
 
@@ -83,11 +92,12 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
 BODIES: dict[str, str] = {'docs/sdlc-protocol.md':
                           'agentic_sdlc.repo.conveyor.sdlc_doc:render'}
 
-USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff]
-       agentic-sdlc install-agents  [--force] [--diff]
-       agentic-sdlc install-hooks   [--force] [--diff] [--write-settings]
-       agentic-sdlc install-gates   [--force] [--diff]
-       agentic-sdlc install-sdlc    [--force] [--diff]
+USAGE = """usage: agentic-sdlc install-ci      [--force] [--diff] [--since <version>] [<path>...]
+       agentic-sdlc install-agents  [--force] [--diff] [--since <version>] [<path>...]
+       agentic-sdlc install-hooks   [--force] [--diff] [--since <version>] [<path>...]
+                                    [--write-settings]
+       agentic-sdlc install-gates   [--force] [--diff] [--since <version>] [<path>...]
+       agentic-sdlc install-sdlc    [--force] [--diff] [--since <version>] [<path>...]
 
 install-ci      three workflows under .github/workflows/: verify.yml
                 (checkout, uv, `make milestone`, which it ASSUMES is your full
@@ -100,7 +110,8 @@ install-ci      three workflows under .github/workflows/: verify.yml
 install-agents  the review/build contract plus the base agent roster, as
                 AGENT DEFINITIONS under .claude/agents/ — the one place a
                 subagent actually reads. Each roster file carries a
-                `Project config` section — yours to edit after install.
+                `Project config` section whose ```text block is yours to edit
+                after install; the rest of the file is the kit's.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine)
                 plus the two ledger couriers
@@ -146,15 +157,45 @@ install-sdlc    docs/sdlc-protocol.md — YOUR protocol, rendered from the
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
-confined to the `project config` header is reported as one, and the rest of
-that file is byte-current, so it needs no --force. --force overwrites the whole
-file, header included. --diff prints what would change and writes nothing.
-EVERY destination gets one `[install]` line whatever its disposition — added,
-modified, header-only, already current, withheld — so a run summarised with
-`grep '^[install]'` cannot omit a file. Each run also names what this verb has
-STOPPED shipping (make targets, retired verb flags) between the DEVKIT_VERSION
-your Makefile pins and the version running; no readable pin reports the whole
-record rather than none of it."""
+confined to the `project config` header is CURRENT: its line says so, nothing
+is written, and it does not make the run exit 1. --force overwrites the file
+but KEEPS two things that are yours: a `project config` block that both your
+file and the installable carry is carried into the new body line for line (the
+line says so; --diff afterwards shows the packaged block beside yours; a CRLF
+file is written LF), and a file named in `[adopt] ours` in devkit.toml is left
+alone and named, with a count. A claim is a destination spelled exactly: one
+that matches none is named on every run, --diff included, and leaves nothing
+alone. A file with no block on either side is replaced whole. The block is a
+hook's `project config` comment block, or an agent brief's ```text fence
+inside `## Project config` — the heading and prose around it are the kit's
+and --force updates them. A kept block that lacks a name the packaged one
+declares (`NAME=` in a hook, `key:` in a fence) has each such name on its line:
+copy it in from --diff, because a hook reading an unset name fails open.
+<path>...       take only these destinations, spelled exactly as the plan
+                spells them (the paths above; --diff prints each one). Naming
+                a path is how you take a claimed file: `install-agents --force
+                .claude/agents/pm-operator.md` takes that one file and nothing
+                else. A path this verb does not write is refused at exit 2,
+                and nothing is written.
+--since <version>
+                the floor of the withdrawal report below, instead of the pin
+                (`v0.4.0` or `0.4.0`; anything else is exit 2). The adopt belt
+                bumps the pin FIRST, and through Makefile.devkit the running
+                version IS the pin, so the floor then equals the version
+                running and the span is empty: the report says it compared
+                nothing rather than that nothing was withdrawn. Pass the pin
+                you are LEAVING.
+--diff prints what would change and writes nothing; a claimed file is still
+diffed, and its line says it is claimed.
+EVERY destination the run covers (the whole plan, or each <path> named) gets
+one `[install]` line whatever its disposition — added, modified, header-only,
+header kept, claimed, already current, withheld — so a run summarised with
+`grep '^[install]'` cannot omit a file. A write's line opens `wrote <path>`;
+a kept header's continues after ` — `, so the path is the field before it.
+Each run also names
+what this verb has STOPPED shipping (make targets, retired verb flags, files)
+between the DEVKIT_VERSION your Makefile pins (or --since) and the version
+running; no readable pin reports the whole record rather than none of it."""
 
 # A `.sh` installable is written executable, as part of the write in `core.apply`.
 EXECUTABLE_SUFFIX = '.sh'
@@ -188,7 +229,8 @@ _NEXT_STEP = {
                      'nothing ever runs. THESE ENTRIES ARE NOT YET IN FORCE '
                      'until one of those two happens, and until then the '
                      'couriers are on disk and nothing fires them — '
-                     '`agentic-sdlc adopt` and `check pm` U2 both report that. '
+                     f'`{vehicle.command("adopt", vehicle.Slot("<version>"))}` '
+                     'and `check pm` U2 both report that. '
                      'Next, the couriers take the TREE from GDK_LEDGER_ROOT '
                      'when the session cwd is not inside it: a session rooted '
                      'at a parent directory derives no repo and files no row, '
@@ -203,9 +245,11 @@ _NEXT_STEP = {
                      'grain from the tree, or omits the key.',
     'install-agents': 'the verification pair carries the review and build '
                       'contract; the rest are the base roster. Each roster '
-                      'file opens with a `Project config` section — edit its '
-                      'stock values (gate commands, pm tree, doc layout) to '
-                      'your spellings: the files are yours now. `model:` in '
+                      'file opens with a `Project config` section — edit the '
+                      'stock values in its ```text block (pm tree, doc '
+                      'layout) to your spellings: that block is yours and '
+                      '--force keeps it; the rest of the file is the kit\'s. '
+                      '`model:` in '
                       'the frontmatter is doing proven work; `effort:` is '
                       'carried unverified. The SDLC these agents run is '
                       'SDLC.md at the agentic-sdlc repo root.',
@@ -222,7 +266,10 @@ _NEXT_STEP = {
                      '<tag>` and then `include Makefile.devkit` — plus your '
                      'own targets; your own gates join `check` through '
                      '`[gates] extra` in devkit.toml, never a fork of the '
-                     'include. A language kit\'s own installer writes '
+                     'include. Every verb is then reached at your pin as '
+                     f'`{vehicle.command("dispatch", "--grain", vehicle.Slot("<id>"))}`, '
+                     'the spelling every command this tool prints uses. '
+                     'A language kit\'s own installer writes '
                      'Makefile.tiers beside it and sets GDK_PRECOMMIT_TIERS / '
                      'GDK_MILESTONE_TIERS; without one, `precommit` and '
                      '`milestone` are `check` and say so. Then gitignore '
@@ -241,7 +288,8 @@ _NEXT_STEP = {
                     'this verb with --force. Link to it from your own SDLC '
                     'document rather than restating the checks there: a '
                     'second copy of an ordered list is the drift this verb '
-                    'exists to end. Then run `agentic-sdlc release <version>` '
+                    'exists to end. Then run '
+                    f'`{vehicle.command("release", vehicle.Slot("<version>"))}` '
                     '— every check runs and prints, all true → the milestone '
                     'is written `done` and the `next:` lines say what is yours '
                     '(retitle, push, PR, tag, prove), any false → nothing is '
@@ -377,20 +425,16 @@ def _settings_write(root: Path, target: Path, body: str,
     return SETTINGS_WROTE.format(rel=AGENT_SETTINGS, root=root), False, False
 
 
-HEADER_ONLY_NOTE = '   (project-config header only)'
-
-
 def collision_refusal(collisions: list[str],
                       wrote: list[str] | None = None,
-                      header_only: tuple[str, ...] | list[str] = (),
                       undecodable: tuple[str, ...] | list[str] = (),
                       ) -> tuple[str, str]:
     """(what collided, what that means), plural-correct; shared with `pm install-skills`.
 
-    `wrote` is what the same run landed; `header_only` names the collisions
-    confined to the editable block, whose repair is to do nothing.
+    `wrote` is what the same run landed. A difference confined to the
+    project-config block is never here: it is current (feature D1), and
+    `--force` would write nothing to it.
     """
-    flagged = set(header_only)
     # Review I5: a file that cannot be decoded did not "differ" — it could not
     # be compared. `--force` still replaces it, which is why it is a collision
     # and not a defect, but the reader is told which of the two this is.
@@ -403,27 +447,13 @@ def collision_refusal(collisions: list[str],
             return (f'{rel} {UNDECODABLE_NOTE}',
                     'Nothing was written. `--force` replaces it whole; there '
                     'is no diff to read first.')
-        if rel in flagged:
-            head = (f'{rel} exists and differs ONLY inside its project-config '
-                    f'header — the rest of the file is byte-current, so there '
-                    f'is nothing in it to take; leave it as yours, or pass '
-                    f'--force to replace the whole file, header included')
-        else:
-            head = (f'{rel} exists and differs from what this would '
-                    f'write — move your version aside, or pass --force')
+        head = (f'{rel} exists and differs from what this would '
+                f'write — move your version aside, or pass --force')
     else:
-        listed = '\n'.join(
-            f'    {rel}' + (HEADER_ONLY_NOTE if rel in flagged else '')
-            for rel in collisions)
+        listed = '\n'.join(f'    {rel}' for rel in collisions)
         head = (f'{len(collisions)} destinations exist and differ from what '
                 f'this would write — move your versions aside, or pass '
                 f'--force:\n{listed}')
-        if flagged:
-            head += (f'\n{len(flagged)} of them differ only inside the '
-                     f'project-config header the file invites you to edit: '
-                     f'the rest of each is byte-current, so there is nothing '
-                     f'in them to take, and --force would replace the header '
-                     f'too')
     if wrote:
         landed = f'{len(wrote)} file(s) with nothing in the way'
         landed += ' was written' if len(wrote) == 1 else ' were written'
@@ -479,44 +509,145 @@ def read_destination(target: Path) -> tuple[str | None, str]:
         return None, f'cannot be read ({err.strerror or err})'
 
 
-# The editable block's two spellings: a shell rule comment pair, a markdown heading pair.
-_BLOCK_GRAMMARS = (
-    ('--- project config (yours to edit after install',
-     re.compile(r'^#\s*-{5,}\s*$')),
-    ('## Project config (yours to edit after install)',
-     re.compile(r'^## ')),
-)
+# The editable block's two spellings. A SHELL block is the lines between the
+# `--- project config (yours to edit after install` comment and the next rule
+# line. A MARKDOWN block is the contents of the ```text fence inside the
+# `## Project config` section, and nothing else of that section (feature D2):
+# the heading, the dispatch sentence and the prose are the kit's, so a bump
+# reaches them. A section with no such fence has no project-owned block.
+SHELL_OPENING = '--- project config (yours to edit after install'
+_SHELL_CLOSING = re.compile(r'^#\s*-{5,}\s*$')
+# What a shell header is made of: blank, comment, assignment, an array's
+# continuation. Any other line before a close means the close is borrowed.
+_SHELL_OWNED = re.compile(
+    r'^(?:[ \t]*$|[ \t]*#|(?:export[ \t]+|readonly[ \t]+)?'
+    r'[A-Za-z_][A-Za-z0-9_]*=|[ \t]|\))')
+_MD_SECTION = re.compile(r'^## Project config\b')
+_MD_SECTION_END = re.compile(r'^## ')
+_MD_FENCE_OPEN = re.compile(r'^```text[ \t]*$')
+_MD_FENCE_CLOSE = re.compile(r'^```[ \t]*$')
+_MD_FENCE_ANY = re.compile(r'^```')
+# What a block DECLARES, per grammar, read only to name what a kept block
+# lacks: a shell `NAME=` / `NAME=(` assignment, a fence's `key:` line. Both
+# at line start, so a comment or a continuation line declares nothing.
+_DECLARES = {
+    'shell': (re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=\(?'), '{}='),
+    'markdown': (re.compile(r'^([A-Za-z][A-Za-z0-9 _.-]*?):(?:[ \t]|$)'),
+                 '{}:'),
+}
 
 
-def config_block_span(text: str) -> tuple[int, int] | None:
-    """The half-open line range of the editable project-config block, markers excluded,
-    or None; locating less than is there is the only safe direction."""
-    lines = text.splitlines()
-    for opening, closing in _BLOCK_GRAMMARS:
-        for start, line in enumerate(lines):
-            if opening not in line:
-                continue
-            for end in range(start + 1, len(lines)):
-                if closing.match(lines[end]):
-                    return start + 1, end
-            return start + 1, len(lines)
+# A close met after a line the grammar does not own — a body line, a `## `,
+# another fence — is a LATER block's: borrowing it carried the old body under
+# a "kept" line (review C1, M4). So that is no block, and replaced whole.
+def _shell_block(lines: list[str]) -> tuple[int, int] | None:
+    for start, line in enumerate(lines):
+        if SHELL_OPENING not in line:
+            continue
+        for end in range(start + 1, len(lines)):
+            if _SHELL_CLOSING.match(lines[end]):
+                return start + 1, end
+            if SHELL_OPENING in lines[end] or not _SHELL_OWNED.match(lines[end]):
+                return None
+        return start + 1, len(lines)
     return None
 
 
+def _markdown_block(lines: list[str]) -> tuple[int, int] | None:
+    for start, line in enumerate(lines):
+        if not _MD_SECTION.match(line):
+            continue
+        for opened in range(start + 1, len(lines)):
+            if _MD_SECTION_END.match(lines[opened]):
+                return None    # the section ended with no fence in it
+            if _MD_FENCE_OPEN.match(lines[opened]):
+                for end in range(opened + 1, len(lines)):
+                    if _MD_FENCE_CLOSE.match(lines[end]):
+                        return opened + 1, end
+                    if (_MD_SECTION_END.match(lines[end])
+                            or _MD_FENCE_ANY.match(lines[end])):
+                        return None
+                return opened + 1, len(lines)
+        return None
+    return None
+
+
+def _locate(text: str) -> tuple[str, tuple[int, int]] | None:
+    """(grammar, span) of the one project-config block, shell first, or None."""
+    lines = text.splitlines()
+    for grammar, finder in (('shell', _shell_block),
+                            ('markdown', _markdown_block)):
+        span = finder(lines)
+        if span is not None:
+            return grammar, span
+    return None
+
+
+def config_block_span(text: str) -> tuple[int, int] | None:
+    """The half-open line range of the editable project-config block, markers
+    excluded (a shell block's two comment lines, a markdown fence's two ```
+    lines), or None; locating less than is there is the only safe direction.
+
+    THE one span: `--diff`'s header-only verdict, `installables-current` and
+    the `--force` carry all reach it through `carry_config_block`, so the three
+    cannot disagree about which bytes are the project's."""
+    found = _locate(text)
+    return None if found is None else found[1]
+
+
 def header_only_difference(existing: str, body: str) -> bool:
-    """True when the two texts differ only inside the project-config block, decided by
-    deleting both blocks and comparing the rest byte for byte."""
-    mine = config_block_span(existing)
-    theirs = config_block_span(body)
-    if mine is None or theirs is None:
-        return False
-    return _outside_block(existing, mine) == _outside_block(body, theirs)
+    """True when `existing` is `body` with only its own project-config block in
+    place of the packaged one — exactly when `--force` would write nothing,
+    because that is how it is decided (`carry_config_block`)."""
+    return carry_config_block(existing, body) == existing
 
 
-def _outside_block(text: str, span: tuple[int, int]) -> list[str]:
-    # keepends, so a trailing-newline difference is still a difference.
-    lines = text.splitlines(keepends=True)
-    return lines[:span[0]] + lines[span[1]:]
+def lacking_names(existing: str, body: str) -> list[str]:
+    """Each name the packaged block declares and `existing`'s block does not,
+    spelled `NAME=` or `key:`, in the packaged block's order.
+
+    A READ for the kept line, never a merge: a hook body defaults a key its
+    header lacks to the stock value (review R1), so the hook then runs a value
+    the project's own header does not state — named, never silent (rule 11).
+    """
+    mine, theirs = _locate(existing), _locate(body)
+    if mine is None or theirs is None or mine[0] != theirs[0]:
+        return []
+    pattern, spelling = _DECLARES[theirs[0]]
+
+    def declared(text: str, span: tuple[int, int]) -> list[str]:
+        return [found.group(1) for line in text.splitlines()[span[0]:span[1]]
+                if (found := pattern.match(line))]
+    kept = set(declared(existing, mine[1]))
+    missing: list[str] = []
+    for name in declared(body, theirs[1]):
+        if name not in kept and spelling.format(name) not in missing:
+            missing.append(spelling.format(name))
+    return missing
+
+
+def carry_config_block(existing: str, body: str) -> str | None:
+    """`body` with `existing`'s project-config block in place of its own, line
+    for line, or None when either side has no CLOSED block (feature D1).
+
+    Lines are carried and nothing is computed: no line of the block is read
+    for meaning, and every line outside it is the packaged body's (a CRLF
+    block comes back LF, review M5). A block with no closing marker runs to
+    the end of its file (`config_block_span`), so carrying it would carry
+    the OLD body under the new one — that side has no block this can take,
+    and the file is replaced whole, as before. A block in the OTHER grammar
+    is not this file's block either.
+    """
+    found_mine, found_theirs = _locate(existing), _locate(body)
+    if (found_mine is None or found_theirs is None
+            or found_mine[0] != found_theirs[0]):
+        return None
+    mine, theirs = found_mine[1], found_theirs[1]
+    old = existing.splitlines(keepends=True)
+    new = body.splitlines(keepends=True)
+    if mine[1] >= len(old) or theirs[1] >= len(new):
+        return None
+    return ''.join(new[:theirs[0]] + old[mine[0]:mine[1]] + new[theirs[1]:])
 
 
 def body_of(name: str) -> str:
@@ -552,6 +683,51 @@ WITHHELD = ('{rel} withheld — it exists and differs from what this would '
             'write, and no --force was given')
 WRITE_FAILED = '{rel} could not be written — the refusal names why'
 NOT_REACHED = '{rel} not reached — an earlier write failed'
+# Feature D1: `--force` carries a block both sides have. `wrote {rel}` still
+# OPENS the line, so a summary grepping for writes counts this one.
+# Line, not byte: a CRLF file's carried block is written LF (review M5).
+WROTE_KEPT_HEADER = ('wrote {rel} — kept its project-config header line for '
+                     'line; the rest is the packaged file, and --diff shows '
+                     'the packaged header beside yours')
+HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
+               '--force keeps — nothing to write')
+# Appended to either kept line when the packaged block declares a name the kept
+# one does not (`lacking_names`). Named, never spliced: the bytes are yours.
+KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
+              'declares — copy {pronoun} in from --diff')
+
+
+def kept_lacks(existing: str, body: str) -> str:
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks nothing."""
+    names = lacking_names(existing, body)
+    if not names:
+        return ''
+    return KEPT_LACKS.format(names=', '.join(f'`{name}`' for name in names),
+                             pronoun='it' if len(names) == 1 else 'them')
+# A claimed file: the project said it is theirs, and the belt reads the same
+# claim through the same function (`conveyor.steps.ours_of`).
+CLAIM_OPERATION = 'adopt'
+CLAIM = f'[{CLAIM_OPERATION}] ours'
+CLAIMED_SKIP = ('{rel} left alone — ' + CLAIM + ' claims it; name it to take '
+                'it: {take}')
+
+
+def claimed_skip(rel: str, command: str) -> str:
+    """`CLAIMED_SKIP` for one path. The command that takes it is spelled the
+    way `conveyor.steps.remedy` spells an installer's: the pinned uvx form for
+    the one that writes `Makefile.devkit`, which a claimed copy may carry
+    without the vehicle's target, and `make …` for every other (feature D2)."""
+    from agentic_sdlc.repo.conveyor.steps import BOOTSTRAP_VERB
+    argv = (*command.split(), '--force', rel)
+    take = (vehicle.pinned(*argv) if command == BOOTSTRAP_VERB
+            else vehicle.command(*argv))
+    return CLAIMED_SKIP.format(rel=rel, take=take)
+CLAIMED_MARK = (' — claimed by ' + CLAIM + ': a run leaves it alone unless '
+                'it is named')
+# The census, printed only when something was claimed: a repo that claims
+# nothing prints byte-identically to one with no devkit.toml at all.
+CLAIMED_CENSUS = ('{command} left {count} of {total} destination(s) alone, '
+                  'claimed by ' + CLAIM + ': {paths}')
 
 
 def _say(line: str) -> None:
@@ -559,11 +735,15 @@ def _say(line: str) -> None:
     print(f'{REPORT_PREFIX} {line}')
 
 
-def print_diff(rel: str, target: Path, body: str) -> None:
+def print_diff(rel: str, target: Path, body: str,
+               claimed: bool = False) -> None:
     """What an install would change, as a unified diff under ONE header line.
 
     Every disposition gets a header, the modified file included; writes nothing.
+    A `claimed` file is diffed like any other — a claim is not a blindfold —
+    and its one header line says a run leaves it alone.
     """
+    mark = CLAIMED_MARK if claimed else ''
     if not target.is_file():
         # `is_file()` is false for a DIRECTORY and for an unwritable parent
         # too, and calling either "an addition" at exit 0 disagrees with the
@@ -572,21 +752,24 @@ def print_diff(rel: str, target: Path, body: str) -> None:
         # disagreement costs the most.
         defect = destination_defect(target)
         if defect:
-            _say(f'{rel} {defect} — a real run REFUSES this; no diff')
+            # A run never reaches a claimed path, so it refuses nothing there.
+            _say(f'{rel} {defect} — '
+                 + ('no diff' if claimed else 'a real run REFUSES this; no diff')
+                 + mark)
             return
-        _say(WOULD_ADD.format(rel=rel))
+        _say(WOULD_ADD.format(rel=rel) + mark)
         existing = ''
     else:
         text, defect = read_destination(target)
         if text is None:
             _say(UNDECODABLE.format(
-                rel=rel, defect=defect or 'is not text this can diff'))
+                rel=rel, defect=defect or 'is not text this can diff') + mark)
             return
         if text == body:
-            _say(IS_CURRENT.format(rel=rel))
+            _say(IS_CURRENT.format(rel=rel) + mark)
             return
         _say((HEADER_ONLY_DIFFERS if header_only_difference(text, body)
-              else BODY_DIFFERS).format(rel=rel))
+              else BODY_DIFFERS).format(rel=rel) + mark)
         existing = text
     sys.stdout.writelines(difflib.unified_diff(
         existing.splitlines(keepends=True), body.splitlines(keepends=True),
@@ -654,6 +837,21 @@ RETIRED_FLAGS = (
     'briefs for each')
 NOTHING_WITHDRAWN = (
     '{command} has withdrawn no make target, verb flag or file {span}')
+# Rule 4's first sin, closed: the adopt belt bumps the pin FIRST, and through
+# Makefile.devkit's `uvx --from …@$(DEVKIT_VERSION)` the version running IS
+# the pin, so on the one run this report exists for the floor equals the
+# ceiling. NOTHING_WITHDRAWN over that empty span was a census of nothing
+# printed as a clean one. The floor is never re-derived from anywhere else
+# (not `HEAD:Makefile`, not git): the tool says what it read and where, and
+# the operator names the floor (rule 9).
+NOT_COMPARED = (
+    '{command} compared nothing before {at} — the floor, {floor} ({source}), '
+    'is not older than the version running, so the span is empty and '
+    'whatever an earlier version withdrew was not read. Run this before '
+    'bumping the pin, or pass --since <the version you are leaving>')
+PIN_SOURCE = f'the DEVKIT_VERSION in {PIN_FILE}'
+SINCE_FLAG = '--since'
+SINCE_SOURCE = SINCE_FLAG
 
 
 def _version_key(version: str) -> tuple[int, int, int] | None:
@@ -708,27 +906,48 @@ def retired_since(command: str, stamp: str | None,
     return tuple(kept)
 
 
-def _span_phrase(stamp: str | None) -> str:
-    at = f'v{__version__}'
+def _v(version: str) -> str:
+    return version if version.startswith('v') else 'v' + version
+
+
+def _span_is_empty(stamp: str | None, current: str | None = None) -> bool:
+    """True when the floor is readable and NOT older than the ceiling, so the
+    span between them holds no version at all — only the ceiling's own rows
+    are read (`retired_since`), and nothing before it was compared."""
+    floor = _version_key(stamp) if stamp else None
+    ceiling = _version_key(current or __version__)
+    return floor is not None and ceiling is not None and floor >= ceiling
+
+
+def _span_phrase(stamp: str | None, current: str | None = None) -> str:
+    at = _v(current or __version__)
     if stamp is None:
         return (f'at or before {at} — this repo pins no readable '
                 f'DEVKIT_VERSION, so the whole record is reported')
-    return f'between {stamp if stamp.startswith("v") else "v" + stamp} and {at}'
+    if _span_is_empty(stamp, current):
+        return f'in {at}'
+    return f'between {_v(stamp)} and {at}'
 
 
 def retirement_report(command: str, stamp: str | None,
                       rows: tuple[Retirement, ...] | None = None,
-                      current: str | None = None) -> list[str]:
+                      current: str | None = None,
+                      source: str = PIN_SOURCE) -> list[str]:
     """The lines a run prints about what `command` stopped shipping.
 
     Never empty: a span that withdrew nothing SAYS so, because a report that
     found nothing and a report that never ran read identically in a transcript.
+    And never that sentence over a span it did not scan: a floor that is not
+    older than the ceiling ends the report with NOT_COMPARED, naming the floor
+    and `source` (where it was read), instead.
     """
     found = retired_since(command, stamp, rows, current)
-    span = _span_phrase(stamp)
-    targets = [t for row in found for t in row.targets]
-    flags = [f for row in found for f in row.flags]
-    files = [f for row in found for f in row.files]
+    span = _span_phrase(stamp, current)
+    # Each name carries the version that withdrew it (review N8).
+    targets = [f'{t} (in {_v(row.version)})' for row in found
+               for t in row.targets]
+    flags = [f'{f} (in {_v(row.version)})' for row in found for f in row.flags]
+    files = [f'{f} (in {_v(row.version)})' for row in found for f in row.files]
     lines = []
     if targets:
         lines.append(NO_LONGER_SHIPPED.format(what=', '.join(targets),
@@ -737,7 +956,26 @@ def retirement_report(command: str, stamp: str | None,
         lines.append(RETIRED_FLAGS.format(what=', '.join(flags), span=span))
     if files:
         lines.append(WITHDRAWN_FILES.format(what=', '.join(files), span=span))
+    if stamp is not None and _span_is_empty(stamp, current):
+        return lines + [NOT_COMPARED.format(
+            command=command, at=_v(current or __version__),
+            floor=_v(stamp.strip()), source=source)]
     return lines or [NOTHING_WITHDRAWN.format(command=command, span=span)]
+
+
+def claim_census(command: str, entries: list, claimed: set[str]) -> None:
+    """One line counting what `[adopt] ours` kept out of this run, in plan
+    order, and the belt's own line naming each claim that matched nothing
+    (review M2) — each silent when there is nothing to say."""
+    from agentic_sdlc.repo.conveyor.steps import claims_matching_nothing
+
+    if claimed:
+        paths = [rel for _, rel, _ in entries if rel in claimed]
+        _say(CLAIMED_CENSUS.format(command=command, count=len(paths),
+                                   total=len(entries), paths=', '.join(paths)))
+    unmatched = claims_matching_nothing(CLAIM_OPERATION)
+    if unmatched:
+        _say(unmatched)
 
 
 def _defect_refusal(command: str, defects: list[str], wrote: list[str]) -> str:
@@ -750,51 +988,146 @@ def _defect_refusal(command: str, defects: list[str], wrote: list[str]) -> str:
             f'command is idempotent.')
 
 
-def _report_retirements(command: str, root: Path) -> None:
+def _report_retirements(command: str, root: Path,
+                        since: str | None = None) -> None:
     """What `command` stopped shipping over the span this repo is crossing.
 
+    The floor is `--since` when given, else the pin — and the line that
+    reports an empty span names which of the two it read.
     Skipped under `next_step=False`, which is `init`: a tree being wired for the
     first time has no span, and there is nothing it could have lost.
     """
-    for line in retirement_report(command, installed_stamp(root)):
+    if since is not None:
+        lines = retirement_report(command, since, source=SINCE_SOURCE)
+    else:
+        lines = retirement_report(command, installed_stamp(root))
+    for line in lines:
         _say(line)
 
 
-def main(command: str, argv: list[str], next_step: bool = True) -> int:
-    """One install verb; `next_step=False` is for `init`, which does what the paragraph asks."""
-    force = False
-    diff = False
-    write_settings = False
-    for arg in argv:
+# `--since` takes exactly one version, the grammar `_VERSION` reads — matched
+# WHOLE here, because a flag is typed input and a pin is a file's contents: a
+# pin that will not parse widens the span, a flag that will not parse is a
+# usage error. The bound and the echo are the belts' own, imported (N9).
+
+
+def shown(value: str) -> str:
+    """Typed input as a refusal echoes it: quoted and clipped."""
+    from agentic_sdlc.repo.conveyor.driver import _quote
+
+    return _quote(value)
+
+
+def since_defect(value: str) -> str:
+    """'' when `value` may be the floor, else why not."""
+    from agentic_sdlc.repo.conveyor.driver import MAX_VERSION
+
+    if len(value) > MAX_VERSION:
+        return (f'{SINCE_FLAG} takes a version, and this is {len(value)} '
+                f'characters (the limit is {MAX_VERSION})')
+    if not _VERSION.fullmatch(value):
+        return (f'{SINCE_FLAG} takes a version like 0.6.0 or v0.6.0, '
+                f'got {shown(value)}')
+    return ''
+
+
+def not_planned(named: list[str], planned: list[str]) -> str:
+    """'' when every named path is a destination spelled exactly, else the
+    refusal — the ONE path grammar, shared with `pm install-skills`."""
+    unknown = [rel for rel in named if rel not in planned]
+    if not unknown:
+        return ''
+    return (f'{", ".join(shown(rel) for rel in unknown)} '
+            + ('is not a destination' if len(unknown) == 1
+               else 'are not destinations')
+            + f' this verb writes — name one of: {", ".join(planned)}. '
+            f'Nothing was written')
+
+
+def _refuse_usage(command: str, message: str) -> int:
+    """Exit 2 before anything is read or written."""
+    print(f'agentic-sdlc {command}: {message}', file=sys.stderr)
+    print(USAGE, file=sys.stderr)
+    return 2
+
+
+def _parse(command: str, argv: list[str]):
+    """(force, diff, write_settings, since, named) — or an exit code.
+
+    A path is anything that is not a flag; which paths are allowed is the
+    verb's own plan, asked by the caller, so there is ONE path grammar here:
+    membership in `PLANS[command]`, spelled exactly."""
+    force = diff = write_settings = False
+    since: str | None = None
+    named: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        index += 1
         if arg == '--force':
             force = True
         elif arg == '--diff':
             diff = True
         elif arg == SETTINGS_FLAG and command in SETTINGS_COMMANDS:
             write_settings = True
+        elif arg == SINCE_FLAG or arg.startswith(SINCE_FLAG + '='):
+            if since is not None:
+                return _refuse_usage(command, f'{SINCE_FLAG} was given twice')
+            if arg == SINCE_FLAG:
+                if index >= len(argv):
+                    return _refuse_usage(command,
+                                         f'{SINCE_FLAG} needs a version')
+                value = argv[index]
+                index += 1
+            else:
+                value = arg.split('=', 1)[1]
+            defect = since_defect(value)
+            if defect:
+                return _refuse_usage(command, defect)
+            since = value
         elif arg in ('-h', '--help', 'help'):
             print(USAGE)
             return 0
+        elif arg.startswith('-'):
+            return _refuse_usage(command, f'unknown flag {arg!r}')
         else:
-            print(f'agentic-sdlc {command}: unknown flag {arg!r}',
-                  file=sys.stderr)
-            print(USAGE, file=sys.stderr)
-            return 2
+            named.append(arg)
+    return force, diff, write_settings, since, named
+
+
+def main(command: str, argv: list[str], next_step: bool = True) -> int:
+    """One install verb; `next_step=False` is for `init`, which does what the paragraph asks."""
+    parsed = _parse(command, argv)
+    if isinstance(parsed, int):
+        return parsed
+    force, diff, write_settings, since, named = parsed
+    planned = [rel for _, rel in PLANS[command]]
+    refusal = not_planned(named, planned)
+    if refusal:
+        return _refuse_usage(command, refusal)
+
+    from agentic_sdlc.repo.conveyor.steps import ours_of
 
     root = repo_root()
     try:
+        # The belt's reader, so a claim the belt would refuse is refused here.
+        ours = ours_of(CLAIM_OPERATION)
         entries = [(root / rel, rel, resolve_body(name, rel))
-                   for name, rel in PLANS[command]]
+                   for name, rel in PLANS[command]
+                   if not named or rel in named]
     except ConfigError as err:
         # A generated body reads the project's config; a bad value is exit 2, before any write.
         print(f'agentic-sdlc {command}: {err}', file=sys.stderr)
         return 2
+    # Naming a path is how a claimed file is taken, so a named one is not claimed.
+    claimed = {rel for _, rel, _ in entries if rel in ours and rel not in named}
 
     if diff:
         for target, rel, body in entries:
-            print_diff(rel, target, body)
+            print_diff(rel, target, body, claimed=rel in claimed)
+        claim_census(command, entries, claimed)
         if next_step:
-            _report_retirements(command, root)
+            _report_retirements(command, root, since)
         if write_settings:
             # Named rather than ignored: --diff writes nothing, this included.
             _say(f'{SETTINGS_FLAG} writes nothing under --diff')
@@ -806,11 +1139,15 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # defect refuses the whole command below, before any of that is printed.)
     plan: list[tuple[str, Path, str, str]] = []   # (kind, target, rel, body)
     collisions: list[str] = []
-    header_only: list[str] = []
     undecodable: list[str] = []
     defects: list[str] = []
+    lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
     for target, rel, body in entries:
         kind = 'write'
+        if rel in claimed:
+            # Never read, never graded, never written — the belt's answer too.
+            plan.append(('claimed', target, rel, body))
+            continue
         defect = destination_defect(target)
         if defect:
             defects.append(f'{rel} {defect}')
@@ -820,8 +1157,24 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             if unreadable:
                 defects.append(f'{rel} {unreadable}')
                 continue
-            if existing == body and not (rel.endswith(EXECUTABLE_SUFFIX)
-                                         and not _is_executable(target)):
+            if existing is not None and existing != body:
+                # Feature D1: the project's block rides into the new body
+                # under --force; and a file whose ONLY difference is that
+                # block is current without it, because --force would write
+                # nothing there either.
+                carried = carry_config_block(existing, body)
+                if carried is not None and carried != body and (
+                        force or carried == existing):
+                    lacks[rel] = kept_lacks(existing, body)
+                    body = carried
+                    kind = 'kept'
+            unbit = (rel.endswith(EXECUTABLE_SUFFIX)
+                     and not _is_executable(target))
+            if existing == body and kind == 'kept':
+                # The rest was already byte-current: nothing to write, unless
+                # the one writer has a mode to set.
+                kind = 'kept' if unbit else 'header-kept'
+            elif existing == body and not unbit:
                 kind = 'current'
             elif existing == body:
                 # Right bytes, missing execute bit: rewritten so the one writer sets the mode.
@@ -832,8 +1185,6 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                     # Review I5: not a file that "differs" — one that cannot be
                     # compared at all, which is a different thing to be told.
                     undecodable.append(rel)
-                elif header_only_difference(existing, body):
-                    header_only.append(rel)
                 plan.append(('withheld', target, rel, body))
                 continue
         plan.append((kind, target, rel, body))
@@ -849,15 +1200,17 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         for target, rel, body in entries:
             if rel in blocked:
                 _say(f'{rel} CANNOT be written — the refusal on stderr says why')
+            elif rel in claimed:
+                _say(claimed_skip(rel, command))
             elif rel in collisions:
                 _say(f'{rel} exists and differs; nothing was written because '
                      f'another destination is unusable')
             else:
                 _say(f'{rel} was reachable; nothing was written because '
                      f'another destination is unusable')
+        claim_census(command, entries, claimed)
         if collisions:
             head, tail = collision_refusal(collisions,
-                                           header_only=header_only,
                                            undecodable=undecodable)
             print(f'agentic-sdlc {command}: {head}\n'
                   f'agentic-sdlc {command}: {tail}', file=sys.stderr)
@@ -866,7 +1219,7 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
 
     writes = apply.Plan()
     for kind, target, rel, body in plan:
-        if kind == 'write':
+        if kind in ('write', 'kept'):
             writes.overwrite(target, body, newline=None, label=rel,
                              executable=rel.endswith(EXECUTABLE_SUFFIX))
     # A failure here means the filesystem changed under the plan; `landed` says how far it got.
@@ -879,14 +1232,20 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             _say(IS_CURRENT.format(rel=rel))
         elif kind == 'withheld':
             _say(WITHHELD.format(rel=rel))
+        elif kind == 'claimed':
+            _say(claimed_skip(rel, command))
+        elif kind == 'header-kept':
+            _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:
-            _say(WROTE.format(rel=rel))
+            _say(WROTE_KEPT_HEADER.format(rel=rel) + lacks[rel]
+                 if kind == 'kept' else WROTE.format(rel=rel))
         elif rel == failed:
             _say(WRITE_FAILED.format(rel=rel))
         else:
             # Named, not dropped: the entries a mid-plan failure never reached
             # are the ones an operator has to re-run for.
             _say(NOT_REACHED.format(rel=rel))
+    claim_census(command, entries, claimed)
     if result.failed is not None:
         print(_defect_refusal(command,
                               [f'{result.failed.label} could not be written '
@@ -896,12 +1255,11 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # Before the next-step paragraph, so the pasteable settings block stays last on stdout.
     if collisions:
         head, tail = collision_refusal(collisions, wrote=written,
-                                       header_only=header_only,
                                        undecodable=undecodable)
         print(f'agentic-sdlc {command}: {head}\n'
               f'agentic-sdlc {command}: {tail}', file=sys.stderr)
     if next_step:
-        _report_retirements(command, root)
+        _report_retirements(command, root, since)
     if written and next_step:
         print(f'[install] {_NEXT_STEP[command]}')
     # Whatever the plan did: a re-run on a current tree is how an operator

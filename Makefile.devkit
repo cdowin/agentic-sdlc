@@ -35,7 +35,12 @@ export VERBOSE
 export GDK_LEDGER_CMD ?= $(DEVKIT)
 
 # Arguments, overridden on the command line:
-#   ARGS — passthrough              make pm ARGS="story building <id>"
+#   ARGS — passthrough              make sdlc ARGS='dispatch --grain <id>'
+# Read with $(value ARGS), so a `$` in free text is never make's to expand; the
+# recipe's shell parses it once more, so quote free text in single quotes.
+# The verb runs with ARGS unset and MAKEFLAGS emptied: a sub-make a belt spawns
+# never sees your ARGS, through the environment or through MAKEFLAGS. Only the
+# `pm` and `sdlc` recipes drop it; your own targets still see `$ARGS`.
 ARGS ?=
 
 # Set by `check` when it re-enters itself through a sub-make. See `check`.
@@ -72,7 +77,7 @@ exit "$$status"
 endef
 
 # Only what this file defines; the tier file declares its own.
-.PHONY: help pm check precommit milestone \
+.PHONY: help pm sdlc check precommit milestone \
         gdk-tiers-none-precommit gdk-tiers-none-milestone
 
 help: ## Show this help (authoritative target list)
@@ -85,8 +90,11 @@ help: ## Show this help (authoritative target list)
 	@echo 'Args: ARGS="…"  VERBOSE=1     Tiers: $(GDK_TIERS_MK) -> precommit=[$(strip $(GDK_PRECOMMIT_TIERS))] milestone=[$(strip $(GDK_MILESTONE_TIERS))]'
 	@echo 'Gates print ONE verdict line naming .gate-reports/<gate>.log; VERBOSE=1 streams it.'
 
-pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS="story building <id>"
-	@$(DEVKIT) pm $(if $(ARGS),$(ARGS),--help)
+pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS='story building <id>'
+	@unset ARGS; MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),$(value ARGS),--help)
+
+sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"
+	@unset ARGS; MAKEFLAGS= $(DEVKIT) $(if $(value ARGS),$(value ARGS),--help)
 
 # --- Aggregate gates ----------------------------------------------------------
 # `check` is the devkit roster then this project's `[gates] extra`, read once

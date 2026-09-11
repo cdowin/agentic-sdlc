@@ -11,9 +11,9 @@ effort: high
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -38,11 +38,11 @@ manage branches or push.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc pm new story` — mint it, bound to its feature
-- `agentic-sdlc pm add <feature-id> <story-id>` — where it sits in its
+- `make pm ARGS='new story'` — mint it, bound to its feature
+- `make pm ARGS='add <feature-id> <story-id>'` — where it sits in its
   parent's order
-- `agentic-sdlc pm vocabulary` — which states may a story hold here?
-- `agentic-sdlc pm ready-for feature <id>` — is the slice actually finished?
+- `make pm ARGS=vocabulary` — which states may a story hold here?
+- `make pm ARGS='ready-for feature <id>'` — is the slice actually finished?
 <!-- END role-verbs -->
 
 ## Checklist
@@ -61,10 +61,12 @@ manage branches or push.
    Gotchas (numbered, load-bearing only); Verification (exact commands); Out
    of scope; Commit prefix; Size. 30-80 lines; longer is restating the spec.
 5. Validate: read `git show <range>` against Scope and Gotchas; report a
-   match or the drift — never flip anything. Status moves through the pm CLI;
-   `reviewing` is the story terminal and the orchestrator closes the feature.
-6. A bug surfaced by validation is filed under the milestone's bugs dir, not
-   absorbed into the next story.
+   match or the drift — never flip anything. Status moves through the pm CLI:
+   a finished story goes to `done` through `close story` (the stock vocabulary
+   declares no story review state; `pm vocabulary` is the authority), and the
+   orchestrator closes the feature.
+6. A bug surfaced by validation is filed as its own bug grain, not absorbed
+   into the next story.
 7. Report: story path, gotchas surfaced, open questions; go idle.
 
 <!-- BEGIN name-both-commands -->
@@ -73,6 +75,6 @@ manage branches or push.
 A dispatch names the NARROW command and the WIDE one, each with its measured
 cost: the narrow one is the inner loop, run after every edit; the wide one
 runs once, at the close. An agent given one command loops on it. Where the
-repo declares `[verify]`, `agentic-sdlc verify --plan` prints each rung with
+repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

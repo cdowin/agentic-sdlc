@@ -30,15 +30,21 @@ files at all.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
+import fnmatch
 import io
+import itertools
 import json
 import os
 import shlex
 import sys
 import tempfile
+import tokenize
+import unittest
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -48,7 +54,7 @@ from support import consumers
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo import install  # noqa: E402
+from agentic_sdlc.repo import install, vehicle  # noqa: E402
 from agentic_sdlc.repo.checks import pm as pm_check  # noqa: E402
 
 
@@ -118,14 +124,30 @@ def dispositions(out: str, command: str) -> dict[str, list[str]]:
     """That summary, keyed by destination — the run's PROSE (the next-step
     paragraph, the retirement report) dropped, because it is not a file's line.
 
-    A header line is `[install] <rel> …` or `[install] wrote <rel>`, anchored:
-    two shapes, so a destination can be counted rather than searched for.
+    A header line is `[install] <rel> …` or `[install] wrote <rel>[ …]`,
+    anchored: two shapes, so a destination can be counted rather than searched
+    for. (`wrote <rel> — kept its project-config header …` is the second
+    shape: a write, and it still opens with the word a summary greps.)
     """
     lines = headers(out)
     return {rel: [line for line in lines
                   if line.startswith(f'{install.REPORT_PREFIX} {rel} ')
-                  or line == f'{install.REPORT_PREFIX} wrote {rel}']
+                  or line == f'{install.REPORT_PREFIX} wrote {rel}'
+                  or line.startswith(f'{install.REPORT_PREFIX} wrote {rel} ')]
             for rel in DESTINATIONS[command]}
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under `root` and its bytes — what "nothing was written" is
+    asserted against, rather than the one file a refusal happened to name."""
+    return {str(path.relative_to(root)): path.read_bytes()
+            for path in sorted(root.rglob('*')) if path.is_file()}
+
+
+def claims(*rels: str) -> str:
+    """A devkit.toml whose `[adopt] ours` claims `rels`."""
+    return ('[adopt]\nours = [' + ', '.join(json.dumps(rel) for rel in rels)
+            + ']\n')
 
 
 WORKFLOW = '.github/workflows/verify.yml'
@@ -401,12 +423,180 @@ def test_diff_prints_a_unified_diff_and_writes_nothing(command):
         assert (root / first).read_text(encoding='utf-8') == mine
         for rel in DESTINATIONS[command][1:]:
             assert not (root / rel).exists(), rel
+        # A claim is not a blindfold (#20): the claimed file is still diffed,
+        # and its ONE header line says a run leaves it alone.
+        (root / 'devkit.toml').write_text(claims(first), encoding='utf-8')
+        load_config.cache_clear()
+        code, out = run(command, '--diff')
+        assert code == 0, out
+        assert '-my own version, deliberately' in out, out
+        assert dispositions(out, command)[first] == [
+            f'{install.REPORT_PREFIX} {install.BODY_DIFFERS.format(rel=first)}'
+            f'{install.CLAIMED_MARK}'], out
+        one_each(out, command)
+        assert (root / first).read_text(encoding='utf-8') == mine
 
 
 def test_an_unknown_flag_is_a_usage_error():
     with repo():
         code, _ = refuse('install-ci', '--yolo')
         assert code == 2
+
+
+# --- what --force does not take: a claim, unless it is named ------------------
+# #20 items 1 and 3, #29. `[adopt] ours` told the adopt belt which installed
+# files a project had rewritten, and the installer never read it: one
+# consumer's `install-agents --force` made 824 insertions and 1,344 deletions
+# across 11 claimed briefs, and taking the ONE new agent was a `git show
+# v0.7.0:…/pm-operator.md >` by hand.
+CLAIMED = AGENTS[2]           # a roster brief the project rewrote, present
+CLAIMED_ABSENT = AGENTS[4]    # a claim naming a file the project deleted
+DRIFTED = AGENTS[3]           # stale and unclaimed: --force takes it
+MINE = 'my own architect, deliberately\n'
+
+
+def test_force_leaves_a_claimed_file_alone_and_a_named_path_takes_it():
+    """The installer and the belt read ONE claim list, and a claimed path is
+    left alone — named per file, and counted — whatever the flags; naming the
+    path is how it is taken. A second `--force` over the result writes
+    nothing (rule 3)."""
+    command = 'install-agents'
+    at = install.REPORT_PREFIX
+    with repo({'devkit.toml': claims(CLAIMED, CLAIMED_ABSENT),
+               CLAIMED: MINE, DRIFTED: 'stale\n'}) as root:
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert (root / CLAIMED).read_text(encoding='utf-8') == MINE
+        assert not (root / CLAIMED_ABSENT).exists(), (
+            'a claimed path was written because nothing stood in the way')
+        assert (root / DRIFTED).read_text(encoding='utf-8') == (
+            install.body_of('po.md'))
+        for rel in (CLAIMED, CLAIMED_ABSENT):
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.claimed_skip(rel, command)], out
+        one_each(out, command)
+        assert [line for line in headers(out)
+                if line.startswith(f'{at} {command} left ')] == [
+            f'{at} ' + install.CLAIMED_CENSUS.format(
+                command=command, count=2, total=len(AGENTS),
+                paths=f'{CLAIMED}, {CLAIMED_ABSENT}')], out
+        # Idempotent: the second --force writes nothing and says the same.
+        before = snapshot(root)
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert '] wrote ' not in out, out
+        assert snapshot(root) == before
+        # --diff narrows to a named path, and a named path is not claimed.
+        code, out = run(command, '--diff', CLAIMED)
+        assert code == 0, out
+        assert dispositions(out, command)[CLAIMED] == [
+            f'{at} ' + install.BODY_DIFFERS.format(rel=CLAIMED)], out
+        assert sum(len(v) for v in dispositions(out, command).values()) == 1
+        # Naming it takes it — that one file and nothing else.
+        (root / DRIFTED).write_text('stale again\n', encoding='utf-8')
+        code, out = run(command, '--force', CLAIMED)
+        assert code == 0, out
+        assert (root / CLAIMED).read_text(encoding='utf-8') == (
+            install.body_of('architect.md'))
+        assert (root / DRIFTED).read_text(encoding='utf-8') == 'stale again\n'
+        assert not (root / CLAIMED_ABSENT).exists()
+        assert [line for line in headers(out) if CLAIMED in line] == [
+            f'{at} wrote {CLAIMED}'], out
+        assert f'{command} left ' not in out, out
+
+
+# Every input the verb's grammar rejects, each at exit 2 with the tree
+# byte-identical afterwards. A PATH has one grammar here — membership in the
+# verb's own plan, spelled exactly — so traversal, absolute, backslash, glob,
+# scheme, drive, home, dot and empty segments, whitespace, a directory, the
+# SOURCE name, another verb's destination and an over-long string all miss it.
+REFUSED_PATHS = ('', ' ', '.', './', '..', '../' + AGENTS[0], '/' + AGENTS[0],
+                 './' + AGENTS[0], AGENTS[0] + '/', ' ' + AGENTS[0],
+                 AGENTS[0] + ' ', AGENTS[0] + '\n', AGENTS[0].replace('/', '\\'),
+                 '.claude/agents/*.md', '.claude/agents', '.claude//agents/po.md',
+                 '.claude/./agents/po.md', 'file://' + AGENTS[0], 'C:' + AGENTS[0],
+                 '~/' + AGENTS[0], 'architect.md', WORKFLOW,
+                 '.claude/agents/' + 'x' * 5000 + '.md')
+# `--since` is typed input, so it is matched WHOLE: a pin that will not parse
+# widens the span, a flag that will not parse is a usage error.
+REFUSED_SINCE = ('', ' ', 'v', '0.4', 'latest', '../0.4.0', ' 0.4.0', '0.4.0 ',
+                 '0.4.0\n', 'v0.4.0.1', '0.4.0-rc1', 'vv0.4.0', '/0.4.0',
+                 'V0.4.0', '0.4.x', '9' * 200 + '.0.0', '--force')
+# `.` is refused by `conveyor.steps.ours_of` ALONE (`relpath_tuple` lets it
+# through), so its exit 2 here proves the installer asks the belt's reader.
+REFUSED_CLAIMS = ('ours = ["."]', 'ours = ".claude/agents/po.md"', 'ours = []',
+                  'ours = ["../elsewhere.md"]', 'ours = ["/etc/passwd"]')
+
+
+def test_every_input_this_verb_refuses_is_exit_2_and_writes_nothing():
+    """SDLC §5's refusal matrix for the three inputs this story added or
+    extended: a named path, `--since`, and the claim list. Each is refused
+    before the first byte, with a valid path and --force beside it — the
+    case that would write if the refusal came late."""
+    command = 'install-agents'
+    with repo({CLAIMED: MINE, DRIFTED: 'stale\n'}) as root:
+        before = snapshot(root)
+        cases = ([(('--force', AGENTS[0], bad), install.shown(bad))
+                  for bad in REFUSED_PATHS]
+                 + [(('--force', '--since', bad), '--since')
+                    for bad in REFUSED_SINCE]
+                 + [(('--force', f'--since={bad}'), '--since')
+                    for bad in REFUSED_SINCE]
+                 + [(('--force', '--since'), '--since needs a version'),
+                    (('--force', '--since', '0.4.0', '--since', '0.5.0'),
+                     '--since was given twice')])
+        for argv, said in cases:
+            code, out, err = streams(command, *argv)
+            assert (code, out) == (2, ''), (argv, code, out, err)
+            assert said in err, (argv, err)
+            assert snapshot(root) == before, f'{argv!r} wrote to the tree'
+        for toml in REFUSED_CLAIMS:
+            (root / 'devkit.toml').write_text(f'[adopt]\n{toml}\n',
+                                              encoding='utf-8')
+            load_config.cache_clear()
+            before = snapshot(root)
+            code, out, err = streams(command, '--force')
+            assert (code, out) == (2, ''), (toml, code, out, err)
+            assert '[adopt] ours' in err, err
+            assert snapshot(root) == before, f'{toml!r} wrote to the tree'
+
+
+# The claim list's NEIGHBOUR: spellings `ours_of` accepts (they stay inside
+# the checkout) that match no destination, because a claim is matched spelled
+# exactly. Named, not honoured: each is a claim that leaves nothing alone, so
+# it is said on every run, `--diff` included, before `--force` takes the file.
+UNMATCHED_CLAIMS = ('./' + CLAIMED, '.claude/agents', '.claude/agents/',
+                    '.claude/agents/*.md', CLAIMED.replace('/', '//', 1),
+                    CLAIMED + '/', ' ' + CLAIMED, CLAIMED[1:])
+
+
+def test_a_claim_that_matches_nothing_is_named_by_every_run():
+    """Review M2: each spelling below exited 0 under `--force`, overwrote the
+    file it meant, and no line anywhere mentioned the claim — only the belt
+    named it, after the write. The installer prints the belt's own clause,
+    through the belt's own function, so the two cannot word it apart."""
+    from agentic_sdlc.repo.conveyor import steps
+
+    command, at = 'install-agents', install.REPORT_PREFIX
+    for spelling in UNMATCHED_CLAIMS:
+        with repo({'devkit.toml': claims(spelling), CLAIMED: MINE}) as root:
+            said = steps.claims_matching_nothing('adopt')
+            assert said and spelling in said, (spelling, said)
+            for argv in (('--diff',), ('--force',), ('--force', CLAIMED)):
+                code, out = run(command, *argv)
+                assert code == 0, (spelling, argv, out)
+                assert headers(out).count(f'{at} {said}') == 1, (
+                    spelling, argv, out)
+            # Named, not honoured: the claim claimed nothing, so --force took
+            # the file — and said so before it did, on the --diff.
+            assert (root / CLAIMED).read_text(encoding='utf-8') == (
+                install.body_of('architect.md'))
+    # A claim that DOES match prints no such line: a repo that claims
+    # exactly prints what it printed before.
+    with repo({'devkit.toml': claims(CLAIMED), CLAIMED: MINE}):
+        assert steps.claims_matching_nothing('adopt') == ''
+        code, out = run(command, '--diff')
+        assert 'matches nothing' not in out, out
 
 
 # --- what a verb STOPPED shipping ---------------------------------------------
@@ -502,9 +692,15 @@ def test_the_shipped_table_names_the_changelog_writer_at_0_6_0():
     assert rows, 'the 0.6.0 retirement row is gone'
     files = [f for r in rows for f in r.files]
     assert '.claude/agents/changelog-writer.md' in files, files
-    # It reports at 0.6.0 and is silent before it.
+    # It reports at 0.6.0 and is silent before it — and the line names the
+    # version that withdrew it, not only the span it scanned (review N8).
     after = install.retirement_report('install-agents', None, current='0.6.0')
-    assert any('changelog-writer' in line for line in after), after
+    assert any('changelog-writer.md (in v0.6.0)' in line for line in after), (
+        after)
+    later = install.retirement_report('install-agents', 'v0.4.0',
+                                      current='0.8.0')
+    assert any('changelog-writer.md (in v0.6.0) — withdrawn between v0.4.0 '
+               'and v0.8.0' in line for line in later), later
     before = install.retirement_report('install-agents', None, current='0.5.0')
     assert not any('changelog-writer' in line for line in before), before
 
@@ -577,6 +773,54 @@ def test_a_run_and_a_diff_both_carry_the_report_and_init_does_not(monkeypatch):
         with contextlib.redirect_stdout(buffer):
             install.main('install-gates', ['--force'], next_step=False)
         assert 'no longer shipped' not in buffer.getvalue(), buffer.getvalue()
+
+
+def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
+    """#21 #28, rule 4's first sin: a census that could not fail in the order
+    the belt demands. The adopt belt bumps the pin FIRST, and through
+    Makefile.devkit the version running IS the pin, so the floor equalled the
+    ceiling on the one run this report exists for, and it printed "withdrawn
+    nothing" over a span it never scanned — while the 0.6.0 changelog-writer
+    row was exactly what it should have named.
+
+    The floor is never re-derived (not from `HEAD:Makefile`, not from git):
+    the line names what it read and where, and `--since` is the operator
+    naming it (rule 9)."""
+    for floor in ('0.8.0', 'v0.8.0', 'v9.9.9'):
+        lines = install.retirement_report('install-agents', floor,
+                                          current='0.8.0')
+        assert not any('withdrawn no' in line for line in lines), lines
+        assert lines[-1] == install.NOT_COMPARED.format(
+            command='install-agents', at='v0.8.0',
+            floor=floor if floor.startswith('v') else f'v{floor}',
+            source=install.PIN_SOURCE), lines
+        assert '--since' in lines[-1] and 'compared nothing' in lines[-1]
+    # A row AT the ceiling is still read — and the line still says the span
+    # before it was not.
+    lines = install.retirement_report('install-agents', f'v{THIS}', rows=FIXTURE)
+    assert GONE_FILE in lines[0] and f'in v{THIS}' in lines[0], lines
+    assert lines[-1].startswith('install-agents compared nothing'), lines
+    # `--since` over the REAL table, run from 0.8.0: the row it existed for.
+    lines = install.retirement_report('install-agents', 'v0.4.0',
+                                      current='0.8.0',
+                                      source=install.SINCE_SOURCE)
+    assert lines == [install.WITHDRAWN_FILES.format(
+        what='.claude/agents/changelog-writer.md (in v0.6.0)',
+        span='between v0.4.0 and v0.8.0')], lines
+    # Through the verb, pin already bumped: the line names the pin and where
+    # it was read, and --since replaces it.
+    with repo({'Makefile': f'DEVKIT_VERSION := v{THIS}\n'}):
+        code, out = run('install-agents', '--diff')
+        assert code == 0, out
+        assert 'has withdrawn no' not in out, out
+        assert (f'the floor, v{THIS} (the DEVKIT_VERSION in Makefile)'
+                in out), out
+        code, out = run('install-agents', '--diff', '--since', 'v0.5.0')
+        assert code == 0, out
+        assert 'compared nothing' not in out, out
+        assert (f'changelog-writer.md (in v0.6.0) — withdrawn between v0.5.0 '
+                f'and v{THIS}') in (
+            out), out
 
 
 # --- the report and the disk are one thing ------------------------------------
@@ -693,6 +937,7 @@ def test_every_roster_agent_carries_model_and_an_editable_config_section():
     predates the roster and deliberately carries neither.
     """
     by_rel = {rel: name for name, rel in install.PLANS['install-agents']}
+    headings = set()
     for rel in ROSTER:
         body = install.body_of(by_rel[rel])
         head = body.split('---', 2)[1]
@@ -701,8 +946,14 @@ def test_every_roster_agent_carries_model_and_an_editable_config_section():
         assert 'UNVERIFIED' in head, (
             f'{rel} dropped the effort-is-unverified caveat')
         assert 'GENERATED by agentic-sdlc' in body, rel
-        assert '## Project config (yours to edit after install)' in body, (
-            f'{rel} carries no editable project-config section')
+        # Feature D2: the section's ```text fence is the project's block, and
+        # a brief whose fence the grammar cannot find has none to keep.
+        assert install.config_block_span(body) is not None, (
+            f'{rel} carries no ```text fence inside `## Project config`')
+        headings.update(line for line in body.splitlines()
+                        if line.startswith('## Project config'))
+    # One wording, saying WHICH part is yours: the heading is the kit's now.
+    assert headings == {MD_OPEN}, headings
     for rel in AGENTS[:2]:
         head = install.body_of(by_rel[rel]).split('---', 2)[1]
         assert 'model:' not in head, f'{rel} grew a model: it never had'
@@ -823,16 +1074,27 @@ def test_this_repo_carries_the_roles_it_runs_byte_current():
     `.claude/agents/` file that shadows a roster name with edited content is
     the invisible fork-by-copy; a role this repo does not run is legitimately
     absent.
+
+    Current means what the installer means by it: byte-current, or different
+    ONLY inside the ```text fence of `## Project config` (feature D2) — this
+    repo's own config, edited on purpose, as the hooks' headers are. A kept
+    fence that LACKS a key the packaged one declares is not current here:
+    this repo reads its own briefs, and a missing key is a policy nobody set.
     """
     present: list[str] = []
     for name, rel in install.PLANS['install-agents']:
         target = REPO_ROOT / rel
         if target.is_file():
             present.append(rel)
-            assert (target.read_text(encoding='utf-8')
-                    == install.body_of(name)), (
-                f'{rel} differs from installables/{name} — edit the source '
-                f'under installables/ and re-install with --force')
+            text, body = target.read_text(encoding='utf-8'), install.body_of(name)
+            assert text == body or install.header_only_difference(text, body), (
+                f'{rel} differs from installables/{name} outside its '
+                f'```text fence — edit the source under installables/ and '
+                f're-install with --force')
+            assert not install.lacking_names(text, body), (
+                f'{rel} keeps a fence lacking '
+                f'{install.lacking_names(text, body)} — copy them in from '
+                f'`install-agents --diff`')
     # The floor: a repo that stops carrying the pair has stopped self-hosting
     # the verbs it ships, and this test would otherwise pass vacuously.
     for rel in AGENTS[:2]:
@@ -975,6 +1237,19 @@ def test_a_byte_current_script_missing_the_bit_is_repaired_not_reported_current(
         code, out = run('install-gates')
         assert code == 0, out
         assert 'already current' in out and 'wrote ' not in out, out
+
+        # A header-only difference is current too (D1), so the same repair
+        # reaches it with no --force — rewriting the file's OWN bytes, header
+        # included, and saying it kept the header.
+        mine = header_edited(target.read_text(encoding='utf-8'))
+        target.write_text(mine, encoding='utf-8')
+        target.chmod(0o644)
+        code, out = run('install-gates')
+        assert code == 0, out
+        assert os.access(target, os.X_OK), 'the re-run left it unrunnable'
+        assert target.read_text(encoding='utf-8') == mine
+        assert (f'{install.REPORT_PREFIX} ' + install.WROTE_KEPT_HEADER.format(
+            rel='tools/dev/gdk_gate.sh')) in out.splitlines(), out
 
 
 # --- install-hooks prints the settings.json entries that FIRE the hooks -------
@@ -1198,21 +1473,27 @@ def test_a_settings_file_that_exists_is_never_merged_into_or_replaced():
 SHELL_OPEN = ("# --- project config (yours to edit after install — the file "
               "is your repo's) --")
 SHELL_CLOSE = '# ' + '-' * 77
-MD_OPEN = '## Project config (yours to edit after install)'
+MD_OPEN = ("## Project config (the text block below is yours to edit; the rest "
+           "is the kit's)")
+# What every consumer's brief said through 0.7.0: kit-owned bytes now (D2).
+MD_OPEN_THROUGH_070 = '## Project config (yours to edit after install)'
 
 
 def header_edited(text: str, line: str = 'MY_PROJECT_SAYS=1') -> str:
     """`text` with `line` inserted INSIDE its project-config block — the edit
-    the block exists to invite.
+    the block exists to invite: after a hook's opening comment, or after the
+    ```text line of the fence inside a brief's `## Project config` (D2).
 
     Finds the OPENING marker on its own and inserts straight after it: a
     fixture built with the production span finder would prove nothing about
     the production span finder.
     """
     lines = text.splitlines(keepends=True)
+    section = False
     for index, one in enumerate(lines):
-        if MD_OPEN in one:
-            return ''.join(lines[:index + 1] + [f'\n{line}\n'] +
+        section = section or one.startswith('## Project config')
+        if section and one.rstrip('\n') == '```text':
+            return ''.join(lines[:index + 1] + [f'{line}\n'] +
                            lines[index + 1:])
         if 'project config (yours to edit after install' in one:
             return ''.join(lines[:index + 1] + [f'{line}\n'] +
@@ -1242,48 +1523,36 @@ def a_consumer_mid_adoption(root: Path) -> dict[str, str]:
 
 def test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited():
     """The bug, whole, asked of ONE run: the couriers land byte-current with
-    their installables, the edited headers survive byte for byte, the run
-    exits 1 naming what it withheld, and the report says what the disk says.
+    their installables, the edited headers survive byte for byte, and the run
+    exits 0, because a header-only difference is CURRENT (feature D1).
 
-    The exit code carries the withholding, and only the exit code can: a
-    caller that reads it alone must never be told the roster is on disk when
-    one of it is the operator's own file. `code == 1` alone is what the
-    defect already did, by writing nothing at all — what has to be true
-    TOGETHER is that the additions landed AND the run still exits 1.
-
-    The report is the one an operator can act on: `nothing was written` over
-    a repo that gained two files is the defect `core.apply` exists to end,
-    and a header-only collision is named as one, because the rest of the
-    file is byte-current and the repair is to do nothing — not --force and
-    four re-edits. Once the collisions are gone the same command is a clean
-    0: the non-zero is about the withholding, not about having spoken."""
+    Through 0.7.0 this run exited 1 over the three edited headers, "withheld"
+    — about files `--force` would now write nothing to. An exit code that
+    goes non-zero over the file the kit invites you to edit is a gate a
+    consumer learns to ignore. What has to be true TOGETHER is that the
+    additions landed, the headers are untouched, each is named as
+    header-only on its own line, and nothing was called withheld."""
+    at = install.REPORT_PREFIX
     with repo() as root:
         mine = a_consumer_mid_adoption(root)
-        code, out = refuse('install-hooks')
-        assert [rel for rel in ASYNC_HOOKS if (root / rel).is_file()] == list(
-            ASYNC_HOOKS), out
-        assert code == 1, f'additions landed and the run exited {code}\n{out}'
+        code, out, err = streams('install-hooks')
+        assert code == 0, f'a header-only difference exited {code}\n{out}{err}'
+        assert err == '', err
         for rel in ASYNC_HOOKS:
             assert (root / rel).read_text(encoding='utf-8') == install.body_of(
                 Path(rel).name), rel
         for rel, text in mine.items():
             assert (root / rel).read_text(encoding='utf-8') == text, (
                 f'{rel} was overwritten by a run that did not say so')
-            assert rel in out, f'{rel} was withheld and not named\n{out}'
+            assert dispositions(out, 'install-hooks')[rel] == [
+                f'{at} ' + install.HEADER_KEPT.format(rel=rel)], out
         for rel in HOOKS:
             assert (root / rel).is_file(), rel
-        assert 'nothing was written' not in out, out
         wrote = {line.split('wrote ', 1)[1].strip()
                  for line in out.splitlines() if '] wrote ' in line}
         assert wrote == set(ASYNC_HOOKS), out
-        assert out.count(install.HEADER_ONLY_NOTE) == len(
-            HEADER_EDITED_HOOKS), out
-        assert 'byte-current' in out, out
-        assert '--force would replace the header too' in out, out
-        for rel in HEADER_EDITED_HOOKS:
-            (root / rel).write_text(
-                install.body_of(Path(rel).name), encoding='utf-8')
-        assert refuse('install-hooks')[0] == 0
+        assert 'withheld' not in out, out
+        one_each(out, 'install-hooks')
 
 
 def test_a_body_difference_is_not_reported_as_a_header_only_one():
@@ -1304,8 +1573,9 @@ def test_a_body_difference_is_not_reported_as_a_header_only_one():
             encoding='utf-8')
         code, out = refuse('install-hooks')
         assert code == 1, out
-        assert rel in out, out
-        assert install.HEADER_ONLY_NOTE not in out, out
+        assert f'{install.REPORT_PREFIX} {install.WITHHELD.format(rel=rel)}' in (
+            out), out
+        assert 'ONLY inside' not in out, out
         assert 'byte-current' not in out, out
 
 
@@ -1327,20 +1597,295 @@ def test_diff_names_a_header_only_difference_before_the_hunks():
             assert not (root / rel).exists(), rel
 
 
-def test_force_replaces_a_header_only_collision_whole_header_included():
-    """The decision, pinned. The installer does NOT merge the block: a
-    preserved consumer header carried onto a newer body is an older contract
-    under a newer one, and this corpus reads its header under `set -u` behind
-    a fail-open trap."""
+def stale_body(text: str) -> str:
+    """`text` with a line an older version shipped, OUTSIDE its block: after
+    the first line (before the block) and at the end (after it)."""
+    first, rest = text.split('\n', 1)
+    return f'{first}\n# a line an older version shipped\n{rest}# and another\n'
+
+
+def test_force_keeps_an_edited_header_and_takes_the_stale_body():
+    """Feature D1 (#20 item 2), which REVERSES what this case pinned through
+    0.7.0. `--diff` and `installables-current` already called the block the
+    project's; the installer was the one reader that disagreed, and one
+    consumer's PUSH_GATE, GATE_STATIC and WARM_DIRS were reset to stock on
+    two successive bumps. Bytes are carried, nothing is computed.
+
+    The expected text is built by `header_edited` over the PACKAGED body — the
+    test's own marker search, not the production span finder — so the case
+    can fail on the splice rather than agree with it."""
+    command = 'install-hooks'
+    at = install.REPORT_PREFIX
+    # The installed side lost its opening marker: no block to carry, so the
+    # file is replaced whole, exactly as before.
+    headerless = 'tools/dev/agent-worktree.sh'
+    assert headerless in CONFIG_HEADED and headerless not in HEADER_EDITED_HOOKS
     with repo() as root:
         mine = a_consumer_mid_adoption(root)
-        code, out = run('install-hooks', '--force')
+        for rel, text in mine.items():
+            (root / rel).write_text(stale_body(text), encoding='utf-8')
+        target = root / headerless
+        target.write_text(stale_body(''.join(
+            line for line in target.read_text(encoding='utf-8').splitlines(
+                keepends=True) if 'project config (yours to edit' not in line)),
+            encoding='utf-8')
+        code, out = run(command, '--force')
         assert code == 0, out
         for rel in mine:
-            assert (root / rel).read_text(encoding='utf-8') == (
+            assert (root / rel).read_text(encoding='utf-8') == header_edited(
                 install.body_of(Path(rel).name)), rel
-            assert 'MY_PROJECT_SAYS' not in (
-                root / rel).read_text(encoding='utf-8'), rel
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=rel)], out
+        assert target.read_text(encoding='utf-8') == install.body_of(
+            Path(headerless).name)
+        assert dispositions(out, command)[headerless] == [f'{at} wrote {headerless}']
+        one_each(out, command)
+        # Idempotent: the second --force finds nothing outside any header to
+        # take, writes nothing, and says why for each kept header.
+        before = snapshot(root)
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert '] wrote ' not in out, out
+        assert snapshot(root) == before
+        for rel in mine:
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.HEADER_KEPT.format(rel=rel)], out
+    # Both grammars, at the function: a markdown block rides the same way, and
+    # a side whose block is unterminated (it runs to EOF, so carrying it would
+    # carry the OLD body) or absent carries nothing.
+    edited = header_edited(MD_STOCK)
+    assert install.carry_config_block(stale_body(edited), MD_STOCK) == edited
+    assert install.carry_config_block(STOCK, 'no block here\n') is None
+    assert install.carry_config_block('no block here\n', STOCK) is None
+    open_ended = swap(STOCK, f'{SHELL_CLOSE}\n', '')
+    assert install.carry_config_block(open_ended, STOCK) is None
+    assert install.carry_config_block(STOCK, open_ended) is None
+    # Review C1 / M4: a block left open whose file carries a LATER close — a
+    # later section's fence, a rule line lower in the body — is still open.
+    # Borrowing that close carried the old body into the new one, whole.
+    borrowed = {
+        'markdown': (swap(MD_STOCK, 'project: yours\n```\n',
+                          'project: yours\n'), MD_STOCK),
+        'shell': (swap(swap(STOCK, f'{SHELL_CLOSE}\n', ''), 'exit 0',
+                       f'{SHELL_CLOSE}\nexit 0'), STOCK),
+    }
+    for grammar, (mine, packaged) in borrowed.items():
+        assert install.carry_config_block(mine, packaged) is None, grammar
+        assert install.carry_config_block(
+            stale_body(header_edited(mine)), packaged) is None, grammar
+
+
+def test_an_unclosed_block_never_borrows_a_later_close():
+    """Review C1, through the verb, on the record's own input: `reviewer.md`
+    with its fence edited, the fence's close deleted and a stale kit line in
+    `## Checklist`. The fence took the close of the ```text fence in `## The
+    record`, `--force` wrote 198 lines against the packaged 127 and SAID it
+    kept the header, and from then on the second `--force` and the belt both
+    called the file current. A block with no close of its own is no block:
+    the file is replaced whole, the line says plainly `wrote`, and the next
+    run finds it current. Review M4 is the same class in the hook grammar."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    rel = '.claude/agents/reviewer.md'
+    packaged = install.body_of(Path(rel).name)
+    lines = header_edited(packaged).splitlines(keepends=True)
+    opened = next(i for i, line in enumerate(lines) if line == '```text\n')
+    close = next(i for i in range(opened + 1, len(lines))
+                 if lines[i] == '```\n')
+    checklist = next(i for i, line in enumerate(lines)
+                     if line.startswith('## Checklist'))
+    mine = ''.join(lines[:close] + lines[close + 1:checklist + 1]
+                   + ['- a stale kit line\n'] + lines[checklist + 1:])
+    hook = 'tools/hooks/pre-push'
+    shell = header_edited(install.body_of('pre-push'))
+    shell = shell.replace(SHELL_CLOSE + '\n', '', 1)
+    shell = shell.replace('\ncd ', f'\n{SHELL_CLOSE}\ncd ', 1)
+    assert shell.count(SHELL_CLOSE) == 1, 'the fixture moved no rule line'
+    with repo({rel: mine, hook: shell}) as root:
+        for verb, path in ((command, rel), ('install-hooks', hook)):
+            code, out = run(verb, '--force', path)
+            assert code == 0, out
+            assert (root / path).read_text(encoding='utf-8') == (
+                install.body_of(Path(path).name)), (
+                f'{path}: an open block borrowed a later close')
+            assert dispositions(out, verb)[path] == [f'{at} wrote {path}'], out
+            code, out = run(verb, '--force', path)
+            assert dispositions(out, verb)[path] == [
+                f'{at} ' + install.IS_CURRENT.format(rel=path)], out
+
+
+BRIEF = '.claude/agents/pm-operator.md'
+
+
+def a_070_brief(packaged: str) -> str:
+    """`packaged` as an 0.7.0 consumer holds it: the old heading wording and
+    an older first sentence under it — both inside the section 0.7.0 called
+    the project's, both the KIT's bytes under D2. Found by the test's own
+    search (the first non-blank line after the heading), not the production
+    span finder, and not by quoting a sentence another feature may reword."""
+    lines = packaged.splitlines(keepends=True)
+    heading = next(index for index, line in enumerate(lines)
+                   if line.startswith('## Project config'))
+    sentence = next(index for index in range(heading + 1, len(lines))
+                    if lines[index].strip())
+    assert not lines[sentence].startswith('```'), lines[sentence]
+    lines[heading] = MD_OPEN_THROUGH_070 + '\n'
+    lines[sentence] = 'An older kit sentence, stale since the bump.\n'
+    return ''.join(lines)
+
+
+def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
+    """Feature D2 (review B2). The markdown block closed at the next `## `,
+    so a brief's heading, its dispatch sentence and its role intro were
+    "the project's", and D1's carry would have frozen them at whatever
+    version a consumer first installed. The block is the ```text fence: a
+    brief with an edited fence AND a stale section gets the new section and
+    keeps the fence byte for byte; without --force the stale section is
+    drift, named as a collision and not as header-only."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    packaged = install.body_of(Path(BRIEF).name)
+    mine = header_edited(a_070_brief(packaged), 'my key:     my value')
+    with repo({BRIEF: mine}) as root:
+        code, out, _err = streams(command, BRIEF)
+        assert code == 1, out
+        assert dispositions(out, command)[BRIEF] == [
+            f'{at} ' + install.WITHHELD.format(rel=BRIEF)], out
+        code, out = run(command, '--diff', BRIEF)
+        assert code == 0, out
+        assert f'{at} ' + install.BODY_DIFFERS.format(rel=BRIEF) in out, out
+        assert 'ONLY inside' not in out, out
+        assert (root / BRIEF).read_text(encoding='utf-8') == mine
+        code, out = run(command, '--force', BRIEF)
+        assert code == 0, out
+        written = (root / BRIEF).read_text(encoding='utf-8')
+        assert written == header_edited(packaged, 'my key:     my value'), (
+            written)
+        assert 'An older kit sentence' not in written, written
+        assert MD_OPEN_THROUGH_070 not in written, written
+        assert dispositions(out, command)[BRIEF] == [
+            f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF)], out
+        # Idempotent (rule 3): the second --force writes nothing and says why.
+        before = snapshot(root)
+        code, out = run(command, '--force', BRIEF)
+        assert code == 0, out
+        assert snapshot(root) == before
+        assert dispositions(out, command)[BRIEF] == [
+            f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF)], out
+
+
+def test_a_crlf_file_keeps_its_block_line_for_line_and_the_line_says_no_more():
+    """Review M5. The read is universal-newline (and stays so), so a CRLF
+    file's kept block is written LF: its LINES are carried, its bytes are
+    not. The kept line said "byte for byte" over bytes that changed; it says
+    only what holds."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    packaged = install.body_of(Path(BRIEF).name)
+    mine = header_edited(a_070_brief(packaged), 'my key:     my value')
+    with repo({BRIEF: ''}) as root:
+        (root / BRIEF).write_bytes(mine.replace('\n', '\r\n').encode('utf-8'))
+        code, out = run(command, '--force', BRIEF)
+        assert code == 0, out
+        assert (root / BRIEF).read_bytes() == header_edited(
+            packaged, 'my key:     my value').encode('utf-8'), (
+            'the kept block is not the same LINES')
+        [line] = dispositions(out, command)[BRIEF]
+        assert line == f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF)
+        assert 'byte for byte' not in line, (
+            f'CRLF went in and LF came out, and the line says: {line}')
+
+
+def without_declaration(text: str, opens: str) -> str:
+    """`text` minus the line opening with `opens` and its indented
+    continuation lines: a block from before that name shipped."""
+    kept, dropping = [], False
+    for line in text.splitlines(keepends=True):
+        if line.startswith(opens):
+            dropping = True
+            continue
+        if dropping and line.startswith(' '):
+            continue
+        dropping = False
+        kept.append(line)
+    assert len(kept) < len(text.splitlines()), f'{opens!r} not in the text'
+    return ''.join(kept)
+
+
+def test_a_kept_header_names_each_packaged_name_it_lacks():
+    """A hook body defaults a key its carried header lacks to the stock value
+    (review R1), so the hook runs a value the project's header does not
+    state. The carry stays bytes (D1): the kept
+    line NAMES what is missing (rule 11) and splices nothing in.
+
+    Both grammars, both kept lines: a hook under --force (`NAME=`), and the
+    brief whose 0.8.0 fence gained `bugs bind:`, header-only and so current
+    with no --force at all (`key:`)."""
+    at = install.REPORT_PREFIX
+    hook = 'tools/hooks/pre-push'
+    packaged = install.body_of(Path(hook).name)
+    older = without_declaration(packaged, 'PUSH_GATE=')
+    with repo({hook: stale_body(older)}) as root:
+        code, out = run('install-hooks', '--force', hook)
+        assert code == 0, out
+        assert (root / hook).read_text(encoding='utf-8') == older
+        assert dispositions(out, 'install-hooks')[hook] == [
+            f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=hook)
+            + install.KEPT_LACKS.format(names='`PUSH_GATE=`', pronoun='it')
+        ], out
+    packaged = install.body_of(Path(BRIEF).name)
+    older = without_declaration(packaged, 'bugs bind:')
+    with repo({BRIEF: older}) as root:
+        code, out, err = streams('install-agents', BRIEF)
+        assert (code, err) == (0, ''), out + err
+        assert (root / BRIEF).read_text(encoding='utf-8') == older
+        assert dispositions(out, 'install-agents')[BRIEF] == [
+            f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF)
+            + install.KEPT_LACKS.format(names='`bugs bind:`', pronoun='it')
+        ], out
+    # Nothing lacking is nothing said: the stock line, byte for byte.
+    assert install.kept_lacks(header_edited(packaged), packaged) == ''
+    assert install.lacking_names(STOCK, swap(
+        STOCK, 'BRANCH="main"', 'BRANCH="main"\nPUSH=(a b)\nLATE=1')) == [
+            'PUSH=', 'LATE=']
+
+
+def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_the_kits():
+    """`installables-current` had no case for its header-only verdict. It
+    reads the SAME predicate the installer does, so a fence-only difference
+    is current and a difference in the section around the fence is drift,
+    named — the verdict `--force` and `--diff` give the same file."""
+    from agentic_sdlc import __version__
+    from agentic_sdlc.repo.conveyor import driver, steps
+
+    packaged = install.body_of(Path(BRIEF).name)
+
+    def graded(root: Path) -> tuple[str, object]:
+        ctx = driver.Context(root=root, operation='adopt', version=__version__)
+        verdicts = {rel: verdict
+                    for _verb, rel, verdict in steps._installable_drift(ctx)}
+        return (verdicts[BRIEF],
+                steps.ADOPT_STEPS['installables-current'].check(ctx))
+
+    with repo({BRIEF: header_edited(packaged)}) as root:
+        verdict, answer = graded(root)
+        assert verdict == steps.HEADER_ONLY, verdict
+        assert answer.is_true, answer.detail
+        assert 'LACK' not in answer.detail, answer.detail
+        # Review M6: a kept block lacking a name the packaged one declares is
+        # still the project's (header-only, current) — and the belt NAMES the
+        # name, as the install line does, rather than passing in silence.
+        hook = 'tools/hooks/cc-stop-gate.sh'
+        (root / hook).parent.mkdir(parents=True)
+        (root / hook).write_text(without_declaration(
+            install.body_of(Path(hook).name), 'GATE_STATIC='), encoding='utf-8')
+        verdict, answer = graded(root)
+        assert answer.is_true, answer.detail
+        assert (f"{hook} lacks `GATE_STATIC=` (`make sdlc ARGS='install-hooks "
+                f"--diff'`)") in answer.detail, answer.detail
+        (root / hook).unlink()
+        (root / BRIEF).write_text(a_070_brief(packaged), encoding='utf-8')
+        verdict, answer = graded(root)
+        assert verdict == 'differs', verdict
+        assert not answer.is_true, answer.detail
+        assert BRIEF in answer.detail, answer.detail
 
 
 def test_a_defect_refuses_the_whole_command_and_writes_no_addition():
@@ -1365,7 +1910,8 @@ def test_a_run_with_both_a_collision_and_a_defect_names_both():
     with repo() as root:
         assert run('install-hooks')[0] == 0
         target = root / 'tools/hooks/cc-stop-gate.sh'
-        target.write_text(header_edited(target.read_text(encoding='utf-8')),
+        # A BODY edit: a header-only one is current, not a collision (D1).
+        target.write_text(stale_body(target.read_text(encoding='utf-8')),
                           encoding='utf-8')
         doomed = root / 'tools/setup-hooks.sh'
         doomed.unlink()
@@ -1384,7 +1930,7 @@ def test_collisions_with_no_additions_still_say_nothing_was_written():
     with repo() as root:
         assert run('install-hooks')[0] == 0
         target = root / rel
-        target.write_text(header_edited(target.read_text(encoding='utf-8')),
+        target.write_text(stale_body(target.read_text(encoding='utf-8')),
                           encoding='utf-8')
         code, out = refuse('install-hooks')
         assert code == 1, out
@@ -1426,12 +1972,19 @@ STOCK = ('#!/usr/bin/env bash\n'
          f'{SHELL_CLOSE}\n'
          'echo "$BRANCH"\n'
          'exit 0\n')
+# The LATER fence is the shape of `reviewer.md`, `milestone-reviewer.md` and
+# `simplifier.md`: a second ```text fence in a later section, whose bare close
+# an unclosed project-config fence would otherwise borrow (review C1).
 MD_STOCK = ('---\nname: x\n---\n'
             '\n'
             f'{MD_OPEN}\n'
+            '\nRun the kit sentence first.\n'
             '\n```text\nproject: yours\n```\n'
+            '\nThe role intro.\n'
             '\n## How you work\n'
-            'the body\n')
+            'the body\n'
+            '\n## The record\n'
+            '\n```text\nverdict: kit\n```\n')
 
 
 def swap(text: str, old: str, new: str) -> str:
@@ -1481,6 +2034,40 @@ HOSTILE = {
         (swap(MD_STOCK, 'the body', 'MY body'), False),
     'the markdown heading rewritten':
         (swap(MD_STOCK, MD_OPEN, '## My config'), False),
+    # Feature D2: the section around the fence is the kit's.
+    'a markdown dispatch sentence edited, inside the section':
+        (swap(MD_STOCK, 'the kit sentence', 'an older sentence'), False),
+    'a markdown intro edited, inside the section':
+        (swap(MD_STOCK, 'The role intro.', 'My intro.'), False),
+    'the markdown heading in its 0.7.0 wording':
+        (swap(MD_STOCK, MD_OPEN, MD_OPEN_THROUGH_070), False),
+    'a markdown fence re-tagged':
+        (swap(MD_STOCK, '```text', '```yaml'), False),
+    'a markdown fence left open, a later fence closed':
+        (swap(MD_STOCK, 'project: yours\n```\n', 'project: yours\n'), False),
+    'a markdown fence line added':
+        (swap(MD_STOCK, 'project: yours', 'project: yours\nmore: mine'), True),
+    # Review C1, the file the FIRST corrupt --force left behind: its fence
+    # runs across a `## ` heading (or another fence's opening) to a close
+    # that is not its own. Read as a block, the predicate called it
+    # header-only, so every later reader called the corruption current.
+    'a markdown fence that runs across a heading to its close':
+        (swap(MD_STOCK, 'project: yours\n',
+              'project: yours\n\n## Checklist\na stale kit line\n'), False),
+    'a markdown fence that runs across another fence opening':
+        (swap(MD_STOCK, 'project: yours\n',
+              'project: yours\n```text\nnested: kit\n'), False),
+    # Review M4, the same class in the hook grammar: the header's close is
+    # only its own when no line the header grammar does not own comes first.
+    'a body line inside the shell block before its close':
+        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH="main"\necho "$BRANCH"\n'),
+         False),
+    'the closing marker deleted, a later rule line closes it':
+        (swap(swap(STOCK, f'{SHELL_CLOSE}\n', ''), 'exit 0',
+              f'{SHELL_CLOSE}\nexit 0'), False),
+    'a blank line, an indented continuation and a close paren in the block':
+        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH="main"\n\nPUSH=(\n  a b\n)\n'
+              'export MORE=1\n'), True),
 }
 
 
@@ -1515,11 +2102,25 @@ def test_the_span_excludes_its_own_markers_and_stops_at_the_first_close():
     assert lines[start:end] == ['# the branch you protect', 'BRANCH="main"']
     # An unterminated block runs to the end of the file rather than to a
     # guessed boundary — and the pair test above proves that answers False.
+    # A line the header grammar does not own, met before any close, ends the
+    # search with NO block (review M4): the close after it is not this one's.
     open_ended = swap(STOCK, f'{SHELL_CLOSE}\n', '')
-    assert install.config_block_span(open_ended) == (
-        5, len(open_ended.splitlines()))
+    assert install.config_block_span(open_ended) is None
+    header_to_eof = f'{SHELL_OPEN}\n# a comment\nBRANCH="main"\n'
+    assert install.config_block_span(header_to_eof) == (1, 3)
     assert install.config_block_span('') is None
     assert install.config_block_span('nothing in here\n') is None
+    # Markdown (D2): the fence's two ``` lines are its markers, and the
+    # heading, sentence and intro around them are outside the span.
+    md = MD_STOCK.splitlines()
+    start, end = install.config_block_span(MD_STOCK)
+    assert (md[start - 1], md[end]) == ('```text', '```'), md[start - 1:end + 1]
+    assert md[start:end] == ['project: yours']
+    # A section with no ```text fence has no project-owned block, even when a
+    # fence follows in a LATER section.
+    fenceless = swap(MD_STOCK, '\n```text\nproject: yours\n```\n', '') + (
+        '```text\nnot: config\n```\n')
+    assert install.config_block_span(fenceless) is None
 
 
 # --- the docs are a second list, so they are asserted rather than trusted ------
@@ -1690,6 +2291,83 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
             assert any(rel in h for h in heads), buf.getvalue()
 
 
+def test_the_sixth_installer_reads_the_same_claim_list():
+    """Review M7: `_installable_drift` grades all SIX installers and leaves a
+    file claimed in `[adopt] ours` alone, and `pm install-skills --force`
+    overwrote that same file — the belt and the sixth installer disagreeing
+    about what a claim is. It asks `ours_of` the way `install.main` does:
+    a claimed file is left alone and named, on `--force` and on the plain run
+    (which updates a merely stale generated file), a claim matching nothing
+    is named, and naming the path — the command the skip line prints — is
+    how the file is taken. Every path the grammar refuses is exit 2 and
+    writes nothing."""
+    from agentic_sdlc.repo.conveyor import steps
+    from agentic_sdlc.repo.pm import cli as pm_cli, skills
+
+    def pm(*argv: str) -> tuple[int, str]:
+        load_config.cache_clear()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = pm_cli.main(list(argv))
+        return code, buf.getvalue()
+
+    (name, rel), (_other, sibling) = skills.GUIDANCE_PLAN[:2]
+    verb, at = skills.GUIDANCE_VERB, install.REPORT_PREFIX
+    mine = skills.guidance_body(name) + '\nmy own doctrine, deliberately\n'
+    with repo() as root:
+        (root / 'devkit.toml').write_text(_flow(), encoding='utf-8')
+        assert pm('install-skills')[0] == 0
+        # Claimed AFTER the install: a claimed file is never written, even
+        # an absent one — which is what held `make test` red (review M3).
+        (root / 'devkit.toml').write_text(
+            _flow() + claims(rel, 'docs/nothing-installs-this.md'),
+            encoding='utf-8')
+        (root / rel).write_text(mine, encoding='utf-8')
+        # Generated and merely stale: the plain run updates it, no --force.
+        (root / sibling).write_text(skills.guidance_body(_other) + 'stale\n',
+                                    encoding='utf-8')
+        skip = f'{at} ' + install.claimed_skip(rel, verb)
+        for argv in ((), ('--force',)):
+            code, out = pm('install-skills', *argv)
+            assert code == 0, (argv, out)
+            assert (root / rel).read_text(encoding='utf-8') == mine, argv
+            assert skip in out.splitlines(), out
+            assert f'{at} {steps.claims_matching_nothing("adopt")}' in (
+                out.splitlines()), out
+        assert (root / sibling).read_text(encoding='utf-8') == (
+            skills.guidance_body(_other)), 'the unclaimed file was not taken'
+        code, out = pm('install-skills', '--diff')
+        assert f'{rel} exists and differs' in out and (
+            install.CLAIMED_MARK in out), out
+        before = snapshot(root)
+        for bad in REFUSED_PATHS + (AGENTS[0],):
+            code, out = pm('install-skills', '--force', bad)
+            assert code == 2, (bad, code, out)
+            assert snapshot(root) == before, f'{bad!r} wrote to the tree'
+        # The skip line's own command, run as printed: that one file. It is a
+        # vehicle line, so both of its shell parses are undone before pm runs.
+        printed = vehicle.argv_of(skip.split('name it to take it: ', 1)[1])
+        assert printed[:2] == ['pm', 'install-skills'], printed
+        code, out = pm(*printed[1:])
+        assert code == 0, out
+        assert (root / rel).read_text(encoding='utf-8') == (
+            skills.guidance_body(name))
+        assert [line for line in out.splitlines()
+                if line.startswith(at) and rel in line] == [
+            f'{at} wrote {rel}'], out
+        code, out = pm('install-skills', '--force', rel)
+        assert '] wrote ' not in out, out
+        # A claim list the belt refuses is refused here, before any write —
+        # returned, not raised, because `init` calls this verb directly.
+        for toml in REFUSED_CLAIMS:
+            (root / 'devkit.toml').write_text(_flow() + f'[adopt]\n{toml}\n',
+                                              encoding='utf-8')
+            before = snapshot(root)
+            code, out = pm('install-skills', '--force')
+            assert code == 2 and '[adopt] ours' in out, (toml, code, out)
+            assert snapshot(root) == before, f'{toml!r} wrote to the tree'
+
+
 def _flow() -> str:
     from support.pm import with_flow
     return with_flow('')
@@ -1716,6 +2394,11 @@ RETIRED_ELSEWHERE = {
     '[[verify.narrow]]': 'retired — the story rung is a make target',
     'CHANGELOG.md': 'retired in 0.6.0 — `changelog:` on the grain, '
                     '`agentic-sdlc changelog` renders',
+    # A project may still choose it in its own fence; the kit may not ship it,
+    # because the stock pm-operations skill binds a bug to the milestone that
+    # will fix it and the brief says the skill wins (0.8.0 review M1).
+    'milestone-of-catch': 'retired as the stock `bugs bind:` in 0.8.0 — the '
+                          'stock policy is the milestone that will fix it',
 }
 # A migration NOTE is the legitimate way to name a retired thing, and the seed
 # devkit.toml is full of them. So the allowance is exactly that: the line has to
@@ -1786,27 +2469,221 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
         + '\n'.join(f'    {row}' for row in found))
 
 
-# --- every definition names the verbs its ROLE reaches for --------------------
-# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1. Across the 12
-# shipped definitions `ready-for` appeared 0 times, `pm ledger` 0 and
-# `lesson record` 0 — a dispatched `developer` was never told the entry rung
-# exists, so six briefs this milestone hand-pasted a roster the package already
-# ships. That is rule 11's own test failed by this package's own surface.
+# --- every shipped citation resolves through the stock wiring -----------------
+# `ft-a-surface-reaches-its-reader-or-it-is-decoration` sweep 1 gave every agent
+# definition a role-verbs block, and this module graded each backticked
+# `agentic-sdlc <verb>` in them against the router. Every one of them graded
+# green and not one could run: the stock wiring puts nothing on PATH (#22), so
+# `agentic-sdlc dispatch --grain <id>`, the pm-operator's FIRST instruction, was
+# `command not found` in every consumer wired as the README says. The router
+# was the wrong authority; the wiring is the right one.
 #
-# The section is a POINTER: the invocation, and in a few words what it ANSWERS.
-# Never what the verb does or how it behaves — that is
-# `ft-prose-that-restates-a-verb-is-rendered-or-gone`'s rule, and five sentences
-# drifted in one day the last time this package restated.
+# `st-every-shipped-citation-resolves-through-the-stock-wiring` swept the
+# shipped words to the vehicle (`repo/vehicle.py`, feature D1/D2) and REWROTE
+# the pair, because a backtick-bound `agentic-sdlc` pattern matches nothing
+# after the sweep and would have passed on an empty census. The census now
+# reads EVERY file the package ships, prose and code, a line at a time and not
+# backtick-bound, for two things:
 #
-# The sibling above proves no definition names something RETIRED. This one is
-# the other half, and it is the load-bearing one: every verb a definition NAMES
-# resolves against the live CLI, asked of the code rather than of a list typed
-# here, so a citation goes RED the day its verb leaves.
+# - a VEHICLE line, `make pm|sdlc [ARGS=…]`. It must come apart through
+#   `vehicle.argv_of` (both shell parses undone), be byte for byte what
+#   `vehicle.command` renders for that argv — so the spelling is the helper's
+#   and never a hand-rolled second one — and name a verb the router routes.
+# - the PROGRAM followed by a word. That is a call no stock consumer can make,
+#   so it is a finding by file and line unless it sits in one of the OUT
+#   classes named in `PROGRAM_OUT`, each of which NAMES the CLI rather than
+#   telling anyone to run it (the story's M3 amendment).
+#
+# A Python module is read as the string VALUES it holds, off the AST, never as
+# source lines (M2 of the feature review): a line reader saw neither
+# ``f'run `{PROG} story done {gid}`'`` nor a citation split across two source
+# lines, so five rendered "run `agentic-sdlc pm …`" hints graded PASS.
+# Implicit concatenation comes back joined, and a replacement field naming a
+# module constant that starts with the program is that constant's text.
+SHIPPED = REPO_ROOT / 'src' / 'agentic_sdlc'
+# Where the planted corpus lands: a shipped brief, and a shipped module.
+BRIEF_HOST = 'pm-operator.md'
+PY_HOST = 'repo/pm/cli.py'
 ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
 ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
-# A citation is BACKTICKED, so the answer beside it is never parsed as argv.
-# `[^`\n]` because a code span does not span lines here.
-CITATION = re.compile(r'`(agentic-sdlc [^`\n]+)`')
+# One shell word: quoted runs and bare runs, no whitespace between them. A
+# backtick ends it (the code span closes) and so does prose punctuation.
+_SHELL_WORD = r"(?:'[^'\n]*'|\"[^\"\n]*\"|[^\s'\"`),;])+"
+VEHICLE_LINE = re.compile(
+    rf'(?<![\w-]){re.escape(vehicle.MAKE)}[ \t]+'
+    rf'(?:{"|".join(map(re.escape, vehicle.TARGETS))})(?![\w-])'
+    rf'(?:[ \t]+{vehicle.VAR}=(?:{_SHELL_WORD}|[^\n`]*))?')
+# `make pm ARGS=…` NAMES the vehicle's shape, the way a synopsis names a verb.
+VEHICLE_SHAPE = (f'{vehicle.VAR}=…', f"{vehicle.VAR}='…'")
+PROGRAM_WORD = re.compile(
+    rf'(?<![\w/@-]){re.escape(vehicle.PROGRAM)}(?![\w-])[ \t]+(?=[A-Za-z{{<])')
+# A placeholder, never a value: `<id>`, `install-*`, `story|feature`, `…`.
+PLACEHOLDER = re.compile(r'<[^<>]+>|[*|…]')
+# The program's name used as a noun in a sentence, verbatim.
+NOUNS = ('agentic-sdlc config', 'agentic-sdlc repo', 'agentic-sdlc run',
+         'agentic-sdlc PM tree')
+# The verb that WROTE this file, named in its own header or description.
+HEADER = re.compile(
+    r'(?:GENERATED|Installed) by agentic-sdlc|Written by `agentic-sdlc '
+    r'|`agentic-sdlc [\w -]+` (?:wrote|writes) (?:it|this)'
+    r'|appended by `agentic-sdlc |\(agentic-sdlc init\)')
+ERROR_PREFIX = re.compile(r'agentic-sdlc (?:[\w-]+|\{[^}]*\}):')
+VERSION_LINE = re.compile(r'agentic-sdlc v?\{__version__\}')
+USAGE_NAME = re.compile(r'(?:^|_)USAGE$')
+# Code the CLI never renders as an instruction, by module and symbol, and why.
+PROGRAM_OUT = {
+    # Review M3: `_own_cli` SPAWNS `python -m agentic_sdlc.cli`, so this is
+    # the record of a subprocess, not of an in-process call; what a person
+    # reads — a verdict, the protocol's `runs` cell and its sentence — is
+    # `shown_action`'s vehicle line or the bare verb, and `_own_cli`,
+    # `_own_verdict` and `STEP_DOC` are no longer exempt.
+    ('repo/conveyor/steps.py', 'SHIPPED_ACTION'):
+        'record: what a belt check spawned when no command is configured — '
+        'the `ran` field of every `check.verdict` row carries this',
+    ('repo/conveyor/driver.py', '_synopsis'): 'usage: a belt\'s --help synopsis',
+    ('repo/pm/cli.py', 'PROG'): 'usage: the prefix of pm\'s usage and errors',
+    ('repo/pm/vocabulary.py', 'RETIRED_SLOT_HEADERS'):
+        'retired: a wording recognised in an old document, never written',
+    ('repo/vehicle.py', 'pinned'):
+        'pinned: the uvx form, which runs with only uv on PATH — the one '
+        'spelling of it, and what `vehicle.pinned` call sites render',
+}
+
+
+def _module_constants(tree: ast.Module) -> dict[str, str]:
+    """{name: text} for every module-level name bound to a string literal."""
+    found = {}
+    for node in tree.body:
+        targets = (node.targets if isinstance(node, ast.Assign)
+                   else [node.target] if isinstance(node, ast.AnnAssign)
+                   else [])
+        value = getattr(node, 'value', None)
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found.update((t.id, value.value) for t in targets
+                         if isinstance(t, ast.Name))
+    return found
+
+
+def _field(node: ast.FormattedValue, constants: dict[str, str]) -> str:
+    """One replacement field as the census reads it: a constant naming the
+    program is its text, a name stays `{name}`, anything else is `{…}`."""
+    text = (constants.get(node.value.id, '')
+            if isinstance(node.value, ast.Name) else '')
+    if text.startswith(vehicle.PROGRAM):
+        return text
+    if isinstance(node.value, (ast.Name, ast.Attribute)):
+        return '{' + ast.unparse(node.value) + '}'
+    return '{…}'
+
+
+def _string_lines(source: str) -> list[tuple[int, str]]:
+    """(line number, text) for each line of each string VALUE in a module, and
+    each comment, in line order. A value's own lines are numbered from where it
+    opens; a value joined from pieces on several source lines, at its first."""
+    lines = [(tok.start[0], tok.string) for tok in
+             tokenize.generate_tokens(io.StringIO(source).readline)
+             if tok.type == tokenize.COMMENT]
+    tree = ast.parse(source)
+    constants = _module_constants(tree)
+    pieces = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            pieces.update(id(part) for part in node.values)
+        elif isinstance(node, ast.FormattedValue) and node.format_spec:
+            pieces.add(id(node.format_spec))
+    for node in ast.walk(tree):
+        if id(node) in pieces:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            text = node.value
+        elif isinstance(node, ast.JoinedStr):
+            text = ''.join(part.value if isinstance(part, ast.Constant)
+                           else _field(part, constants) for part in node.values)
+        else:
+            continue
+        lines.extend((min(node.lineno + i, node.end_lineno), line)
+                     for i, line in enumerate(text.splitlines()))
+    return sorted(lines, key=lambda row: row[0])
+
+
+class Census(NamedTuple):
+    files: int
+    vehicle_lines: int
+    out: dict[str, int]
+    findings: list[str]
+
+
+def _python_out(source: str, rel: str) -> list[tuple[int, int, str]]:
+    """(first line, last line, class) for every span of a module that NAMES
+    the CLI: a docstring (a verb's --help body), a `*USAGE` constant, and the
+    symbols `PROGRAM_OUT` names."""
+    spans = []
+    for node in ast.walk(ast.parse(source)):
+        body = getattr(node, 'body', None)
+        if (isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef))
+                and body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            spans.append((body[0].lineno, body[0].end_lineno, 'help'))
+        if isinstance(node, ast.FunctionDef):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target,
+                                                             ast.Name):
+            names = [node.target.id]
+        else:
+            names = []
+        for name in names:
+            if USAGE_NAME.search(name):
+                spans.append((node.lineno, node.end_lineno, 'usage'))
+            why = PROGRAM_OUT.get((rel, name))
+            if why:
+                spans.append((node.lineno, node.end_lineno, why.split(':')[0]))
+    return spans
+
+
+def _program_class(line: str, at: int, number: int, is_python: bool,
+                   spans: list[tuple[int, int, str]]) -> str:
+    """The OUT class of the program named at `line[at:]`, or '' for IN."""
+    tail = line[at:]
+    if HEADER.search(line):
+        return 'header'
+    if any(tail.startswith(noun) for noun in NOUNS):
+        return 'noun'
+    if not is_python:
+        return ''
+    if ERROR_PREFIX.match(tail):
+        return 'error-prefix'
+    if VERSION_LINE.match(tail):
+        return 'version'
+    if line.lstrip().startswith('#'):
+        return 'comment'
+    if 'usage:' in line:
+        return 'usage'
+    return next((cls for first, last, cls in spans if first <= number <= last),
+                '')
+
+
+def _placeholder(token: str) -> bool:
+    return bool(PLACEHOLDER.search(token))
+
+
+def _spelled_by_the_helper(line: str, argv: list[str]) -> bool:
+    """Is `line` what `vehicle.command` renders for `argv`, each placeholder
+    either a `Slot` (bare) or free text (quoted)? Nothing else is accepted, so
+    a hand-quoted line that happens to parse is still a second spelling."""
+    if not argv:
+        return line == f'{vehicle.MAKE} {vehicle.SDLC_TARGET}'
+    slots = [i for i, token in enumerate(argv) if _placeholder(token)]
+    for mask in itertools.product((False, True), repeat=len(slots)):
+        marked = list(argv)
+        for i, bare in zip(slots, mask):
+            if bare:
+                marked[i] = vehicle.Slot(marked[i])
+        if vehicle.command(*marked) == line:
+            return True
+    return False
 
 
 def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
@@ -1830,23 +2707,26 @@ def _verb_rosters() -> dict[tuple[str, ...], tuple[str, ...]]:
             # token was graded as an argument, because this stopped one
             # position short of a real sub-roster.
             ('pm', 'ledger'): pm_cli.ledger_commands(),
-            ('check',): tuple(root_cli.KNOWN_GATES),
+            # `all` is the router's own branch (`_dispatch_check`), and
+            # `_unknown_check` lists it beside the gates the same way.
+            ('check',): (*root_cli.KNOWN_GATES, 'all'),
             ('close',): tuple(driver.CLOSE_OPERATIONS),
             ('lesson',): (lessons.RECORD, lessons.SHOW),
             ('verify',): tuple(f'--{mode}' for mode in MODES)}
 
 
-def _unrouted(citation: str,
+def _unrouted(argv: list[str],
               rosters: dict[tuple[str, ...], tuple[str, ...]]) -> str:
-    """The prefix of `citation` this package does not route, or `''`.
+    """The prefix of `argv` this package does not route, or `''`.
 
     It walks only as deep as a ROSTER exists for. A token past the last one is
     an argument — an id, a path, a state word this project declared in its own
     `devkit.toml` — and grading it here would be inventing a claim rather than
-    reading one.
+    reading one. A placeholder stops the walk too, after its alternatives or
+    its glob are held to the roster it stands in.
     """
     path: tuple[str, ...] = ()
-    for token in citation.split()[1:]:
+    for token in argv:
         roster = rosters.get(path)
         if roster is None:
             return ''
@@ -1854,29 +2734,199 @@ def _unrouted(citation: str,
             # A flag where the roster holds verbs: `pm --help`. This package
             # publishes no roster of flags at that position, so it stops.
             return ''
+        if _placeholder(token):
+            if '<' in token or '…' in token:
+                return ''
+            missing = [alt for alt in token.split('|')
+                       if not fnmatch.filter(roster, alt)]
+            return ' '.join((*path, missing[0])) if missing else ''
         if token not in roster:
             return ' '.join((*path, token))
         path = (*path, token)
     return ''
 
 
-def _role_verb_citations() -> dict[str, list[tuple[int, str]]]:
-    """{installable: [(line number in its SOURCE, citation)]} for the whole
-    file — not just the block. A retired citation in a config paragraph is the
-    same false instruction as one in the roster."""
-    found = {}
-    for name, _rel in install.PLANS['install-agents']:
-        body = install.body_of(name)
-        found[name] = [(number, citation)
-                       for number, line in enumerate(body.splitlines(), 1)
-                       for citation in CITATION.findall(line)]
-    return found
+def citation_census(root: Path) -> Census:
+    """Every citation under `root`, classed; `root` is `SHIPPED` or a corpus."""
+    rosters = _verb_rosters()
+    out: dict[str, int] = {}
+    findings: list[str] = []
+    files = vehicle_lines = 0
+    for path in sorted(root.rglob('*')):
+        if (not path.is_file() or path.suffix == '.pyc'
+                or '__pycache__' in path.parts):
+            continue
+        files += 1
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text(encoding='utf-8', errors='replace')
+        is_python = path.suffix == '.py'
+        spans = _python_out(text, rel) if is_python else []
+        for number, line in (_string_lines(text) if is_python
+                             else enumerate(text.splitlines(), 1)):
+            where = f'{root.name}/{rel}:{number}'
+            for match in VEHICLE_LINE.finditer(line):
+                cited = match.group(0).rstrip('.:')
+                if cited.endswith(VEHICLE_SHAPE):
+                    out['shape'] = out.get('shape', 0) + 1
+                    continue
+                vehicle_lines += 1
+                try:
+                    argv = vehicle.argv_of(cited)
+                except ValueError as err:
+                    findings.append(f'{where} `{cited}` does not come apart as '
+                                    f'a vehicle line: {err}')
+                    continue
+                if not _spelled_by_the_helper(cited, argv):
+                    helper = vehicle.command(*(
+                        vehicle.Slot(a) if _placeholder(a) else a
+                        for a in argv)) if argv else cited
+                    findings.append(f'{where} `{cited}` is spelled by hand; '
+                                    f'`vehicle.command` renders `{helper}`')
+                bad = _unrouted(argv, rosters)
+                if bad:
+                    findings.append(f'{where} `{cited}` reaches no verb: this '
+                                    f'package routes no `{bad}`')
+            for match in PROGRAM_WORD.finditer(line):
+                cls = _program_class(line, match.start(), number, is_python,
+                                     spans)
+                if cls:
+                    out[cls] = out.get(cls, 0) + 1
+                    continue
+                cited = line[match.start():].split('`')[0].strip()[:70]
+                findings.append(
+                    f'{where} cites `{cited}` — `{vehicle.PROGRAM}` is on no '
+                    f'stock consumer\'s PATH; spell it through '
+                    f'`{vehicle.MAKE} {vehicle.PM_TARGET}|{vehicle.SDLC_TARGET} '
+                    f'{vehicle.VAR}=…` (repo/vehicle.py)')
+    return Census(files, vehicle_lines, out, findings)
+
+
+class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
+    """Criteria 2 and 3 of the story: the census over the shipped tree, and the
+    deliberately broken probe as a corpus — each line planted in a scratch copy
+    of a shipped brief, which is otherwise clean, so every finding is
+    attributable to its plant."""
+
+    PROTECTS = (
+        'every command a shipped file tells a person or an agent to run reaches '
+        'a verb through the stock wiring, spelled by repo/vehicle.py',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        '0.6.0 pair graded every citation green against the router while not '
+        'one of them could run in a stock consumer, and a backtick-bound '
+        'pattern read nothing at all once the words were swept',
+    )
+
+    CORPUS = (
+        # The story's own probe, and its unbacktick twin in a config block.
+        ("- `agentic-sdlc lesson show --rule <id>` — planted", True),
+        ('doc gate:     agentic-sdlc lesson record   (planted)', True),
+        # Parses, reaches the verb, and is not the helper's spelling.
+        ('- `make pm ARGS="story building <id>"` — planted', True),
+        # The helper's spelling of a verb nothing routes.
+        ("- `make sdlc ARGS='lessons show'` — planted", True),
+        ("- `make pm ARGS='ready-for story|sprint <id>'` — planted", True),
+        # A quote that never closes: no argv comes out of it.
+        ("- `make sdlc ARGS='verify --story` — planted", True),
+        # What the sweep writes, and what names the CLI without instructing.
+        ("- `make sdlc ARGS='lesson show --rule <id>'` — planted", False),
+        ("- `make pm ARGS='set <id> changelog '\"'\"'<sentence>'\"'\"''`", False),
+        ("- `make sdlc ARGS='install-* --diff'` and `make pm` — planted", False),
+        ('<!-- GENERATED by agentic-sdlc — `agentic-sdlc install-agents`. -->',
+         False),
+        ('the agentic-sdlc PM tree, and `make pm ARGS=…` its shape', False),
+        # The two shapes a line reader could not see (M2 of the feature
+        # review), planted in the module that shipped both — a (host, line)
+        # pair: the program spelled `{PROG}`, and a citation split across two
+        # source lines. The third names the CLI and is not an instruction.
+        ((PY_HOST, "HINT = f'status is a move: run `{PROG} story done {gid}`'"),
+         True),
+        ((PY_HOST, "HINT = (f'run `agentic-sdlc '\n        "
+                   "f'close story {gid}`')"), True),
+        ((PY_HOST, "HINT = f'{PROG}: unknown command {cmd!r}'"), False),
+    )
+    # What each caught plant is named as, beside its file and line.
+    SAID = {
+        CORPUS[0][0]: 'cites `agentic-sdlc lesson show',
+        CORPUS[1][0]: 'cites `agentic-sdlc lesson record',
+        CORPUS[2][0]: "is spelled by hand; `vehicle.command` renders "
+                      "`make pm ARGS='story building <id>'`",
+        CORPUS[3][0]: 'routes no `lessons`',
+        CORPUS[4][0]: 'routes no `pm ready-for sprint`',
+        CORPUS[5][0]: 'does not come apart',
+        CORPUS[11][0]: 'cites `agentic-sdlc pm story done {gid}',
+        CORPUS[12][0]: 'cites `agentic-sdlc close story {gid}',
+    }
+    # The vehicle lines at the time of writing. A census that shrank below it is
+    # a sweep undone or a reader that stopped reading; raise it, never lower it
+    # without the reason in the commit.
+    VEHICLE_FLOOR = 105
+
+    @staticmethod
+    def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:
+        """(host, line): a bare line is planted in `pm-operator.md`."""
+        return plant if isinstance(plant, tuple) else (BRIEF_HOST, plant)
+
+    @classmethod
+    def planted(cls, plant: str | tuple[str, str]) -> tuple[int, list[str]]:
+        """(the line number the plant lands on, the census's findings) for a
+        scratch copy of its host — a shipped brief, or a shipped module by its
+        path under the package — with the line appended."""
+        host, line = cls.host_of(plant)
+        brief = ((SHIPPED / host).read_text(encoding='utf-8')
+                 if host.endswith('.py') else install.body_of(host))
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / 'corpus'
+            (corpus / host).parent.mkdir(parents=True)
+            (corpus / host).write_text(f'{brief}{line}\n', encoding='utf-8')
+            return len(brief.splitlines()) + 1, citation_census(corpus).findings
+
+    @classmethod
+    def catches(cls, planted: str) -> bool:
+        return bool(cls.planted(planted)[1])
+
+    def test_the_shipped_tree_cites_nothing_the_wiring_cannot_reach(self):
+        census = citation_census(SHIPPED)
+        self.assertGreater(census.files, 20, (
+            f'the citation census read {census.files} file(s) under {SHIPPED} — '
+            f'a census of nothing passes everything'))
+        self.assertGreaterEqual(census.vehicle_lines, self.VEHICLE_FLOOR, (
+            f'{census.vehicle_lines} vehicle line(s) in the shipped files, '
+            f'below the {self.VEHICLE_FLOOR} this census was written against'))
+        self.assertEqual([], census.findings, (
+            f'{len(census.findings)} shipped citation(s) the stock wiring '
+            f'cannot reach — the reader is told to run what `make` will not:\n'
+            + '\n'.join(f'    {row}' for row in census.findings)))
+
+    def test_each_plant_is_named_by_file_and_line_and_nothing_else_is(self):
+        for host in {self.host_of(plant)[0] for plant, _ in self.CORPUS}:
+            self.assertEqual([], self.planted((host, ''))[1],
+                             f'the clean copy of {host} is not clean, so no '
+                             f'plant is attributable to itself')
+        for plant, caught in self.CORPUS:
+            with self.subTest(plant):
+                number, found = self.planted(plant)
+                if not caught:
+                    self.assertEqual([], found)
+                    continue
+                self.assertEqual(1, len(found), found)
+                self.assertTrue(found[0].startswith(
+                    f'corpus/{self.host_of(plant)[0]}:{number} '), found)
+                self.assertIn(self.SAID[plant], found[0])
+
+    def test_a_census_of_no_files_reads_nothing_and_says_so(self):
+        """The floor under the shipped case: pointed at an empty tree the
+        census reports zero files rather than a clean bill."""
+        with tempfile.TemporaryDirectory() as tmp:
+            census = citation_census(Path(tmp))
+        self.assertEqual((0, 0, []), (census.files, census.vehicle_lines,
+                                      census.findings))
 
 
 def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
     """(a) of the ship criterion: a definition with no verbs in it leaves every
     dispatch to hand-paste them, which is the measurement that opened sweep 1.
-    An EMPTY section counts as none — a heading is not a pointer."""
+    An EMPTY section counts as none — a heading is not a pointer, and a verb
+    spelled any way but the vehicle's is not one either."""
     plans = install.PLANS['install-agents']
     assert len(plans) == len(AGENTS), 'the agent roster moved without this test'
     bare: list[str] = []
@@ -1887,33 +2937,9 @@ def test_every_agent_definition_names_the_verbs_its_role_reaches_for():
             continue
         start = body.index(ROLE_VERBS_OPEN) + len(ROLE_VERBS_OPEN)
         block = body[start:body.index(ROLE_VERBS_CLOSE)]
-        if not CITATION.findall(block):
+        if not VEHICLE_LINE.search(block):
             bare.append(f'{name} has the section and names no verb in it')
     assert not bare, (
         f'{len(bare)} shipped definition(s) name none of their role\'s verbs, '
         f'so a dispatch into that role has to hand-paste them:\n'
         + '\n'.join(f'    {row}' for row in bare))
-
-
-def test_every_verb_an_agent_definition_names_resolves_against_the_cli():
-    """(b), and the half that can go red on its own. Asked of the router, the
-    gate roster, the verify modes and the pm table — never of a list here."""
-    rosters = _verb_rosters()
-    assert len(rosters[()]) > 5, 'the router census collapsed — this graded nothing'
-    assert len(rosters[('pm',)]) > 5, 'the pm table collapsed'
-    cited = _role_verb_citations()
-    assert sum(len(rows) for rows in cited.values()), 'no citation was scanned'
-    unrouted: list[str] = []
-    for name, rows in cited.items():
-        for number, citation in rows:
-            bad = _unrouted(citation, rosters)
-            if bad:
-                unrouted.append(
-                    f'{INSTALLED_SOURCES[0]}/{name}:{number} cites '
-                    f'`{citation}` — this package routes no '
-                    f'`agentic-sdlc {bad}`')
-    assert not unrouted, (
-        f'{len(unrouted)} shipped definition(s) cite a verb this package does '
-        f'not route; a definition naming a retired verb is a false instruction '
-        f'to an operator who cannot check it:\n'
-        + '\n'.join(f'    {row}' for row in unrouted))

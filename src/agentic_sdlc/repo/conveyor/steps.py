@@ -25,7 +25,10 @@ from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
+
+ID = vehicle.Slot('<id>')
 
 # --- the shipped defaults -----------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -308,8 +311,8 @@ def _make(ctx: Context, *args: str) -> tuple[int, str]:
 
 def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
     """This package's own verb as a subprocess (`repo/` may not import
-    `cli`), with `PYTHONPATH` naming the running package; returns the argv
-    it ran so a test can assert what was run."""
+    `cli`), with `PYTHONPATH` naming the running package; returns the whole
+    output, unclipped, and the argv it ran so a test can assert what was run."""
     import agentic_sdlc
 
     parent = str(Path(agentic_sdlc.__file__).resolve().parent.parent)
@@ -322,21 +325,25 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
                          text=True, env=env,
                          timeout=_timeout(ctx.operation))
     except spawn.TimeoutExpired:
-        return TIMED_OUT, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
+        return TIMED_OUT, (f'`{vehicle.command(*argv)}` did not finish inside '
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
-        return CANNOT_RUN, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
-    return done.returncode, _clip(done.stdout + done.stderr), argv
+        return CANNOT_RUN, f'`{vehicle.command(*argv)}` could not be run ({err})', argv
+    return done.returncode, done.stdout + done.stderr, argv
 
 
-def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
+def _own_verdict(ctx: Context, *argv: str, found: str = '',
+                 after=None) -> Answer:
     """One of this package's own gates as a check: exit 2 is UNVERIFIABLE
-    (D11) — only for this callee, since a configured command is any shell."""
-    code, said, _ = _own_cli(ctx, *argv)
-    spoken = f'`agentic-sdlc {" ".join(argv)}`'
+    (D11) — only for this callee, since a configured command is any shell.
+    `after(output)` appends a clause to a TRUE detail, after the clip."""
+    code, printed, _ = _own_cli(ctx, *argv)
+    said = _clip(printed)
+    spoken = f'`{vehicle.command(*argv)}`'
     if code == 0:
         return Answer.yes(f'{spoken} exited 0{f" — {found}" if found else ""}'
-                          + (f': {said}' if said else ''))
+                          + (f': {said}' if said else '')
+                          + (after(printed) if after else ''))
     if code == 2:
         return Answer.unverifiable(
             f'{spoken} exited 2 — a CONFIG or usage error, not a finding, so '
@@ -538,7 +545,7 @@ def validate_config(operation: str, names: tuple[str, ...],
     if 'runner-targets-resolve' in names:
         _runner_targets_of(operation)
     if 'installables-current' in names:
-        _ours_of(operation)
+        ours_of(operation)
 
 
 def _timeout(operation: str) -> int:
@@ -558,8 +565,8 @@ def _changelog_retired(operation: str) -> None:
         raise ConfigError(
             f'[{operation}] changelog was retired in 0.6.0 — the step grades '
             f'every grain\'s `changelog:` field instead of counting bullets '
-            f'in a file, so there is no path to name. `agentic-sdlc changelog '
-            f'<id>` renders them. Remove the key')
+            f'in a file, so there is no path to name. '
+            f'`{vehicle.command("changelog", ID)}` renders them. Remove the key')
 
 
 def _pin_file_of(operation: str) -> str:
@@ -571,7 +578,7 @@ def _pin_file_of(operation: str) -> str:
     return raw
 
 
-def _ours_of(operation: str) -> tuple[str, ...]:
+def ours_of(operation: str) -> tuple[str, ...]:
     """The installed files this project has taken over — `[<op>] ours`.
 
     Read through `relpath_tuple`, the SAME path grammar every other path key
@@ -579,6 +586,10 @@ def _ours_of(operation: str) -> tuple[str, ...]:
     a traversal, a URL or an absolute path is exit 2 — a claim this machine
     cannot read is a reading failure (rule 9), never a silent claim.
     `installables-current` does not grade a claimed file; it names it.
+
+    PUBLIC, and the ONE reader of a claim: the `install-*` verbs leave a
+    claimed file alone through this same function, so the belt and the
+    installer cannot disagree about what a claim is.
     """
     claims = relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
     # `relpath_tuple` guards what LEAVES the checkout; these two stay inside
@@ -795,33 +806,14 @@ def _published(root: Path, branch: str) -> str:
     return f', {seen} remote — `{remote.push_command(branch)}`' 
 
 
-def _unreleased_span(text: str) -> tuple[int, int, list[str]] | str:
-    """(start, end, body-lines) of the one `## Unreleased` section, or why
-    not; two headings is a refusal."""
-    lines = text.split('\n')
-    at = [i for i, line in enumerate(lines)
-          if line.strip().lower().startswith('## unreleased')]
-    if not at:
-        return 'there is no `## Unreleased` heading'
-    if len(at) > 1:
-        return (f'there are {len(at)} `## Unreleased` headings (lines '
-                f'{", ".join(str(i + 1) for i in at)}) — ambiguous')
-    start = at[0]
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        if lines[i].startswith('## '):
-            end = i
-            break
-    return start, end, lines[start + 1:end]
-
-
 def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     """Every grain closing here answered the changelog question — a sentence,
     or `none` (0.6.0).
 
     It counted BULLETS IN A FILE: one bullet passed a release of forty grains,
     and nothing bound a bullet to the work it described. It names the GRAIN
-    now. The step KEEPS its name — a step id is contract (rule 6).
+    now. The step KEEPS its name — a step id is contract (rule 6). The
+    milestone is graded whatever its state: this runs before its `done` (0.8.0).
     """
     from agentic_sdlc.repo.pm import changelog as clog
     cfg = _pm_cfg(ctx)
@@ -832,22 +824,29 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     entries = clog.collect(cfg, mid)
     if not entries:
         return Answer.unverifiable(f'{mid} holds no grains to read')
-    silent = clog.unanswered(cfg, entries)
+    silent = clog.unanswered(cfg, entries, releasing=mid)
     if silent:
-        named = ', '.join(e.gid for e in silent[:SHOWN_MAX])
-        more = (f' (+{len(silent) - SHOWN_MAX} more)'
-            if len(silent) > SHOWN_MAX else '')
+        closed = [e.gid for e in silent if e.gid != mid]
+        who = ([f'{mid}, the milestone this release is for,']
+               if len(closed) < len(silent) else [])
+        if closed:
+            more = (f' (+{len(closed) - SHOWN_MAX} more)'
+                    if len(closed) > SHOWN_MAX else '')
+            who.append(f'{len(closed)} closed grain(s)')
+        listed = (f': {", ".join(closed[:SHOWN_MAX])}{more}' if closed else '')
         return Answer.no(
-            f'{len(silent)} closed grain(s) answered neither: {named}{more} — '
-            f'`agentic-sdlc pm set <id> {clog.FIELD} "<sentence>"`, or '
-            f'`{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
+            f'{" and ".join(who)} answered neither{listed} — '
+            f'`{vehicle.command("pm", "set", ID, clog.FIELD, "<sentence>")}` '
+            f'({vehicle.FREE_TEXT_NOTE}), or `{clog.NEEDS_NONE}` to say it '
+            f'earned no consumer-visible line')
     said = clog.rows(entries)
     # Rule 4: `declined` is what a grain SAID, never the arithmetic remainder —
     # a grain that is simply not closed yet answered nothing and is neither.
     declined = sum(1 for e in entries if e.declined)
     return Answer.yes(f'{len(said)} entry/ies across {len(entries)} grain(s), '
                       f'{declined} declined with `{clog.NEEDS_NONE}`; every '
-                      f'closed grain answered')
+                      f'closed grain answered, and so did {mid}, the '
+                      f'milestone this release is for')
 
 
 def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:
@@ -933,32 +932,74 @@ def check_pin_bumped(ctx: Context) -> Answer:
         f'and does not add one')
 
 
-def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
-    """(verb, path, verdict) for every file the `install-*` verbs write, from
-    `install.PLANS`; `not-installed` is not drift, and a path the project
-    claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
+def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
+    """(verb, plan) for all SIX installers, not the five in one module:
+    the guidance files drifted invisibly here (review O2). `BOOTSTRAP_VERB`
+    first, because every other remedy is spelled through what it writes."""
     from agentic_sdlc.repo import install
 
     from agentic_sdlc.repo.pm import skills
 
-    claimed = frozenset(_ours_of(ctx.operation))
-    out: list[tuple[str, str, str]] = []
-    # All SIX installers (CLAUDE.md's self-hosting list), not the five that
-    # happen to share a module: the two guidance files drifted invisibly here,
-    # with no `ours` key in play at all (review O2).
-    everything = list(install.PLANS.items()) + [
+    plans = [(verb, list(plan)) for verb, plan in install.PLANS.items()] + [
         (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
-    for verb, plan in everything:
+    return sorted(plans, key=lambda pair: pair[0] != BOOTSTRAP_VERB)
+
+
+# The installer that writes `Makefile.devkit`, the file the vehicle lives in. A
+# tree coming from a release before it has no `sdlc` target until this runs, so
+# its remedy is the pinned uvx form at this tool's version, and it comes first
+# (feature D2); every other installer's remedy is spelled through the vehicle.
+BOOTSTRAP_VERB = 'install-gates'
+
+
+def remedy(verb: str) -> str:
+    """The command that takes one installer's drifted files."""
+    if verb == BOOTSTRAP_VERB:
+        return vehicle.pinned(verb, '--force')
+    return vehicle.command(*verb.split(), '--diff')
+
+
+# `./x`, a directory, a glob or `//` passes `ours_of` and claims NOTHING:
+# named, never refused, in ONE wording for every reader (review M2).
+CLAIMS_MATCH_NOTHING = (
+    '{count} claim(s) in [{operation}] ours name no file {version} installs, '
+    'so each matches nothing and leaves nothing alone — a claim is a '
+    'destination spelled exactly as --diff heads it: {paths}')
+
+
+def claims_matching_nothing(operation: str) -> str:
+    """The one line the belt and all six installers print (every run,
+    `--diff` too) naming claims that match no destination, or ''."""
+    planned = {rel for _verb, plan in _every_plan() for _name, rel in plan}
+    unmatched = [rel for rel in ours_of(operation) if rel not in planned]
+    if not unmatched:
+        return ''
+    return CLAIMS_MATCH_NOTHING.format(
+        count=len(unmatched), operation=operation, version=__version__,
+        paths=_clip(', '.join(repr(rel) if rel != rel.strip() else rel
+                              for rel in unmatched)))
+
+
+def _graded(ctx: Context) -> list[tuple[str, str, str, list[str]]]:
+    """`_installable_drift`'s rows, each with what a header-only file's
+    kept block lacks (`install.lacking_names`), else []."""
+    from agentic_sdlc.repo import install
+
+    from agentic_sdlc.repo.pm import skills
+
+    claimed = frozenset(ours_of(ctx.operation))
+    out: list[tuple[str, str, str, list[str]]] = []
+    for verb, plan in _every_plan():
         for name, rel in plan:
             if rel in claimed:
                 # The project declared this file its own. Grading it would be
                 # this package holding an opinion about somebody else's file
                 # — and the claim is printed, so it hides nothing.
-                out.append((verb, rel, CLAIMED))
+                out.append((verb, rel, CLAIMED, []))
                 continue
             target = ctx.root / rel
             if not target.is_file():
-                out.append((verb, rel, NOT_INSTALLED))
+                out.append((verb, rel, NOT_INSTALLED, []))
                 continue
             text, _defect = install.read_destination(target)
             try:
@@ -967,18 +1008,39 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
                         else install.resolve_body(name, rel))
             except (OSError, UnicodeDecodeError, ConfigError) as err:
                 out.append((verb, rel,
-                            f'unrenderable({_clip(str(err), RENDER_ERROR_LIMIT)})'))
+                            f'unrenderable({_clip(str(err), RENDER_ERROR_LIMIT)})',
+                            []))
                 continue
             if text is None:
-                out.append((verb, rel, 'unreadable'))
+                out.append((verb, rel, 'unreadable', []))
             elif text == body:
-                out.append((verb, rel, CURRENT))
+                out.append((verb, rel, CURRENT, []))
             elif install.header_only_difference(text, body):
                 # The operator's own project-config header; not drift.
-                out.append((verb, rel, HEADER_ONLY))
+                out.append((verb, rel, HEADER_ONLY,
+                            install.lacking_names(text, body)))
             else:
-                out.append((verb, rel, 'differs'))
+                out.append((verb, rel, 'differs', []))
     return out
+
+
+def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
+    """(verb, path, verdict) for every file the `install-*` verbs write, from
+    `install.PLANS`; `not-installed` is not drift, and a path the project
+    claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
+    return [(verb, rel, verdict) for verb, rel, verdict, _ in _graded(ctx)]
+
+
+def _lacks_clause(graded: list[tuple[str, str, str, list[str]]]) -> str:
+    """Each kept header lacking a packaged name (review M6): not drift, but
+    a hook reading an unset name fails OPEN, so a pass names it."""
+    lacking = [f'{rel} lacks ' + ', '.join(f'`{name}`' for name in names)
+               + f' (`{remedy(verb)}`)'
+               for verb, rel, _verdict, names in graded if names]
+    if not lacking:
+        return ''
+    return (f'; {len(lacking)} kept header(s) lack a name the packaged one '
+            f'declares: ' + _clip(', '.join(lacking)))
 
 
 def _claim_clause(operation: str,
@@ -994,16 +1056,13 @@ def _claim_clause(operation: str,
     byte-identically to one with no devkit.toml at all (rule 5).
     """
     claimed = [rel for _, rel, verdict in drift if verdict == CLAIMED]
-    planned = {rel for _, rel, _ in drift}
-    unplanned = [rel for rel in _ours_of(operation) if rel not in planned]
+    unmatched = claims_matching_nothing(operation)
     clause = ''
     if claimed:
         clause += (f'; {len(claimed)} claimed by [{operation}] ours and not '
                    f'graded: ' + _clip(', '.join(claimed)))
-    if unplanned:
-        clause += (f'; {len(unplanned)} claim(s) in [{operation}] ours name '
-                   f'no file {__version__} installs: '
-                   + _clip(', '.join(unplanned)))
+    if unmatched:
+        clause += f'; {unmatched}'
     return clause
 
 
@@ -1012,19 +1071,20 @@ def check_installables_current(ctx: Context) -> Answer:
     header-only different; each that is not is named with the verb that shows
     the diff, and what `[<op>] ours` claimed is counted and named beside it.
     """
-    drift = _installable_drift(ctx)
+    graded = _graded(ctx)
+    drift = [(verb, rel, verdict) for verb, rel, verdict, _ in graded]
     stale = [(verb, rel, verdict) for verb, rel, verdict in drift
              if verdict not in NOT_DRIFT]
     counted = sum(1 for _, _, v in drift if v not in UNCOUNTED)
     # After the clip, never inside it: the claim is the one part of this line
     # that must survive a hundred drifted files.
-    claims = _claim_clause(ctx.operation, drift)
+    claims = _claim_clause(ctx.operation, drift) + _lacks_clause(graded)
     if stale:
         return Answer.no(
             f'{len(stale)} of {counted} installed file(s) differ from what '
             f'{__version__} ships: '
-            + _clip(', '.join(f'{rel} ({verdict}; `agentic-sdlc {verb} '
-                              f'--diff`)' for verb, rel, verdict in stale))
+            + _clip(', '.join(f'{rel} ({verdict}; `{remedy(verb)}`)'
+                              for verb, rel, verdict in stale))
             + claims)
     if not counted:
         # Review O1, and milestone risk 2 as written: "a project can silence
@@ -1261,7 +1321,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'no ledger setup for this tree, no telemetry — the vehicle '
             f'answers, nothing in this checkout registers '
             f'{", ".join(unwired)}, and no courier row has ever landed. '
-            f'`install-hooks {install.SETTINGS_FLAG}` writes '
+            f'`{vehicle.command("install-hooks", install.SETTINGS_FLAG)}` writes '
             f'{vocabulary.AGENT_SETTINGS} when nothing is in the way, and prints '
             f'the block for whatever settings file your harness actually reads '
             f'when something is; a session rooted outside this tree also needs '
@@ -1296,8 +1356,9 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
         return run_command(ctx, 'runner-targets-resolve', command)
     if not (ctx.root / FRAMEWORK_MAKEFILE).is_file():
         return Answer.no(
-            f'{FRAMEWORK_MAKEFILE} is not in this checkout — `install-gates` '
-            f'writes it and this check installs nothing; run the verb, or drop '
+            f'{FRAMEWORK_MAKEFILE} is not in this checkout — '
+            f'`{vehicle.pinned(BOOTSTRAP_VERB)}` writes it and this check '
+            f'installs nothing; run the verb, or drop '
             f'`runner-targets-resolve` from [{ctx.operation}] steps')
     targets = _runner_targets_of(ctx.operation)
     # `-n` composes everything and RUNS nothing.
@@ -1317,12 +1378,47 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
 
 
 def check_checks_pass(ctx: Context) -> Answer:
-    """THIS package's `check all` — never the consumer's `make check`."""
+    """THIS package's `check all` — never the consumer's `make check`. A TRUE
+    detail names what it did NOT run (0.8.0, rule 11); reading a make file for
+    what else is armed would be deciding what a project meant (rule 9)."""
     command = _configured(ctx, 'checks-pass')
     if command:
         return run_command(ctx, 'checks-pass', command)
     return _own_verdict(ctx, 'check', 'all',
-                        found='the roster this version ships')
+                        found='the roster this version ships',
+                        after=lambda printed: _not_run_clause(ctx, printed))
+
+
+# Every gate prints `[check:<gate>] …` on every path (rule 6), so the gates
+# that printed one are the gates `check all` ran.
+_GATE_LINE = re.compile(r'^\[check:([a-z][a-z0-9-]*)\]', re.MULTILINE)
+
+
+def _not_run_clause(ctx: Context, printed: str) -> str:
+    """'; NOT run: …', or ''. Gates are read off `check all`'s own lines, never
+    a copy of the router's stock roster, which this layer may not import."""
+    from agentic_sdlc.repo import gates_extra
+
+    ran = set(_GATE_LINE.findall(printed))
+    gates = sorted(gate_universe() - ran)
+    try:
+        targets: tuple[str, ...] | None = gates_extra.targets()
+    except ConfigError:
+        targets = None
+    parts = []
+    if gates:
+        parts.append(f'{len(gates)} gate(s) outside the roster '
+                     f'({", ".join(gates)})')
+    if targets:
+        parts.append(f'{len(targets)} [gates] extra target(s) '
+                     f'({_clip(", ".join(targets), LIST_LIMIT)})')
+    clause = (f'; NOT run: {" and ".join(parts)} — '
+              f'`[{ctx.operation}.commands] checks-pass` is the command that '
+              f'would run them' if parts else '')
+    if targets is None:
+        clause += ('; [gates] extra could not be read, so none of its targets '
+                   'is named — `config-updated` says why')
+    return clause
 
 
 def check_pm_validates(ctx: Context) -> Answer:
@@ -1406,12 +1502,19 @@ def check_evidence_written(ctx: Context) -> Answer:
         text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
+    return evidence_in(cfg.rel(path), text)
+
+
+def evidence_in(rel: str, text: str) -> Answer:
+    """`evidence-written`'s whole grammar over a story's text: the one reader
+    of a `done:` line, which `check pm`'s CLOSE line asks too — with the text
+    off the gate's own single read, since the gate opens each document once."""
     lines = [m.group('body').strip()
              for m in (EVIDENCE_LINE.match(raw) for raw in text.split('\n'))
              if m is not None]
     if not lines:
         return Answer.no(
-            f'{cfg.rel(path)} carries no `done:` line — step 6 of '
+            f'{rel} carries no `done:` line — step 6 of '
             f'pm-execution.md: `done: <hash(es)> — <what shipped>`, at most '
             f'{EVIDENCE_BUDGET} lines, so a fresh session picks this story up '
             f'from the tree alone')
@@ -1422,12 +1525,12 @@ def check_evidence_written(ctx: Context) -> Answer:
         said = EVIDENCE_LANDED.sub('', body).strip(' \t—–-:;,.')
         if not said:
             return Answer.no(
-                f'{cfg.rel(path)} `done: {_clip(body, QUOTED_LIMIT)}` names what landed '
+                f'{rel} `done: {_clip(body, QUOTED_LIMIT)}` names what landed '
                 f'and not what shipped — the second half of the line is the '
                 f'part a fresh session reads')
-        return Answer.yes(f'{cfg.rel(path)} carries `done: {_clip(body, QUOTED_LIMIT)}`')
+        return Answer.yes(f'{rel} carries `done: {_clip(body, QUOTED_LIMIT)}`')
     return Answer.no(
-        f'{cfg.rel(path)} `done: {_clip(lines[0], QUOTED_LIMIT)}` names no commit — a '
+        f'{rel} `done: {_clip(lines[0], QUOTED_LIMIT)}` names no commit — a '
         f'hash of {HASH_MIN}-{HASH_MAX} hex characters, or the literal '
         f'`{IN_PLACE}` for a fix that has not been committed yet')
 
@@ -1611,10 +1714,15 @@ STEP_DOC: dict[str, str] = {
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
     'changelog-unreleased-nonempty':
-        'the changelog\'s `## Unreleased` section holds at least one bullet.',
+        'the milestone itself, whatever its state, and every grain in it that '
+        'is in the `done` category answer the `changelog:` field with a '
+        'sentence or `none`. The milestone is graded before `release` writes '
+        'its `done`, and the field is read on each grain — no file is.',
     'features-done':
         '`pm ready-for milestone <milestone>` exits 0 — every feature is in '
-        'the `done` category and no open bug names the milestone.',
+        'the `done` category and its `reviewed:` names a review record that '
+        'is there and not empty, and every bug whose `milestone:` names the '
+        'milestone is in the `done` category.',
     'findings-resolved':
         '`pm ready-for tag <milestone>` exits 0 — no finding in any record '
         'the milestone\'s grains point at is `open`.',
@@ -1642,14 +1750,17 @@ STEP_DOC: dict[str, str] = {
         'the composed gate targets resolve under `make -n`; an empty tier '
         'list passes and says so.',
     'checks-pass':
-        'this package\'s `agentic-sdlc check all` exits 0 — not '
-        '`make check`, which verifies your code against your rules.',
+        'this package\'s `check all` exits 0 — not '
+        '`make check`, which verifies your code against your rules. Its '
+        '`ok:` line names what it did NOT run — every gate outside the '
+        'roster, every `[gates] extra` target — and `[adopt.commands] '
+        'checks-pass` is the command that would run them.',
     'pm-validates':
         '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---
     'story-exists': 'the story id resolves to exactly one document.',
     'story-verified':
-        '`agentic-sdlc verify --story` exits 0 — the make target '
+        '`verify --story` exits 0 — the make target '
         '`[verify] story` names, the way `feature-verified` runs its rung.',
     'committed':
         'nothing is uncommitted outside the roadmap directory; it names what '
@@ -1668,7 +1779,7 @@ STEP_DOC: dict[str, str] = {
     'findings-landed':
         'no finding in that record sits at `disposition: open`.',
     'feature-verified':
-        '`agentic-sdlc verify --feature` exits 0; not in the shipped list, '
+        '`verify --feature` exits 0; not in the shipped list, '
         'add it to `[feature] steps`.',
 }
 
@@ -1698,27 +1809,38 @@ def ran_of(check: str, commands: dict[str, str]) -> str:
     literal. `commands` is `commands_for(operation)`, already merged."""
     return commands.get(check) or SHIPPED_ACTION.get(check) or READS_THE_TREE
 
+
+def shown_action(action: str) -> str:
+    """A `SHIPPED_ACTION` value as a person runs it (review M3)."""
+    prefix = f'{vehicle.PROGRAM} '
+    if not action.startswith(prefix):
+        return action
+    return vehicle.command(*(vehicle.Slot(word) if word.startswith('<')
+                             else word
+                             for word in action[len(prefix):].split()))
+
 # What the caller does after a write, printed on success and rendered into the
 # document; `{version}`, `{branch}` and `{mainline}` are filled by the driver.
 AFTER: dict[str, tuple[str, ...]] = {
     OP_STORY: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
-        'when every story of the feature is done: `agentic-sdlc close feature '
-        '<feature-id>`',
+        'when every story of the feature is done: '
+        f'`{vehicle.command("close", OP_FEATURE, vehicle.Slot("<feature-id>"))}`',
     ),
     OP_FEATURE: (
         'commit the roadmap directory — the status line and the ledger row '
         'this belt wrote',
-        'when every feature of the milestone is done: `agentic-sdlc release '
-        '<version>`',
+        'when every feature of the milestone is done: '
+        f'`{vehicle.command("release", vehicle.Slot("<version>"))}`',
     ),
     'release': (
         # `CHANGELOG.md` retired in 0.6.0 and this line survived it, telling
         # the operator running THAT release to go retitle a section in a file
         # it had just deleted. `agentic-sdlc changelog <milestone-id>` renders
         # the notes from each grain's own field; redirect it if you want a file.
-        'render the release notes: `agentic-sdlc changelog <milestone-id>` — '
+        'render the release notes: '
+        f'`{vehicle.command("changelog", vehicle.Slot("<milestone-id>"))}` — '
         'they come off each grain\'s `changelog:` field, in the `order:` the '
         'milestone declares, and no file is maintained',
         'commit the roadmap directory as the release commit',

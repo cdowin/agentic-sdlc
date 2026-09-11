@@ -5,8 +5,8 @@
 # include that defines every target (`make help` lists them).
 #
 # BUMPING THE PIN is a one-line diff here. Read the release notes, run
-# `agentic-sdlc pm vocabulary` for what the closed state/rule sets became, and
-# `agentic-sdlc install-* --diff` for what the shipped files would change
+# `make pm ARGS=vocabulary` for what the closed state/rule sets became, and
+# `make sdlc ARGS='install-* --diff'` for what the shipped files would change
 # before you let them.
 DEVKIT_VERSION := {version}
 

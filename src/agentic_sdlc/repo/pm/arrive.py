@@ -17,12 +17,14 @@ an opinion and does not ship.
 """
 from __future__ import annotations
 
+import re
+import shlex
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, remote, vocabulary
 
 # The BELT names. Their home is `conveyor/driver.py` and `pm/` may not import
@@ -46,6 +48,10 @@ ABOVE = {vocabulary.GRAIN_STORY: FEATURE_BELT, vocabulary.GRAIN_FEATURE: RELEASE
 RECORD_FIELD = 'reviewed'
 
 PREFIX = '[pm]'
+
+# The only `<…>` a rendered command leaves bare (`vehicle.Slot`): a name, so a
+# `<x; touch p #>` typed where a value goes is quoted and never run.
+PLACEHOLDER = re.compile(r'<[\w .-]+>')
 
 
 def _say(line: str) -> None:
@@ -119,11 +125,31 @@ def fork_lines(cfg: vocabulary.PmConfig, node: vocabulary.Arrival | None, gid: s
     """
     if node is None or not node.ask or not cfg.pressure or said:
         return []
-    move = f'agentic-sdlc pm {node.kind} {node.state} {gid}'
     lines = ['', node.ask]
     for index, answer in enumerate(node.answers):
-        lines.append(f'  {chr(ord("a") + index)}) {move} {answer}')
+        move = vehicle.command('pm', node.kind, node.state, gid,
+                               *answer_argv(answer))
+        lines.append(f'  {chr(ord("a") + index)}) {move}')
     return lines
+
+
+def answer_argv(answer: str) -> list[str]:
+    """A declared answer (`--why "<reason>"`) as argv: a word the project
+    QUOTED is free text and stays quoted, a bare `<x>` of name characters stays
+    a placeholder, and any other `<…>` is a value and is quoted like one."""
+    try:
+        words = shlex.split(answer, posix=False)
+    except ValueError:
+        return answer.split()
+    out: list[str] = []
+    for word in words:
+        if word[:1] in ('"', "'"):
+            out.extend(shlex.split(word))
+        elif PLACEHOLDER.fullmatch(word):
+            out.append(vehicle.Slot(word))
+        else:
+            out.append(word)
+    return out
 
 
 def disposition_of(row: dict) -> bool:
@@ -146,8 +172,9 @@ class Next:
 
     @property
     def action(self) -> str:
-        """The command a caller can copy, with the belt's own argument shape."""
-        return f'agentic-sdlc {self.verb} {self.subject}'
+        """The command a caller can copy, with the belt's own argument shape —
+        `subject` is `driver.SUBJECT`'s placeholder, never a value."""
+        return vehicle.command(*self.verb.split(), vehicle.Slot(self.subject))
 
 
 def derive_next(cfg: vocabulary.PmConfig, kind: str, to: str) -> Next | None:
@@ -360,7 +387,8 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
     """'' unless this write made the grain's PARENT ready, else the line
     saying so and naming the belt that closes it. Derivable on the write that
     caused it, so READY stops being a question somebody must remember to ask
-    (0.3.0 made it prose in a document instead)."""
+    (0.3.0 made it prose in a document instead). READY is the parent's own
+    `ready-for` verdict; the same-kind siblings only supply the count."""
     if not cfg.pressure:
         return ''
     grain = inventory.grain_index(cfg).get(gid)
@@ -377,22 +405,32 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
                        vocabulary.DONE_CATEGORY)
     if not held:
         return ''
+    # Imported here: `ready_for` imports `pm/cli.py`, which imports this.
+    from agentic_sdlc.repo.pm import ready_for
+    try:
+        if ready_for.blockers(cfg, parent_kind, grain.binding):
+            return ''
+    except Exception:  # noqa: BLE001 — an edge that cannot answer is not READY
+        return ''
     from agentic_sdlc.repo.conveyor import driver
     verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
-    subject = _subject_of(cfg, belt, grain.binding)
-    return (f'ready: `agentic-sdlc {verb} {subject}` — this write made '
+    move = vehicle.command(*verb.split(), _subject_of(cfg, belt, grain.binding))
+    return (f'ready: `{move}` — this write made '
             f'{grain.binding} READY (every {kind} is in {vocabulary.DONE_CATEGORY}: '
             f'{held.counted} of {held.counted})')
 
 
 def _subject_of(cfg: vocabulary.PmConfig, belt: str, parent_id: str) -> str:
     """The argument that belt takes for this parent — its id, or the VERSION
-    the parent declares when the belt's own `SUBJECT` says it takes one."""
+    the parent declares when the belt's own `SUBJECT` says it takes one. Only
+    the belt's own placeholder, standing in for a version nobody declared, is
+    a `Slot`: a tree value is quoted whatever its shape (M1 of the 0.8.0
+    vehicle review — a `version:` of `<x; touch p #>` ran out of `ready:`)."""
     from agentic_sdlc.repo.conveyor import driver
     noun = driver.SUBJECT.get(belt, (0, '', ''))
     if noun[1] != 'version':
         return parent_id
-    return inventory.milestone_version(cfg, parent_id) or noun[2]
+    return inventory.milestone_version(cfg, parent_id) or vehicle.Slot(noun[2])
 
 
 # --- the emitted row ----------------------------------------------------------

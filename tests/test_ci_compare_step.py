@@ -118,12 +118,33 @@ def test_the_id_still_declares_the_version_on_a_tree_that_predates_the_field(tmp
     assert 'done milestone 0.99.0' in ok.stdout, ok.stdout
 
 
+# A `done`/`building` entry is an id that IS the version (the pre-0.3.0 layout),
+# or an `(id, version)` pair — the `version:` field every scaffold writes now.
+SLUG_28 = ('ms-the-slug', '0.28.4')
+INCREMENTED = "incremented hotfix 2 over main's 0.28.4.1, on 0.28.4, the"
+
 COMPARE_ROWS = [
-    ('0.90.3',   '0.90.3.1',   (),          ('0.90.3.2',), True,  'hotfix 1 on main'),
+    ('0.90.3',   '0.90.3.1',   (),          ('0.90.3.2',), True,  "appended hotfix 1 on main's 0.90.3"),
     ('0.90.3.1', '0.90.3.2',   ('0.90.3.2',), (),          True,  'done milestone 0.90.3.2'),
     ('0.16',     '0.16.1',     ('0.16.1',),  (),           True,  'done milestone 0.16.1'),
-    ('0.90.3.1', '0.90.3.1.1', (),          ('0.90.4',),  True,  'hotfix 1 on main'),
-    ('0.90.2',   '0.90.3',     ('0.90.2',),  ('0.90.3',),  False, "whose status is 'building', not done"),
+    ('0.90.3.1', '0.90.3.1.1', (),          ('0.90.4',),  True,  "appended hotfix 1 on main's 0.90.3.1"),
+    # #27 — the NEXT hotfix. Main is already a hotfix of a done milestone's
+    # version, so the PR bumps the final component instead of nesting one deeper.
+    ('0.28.4.1', '0.28.4.2',   (SLUG_28,),  (),           True,  f'{INCREMENTED} version of done milestone ms-the-slug'),
+    ('0.28.4.1', '0.28.4.2',   ('0.28.4',),  (),           True,  f'{INCREMENTED} id of done milestone 0.28.4'),
+    ('0.28.4.2', '0.28.4.5',   (SLUG_28,),  (),           True,  "incremented hotfix 5 over main's 0.28.4.2"),
+    ('0.28.4.2', '0.28.4.1',   (SLUG_28,),  (),           False, 'Version must increase'),
+    ('0.28.4.1', '0.28.5',     (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
+    ('0.28.4.1', '0.28.4.2',   (),          (SLUG_28,),   False, 'the version or id of no done milestone'),
+    ('0.28.4.1', '0.28.4.2',   (SLUG_28,),  (('ms-next', '0.28.4.2'),), False, "whose status is 'building', not done"),
+    ('0.28.4.1', '0.28.4.2.1', (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
+    ('0.28.4.1', '0.28.4.02',  (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
+    # The review's M2: a main that is itself a done milestone's version is a
+    # RELEASE, not a hotfix, so incrementing its final component is a bump no
+    # milestone declares — AC2's own refused `0.28.5`. Its hotfix is appended.
+    ('0.16.1',   '0.16.2',     ('0.16', '0.16.1'), (),    False, "a release, not a hotfix"),
+    ('0.28.4',   '0.28.5',     (('ms-a', '0.28'), SLUG_28), (), False, "a release, not a hotfix"),
+    ('0.90.2',  '0.90.3',     ('0.90.2',),  ('0.90.3',),  False, "whose status is 'building', not done"),
     ('0.90.3',   '0.90.4',     (),          ('0.90.4',),  False, "whose status is 'building', not done"),
     ('0.90.3',   '0.90.3',     (),          (),           False, 'Version must increase'),
     ('0.90.3',   '0.90.2',     ('0.90.2',),  (),           False, 'Version must increase'),
@@ -143,17 +164,23 @@ def test_the_compare_step_admits_a_done_milestone_or_a_hotfix_and_nothing_else(
     main wearing 0.90.3 — the NEXT milestone's bump-at-start had landed before
     the close merged — and the three-field gate waved it through. Row 5 is
     that PR, and it is refused. Every row is one bash run over its own
-    scratch roadmap; a row that answers wrongly names itself."""
+    scratch roadmap; a row that answers wrongly names itself.
+
+    Issue #27 is the 0.28.x block: `0.28.4.1 -> 0.28.4.2` was refused because
+    the only hotfix rule was main plus one APPENDED component, and the consumer
+    merged over the red check. The admitted line names the rule that admitted
+    it, and a decrement, a skip to an undone version, a parent that is not done
+    and a building milestone at the PR's version all still refuse."""
     import subprocess
     script = tmp_path / 'compare.sh'
     script.write_text(_compare_step_script(), encoding='utf-8')
     wrong = []
     for n, (main, pr, done, building, ok, why) in enumerate(COMPARE_ROWS):
         root = tmp_path / f'row{n}'
-        for mid in done:
-            _milestone(root, mid, 'done')
-        for mid in building:
-            _milestone(root, mid, 'building')
+        for status, entries in (('done', done), ('building', building)):
+            for entry in entries:
+                mid, version = entry if isinstance(entry, tuple) else (entry, '')
+                _milestone(root, mid, status, version=version)
         (root / 'pm/roadmap').mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(['bash', str(script)], cwd=root, capture_output=True,
                               text=True, env={'PATH': '/usr/bin:/bin', 'PR': pr,

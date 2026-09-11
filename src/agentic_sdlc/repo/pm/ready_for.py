@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 from agentic_sdlc.repo.pm.cli import Usage, _grain_of, _ok
 
@@ -52,7 +52,8 @@ NO_ENTRY_EDGE: dict[str, str] = {
            '(hard rule 2). The derived entry condition is therefore EMPTY, so '
            'this rung could only ever answer NOT READY, on every tree, '
            'forever. It was declined rather than hand-written: see D4 in the '
-           "milestone's decisions log. `agentic-sdlc adopt <version>` runs the "
+           "milestone's decisions log. "
+           f'`{vehicle.command(ADOPT, vehicle.Slot("<version>"))}` runs the '
            'checks and writes nothing, which is the answer you wanted',
 }
 
@@ -348,7 +349,8 @@ def _entry_condition(operation: str) -> Derived:
     commands = step_defs.commands_for(operation, names, known)
     derived = Derived([], [], [], names)
     for name in names:
-        runs = commands.get(name) or step_defs.SHIPPED_ACTION.get(name, '')
+        runs = commands.get(name) or step_defs.shown_action(
+            step_defs.SHIPPED_ACTION.get(name, ''))
         if name not in step_defs.ENTRY_CONDITIONS:
             derived.not_declared.append(
                 name + (f' (by `{runs}`)' if runs else ''))
@@ -408,6 +410,12 @@ def ready_for_story(cfg: vocabulary.PmConfig, sid: str) -> int:
 def ready_for_feature(cfg: vocabulary.PmConfig, fid: str) -> int:
     """Is every story under this feature in the `done` category? Exit 1 names
     each that is not, with the word the file holds; no stories is vacuous."""
+    return _answer(cfg, FEATURE, fid, *_feature_verdict(cfg, fid))
+
+
+def _feature_verdict(cfg: vocabulary.PmConfig,
+                     fid: str) -> tuple[str, list[Blocker], str]:
+    """`ready_for_feature`'s (subject, blockers, census), printed nowhere."""
     feature = _grain(cfg, FEATURE, fid, vocabulary.GRAIN_FEATURE, FEATURE,
                      "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
@@ -430,7 +438,7 @@ def ready_for_feature(cfg: vocabulary.PmConfig, fid: str) -> int:
                    f'would make this verb unusable on a doc-only feature')
     elif not blockers:
         census += f', all {DONE}'
-    return _answer(cfg, FEATURE, fid, f'{FEATURE} {fid}', blockers, census)
+    return f'{FEATURE} {fid}', blockers, census
 
 
 # --- feature -> milestone -----------------------------------------------------
@@ -464,19 +472,25 @@ def ready_for_milestone(cfg: vocabulary.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
     promised to this milestone outside `done`. Zero features exits 1,
     deliberately opposite to the empty-story ruling."""
+    return _answer(cfg, MILESTONE, mid, *_milestone_verdict(cfg, mid))
+
+
+def _milestone_verdict(cfg: vocabulary.PmConfig,
+                       mid: str) -> tuple[str, list[Blocker], str]:
+    """`ready_for_milestone`'s (subject, blockers, census), printed nowhere."""
     milestone = _grain(cfg, MILESTONE, mid, vocabulary.GRAIN_MILESTONE, MILESTONE,
                        "about a milestone's features")
     features = _features(cfg, milestone)
     subject = f'{MILESTONE} {mid}'
     check = _check_answered_by(MILESTONE)
     if not features:
-        return _answer(cfg, MILESTONE, mid, subject,
-                       # Worded to share no phrase with the feature belt's
-                       # empty-set line; the two rulings are opposite.
-                       [Blocker('', f'{mid} has no features — an empty feature '
-                                    f'set does not satisfy this belt; a '
-                                    f'mis-typed id looks exactly like this')],
-                       '0 feature(s)')
+        # Worded to share no phrase with the feature belt's empty-set line;
+        # the two rulings are opposite.
+        return (subject,
+                [Blocker('', f'{mid} has no features — an empty feature set '
+                             f'does not satisfy this belt; a mis-typed id '
+                             f'looks exactly like this')],
+                '0 feature(s)')
     # Asked of the feature flow, not the story flow.
     held = vocabulary.holds(
         cfg, vocabulary.GRAIN_FEATURE,
@@ -503,7 +517,7 @@ def ready_for_milestone(cfg: vocabulary.PmConfig, mid: str) -> int:
                  else ''))
     if not blockers:
         census += f', all {DONE}' + (' with a record' if features else '')
-    return _answer(cfg, MILESTONE, mid, subject, blockers, census)
+    return subject, blockers, census
 
 
 # --- milestone -> tag ---------------------------------------------------------
@@ -580,6 +594,16 @@ def ready_for_tag(cfg: vocabulary.PmConfig, mid: str) -> int:
 # --- the verb -----------------------------------------------------------------
 PREDICATES = {STORY: ready_for_story, FEATURE: ready_for_feature,
               MILESTONE: ready_for_milestone, TAG: ready_for_tag}
+
+# The two rungs a pm WRITE can cross, and the verdict each verb prints.
+_VERDICTS = {FEATURE: _feature_verdict, MILESTONE: _milestone_verdict}
+
+
+def blockers(cfg: vocabulary.PmConfig, kind: str, gid: str) -> list[Blocker]:
+    """What `pm ready-for <kind> <gid>` names, empty when READY, printed and
+    emitted nowhere — for the arrival's `ready:` line, which must agree with
+    this edge (S12). Raises `Usage` as the verb does."""
+    return _VERDICTS[kind](cfg, gid)[1]
 
 
 def cmd_ready_for(cfg: vocabulary.PmConfig, args: list[str]) -> int:

@@ -27,16 +27,17 @@ about your words.
 
 ## Install
 
-Pin a tag so every machine and CI runs identical code:
+Pin a tag so every machine and CI runs identical code. `vX.Y.Z` below is the release you pin;
+`git ls-remote --tags https://github.com/cdowin/agentic-sdlc` lists them:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc --version
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc --version
 ```
 
 Then, from inside a git repo:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc init
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc init
 make help
 ```
 
@@ -46,11 +47,17 @@ the hook corpus (armed), the agent roster, the CI workflows, the rendered SDLC d
 overwritten by `--force`; `devkit.toml`, `Makefile`, `CLAUDE.md` and the tree are yours from the
 first write and never touched again.
 
-**Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, read the release notes
-(`agentic-sdlc changelog <milestone-id>` on the source tree — the changelog is a `changelog:` field
-on each grain, not a file, since 0.6.0), run
-`install-* --diff` to see what the release would change, take what you want, re-run `pm init`
-once, and `agentic-sdlc adopt <version>` to read the result.
+**Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, then **take `Makefile.devkit`
+first**, with the pinned form, because every other command below goes through the targets it
+defines (a `Makefile.devkit` from before 0.8.0 has no `sdlc` target):
+`uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc install-gates --force`.
+Read the release notes (`agentic-sdlc changelog <milestone-id>` on the source tree, where
+`agentic-sdlc pm roadmap` prints each release's version beside its milestone id — the changelog is a
+`changelog:` field on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only
+in the retired file at its tag, and `git show v0.5.0:CHANGELOG.md` in a clone of this repo prints
+v0.5.0 back to v0.2.0), run `make sdlc ARGS='install-agents --diff'` (and each other `install-*`) to
+see what the release would change, take what you want, re-run `make pm ARGS=init` once, and
+`make sdlc ARGS='adopt <version>'` to read the result.
 
 ## The ladder — one verb, one scope
 
@@ -59,14 +66,14 @@ Nothing runs a rung wider than the thing you changed.
 | You are | Run |
 |---|---|
 | editing the PM tree or a doc | `make check` |
-| editing code, inner loop | `agentic-sdlc verify --story` — the make target `[verify] story` names, e.g. `make unit` |
+| editing code, inner loop | `make sdlc ARGS='verify --story'` — the make target `[verify] story` names, e.g. `make unit` |
 | about to commit | `make precommit` — `check` + your `GDK_PRECOMMIT_TIERS` |
-| closing a story | `agentic-sdlc close story <id>` |
-| closing a feature | `agentic-sdlc close feature <id>` — its check runs what `[verify] feature` names |
-| closing a milestone | `agentic-sdlc release <version>` — its `gate` check runs `make milestone` |
-| bumping the devkit pin | `agentic-sdlc adopt <version>` — the adoption, never your own gates |
+| closing a story | `make sdlc ARGS='close story <id>'` |
+| closing a feature | `make sdlc ARGS='close feature <id>'` — its check runs what `[verify] feature` names |
+| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check runs `make milestone` |
+| bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 
-`agentic-sdlc verify --plan` prints the three `verify` rungs with the cost each one last took, read
+`make sdlc ARGS='verify --plan'` prints the three `verify` rungs with the cost each one last took, read
 from your ledger. Ask it instead of guessing.
 
 A rung also RECORDS its verdict, against the state of the tree it ran on — so asking the same rung
@@ -93,7 +100,7 @@ A belt's output is one line per check, then one line saying what happened:
 
 ```
 [story] ok: story-exists — pm/roadmap/stories/works.md
-[story] ok: story-verified — `agentic-sdlc verify --story` exited 0 — the story rung [verify] names
+[story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0 — the story rung [verify] names
 [story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
 [story] error — 2 check(s) false; nothing written
@@ -113,12 +120,12 @@ question the tree answers.
 
 ## Verbs
 
-`agentic-sdlc --help` and `agentic-sdlc pm --help` are the live rosters; this is the same set.
+`agentic-sdlc --help` and `agentic-sdlc pm --help` are the live rosters; this is the same set. `pm <verb> --help` prints one verb's entry, at exit 0.
 
 | Verb | Reads / writes |
 |---|---|
 | `pm <kind> <status> <id> [<answer>…]` | **One ARRIVAL.** Writes one `status:` line — any state in `[pm.states.<kind>]`, anything else is exit 2 — plus a `status` row, a `disposition` row and a `rung.leave` event. On **stderr**, all derived and never a refusal: `next:` (the belt that closes it and the checks it will ask), `have:` (the installed files `[pm.arrive.<kind>.<state>] have` binds to this state — a declared one that is ABSENT is a named line), the FORK that state declares with **both answers already typed as commands you can paste**, `ready:` when the write made a PARENT ready, and one census of the tree's open work. An `<answer>` is whichever flag `[pm.arrive.…] answers` declares; it is recorded as a claim and never verified, a flag the state does not declare is refused naming the ones it does, and a bare move still writes and records `none` — which puts the grain on the census until somebody answers. **There is no transition table**: the unit is the state arrived at, never the pair, so `building -> planning` is an arrival at `planning` and asks `planning`'s question. `pm feature <done-state> <id> --review-record <path>` stamps `reviewed:` too; a path naming no file is refused whole |
-| `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone, set one frontmatter field. **`pm set` writes the SHAPE `check pm` grades**: a list-shaped field (`depends_on`, `consumed_by`) lands as the inline list `["a", "b"]` whatever form the value arrived in, a shape the gate's parser cannot read is refused at exit 2 with nothing written, and `order` is refused by name pointing at `pm add`/`pm remove`, because it is a BLOCK list. `pm new <kind> <slug>` mints **`<kind-prefix>-<slug>`** — the same id `tools/dev/pm_migrate.py` mints, one path for both — and the parent argument writes the child's BINDING, never a piece of the id. A milestone's VERSION is the same shape of fact: `pm new milestone <slug> <name...> --version <ver>` stamps `version:` and leaves the id a slug, and a milestone with no version is backlog rather than a finding. `pm retire <id> [<summary...>]` keeps the milestone's id on the plan and files a `retire` row in `<roadmap>/ledger.jsonl` holding its version, name and summary, which `pm roadmap` prints. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
+| `pm new`, `pm init`, `pm retire`, `pm set`, `pm rename` | The other writes: scaffold a grain, stand up a tree, retire a milestone, set one frontmatter field. **`pm set` writes the SHAPE `check pm` grades**: a list-shaped field (`depends_on`, `consumed_by`) lands as the inline list `["a", "b"]` whatever form the value arrived in, a shape the gate's parser cannot read is refused at exit 2 with nothing written, and `order` is refused by name pointing at `pm add`/`pm remove`, because it is a BLOCK list. `pm new <kind> <slug>` mints **`<kind-prefix>-<slug>`** — the same id `tools/dev/pm_migrate.py` mints, one path for both — and the parent argument writes the child's BINDING, never a piece of the id. A milestone's VERSION is the same shape of fact: `pm new milestone <slug> <name...> --version <ver>` stamps `version:` and leaves the id a slug, and a milestone with no version is backlog rather than a finding. `pm retire <id> [<summary...>]` keeps the milestone's id on the plan and files a `retire` row in `<roadmap>/ledger.jsonl` holding its version, name and summary, which `pm roadmap` prints; `pm retire <id> --version <v> --name <name> [<summary...>]` backfills that row, marked `backfilled`, for a milestone no grain claims any more — one pruned before 0.5.0. `pm new bug <milestone> <slug> [<name...>]` stamps `name:`; without one the bug is still created and a `next:` line names the empty field. **`pm move` is gone (0.4.0)** — re-parenting is `pm set <id> feature <fid>`, one line, and the id never changes. `pm rename <old> <new>` is the one path that still rewrites refs: the grain's `id:` and every inbound reference (`depends_on`, `consumed_by`, `reviewed`, `caused_by`, `caught_in`, `fix_milestone`, the bindings, every `order` entry), matched whole-token, in one pass — **whole or not at all**, and one reference it cannot rewrite means nothing is written |
 | `pm config --seed` | Prints the seed `devkit.toml` this pinned version ships — every gate key commented at the default the code actually holds, and the two declarations spelled out with their arguments. Writes nothing. `init` serves a new repo once; this serves every bump after it |
 | `pm status`, `pm list`, `pm get`, `pm validate`, `pm vocabulary`, `pm ready-for`, `pm roadmap` | Reads. `ready-for story\|feature\|milestone\|tag <id>` is a belt's entry condition as an exit code, naming every blocker and never a tally. **`story` is the inner loop's edge**: it asks the story belt's own `[story] steps` narrowed to what the registry declares decidable before the work, and NAMES every check it did not ask with why. There is no `adopt` rung — every adopt check is either the work the bump does or one that runs a command, so the derived condition is empty; the refusal says so rather than reading as a typo. Emits `rung.enter` where `[emit]` declares a sink, and nothing where a tree declares none |
 | `pm ledger record\|show\|report` | The ledger — telemetry: one JSONL row per status flip, decision, dispatch, session and gate run, carrying tokens, tool calls and wall-clock. `report` adds them up per grain (spend, cost, how long something took) and never exits non-zero on a number; **name more than one milestone and it compares them** — every block gets one row per milestone and a `delta` row, `last - first`, marked `*` where the census under it moved, and `--json` is one joined document rather than a nested report per milestone to join by hand. `--help` names every block it prints with that block's columns in order. **Two homes**: one `ledger.jsonl` per milestone for rows naming a grain, and `<roadmap>/ledger.jsonl` for the rest — `gate` and `test` rows, and a session nobody could attribute. `show` and `report` both read both. A row names its grain from `--grain` (the couriers pass **`GDK_LEDGER_GRAIN`** from their environment — **you export it**; nothing here does), else from the one story in progress, else not at all |
@@ -136,19 +143,27 @@ question the tree answers.
 | `changelog [<grain-id>] [--json]` | The consumer-visible sentence each grain earned, rendered. `changelog:` is a FIELD on every grain kind and this is the view: it collects `<grain-id>` and everything beneath it **in the `order:` each parent declares**, read whole across kinds so a milestone's interleaved bugs and features come out in the sequence the work shipped. `none` is an ANSWER — the grain earned no consumer-visible line — and prints nothing; an EMPTY field has answered nothing and `check pm` D12 names it. Columns in order: `id kind status changelog`. Writes no file: **`CHANGELOG.md` is retired (0.6.0)**, the way `ROADMAP.md` was in 0.3.0, and for the same reason — a hand-maintained second copy nothing could check against the tree. Redirect this if you want a file |
 | `cite [--sites]` | **The rule-citation census: how many times each `rule <n>` is cited in your tree, and where.** The number a brief quotes, as a command's output — this package's own 0.6.0 brief asserted *"roughly 600 citations, rule 4 alone 194"* against a tree holding 1,107, and nobody could ask, so the wrong number was quoted forward through three milestones. The universe is `git ls-files` from the repo root, so a venv, a cache and a nested worktree are out without a roster to keep current; a tracked SYMLINK is skipped rather than followed, because it may leave the checkout. Columns in order: `rule citations files`, and with `--sites` one row per citation, `rule path line text`. **Rows on stdout, the census line on stderr**, so a pipe carries rows only; there is no `--rule` flag, because the rule is the first column and one rule is a grep. The grammar's whitespace may be a LINE BREAK, so a wrapped `hard rule 4` counts where a line-based grep loses it — six of this repo's own do. It reports and never grades: a rising count is what a rule being USED looks like, and a census of ZERO files is exit 1 naming what it scanned |
 | `dispatch [--grain <id>] [--role <name>]` | The contract preamble a dispatched agent needs **before its first tool call**. What it RENDERS is read from the same declaration the verb it describes reads — the ladder from `[verify]`, the gate roster from `[checks]`, the state vocabulary from `[pm.states.*]` — so none of it is retyped and none can drift. What it POINTS AT is `[dispatch] contracts`, your own authored files, NAMED and never copied: a 163-line paste in every brief is volume, and the fix is placement. A declared path that resolves to nothing is exit 2. `[dispatch]` is a DECLARATION — nothing stands behind it and the reader refuses by name when it is absent. With `--grain` it also prints the `GDK_LEDGER_GRAIN` export and the `pm ledger record --grain <id>` line that files what the dispatch cost, because the moment a dispatch begins is the only moment anyone knows the grain. **It renders; it never spawns** — the two commands are yours to run |
-| `release <version>` | The outer belt: tree clean, on the milestone branch, **every closed grain answered the changelog question** (a sentence or `none` — it counted bullets in a file until 0.6.0, which passed a release of forty grains on one bullet), features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Push, PR, merge and tag are printed as `next:` — never performed |
-| `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); the milestone is only where a ledger row would land |
+| `release <version>` | The outer belt: tree clean, on the milestone branch, **the milestone itself and every closed grain answered the changelog question** (a sentence or `none` — it counted bullets in a file until 0.6.0, which passed a release of forty grains on one bullet), features done, findings dispositioned, version sites in sync, gate green → the milestone's status. Push, PR, merge and tag are printed as `next:` — never performed |
+| `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green — and `checks-pass` names every gate outside the roster and every `[gates] extra` target it did not run, beside the `[adopt.commands] checks-pass` key that would run them. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); it sets no status and files no row of its own |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
-| `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, doc-hygiene, pm-operator — each pointing at `agentic-sdlc dispatch` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install |
+| `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, doc-hygiene, pm-operator — each pointing at `make sdlc ARGS='dispatch …'` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install |
 | `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE, shell-quoted script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. An absolute path names one machine, so a shared checkout puts the block in the gitignored `.claude/settings.local.json` — `check pm` and `adopt` read both. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
-| `install-gates` | `Makefile.devkit` (`help`, `pm`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library |
+| `install-gates` | `Makefile.devkit` (`help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library. `sdlc` reaches every verb at your pin, and it is how every command the CLI prints is spelled |
 | `install-sdlc` | `docs/sdlc-protocol.md`, **rendered** from your `[story]` / `[feature]` / `[release]` / `[adopt]` check lists and the `done` state each belt writes |
 | `version` | This package's version |
 
 Every installer writes a file once. A destination that differs is refused by path (move it aside,
 or `--force`); `--diff` prints what would change and writes nothing; a difference confined to a
-hook's `project config` header is reported as one and needs no `--force`.
+file's project-config block — a hook's `project config` header, an agent brief's ```` ```text ````
+fence — is reported as one and is current. **`--force` keeps what is yours**: that block is carried
+into the new body line for line (a CRLF file comes back LF) and named on the file's line, with any
+stock key the packaged block has and yours lacks; a file `[adopt] ours` claims is left alone and named,
+by `pm install-skills` too. A claim is a destination spelled exactly, and one that matches none is
+named on every run, `--diff` included. `install-* --force <path>` takes one destination, claimed or
+not. The withdrawal report's floor is the pin; after the bump the pin
+IS the running version and the report says it compared nothing — pass `--since <the version you are
+leaving>`.
 
 ## Reading the output
 
@@ -224,9 +239,12 @@ contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = 
                                               # which kinds `pm add` lets hold which. It
                                               # NARROWS the stock mapping — drop "bug" and
                                               # `pm add <ms> <bug>` refuses by name
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", # + D9 D10 R5, opt-in.
-          "U1", "U2", "U3", "U4", "U5",       # U2: the ledger couriers are wired and the
-          "V1", "V4", "V5", "V7"]             # tree holds no row at all. U3: [emit] is
+checks = ["D1", "D2", "D4", "D5", "D6",       # the stock roster, DEFAULT_CHECKS; a declared
+          "D11", "D12", "U1",                 # list REPLACES it, and `check pm` names any
+          "V1", "V4", "V5", "V7"]             # stock rule it omits on a ROSTER line.
+                                              # Opt-in: D9 D10 R1-R6 U2-U5.
+                                              # U2: the ledger couriers are wired and the
+                                              # tree holds no row at all. U3: [emit] is
                                               # declared and its sink has never been
                                               # written to. U4: the LAST hook-written row,
                                               # named with its age — recording that goes
@@ -287,7 +305,7 @@ runner_targets = ["precommit", "milestone"]   # what `runner-targets-resolve` as
 ours = [".github/workflows/verify.yml"]        # installed files this project OWNS: not graded, named every run
 ```
 
-`agentic-sdlc pm vocabulary` prints your declared states with their categories and the rule ids
+`make pm ARGS=vocabulary` prints your declared states with their categories and the rule ids
 `[pm] checks` may name — read it after a pin bump. A key this version no longer reads is named at
 exit 2, never silently ignored.
 
@@ -339,14 +357,21 @@ bumps in the release commit.
 one-line diff:
 
 ```make
-DEVKIT_VERSION := v0.4.0
+DEVKIT_VERSION := vX.Y.Z
 include Makefile.devkit
 
 my-scan: ## a gate this project owns
 	@bash tools/dev/checks/my_scan.sh
 ```
 
-`Makefile.devkit` is devkit-owned: `help`, `pm`, `check`, `precommit`, `milestone`. Your build and
+**The stock wiring never puts `agentic-sdlc` on PATH; `make` reaches it at your pin.**
+`make sdlc ARGS='close story <id>'` runs any verb and `make pm ARGS='story building <id>'` any `pm`
+verb, and every command the CLI prints for you to run is spelled that way. `ARGS` is parsed by a
+second shell, so put free text in single quotes, as the printed lines do:
+`make pm ARGS='set <id> changelog '"'"'costs $5'"'"''`, and each `'` INSIDE that free text is typed `'"'"'"'"'"'"'"'"'` (it has to survive both shells). Through make, any nonzero exit is make's
+2, and the verb's own code is the N in make's `Error N` line.
+
+`Makefile.devkit` is devkit-owned: `help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`. Your build and
 test tiers arrive through `Makefile.tiers`, a file you (or a language kit) write beside it: it
 defines the tier targets and declares which compositions they join with `GDK_PRECOMMIT_TIERS` and
 `GDK_MILESTONE_TIERS`. With no tier file, `precommit` and `milestone` are `check` alone and say so.
@@ -355,8 +380,8 @@ Your own static gates join `check` through `[gates] extra`, never through a fork
 **The two lists next to each other are two namespaces.** `[checks] all` names **gates this package
 ships** (`agentic-sdlc check <name>`); `[gates] extra` names **make targets your own makefile
 defines**. `make check` runs the first list, then the second. A gate name in `[gates] extra` is
-refused at exit 2 and told which key runs it, because make's own answer — `No rule to make target
-'budget'` — arrives three layers below the config that caused it.
+refused at exit 2 and told which key runs it, because make's own answer —
+`No rule to make target 'budget'` — arrives three layers below the config that caused it.  <!-- doc-scan:allow -->
 
 Every gate prints ONE verdict line naming its transcript under `.gate-reports/`; `VERBOSE=1`
 streams it. `make precommit` belongs in your per-change loop; `make milestone` is the full gate and

@@ -14,7 +14,7 @@ from pathlib import Path
 from agentic_sdlc import __version__
 from agentic_sdlc.core import apply, spawn
 from agentic_sdlc.core.project import repo_root
-from agentic_sdlc.repo import install
+from agentic_sdlc.repo import install, vehicle
 
 VERSION_PLACEHOLDER = '{version}'
 
@@ -111,8 +111,9 @@ def _write_seed(root: Path, name: str, rel: str) -> int:
         if existing == body:
             _say(f'{rel} already current')
         else:
+            # Pinned, not the vehicle: `init` writes `Makefile.devkit` (D2).
             _say(f'{rel} is yours — left alone (it differs from the template; '
-                 f'`agentic-sdlc init --diff` shows how)')
+                 f'`{vehicle.pinned("init", "--diff")}` shows how)')
         return 0
     result = apply.Plan().overwrite(target, body, newline=None,
                                     label=rel).apply(decide=False)
@@ -307,16 +308,20 @@ def main(argv: list[str]) -> int:
     print('     and `make milestone` get their tiers. Without one they are '
           '`check` alone,')
     print('     and they say so.')
-    print('  7. `agentic-sdlc pm new milestone first-light "First Milestone" '
-          '--version 0.1`')
+    # Through the vehicle: `init` has just written the `Makefile.devkit` it
+    # lives in. `pm init` prints the same line.
+    from agentic_sdlc.repo.pm.skills import FIRST_MILESTONE
+    print(f'  7. `{FIRST_MILESTONE[0]}`')
     print('     (it mints the id `ms-first-light` — the kind prefix and your '
           'slug — and')
-    print('     stamps `version: 0.1`), then `agentic-sdlc check pm`.')
+    print(f'     stamps `version: 0.1`), then '
+          f'`{vehicle.command("check", "pm")}`.')
     print(f'  8. The hooks are on disk and NOT registered: a harness runs them '
           f'because')
     print(f'     {install.AGENT_SETTINGS} names them, and nothing else does. '
           f'The block is')
-    print(f'     below — `agentic-sdlc install-hooks {install.SETTINGS_FLAG}` '
+    print(f'     below — '
+          f'`{vehicle.command("install-hooks", install.SETTINGS_FLAG)}` '
           f'lands it in this')
     print('     tree, or paste it into whatever settings file your harness '
           'reads.')

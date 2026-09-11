@@ -1,11 +1,11 @@
 ---
 id: bg-the-gate-help-names-one-of-its-four-rule-families
 kind: bug
-milestone:
+milestone: ms-a-consumer-can-take-the-bump
 name: check pm's opening line names the drift family and not the other three it runs
-status: open
+status: closed
 caused_by:
-changelog: none
+changelog: `check pm --help` opens on all four of its rule families and states the default roster the code actually runs — D12 on, U2–U5 opt-in — with V1, V4 and V5 now listed.
 ---
 
 # the gate help names one of its four rule families
@@ -64,3 +64,13 @@ roster against `KNOWN_RULES`, in both directions.
 The other gates' opening lines. A sweep across all five is a census and this is the one a reader
 was standing in when they noticed; `agentic-sdlc check <gate> --help` for each is how somebody
 would start it.
+
+## Correction from the 0.8.0 spec scout (M5)
+
+The premise above is incomplete: the roster on that help page is itself FALSE, not just undersold.
+The "default:" roster (`checks/pm.py:4-5`) omits D12 and lists U2–U5. Those are off by default: they
+are gated at `:488`, `:713`, `:779` and `:841`, and `DEFAULT_CHECKS` (`vocabulary.py:206-207`) lacks
+them. The seed (`project-devkit.toml:150`) agrees with the code. The comment at `vocabulary.py:210-213`
+("Both are STOCK-ON") is false for U2. The fix corrects the roster as well as the opening line. The
+test holds the stated default to `DEFAULT_CHECKS` and the enumerated rules to `KNOWN_CHECKS`
+(`KNOWN_RULES` does not exist). Serialized after #19 and #30 on `checks/pm.py`.

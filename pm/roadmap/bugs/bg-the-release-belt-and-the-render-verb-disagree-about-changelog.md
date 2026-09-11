@@ -1,11 +1,11 @@
 ---
 id: bg-the-release-belt-and-the-render-verb-disagree-about-changelog
 kind: bug
-milestone:
+milestone: ms-a-consumer-can-take-the-bump
 name: release blesses a release note whose first sentence is missing, because its check asks a narrower question than changelog does
-status: open
+status: closed
 caused_by:
-changelog: none
+changelog: `release` now exits 1 when the milestone's own `changelog:` is blank — `changelog-unreleased-nonempty` grades the milestone being released whatever its status, as well as every closed grain under it, and names it.
 ---
 
 # the release belt and the render verb disagree about changelog
@@ -57,3 +57,9 @@ every child has one. `release` exits 0 today; it should name the milestone and e
 Whether a `none` is TRUE — that a grain declining a sentence really changed nothing a consumer sees.
 That is judgement and a gate asserting it would be the second scoreboard. 0.7.0 declined 11 and each
 was read at the milestone review; none was mechanically graded.
+
+## Bound to 0.8.0
+
+Bound on the milestone's D1. Its `changelog:` was `none`, and it is cleared: `release` exiting 1 on a
+tree it passed is consumer-visible, so the sentence is written at close (spec scout M7). It edits
+`steps.py:818-850`, so it runs after the phase-A `steps.py` slices commit, and before the bump bug.

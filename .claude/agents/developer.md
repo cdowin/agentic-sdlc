@@ -11,9 +11,9 @@ effort: high
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -47,10 +47,10 @@ around it — and you build no named construct the story does not name.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc pm ready-for story <id>` — may I start?
-- `agentic-sdlc pm story building <id>` — the claim, on the record
-- `agentic-sdlc pm vocabulary` — which states may I write on this tree?
-- `agentic-sdlc verify --story` — the rung after every edit
+- `make pm ARGS='ready-for story <id>'` — may I start?
+- `make pm ARGS='story building <id>'` — the claim, on the record
+- `make pm ARGS=vocabulary` — which states may I write on this tree?
+- `make sdlc ARGS='verify --story'` — the rung after every edit
 <!-- END role-verbs -->
 
 ## Checklist
@@ -104,6 +104,6 @@ around it — and you build no named construct the story does not name.
 A dispatch names the NARROW command and the WIDE one, each with its measured
 cost: the narrow one is the inner loop, run after every edit; the wide one
 runs once, at the close. An agent given one command loops on it. Where the
-repo declares `[verify]`, `agentic-sdlc verify --plan` prints each rung with
+repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

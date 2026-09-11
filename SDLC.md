@@ -87,7 +87,10 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 **Builders:**
 
-- never commit — they write, verify their slice, and report;
+- in the serial default, never commit: they write, verify their slice, and report, and the
+  orchestrator commits by pathspec. Under the parallel opt-in, they own their worktree end to end:
+  `agent-worktree.sh new`, commit by pathspec, merge into the milestone branch, `agent-worktree.sh
+  done`, and report the merge hash;
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
   HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
@@ -100,13 +103,55 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
   one builder's "quick check" saturates the machine every other builder shares.
   A builder that believes it needs a wide gate reports and stops.
 
+**The orchestrator runs the belts as the NEXT ACTION, never as a batch.** Parallel or not, each grain
+still goes open → complete → reviewed → closed, and the belt runs the moment its input exists:
+
+    a slice is verified and committed     →  close story <id>, same turn
+    a feature's last story is done        →  pm feature reviewing <id>, then dispatch its review
+    a review record lands                 →  commit it, same turn
+    its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
+                                             deferred:<bug> / rejected:<why>), close feature <id>,
+                                             close its GitHub issues — then the next feature
+
+**Two modes, one contract, and the milestone document declares which.** SERIAL: one builder at a
+time, directly on the milestone branch; the git surface is `git add <paths>`, `git commit -m … --
+<paths>` and `git push`, plus the release's one merge. PARALLEL: for features on disjoint files, each
+builder in its own worktree. **Parallel builders never share one tree**, because the story belt's
+`committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
+after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
+the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
+`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.9.0 runs PARALLEL,
+by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
+mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
+harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
+branch, not the milestone's). The AGENT owns the whole loop: `agent-worktree.sh new <slug>` (based
+on the in-progress milestone's declared `branch:`, with the Stop gate's scope marker written), build,
+verify, commit by pathspec, merge its branch into the milestone branch, `agent-worktree.sh done
+<slug>` (which refuses to drop uncommitted or unmerged work). **The orchestrator never enters a
+worktree.** It verifies the merged result on the branch and runs the belts.
+
+**The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
+`checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
+reading the test and the code at HEAD, never by rewinding the tree.
+
+**A fix dispatch after a review lands the MAJOR-and-worse findings only**, per §0: a MINOR is recorded,
+not held for. Pure-text edits (a README row, a brief's sentence, a description) the orchestrator
+makes itself rather than dispatching.
+
 **The orchestrator:**
 
 - verifies each reported slice against the actual tree, never the narration;
 - runs the one authoritative full gate (`make milestone`) itself;
 - commits per feature by **explicit pathspec**;
 - moves every status through the pm CLI — `check pm` is the drift gate;
-- applies proposed shared-doc wording, appends decisions, opens the close.
+- applies proposed shared-doc wording, appends decisions, opens the close;
+- **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the
+  feature's `Issues:` line, it pushes the branch first so the hash resolves on GitHub. Then it posts
+  a comment naming the feature id, the commit hash(es) that fixed the issue and the version it ships
+  in, and runs `gh issue close <n> --reason completed`. **Cite a hash, never the branch:** `milestone/*`
+  branches are deleted after the merge, and hashes survive it because `main` is merge-commit-only and
+  forward-only. An issue the feature only partly fixes gets the comment, stays open, and the comment
+  names what remains and where it is tracked.
 
 ## 3. The model mix
 

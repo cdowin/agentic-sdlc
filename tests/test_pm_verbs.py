@@ -27,6 +27,7 @@ from pathlib import Path
 from support.pm import (
     CASE_SENSITIVE_TMP,
     STORY_REL,
+    bug as support_bug,
     cfg_for,
     declaring,
     ledger_lines,
@@ -41,6 +42,7 @@ from support.pm import (
 )
 
 from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, skills,
                                   vocabulary)
 
@@ -506,15 +508,16 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             self.assertIn(self.ASK, out)
             for answer in self.ANSWERS:
+                # Through the stock wiring, the answer inside ARGS.
                 self.assertIn(
-                    f'agentic-sdlc pm feature building 0.1/alpha {answer}', out)
+                    f"make pm ARGS='feature building 0.1/alpha {answer}'", out)
             # No node -> no question. `reviewing` declares nothing here.
             _, out = run_cli(root, 'feature', 'reviewing', '0.1/alpha')
             self.assertNotIn(self.ASK, out)
         one = self._node('feature', 'building', self.ASK, (self.ONE_ANSWER,))
         with tree(feature_status='ready', config=one) as root:
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
-            offered = [ln for ln in out.splitlines() if ') agentic-sdlc' in ln]
+            offered = [ln for ln in out.splitlines() if ') make pm ' in ln]
             self.assertEqual(len(offered), 1, offered)
 
     # --- 4: the capability census -----------------------------------------
@@ -684,9 +687,57 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(code, 0, out)
             crossed = self._stderr(out, 'READY')
             self.assertEqual(len(crossed), 1, out)
-            self.assertIn(f'agentic-sdlc {driver.CLOSE_VERB} feature '
-                          f'0.1/alpha', crossed[0])
+            self.assertIn(f"`make sdlc ARGS='{driver.CLOSE_VERB} feature "
+                          f"0.1/alpha'`", crossed[0])
             self.assertIn('2 of 2', crossed[0])
+
+        # One grain up, the line is the PARENT's own entry edge and never a
+        # narrower reading of same-kind siblings: an open bug nested in the
+        # milestone keeps `pm ready-for milestone` at NOT READY, and a READY
+        # printed over it is rule 4's first sin in a breadcrumb (S12,
+        # bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not).
+        for bug_status, ready in (('open', False), ('closed', True)):
+            with self.subTest(bug=bug_status), \
+                    tree(story_statuses=('done',)) as root:
+                support_bug(root, status=bug_status)
+                code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
+                                    '--review-record', 'docs/reviews/alpha.md')
+                self.assertEqual(code, 0, out)
+                edge, said = run_cli(root, 'ready-for', 'milestone', '0.1')
+                self.assertEqual(edge, 0 if ready else 1, said)
+                crossed = self._stderr(out, 'READY')
+                self.assertEqual(len(crossed), int(ready),
+                                 f'`pm ready-for milestone 0.1` exited {edge} '
+                                 f'and the arrival printed:\n{out}')
+                if ready:
+                    # The line's shape is contract (rule 6): unchanged by
+                    # which predicate decides whether it prints.
+                    self.assertRegex(
+                        crossed[0], r"^\[pm\] ready: `make sdlc ARGS='release "
+                                    r"[^'\s]+'` "
+                                    r'— this write made 0\.1 READY \(every '
+                                    r'feature is in done: 1 of 1\)$')
+
+        # Only the belt's OWN placeholder is bare. A `version:` off the tree, or
+        # a declared answer, shaped `<…>` is a value and is quoted: rendered
+        # bare, the review's input ran `touch PWNED4` out of a pasted `ready:`
+        # line and make exited 0 (M1 of the 0.8.0 vehicle review).
+        hostile = '<x; touch PWNED4 #>'
+        with tree(story_statuses=('done',)) as root:
+            self.assertEqual(run_cli(root, 'set', '0.1', 'version', hostile)[0],
+                             0)
+            code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
+                                '--review-record', 'docs/reviews/alpha.md')
+            self.assertEqual(code, 0, out)
+            crossed = self._stderr(out, 'READY')
+            self.assertEqual(len(crossed), 1, out)
+            self.assertEqual(vehicle.argv_of(crossed[0].split('`')[1]),
+                             ['release', hostile], crossed[0])
+        # `shlex` reads `;` as a word character, so the round trip cannot see
+        # a one-word answer: the type can — a `Slot` is rendered bare.
+        said = arrive.answer_argv('--by <x;touch${IFS}PWNED4;#> agent <type>')
+        self.assertEqual([type(w).__name__ for w in said],
+                         ['str', 'str', 'str', 'Slot'], said)
 
     # --- the emitted row --------------------------------------------------
     def test_the_printed_line_and_the_emitted_row_read_ONE_derivation(self):
@@ -1252,7 +1303,8 @@ class FieldMutation(unittest.TestCase):
                 with self.subTest(gid=gid, word=word):
                     code, out = run_cli(root, 'set', gid, 'status', word)
                     self.assertEqual(code, 2, out)
-                    self.assertIn(f'pm {verb} {word} {gid}', out)
+                    self.assertIn(
+                        vehicle.command('pm', verb, word, gid), out)
                     self.assertIn('stamps the ledger', out)
             self.assertEqual(sf.read_bytes(), before)
             self.assertEqual(ledger_lines(root), rows)   # refused: no row
@@ -1418,7 +1470,8 @@ class PmMoveIsRetiredByName(unittest.TestCase):
             code, out = run_cli(root, 'move', '0.1/alpha/s0', '0.1/beta')
             self.assertEqual(code, 2, out)
             self.assertIn('move was retired', out)
-            self.assertIn('pm set <story-id> feature', out)
+            self.assertIn("make pm ARGS='set <story-id> feature "
+                          "<feature-id>'", out)
             self.assertNotIn('unknown command', out)
 
     def test_the_router_does_not_carry_it(self):
@@ -1427,6 +1480,84 @@ class PmMoveIsRetiredByName(unittest.TestCase):
         source = pathlib.Path(cli.__file__).read_text(encoding='utf-8')
         self.assertNotIn("'move': cmd_", source)
         self.assertIn('move', cli.RETIRED_COMMANDS)
+
+
+class EveryVerbAnswersItsOwnHelp(unittest.TestCase):
+    """#25. `pm set --help` was exit 2 and the ~480-line roster on stderr, and
+    `pm add --help` was `unknown flag '--help'`: the router only read help as
+    `argv[0]`. Over the ROUTER'S OWN TABLE, so a verb added tomorrow is asked
+    the day it lands, and an exit code rather than prose — a verb whose USAGE
+    entry is missing fails here by name.
+
+    Not a row in `test_cli_surface.help_surfaces()`: the claim here is *a help
+    flag never WRITES*, which needs a tree to write into and a snapshot of it,
+    and that census is cached precisely so it is never built inside a fixture.
+    """
+
+    def test_a_help_flag_anywhere_never_writes_and_is_success_only_as_the_first_argument(self):
+        # The review of 0.8.0, M4: read ANYWHERE at exit 0, a help flag turned
+        # `decide <id> drop the -h alias` from a write into a success that
+        # wrote nothing. Past the verb's first argument (or its sub-form's) it
+        # still never writes, but it is exit 2 and says so.
+        roster = len(cli.USAGE.splitlines())
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            def snapshot():
+                return sorted((p.relative_to(root), p.read_bytes())
+                              for p in root.rglob('*') if p.is_file())
+            before = snapshot()
+            for verb in cli.commands():
+                entry = cli.verb_help(verb)
+                self.assertTrue(entry, f'USAGE has no entry for {verb!r}')
+                for argv in ((verb, '--help'), (verb, '-h')):
+                    with self.subTest(argv=argv):
+                        code, out = run_cli(root, *argv, stdout_only=True)
+                        self.assertEqual(code, 0, out)
+                        self.assertIn(entry.splitlines()[0], out)
+                        self.assertNotIn('ERROR', out)
+                        # The verb's block, never the roster (N11).
+                        self.assertLess(len(out.splitlines()), roster)
+                # `retire 0.1 --help` is the one that would bite: a flag read
+                # past a real argument must still never reach the write.
+                argv = (verb, '0.1', '--help')
+                with self.subTest(argv=argv):
+                    code, out = run_cli(root, *argv, stdout_only=True)
+                    self.assertEqual((code, out), (2, ''))
+                    code, out = run_cli(root, *argv)
+                    self.assertIn(entry.splitlines()[0], out)
+                    self.assertIn('read as a help flag, nothing was written; '
+                                  'quote the words to use it as text', out)
+                    self.assertLess(len(out.splitlines()), roster)
+            # The record's two argvs, each a WRITE before the help flag was
+            # read anywhere.
+            for argv in (('decide', '0.1/alpha', 'drop', 'the', '-h', 'alias'),
+                         ('new', 'feature', '0.1', 'hflag', 'make', '--help',
+                          'answer')):
+                with self.subTest(argv=argv):
+                    self.assertEqual(run_cli(root, *argv)[0], 2)
+            self.assertEqual(snapshot(), before)
+            # A sub-form is the verb's own first word: it narrows to its own
+            # entry at exit 0, and never to nothing.
+            code, out = run_cli(root, 'new', 'bug', '--help', stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn('new bug <milestone>', out)
+            self.assertNotIn('new story', out)
+            code, out = run_cli(root, 'ledger', 'report', '--help',
+                                stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn('ledger report', out)
+            self.assertNotIn('ledger record', out)
+        # N14: the arity refusal and `pm help <verb>` answer with the verb's
+        # block too, never the whole roster.
+        with tree() as root:
+            code, out = run_cli(root, 'set')
+            self.assertEqual(code, 2, out)
+            self.assertIn(cli.verb_help('set').splitlines()[0], out)
+            self.assertLess(len(out.splitlines()), roster)
+            code, out = run_cli(root, 'help', 'set', stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn(cli.verb_help('set').splitlines()[0], out)
+            self.assertLess(len(out.splitlines()), roster)
 
 
 class StoryResolution(unittest.TestCase):
@@ -1533,14 +1664,15 @@ class TheOrdinalPrefixRetiredByName(unittest.TestCase):
 
     def test_the_key_is_refused_by_name_with_its_replacement(self):
         self.assertIn('story_ordinal_prefix', vocabulary.RETIRED_KEYS)
-        self.assertIn('pm add', vocabulary.RETIRED_KEYS['story_ordinal_prefix'])
+        self.assertIn("make pm ARGS='add <feature-id> <story-id>'",
+                      vocabulary.RETIRED_KEYS['story_ordinal_prefix'])
         with tree(story_statuses=()) as root:
             write_config(root, '[pm]\nstory_ordinal_prefix = true\n')
             code, out = run_cli(root, 'validate')
             self.assertEqual(code, 2, out)
             self.assertIn('story_ordinal_prefix', out)
             self.assertIn('was retired', out)
-            self.assertIn('pm add', out)
+            self.assertIn("make pm ARGS='add <feature-id> <story-id>'", out)
 
     def test_a_leading_ordinal_is_now_just_part_of_the_slug(self):
         with tree(story_statuses=()) as root:
@@ -1823,13 +1955,78 @@ class Retire(unittest.TestCase):
     — is reported below the line that says what moved, never a precondition.
     """
 
+    # #31's backfill form: the inputs it refuses at exit 2, BEFORE a byte is
+    # written. Its facts are the caller's and nothing can check them, so the
+    # grammar is the whole defence. The id and version grammars are REUSED, so
+    # one malformed value each proves the reuse (SDLC.md §5).
+    BACKFILL_REFUSED = (
+        # (why, argv after `retire`, a phrase the refusal must carry)
+        ('id in the tree', ('0.1', '--version', '0.1.0', '--name', 'D'),
+         "make pm ARGS='retire 0.1 [<summary...>]'"),
+        # A near miss of an in-tree id names the id it missed (M3); the test
+        # mints `ms-foo` and `ft-bar` for these.
+        *((f'near miss {v!r}', (v, '--version', '1', '--name', 'D'),
+           "'ms-foo'")
+          for v in ('MS-FOO', 'Ms-Foo', 'foo', 'ms-foo.md', 'ms-foo\u200b')),
+        # An in-tree id of another kind is not told to use a command that
+        # refuses it (N9).
+        ('a feature id', ('ft-bar', '--version', '1', '--name', 'D'),
+         'not a milestone'),
+        # A flag-shaped value or word is a flag, never data (M1): a dry run
+        # asked for is never a permanent row, on either path (Q17).
+        ('flag as --version', ('gone', '--version', '--dry-run', '--name', 'X'),
+         'looks like a flag'),
+        ('flag as --name', ('gone', '--version', '1', '--name', '--dry-run'),
+         'looks like a flag'),
+        ('typo in the backfill', ('gone', '--version', '2', '--name', 'Y',
+                                  '--dryrun'), 'looks like a flag'),
+        ('typo on the normal path', ('0.1', '--dryrun'), 'looks like a flag'),
+        ('no --name', ('gone', '--version', '0.1.0'), '--name'),
+        ('no --version', ('gone', '--name', 'D'), '--version'),
+        ('empty --name', ('gone', '--version', '1', '--name', '  '), '--name'),
+        ('--name=', ('gone', '--version', '1', '--name='), '--name'),
+        ('bare flag', ('gone', '--name', 'D', '--version'), 'needs a value'),
+        ('twice', ('gone', '--version', '1', '--version', '2', '--name', 'D'),
+         'given twice'),
+        ('multi-line name', ('gone', '--version', '1', '--name', 'a\nb'),
+         'one line'),
+        ('version a b', ('gone', '--version', 'a b', '--name', 'D'), ''),
+        ('id a/b', ('a/b', '--version', '1', '--name', 'D'), ''),
+        # The ID grammar, not the version's: a colon no id may hold (N8).
+        ('id a:b', ('a:b', '--version', '1', '--name', 'D'), ''),
+    )
+
     def test_every_refusal_leaves_the_tree_standing(self):
         with tree() as root:
+            for argv in (('milestone', 'foo', 'Foo'),
+                         ('feature', '0.1', 'bar', 'Bar')):
+                self.assertEqual(run_cli(root, 'new', *argv)[0], 0)
             code, out = run_cli(root, 'retire', '9.9')
             self.assertEqual(code, 2, out)
             self.assertIn('is not a milestone', out)
             self.assertIn('0.1', out)
             self.assertTrue((root / 'pm/roadmap').is_dir())
+            before = sorted((p.relative_to(root), p.read_bytes())
+                            for p in root.rglob('*') if p.is_file())
+            for why, argv, phrase in self.BACKFILL_REFUSED:
+                with self.subTest(why=why):
+                    code, out = run_cli(root, 'retire', *argv)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(phrase, out)
+                    self.assertNotIn('Traceback', out)
+            self.assertEqual(sorted((p.relative_to(root), p.read_bytes())
+                                    for p in root.rglob('*') if p.is_file()),
+                             before)
+        with tree() as root:
+            # A RECORDED retirement is never superseded by a reconstruction.
+            (root / 'pm/roadmap/ledger.jsonl').write_text(
+                ledger.dumps(ledger.retire_row('gone', '0.3.0', 'Real'))
+                + '\n', encoding='utf-8')
+            code, out = run_cli(root, 'retire', 'gone', '--version', '0.3.0',
+                                '--name', 'Guessed')
+            self.assertEqual(code, 1, out)
+            self.assertIn('RECORDED retire row', out)
+            self.assertEqual(len(ledger_rows(root, 'pm/roadmap/ledger.jsonl')), 1)
         if hasattr(os, 'geteuid') and os.geteuid() == 0:
             return  # permission bits are not an obstruction as root
         # The obstruction. With ROADMAP.md gone the plan is ONE step, so the
@@ -1901,7 +2098,7 @@ class Retire(unittest.TestCase):
             code, out = run_cli(root, 'retire', '0.1')
             self.assertEqual(code, 0, out)
             self.assertIn('on no plan', out)
-            self.assertIn('pm add roadmap 0.1', out)
+            self.assertIn("`make pm ARGS='add roadmap 0.1'`", out)
 
     def test_the_summary_is_normalised_so_it_cannot_forge_a_column(self):
         """`pm roadmap` prints the summary in a TAB-separated row, so a tab or

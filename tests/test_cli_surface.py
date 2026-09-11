@@ -772,3 +772,135 @@ class TestTheHelpNamesTheBeltBesideThePathThatBypassesIt:
             assert named in entry, (
                 f'the `feature <done-state>` entry in `pm --help` never says '
                 f'{named!r}:\n{entry}')
+
+
+# --- a capability is cited where its operator STANDS ---------------------------
+# Rule 11's read side, as a boolean. `test_install.py` already asserts the other
+# direction — every verb an agent definition NAMES resolves against the router —
+# so "no definition cites a verb that does not exist" could fail and "every verb
+# is declared where its operator reads" could not. 0.7.0's own orchestrator
+# hand-rolled three shipped capabilities in one session, including the dispatch
+# preamble, and no gate went red
+# (`bg-rule-11-is-gated-in-one-direction-only`).
+REPO = Path(__file__).resolve().parents[1]
+OPERATOR_SURFACES = ('CLAUDE.md', 'README.md', 'SDLC.md',
+                     '.claude/rules/*.md', '.claude/skills/*/SKILL.md')
+
+# A verb whose operator surface is deliberately elsewhere. Each entry carries
+# its reason, and a STALE entry — one naming a verb this package no longer
+# routes, or one that is now cited anyway — fails, in the shape
+# `CONFIG_IMPORT_ALLOWLIST` uses in tests/test_boundaries.py. The roster is
+# meant to shrink.
+UNCITED_ALLOWED: dict[str, str] = {}
+
+
+def _operator_lines() -> list[str]:
+    """Every surface an operator of this repo reads, LINE BY LINE.
+
+    Lines rather than one blob, and that is not tidiness: a backtick span is
+    found by pairing backticks, and concatenating files re-pairs them across
+    the join — a roster that matched on its own line stopped matching inside
+    the blob, and this gate reported three false absences before the cause was
+    found. A markdown span does not cross a newline, so a line is the unit.
+    """
+    out: list[str] = []
+    for pattern in OPERATOR_SURFACES:
+        paths = sorted(REPO.glob(pattern)) if '*' in pattern else [REPO / pattern]
+        for path in paths:
+            if path.is_file():
+                out += path.read_text(encoding='utf-8').split('\n')
+    return out
+
+
+def every_routed_surface() -> tuple[str, ...]:
+    """Every invocable surface this package routes, sub-verbs included.
+
+    Assembled from the routers' OWN tables rather than a list here — the second
+    scoreboard this milestone kept finding. `pm cli.commands()` was hoisted in
+    0.6.0 for exactly this census and was used only in the resolving direction.
+    """
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo import install
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    names = set(routed_verbs())
+    names |= {f'pm {c}' for c in pm_cli.commands()}
+    names |= {f'check {g}' for g in cli.KNOWN_GATES}
+    names |= {f'close {o}' for o in driver.CLOSE_OPERATIONS}
+    names |= set(install.PLANS)
+    return tuple(sorted(names))
+
+
+def _cited(verb: str, lines: list[str]) -> bool:
+    """An INVOCATION, never a bare word — and a pipe ROSTER counts as one.
+
+    Four failures this had to survive, each found by RUNNING it:
+
+      too generous  a bare substring: `dispatch` appears in four files as "a
+                    dispatched agent", scoring this gate 10 verbs kind.
+      too strict    `<family> <sub>` adjacent: the idiomatic citation for a
+                    gate here is `check doc | shell | grain-shape | pm | hooks
+                    | repo-hygiene | budget`, which names seven adjacently
+                    spells none.
+      too generous  "a span opening with the family, containing the sub
+                    anywhere": `pm bug` matched ``pm add <ms> <bug>`` and `pm
+                    milestone` matched ``pm new milestone <slug>`` — both a
+                    DIFFERENT verb mentioning this one's noun.
+      wrong unit    scanning the files as one blob re-pairs backticks across
+                    the join, so a roster that matched alone stopped matching
+                    concatenated. A markdown span never crosses a newline.
+
+    So: a line carrying `agentic-sdlc <verb>` or a span opening with the whole
+    verb; or, for a sub-verb, a pipe roster of its family in which the sub-verb
+    is an alternative ON ITS OWN.
+    """
+    invocation = re.compile(r'(agentic-sdlc\s+|`)' + re.escape(verb) + r'\b')
+    if any(invocation.search(line) for line in lines):
+        return True
+    family, _, sub = verb.partition(' ')
+    if not sub:
+        return False
+    for line in lines:
+        for span in re.findall(r'`([^`]+)`', line):
+            # A markdown table escapes its pipes; the escape is not a token.
+            head, pipe, rest = span.replace('\\', '').partition('|')
+            # EXACTLY family + the first alternative. `pm new
+            # milestone|feature|story|bug` has a three-token head and is a
+            # roster of `pm new <kind>`, not of `pm <kind>` — it cited `pm bug`
+            # for a whole iteration of this gate, which is the same verb-shaped
+            # near-miss the case above records twice.
+            if not pipe or head.split()[:-1] != [family]:
+                continue
+            alts = [head.split()[-1:], *(a.split()[:1] for a in rest.split('|'))]
+            if any(alt == [sub] for alt in alts if alt):
+                return True
+    return False
+
+
+class TestACapabilityIsCitedWhereItsOperatorStands:
+
+    def test_every_routed_surface_is_named_in_a_surface_an_operator_reads(self):
+        lines = _operator_lines()
+        assert len(lines) > 500, 'the operator-surface census collapsed'
+        surfaces = every_routed_surface()
+        assert len(surfaces) > 30, f'only {len(surfaces)} surfaces — the roster collapsed'
+        missing = [v for v in surfaces
+                   if not _cited(v, lines) and v not in UNCITED_ALLOWED]
+        assert not missing, (
+            f'{len(missing)} routed surface(s) are named in no file an operator '
+            f'reads, so the only way to find them is to read the source:\n'
+            + '\n'.join(f'    {v}' for v in missing)
+            + '\n  Cite it in one of: ' + ', '.join(OPERATOR_SURFACES)
+            + '\n  or add it to UNCITED_ALLOWED with the reason its operator '
+              'surface is elsewhere.')
+
+    def test_the_allowlist_holds_no_entry_that_does_nothing(self):
+        """The stale half. An exemption for a verb that is now cited, or that
+        this package no longer routes, is a hole waiting for a verb to fall
+        into it — the same failure `CONFIG_IMPORT_ALLOWLIST` prunes for."""
+        lines = _operator_lines()
+        surfaces = set(every_routed_surface())
+        stale = sorted(v for v in UNCITED_ALLOWED
+                       if v not in surfaces or _cited(v, lines))
+        assert not stale, (
+            f'{len(stale)} exemption(s) no longer exempt anything — the verb is '
+            f'cited now, or is not routed at all: {", ".join(stale)}')

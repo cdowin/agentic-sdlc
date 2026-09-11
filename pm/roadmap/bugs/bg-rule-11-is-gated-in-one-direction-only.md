@@ -3,9 +3,9 @@ id: bg-rule-11-is-gated-in-one-direction-only
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: a citation is checked for resolving and a capability is never checked for being cited — 13 of 48 verbs
-status: open
+status: fixed
 caused_by:
-changelog: none
+changelog: `tests/test_cli_surface.py` now asserts the direction rule 11 was missing: every verb and sub-verb the routers declare is cited in a surface an operator reads, with a named exemption roster whose stale entries fail too. `.claude/rules/pm-execution.md` gains `agentic-sdlc dispatch --grain <id>`, the serial-attribution path, and the per-kind status verbs.
 ---
 
 # rule 11 is gated in one direction only
@@ -15,22 +15,29 @@ milestone named `nothing is hand-rolled`.** Not discipline — a missing boolean
 
 ## The measurement
 
-Of **48** routed verbs, **13** are named in no surface an ORCHESTRATOR loads
-(`CLAUDE.md`, `SDLC.md`, `.claude/rules/*.md`, `.claude/skills/*/SKILL.md`),
-matched as an invocation rather than a bare word:
+**CORRECTED.** This grain first said 13 of 48 verbs were unnamed. That census
+omitted `README.md`, and the number is wrong in the direction that flattered the
+finding — the defect class this milestone is named for, committed inside it, for
+the second time. The honest split:
 
-    named NOWHERE an operator or an agent loads (8)
-      check hooks   check repo-hygiene   check shell   gates-extra
-      pm bug        pm get               pm milestone  pm next
+    surfaces an operator can FIND (README included)      3 of 48 unnamed
+      check hooks   pm bug   pm milestone
 
-    in an agent DEFINITION only, and in no auto-loaded surface (5)
-      check budget  check doc  dispatch  lesson record  lesson show
+    surfaces ALWAYS LOADED (CLAUDE.md, .claude/rules/)  13 of 48 unnamed
+      check budget  check doc  check hooks  check repo-hygiene  check shell
+      dispatch  gates-extra  lesson record  lesson show
+      pm bug  pm get  pm milestone  pm next
 
-**`dispatch` is the one that cost this session.** It is cited in the shipped
-agent definitions — which are the PAYLOAD handed TO a dispatched agent — and in
-nothing the agent doing the DISPATCHING reads. So the verb whose entire purpose
-is to be run at the moment of dispatch is advertised to everyone except the
-operator at that moment.
+**The README names nearly everything, and that is the point rather than the
+refutation.** `CLAUDE.md` says *"Read `README.md` once."* Once, at the start of
+a session — which is not the same as having the line in context at the moment
+you need it. Rule 11's own words are *"named in the surface someone is standing
+in when they need it"*, and the surface an orchestrator is standing in when it
+dispatches is `.claude/rules/pm-execution.md`, which names `GDK_LEDGER_GRAIN`
+and not the verb that renders it.
+
+So the finding narrows and sharpens: **3 verbs are undiscoverable; `dispatch` is
+discoverable in a file you read once and absent from the file that reloads.**
 
 ## Root cause — 0.6.0 fixed the payload and never measured the carrier
 

@@ -93,6 +93,12 @@ too. Shipping is a git event, after `done`.
 while its status never moved — the tree and the work disagreeing. Move the status when
 it becomes true, rather than batching flips at the end.
 
+**Every kind moves the same way and each has its own verb** — `pm story <state>
+<id>`, `pm feature <state> <id>`, `pm bug <state> <id>`, `pm milestone <state>
+<id>` — and the states are that kind's own, from `[pm.states.<kind>]`. A bug
+runs `open | fixed | closed`, not the story words; asking for a state the kind
+does not declare is refused by name.
+
 1. **Claim.** `pm story building <id>` when you begin editing files for a story, and
    set `owner:` in the same edit (`pm set <id> owner <name>`). This is bookkeeping,
    and only bookkeeping: **the flip does not turn recording on.** A ledger row is
@@ -190,13 +196,29 @@ a list of ids and nothing else — never a rendered roster.
 - `pm ledger show <grain-id>` — that grain's TELEMETRY, oldest first: every
   status flip, decision and dispatch, with the seconds between them. What a
   story COST, rather than where it is.
+- **`agentic-sdlc dispatch --grain <id>`** — the prompt you hand a subagent, and
+  it is RENDERED rather than pasted: this project's contract, the grain's id,
+  kind, status and brief, the ladder, the gate roster and the vocabulary, all
+  read out of `devkit.toml` so they cannot go stale. **Run it before you write a
+  dispatch prompt.** A dispatched agent receives none of the files you are
+  reading now — measured, not assumed (0.6.0) — so the preamble is the only
+  thing that reaches it. It also renders the two lines that ATTRIBUTE the
+  dispatch's spend; the next entry is what they are for.
+- **One story `building` at a time and attribution is free.** The courier reads
+  the tree at the moment the agent stops: exactly one story in progress, the row
+  names it; none or several, the row names none and says which. So a serial
+  dispatch needs no export at all, and a concurrent one needs the next entry.
 - **`GDK_LEDGER_GRAIN`** — export it, and the session's or dispatch's rows land
   on that grain's line instead of in `rows naming no grain`. The couriers read
   it from their own environment and pass it as `--grain`; **nothing exports it
   for you**, and it is the one `GDK_LEDGER_*` value the hook cannot get from
   the payload, because no hook event carries a grain. Whoever starts a session
   or dispatches an agent knows what it is working on, so passing it is copying
-  a fact rather than deriving one. Unset is normal: the verb then uses the one
+  a fact rather than deriving one. **If you cannot export into the courier's
+  environment** — an orchestrator whose shell state does not persist between
+  tool calls cannot — record it when the agent returns instead:
+  `pm ledger record --grain <id> --tokens-total N --tool-calls N --duration-s N`,
+  off the numbers the dispatch reports back. Unset is normal: the verb then uses the one
   story in progress, and omits the key when there is none or several — never a
   guess.
 - `pm ledger report [<grain-id>]` — the same rows added up per grain:

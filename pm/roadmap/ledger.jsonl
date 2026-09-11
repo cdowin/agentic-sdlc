@@ -3043,3 +3043,13 @@
 {"ts":"2026-09-11T01:32:03Z","kind":"test","tier":"integration","nodeid":"tests/test_fresh_project.py::test_nothing_the_install_wrote_is_a_check_finding_and_the_gates_pass","duration_ms":2043,"rank":5}
 {"ts":"2026-09-11T01:32:03Z","kind":"gate","gate":"integration","verdict":"FAIL","duration_ms":28263,"census":351}
 {"ts":"2026-09-11T01:32:04Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":228}
+{"ts":"2026-09-11T01:33:01Z","kind":"gate","gate":"check","verdict":"FAIL","duration_ms":270}
+{"ts":"2026-09-11T01:33:32Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":797,"rank":1}
+{"ts":"2026-09-11T01:33:32Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":743,"rank":2}
+{"ts":"2026-09-11T01:33:32Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling","duration_ms":445,"rank":3}
+{"ts":"2026-09-11T01:33:32Z","kind":"test","tier":"unit","nodeid":"tests/test_cli_surface.py::TestACapabilityIsCitedWhereItsOperatorStands::test_every_routed_surface_is_named_in_a_surface_an_operator_reads","duration_ms":14,"rank":4}
+{"ts":"2026-09-11T01:33:32Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_the_shell_installables_are_under_a_fifth_comment_lines","duration_ms":0,"rank":5}
+{"ts":"2026-09-11T01:33:43Z","kind":"test","tier":"unit","nodeid":"tests/test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch::test_every_ast_shaped_guard_declares_a_corpus_or_is_named","duration_ms":493,"rank":1}
+{"ts":"2026-09-11T01:33:43Z","kind":"test","tier":"unit","nodeid":"tests/test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch::test_every_declared_corpus_is_replayed_case_by_case","duration_ms":24,"rank":2}
+{"ts":"2026-09-11T01:33:43Z","kind":"test","tier":"unit","nodeid":"tests/test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch::test_every_corpus_holds_a_violation_and_a_clean_case","duration_ms":0,"rank":3}
+{"ts":"2026-09-11T01:33:43Z","kind":"test","tier":"unit","nodeid":"tests/test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch::test_the_census_is_the_real_suite","duration_ms":0,"rank":4}

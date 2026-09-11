@@ -46,3 +46,37 @@ that filed the bug — a bare `D1` resolving to a real ruling that says somethin
 else — and that is stated in the grain rather than implied away. Closing that
 needs the tree to adopt `<version>/D<n>` as mandatory in grains, which is a
 273-site migration and a decision of its own, not a line in this close.
+
+## D2 — 2026-09-11 — a trailing telemetry row is expected, not drift, and the belts already say so
+
+`bg-the-push-gate-dirties-the-tree-it-just-cleaned` is real and four fixes were
+listed for it, each losing something: drop the row (loses cost data for the runs
+that happen most), amend inside the hook (forward-only forbids it), untrack the
+ledger (loses the history three verbs read), `.gitignore` the root file (deletes
+the destination `0.4.0` designed for unattributed rows).
+
+**None is taken, because the repo's own checks already hold the correct
+position.** `close story`'s `committed` check reads *"no modified path outside
+`pm/roadmap/`"* — `steps.py:106` carries the full argument for that exclusion,
+and leg (ii) is this one: N builders share one worktree, so a bare `git status
+--porcelain` is dirty during any real inner-loop call, and *"a rung that cries
+wolf is one an agent learns to ignore, and the ignoring generalises to the rungs
+that do work."*
+
+So: **a pending `gate` or `session` row under `pm/roadmap/` is machine-written
+telemetry, it is `merge=union`, and it is not uncommitted work.** The belts are
+right and nothing in this package reports otherwise. What complains is tooling
+OUTSIDE the repo that asks `git status` the coarse question — and the answer to
+that is the same as leg (ii): ask the narrower question, which `close story`
+already does.
+
+**Rejected: make the hook silent.** The pre-push gate is the run that happens
+most, so its cost row is the most valuable one in the file. Deleting a real
+measurement to keep `git status` quiet trades the thing this package is for
+against a cosmetic.
+
+What survives as a genuine cost, and is recorded rather than fixed: the residue
+is always the same uninteresting file, which trains the blind `git add` that
+`tools/hooks/cc-commit-pathspec.sh` exists to block. That guard fired on this
+session's own orchestrator once, correctly, and is the mitigation already in
+place.

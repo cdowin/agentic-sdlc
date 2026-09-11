@@ -3,9 +3,9 @@ id: bg-the-always-loaded-surface-states-properties-not-procedures
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: CLAUDE.md is 1.8 negatives per positive and 6 of 11 rules open with a prohibition; a constraint fires only from inside the mistake
-status: open
+status: fixed
 caused_by:
-changelog: none
+changelog: Rule 11 in the always-loaded CLAUDE.md now states its read side as a MOVE with a trigger — before writing a script to measure the tree, ask it, naming the four verbs that answer — beside the property it already asserted.
 ---
 
 # the always-loaded surface states properties, not procedures
@@ -102,3 +102,26 @@ the verb is in no surface the orchestrator loads
 (`bg-rule-11-is-gated-in-one-direction-only`), and no amount of framing fixes a
 line that is not there. Framing explains why the rule did not send the operator
 LOOKING; the gate is what makes the line exist.
+
+## What landed
+
+**Rule 11 gains its operator-facing form, beside the property it already
+states** — the fifth question 0.6.0's pass never asked, answered for the one
+rule this session proved it on, without touching a rule number:
+
+    Before you write a script to measure this tree, or paste a prompt, ASK IT:
+    `pm ledger report` (spend, clock, gate cost, session deltas), `pm list`,
+    `check <gate>`, `agentic-sdlc dispatch --grain <id>`.
+
+The sentence names the moment ("before you write a script"), the move ("ask
+it"), and the four surfaces that answer. It also carries its own evidence: this
+milestone's orchestrator hand-rolled three of those having read the rule.
+
+`CLAUDE.md` goes 152 -> 180 lines against a documented ~200 target.
+
+**Only rule 11, deliberately.** The other ten are not rewritten: rules 1-3 are
+load-bearing prohibitions whose form is correct, the numbers are a public API
+with four-figure citations, and a sweep of all eleven on one session's n=1
+evidence would be the confident reconstruction rule 4 is about. The fifth
+question is now asked and answered once, on the rule that failed, and the rest
+stay as they are until something measures them failing.

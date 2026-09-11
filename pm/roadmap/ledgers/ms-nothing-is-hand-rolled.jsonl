@@ -49,3 +49,8 @@
 {"ts":"2026-09-11T01:29:09Z","kind":"disposition","grain":"bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator","state":"fixed","answer":"none"}
 {"ts":"2026-09-11T01:32:51Z","kind":"status","grain":"bg-the-integration-tier-counts-fixtures-not-integration","from":"open","to":"fixed"}
 {"ts":"2026-09-11T01:32:51Z","kind":"disposition","grain":"bg-the-integration-tier-counts-fixtures-not-integration","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T01:34:13Z","kind":"decision","grain":"ms-nothing-is-hand-rolled","entry":"D2","title":"a trailing telemetry row is expected, not drift, and the belts already say so"}
+{"ts":"2026-09-11T01:34:13Z","kind":"status","grain":"bg-the-push-gate-dirties-the-tree-it-just-cleaned","from":"open","to":"fixed"}
+{"ts":"2026-09-11T01:34:13Z","kind":"disposition","grain":"bg-the-push-gate-dirties-the-tree-it-just-cleaned","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T01:34:33Z","kind":"status","grain":"bg-the-always-loaded-surface-states-properties-not-procedures","from":"open","to":"fixed"}
+{"ts":"2026-09-11T01:34:33Z","kind":"disposition","grain":"bg-the-always-loaded-surface-states-properties-not-procedures","state":"fixed","answer":"none"}

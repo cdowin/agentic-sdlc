@@ -4,8 +4,8 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a state the ledger shows was held is not called never held
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

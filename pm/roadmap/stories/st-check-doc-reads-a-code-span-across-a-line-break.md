@@ -4,8 +4,8 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: check doc reads a code span across a line break
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: ["st-the-auto-loaded-rule-is-true-at-this-version"]
 changelog:
 ---

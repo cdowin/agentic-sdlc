@@ -7,7 +7,7 @@ name: a state the ledger shows was held is not called never held
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `check pm` U1 and `pm init`'s census count a state as held when a ledger `status` or `disposition` row names it, so a tree at rest no longer reports its transient rungs as never held, and the WARN says what it read instead of calling the state "a flow the project is not running".
 ---
 
 # a state the ledger shows was held is not called never held

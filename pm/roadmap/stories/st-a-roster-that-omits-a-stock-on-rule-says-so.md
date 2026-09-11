@@ -7,7 +7,7 @@ name: a declared roster that omits a stock-on rule says so
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `check pm` reports a retired `fix_milestone:` or `caught_in:` field whatever `[pm] checks` declares (exit 1), prints a `ROSTER` line naming each stock-on rule a declared roster omits — a roster written before 0.6.0 lacks D11 and D12 — and the D3/D8 retirement refusal names the rule that replaces it.
 ---
 
 # a declared roster that omits a stock-on rule says so

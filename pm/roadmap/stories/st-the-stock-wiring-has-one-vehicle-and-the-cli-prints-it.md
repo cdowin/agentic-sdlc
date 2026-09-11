@@ -7,7 +7,7 @@ name: the stock wiring reaches every verb, and every line the CLI renders names 
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `Makefile.devkit` gains `make sdlc ARGS='<verb> …'`, which reaches every verb at your pin, and every command the CLI prints for you to run is now spelled `make pm|sdlc ARGS='…'` with free text single-quoted; `ARGS` no longer leaks into sub-makes, the dispatch preamble's STATIC GATES lists `[gates] extra` and the stock roster, and a stale `Makefile.devkit` is remedied first with the pinned `uvx … install-gates --force` — run `install-gates --force` before anything else when you take this bump.
 ---
 
 # the stock wiring reaches every verb, and every line the CLI renders names it
@@ -72,3 +72,7 @@ Minor: a new `Makefile.devkit` target and changed rendered line shapes (rule 6).
 10. **The probe runs the checkout, not the network (M8):** criteria 3 and 5 set `DEVKIT=` to this
     checkout (`Makefile.devkit:17-23` already supports that). 0.8.0 is not tagged, and `uvx --from
     git+…@<pin>` would run old code.
+
+## Close
+
+done: 188c831 — `make sdlc ARGS=` over the pinned $(DEVKIT) with value/unexport/MAKEFLAGS= quoting; one helper (repo/vehicle.py) spells every rendered command (73 -> 20 bare strings in src/, the rest usage/prefixes); STATIC GATES names [gates] extra and the stock roster; Makefile.devkit remedy is the pinned uvx install-gates; a pasted RECORDING line runs with nothing on PATH (tests/test_makefile_include.py). Hand-typed double-quoted ARGS still expands $ — the shell does it before the CLI sees it; the single-quote rule is documented, no guard possible.

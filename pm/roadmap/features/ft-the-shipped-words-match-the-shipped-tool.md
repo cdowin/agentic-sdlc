@@ -3,7 +3,7 @@ id: ft-the-shipped-words-match-the-shipped-tool
 kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the shipped words match the shipped tool
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-the-shipped-words-match-the-shipped-tool.md
 depends_on: []
 consumed_by: []

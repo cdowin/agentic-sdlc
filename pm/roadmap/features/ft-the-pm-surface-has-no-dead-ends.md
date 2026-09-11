@@ -3,7 +3,7 @@ id: ft-the-pm-surface-has-no-dead-ends
 kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the pm surface has no dead ends
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-the-pm-surface-has-no-dead-ends.md
 depends_on: []
 consumed_by: []

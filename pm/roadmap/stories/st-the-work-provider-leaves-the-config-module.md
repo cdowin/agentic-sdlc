@@ -7,7 +7,7 @@ name: the work provider leaves the config module
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `pm config --seed` prints one changed comment line: the seed's own note about where its bytes come from now names `vocabulary.render_seed()`, because the module it used to name no longer exists.
 ---
 
 # the work provider leaves the config module
@@ -119,3 +119,53 @@ becomes pluggable.
 Moving the SDLC vocabulary out of `repo/pm/` — 1,062 lines in the right package, wrongly named.
 
 The `print()` question and the docstring GATE — `st-every-module-opens-with-one-true-sentence`.
+
+## Close
+
+**`vocabulary.py` (1,071 lines) DECLARES; `inventory.py` (1,505) CONTAINS.** The filenames are
+criterion 2: one holds the categories, the state words, the arrival table, the rule ids, the document
+slots and `PmConfig`; the other the grains, the pools, the index, the children, a grain document's
+sections and the plan. `inventory` imports 28 names from `vocabulary`; `vocabulary` imports nothing
+from `repo/`, which `LayersPointDownward::test_each_sibling_half_imports_with_the_other_absent`
+EXECUTES rather than reads — purge the package from `sys.modules`, import each half alone, and the
+DECLARES half must leave the other unimported. Probed both ways before it was trusted.
+
+**Criterion 4 — one entry, and the argument is a measurement.** `mainline_branch` went with the
+vocabulary because `[repo_hygiene] mainline` is a config read, not a tree read; with it gone the work
+provider's config-guard usage is ZERO, so `repo/pm/vocabulary.py` replaces `repo/pm/model.py` in
+`CONFIG_IMPORT_ALLOWLIST` and the roster neither grows nor grows a `sect=None`.
+
+**Criterion 5 — one module, two banners, and the second is not grammar.** Both clusters are in
+`inventory.py`. `id_defect` stays immediately above `grain()`, its first caller, and `kind_of` reads
+`grain_index`: moving them up would be a re-order, and this was a move.
+
+**A third name moved for the same reason as the other two.** `dir_entries`/`case_variants` read a
+DIRECTORY, so they went with CONTAINS — which is what makes the vocabulary docstring's last sentence
+true: it imports `core.config` and `core.project` and nothing else. No walk, no frontmatter, no apply.
+
+**AST residual (criterion 8): ZERO lines inside the move.** 217 top-level units in HEAD's `model.py`,
+217 across the two halves plus `config.pointer_escapes`, every one byte-identical under `ast.unparse`
+with docstrings stripped and the owner name mapped; no name only in HEAD, none only in NOW. 164 lines
+over 21 modules OUTSIDE it, read line by line: a function-local `import model` repointed (23), the
+string annotation `'model.PmConfig'` (5), `pointer_escapes` now unqualified at its 4 callers and 2
+cases, one roster/corpus/message per module naming the owner, and this story's one new case.
+
+**Behaviour, measured rather than asserted:** 28 verb runs over this tree, HEAD's `src/` against this
+one on the same data, same second. 20 byte-identical: `pm status`, `validate`, `vocabulary`
+(+`--json`), `list` ×4, `roadmap`, `next`, `get`, `changelog`, `check pm`/`grain-shape`/`doc`, `cite`,
+`dispatch`, `verify --plan`, `ledger show`, `ready-for feature`. Four belts refused identically and
+wrote nothing (`close story`, `close feature`, `release`, `adopt`; `release` is byte-identical once it
+is not racing my own `make`). Everything left is a CLOCK, and each was shown to drift the same way
+between two runs of the SAME code: elapsed ms inside a quoted gate line, U4's row age, a feature's
+`open` age, `ledger report`'s `open_seconds`. With the numbers masked every one is identical,
+`--from HEAD~5` included, so history still reads through git blobs.
+
+finding: one REAL output byte. `installables/project-devkit.toml` said *"THESE BYTES ARE
+`model.render_seed()` VERBATIM"*, so `pm config --seed` and `init` printed a module that no longer
+exists; it reads `vocabulary.render_seed()` now. One comment line, and the only consumer-visible
+change this story makes.
+finding: `make budget` FAILS at `test 1596 of 1575` (+21), as handed over. HEAD was 1595: this story
+adds exactly ONE case.
+finding: the rename lengthened lines it did not reflow — `checks/pm.py:151` is 120 characters where it
+was 106. A reflow is a body edit.
+finding: `changelog:` is still empty. The sentence it owes is the first finding above.

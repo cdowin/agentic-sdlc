@@ -11,8 +11,9 @@ from __future__ import annotations
 import sys
 from typing import NamedTuple
 
+from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model
+from agentic_sdlc.repo.pm import inventory, ledger, vocabulary
 
 # The row kind, and its fields IN ORDER — the columns a read verb names. `ts`,
 # the stamp every other reader keys on: spelled `at`, a row sorts as the empty
@@ -337,13 +338,13 @@ def record(cfg, rest: list[str]) -> int:
     source = given[SOURCE_FLAG]
     # Rule 8: this ledger is committed and APPEND-ONLY, so a pointer that
     # resolves on one machine cannot be edited back out afterwards.
-    if model.pointer_escapes(source):
+    if pointer_escapes(source):
         return _refused(f'{SOURCE_FLAG} {source!r} names a path outside this '
                         f'checkout; nothing was recorded, because a pointer '
                         f'only its author can follow points at nothing for '
                         f'every other reader of this ledger', 1)
-    target = model.record_path(cfg, source)
-    if not model.record_resolves(target):
+    target = inventory.record_path(cfg, source)
+    if not inventory.record_resolves(target):
         return _refused(f'{SOURCE_FLAG} {source!r} names no file '
                         f'({cfg.rel(target)}); nothing was recorded, because a '
                         f'row pointing at nothing is the paraphrase this row '
@@ -419,7 +420,7 @@ def main(argv: list[str]) -> int:
         return _refused(f'unknown {WORD} command {word!r} (expected: '
                         f'{RECORD}, {SHOW})', 2)
     try:
-        cfg = model.load()
-    except model.ConfigError as err:
+        cfg = vocabulary.load()
+    except vocabulary.ConfigError as err:
         return _refused(str(err), 2)
     return record(cfg, rest) if word == RECORD else show(cfg, rest)

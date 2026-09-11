@@ -41,7 +41,7 @@ from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 pytestmark = pytest.mark.fuzz
 
 # The flow is APPENDED rather than typed out: `[pm.states.*]` has no runtime
-# fallback (model.py:718 `flow_of`), so the eleven-step sequence below —
+# fallback (`vocabulary.flow_of`), so the eleven-step sequence below —
 # `pm new milestone`, `pm new feature`, `pm sync` — reads it on every call, and
 # a tree that declared nothing would fail the FIRST step at exit 2 with nothing
 # said about idempotence. Derived from `render_seed()` through

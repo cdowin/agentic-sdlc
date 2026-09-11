@@ -24,7 +24,8 @@ from pathlib import Path
 from support.pm import bug, cfg_for, damage, run_cli, tree, write
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import model, rename, templates, validate
+from agentic_sdlc.repo.pm import (inventory, rename, templates, validate,
+                                  vocabulary)
 
 TARGET = '0.1/alpha'
 RENAMED = 'ft-alpha'
@@ -124,7 +125,7 @@ class TheSweepIsOnePass(unittest.TestCase):
                              f'["{RENAMED}"]')
             self.assertEqual(
                 frontmatter.list_field_of(root / POOLS / 'milestones/0.1.md',
-                                    model.ORDER_KEY),
+                                    vocabulary.ORDER_KEY),
                 [RENAMED, '0.1/alphabet'])
             # The near-misses, and the whole tree still resolving: a missed
             # binding leaves a story bound to an id nothing holds.
@@ -136,7 +137,7 @@ class TheSweepIsOnePass(unittest.TestCase):
                 'docs/reviews/alpha.md')
             cfg = cfg_for(root)
             self.assertEqual([g.gid for g in
-                              model.children(cfg, 'story', RENAMED)],
+                              inventory.children(cfg, 'story', RENAMED)],
                              [f'{TARGET}/s0'])
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
@@ -216,7 +217,7 @@ class TheNewIdIsRefusedNeverResolved(unittest.TestCase):
                         code, out = run_cli(root, 'rename', TARGET, gid)
                         self.assertEqual(code, 2, out)
                         # The SHARED matrix, not a second one spelled here.
-                        self.assertIn(model.id_defect(gid), out)
+                        self.assertIn(inventory.id_defect(gid), out)
             finally:
                 frontmatter.read_raw = original
 
@@ -279,7 +280,7 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
         with tree() as root:
             cfg = cfg_for(root)
             keys = set()
-            for kind in model.FLOW_KINDS:
+            for kind in vocabulary.FLOW_KINDS:
                 lines = frontmatter._split(templates.load(cfg, kind))
                 bounds = frontmatter._fence_bounds(lines)
                 self.assertIsNotNone(bounds, kind)
@@ -290,7 +291,7 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
         self.assertEqual(keys - self.NOT_REFS - set(rename.REF_FIELDS), set())
 
     def test_every_id_a_reader_resolves_is_swept(self):
-        declared = ({model.ORDER_KEY, validate.CAUSED_BY}
+        declared = ({vocabulary.ORDER_KEY, validate.CAUSED_BY}
                     | set(validate.REF_KEYS)
-                    | {field for _, field in model.BINDS_TO.values()})
+                    | {field for _, field in vocabulary.BINDS_TO.values()})
         self.assertEqual(declared - set(rename.REF_FIELDS), set())

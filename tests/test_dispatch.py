@@ -23,9 +23,9 @@ from support.pm import run_cli, tree as pm_tree
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import dispatch
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import vocabulary
 
-FLOW = model.render_seed()
+FLOW = vocabulary.render_seed()
 LADDER = '[verify]\nstory = "make unit"\nfeature = "make test"\nmilestone = "make milestone"\n'
 DECLARED = ('[dispatch]\nproject = "A worked example, and its stack."\n'
             'contracts = ["RULES.md"]\n')

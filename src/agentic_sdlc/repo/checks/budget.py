@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 
 from agentic_sdlc.core.config import ConfigError, config_section, number_table
-from agentic_sdlc.repo.pm import ledger, model
+from agentic_sdlc.repo.pm import ledger, vocabulary
 
 NAME = 'budget'
 
@@ -84,7 +84,7 @@ def _budgets() -> dict[str, int]:
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
     """Every row of the current release's ledger, or the defect that stopped the read."""
-    cfg = model.load()
+    cfg = vocabulary.load()
     path = ledger.grainless_path(cfg.roadmap)
     if not path.is_file():
         return [], ''

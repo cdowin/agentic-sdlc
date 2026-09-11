@@ -11,14 +11,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # Every frontmatter key whose value can be a grain id. `tests/test_pm_rename.py`
 # holds it to the shipped templates and to `BINDS_TO`/`ORDER_KEY`/`validate`'s
 # ref keys, so a template or a bound kind cannot grow a reference without
 # joining the sweep.
 REF_FIELDS = ('depends_on', 'consumed_by', 'caused_by', 'reviewed', 'order',
-              model.GRAIN_MILESTONE, model.GRAIN_FEATURE)
+              vocabulary.GRAIN_MILESTONE, vocabulary.GRAIN_FEATURE)
 
 # An unindented frontmatter key, which is the only shape the readers accept.
 _KEY = re.compile(r'^(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?P<rest>.*)$')
@@ -113,7 +113,7 @@ def reidentified(text: str, new: str) -> str:
         return ''
     for i in range(bounds[0] + 1, bounds[1]):
         match = _KEY.match(lines[i])
-        if match is None or match.group('key') != model.FIELD_ID:
+        if match is None or match.group('key') != vocabulary.FIELD_ID:
             continue
         rest = match.group('rest')
         value = frontmatter._without_trailing_comment(rest).strip()
@@ -126,16 +126,16 @@ def reidentified(text: str, new: str) -> str:
     return ''
 
 
-def _claimants(cfg: model.PmConfig, gid: str) -> list[str]:
+def _claimants(cfg: vocabulary.PmConfig, gid: str) -> list[str]:
     """Every document declaring `gid`, by path — usually one."""
-    for claimed, paths in model.duplicate_ids(cfg):
+    for claimed, paths in inventory.duplicate_ids(cfg):
         if claimed == gid:
             return [cfg.rel(path) for path in paths]
     return []
 
 
-def _verdict(cfg: model.PmConfig, out: Sweep, target: model.Grain | None,
-             holder: model.Grain | None) -> bool:
+def _verdict(cfg: vocabulary.PmConfig, out: Sweep, target: inventory.Grain | None,
+             holder: inventory.Grain | None) -> bool:
     """The answers that need no sweep at all, onto `out`; True when one of them
     applies."""
     # BOTH directions of one sentence: refusing a taken `new` and then picking
@@ -168,7 +168,7 @@ def _verdict(cfg: model.PmConfig, out: Sweep, target: model.Grain | None,
     return bool(out.defect or out.noop or out.blockers)
 
 
-def documents(cfg: model.PmConfig, index: dict[str, model.Grain]) -> list[Path]:
+def documents(cfg: vocabulary.PmConfig, index: dict[str, inventory.Grain]) -> list[Path]:
     """Every document the sweep must read, in whichever layout the tree is in.
 
     The POOL, not the index, because a document the index cannot key on still
@@ -178,25 +178,25 @@ def documents(cfg: model.PmConfig, index: dict[str, model.Grain]) -> list[Path]:
     a container now and its `order` holds milestone IDS, so a pools-only sweep
     left `order: ["ms-a"]` naming a renamed grain, at exit 0.
     """
-    if model.is_pooled(cfg):
-        pooled = [p for kind in model.FLOW_KINDS
-                  for p in model.pool_walk(cfg, kind)]
-        root = model.root_grain(cfg)
+    if inventory.is_pooled(cfg):
+        pooled = [p for kind in vocabulary.FLOW_KINDS
+                  for p in inventory.pool_walk(cfg, kind)]
+        root = inventory.root_grain(cfg)
         return pooled + ([root.path] if root is not None else [])
     return sorted({g.path for g in index.values()})
 
 
-def sweep(cfg: model.PmConfig, old: str, new: str) -> Sweep:
+def sweep(cfg: vocabulary.PmConfig, old: str, new: str) -> Sweep:
     """Decide the whole rename against the tree; writes nothing. A malformed id
     is answered before a document is opened, so a hostile string costs no read
-    — the property `model.id_defect` exists to keep."""
+    — the property `inventory.id_defect` exists to keep."""
     out = Sweep(old=old, new=new)
     for gid in (old, new):
-        defect = model.id_defect(gid)
+        defect = inventory.id_defect(gid)
         if defect:
             out.defect = f'{defect} — nothing was read'
             return out
-    index = model.grain_index(cfg)
+    index = inventory.grain_index(cfg)
     target = index.get(old)
     if _verdict(cfg, out, target, index.get(new)):
         return out
@@ -206,7 +206,7 @@ def sweep(cfg: model.PmConfig, old: str, new: str) -> Sweep:
     return out
 
 
-def _take(cfg: model.PmConfig, out: Sweep, path: Path, is_target: bool) -> None:
+def _take(cfg: vocabulary.PmConfig, out: Sweep, path: Path, is_target: bool) -> None:
     """One document's share of the sweep, staged or reported."""
     try:
         text = frontmatter.read_raw(path)
@@ -217,7 +217,7 @@ def _take(cfg: model.PmConfig, out: Sweep, path: Path, is_target: bool) -> None:
     swept, fields = rewritten(text, out.old, out.new)
     if is_target and swept:
         swept, fields = reidentified(swept,
-                                     out.new), (model.FIELD_ID,) + fields
+                                     out.new), (vocabulary.FIELD_ID,) + fields
     if not swept:
         # No fence to locate a field in. A document that never names `old` is
         # simply not a reference; one that does is a ref this verb cannot

@@ -98,8 +98,8 @@ def _also_wrong(roster: tuple[str, ...]) -> str:
     said: list[str] = []
     if 'pm' in roster:
         try:
-            from agentic_sdlc.repo.pm import model
-            said.extend(model.all_config_defects())
+            from agentic_sdlc.repo.pm import vocabulary
+            said.extend(vocabulary.all_config_defects())
         except Exception:  # noqa: BLE001 - never mask the roster error
             pass
     if not said:

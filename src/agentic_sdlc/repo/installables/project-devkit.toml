@@ -290,7 +290,7 @@
 # — `obe`, `wontfix`, `duplicate` — belongs in `done`, because finished and
 # delivered are different axes (`docs/design/state-categories.md` §4).
 #
-# THESE BYTES ARE `model.render_seed()` VERBATIM and a test holds them there.
+# THESE BYTES ARE `vocabulary.render_seed()` VERBATIM and a test holds them there.
 # Hand-copying the table would leave two spellings of it in this package, and
 # the copy nobody runs is the one that goes stale.
 

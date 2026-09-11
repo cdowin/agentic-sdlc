@@ -21,7 +21,7 @@ from pathlib import Path
 from support.pm import cfg_for, run_cli, run_gate, tree, write, write_config
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import cli, model
+from agentic_sdlc.repo.pm import cli, inventory, vocabulary
 
 PLAN_REL = 'pm/roadmap/releases.md'
 
@@ -273,7 +273,7 @@ class ContainsDecidesWhatMayHoldWhat(unittest.TestCase):
                 outputs.append([run_cli(root, 'add', p, c)
                                 for p, _, c, _, _ in LEVELS])
         self.assertEqual(outputs[0], outputs[1])
-        self.assertEqual(model.DEFAULT_CONTAINS['milestone'],
+        self.assertEqual(vocabulary.DEFAULT_CONTAINS['milestone'],
                          ('feature', 'bug'))
 
 
@@ -350,7 +350,7 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
             text = (root / PLAN_REL).read_text(encoding='utf-8')
             self.assertTrue(text.startswith('---\n'))
             self.assertIn('# The release plan', text)
-            self.assertEqual(model.root_id(cfg_for(root)), 'roadmap')
+            self.assertEqual(inventory.root_id(cfg_for(root)), 'roadmap')
             self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
 
     def test_the_plan_answers_to_the_id_it_declares(self):
@@ -358,7 +358,7 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
             (root / PLAN_REL).write_text(
                 '---\nid: the-plan\nkind: roadmap\norder:\n---\n\nPlan.\n',
                 encoding='utf-8')
-            self.assertEqual(model.root_id(cfg_for(root)), 'the-plan')
+            self.assertEqual(inventory.root_id(cfg_for(root)), 'the-plan')
             self.assertEqual(run_cli(root, 'add', 'the-plan', '0.1')[0], 0)
             self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
             # ...and `roadmap` is then no id at all, rather than a second name
@@ -468,7 +468,7 @@ class ThePlanIsRead(unittest.TestCase):
             code, out = run_cli(root, 'next')
             self.assertEqual(code, 0, out)
             self.assertIn('has shipped', out)
-            self.assertIsNone(model.current_milestone(cfg_for(root)))
+            self.assertIsNone(inventory.current_milestone(cfg_for(root)))
 
     def test_the_roadmap_verb_writes_nothing(self):
         with tree(story_statuses=('ready',)) as root:

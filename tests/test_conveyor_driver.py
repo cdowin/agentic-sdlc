@@ -30,7 +30,7 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
 CTX = driver.Context(root=Path('.'), operation='release', version='1.0.0')
 
@@ -224,11 +224,11 @@ def test_done_state_is_the_first_of_the_done_category_as_declared():
     tail = re.sub(r'^(\s*done\s*=\s*\[)', r'\1"shipped", ', tail, count=1,
                   flags=re.MULTILINE)
     with _tree(head + marker + tail):
-        assert driver.done_state(model.load(), 'milestone') == 'shipped'
+        assert driver.done_state(vocabulary.load(), 'milestone') == 'shipped'
     with _tree(FLOW_TOML):
-        flow = model.flow_of(model.load(), 'milestone')
-        assert driver.done_state(model.load(), 'milestone') == \
-            flow.by_category[model.DONE_CATEGORY][0]
+        flow = vocabulary.flow_of(vocabulary.load(), 'milestone')
+        assert driver.done_state(vocabulary.load(), 'milestone') == \
+            flow.by_category[vocabulary.DONE_CATEGORY][0]
 
 
 # --- criterion 4: release prints the caller's list, writes only the status ---
@@ -253,7 +253,7 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
                    if before.get(rel) != after.get(rel)}
         assert changed == {'pm/roadmap/milestones/1.0.0.md',
                            'pm/roadmap/ledgers/1.0.0.jsonl'}, changed
-        want = driver.done_state(model.load(), 'milestone')
+        want = driver.done_state(vocabulary.load(), 'milestone')
         assert frontmatter.field_of(root / 'pm/roadmap/milestones/1.0.0.md',
                               'status') == want
         rows = [r.data for r in

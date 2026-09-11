@@ -33,7 +33,7 @@ from support.pm import tree
 
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import cli, model, templates
+from agentic_sdlc.repo.pm import cli, inventory, templates, vocabulary
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
 
@@ -114,14 +114,14 @@ class Scaffolding(unittest.TestCase):
         can regenerate.
         """
         with tree(story_statuses=('ready',)) as root:
-            doc = shared(root, '0.1', model.HANDOFF_FILE_NAME)
+            doc = shared(root, '0.1', vocabulary.HANDOFF_FILE_NAME)
             self.assertFalse(doc.exists())
             code, out = run_cli(root, 'new', 'handoff', '0.1')
             self.assertEqual(code, 0, out)
             body = doc.read_text(encoding='utf-8')
             # Rendered, not copied: the placeholders are filled from the tree.
             self.assertTrue(
-                body.startswith(model.SLOT_HEADER[model.HANDOFF_FILE_NAME]),
+                body.startswith(vocabulary.SLOT_HEADER[vocabulary.HANDOFF_FILE_NAME]),
                 body)
             self.assertIn('0.1', body)
             self.assertNotIn('{id}', body)
@@ -144,7 +144,7 @@ class Scaffolding(unittest.TestCase):
         the warning it protects has become noise.
         """
         with tree(story_statuses=('ready',)) as root:
-            doc = shared(root, '0.1', model.HANDOFF_FILE_NAME)
+            doc = shared(root, '0.1', vocabulary.HANDOFF_FILE_NAME)
             doc.unlink(missing_ok=True)
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
             self.assertFalse(doc.exists(),
@@ -167,7 +167,7 @@ class Scaffolding(unittest.TestCase):
             self.assertIn('0.1-DECISIONS.md', out)
             self.assertIn('0.1-decisions.md', out)
             self.assertIn('nothing was written', out)
-            entries = model.dir_entries(pool)
+            entries = inventory.dir_entries(pool)
             # EXACT names: on macOS `exists('0.1-decisions.md')` answers True
             # off the 0.1-DECISIONS.md sitting there, so only a listing can
             # prove no twin was minted and no rename ran.
@@ -181,7 +181,7 @@ class Scaffolding(unittest.TestCase):
         # reads to a consumer's hook as "drift found" with a traceback attached.
         # ScaffoldRefused is the shape, and it refuses before anything moves.
         with tree(story_statuses=('ready',)) as root:
-            shared(root, '0.1', model.DECISION_FILE_NAME).mkdir()
+            shared(root, '0.1', vocabulary.DECISION_FILE_NAME).mkdir()
             code, out = run_cli(root, 'new', 'milestone', '0.1')
             self.assertEqual(code, 1, out)
             self.assertIn('REFUSED', out)
@@ -279,13 +279,13 @@ class Scaffolding(unittest.TestCase):
         # one stacked on it.
         with tree(story_statuses=('ready',)) as root:
             self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
-            for slot in model.MILESTONE_OPTIONAL_SLOTS:
+            for slot in vocabulary.MILESTONE_OPTIONAL_SLOTS:
                 self.assertFalse(shared(root, '0.1', slot).exists(), slot)
-            for slot, want in model.SLOT_HEADER.items():
+            for slot, want in vocabulary.SLOT_HEADER.items():
                 doc = shared(root, '0.1', slot)
                 doc.write_text('# headerless\n', encoding='utf-8')
                 self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
-                self.assertEqual(model.header_of(doc), want, slot)
+                self.assertEqual(inventory.header_of(doc), want, slot)
                 self.assertIn('# headerless', doc.read_text(encoding='utf-8'))
                 repaired = doc.read_text(encoding='utf-8')
                 self.assertEqual(run_cli(root, 'new', 'milestone', '0.1')[0], 0)
@@ -299,12 +299,12 @@ class Scaffolding(unittest.TestCase):
             # wording, both tiers stayed green, and `pm new` stacked a second
             # header onto every doc written under the old words on upgrade day
             # (bg-a-proof-row-names-a-case-that-proves-half).
-            retired = sorted(model.RETIRED_SLOT_HEADERS)
+            retired = sorted(vocabulary.RETIRED_SLOT_HEADERS)
             self.assertTrue(retired, 'a retired wording must stay recognised '
                                      'once one exists — with the set empty '
                                      'the loop below asks nothing')
             for header in retired:
-                for slot in model.SLOT_HEADER:
+                for slot in vocabulary.SLOT_HEADER:
                     doc = shared(root, '0.1', slot)
                     doc.write_text(f'{header}\n\n# 0.1 demo\n',
                                    encoding='utf-8')
@@ -315,7 +315,7 @@ class Scaffolding(unittest.TestCase):
                         doc.read_bytes(), before,
                         f'{slot} grew a second header over the retired '
                         f'wording {header!r}')
-                    self.assertEqual(model.header_of(doc), header, slot)
+                    self.assertEqual(inventory.header_of(doc), header, slot)
 
     def test_a_name_the_filesystem_refuses_is_a_refusal_not_a_traceback(self):
         # The grain's own filename is the last unguarded write: a name too
@@ -331,7 +331,7 @@ class Scaffolding(unittest.TestCase):
             self.assertIn('past the', out)
             self.assertIn('nothing was written', out)
             self.assertEqual(
-                [f.name for f in model.pool_walk(cfg_for(root), 'milestone')],
+                [f.name for f in inventory.pool_walk(cfg_for(root), 'milestone')],
                 ['0.1.md'])
 
     def test_new_story_and_new_bug_refuse_a_name_the_filesystem_rejects(self):
@@ -385,14 +385,14 @@ class NewKeepsTheTreesOwnLayout(unittest.TestCase):
     def test_a_nested_tree_keeps_its_shape_and_stays_readable(self):
         with tree(story_statuses=('ready',)) as root:
             mdir = self._nested(root)
-            self.assertFalse(model.is_pooled(cfg_for(root)))
+            self.assertFalse(inventory.is_pooled(cfg_for(root)))
             code, out = run_cli(root, 'new', 'story', '0.1/alpha', 'probe', 'P')
             self.assertEqual(code, 0, out)
             self.assertTrue(
                 (mdir / 'features/alpha/stories/st-probe.md').is_file(), out)
             self.assertFalse((root / 'pm/roadmap/stories').exists(), out)
             # The tree is still READ as nested, which is the half that broke.
-            self.assertFalse(model.is_pooled(cfg_for(root)))
+            self.assertFalse(inventory.is_pooled(cfg_for(root)))
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('2 story/ies', out)
@@ -461,7 +461,7 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
     """`bg-the-new-verbs-mint-a-compound-id`, GitHub #8.
 
     `pm new` minted `<mid>/<slug>` while `tools/dev/pm_migrate.py` minted
-    `<kind-prefix>-<slug>` off `model.KIND_PREFIX`, so a migrated tree grew
+    `<kind-prefix>-<slug>` off `inventory.KIND_PREFIX`, so a migrated tree grew
     BOTH vocabularies, one grain at a time, and nothing went red. The id also
     restated the binding that `milestone:`/`feature:` already carried, which
     made re-parenting a `pm rename` plus a whole-tree ref sweep — the cost
@@ -476,7 +476,7 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
         self.assertEqual(run_cli(root, 'new', 'milestone', 'later', 'Later')[0], 0)
 
     def test_every_kind_mints_what_the_migration_would_have_minted(self):
-        # Compared against `model.mint_id` rather than four literals: the claim
+        # Compared against `inventory.mint_id` rather than four literals: the claim
         # is that the two paths are ONE function, and two hard-coded strings
         # would still pass the day they diverge again.
         with tree(story_statuses=('ready',)) as root:
@@ -493,8 +493,8 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                 with self.subTest(kind=kind):
                     code, out = run_cli(root, *argv)
                     self.assertEqual(code, 0, out)
-                    gid = model.mint_id(kind, slug)
-                    self.assertEqual(gid, f'{model.KIND_PREFIX[kind]}-{slug}')
+                    gid = inventory.mint_id(kind, slug)
+                    self.assertEqual(gid, f'{inventory.KIND_PREFIX[kind]}-{slug}')
                     path = root / doc / f'{gid}.md'
                     self.assertTrue(path.is_file(), out)
                     self.assertEqual(frontmatter.unquote(frontmatter.field_of(path, 'id')),
@@ -797,10 +797,10 @@ class Templates(unittest.TestCase):
         # have failed in CI on Linux. The slot names are the assertion.
         with tree() as root:
             run_cli(root, 'new', 'milestone', '0.2', 'Second')
-            entries = model.dir_entries(root / MILESTONES)
+            entries = inventory.dir_entries(root / MILESTONES)
             self.assertEqual(entries.get('ms-0.2.md'), 'file', entries)
             # And no shared doc rode along beside it.
-            for slot in model.MILESTONE_OPTIONAL_SLOTS:
+            for slot in vocabulary.MILESTONE_OPTIONAL_SLOTS:
                 self.assertNotIn(f'ms-0.2-{slot}', entries)
             self.assertIn('# ms-0.2 — Second',
                           (root / MILESTONES / 'ms-0.2.md').read_text())
@@ -823,7 +823,7 @@ class Templates(unittest.TestCase):
             self.assertIn('is a case variant of decisions.md', out)
             self.assertIn('git mv --force', out)
             self.assertEqual(frontmatter.read_raw(tdir / 'DECISIONS.md'), mine)
-            self.assertNotIn('decisions.md', model.dir_entries(tdir))
+            self.assertNotIn('decisions.md', inventory.dir_entries(tdir))
 
             # The same rule for a template that is merely CUSTOMISED: copying
             # them out a second time never clobbers what a project edited.
@@ -925,10 +925,10 @@ class YourMilestoneDirectoryIsYours(unittest.TestCase):
         # rather than that it does not exist. "Unknown rule" reads as a typo
         # and silently ungates.
         for retired in ('D13', 'D14'):
-            self.assertNotIn(retired, model.KNOWN_CHECKS)
+            self.assertNotIn(retired, vocabulary.KNOWN_CHECKS)
         for retired in ('V2', 'V3', 'V6', 'D7', 'D8'):
-            self.assertNotIn(retired, model.KNOWN_CHECKS, retired)
-            self.assertIn(retired, model.RETIRED_CHECKS, retired)
+            self.assertNotIn(retired, vocabulary.KNOWN_CHECKS, retired)
+            self.assertIn(retired, vocabulary.RETIRED_CHECKS, retired)
         with tree(story_statuses=('ready',)) as root:
             for named, says in (('D13', ''), ('V2', 'identity'),
                                 ('V3', 'membership is now the field'),

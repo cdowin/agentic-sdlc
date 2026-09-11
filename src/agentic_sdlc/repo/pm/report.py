@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.core import frontmatter, spawn
-from agentic_sdlc.repo.pm import arrive, ledger, model, verdict
+from agentic_sdlc.core.config import pointer_escapes
+from agentic_sdlc.repo.pm import arrive, inventory, ledger, verdict, vocabulary
 
 # The two line shapes a consumer greps (rule 6); both carry the milestone id.
 HEADING_PREFIX = '[ledger:report]'
@@ -59,9 +60,9 @@ SUB_ROW_INDENT = '  '
 SIZE_FIELD = 'size'
 
 # Grain kinds, in the order their tables print.
-KIND_STORY = model.GRAIN_STORY
-KIND_FEATURE = model.GRAIN_FEATURE
-KIND_BUG = model.GRAIN_BUG
+KIND_STORY = vocabulary.GRAIN_STORY
+KIND_FEATURE = vocabulary.GRAIN_FEATURE
+KIND_BUG = vocabulary.GRAIN_BUG
 KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
 
 # D3's snapshot buckets, by the kind of grain whose ids they hold;
@@ -201,9 +202,9 @@ LEFT, RIGHT = 'left', 'right'
 # over one tree, so a report read from history is the same report by
 # construction. `GitSource` runs `rev-parse`, `ls-tree`, `cat-file` and `show`,
 # none of which writes or touches the index (D6).
-FEATURES_DIR = model.FEATURES_DIR
-STORIES_DIR = model.STORIES_DIR
-BUGS_DIR = model.BUGS_DIR
+FEATURES_DIR = vocabulary.FEATURES_DIR
+STORIES_DIR = vocabulary.STORIES_DIR
+BUGS_DIR = vocabulary.BUGS_DIR
 MD_SUFFIX = '.md'
 
 GIT = 'git'
@@ -248,8 +249,8 @@ def _universal(text: str) -> str:
 
 
 class _Blob:
-    """One file at a rev, shaped as `open(...)` and `read_text(...)` so `model`
-    and `ledger` stay the only readers of their formats. The text is produced
+    """One file at a rev, shaped as `open(...)` and `read_text(...)` so
+    `inventory` and `ledger` stay the only readers of their formats. The text is produced
     lazily, so an absent blob raises inside the reader that already handles it.
     """
 
@@ -258,7 +259,7 @@ class _Blob:
 
     def open(self, mode: str = 'r', encoding: str | None = None,
              newline: str | None = None) -> io.StringIO:
-        # The same disabled translation `model.read_raw` asks of `open()`.
+        # The same disabled translation `frontmatter.read_raw` asks of `open()`.
         return io.StringIO(self._read(), newline='')
 
     def read_text(self, encoding: str = 'utf-8') -> str:
@@ -271,7 +272,7 @@ class _Blob:
 class Source:
     """The tree the report reads, as the fourteen reads it makes — no more,
     none writing. The last four are the LAYOUT family: a rev read that asked
-    `model.is_pooled` would look for a retired milestone's ledger, document and
+    `inventory.is_pooled` would look for a retired milestone's ledger, document and
     records in the layout the retire left.
     """
 
@@ -279,22 +280,22 @@ class Source:
     #: it in the heading.
     rev = ''
 
-    def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
+    def milestone_dir(self, cfg: vocabulary.PmConfig, mid: str) -> Path | None:
         raise NotImplementedError
 
-    def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
+    def feature_file(self, cfg: vocabulary.PmConfig, fid: str) -> Path | None:
         raise NotImplementedError
 
-    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+    def feature_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         raise NotImplementedError
 
-    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
+    def story_files(self, cfg: vocabulary.PmConfig, fid: str) -> list[Path]:
         raise NotImplementedError
 
-    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+    def bug_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         raise NotImplementedError
 
-    def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
+    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
         raise NotImplementedError
 
     def field_of(self, path: Path, key: str) -> str:
@@ -309,40 +310,40 @@ class Source:
     def ledger_rows(self, path: Path) -> list:
         raise NotImplementedError
 
-    def is_pooled(self, cfg: model.PmConfig) -> bool:
+    def is_pooled(self, cfg: vocabulary.PmConfig) -> bool:
         raise NotImplementedError
 
     def milestone_doc(self, handle: Path) -> Path:
         raise NotImplementedError
 
-    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+    def ledger_for(self, cfg: vocabulary.PmConfig, mid: str) -> Path:
         raise NotImplementedError
 
-    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
+    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
         raise NotImplementedError
 
 
 class DiskSource(Source):
-    """The working tree, delegated to `model` and `ledger` so the live census
-    is the gate's census."""
+    """The working tree, delegated to `inventory` and `ledger` so the live
+    census is the gate's census."""
 
-    def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
-        return model.milestone_dir(cfg, mid)
+    def milestone_dir(self, cfg: vocabulary.PmConfig, mid: str) -> Path | None:
+        return inventory.milestone_dir(cfg, mid)
 
-    def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
-        return model.feature_file(cfg, fid)
+    def feature_file(self, cfg: vocabulary.PmConfig, fid: str) -> Path | None:
+        return inventory.feature_file(cfg, fid)
 
-    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
-        return model.feature_files(cfg, mid)
+    def feature_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
+        return inventory.feature_files(cfg, mid)
 
-    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
-        return model.story_files(cfg, fid)
+    def story_files(self, cfg: vocabulary.PmConfig, fid: str) -> list[Path]:
+        return inventory.story_files(cfg, fid)
 
-    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
-        return model.bug_files(cfg, mid)
+    def bug_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
+        return inventory.bug_files(cfg, mid)
 
-    def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
-        return model.review_record_for(cfg, fid)
+    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
+        return inventory.review_record_for(cfg, fid)
 
     def field_of(self, path: Path, key: str) -> str:
         return frontmatter.field_of(path, key)
@@ -356,17 +357,17 @@ class DiskSource(Source):
     def ledger_rows(self, path: Path) -> list:
         return ledger.read_rows(path)
 
-    def is_pooled(self, cfg: model.PmConfig) -> bool:
-        return model.is_pooled(cfg)
+    def is_pooled(self, cfg: vocabulary.PmConfig) -> bool:
+        return inventory.is_pooled(cfg)
 
     def milestone_doc(self, handle: Path) -> Path:
-        return model.milestone_doc(handle)
+        return inventory.milestone_doc(handle)
 
-    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+    def ledger_for(self, cfg: vocabulary.PmConfig, mid: str) -> Path:
         return ledger.ledger_for(cfg, mid)
 
-    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
-        return model.shared_doc(cfg, path, name)
+    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
+        return inventory.shared_doc(cfg, path, name)
 
 
 class GitSource(Source):
@@ -457,7 +458,7 @@ class GitSource(Source):
                       and (not pattern or fnmatch.fnmatchcase(name, pattern)))
 
     def _grain_docs(self, gdir: Path) -> list[Path]:
-        """`model.grain_docs` at the rev: the same walk and the same four
+        """`inventory.grain_docs` at the rev: the same walk and the same four
         narrowings, in the same order, so a milestone read from history has the
         census it had on disk."""
         out: list[Path] = []
@@ -475,10 +476,10 @@ class GitSource(Source):
         return sorted(out)
 
     def _is_grain_doc(self, path: Path) -> bool:
-        """`model._is_grain_doc` at the rev — the predicate itself, not a copy,
+        """`inventory._is_grain_doc` at the rev — the predicate itself, not a copy,
         so this census cannot disagree with the gate's. An unreadable blob
         stays in scope, as on disk."""
-        return model._is_grain_doc(self._doc(path))
+        return inventory._is_grain_doc(self._doc(path))
 
     def _doc(self, path: Path) -> _Blob:
         """This path at the rev, handed to a reader that expects a `Path`."""
@@ -497,100 +498,100 @@ class GitSource(Source):
         return self._blobs[rel].decode('utf-8')
 
     # --- the layout, asked of the REV ------------------------------------------
-    def is_pooled(self, cfg: model.PmConfig) -> bool:
-        """`model.is_pooled` at the rev, because the two disagree in the case
+    def is_pooled(self, cfg: vocabulary.PmConfig) -> bool:
+        """`inventory.is_pooled` at the rev, because the two disagree in the case
         this verb exists for: a retire empties the pools on disk while the rev
         still holds every grain."""
         if self._pooled is None:
-            self._pooled = any(self._grain_docs(model.pool_dir(cfg, kind))
-                               for kind in model.FLOW_KINDS)
+            self._pooled = any(self._grain_docs(inventory.pool_dir(cfg, kind))
+                               for kind in vocabulary.FLOW_KINDS)
         return self._pooled
 
-    def _pool_grain(self, cfg: model.PmConfig, kind: str,
+    def _pool_grain(self, cfg: vocabulary.PmConfig, kind: str,
                     gid: str) -> Path | None:
         """The document in one pool DECLARING this id, at the rev — what
-        `model.grain_index` answers on disk, for one id."""
-        for path in self._grain_docs(model.pool_dir(cfg, kind)):
-            if self.field_of(path, model.FIELD_ID) == gid:
+        `inventory.grain_index` answers on disk, for one id."""
+        for path in self._grain_docs(inventory.pool_dir(cfg, kind)):
+            if self.field_of(path, vocabulary.FIELD_ID) == gid:
                 return path
         return None
 
     # --- the fourteen reads ---------------------------------------------------
-    def milestone_dir(self, cfg: model.PmConfig, mid: str) -> Path | None:
+    def milestone_dir(self, cfg: vocabulary.PmConfig, mid: str) -> Path | None:
         """The milestone's HANDLE at the rev: its document in the pool, or the
         `<mid>-*` directory a pre-migration rev holds."""
-        if not model.segment_is_literal(mid):
+        if not inventory.segment_is_literal(mid):
             return None
         if self.is_pooled(cfg):
-            return self._pool_grain(cfg, model.GRAIN_MILESTONE, mid)
-        for base in (cfg.roadmap, cfg.roadmap / model.ARCHIVE_DIR_NAME):
+            return self._pool_grain(cfg, vocabulary.GRAIN_MILESTONE, mid)
+        for base in (cfg.roadmap, cfg.roadmap / vocabulary.ARCHIVE_DIR_NAME):
             for found in self._dirs(base, f'{mid}-*'):
                 return found
         return None
 
-    def feature_file(self, cfg: model.PmConfig, fid: str) -> Path | None:
+    def feature_file(self, cfg: vocabulary.PmConfig, fid: str) -> Path | None:
         if self.is_pooled(cfg):
-            return self._pool_grain(cfg, model.GRAIN_FEATURE, fid)
+            return self._pool_grain(cfg, vocabulary.GRAIN_FEATURE, fid)
         mid, _, slug = fid.partition('/')
-        if not model.segment_is_literal(slug):
+        if not inventory.segment_is_literal(slug):
             return None
         mdir = self.milestone_dir(cfg, mid)
         if mdir is None:
             return None
-        ffile = mdir / FEATURES_DIR / slug / model.FEATURE_DOC
+        ffile = mdir / FEATURES_DIR / slug / vocabulary.FEATURE_DOC
         return ffile if self.is_file(ffile) else None
 
-    def _pool_children(self, cfg: model.PmConfig, kind: str,
+    def _pool_children(self, cfg: vocabulary.PmConfig, kind: str,
                        parent_id: str) -> list[Path]:
-        """`model._children_paths` at the rev, in the parent's declared `order`
+        """`inventory._children_grains` at the rev, in the parent's declared `order`
         and by id after that — the ORDER is half of the equality with disk."""
-        field = model.BINDS_TO.get(kind, ('', ''))[1]
+        field = vocabulary.BINDS_TO.get(kind, ('', ''))[1]
         if not field:
             return []
         found: dict[str, Path] = {}
-        for path in self._grain_docs(model.pool_dir(cfg, kind)):
+        for path in self._grain_docs(inventory.pool_dir(cfg, kind)):
             if self.field_of(path, field) != parent_id:
                 continue
-            found[self.field_of(path, model.FIELD_ID) or path.stem] = path
+            found[self.field_of(path, vocabulary.FIELD_ID) or path.stem] = path
         parent = self._grain_at(cfg, parent_id)
-        declared = (frontmatter.list_field_of(self._doc(parent), model.ORDER_KEY)
+        declared = (frontmatter.list_field_of(self._doc(parent), vocabulary.ORDER_KEY)
                     if parent is not None else [])
         out = [found.pop(gid) for gid in declared if gid in found]
         return out + [found[gid] for gid in sorted(found)]
 
-    def _grain_at(self, cfg: model.PmConfig, gid: str) -> Path | None:
+    def _grain_at(self, cfg: vocabulary.PmConfig, gid: str) -> Path | None:
         """Any grain's document at the rev — the parent whose `order`
         `_pool_children` reads."""
-        for kind in model.FLOW_KINDS:
+        for kind in vocabulary.FLOW_KINDS:
             found = self._pool_grain(cfg, kind, gid)
             if found is not None:
                 return found
         return None
 
-    def feature_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+    def feature_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, model.GRAIN_FEATURE, mid)
+            return self._pool_children(cfg, vocabulary.GRAIN_FEATURE, mid)
         mdir = self.milestone_dir(cfg, mid)
         if mdir is None:
             return []
         features = mdir / FEATURES_DIR
-        return [d / model.FEATURE_DOC for d in self._dirs(features)
-                if self.is_file(d / model.FEATURE_DOC)]
+        return [d / vocabulary.FEATURE_DOC for d in self._dirs(features)
+                if self.is_file(d / vocabulary.FEATURE_DOC)]
 
-    def story_files(self, cfg: model.PmConfig, fid: str) -> list[Path]:
+    def story_files(self, cfg: vocabulary.PmConfig, fid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, model.GRAIN_STORY, fid)
+            return self._pool_children(cfg, vocabulary.GRAIN_STORY, fid)
         ffile = self.feature_file(cfg, fid)
         return self._grain_docs(ffile.parent / STORIES_DIR) if ffile else []
 
-    def bug_files(self, cfg: model.PmConfig, mid: str) -> list[Path]:
+    def bug_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         if self.is_pooled(cfg):
-            return self._pool_children(cfg, model.GRAIN_BUG, mid)
+            return self._pool_children(cfg, vocabulary.GRAIN_BUG, mid)
         mdir = self.milestone_dir(cfg, mid)
         return self._grain_docs(mdir / BUGS_DIR) if mdir is not None else []
 
-    def review_record_for(self, cfg: model.PmConfig, fid: str) -> str | None:
-        """`model.review_record_for` at the rev. An absolute pointer resolves
+    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
+        """`inventory.review_record_for` at the rev. An absolute pointer resolves
         to nothing here, even one inside the root: it named a place on one
         machine's disk, not a path in the rev."""
         ffile = self.feature_file(cfg, fid)
@@ -599,7 +600,7 @@ class GitSource(Source):
         pointer = self.field_of(ffile, 'reviewed')
         # `pointer_escapes`, not `startswith('/')`: the local check accepted
         # `../outside.md` and `~/x.md` (0.6.0, F1's class).
-        if pointer and pointer != 'null' and not model.pointer_escapes(pointer):
+        if pointer and pointer != 'null' and not pointer_escapes(pointer):
             if self.is_file(cfg.root / pointer):
                 return pointer
         return None
@@ -634,10 +635,10 @@ class GitSource(Source):
         return ledger.read_rows(self._doc(path))
 
     def milestone_doc(self, handle: Path) -> Path:
-        """`model.milestone_doc` at the rev: a pooled handle IS the document."""
-        return handle if self.is_file(handle) else handle / model.MILESTONE_DOC
+        """`inventory.milestone_doc` at the rev: a pooled handle IS the document."""
+        return handle if self.is_file(handle) else handle / vocabulary.MILESTONE_DOC
 
-    def ledger_for(self, cfg: model.PmConfig, mid: str) -> Path:
+    def ledger_for(self, cfg: vocabulary.PmConfig, mid: str) -> Path:
         """`ledger.ledger_for` at the rev."""
         if self.is_pooled(cfg):
             return ledger.ledgers_dir(cfg) / f'{mid}.jsonl'
@@ -645,8 +646,8 @@ class GitSource(Source):
         return (ledger.ledger_path(mdir) if mdir is not None
                 else ledger.grainless_path(cfg.roadmap))
 
-    def shared_doc(self, cfg: model.PmConfig, path: Path, name: str) -> Path:
-        """`model.shared_doc` at the rev."""
+    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
+        """`inventory.shared_doc` at the rev."""
         if self.is_pooled(cfg):
             return path.with_name(f'{path.stem}-{name}')
         return path.parent / name
@@ -664,8 +665,8 @@ class Section(NamedTuple):
     `lines` reads the whole object back, so a section may print another's
     number and none recomputes one."""
     name: str
-    data: Callable[[Source, model.PmConfig, str, Path, list], dict]
-    lines: Callable[[model.PmConfig, dict], list[str]]
+    data: Callable[[Source, vocabulary.PmConfig, str, Path, list], dict]
+    lines: Callable[[vocabulary.PmConfig, dict], list[str]]
 
 
 # --- the numbers --------------------------------------------------------------
@@ -700,7 +701,7 @@ def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
     """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
     which the report joins on), its kind, its `size:`; a missing id falls back
     to the path's."""
-    gid = src.field_of(path, model.FIELD_ID) or fallback
+    gid = src.field_of(path, vocabulary.FIELD_ID) or fallback
     return Grain(gid, kind, src.field_of(path, SIZE_FIELD))
 
 
@@ -713,7 +714,7 @@ def _bug_slug(mdir: Path, path: Path) -> str:
         return path.stem
 
 
-def walk_grains(src: Source, cfg: model.PmConfig, mid: str,
+def walk_grains(src: Source, cfg: vocabulary.PmConfig, mid: str,
                 mdir: Path) -> tuple[list[Grain], dict[str, set[str]]]:
     """Every grain under the milestone, and which stories each feature owns —
     the walkers `check pm` uses."""
@@ -829,17 +830,17 @@ def state_columns() -> tuple[str, ...]:
     reopened grain leaves it; the seconds after the last row are never counted;
     re-entered categories sum; an undeclared word is `unplaced_s`.
     """
-    return model.CATEGORIES
+    return vocabulary.CATEGORIES
 
 
-def category_seconds(cfg: model.PmConfig, kind: str,
+def category_seconds(cfg: vocabulary.PmConfig, kind: str,
                      seconds: dict[str, int]) -> tuple[dict[str, int], int]:
     """(seconds per category, seconds in words the declaration does not name),
     read through the current declaration."""
     placed: dict[str, int] = {}
     unplaced = 0
     for word, spent in seconds.items():
-        category = model.category_of(cfg, kind, word)
+        category = vocabulary.category_of(cfg, kind, word)
         if category is None:
             unplaced += spent
             continue
@@ -907,7 +908,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def open_charge(cfg: model.PmConfig, kind: str, rows: list,
+def open_charge(cfg: vocabulary.PmConfig, kind: str, rows: list,
                 now: datetime | None = None) -> tuple[str, int | None]:
     """(the state this grain is sitting in now, seconds since it got there),
     or `('', None)` — a closed grain accrues nothing, and one nobody ever
@@ -935,7 +936,7 @@ ACTOR_COLUMN = 'actor'
 ARRIVALS_COLUMN = 'arrivals'
 GRAINS_COLUMN = 'grains'
 SECONDS_COLUMN = 'seconds'
-KIND_MILESTONE = model.GRAIN_MILESTONE
+KIND_MILESTONE = vocabulary.GRAIN_MILESTONE
 # What `--help` names, in order (rule 11's read side): "total review time for
 # this milestone" is `… | awk` over these, never a flag this verb grew.
 CLOCK_COLUMNS = (GRAIN_COLUMN, f'<state>{STATE_SUFFIX}', CLOSED_COLUMN,
@@ -976,7 +977,7 @@ def subtree(rows: list[dict], focus: str) -> list[dict]:
     return [dict(row, depth=row['depth'] - base) for row in kept]
 
 
-def clock_data(cfg: model.PmConfig, mid: str, grains: list, owned: dict,
+def clock_data(cfg: vocabulary.PmConfig, mid: str, grains: list, owned: dict,
                rows: list, now: datetime | None = None,
                focus: str = '') -> dict:
     """The milestone, its features, their stories and its bugs, each with the
@@ -1059,19 +1060,19 @@ def actor_rows(kinds: dict[str, str], mine: dict[str, list]) -> list[dict]:
             for _actor, entry in sorted(tally.items())]
 
 
-def clock_columns(cfg: model.PmConfig, rows: list) -> tuple[str, ...]:
+def clock_columns(cfg: vocabulary.PmConfig, rows: list) -> tuple[str, ...]:
     """Which state WORDS this milestone's rows hold, in the order the project
     declared them and any word `[pm.states.*]` does not name appended. A state
     nobody held is no column: a zero nobody measured is the one number this
     report must never print (rule 4)."""
     held = {state for row in rows for state in row['state_s']}
-    declared = list(dict.fromkeys(state for kind in model.FLOW_KINDS
-                                  for state in model.flow_of(cfg, kind).order))
+    declared = list(dict.fromkeys(state for kind in vocabulary.FLOW_KINDS
+                                  for state in vocabulary.flow_of(cfg, kind).order))
     named = [state for state in declared if state in held]
     return tuple(named + sorted(held - set(named)))
 
 
-def clock_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def clock_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """The two blocks the clock adds to section 1: one row per grain in tree
     order, indented by depth, then one row per actor."""
     rows = data['rows']
@@ -1095,7 +1096,7 @@ def clock_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 1: spend per grain -----------------------------------------------
-def spend_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def spend_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                rows: list) -> dict:
     """Section 1 as data: one entry per grain, the strays, and the totals."""
     grains, owned = walk_grains(src, cfg, mid, mdir)
@@ -1219,7 +1220,7 @@ def _spend_cells(entry: dict) -> tuple[str, ...]:
             *(_cell(entry[key]) for key in (TOTAL_KEY, *COUNT_KEYS)))
 
 
-def spend_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def spend_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 1 as lines: a heading, one table per kind, the strays, a total."""
     totals = data['totals']
     out = [f'{HEADING_PREFIX} {heading_id(data)} — {SPEND_TITLE} — '
@@ -1304,19 +1305,19 @@ class RecordError(Exception):
     all is `NoVerdict`, listed as a fact."""
 
 
-def review_records(src: Source, cfg: model.PmConfig, mid: str,
+def review_records(src: Source, cfg: vocabulary.PmConfig, mid: str,
                    mdir: Path) -> list[tuple[str, str, Path]]:
     """(feature id, the path as the report prints it, the path) per record."""
     out: list[tuple[str, str, Path]] = []
     for ffile in src.feature_files(cfg, mid):
-        fid = (src.field_of(ffile, model.FIELD_ID)
+        fid = (src.field_of(ffile, vocabulary.FIELD_ID)
                or f'{mid}/{ffile.parent.name}')
         rel = src.review_record_for(cfg, fid)
         path = (cfg.root / rel) if rel else None
         if path is None:
             # BESIDE the grain, wherever it sits. Asked of the SOURCE, since
             # which layout it is, is a fact about the tree being read.
-            beside = src.shared_doc(cfg, ffile, model.REVIEW_FILE_NAME)
+            beside = src.shared_doc(cfg, ffile, vocabulary.REVIEW_FILE_NAME)
             if src.is_file(beside):
                 path, rel = beside, cfg.rel(beside)
         if path is not None and rel is not None:
@@ -1326,7 +1327,7 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
     return out
 
 
-def parsed_records(src: Source, cfg: model.PmConfig, mid: str,
+def parsed_records(src: Source, cfg: vocabulary.PmConfig, mid: str,
                    mdir: Path) -> list[tuple[str, str, object]]:
     """Every record, parsed: its passes (one per verdict block, in order), or
     `None` when it carries no block. Sections 2 and 3 both call this;
@@ -1376,7 +1377,7 @@ IN_FLIGHT_UNPLACEABLE = ('name a grain this milestone does not hold, so no age '
                          'grain, or the ids were replaced under it')
 
 
-def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
+def _in_flight_ages(cfg: vocabulary.PmConfig, kinds: dict[str, str],
                     status: list, arrived: list) -> tuple[list[dict], int]:
     """`(per kind: in-flight count, median age, worst), rows this could not
     place`.
@@ -1420,7 +1421,7 @@ def _in_flight_ages(cfg: model.PmConfig, kinds: dict[str, str],
 
 
 # --- section 2: yield per review pass -----------------------------------------
-def yield_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def yield_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                rows: list) -> dict:
     """Section 2 as data: counting over the block's closed sets per record. The
     disposition is read as its kind, never as the shape of its value. Spend is
@@ -1457,7 +1458,7 @@ def yield_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                                    for one in r['passes'])}}}
 
 
-def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def yield_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 2 as lines: the pass, its severities, and where it deferred."""
     section = data[SECTION_YIELD]
     records = section['records']
@@ -1499,7 +1500,7 @@ def yield_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 3: rework --------------------------------------------------------
-def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def rework_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                 rows: list) -> dict:
     """Section 3 as data: the verdict spread, per pass rather than per record."""
     spread = _tally(one.verdict
@@ -1511,7 +1512,7 @@ def rework_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         'totals': {'passes': sum(spread.values())}}}
 
 
-def rework_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def rework_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 3 as lines: one row per verdict that was given."""
     section = data[SECTION_REWORK]
     spread = [(v['verdict'], str(v['passes'])) for v in section['verdicts']]
@@ -1524,7 +1525,7 @@ def rework_lines(cfg: model.PmConfig, data: dict) -> list[str]:
 
 
 # --- section 4: escapes -------------------------------------------------------
-def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def escapes_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                  rows: list) -> dict:
     """Section 4 as data: every bug whose `caused_by:` names a feature, grouped
     by the id named, resolved wherever it lives; an unresolved cause keeps its
@@ -1535,14 +1536,14 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         cause = src.field_of(bfile, CAUSED_BY_FIELD)
         if not cause:
             continue
-        gid = (src.field_of(bfile, model.FIELD_ID)
+        gid = (src.field_of(bfile, vocabulary.FIELD_ID)
                or f'{mid}/{BUGS_DIR}/{_bug_slug(mdir, bfile)}')
         ffile = src.feature_file(cfg, cause)
         fstatus = src.field_of(ffile,
-                               model.FIELD_STATUS) if ffile is not None else ''
+                               vocabulary.FIELD_STATUS) if ffile is not None else ''
         out.append({
             'caused_by': cause, BUG_COLUMN: gid,
-            STATUS_COLUMN: src.field_of(bfile, model.FIELD_STATUS) or None,
+            STATUS_COLUMN: src.field_of(bfile, vocabulary.FIELD_STATUS) or None,
             'feature_status': fstatus or None,
             'feature_done': (None if not fstatus
                              else ledger.ends_grain(cfg, KIND_FEATURE, fstatus))})
@@ -1553,7 +1554,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                    'features': len({e['caused_by'] for e in out})}}}
 
 
-def escapes_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def escapes_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 4 as lines: cause, bug, the bug's state, the feature's."""
     section = data[SECTION_ESCAPES]
     bugs = [(e['caused_by'], e[BUG_COLUMN], _cell(e[STATUS_COLUMN]),
@@ -1588,7 +1589,7 @@ def _usage_of(row: dict, key: str) -> object:
     return usage.get(key) if isinstance(usage, dict) else None
 
 
-def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def overhead_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                   rows: list) -> dict:
     """Section 5 as data: a story's `tool_calls_before_first_write` summed and
     listed; a decision row against the grain its own `grain` names, never
@@ -1671,7 +1672,7 @@ def overhead_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
                    'session_rows': len(sessions)}}}
 
 
-def overhead_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def overhead_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 5 as lines: four blocks, one per thing the shape is made of."""
     section = data[SECTION_OVERHEAD]
     stories = [(e[GRAIN_COLUMN], str(e['dispatches']),
@@ -1735,7 +1736,7 @@ def _gate_unusable(row: dict) -> str | None:
     return None
 
 
-def gates_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
+def gates_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
                rows: list) -> dict:
     """Section 6 as data: one entry per `gate`, slowest-latest first;
     `delta_ms` is `last - first`. A gate with one run still appears, with `-`;
@@ -1786,7 +1787,7 @@ def _gate_census_cell(entry: dict) -> str:
             else f'{first}{CENSUS_ARROW}{last}')
 
 
-def gates_lines(cfg: model.PmConfig, data: dict) -> list[str]:
+def gates_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """Section 6 as lines: the cost table, then whatever it could not read."""
     section = data[SECTION_GATES]
     cost = []
@@ -1827,7 +1828,7 @@ SECTIONS = (Section(SECTION_SPEND, spend_data, spend_lines),
             Section(SECTION_GATES, gates_data, gates_lines))
 
 
-def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
+def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
           src: Source | None = None) -> dict:
     """The whole report as one object — what `--json` prints. Section 1's keys
     sit at the top level as shipped; sections 2-5 each add one key. `rev` is
@@ -1843,7 +1844,7 @@ def build(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
     return out
 
 
-def clock_report(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
+def clock_report(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
                  src: Source, focus: str) -> dict:
     """The clock at the LEVEL an id names — `pm ledger report <feature-id>`.
     The rows are the milestone's, because that is where a ledger is (D6); the
@@ -1858,7 +1859,7 @@ def clock_report(cfg: model.PmConfig, mid: str, mdir: Path, rows: list,
     return out
 
 
-def clock_render(cfg: model.PmConfig, data: dict) -> list[str]:
+def clock_render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """The focused report as lines: the grain, its milestone, both tables."""
     rows = data['clock']['rows']
     return [f'{HEADING_PREFIX} {data["focus"]} — {CLOCK_TITLE} — '
@@ -1874,7 +1875,7 @@ def beyond_ledger(data: dict) -> bool:
             or bool(data[SECTION_ESCAPES]['totals']['bugs']))
 
 
-def render(cfg: model.PmConfig, data: dict) -> list[str]:
+def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     """The whole report as lines, in section order."""
     lines: list[str] = []
     for section in SECTIONS:

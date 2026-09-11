@@ -177,9 +177,9 @@ _STATUS_FORM = re.compile(
 def declared_states() -> dict[str, tuple[str, ...]]:
     """{kind: every state the project declared}, or {} when the tree has no
     flow — then this rule reports nothing rather than inventing a vocabulary."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     try:
-        cfg = model.load()
+        cfg = vocabulary.load()
     except SystemExit:
         return {}
     return {kind: flow.order for kind, flow in cfg.flows.items()}
@@ -216,9 +216,9 @@ def check_invocations(doc: Path, lines: list[tuple[int, str]],
 
 def pm_config():
     """The project's PM config, or None when the tree declares no flow."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     try:
-        return model.load()
+        return vocabulary.load()
     except SystemExit:
         return None
 
@@ -235,10 +235,10 @@ def decision_index() -> dict[str, tuple[str, set[str]]]:
     cfg = pm_config()
     if cfg is None:
         return index
-    from agentic_sdlc.repo.pm import model
-    for grain in model.milestones(cfg):
+    from agentic_sdlc.repo.pm import inventory, vocabulary
+    for grain in inventory.milestones(cfg):
         version = grain.field('version').strip()
-        decisions = model.shared_doc(cfg, grain, model.DECISION_FILE_NAME)
+        decisions = inventory.shared_doc(cfg, grain, vocabulary.DECISION_FILE_NAME)
         if not version or not decisions.is_file():
             continue
         kept, _ = non_fenced_lines(

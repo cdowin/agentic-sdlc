@@ -23,9 +23,9 @@ from support import run_check  # noqa: E402
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import doc
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import vocabulary
 
-FLOW = model.render_seed()
+FLOW = vocabulary.render_seed()
 
 
 @contextmanager
@@ -79,8 +79,8 @@ class AnInvocationIsAClaimAboutTheTree(unittest.TestCase):
         """RULE 9's edge: this reads what the project declared, it does not
         decide what a story vocabulary should be. Declare `reviewing` for a
         story and the same sentence stops being a finding."""
-        declared = model.render_seed(
-            {**model.DEFAULT_FLOWS,
+        declared = vocabulary.render_seed(
+            {**vocabulary.DEFAULT_FLOWS,
              'story': {'todo': ('planning', 'ready'),
                        'in_progress': ('building', 'reviewing'),
                        'done': ('done', 'obe')}})

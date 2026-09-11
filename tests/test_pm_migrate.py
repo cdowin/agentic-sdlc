@@ -32,7 +32,7 @@ from support import REPO_ROOT
 from support.pm import cfg_for, tree, write
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import vocabulary
 
 # NOT importable as a package: the script lives outside `src/` on purpose (it
 # is deliberately not a verb — the CLI is a published API and this job runs
@@ -115,12 +115,12 @@ def as_nested(root: Path) -> None:
     for path in sorted(pools.rglob('*.md')):
         path.unlink()
     mdir = pools / '0.1-demo'
-    write(mdir / model.MILESTONE_DOC,
+    write(mdir / vocabulary.MILESTONE_DOC,
           {'id': '"0.1"', 'name': 'Demo', 'status': 'building'})
-    write(mdir / 'features' / 'alpha' / model.FEATURE_DOC,
+    write(mdir / 'features' / 'alpha' / vocabulary.FEATURE_DOC,
           {'id': '0.1/alpha', 'milestone': '"0.1"', 'name': 'Alpha',
            'status': 'building', 'reviewed': ''})
-    write(mdir / 'features' / 'beta' / model.FEATURE_DOC,
+    write(mdir / 'features' / 'beta' / vocabulary.FEATURE_DOC,
           {'id': '0.1/beta', 'milestone': '"0.1"', 'name': 'Beta',
            'status': 'planning', 'reviewed': '',
            'depends_on': '[0.1/alpha,0.99/gone]'})

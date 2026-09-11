@@ -31,13 +31,13 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model, verdict
+from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 from agentic_sdlc.repo.pm.cli import Usage, _grain_of, _ok
 
 # The closed set of questions; an unknown kind names all four. Three ARE grain
 # kinds, read from their one home; `tag` has no grain behind it.
-STORY, FEATURE, MILESTONE = (model.GRAIN_STORY, model.GRAIN_FEATURE,
-                             model.GRAIN_MILESTONE)
+STORY, FEATURE, MILESTONE = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_FEATURE,
+                             vocabulary.GRAIN_MILESTONE)
 TAG = 'tag'
 KINDS = (STORY, FEATURE, MILESTONE, TAG)
 
@@ -57,9 +57,9 @@ NO_ENTRY_EDGE: dict[str, str] = {
            'checks and writes nothing, which is the answer you wanted',
 }
 
-# A category, asked through `model.holds` so this and `check pm` D2 cannot
+# A category, asked through `vocabulary.holds` so this and `check pm` D2 cannot
 # disagree.
-DONE = model.DONE_CATEGORY
+DONE = vocabulary.DONE_CATEGORY
 
 # Named blockers are capped; the remainder is disclosed, never dropped.
 MAX_NAMED = 50
@@ -111,7 +111,7 @@ def _enter_row(rung: str, grain: str, blockers: list[Blocker]) -> dict:
         [{'check': b.check, 'why': b.why} for b in blockers])))
 
 
-def _emit_enter(cfg: model.PmConfig, rung: str, grain: str,
+def _emit_enter(cfg: vocabulary.PmConfig, rung: str, grain: str,
                 blockers: list[Blocker]) -> None:
     """Write the entry event, or nothing, and never change the answer.
 
@@ -134,7 +134,7 @@ def _emit_enter(cfg: model.PmConfig, rung: str, grain: str,
               f'the answer above is unaffected', file=sys.stderr)
 
 
-def _answer(cfg: model.PmConfig, rung: str, grain: str, subject: str,
+def _answer(cfg: vocabulary.PmConfig, rung: str, grain: str, subject: str,
             blockers: list[Blocker], census: str) -> int:
     """Print the verdict for one question and return its exit code — the one
     place the 0/1 contract is spelled, and the one place `rung.enter` is
@@ -159,23 +159,23 @@ def _answer(cfg: model.PmConfig, rung: str, grain: str, subject: str,
 
 
 # --- grain resolution ---------------------------------------------------------
-def _kind_of(grain: model.Grain) -> str:
+def _kind_of(grain: inventory.Grain) -> str:
     """The grain's own `kind:` since 0.4.0, with the filename as the fallback
     for a document that declares none — it used to come from the FILENAME,
     which is the path being schema.
     """
-    found = grain.field(model.FIELD_KIND)
+    found = grain.field(vocabulary.FIELD_KIND)
     if not found:
         # A nested tree's documents declare no `kind:`; there the slot name IS
         # the kind — the derivation 0.4.0 deletes, surviving here alone.
-        found = {model.MILESTONE_DOC: model.GRAIN_MILESTONE,
-                 model.FEATURE_DOC: model.GRAIN_FEATURE}.get(grain.path.name,
-                                                             model.GRAIN_STORY)
+        found = {vocabulary.MILESTONE_DOC: vocabulary.GRAIN_MILESTONE,
+                 vocabulary.FEATURE_DOC: vocabulary.GRAIN_FEATURE}.get(grain.path.name,
+                                                             vocabulary.GRAIN_STORY)
     return found
 
 
-def _grain(cfg: model.PmConfig, kind: str, gid: str, want: str, noun: str,
-           asks: str) -> model.Grain:
+def _grain(cfg: vocabulary.PmConfig, kind: str, gid: str, want: str, noun: str,
+           asks: str) -> inventory.Grain:
     """The grain `gid` names, of the right kind, or exit 2; a story id handed
     to `ready-for feature` would get the wrong question answered.
 
@@ -211,7 +211,7 @@ def _pointer_defect(pointer: str) -> str | None:
     """Why this `reviewed:` value may not be followed, decided by shape before
     anything is opened (hard rule 8).
 
-    RICHER than `model.pointer_escapes`, deliberately: this belt names WHICH
+    RICHER than `pointer_escapes`, deliberately: this belt names WHICH
     shape is wrong so the operator can fix it, where the predicate answers
     yes/no for a caller that only refuses. They must never DISAGREE about the
     verdict, and `tests/test_contracts.py` holds them to that.
@@ -223,7 +223,7 @@ def _pointer_defect(pointer: str) -> str | None:
                 f'repo-relative path of at most {MAX_POINTER_LEN}')
     if pointer.strip() != pointer or any(ch.isspace() for ch in pointer):
         return f'reviewed: {pointer!r} carries whitespace — it names one file'
-    if not model.id_is_literal(pointer):
+    if not inventory.id_is_literal(pointer):
         return (f'reviewed: {pointer!r} is a glob — a pointer that matches two '
                 f'records proves neither')
     if '://' in pointer or pointer.lower().startswith('file:'):
@@ -241,7 +241,7 @@ def _pointer_defect(pointer: str) -> str | None:
     return None
 
 
-def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | None]:
+def _record(cfg: vocabulary.PmConfig, pointer: str) -> tuple[Record | None, str | None]:
     """(record, defect) for one `reviewed:` pointer — exactly one is not None.
     The single resolver behind `milestone` and `tag`; empty is a defect."""
     defect = _pointer_defect(pointer)
@@ -278,7 +278,7 @@ def _record(cfg: model.PmConfig, pointer: str) -> tuple[Record | None, str | Non
 
 
 # --- the edit -> story --------------------------------------------------------
-def _story_subject(cfg: model.PmConfig, sid: str) -> None:
+def _story_subject(cfg: vocabulary.PmConfig, sid: str) -> None:
     """Refuse what cannot be a story id, and an id naming another kind.
 
     An id that names NOTHING is deliberately NOT refused here: `story-exists`
@@ -286,13 +286,13 @@ def _story_subject(cfg: model.PmConfig, sid: str) -> None:
     answers 1 would be two rulings about one fact. The shape check comes first
     so a hostile id is refused without a grain being read.
     """
-    defect = model.id_defect(sid)
+    defect = inventory.id_defect(sid)
     if defect:
         raise Usage(f'no grain resolves from id {sid!r} — {defect}')
     # The INDEX's kind, not the document name's: `_kind_of`'s fallback is right
     # for the rungs that want a milestone or a feature, and would let a bug
     # through here.
-    grain = model.grain_index(cfg).get(sid)
+    grain = inventory.grain_index(cfg).get(sid)
     if grain is None:
         return
     if grain.kind != STORY:
@@ -360,7 +360,7 @@ def _entry_condition(operation: str) -> Derived:
     return derived
 
 
-def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
+def ready_for_story(cfg: vocabulary.PmConfig, sid: str) -> int:
     """The inner loop's entry edge: the story belt's own checks that are
     decidable before the work, ASKED rather than re-implemented, so a blocker
     here carries the sentence `close story` will print.
@@ -406,23 +406,23 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
 
 
 # --- story -> feature ---------------------------------------------------------
-def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
+def ready_for_feature(cfg: vocabulary.PmConfig, fid: str) -> int:
     """Is every story under this feature in the `done` category? Exit 1 names
     each that is not, with the word the file holds; no stories is vacuous."""
-    feature = _grain(cfg, FEATURE, fid, model.GRAIN_FEATURE, FEATURE,
+    feature = _grain(cfg, FEATURE, fid, vocabulary.GRAIN_FEATURE, FEATURE,
                      "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
     # it: membership is the child's field.
-    kept = model.story_grains(cfg, feature.field(model.FIELD_ID) or fid)
-    held = model.holds(
-        cfg, model.GRAIN_STORY,
-        ((story.field(model.FIELD_ID) or cfg.rel(story.path),
-          story.field(model.FIELD_STATUS) or '(no status:)')
+    kept = inventory.story_grains(cfg, feature.field(vocabulary.FIELD_ID) or fid)
+    held = vocabulary.holds(
+        cfg, vocabulary.GRAIN_STORY,
+        ((story.field(vocabulary.FIELD_ID) or cfg.rel(story.path),
+          story.field(vocabulary.FIELD_STATUS) or '(no status:)')
          for story in kept),
         DONE)
     check = _check_answered_by(FEATURE)
     blockers = [Blocker(check, name) for name in held.names]
-    skipped = model.pool_skipped(cfg, model.GRAIN_STORY)
+    skipped = inventory.pool_skipped(cfg, vocabulary.GRAIN_STORY)
     census = (f'{len(kept)} story/ies'
               + (f', {skipped} file(s) skipped (no frontmatter — not a '
                  f'grain)' if skipped else ''))
@@ -435,19 +435,19 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
 
 
 # --- feature -> milestone -----------------------------------------------------
-def _features(cfg: model.PmConfig,
-              milestone: model.Grain) -> list[tuple[str, model.Grain]]:
+def _features(cfg: vocabulary.PmConfig,
+              milestone: inventory.Grain) -> list[tuple[str, inventory.Grain]]:
     """(id, grain) per feature BOUND TO this milestone, in its declared order.
 
     Takes the GRAIN, not a directory: a pooled tree has none, and membership is
     the child's field.
     """
-    mid = milestone.field(model.FIELD_ID)
-    return [(ff.field(model.FIELD_ID) or cfg.rel(ff.path), ff)
-            for ff in model.feature_grains(cfg, mid)]
+    mid = milestone.field(vocabulary.FIELD_ID)
+    return [(ff.field(vocabulary.FIELD_ID) or cfg.rel(ff.path), ff)
+            for ff in inventory.feature_grains(cfg, mid)]
 
 
-def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
+def _bugs_against(cfg: vocabulary.PmConfig, mid: str) -> tuple[list, int]:
     """((id, status) for every bug NESTED IN `mid`), and the pool count.
 
     The bug walk IS the feature walk; it scanned for `fix_milestone:`, a field
@@ -455,17 +455,17 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     POOL is the second number, not a scan total — it separates
     zero-because-none-nested from zero-because-none-matched.
     """
-    against = [(bug.field(model.FIELD_ID) or cfg.rel(bug.path),
-                bug.field(model.FIELD_STATUS) or '(no status:)')
-               for bug in model.bug_grains(cfg, mid)]
-    return against, len(model.unbound(cfg, model.GRAIN_BUG))
+    against = [(bug.field(vocabulary.FIELD_ID) or cfg.rel(bug.path),
+                bug.field(vocabulary.FIELD_STATUS) or '(no status:)')
+               for bug in inventory.bug_grains(cfg, mid)]
+    return against, len(inventory.unbound(cfg, vocabulary.GRAIN_BUG))
 
 
-def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
+def ready_for_milestone(cfg: vocabulary.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
     promised to this milestone outside `done`. Zero features exits 1,
     deliberately opposite to the empty-story ruling."""
-    milestone = _grain(cfg, MILESTONE, mid, model.GRAIN_MILESTONE, MILESTONE,
+    milestone = _grain(cfg, MILESTONE, mid, vocabulary.GRAIN_MILESTONE, MILESTONE,
                        "about a milestone's features")
     features = _features(cfg, milestone)
     subject = f'{MILESTONE} {mid}'
@@ -479,9 +479,9 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
                                     f'mis-typed id looks exactly like this')],
                        '0 feature(s)')
     # Asked of the feature flow, not the story flow.
-    held = model.holds(
-        cfg, model.GRAIN_FEATURE,
-        ((fid, ff.field(model.FIELD_STATUS) or '(no status:)')
+    held = vocabulary.holds(
+        cfg, vocabulary.GRAIN_FEATURE,
+        ((fid, ff.field(vocabulary.FIELD_STATUS) or '(no status:)')
          for fid, ff in features),
         DONE)
     unfinished = dict(held.blockers)
@@ -494,7 +494,7 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
     bugs, pooled = _bugs_against(cfg, mid)
-    open_bugs = model.holds(cfg, model.GRAIN_BUG, bugs, DONE).blockers
+    open_bugs = vocabulary.holds(cfg, vocabulary.GRAIN_BUG, bugs, DONE).blockers
     for bid, status in open_bugs:
         blockers.append(Blocker(check, f'{bid} is {status} — a bug nested in '
                                        f'{mid}'))
@@ -508,8 +508,8 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
 
 
 # --- milestone -> tag ---------------------------------------------------------
-def _pointers(cfg: model.PmConfig, mid: str,
-              milestone: model.Grain) -> list[tuple[str, str]]:
+def _pointers(cfg: vocabulary.PmConfig, mid: str,
+              milestone: inventory.Grain) -> list[tuple[str, str]]:
     """(owner, pointer) for every record this milestone points at: the
     features' plus the milestone's own, never a `review_dir` sweep."""
     owned = [(fid, ff.field('reviewed'))
@@ -518,10 +518,10 @@ def _pointers(cfg: model.PmConfig, mid: str,
     return owned
 
 
-def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
+def ready_for_tag(cfg: vocabulary.PmConfig, mid: str) -> int:
     """Is every finding in every record this milestone points at not `open`?
     An unparseable record is UNVERIFIABLE and blocks; no records blocks."""
-    milestone = _grain(cfg, TAG, mid, model.GRAIN_MILESTONE, MILESTONE,
+    milestone = _grain(cfg, TAG, mid, vocabulary.GRAIN_MILESTONE, MILESTONE,
                        "about a milestone's review records")
     check = _check_answered_by(TAG)
     blockers: list[Blocker] = []
@@ -583,7 +583,7 @@ PREDICATES = {STORY: ready_for_story, FEATURE: ready_for_feature,
               MILESTONE: ready_for_milestone, TAG: ready_for_tag}
 
 
-def cmd_ready_for(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_ready_for(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """`pm ready-for <kind> <id>` — one kind, one id, no flags. Every refusal
     is exit 2, so 1 keeps meaning "the belt below is not finished"."""
     if not args:

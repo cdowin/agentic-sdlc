@@ -28,7 +28,7 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import emit  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, lessons, steps  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
 VERSION = '9.9.9'
 ROADMAP_DIR = 'pm/roadmap'
@@ -219,7 +219,7 @@ def test_a_recorded_lesson_changes_no_verdict_no_exit_code_and_no_write():
     runs = []
     for recorded in (False, True):
         with tree(config=f'[{emit.SECTION}]\n') as root:
-            mledger = ledger.ledger_for(model.load(), VERSION)
+            mledger = ledger.ledger_for(vocabulary.load(), VERSION)
             if recorded:
                 ledger.append_to(mledger, lesson_row(VERSION))
             commit(root)

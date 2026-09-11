@@ -57,10 +57,10 @@ from agentic_sdlc.repo.pm import arrive, ledger
 # proves nothing different. `support.pm.tree` is the builder; this only fixes
 # its `config`.
 from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
-from agentic_sdlc.repo.pm import model as _model  # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 
-LEGACY_FLOW = _declaring(feature=_model.DEFAULT_FLOWS['milestone'],
-                         story=_model.DEFAULT_FLOWS['milestone'])
+LEGACY_FLOW = _declaring(feature=vocabulary.DEFAULT_FLOWS['milestone'],
+                         story=vocabulary.DEFAULT_FLOWS['milestone'])
 
 
 def tree(**kwargs):

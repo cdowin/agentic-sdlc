@@ -19,12 +19,13 @@ from pathlib import Path
 from agentic_sdlc import __version__
 from agentic_sdlc.core import frontmatter, spawn, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
-                                      relpath_tuple, str_tuple)
+                                      pointer_escapes, relpath_tuple,
+                                      str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
-from agentic_sdlc.repo.pm import model, remote, verdict
+from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
 
 # --- the shipped defaults -----------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -241,8 +242,8 @@ def _clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
     return flat if len(flat) <= limit else flat[:limit] + '…'
 
 
-def _pm_cfg(ctx: Context) -> 'model.PmConfig':
-    return replace(model.load(), root=ctx.root)
+def _pm_cfg(ctx: Context) -> 'vocabulary.PmConfig':
+    return replace(vocabulary.load(), root=ctx.root)
 
 
 def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
@@ -692,7 +693,7 @@ def subject_grain(ctx: Context) -> str:
         cfg = _pm_cfg(ctx)
     except Exception:  # noqa: BLE001 - a config this cannot read decides nothing
         return ctx.version
-    return model.milestone_of_version(cfg, ctx.version) or ctx.version
+    return inventory.milestone_of_version(cfg, ctx.version) or ctx.version
 
 
 def ready_for(ctx: Context, target: str) -> Answer:
@@ -763,7 +764,7 @@ def check_tree_clean(ctx: Context) -> Answer:
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
-    milestone = model.grain(cfg, subject_grain(ctx), model.GRAIN_MILESTONE)
+    milestone = inventory.grain(cfg, subject_grain(ctx), vocabulary.GRAIN_MILESTONE)
     if milestone is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')
@@ -825,7 +826,7 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     from agentic_sdlc.repo.pm import changelog as clog
     cfg = _pm_cfg(ctx)
     mid = subject_grain(ctx)
-    if mid not in model.grain_index(cfg):
+    if mid not in inventory.grain_index(cfg):
         return Answer.unverifiable(
             f'no grain resolves from {mid!r} to read `{clog.FIELD}:` from')
     entries = clog.collect(cfg, mid)
@@ -883,7 +884,7 @@ def check_version_sync(ctx: Context) -> Answer:
 
 
 def check_features_done(ctx: Context) -> Answer:
-    return ready_for(ctx, model.GRAIN_MILESTONE)
+    return ready_for(ctx, vocabulary.GRAIN_MILESTONE)
 
 
 def check_findings_resolved(ctx: Context) -> Answer:
@@ -1049,7 +1050,7 @@ def _config_readers() -> tuple[tuple[str, str, object], ...]:
     return (
         ('checks', '[checks] all', _read_checks),
         ('gates', '[gates] extra', gates_extra.targets),
-        ('pm', '[pm]', model.load),
+        ('pm', '[pm]', vocabulary.load),
         ('release', '[release] steps / commands',
          lambda: _read_operation('release')),
         ('adopt', '[adopt] steps / commands',
@@ -1210,8 +1211,8 @@ def check_telemetry_live(ctx: Context) -> Answer:
     command = _configured(ctx, 'telemetry-live')
     if command:
         return run_command(ctx, 'telemetry-live', command)
-    from agentic_sdlc.repo.pm import model as pm_model
-    absent = [name for name in pm_model.LEDGER_COURIERS
+    from agentic_sdlc.repo.pm import vocabulary
+    absent = [name for name in vocabulary.LEDGER_COURIERS
               if not (ctx.root / HOOKS_DIR / name).is_file()]
     if absent:
         return Answer.unverifiable(
@@ -1229,7 +1230,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
         return Answer.unverifiable(
             f'{registered.unread}, so whether this tree\'s couriers are '
             f'registered cannot be read — not a finding, and not a pass either')
-    unwired = [name for name in pm_model.LEDGER_COURIERS
+    unwired = [name for name in vocabulary.LEDGER_COURIERS
                if name not in registered.couriers]
     # The vehicle, in THIS tree: `vocabulary` is a read that needs make to
     # reach the CLI *and* the CLI to have a flow to answer with, which is
@@ -1237,7 +1238,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
     code, out = _run(ctx, ['make', '-s', 'pm', 'ARGS=vocabulary'])
     if code == NOT_ON_PATH:
         return Answer.unverifiable('make is not on PATH')
-    reached = code == 0 and any(kind in out for kind in pm_model.FLOW_KINDS)
+    reached = code == 0 and any(kind in out for kind in vocabulary.FLOW_KINDS)
     if not reached:
         return Answer.no(
             f'no ledger setup for this tree, no telemetry — `make -s pm '
@@ -1261,7 +1262,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'answers, nothing in this checkout registers '
             f'{", ".join(unwired)}, and no courier row has ever landed. '
             f'`install-hooks {install.SETTINGS_FLAG}` writes '
-            f'{pm_model.AGENT_SETTINGS} when nothing is in the way, and prints '
+            f'{vocabulary.AGENT_SETTINGS} when nothing is in the way, and prints '
             f'the block for whatever settings file your harness actually reads '
             f'when something is; a session rooted outside this tree also needs '
             f'`GDK_LEDGER_ROOT={ctx.root}`. Nothing here is mandatory — a tree '
@@ -1356,7 +1357,7 @@ def check_story_exists(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
     try:
         path = _grain_file(ctx)
-    except model.AmbiguousStory as err:
+    except inventory.AmbiguousStory as err:
         return Answer.no(str(err))
     if path is None:
         return Answer.no(f'no story resolves from {ctx.version!r} under '
@@ -1395,7 +1396,7 @@ def check_evidence_written(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
     try:
         path = _grain_file(ctx)
-    except model.AmbiguousStory as err:
+    except inventory.AmbiguousStory as err:
         return Answer.unverifiable(str(err))
     if path is None:
         return Answer.unverifiable(
@@ -1434,7 +1435,7 @@ def check_evidence_written(ctx: Context) -> Answer:
 # --- the feature checks -------------------------------------------------------
 def check_stories_done(ctx: Context) -> Answer:
     """`pm ready-for feature <fid>`, never re-implemented."""
-    return ready_for(ctx, model.GRAIN_FEATURE)
+    return ready_for(ctx, vocabulary.GRAIN_FEATURE)
 
 
 def check_feature_verified(ctx: Context) -> Answer:
@@ -1449,20 +1450,20 @@ def check_feature_verified(ctx: Context) -> Answer:
 
 def _record_of(ctx: Context) -> tuple[Path | None, str]:
     """(the feature's review record, '' or why there is none), through
-    `model.review_record_for`; an absolute pointer is refused (rule 8)."""
+    `inventory.review_record_for`; an absolute pointer is refused (rule 8)."""
     cfg = _pm_cfg(ctx)
-    pointer = model.review_record_for(cfg, ctx.version)
+    pointer = inventory.review_record_for(cfg, ctx.version)
     if not pointer:
         return None, (f'{ctx.version} points at no review record — '
                       f'`reviewed:` is blank; run the feature review and '
                       f'`pm set {ctx.version} reviewed <path>`')
-    # `model.pointer_escapes`, not a local spelling of it: this hand-rolled
+    # `pointer_escapes`, not a local spelling of it: this hand-rolled
     # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
     # predicate refuses. F1's class, in a second verb.
-    if model.pointer_escapes(pointer):
+    if pointer_escapes(pointer):
         return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
-    path = model.record_path(cfg, pointer)
+    path = inventory.record_path(cfg, pointer)
     if not path.is_file():
         return None, f'reviewed: names no file ({pointer})'
     size = path.stat().st_size

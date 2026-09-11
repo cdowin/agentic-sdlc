@@ -7,7 +7,7 @@ name: the census reads both roots
 status: done
 owner: agent
 depends_on: []
-changelog:
+changelog: none
 ---
 
 # the census reads both roots

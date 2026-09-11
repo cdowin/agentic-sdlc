@@ -201,8 +201,8 @@ def _stand_up_pm_tree(cfg) -> int:
 
 
 def _pm_config():
-    from agentic_sdlc.repo.pm import model
-    return model.load()
+    from agentic_sdlc.repo.pm import vocabulary
+    return vocabulary.load()
 
 
 def _diff(root: Path) -> int:

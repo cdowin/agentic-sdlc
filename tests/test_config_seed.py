@@ -41,7 +41,8 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import init  # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape  # noqa: E402
-from agentic_sdlc.repo.pm import cli as pm_cli, model, skills  # noqa: E402
+from agentic_sdlc.repo.pm import (cli as pm_cli, skills,  # noqa: E402
+                                  vocabulary)
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 SEED = init.seed_body(init.SEED_CONFIG[0])
@@ -65,7 +66,7 @@ DYNAMIC_MODULES = {
     'repo/conveyor/steps.py':
         '[<belt>] ours — the section IS the belt\'s name, and the stock claim '
         'set is empty',
-    'repo/pm/model.py':
+    'repo/pm/vocabulary.py':
         '[pm] keys reached through a loop variable in `load` and '
         '`all_config_defects`; every one of them is ALSO read by a literal '
         'call in the other, which is what this census sees',
@@ -90,7 +91,7 @@ VALUE_FROM_CODE = {
         lambda: tuple(name for name, on in top_cli.KNOWN_GATES.items() if on),
     ('grain_shape', 'caps'): lambda: dict(grain_shape.DEFAULT_CAPS),
     # Keyed and valued by the grain vocabulary's constants, which do not fold.
-    ('pm', 'contains'): lambda: dict(model.DEFAULT_CONTAINS),
+    ('pm', 'contains'): lambda: dict(vocabulary.DEFAULT_CONTAINS),
 }
 
 SECTION_LINE = re.compile(r'^# \[([a-z_]+)\]$')
@@ -265,12 +266,12 @@ def snapshot(root: Path) -> dict[str, bytes]:
 
 def test_pm_config_seed_prints_the_seed_and_writes_nothing():
     """Exit 0, the seed byte for byte, and the tree untouched."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     with tree(SEED) as root:
         before = snapshot(root)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = skills.cmd_config(model.load(), ['--seed'])
+            code = skills.cmd_config(vocabulary.load(), ['--seed'])
         after = snapshot(root)
     assert code == 0
     assert out.getvalue() == SEED, 'stdout is not the seed byte for byte'
@@ -403,14 +404,14 @@ def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
     never two — a consumer reads the seed to find out what a version can do.
     """
     live = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text(encoding='utf-8'))
-    for kind in (model.GRAIN_FEATURE, model.GRAIN_STORY):
-        node = live['pm'][model.ARRIVE_KEY][kind]['building']
-        named = {path: why for path, why in node[model.HAVE_KEY].items()
-                 if any(courier in path for courier in model.LEDGER_COURIERS)}
+    for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_STORY):
+        node = live['pm'][vocabulary.ARRIVE_KEY][kind]['building']
+        named = {path: why for path, why in node[vocabulary.HAVE_KEY].items()
+                 if any(courier in path for courier in vocabulary.LEDGER_COURIERS)}
         assert named, (
             f'[pm.arrive.{kind}.building] have names no ledger courier; a '
             f'dispatch starts here and nothing tells the operator it can be '
-            f'recorded: {sorted(node[model.HAVE_KEY])}')
+            f'recorded: {sorted(node[vocabulary.HAVE_KEY])}')
         for path, why in named.items():
             assert (REPO_ROOT / path).is_file(), (
                 f'[pm.arrive.{kind}.building] have names {path}, which is not '

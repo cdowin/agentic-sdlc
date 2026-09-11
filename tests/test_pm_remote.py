@@ -25,7 +25,7 @@ from pathlib import Path
 from support.pm import tree, write_config
 
 from agentic_sdlc.core.project import load_config, repo_root
-from agentic_sdlc.repo.pm import arrive, model, remote
+from agentic_sdlc.repo.pm import arrive, remote, vocabulary
 
 AUTHOR = ('-c', 'user.email=t@example.invalid', '-c', 'user.name=t')
 BRANCH = 'milestone/0.1-probe'
@@ -143,7 +143,7 @@ class TheSurfacesCarryIt(unittest.TestCase):
     def _cfg(self, root: Path):
         write_config(root, '')
         (root / 'pm' / 'roadmap').mkdir(parents=True, exist_ok=True)
-        return model.load()
+        return vocabulary.load()
 
     def test_the_census_clause_appears_only_when_something_is_unpushed(self):
         base = dict(open_count=1, oldest_id='x', oldest_seconds=5,

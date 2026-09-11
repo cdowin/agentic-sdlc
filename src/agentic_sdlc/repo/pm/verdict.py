@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 from agentic_sdlc.core import markdown
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory
 
 # --- the closed sets ----------------------------------------------------------
 # SHIP family for a feature review, RELEASE family for a milestone one; the
@@ -267,7 +267,7 @@ def _is_grain_id(value: str) -> bool:
     """
     segments = value.split('/')
     return (len(segments) <= MAX_ID_SEGMENTS
-            and all(model.segment_is_literal(segment) for segment in segments))
+            and all(inventory.segment_is_literal(segment) for segment in segments))
 
 
 def _finding(lineno: int, line: str) -> Finding:

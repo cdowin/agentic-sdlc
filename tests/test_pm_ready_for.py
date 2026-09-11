@@ -28,7 +28,7 @@ from support.pm import (bug, declaring, ledger_lines, ledger_rows, run_cli,
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model, ready_for
+from agentic_sdlc.repo.pm import ledger, ready_for
 
 FEATURE_STORIES = 'pm/roadmap/stories'
 REVIEWS = 'docs/reviews'
@@ -121,7 +121,7 @@ def stories(root: Path, **statuses: str) -> None:
 def bytes_of(root: Path) -> dict[str, bytes]:
     """Every file under the tree, by relative path — the write-nothing proof.
 
-    `.git/` is out: `model.load()` shells out to `git rev-parse` to find the
+    `.git/` is out: `vocabulary.load()` shells out to `git rev-parse` to find the
     root, and a reflog or index touched by READING is not this verb writing.
     """
     return {str(p.relative_to(root)): p.read_bytes()

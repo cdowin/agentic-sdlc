@@ -7,7 +7,7 @@ V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
 
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
 # shape `check pm` grades and cannot produce what this reader refuses (rule 4).
@@ -105,12 +105,12 @@ def _unverifiable(index: dict, ref: str) -> bool:
     return prefix != ref and prefix not in index
 
 
-def _grain_exists(cfg: model.PmConfig, ref: str) -> bool | None:
+def _grain_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
     """True/False if resolvable, None when the owning milestone is pruned
     (UNVERIFIABLE, not a finding).
     """
     try:
-        index = model.grain_index(cfg)
+        index = inventory.grain_index(cfg)
     except OSError:
         return False
     if ref in index:
@@ -118,21 +118,21 @@ def _grain_exists(cfg: model.PmConfig, ref: str) -> bool | None:
     return None if _unverifiable(index, ref) else False
 
 
-def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
+def _feature_exists(cfg: vocabulary.PmConfig, ref: str) -> bool | None:
     """`_grain_exists` for a ref that must name a FEATURE; a milestone or a
     story id is False. An OSError is False too.
     """
     try:
-        index = model.grain_index(cfg)
+        index = inventory.grain_index(cfg)
     except OSError:
         return False
     found = index.get(ref)
     if found is not None:
-        return found.kind == model.GRAIN_FEATURE
+        return found.kind == vocabulary.GRAIN_FEATURE
     return None if _unverifiable(index, ref) else False
 
 
-def _check_ref_ids(cfg: model.PmConfig, grain, key: str, refs: list[str],
+def _check_ref_ids(cfg: vocabulary.PmConfig, grain, key: str, refs: list[str],
                    on: set[str], bad, census: dict, exists=_grain_exists) -> list[str]:
     """The census / UNVERIFIABLE / V4 block for one ref key's parsed ids.
     Returns the refs that resolved.
@@ -152,7 +152,7 @@ def _check_ref_ids(cfg: model.PmConfig, grain, key: str, refs: list[str],
     return resolved
 
 
-def _check_refs(cfg: model.PmConfig, grain, key: str, on: set[str], bad,
+def _check_refs(cfg: vocabulary.PmConfig, grain, key: str, on: set[str], bad,
                 census: dict) -> list[str]:
     """`_check_ref_ids` over an inline-list ref key."""
     return _check_ref_ids(cfg, grain, key,
@@ -160,7 +160,7 @@ def _check_refs(cfg: model.PmConfig, grain, key: str, on: set[str], bad,
                           on, bad, census)
 
 
-def _check_caused_by(cfg: model.PmConfig, grain, on: set[str], bad,
+def _check_caused_by(cfg: vocabulary.PmConfig, grain, on: set[str], bad,
                      census: dict) -> None:
     """`_check_ref_ids` over a bug's scalar `caused_by:`, resolved as a feature."""
     _check_ref_ids(cfg, grain, CAUSED_BY,
@@ -168,11 +168,11 @@ def _check_caused_by(cfg: model.PmConfig, grain, on: set[str], bad,
                    on, bad, census, exists=_feature_exists)
 
 
-def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str], dict]:
+def run(cfg: vocabulary.PmConfig, enabled: set[str] | None = None) -> tuple[list[str], dict]:
     """Returns (findings, census). A finding names a path a human can open."""
-    # `model.VALIDATE_CHECKS` is the one roster; a local copy would split `pm
+    # `vocabulary.VALIDATE_CHECKS` is the one roster; a local copy would split `pm
     # validate` from `check pm`.
-    on = enabled if enabled is not None else set(model.VALIDATE_CHECKS)
+    on = enabled if enabled is not None else set(vocabulary.VALIDATE_CHECKS)
     findings: list[str] = []
     census = {'grains': 0, 'refs': 0, 'unverifiable': 0}
 
@@ -187,9 +187,9 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # in no index, so nothing below would ever visit it; two documents claiming
     # one id means the descent visits the first and walks past the second.
     if 'V1' in on:
-        for path, why in model.unkeyed_documents(cfg):
+        for path, why in inventory.unkeyed_documents(cfg):
             bad(f'{cfg.rel(path)} {why} — it was SKIPPED by this scan')
-        for gid, paths in model.duplicate_ids(cfg):
+        for gid, paths in inventory.duplicate_ids(cfg):
             names = ' '.join(cfg.rel(path) for path in paths)
             bad(f'{len(paths)} documents claim id {gid!r} — a resolver keeps '
                 f'the first it reads and the rest are addressable by nothing; '
@@ -199,19 +199,19 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # V5 about the feature graph, so the descent was never what they needed —
     # and it left a ref on an unbound grain unread while the census counted the
     # grain (rule 4).
-    for milestone in model.milestones(cfg):
+    for milestone in inventory.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not milestone.field(model.FIELD_ID)
-                           or not milestone.field(model.FIELD_STATUS)):
+        if 'V1' in on and (not milestone.field(vocabulary.FIELD_ID)
+                           or not milestone.field(vocabulary.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
         _check_refs(cfg, milestone, 'depends_on', on, bad, census)
 
-    for feature in model.every_grain(cfg, model.GRAIN_FEATURE):
+    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
         census['grains'] += 1
-        expect = feature.field(model.FIELD_ID)
+        expect = feature.field(vocabulary.FIELD_ID)
         if 'V1' in on and (not expect
-                           or not feature.field(model.FIELD_STATUS)):
+                           or not feature.field(vocabulary.FIELD_STATUS)):
             bad(f'{cfg.rel(feature.path)}: missing id: or status: in the '
                 f'frontmatter')
         # The UNQUOTED id, because that is what a ref carries: keying the node
@@ -224,20 +224,20 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                 # Which kind a ref names is a question about the GRAIN;
                 # counting slashes left the graph empty on a flat tree.
                 graph[expect].extend(ref for ref in resolved
-                                     if model.kind_of(cfg,
-                                                      ref) == model.GRAIN_FEATURE)
+                                     if inventory.kind_of(cfg,
+                                                      ref) == vocabulary.GRAIN_FEATURE)
 
-    for story in model.every_grain(cfg, model.GRAIN_STORY):
+    for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
         census['grains'] += 1
-        if 'V1' in on and (not story.field(model.FIELD_ID)
-                           or not story.field(model.FIELD_STATUS)):
+        if 'V1' in on and (not story.field(vocabulary.FIELD_ID)
+                           or not story.field(vocabulary.FIELD_STATUS)):
             bad(f'{cfg.rel(story.path)}: missing id: or status: in the '
                 f'frontmatter')
         _check_refs(cfg, story, 'depends_on', on, bad, census)
 
     # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
     # only milestones, features and stories.
-    for bug in model.every_grain(cfg, model.GRAIN_BUG):
+    for bug in inventory.every_grain(cfg, vocabulary.GRAIN_BUG):
         _check_caused_by(cfg, bug, on, bad, census)
 
     if 'V7' in on:
@@ -247,7 +247,7 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     return findings, census
 
 
-def _unbound_findings(cfg: model.PmConfig) -> list[str]:
+def _unbound_findings(cfg: vocabulary.PmConfig) -> list[str]:
     """V7 — a binding that names a grain not in the tree, or one of the wrong
     kind. An EMPTY binding is not here: it is unbound, which is a counted line.
 
@@ -257,9 +257,9 @@ def _unbound_findings(cfg: model.PmConfig) -> list[str]:
     A milestone binds to nothing and is never asked.
     """
     out: list[str] = []
-    index = model.grain_index(cfg)
+    index = inventory.grain_index(cfg)
     for gid, grain in sorted(index.items()):
-        bind = model.BINDS_TO.get(grain.kind)
+        bind = vocabulary.BINDS_TO.get(grain.kind)
         if bind is None:
             continue
         want_kind, field = bind

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from support.pm import run_cli, tree, write
 
-from agentic_sdlc.repo.pm import cli, model, skills
+from agentic_sdlc.repo.pm import cli, skills, vocabulary
 
 class Guidance(unittest.TestCase):
     """`pm install-skills` / `pm init` — the shared doctrine, and only that."""
@@ -265,7 +265,7 @@ class Guidance(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertIn('wrote the flow into devkit.toml', out)
                 config = (root / 'devkit.toml').read_text(encoding='utf-8')
-                self.assertTrue(config.endswith(model.render_seed()), config)
+                self.assertTrue(config.endswith(vocabulary.render_seed()), config)
                 # The flow init tells the user to run must actually work.
                 self.assertEqual(
                     run_cli(root, 'new', 'milestone', '0.1', 'First')[0], 0)

@@ -2,8 +2,15 @@
 
 A bare string is iterable, so a `tuple(...)` over `exclude_prefixes = "addons/"` would
 exclude the whole tree and let a gate print PASS over nothing.
+
+One thing here is not a coercion and says so: `pointer_escapes` is the "inside
+this checkout" shapes `relpath` refuses, as a PREDICATE, for a pointer that
+arrived from a grain rather than from config — where leaving the checkout is a
+finding and not an exit 2.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 from agentic_sdlc.core.project import load_config
 
@@ -92,6 +99,14 @@ def relpath_tuple(sect: dict, name: str, key: str,
                 f'[{name}] {key} entry {index} of {len(values)} must name a '
                 f'path inside this checkout, got {value!r} — it {defect}')
     return values
+
+
+def pointer_escapes(pointer: str) -> bool:
+    """Outside the checkout? The shapes `core.config.relpath` refuses, as a
+    predicate: a bad pointer is a finding, never a config error."""
+    return (pointer.startswith(('/', '~', '\\'))
+            or ':' in pointer.split('/', 1)[0]
+            or '..' in Path(pointer).parts)
 
 
 def flag(sect: dict, name: str, key: str, fallback: bool) -> bool:

@@ -97,7 +97,7 @@ class Repo:
             target.write_text(body, encoding='utf-8')
         if verify is not None:
             # THROUGH `with_flow`: `--plan` reads the building milestone's
-            # ledger through `pm.model`, which has no fallback behind
+            # ledger through `pm.vocabulary`, which has no fallback behind
             # `[pm.states.*]` and swallows every failure as "unknown".
             (self.root / 'devkit.toml').write_text(
                 with_flow(f'[verify]\n{verify}'), encoding='utf-8')

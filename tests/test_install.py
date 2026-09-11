@@ -1731,16 +1731,16 @@ NOT_SHIPPED = ('__init__.py',)
 
 def _retired_names() -> dict[str, str]:
     """{the spelling that would appear in prose: what it is}, off the code."""
-    from agentic_sdlc.repo.pm import cli as pm_cli, model as pm_model
+    from agentic_sdlc.repo.pm import cli as pm_cli, vocabulary
     from agentic_sdlc.repo.verify import rules
     names = {f'pm {verb}': 'a retired pm verb'
              for verb in pm_cli.RETIRED_COMMANDS}
     names.update({key: 'a retired [pm] config key'
-                  for key in pm_model.RETIRED_KEYS})
+                  for key in vocabulary.RETIRED_KEYS})
     names.update({check: 'a retired check id'
-                  for check in pm_model.RETIRED_CHECKS})
+                  for check in vocabulary.RETIRED_CHECKS})
     names.update({f'[{section}]': 'a retired config section'
-                  for section in pm_model.RETIRED_SECTIONS})
+                  for section in vocabulary.RETIRED_SECTIONS})
     names.update({f'[verify] {key}': 'a retired [verify] key'
                   for key in rules.RETIRED})
     names.update(RETIRED_ELSEWHERE)

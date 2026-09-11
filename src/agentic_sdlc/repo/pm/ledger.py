@@ -115,7 +115,7 @@ EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
 
 # What the row says when nobody answered. It cannot collide with a declared
-# answer, because `model._arrive_node_defect` refuses one that does not open
+# answer, because `vocabulary._arrive_node_defect` refuses one that does not open
 # with `--`. A bare move still writes, and is never invisible.
 NO_DISPOSITION = 'none'
 
@@ -405,10 +405,10 @@ def ledger_for(cfg, milestone_id: str) -> Path:
     own directory). One function, because a reader that guessed would find the
     rows in one layout and silently none in the other.
     """
-    from agentic_sdlc.repo.pm import model
-    if model.is_pooled(cfg):
+    from agentic_sdlc.repo.pm import inventory
+    if inventory.is_pooled(cfg):
         return ledgers_dir(cfg) / f'{milestone_id}.jsonl'
-    mdir = model.milestone_dir(cfg, milestone_id)
+    mdir = inventory.milestone_dir(cfg, milestone_id)
     return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
 
 
@@ -419,8 +419,8 @@ def ledger_of_grain(cfg, gid: str) -> Path | None:
     answer to "where does this row go": the lookup 0.4.0 retired asked which
     milestone was `in_progress` and lost every row a planning tree wrote.
     """
-    from agentic_sdlc.repo.pm import model
-    mid = model.milestone_of(cfg, gid) if gid else ''
+    from agentic_sdlc.repo.pm import inventory
+    mid = inventory.milestone_of(cfg, gid) if gid else ''
     return ledger_for(cfg, mid) if mid else None
 
 
@@ -442,9 +442,9 @@ def ledger_paths(cfg) -> list[Path]:
     """BOTH homes (0.4.0/D3), deduplicated: the tree's own ledger and one per
     milestone — the walk every reader of "every row" takes, and here because
     `conveyor/lessons.py` and `checks/pm.py` were two more spellings of it."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import inventory
     found = [grainless_path(cfg.roadmap)]
-    found += [ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    found += [ledger_for(cfg, g.gid) for g in inventory.milestones(cfg)]
     return list(dict.fromkeys(found))
 
 
@@ -692,17 +692,18 @@ def usage_row(kind: str, **fields: object) -> dict:
 
 # --- where a grain ENDS (D8) --------------------------------------------------
 # Finished is the `done` category of the grain's own kind, asked of
-# `model.category_of` — the question the drift rules ask, so `show`, `report`
-# and the gate agree on where a grain ended; the kind WORDS live in `model`.
+# `vocabulary.category_of` — the question the drift rules ask, so `show`, `report`
+# and the gate agree on where a grain ended; the kind WORDS live in
+# `vocabulary`.
 
 
 def ends_grain(cfg, grain_kind: str, to_state) -> bool:
     """Does a status row into `to_state` finish a grain of this kind? A `to`
     that is not a string finishes nothing."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     if not isinstance(to_state, str):
         return False
-    return model.category_of(cfg, grain_kind, to_state) == model.DONE_CATEGORY
+    return vocabulary.category_of(cfg, grain_kind, to_state) == vocabulary.DONE_CATEGORY
 
 
 def total_seconds(cfg, grain_kind: str, status: list) -> int | None:

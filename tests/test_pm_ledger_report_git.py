@@ -216,7 +216,7 @@ def test_no_ledger_at_the_rev_is_one_line_and_exit_zero():
 
 def test_the_census_at_a_rev_narrows_exactly_as_the_disk_walk_does():
     """The claim `GitSource._grain_docs` makes, staged against a tree that
-    exercises every one of `model.pool_scan`'s decisions at once.
+    exercises every one of `inventory.pool_scan`'s decisions at once.
 
     A census read out of git that quietly counted MORE than the disk walk (a
     note, a hidden document) or LESS (a bug nested inside its pool, an

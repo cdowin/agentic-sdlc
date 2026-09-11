@@ -142,7 +142,7 @@ SPAWN_DOTTED = 'agentic_sdlc.core.spawn'
 # is a label, not a reading order.
 #
 # `repo/pm/model.py` held 385 lines of frontmatter I/O in the middle of the PM
-# invariants: the fence scan, the per-process document cache, the field readers
+# invariants (the file is `vocabulary.py` + `inventory.py` now): the fence scan, the per-process document cache, the field readers
 # and the three byte-exact writers. Nothing said they belonged together, so a
 # caller that wanted the bytes back reached past them and opened the file —
 # `conveyor/steps._read` was a second `read_raw`, character for character.
@@ -174,16 +174,16 @@ OPEN_NEWLINE_KEYWORD = 'newline'
 # Primitive 9 put frontmatter I/O in one module. This one is about who may
 # ADDRESS it: 102 call sites outside the grain layer handed `field_of` a `Path`
 # to ask what a grain SAYS, which is "a grain is a file on disk" hard-coded 102
-# times. `model.grain(cfg, gid)` resolves an id to a `Grain` and `Grain.field`
-# asks it; a module that knows an id goes through those and names no file.
+# times. `inventory.grain(cfg, gid)` resolves an id to a `Grain` and
+# `Grain.field` asks it; a module that knows an id goes through those and names no file.
 #
 # What a second backend would cost is the argument: at 102 `Path` call sites it
 # is not expensive, it is impossible — and the reachability is worth having
 # WITHOUT one, because the reads now say which question they are asking.
-GRAIN_LAYER_MODULE = 'repo/pm/model.py'
-# The name every caller imports the grain layer under, so `model.doc_grain` is
-# reaching it and a bare `doc_grain(` is the layer's own spelling.
-GRAIN_LAYER_OWNER = 'model'
+GRAIN_LAYER_MODULE = 'repo/pm/inventory.py'
+# The name every caller imports the grain layer under, so `inventory.doc_grain`
+# is reaching it and a bare `doc_grain(` is the layer's own spelling.
+GRAIN_LAYER_OWNER = 'inventory'
 # The storage reads that take a PATH and answer *what does this document say*.
 # `field_in` is absent on purpose: its first argument is LINES, so it cannot
 # hand storage a path; `read_raw` is absent because *what are this file's
@@ -192,8 +192,8 @@ GRAIN_LAYER_OWNER = 'model'
 STORAGE_FIELD_READS = ('field_of', 'list_field_of', 'document',
                        'sequence_defect')
 # The ONE file-to-grain adapter, and it is graded here too — otherwise every
-# `frontmatter.field_of(p, k)` could become `model.doc_grain(p).field(k)`, the
-# gate would go green and nothing would have changed. A module that really
+# `frontmatter.field_of(p, k)` could become `inventory.doc_grain(p).field(k)`,
+# the gate would go green and nothing would have changed. A module that really
 # holds a file is a ROSTER entry with a reason, not a `doc_grain` call.
 GRAIN_ADAPTER = 'doc_grain'
 # Modules that may still address a storage read BY PATH, each with the reason
@@ -431,7 +431,7 @@ def _called_name(node: ast.Call) -> tuple[str, str]:
 
     Both spellings, because the owner of a name calls it bare and everybody
     else calls it through the module: `doc_grain(path)` inside the grain layer
-    and `model.doc_grain(path)` outside it are the same call.
+    and `inventory.doc_grain(path)` outside it are the same call.
     """
     func = node.func
     if isinstance(func, ast.Attribute):
@@ -799,7 +799,7 @@ class OneStorage(unittest.TestCase):
         ('def _fence_bounds(lines):\n    return None', True),
         ('_DOCUMENTS = {}', True),
         # A re-export is a binding like any other — this is the exact line
-        # `model.field_of` would have survived behind.
+        # a re-exported `field_of` would have survived behind.
         ('from agentic_sdlc.core.frontmatter import read_raw', True),
         ('from agentic_sdlc.core.frontmatter import write_raw as put', True),
         # The reader that reuses no name at all.
@@ -864,7 +864,7 @@ class OneStorage(unittest.TestCase):
 class TheEngineAsksByIdNotByPath(unittest.TestCase):
     """PRIMITIVE 10 — a module that knows an id never names the file.
 
-    `model.grain(cfg, gid)` is the id-addressed handle and `Grain.field(key)`
+    `inventory.grain(cfg, gid)` is the id-addressed handle and `Grain.field(key)`
     is the read; `PATH_ADDRESSED_ROSTER` is the closed set of modules that
     legitimately hold a FILE instead, each with its reason.
 
@@ -899,12 +899,12 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
         ("defect = frontmatter.sequence_defect(parent.path, 'order')", True),
         # The adapter, graded too: it is the one way to turn a path into a
         # grain, so it cannot be the way round this rule.
-        ('beside = model.doc_grain(path)', True),
+        ('beside = inventory.doc_grain(path)', True),
         ('beside = doc_grain(path)', True),
         # Asking the GRAIN. No path is handed to anything.
         ("status = grain.field('status')", False),
         ("order = parent.list_field('order')", False),
-        ("found = model.grain(cfg, gid, 'story').field('status')", False),
+        ("found = inventory.grain(cfg, gid, 'story').field('status')", False),
         # A question about a FILE's bytes, not about what a grain says.
         ('text = frontmatter.read_raw(version_file)', False),
         # LINES, already read — there is no path in the call to hand over.
@@ -936,7 +936,7 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
         self.assertEqual(
             [], offenders,
             'a storage read addressed by PATH outside the roster. A module '
-            'that knows an id asks `model.grain(cfg, gid).field(key)`; one '
+            'that knows an id asks `inventory.grain(cfg, gid).field(key)`; one '
             'that really holds a file joins ' + ', '.join(
                 sorted(PATH_ADDRESSED_ROSTER)) + ' with its reason written '
             'beside it, and that roster may only SHRINK:\n  '
@@ -987,18 +987,18 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
         offender moved somewhere else and these cases pass over nothing).
         """
         import inspect
-        from agentic_sdlc.repo.pm import model as pm_model
+        from agentic_sdlc.repo.pm import inventory
         for name, args in (('grain', ('cfg', 'gid', 'kind')),
                            ('doc_grain', ('path', 'kind')),
                            ('story_grain', ('cfg', 'sid'))):
-            fn = getattr(pm_model, name, None)
-            self.assertTrue(callable(fn), f'model.{name} is gone')
+            fn = getattr(inventory, name, None)
+            self.assertTrue(callable(fn), f'{GRAIN_LAYER_OWNER}.{name} is gone')
             params = inspect.signature(fn).parameters
             for arg in args:
-                self.assertIn(arg, params, f'model.{name}({arg})')
+                self.assertIn(arg, params, f'{GRAIN_LAYER_OWNER}.{name}({arg})')
         for name in ('field', 'list_field', 'declares', 'sequence_defect'):
             self.assertTrue(
-                callable(getattr(pm_model.Grain, name, None)),
+                callable(getattr(inventory.Grain, name, None)),
                 f'Grain.{name} is gone — every caller that stopped naming a '
                 f'file reads through it')
         sites = _path_addressed_sites(GRAIN_LAYER_MODULE,
@@ -1173,7 +1173,7 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
         return bool(_sites_for(planted, APPEND_ONLY_MODULE))
 
     def test_append_anywhere_else_is_a_finding(self):
-        for rel in (SCRATCH_MODULE, 'cli.py', 'repo/pm/model.py'):
+        for rel in (SCRATCH_MODULE, 'cli.py', 'repo/pm/inventory.py'):
             for source in ("p.open('a')", "open(p, 'a')", "p.open('ab')"):
                 with self.subTest(rel=rel, source=source):
                     self.assertNotEqual([], _sites_for(source, rel))
@@ -1225,17 +1225,15 @@ class TheResolversCollapsed(unittest.TestCase):
                    'milestone_walk', 'milestone_dirs', 'AmbiguousStory')
 
     def test_the_path_shaped_resolvers_are_gone(self):
-        model = SRC / 'repo' / 'pm' / 'model.py'
-        source = model.read_text(encoding='utf-8')
+        source = (SRC / GRAIN_LAYER_MODULE).read_text(encoding='utf-8')
         for name in self.GONE:
             self.assertNotIn(f'def {name}(', source,
-                             f'{name} is back in model.py. An id names no '
-                             f'location in 0.4.0, so nothing derives one from '
-                             f'a path.')
+                             f'{name} is back in {GRAIN_LAYER_MODULE}. An id '
+                             f'names no location in 0.4.0, so nothing derives '
+                             f'one from a path.')
 
     def test_the_nested_reader_is_exactly_this_roster(self):
-        model = SRC / 'repo' / 'pm' / 'model.py'
-        source = model.read_text(encoding='utf-8')
+        source = (SRC / GRAIN_LAYER_MODULE).read_text(encoding='utf-8')
         for name in self.NESTED_ONLY:
             opener = f'class {name}(' if name[0].isupper() else f'def {name}('
             self.assertIn(opener, source,
@@ -1244,11 +1242,11 @@ class TheResolversCollapsed(unittest.TestCase):
                           f'goes together and D3 gets closed.')
 
     def test_the_three_general_resolvers_take_a_kind(self):
-        from agentic_sdlc.repo.pm import model as pm_model
+        from agentic_sdlc.repo.pm import inventory
         import inspect
         for name, arg in (('grain_file', 'kind'), ('children', 'kind'),
                           ('pool_walk', 'kind')):
-            fn = getattr(pm_model, name)
+            fn = getattr(inventory, name)
             self.assertIn(arg, inspect.signature(fn).parameters, name)
 
 
@@ -1362,7 +1360,11 @@ CONFIG_OWNER = 'core/config.py'
 CONFIG_IMPORT_ALLOWLIST = frozenset((
     CONFIG_OWNER,                 # the guard module itself
     'cli.py',
-    'repo/pm/model.py',
+    # `[pm]` and `[repo_hygiene] mainline`, through `flag`/`number`/`relpath`/
+    # `str_tuple_table`/`table`/`text`. The DECLARES half of the old `model.py`:
+    # the CONTAINS half (`repo/pm/inventory.py`) reads no config at all, which
+    # is why the split left one entry here and not two.
+    'repo/pm/vocabulary.py',
     'repo/checks/doc.py',
     'repo/checks/grain_shape.py',
     'repo/checks/repo_hygiene.py',
@@ -1748,7 +1750,7 @@ class LayersPointDownward(unittest.TestCase):
     CORPUS = (
         ('from agentic_sdlc.repo import emit', True),
         ('import agentic_sdlc.cli', True),
-        ('from agentic_sdlc.repo.pm import model', True),
+        ('from agentic_sdlc.repo.pm import inventory', True),
         # Relative, and resolved against the module's own package — spelling
         # the target without its prefix dodges nothing.
         ('from ..repo import emit', True),
@@ -1757,9 +1759,56 @@ class LayersPointDownward(unittest.TestCase):
         ('import tomllib', False),
     )
 
+    # The two halves `repo/pm/model.py` split into, in import order. Siblings
+    # at one altitude, so `LAYER_RULES` above cannot see a cycle between them:
+    # both spell `agentic_sdlc.repo.pm`, which is neither layer reaching up.
+    SIBLING_HALVES = (f'{PACKAGE}.repo.pm.vocabulary',
+                      f'{PACKAGE}.repo.pm.inventory')
+
     @staticmethod
     def catches(planted: str) -> bool:
         return bool(_upward_imports(CORE_SCRATCH, ast.parse(planted)))
+
+    def test_each_sibling_half_imports_with_the_other_absent(self):
+        """The DECLARES half does not know the CONTAINS half exists.
+
+        Executed rather than read, because the defect it catches is the one a
+        reader of the imports waves through: `inventory` needs 28 names from
+        `vocabulary`, and the tempting way to resolve a reference running the
+        other way is an import inside a function, which no import-block reader
+        sees. So each half is imported with the whole package purged from
+        `sys.modules`: `vocabulary` alone must leave `inventory` UNIMPORTED —
+        nothing in it reaches forward, at module level or from inside a call —
+        and `inventory` alone must pull `vocabulary` in, which is the one
+        direction being real rather than deferred.
+
+        Probed both ways. A planted `import inventory` in `vocabulary.py` reds
+        it as a circular ImportError; deleting `inventory.py`'s module-level
+        import reds it too, as the NameError the 28 module-level uses raise.
+        """
+        import importlib
+        import sys
+        declares, contains = self.SIBLING_HALVES
+        for dotted, wanted, absent in ((declares, (), contains),
+                                       (contains, (declares,), '')):
+            saved = {name: module for name, module in sys.modules.items()
+                     if name.split('.')[0] == PACKAGE}
+            for name in saved:
+                del sys.modules[name]
+            try:
+                importlib.import_module(dotted)
+                for name in wanted:
+                    self.assertIn(name, sys.modules,
+                                  f'{dotted} does not import {name} at module '
+                                  f'level — a deferred import is how a cycle '
+                                  f'hides from a reader of the import block')
+                if absent:
+                    self.assertNotIn(
+                        absent, sys.modules,
+                        f'{dotted} reached {absent}: what a project DECLARES '
+                        f'cannot depend on what a tree CONTAINS')
+            finally:
+                sys.modules.update(saved)
 
     def test_no_layer_imports_upward(self):
         sources = _sources()
@@ -2355,7 +2404,7 @@ class NoCodePathParsesAVersion(unittest.TestCase):
         the narrowing honest.
         """
         surface = {
-            'repo/pm/model.py': ('releases_file', 'declared_order',
+            'repo/pm/inventory.py': ('releases_file', 'declared_order',
                                  'milestone_version', 'version_claims',
                                  'milestone_of_version', 'entry_is_shipped',
                                  'entry_is_dangling', 'current_release',

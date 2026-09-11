@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import unittest
 
-from agentic_sdlc.repo.pm import changelog, ledger, model, report, templates
+from agentic_sdlc.core import config
+from agentic_sdlc.repo.pm import (changelog, inventory, ledger, report,
+                                  templates, vocabulary)
 from agentic_sdlc.repo.pm import cli as pm_cli
 
 # {surface: (the constant, the case that binds it to its reader)}. A surface
@@ -30,9 +32,9 @@ SURFACES = {
     'ledger.EVENT_KEYS': 'test_every_event_shape_stamps_the_key_its_reader_sorts_on',
     'changelog.COLUMNS': 'test_changelog_rows_and_json_carry_the_same_columns',
     'cli.LIST_COLUMNS': 'test_every_list_kind_emits_exactly_its_declared_columns',
-    'model.BINDS_TO': 'test_every_binding_field_is_one_the_templates_carry',
-    'model.FLOW_KINDS': 'test_every_grain_kind_reaches_the_tables_keyed_on_it',
-    'model.pointer_escapes': 'test_no_caller_hand_rolls_its_own_escape_check',
+    'vocabulary.BINDS_TO': 'test_every_binding_field_is_one_the_templates_carry',
+    'vocabulary.FLOW_KINDS': 'test_every_grain_kind_reaches_the_tables_keyed_on_it',
+    'config.pointer_escapes': 'test_no_caller_hand_rolls_its_own_escape_check',
     'cli.ROADMAP_COLUMNS': 'test_pm_roadmap_help_names_its_columns',
     'report.CLOCK_COLUMNS': 'test_ledger_report_help_names_its_clock_and_actor_columns',
 }
@@ -62,8 +64,9 @@ class TheRegistryIsComplete(unittest.TestCase):
         self.assertGreaterEqual(len(SURFACES), 9, SURFACES)
         for surface in SURFACES:
             module, _, name = surface.partition('.')
-            holder = {'ledger': ledger, 'changelog': changelog,
-                      'cli': pm_cli, 'model': model, 'report': report}[module]
+            holder = {'ledger': ledger, 'changelog': changelog, 'cli': pm_cli,
+                      'config': config, 'inventory': inventory,
+                      'report': report, 'vocabulary': vocabulary}[module]
             self.assertTrue(hasattr(holder, name),
                             f'{surface} is registered and does not exist')
 
@@ -140,7 +143,7 @@ class TheRowsRoundTrip(unittest.TestCase):
                 self.assertNotIn(WRONG_STAMP, row)
 
 
-# Every shape `model.pointer_escapes` refuses, and the two the hand-rolled
+# Every shape `config.pointer_escapes` refuses, and the two the hand-rolled
 # checks missed. `..` is F1's: it is not absolute and does not start with `~`,
 # so a `/`-and-`~` pair reads it as repo-relative and resolves it anywhere.
 ESCAPING = ('../outside.md', '../../etc/passwd', '/etc/passwd', '~/x.md',
@@ -152,7 +155,7 @@ RICHER = frozenset({'ready_for.py'})
 # The two functions that DEFINE the resolution. `test_boundaries.py` allowlists
 # the guard module itself for the same reason: the owner cannot route through
 # itself. Allowed by FUNCTION, not by module, so a third spelling elsewhere in
-# `model.py` is still an offender.
+# `core/config.py` is still an offender.
 OWNERS = frozenset({'record_path', 'pointer_escapes'})
 
 
@@ -204,7 +207,7 @@ class OnePointerResolver(unittest.TestCase):
     def test_every_escaping_shape_is_refused(self):
         for pointer in ESCAPING:
             with self.subTest(pointer=pointer):
-                self.assertTrue(model.pointer_escapes(pointer),
+                self.assertTrue(config.pointer_escapes(pointer),
                                 f'{pointer!r} reaches outside the checkout')
 
     def test_a_repo_relative_pointer_is_not_refused(self):
@@ -212,7 +215,7 @@ class OnePointerResolver(unittest.TestCase):
         above and make every pointer verb unusable."""
         for pointer in REPO_RELATIVE:
             with self.subTest(pointer=pointer):
-                self.assertFalse(model.pointer_escapes(pointer))
+                self.assertFalse(config.pointer_escapes(pointer))
 
     CORPUS = (
         # The spelling that shipped, in each name a pointer travels under.
@@ -225,7 +228,7 @@ class OnePointerResolver(unittest.TestCase):
         ("if line.startswith('#'):\n    pass", False),
         ("if pointer.startswith('docs/'):\n    pass", False),
         ("if name.startswith('/'):\n    pass", False),
-        ('escapes = model.pointer_escapes(pointer)', False),
+        ('escapes = pointer_escapes(pointer)', False),
     )
 
     @staticmethod
@@ -241,7 +244,7 @@ class OnePointerResolver(unittest.TestCase):
         """
         import ast
         from pathlib import Path as _P
-        root = _P(model.__file__).resolve().parents[3] / 'agentic_sdlc'
+        root = _P(vocabulary.__file__).resolve().parents[3] / 'agentic_sdlc'
         offenders = []
         modules = 0
         for path in sorted(root.rglob('*.py')):
@@ -255,7 +258,7 @@ class OnePointerResolver(unittest.TestCase):
         self.assertGreaterEqual(modules, 20, 'the source census collapsed')
         self.assertEqual(
             [], offenders,
-            'a pointer escape check spelled by hand. `model.pointer_escapes` '
+            'a pointer escape check spelled by hand. `pointer_escapes` '
             'is the one predicate and it refuses `..` and a scheme prefix, '
             'which `/`-and-`~` does not:\n  ' + '\n  '.join(offenders))
 
@@ -366,17 +369,17 @@ class TheColumnsRoundTrip(unittest.TestCase):
                                  'a duplicate column silently shifts a row')
 
     def test_every_grain_kind_reaches_the_tables_keyed_on_it(self):
-        """`model.FLOW_KINDS` is the vocabulary every kind-keyed table indexes.
+        """`vocabulary.FLOW_KINDS` is the vocabulary every kind-keyed table indexes.
         A kind added there with no prefix, pool, template or list columns is
         four `KeyError`s waiting on four different verbs."""
-        for kind in model.FLOW_KINDS:
+        for kind in vocabulary.FLOW_KINDS:
             with self.subTest(kind=kind):
-                for table, name in ((model.KIND_PREFIX, 'KIND_PREFIX'),
-                                    (model.POOL_NAME, 'POOL_NAME'),
+                for table, name in ((inventory.KIND_PREFIX, 'KIND_PREFIX'),
+                                    (inventory.POOL_NAME, 'POOL_NAME'),
                                     (pm_cli.LIST_COLUMNS, 'cli.LIST_COLUMNS')):
                     self.assertIn(kind, table,
                                   f'{name} is not keyed on {kind!r} and '
-                                  f'model.FLOW_KINDS says it is a kind')
+                                  f'vocabulary.FLOW_KINDS says it is a kind')
                 # Review V3 (0.6.0): this asked `kind in templates.GRAINS`,
                 # and the same commit that collapsed the parallel kind
                 # declarations made `GRAINS` an alias OF `FLOW_KINDS` — so the
@@ -391,7 +394,7 @@ class TheColumnsRoundTrip(unittest.TestCase):
     def test_every_binding_field_is_one_the_templates_carry(self):
         """`BINDS_TO` says which field binds a kind; the shipped template has
         to actually carry it, or `pm add` writes a key nothing reads."""
-        for kind, (_parent, field) in model.BINDS_TO.items():
+        for kind, (_parent, field) in vocabulary.BINDS_TO.items():
             with self.subTest(kind=kind):
                 self.assertIn(f'{field}:', _shipped(kind),
                               f'{kind}.md carries no `{field}:` and BINDS_TO '

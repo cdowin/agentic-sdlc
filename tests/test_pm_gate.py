@@ -290,7 +290,7 @@ class DriftGate(unittest.TestCase):
             root = Path(tmp) / 'repo'
             (root / 'pm' / 'roadmap').mkdir(parents=True)
             # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
-            # (model.py:718), so this ad-hoc tree needs it for the same
+            # (`vocabulary.flow_of`), so this ad-hoc tree needs it for the same
             # reason `support.pm.tree` does.
             write_config(root)
             (root / '.git').mkdir(exist_ok=True)  # a MARKER: `repo_root` walks for it
@@ -888,9 +888,9 @@ class RetiredConfigIsRefusedByName(unittest.TestCase):
     """A key the tracker stopped reading is REFUSED by name, never ignored.
 
     The mechanism is the `RETIRED_KEYS` / `RETIRED_SECTIONS` ledger in
-    model.py — the executable tombstone that keeps a consumer arriving from an
-    older pin from shipping config that silently does nothing (a config key
-    that does nothing is worse than one that errors: the author believes it
+    `vocabulary.py` — the executable tombstone that keeps a consumer arriving
+    from an older pin from shipping config that silently does nothing (a config
+    key that does nothing is worse than one that errors: the author believes it
     took effect). One key and one section stand in for the roster; the ledger
     itself is the enumeration, so a per-key table here would be a copy of it.
     """

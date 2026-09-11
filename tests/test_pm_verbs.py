@@ -41,7 +41,8 @@ from support.pm import (
 )
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import arrive, cli, ledger, model, skills
+from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, skills,
+                                  vocabulary)
 
 FFILE = 'pm/roadmap/features/alpha.md'
 MFILE = 'pm/roadmap/milestones/0.1.md'
@@ -63,11 +64,11 @@ class ReviewRecord(unittest.TestCase):
         # missing one is not.
         with tree(with_record=True) as root:
             cfg = cfg_for(root)
-            self.assertIsNotNone(model.review_record_for(cfg, '0.1/alpha'))
+            self.assertIsNotNone(inventory.review_record_for(cfg, '0.1/alpha'))
             (root / 'docs' / 'reviews' / 'alpha.md').write_text('', encoding='utf-8')
-            self.assertIsNotNone(model.review_record_for(cfg, '0.1/alpha'))
+            self.assertIsNotNone(inventory.review_record_for(cfg, '0.1/alpha'))
             (root / 'docs' / 'reviews' / 'alpha.md').unlink()
-            self.assertIsNone(model.review_record_for(cfg, '0.1/alpha'))
+            self.assertIsNone(inventory.review_record_for(cfg, '0.1/alpha'))
 
 
 class StatusMoves(unittest.TestCase):
@@ -235,8 +236,8 @@ class StatusVerbQuartet(unittest.TestCase):
     def _states(kind: str) -> tuple[str, ...]:
         # The seed's words in their declared order — what `pm init` writes
         # and the fixture tree declares.
-        return tuple(st for cat in model.CATEGORIES
-                     for st in model.DEFAULT_FLOWS[kind][cat])
+        return tuple(st for cat in vocabulary.CATEGORIES
+                     for st in vocabulary.DEFAULT_FLOWS[kind][cat])
 
     @staticmethod
     @contextlib.contextmanager
@@ -266,7 +267,7 @@ class StatusVerbQuartet(unittest.TestCase):
     def test_a_state_outside_the_vocabulary_is_a_usage_error_naming_the_set(self):
         """The half that IS a fact: `banana` is not a status in any vocabulary,
         and neither is `todo` now that the window has closed — the refusal is
-        `model.move_defect`'s, naming the declaration and nothing about a
+        `vocabulary.move_defect`'s, naming the declaration and nothing about a
         replacement. A softened close that kept the old special message would
         keep the four retired words alive in the tool's own help text for
         another release."""
@@ -561,7 +562,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             cfg = loaded(root)
 
             # the fork: every printed line is the DECLARATION, verbatim
-            node = model.arrival_at(cfg, 'feature', 'building')
+            node = vocabulary.arrival_at(cfg, 'feature', 'building')
             asked = self._stderr(out, node.ask)
             self.assertEqual(
                 len(asked), 1,
@@ -578,11 +579,11 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             # the census: the count is the `in_progress` CATEGORY of the
             # project's own `[pm.states.*]`, over the tree's own grains
             census = self._stderr(out, 'open:')[0]
-            open_now = [g for g in model.grain_index(cfg).values()
-                        if g.kind in model.FLOW_KINDS
-                        and model.category_of(cfg, g.kind, g.status)
-                        == model.IN_PROGRESS]
-            self.assertIn(f'{len(open_now)} {model.IN_PROGRESS}', census)
+            open_now = [g for g in inventory.grain_index(cfg).values()
+                        if g.kind in vocabulary.FLOW_KINDS
+                        and vocabulary.category_of(cfg, g.kind, g.status)
+                        == vocabulary.IN_PROGRESS]
+            self.assertIn(f'{len(open_now)} {vocabulary.IN_PROGRESS}', census)
             # the wip clause is the PROJECT's number, never this package's —
             # bound to the WORD, because a bare `1` is on the line anyway
             self.assertEqual(cfg.wip, 1)
@@ -597,7 +598,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             aged = int((datetime.now(timezone.utc) - planted).total_seconds())
             self.assertIn(f'oldest 0.1 {ledger.human_duration(aged)}', census)
             # and the artifact count is `reviewed:` resolving, off frontmatter
-            self.assertEqual(model.review_record_for(cfg, '0.1/alpha'),
+            self.assertEqual(inventory.review_record_for(cfg, '0.1/alpha'),
                              'docs/reviews/alpha.md')
             self.assertNotIn(f'{arrive.RECORD_FIELD} record', census)
 
@@ -610,13 +611,13 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             _, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             cfg = loaded(root)
             census = self._stderr(out, 'open:')[0]
-            pool = [g for g in model.grain_index(cfg).values()
-                    if g.kind in model.FLOW_KINDS
-                    and model.category_of(cfg, g.kind, g.status)
-                    == model.IN_PROGRESS
+            pool = [g for g in inventory.grain_index(cfg).values()
+                    if g.kind in vocabulary.FLOW_KINDS
+                    and vocabulary.category_of(cfg, g.kind, g.status)
+                    == vocabulary.IN_PROGRESS
                     and arrive.RECORD_FIELD in frontmatter.document(g.path).fields]
             missing = [g for g in pool
-                       if not model.record_resolves(
+                       if not inventory.record_resolves(
                            cfg.root / frontmatter.document(g.path).field(
                                arrive.RECORD_FIELD))]
             self.assertTrue(missing, 'nothing is missing a record, so the '
@@ -1093,7 +1094,7 @@ class ListFindsTheNail(unittest.TestCase):
             root = Path(tmp) / 'repo'
             (root / 'pm' / 'roadmap').mkdir(parents=True)
             # DECLARES ITS FLOW: `[pm.states.*]` has no runtime fallback
-            # (model.py:718), so this ad-hoc tree needs it for the same
+            # (`vocabulary.flow_of`), so this ad-hoc tree needs it for the same
             # reason `support.pm.tree` does.
             write_config(root)
             (root / '.git').mkdir(exist_ok=True)  # a MARKER: `repo_root` walks for it
@@ -1170,7 +1171,7 @@ class WriteFidelity(unittest.TestCase):
 class IdsAreLiterals(unittest.TestCase):
     """One case showing the refusal ARRIVES. The grammar's own matrix —
     traversal, empty and dot segments, backslashes, schemes, length — lives
-    with `model.segment_is_literal`, per SDLC.md §5."""
+    with `inventory.segment_is_literal`, per SDLC.md §5."""
 
     def test_a_glob_never_resolves_to_a_grain(self):
         with tree() as root:
@@ -1441,7 +1442,7 @@ class StoryResolution(unittest.TestCase):
             self._story(root, 'parked/s2.md', '0.1/alpha/s2')
             _, gate = run_gate(root)
             self.assertIn('2 story/ies', gate)
-            self.assertIsNotNone(model.story_file(cfg_for(root), '0.1/alpha/s2'))
+            self.assertIsNotNone(inventory.story_file(cfg_for(root), '0.1/alpha/s2'))
             code, out = run_cli(root, 'story', 'building', '0.1/alpha/s2')
             self.assertEqual(code, 0, out)
             self.assertEqual(
@@ -1452,7 +1453,7 @@ class StoryResolution(unittest.TestCase):
     def test_an_uppercase_extension_resolves(self):
         with tree() as root:
             self._story(root, 'S3.MD', '0.1/alpha/S3')
-            self.assertEqual(model.story_file(cfg_for(root), '0.1/alpha/S3').name,
+            self.assertEqual(inventory.story_file(cfg_for(root), '0.1/alpha/S3').name,
                              'S3.MD')
 
     def test_the_filename_never_decides_which_story_an_id_reaches(self):
@@ -1465,18 +1466,18 @@ class StoryResolution(unittest.TestCase):
         with tree() as root:
             cfg = cfg_for(root)
             self._story(root, '07-s9.md', '0.1/alpha/s9')
-            self.assertEqual(model.story_file(cfg, '0.1/alpha/s9').name,
+            self.assertEqual(inventory.story_file(cfg, '0.1/alpha/s9').name,
                              '07-s9.md')
             self._story(root, 'parked/03-s4.md', '0.1/alpha/s4')
-            self.assertEqual(model.story_file(cfg, '0.1/alpha/s4').name,
+            self.assertEqual(inventory.story_file(cfg, '0.1/alpha/s4').name,
                              '03-s4.md')
             # ...and the filename is not the id, so a file whose STEM spells
             # one id while its frontmatter spells another answers to the
             # frontmatter.
             self._story(root, 's5.md', '0.1/alpha/actually-s6')
-            self.assertIsNone(model.story_file(cfg, '0.1/alpha/s5'))
+            self.assertIsNone(inventory.story_file(cfg, '0.1/alpha/s5'))
             self.assertEqual(
-                model.story_file(cfg, '0.1/alpha/actually-s6').name, 's5.md')
+                inventory.story_file(cfg, '0.1/alpha/actually-s6').name, 's5.md')
 
     def test_two_files_claiming_one_id_resolve_and_are_REPORTED(self):
         # The old resolver refused rather than picked, which turned a tree
@@ -1488,7 +1489,7 @@ class StoryResolution(unittest.TestCase):
         with tree() as root:
             self._story(root, 'dup.md', '0.1/alpha/dup')
             self._story(root, 'parked/dup.md', '0.1/alpha/dup')
-            self.assertIsNotNone(model.story_file(cfg_for(root), '0.1/alpha/dup'))
+            self.assertIsNotNone(inventory.story_file(cfg_for(root), '0.1/alpha/dup'))
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             self.assertIn("2 documents claim id '0.1/alpha/dup'", out)
@@ -1499,7 +1500,7 @@ class StoryResolution(unittest.TestCase):
         with tree() as root:
             (root / self.FDIR / 'README.md').write_text(
                 '# how stories are written here\n', encoding='utf-8')
-            self.assertIsNone(model.story_file(cfg_for(root), '0.1/alpha/README'))
+            self.assertIsNone(inventory.story_file(cfg_for(root), '0.1/alpha/README'))
 
 
 class TheOrdinalPrefixRetiredByName(unittest.TestCase):
@@ -1517,8 +1518,8 @@ class TheOrdinalPrefixRetiredByName(unittest.TestCase):
     """
 
     def test_the_key_is_refused_by_name_with_its_replacement(self):
-        self.assertIn('story_ordinal_prefix', model.RETIRED_KEYS)
-        self.assertIn('pm add', model.RETIRED_KEYS['story_ordinal_prefix'])
+        self.assertIn('story_ordinal_prefix', vocabulary.RETIRED_KEYS)
+        self.assertIn('pm add', vocabulary.RETIRED_KEYS['story_ordinal_prefix'])
         with tree(story_statuses=()) as root:
             write_config(root, '[pm]\nstory_ordinal_prefix = true\n')
             code, out = run_cli(root, 'validate')
@@ -1574,7 +1575,7 @@ class Decide(unittest.TestCase):
             body = log.read_text(encoding='utf-8')
             # Minted from the template, header and all — a bare heading with no
             # instruction line is what D13 reports.
-            self.assertTrue(body.startswith(model.SLOT_HEADER['decisions.md']))
+            self.assertTrue(body.startswith(vocabulary.SLOT_HEADER['decisions.md']))
             today = datetime.now(timezone.utc).date().isoformat()
             self.assertIn(f'## D1 — {today} — the sweep verb moves', body)
             # The GRAIN's `name:`, asked of the grain
@@ -1613,7 +1614,7 @@ class Decide(unittest.TestCase):
             for eid in ('## D1 ', '## D2 ', '## D3 '):
                 self.assertIn(eid, body)
             log = root / self.MLOG
-            frontmatter.write_raw(log, f'{model.SLOT_HEADER["decisions.md"]}\n\n'
+            frontmatter.write_raw(log, f'{vocabulary.SLOT_HEADER["decisions.md"]}\n\n'
                                  f'## M27 — 2026-01-01 — an older choice\n')
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
             self.assertIn('## M28 — ', self._log(root))
@@ -1634,7 +1635,7 @@ class Decide(unittest.TestCase):
             log = root / self.MLOG
             hand = ('## D9 — 2026-01-01 — a hand-written entry\n'
                     'Free prose, no fields, several  \nlines of it.\n')
-            before = (f'{model.SLOT_HEADER["decisions.md"]}\n\n{hand}'
+            before = (f'{vocabulary.SLOT_HEADER["decisions.md"]}\n\n{hand}'
                       .replace('\n', '\r\n'))
             frontmatter.write_raw(log, before)
             self.assertEqual(run_cli(root, 'decide', '0.1', 'the next one')[0], 0)
@@ -1848,7 +1849,7 @@ class Retire(unittest.TestCase):
             self.assertIn('feature(s) not done', out)
             self.assertIn('bug(s) still open', out)
             # The GRAINS are gone; `pm/roadmap` is the tree itself and stays.
-            self.assertEqual(model.milestones(cfg_for(root)), [])
+            self.assertEqual(inventory.milestones(cfg_for(root)), [])
             self.assertFalse((root / MFILE).exists())
             self.assertFalse((root / FFILE).exists())
 
@@ -1993,18 +1994,18 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
         with tree() as root:
             self._plan(root, 'a', 'b', 'c')
             cfg = cfg_for(root)
-            self.assertEqual(model.declared_order(cfg), ['a', 'b', 'c'])
+            self.assertEqual(inventory.declared_order(cfg), ['a', 'b', 'c'])
             # A scalar on the key line is a DIFFERENT shape, and reading it as
             # a one-element list would make `order: a` silently a plan.
             (root / 'pm' / 'roadmap' / 'releases.md').write_text(
                 '---\norder: a\n---\n', encoding='utf-8')
-            self.assertEqual(model.declared_order(cfg), [])
+            self.assertEqual(inventory.declared_order(cfg), [])
 
     def test_no_plan_at_all_is_no_current_release(self):
         with tree() as root:
             cfg = cfg_for(root)
-            self.assertEqual(model.declared_order(cfg), [])
-            self.assertIsNone(model.current_release(cfg))
+            self.assertEqual(inventory.declared_order(cfg), [])
+            self.assertIsNone(inventory.current_release(cfg))
 
     def test_the_release_worked_on_and_the_release_graded_are_two_questions(self):
         """Review A1/B2/C1. `version_at` answers "what should the version FILE
@@ -2021,14 +2022,14 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             # Worked on: the same answer under BOTH flows, because it is not
             # version_at's question. The entry is the ID; the VERSION comes
             # from the milestone it names.
-            self.assertEqual(loaded(root).version_at, model.VERSION_AT_START)
-            self.assertEqual(model.current_milestone(loaded(root)), 'c')
-            self.assertEqual(model.current_release(loaded(root)), '0.3.0')
-            self.assertEqual(model.graded_release(loaded(root))[0], '0.3.0')
+            self.assertEqual(loaded(root).version_at, vocabulary.VERSION_AT_START)
+            self.assertEqual(inventory.current_milestone(loaded(root)), 'c')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.3.0')
+            self.assertEqual(inventory.graded_release(loaded(root))[0], '0.3.0')
 
             write_config(root, '[pm]\nversion_at = "ship"\n')
-            self.assertEqual(model.current_release(loaded(root)), '0.3.0')
-            self.assertEqual(model.graded_release(loaded(root))[0], '0.2.0')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.3.0')
+            self.assertEqual(inventory.graded_release(loaded(root))[0], '0.2.0')
 
     def test_a_version_change_never_touches_the_plan(self):
         # Criterion 7, measured: the entry is the milestone's id, so the plan
@@ -2038,9 +2039,9 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self._plan(root, 'a')
             self._milestone(root, 'a', '0.1.0', 'building')
             before = (root / 'pm/roadmap/releases.md').read_bytes()
-            self.assertEqual(model.current_release(loaded(root)), '0.1.0')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.1.0')
             self.assertEqual(run_cli(root, 'set', 'a', 'version', '0.2.0')[0], 0)
-            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.2.0')
             self.assertEqual((root / 'pm/roadmap/releases.md').read_bytes(),
                              before)
 
@@ -2051,7 +2052,7 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self._plan(root, 'a')
             self._milestone(root, 'a', '0.1.0', 'building')
             write_config(root, '[pm]\nversion_at = "ship"\n')
-            version, why = model.graded_release(loaded(root))
+            version, why = inventory.graded_release(loaded(root))
             self.assertIsNone(version)
             self.assertIn('no entry in `order` has shipped yet', why)
 
@@ -2072,9 +2073,9 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             # `gone` is named by no document; c is written and building.
             self._milestone(root, 'c', '0.3.0', 'building')
             cfg = loaded(root)
-            self.assertTrue(model.entry_is_dangling(cfg_for(root), 'gone'))
-            self.assertEqual(model.current_milestone(cfg), 'c')
-            self.assertEqual(model.current_release(cfg), '0.3.0')
+            self.assertTrue(inventory.entry_is_dangling(cfg_for(root), 'gone'))
+            self.assertEqual(inventory.current_milestone(cfg), 'c')
+            self.assertEqual(inventory.current_release(cfg), '0.3.0')
             # ...and R1 names it on the same tree, so the skip is never
             # silent. A WARN, not a finding: an entry never written and a
             # retired milestone's surviving row are indistinguishable, and
@@ -2093,9 +2094,9 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self._plan(root, 'a', 'b')
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.2.0', 'building')
-            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.2.0')
             (root / 'pm' / 'roadmap' / 'milestones' / 'a.md').unlink()
-            self.assertEqual(model.current_release(loaded(root)), '0.2.0')
+            self.assertEqual(inventory.current_release(loaded(root)), '0.2.0')
 
     def test_two_milestones_claiming_one_version_are_named_never_picked(self):
         """Review F2: the same facts gave opposite verdicts depending on which
@@ -2106,19 +2107,19 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             self._milestone(root, 'a', '0.1.0', 'done')
             self._milestone(root, 'b', '0.1.0', 'building')
             cfg = cfg_for(root)
-            self.assertEqual(sorted(model.milestones_of_version(cfg, '0.1.0')),
+            self.assertEqual(sorted(inventory.milestones_of_version(cfg, '0.1.0')),
                              ['a', 'b'])
-            self.assertIsNone(model.milestone_of_version(cfg, '0.1.0'))
+            self.assertIsNone(inventory.milestone_of_version(cfg, '0.1.0'))
             # The plan is unambiguous either way — an entry is one grain — so
             # the CURRENT release is `b`'s, and R3 is what reports the clash.
-            self.assertEqual(model.current_milestone(cfg), 'b')
+            self.assertEqual(inventory.current_milestone(cfg), 'b')
             write_config(root, '[pm]\nchecks = ["R3"]\n')
             self.assertEqual(run_gate(root)[0], 1)
 
     def test_version_at_refuses_a_value_it_does_not_know(self):
         with tree() as root:
             write_config(root, '[pm]\nversion_at = "whenever"\n')
-            with self.assertRaises(model.ConfigError) as caught:
+            with self.assertRaises(vocabulary.ConfigError) as caught:
                 loaded(root)
             self.assertIn('version_at', str(caught.exception))
             self.assertIn('whenever', str(caught.exception))

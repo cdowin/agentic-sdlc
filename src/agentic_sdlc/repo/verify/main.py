@@ -279,8 +279,8 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     import json
 
     try:
-        from agentic_sdlc.repo.pm import ledger, model
-        cfg = model.load()
+        from agentic_sdlc.repo.pm import ledger, vocabulary
+        cfg = vocabulary.load()
         # The TREE's ledger, not a milestone's: a `gate` row names no grain, so
         # 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` and one file holds every
         # cost this repo has ever measured. That also survives `pm retire`,

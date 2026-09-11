@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model, remote
+from agentic_sdlc.repo.pm import inventory, ledger, remote, vocabulary
 
 # The BELT names. Their home is `conveyor/driver.py` and `pm/` may not import
 # `conveyor/`, so they are spelled once here rather than at each use; the
@@ -35,11 +35,11 @@ RELEASE_BELT = 'release'
 # Which belt closes a grain of each kind, and which belt the grain ABOVE it
 # needs next — `steps.registry_for` keys, and the whole of the mapping: the
 # CHECKS each belt asks are read from the registry at runtime.
-CLOSES = {model.GRAIN_STORY: STORY_BELT, model.GRAIN_FEATURE: FEATURE_BELT,
-          model.GRAIN_MILESTONE: RELEASE_BELT}
+CLOSES = {vocabulary.GRAIN_STORY: STORY_BELT, vocabulary.GRAIN_FEATURE: FEATURE_BELT,
+          vocabulary.GRAIN_MILESTONE: RELEASE_BELT}
 # A milestone's `done` names nothing above it: inventing a sentence for what
 # somebody does after a release would be this engine having an opinion.
-ABOVE = {model.GRAIN_STORY: FEATURE_BELT, model.GRAIN_FEATURE: RELEASE_BELT}
+ABOVE = {vocabulary.GRAIN_STORY: FEATURE_BELT, vocabulary.GRAIN_FEATURE: RELEASE_BELT}
 
 # The frontmatter pointer a close stamps. A grain whose document does not
 # carry the key is not counted for want of a field it never had.
@@ -75,7 +75,7 @@ class Incomplete(Exception):
     """A declared answer typed without the rest of itself. Exit 2, by name."""
 
 
-def take(node: model.Arrival | None,
+def take(node: vocabulary.Arrival | None,
          args: list[str]) -> tuple[Said, list[str]]:
     """Split a declared answer off the tail of `args`; `(NOTHING, args)` when
     the caller typed none. The flags come from the node's own `answers`, so a
@@ -100,7 +100,7 @@ def take(node: model.Arrival | None,
     return NOTHING, list(args)
 
 
-def unknown_flag_hint(node: model.Arrival | None) -> str:
+def unknown_flag_hint(node: vocabulary.Arrival | None) -> str:
     """What a state DOES accept, for the refusal a flag it does not gets —
     rule 11: naming the answers beats naming the typo."""
     if node is None or not node.answers:
@@ -109,7 +109,7 @@ def unknown_flag_hint(node: model.Arrival | None) -> str:
             + ', '.join(repr(a) for a in node.answers))
 
 
-def fork_lines(cfg: model.PmConfig, node: model.Arrival | None, gid: str,
+def fork_lines(cfg: vocabulary.PmConfig, node: vocabulary.Arrival | None, gid: str,
                said: Said = NOTHING) -> list[str]:
     """The question and both answers, each a command that can be pasted. The
     command is the ARRIVAL itself: a move is idempotent, so re-running it with
@@ -150,13 +150,13 @@ class Next:
         return f'agentic-sdlc {self.verb} {self.subject}'
 
 
-def derive_next(cfg: model.PmConfig, kind: str, to: str) -> Next | None:
+def derive_next(cfg: vocabulary.PmConfig, kind: str, to: str) -> Next | None:
     """The belt this arrival hands to, and the checks it will ask — or None.
     Three runtime sources: `[pm.states.<kind>]`, `driver.step_names(<belt>)`
     (the project's list, not the shipped one) and `driver.SUBJECT`."""
-    category = model.flow_of(cfg, kind).category(to)
-    belt = (CLOSES.get(kind) if category == model.IN_PROGRESS
-            else ABOVE.get(kind) if category == model.DONE_CATEGORY else None)
+    category = vocabulary.flow_of(cfg, kind).category(to)
+    belt = (CLOSES.get(kind) if category == vocabulary.IN_PROGRESS
+            else ABOVE.get(kind) if category == vocabulary.DONE_CATEGORY else None)
     if belt is None:
         return None
     from agentic_sdlc.repo.conveyor import driver
@@ -192,8 +192,8 @@ class Capability:
         return f'have: {self.path} {state} — {self.why}'
 
 
-def capabilities(cfg: model.PmConfig,
-                 node: model.Arrival | None) -> list[Capability]:
+def capabilities(cfg: vocabulary.PmConfig,
+                 node: vocabulary.Arrival | None) -> list[Capability]:
     """Which installed files this arrival's declaration binds to it. The
     mapping is a DECLARATION and never a list in this package."""
     if node is None:
@@ -236,7 +236,7 @@ class Census:
         """One line, and only when there is something to say."""
         # The CATEGORY word, not a literal: renaming a state does not rename
         # the three categories the reader asked the tree with.
-        head = f'open: {self.open_count} {model.IN_PROGRESS}'
+        head = f'open: {self.open_count} {vocabulary.IN_PROGRESS}'
         if self.wip and self.open_count > self.wip:
             head += f', over the declared [pm] wip of {self.wip}'
         if self.oldest_id:
@@ -259,17 +259,17 @@ class Census:
         return head + (' — ' + ', '.join(clauses) if clauses else '')
 
 
-def _ledger_paths(cfg: model.PmConfig) -> list[Path]:
+def _ledger_paths(cfg: vocabulary.PmConfig) -> list[Path]:
     """Every ledger a status row could be in — one per milestone plus the
     grainless one — read once each rather than once per grain."""
     paths = [ledger.grainless_path(cfg.roadmap)]
-    for _mdir, mid in model.known_milestones(cfg):
+    for _mdir, mid in inventory.known_milestones(cfg):
         if mid:
             paths.append(ledger.ledger_for(cfg, mid))
     return list(dict.fromkeys(paths))
 
 
-def _rows_by_grain(cfg: model.PmConfig) -> tuple[dict[str, list], int]:
+def _rows_by_grain(cfg: vocabulary.PmConfig) -> tuple[dict[str, list], int]:
     """`{grain id: its rows, oldest first}` and how many ledgers would not
     read. A damaged ledger is COUNTED and disclosed: an age computed over a
     file quietly dropped is rule 4's first sin."""
@@ -301,7 +301,7 @@ def _answered(rows: list, state: str) -> bool:
     return False
 
 
-def answered_at(cfg: model.PmConfig, gid: str, state: str) -> bool:
+def answered_at(cfg: vocabulary.PmConfig, gid: str, state: str) -> bool:
     """Did this grain's LAST disposition for `state` carry an answer? Asked
     on a NO-OP, where a fresh `none` would SHADOW the answer already given."""
     path = ledger.ledger_of_grain(cfg, gid)
@@ -313,14 +313,14 @@ def answered_at(cfg: model.PmConfig, gid: str, state: str) -> bool:
                             key=lambda r: str(r.data.get(ledger.TS_FIELD) or '')), state)
 
 
-def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
+def census(cfg: vocabulary.PmConfig, now: datetime | None = None) -> Census | None:
     """The whole tree's open work, or None when nothing is open — the WHOLE
     tree, because a grain nobody moves is otherwise silent forever."""
     if not cfg.pressure:
         return None
-    grains = [g for g in model.grain_index(cfg).values()
-              if g.kind in model.FLOW_KINDS
-              and model.category_of(cfg, g.kind, g.status) == model.IN_PROGRESS]
+    grains = [g for g in inventory.grain_index(cfg).values()
+              if g.kind in vocabulary.FLOW_KINDS
+              and vocabulary.category_of(cfg, g.kind, g.status) == vocabulary.IN_PROGRESS]
     if not grains:
         return None
     rows, unreadable = _rows_by_grain(cfg)
@@ -344,7 +344,7 @@ def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
             continue
         if declared:
             record_pool += 1
-            if not grain.field(RECORD_FIELD) or not model.record_resolves(
+            if not grain.field(RECORD_FIELD) or not inventory.record_resolves(
                     cfg.root / grain.field(RECORD_FIELD)):
                 no_record += 1
     elsewhere = remote.read(cfg.root)
@@ -356,47 +356,47 @@ def census(cfg: model.PmConfig, now: datetime | None = None) -> Census | None:
 
 
 # --- the crossing -------------------------------------------------------------
-def crossing(cfg: model.PmConfig, kind: str, gid: str) -> str:
+def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
     """'' unless this write made the grain's PARENT ready, else the line
     saying so and naming the belt that closes it. Derivable on the write that
     caused it, so READY stops being a question somebody must remember to ask
     (0.3.0 made it prose in a document instead)."""
     if not cfg.pressure:
         return ''
-    grain = model.grain_index(cfg).get(gid)
+    grain = inventory.grain_index(cfg).get(gid)
     if grain is None or not grain.binding:
         return ''
     belt = ABOVE.get(kind)
-    parent_kind = model.BINDS_TO.get(kind, ('', ''))[0]
+    parent_kind = vocabulary.BINDS_TO.get(kind, ('', ''))[0]
     if belt is None or not parent_kind:
         return ''
-    children = model.children(cfg, kind, grain.binding)
+    children = inventory.children(cfg, kind, grain.binding)
     if not children:
         return ''
-    held = model.holds(cfg, kind, [(c.gid, c.status) for c in children],
-                       model.DONE_CATEGORY)
+    held = vocabulary.holds(cfg, kind, [(c.gid, c.status) for c in children],
+                       vocabulary.DONE_CATEGORY)
     if not held:
         return ''
     from agentic_sdlc.repo.conveyor import driver
     verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
     subject = _subject_of(cfg, belt, grain.binding)
     return (f'ready: `agentic-sdlc {verb} {subject}` — this write made '
-            f'{grain.binding} READY (every {kind} is in {model.DONE_CATEGORY}: '
+            f'{grain.binding} READY (every {kind} is in {vocabulary.DONE_CATEGORY}: '
             f'{held.counted} of {held.counted})')
 
 
-def _subject_of(cfg: model.PmConfig, belt: str, parent_id: str) -> str:
+def _subject_of(cfg: vocabulary.PmConfig, belt: str, parent_id: str) -> str:
     """The argument that belt takes for this parent — its id, or the VERSION
     the parent declares when the belt's own `SUBJECT` says it takes one."""
     from agentic_sdlc.repo.conveyor import driver
     noun = driver.SUBJECT.get(belt, (0, '', ''))
     if noun[1] != 'version':
         return parent_id
-    return model.milestone_version(cfg, parent_id) or noun[2]
+    return inventory.milestone_version(cfg, parent_id) or noun[2]
 
 
 # --- the emitted row ----------------------------------------------------------
-def emit_leave(cfg: model.PmConfig, row: dict) -> None:
+def emit_leave(cfg: vocabulary.PmConfig, row: dict) -> None:
     """Write the leave event, or nothing, and never change the answer. A tree
     with no `[emit]` opted out. Every failure is a finding on stderr, never
     the exit code: a code that moved because a SINK was unwritable would make
@@ -411,14 +411,14 @@ def emit_leave(cfg: model.PmConfig, row: dict) -> None:
 
 
 # --- the whole event ----------------------------------------------------------
-def remote_lines(cfg: model.PmConfig, kind: str, to: str) -> list[str]:
+def remote_lines(cfg: vocabulary.PmConfig, kind: str, to: str) -> list[str]:
     """`remote:` — whether a milestone's branch exists anywhere but this disk.
 
     Asked at the arrival into `in_progress`, the moment the work starts being
     worth something. INVENTORY and a command, never a push (rule 9).
     """
-    if kind != model.GRAIN_MILESTONE or model.category_of(cfg, kind,
-                                                          to) != model.IN_PROGRESS:
+    if kind != vocabulary.GRAIN_MILESTONE or vocabulary.category_of(cfg, kind,
+                                                          to) != vocabulary.IN_PROGRESS:
         return []
     state = remote.read(cfg.root)
     if state is None or not state:
@@ -429,12 +429,12 @@ def remote_lines(cfg: model.PmConfig, kind: str, to: str) -> list[str]:
             f'        `{remote.push_command(state.branch)}`']
 
 
-def report(cfg: model.PmConfig, kind: str, gid: str, to: str,
+def report(cfg: vocabulary.PmConfig, kind: str, gid: str, to: str,
            said: Said, answered: bool = False) -> dict:
     """Say what this arrival has to say, and hand back the row it emitted, in
     read order: what the belt asks, what is installed, the fork, then the
     tree. Nothing at all when there is nothing to say."""
-    node = model.arrival_at(cfg, kind, to)
+    node = vocabulary.arrival_at(cfg, kind, to)
     nxt = derive_next(cfg, kind, to)
     have = capabilities(cfg, node)
     # `[pm] breadcrumbs = false` silences the PROSE only; the ROW carries the

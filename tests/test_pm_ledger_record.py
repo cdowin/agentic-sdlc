@@ -48,16 +48,16 @@ from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import arrive, ledger
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
 # written under rather than being rewritten: tests/test_pm_ledger.py, beside the
 # same `LEGACY_FLOW`.
 from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
-from agentic_sdlc.repo.pm import model as _model  # noqa: E402
+from agentic_sdlc.repo.pm import inventory, vocabulary  # noqa: E402
 
-LEGACY_FLOW = _declaring(feature=_model.DEFAULT_FLOWS['milestone'],
-                         story=_model.DEFAULT_FLOWS['milestone'])
+LEGACY_FLOW = _declaring(feature=vocabulary.DEFAULT_FLOWS['milestone'],
+                         story=vocabulary.DEFAULT_FLOWS['milestone'])
 
 
 def tree(**kwargs):
@@ -779,7 +779,7 @@ def test_retire_takes_the_milestones_ledger_and_appends_to_the_trees():
         # The GRAINS go, not the tree — `pm/roadmap/` is the tree itself and a
         # pooled milestone has no directory of its own to remove.
         assert not (root / LEDGER_REL).exists()
-        assert model.milestones(loaded(root)) == []
+        assert inventory.milestones(loaded(root)) == []
         after = (root / ROOT_LEDGER_REL).read_bytes()
         assert after.startswith(before), after
         added = [json.loads(line) for line in
@@ -1096,7 +1096,7 @@ def test_done_ends_a_story_and_blocked_does_not():
     `blocked` is a word this project never declared, so it is in no category
     and ends nothing; reading a list's last entry would have printed a total
     for a story that STALLED and none for one that finished. The category is
-    the one every drift rule in model.py asks, so `show` agrees with the gate.
+    the one every drift rule asks of `vocabulary`, so `show` agrees with the gate.
     """
     with tree() as root:
         timeline(root, last_to='done')
@@ -1142,8 +1142,8 @@ def test_the_finished_rule_lives_in_ledger_py_and_is_the_done_category():
     assert ledger.ends_grain(cfg, 'story', 'obe')
     assert ledger.ends_grain(cfg, 'feature', 'done')
     assert ledger.ends_grain(cfg, 'milestone', 'done')
-    assert ledger.ends_grain(cfg, model.GRAIN_BUG, 'closed')
-    assert not ledger.ends_grain(cfg, model.GRAIN_BUG, 'fixed')
+    assert ledger.ends_grain(cfg, vocabulary.GRAIN_BUG, 'closed')
+    assert not ledger.ends_grain(cfg, vocabulary.GRAIN_BUG, 'fixed')
     assert not ledger.ends_grain(cfg, 'story', 'reviewing')
     assert not ledger.ends_grain(cfg, 'story', 'shut')
     assert not ledger.ends_grain(cfg, 'story', {'to': 'done'})

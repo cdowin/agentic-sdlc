@@ -1,7 +1,7 @@
 """check pm — the active PM tree's statuses do not contradict each other.
 
 Every rule asks a CATEGORY (`todo`/`in_progress`/`done`), never a word, off the same
-predicates in `repo/pm/model` that `pm` writes with. Which rules run is `[pm] checks`
+predicates in `repo/pm/vocabulary` that `pm` writes with. Which rules run is `[pm] checks`
 (default: D1/D2/D4/D5/D6/D11 + U1/U2/U3/U4/U5 + V1/V4/V5/V7; D9/D10 and the R
 family are opt-in). D3 retired INTO D11 — `pm vocabulary` names where it went.
 
@@ -63,7 +63,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # How many row kinds the 'what IS recorded' census names before the fix
 # line; thirteen of them once pushed that fix behind 839 characters.
@@ -83,21 +83,21 @@ UNDATEABLE = 'at a timestamp this reader cannot parse'
 # public repo must not commit a machine path, so the block belongs in a
 # gitignored file — a reader of one file calls such a tree unwired.
 AGENT_SETTINGS_LOCAL = '.claude/settings.local.json'
-SETTINGS_FILES = (model.AGENT_SETTINGS, AGENT_SETTINGS_LOCAL)
+SETTINGS_FILES = (vocabulary.AGENT_SETTINGS, AGENT_SETTINGS_LOCAL)
 
 
 def run() -> int:
     try:
         # THE one read-only scope: the walk under every rule is shared rather
         # than repeated per rule per grain, and the scope drops itself on a write.
-        with model.reading_tree():
+        with inventory.reading_tree():
             return _run()
-    except model.ConfigError as err:
+    except vocabulary.ConfigError as err:
         # EVERY defect, not the first, and the FLOW first among them: the flow
         # is read lazily, so a tree that declared none is refused at the first
         # category question, and a real adoption is wrong in more ways than one.
         try:
-            defects = model.all_config_defects()
+            defects = vocabulary.all_config_defects()
         except Exception:  # noqa: BLE001 - the collector must never mask the error
             defects = []
         for msg in defects or [str(err)]:
@@ -110,13 +110,13 @@ def run() -> int:
 
 
 def _run() -> int:
-    cfg = model.load()
-    # Validated here, not in `model.load()`, so a stale rule id cannot take `pm status` down.
-    stale = model.config_complaints(cfg)
+    cfg = vocabulary.load()
+    # Validated here, not in `vocabulary.load()`, so a stale rule id cannot take `pm status` down.
+    stale = vocabulary.config_complaints(cfg)
     if stale:
         # The flow can be declared and the roster still stale; report the whole
         # set either way, in the same order.
-        flow = model.missing_flow_defect()
+        flow = vocabulary.missing_flow_defect()
         for msg in ([flow] if flow else []) + stale:
             print(f'[check:pm] ERROR — {msg}', file=sys.stderr)
         return 2
@@ -133,9 +133,9 @@ def _run() -> int:
 
     enabled = set(cfg.checks)
     print(f'[check:pm] scanning active PM tree ({cfg.roadmap_dir}/, '
-          f'excluding {model.ARCHIVE_DIR_NAME}/)')
+          f'excluding {vocabulary.ARCHIVE_DIR_NAME}/)')
 
-    found_milestones = model.milestones(cfg)
+    found_milestones = inventory.milestones(cfg)
     if not found_milestones:
         print()
         print(f'[check:pm] FAIL — no milestones found under {cfg.roadmap_dir}/ '
@@ -144,18 +144,18 @@ def _run() -> int:
 
     # Never gated by `checks`: this is the scan saying it found something it
     # cannot place.
-    for stray in model.stray_documents(cfg):
+    for stray in inventory.stray_documents(cfg):
         report(f'{cfg.rel(stray.path)} declares `id: '
-               f'{stray.field(model.FIELD_ID)}` and sits in no '
+               f'{stray.field(vocabulary.FIELD_ID)}` and sits in no '
                f'pool, so every reader walks past it — move it into '
-               f'{cfg.rel(model.pool_dir(cfg, stray.field(model.FIELD_KIND) or model.GRAIN_MILESTONE))}/')
+               f'{cfg.rel(inventory.pool_dir(cfg, stray.field(vocabulary.FIELD_KIND) or vocabulary.GRAIN_MILESTONE))}/')
 
     # No readable `id:`, and two documents claiming one, are V1's and are
     # reported from `validate.run` below, so `pm validate` and this gate cannot
     # disagree about a file neither of them can key on.
 
     # Always walked for the census; reported only under D4.
-    bug_findings, n_bugs = model.bug_status_findings(cfg)
+    bug_findings, n_bugs = inventory.bug_status_findings(cfg)
     if 'D4' in enabled:
         for path, why in bug_findings:
             report(f'{cfg.rel(path)}: {why}')
@@ -183,7 +183,7 @@ def _run() -> int:
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V7: structural + referential integrity ------------------------
-    v_on = enabled & set(model.VALIDATE_CHECKS)
+    v_on = enabled & set(vocabulary.VALIDATE_CHECKS)
     v_census: dict = {}
     if v_on:
         from agentic_sdlc.repo.pm import validate as _validate
@@ -203,9 +203,9 @@ def _run() -> int:
 ADVANCE_IT = 'advance it (`done` is the LAST state, not the next one)'
 
 
-def _cat(cfg: model.PmConfig, kind: str, status: str) -> str:
+def _cat(cfg: vocabulary.PmConfig, kind: str, status: str) -> str:
     """The category a WARN line prints beside a word, or 'undeclared'."""
-    return model.category_of(cfg, kind, status) or 'undeclared'
+    return vocabulary.category_of(cfg, kind, status) or 'undeclared'
 
 
 class _Ready:
@@ -219,13 +219,13 @@ class _Ready:
         self._warn = warn
         self.named = self.counted = self.live = self.closed = 0
 
-    def grading(self, cfg: model.PmConfig, kind: str, status: str) -> bool | None:
+    def grading(self, cfg: vocabulary.PmConfig, kind: str, status: str) -> bool | None:
         """True while the grain can still act, False once it has closed, None
         in `todo` — where nothing is asked and nothing is counted."""
-        category = model.category_of(cfg, kind, status)
-        if category is None or category == model.TODO:
+        category = vocabulary.category_of(cfg, kind, status)
+        if category is None or category == vocabulary.TODO:
             return None
-        live = category == model.IN_PROGRESS
+        live = category == vocabulary.IN_PROGRESS
         self.live += live
         self.closed += not live
         return live
@@ -241,54 +241,54 @@ class _Ready:
         # Printed at zero too: a family that graded nothing has to say so, and
         # this count is what makes the narrowing above visible (rule 4).
         print(f'  READY  {self.named} gap(s) named on {self.live} '
-              f'{model.IN_PROGRESS} grain(s); {self.counted} on {self.closed} '
+              f'{vocabulary.IN_PROGRESS} grain(s); {self.counted} on {self.closed} '
               f'closed grain(s) counted rather than named — a closed grain\'s '
               f'scaffolded section is nobody\'s next action (READY)')
 
 
-def _feature_self(cfg: model.PmConfig, view, ready: _Ready) -> None:
+def _feature_self(cfg: vocabulary.PmConfig, view, ready: _Ready) -> None:
     """The READY warnings a feature earns on its OWN document."""
-    live = ready.grading(cfg, model.GRAIN_FEATURE, view.status)
+    live = ready.grading(cfg, vocabulary.GRAIN_FEATURE, view.status)
     if live is None:
         return
     frel = cfg.rel(view.path)
     if view.total == 0:
         ready.gap(live, f'feature {view.fid} is {view.status!r} with no '
                         f'stories — past todo, and nothing to build  [{frel}]')
-    why = model.empty_section(view.path, model.SHIP_HEADING)
+    why = inventory.empty_section(view.path, inventory.SHIP_HEADING)
     if why:
         ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
                         f'past todo, and nothing says what done means  [{frel}]')
     # The anti-bloat contract, never verified to exist until here: an empty
     # proof budget is how a feature ships twice its budget with nobody able to
     # say so.
-    why = model.empty_section(view.path, model.PROOF_HEADING)
+    why = inventory.empty_section(view.path, inventory.PROOF_HEADING)
     if why:
         ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
                         f'past todo, and nothing says what it should COST  '
                         f'[{frel}]')
 
 
-def _story_self(cfg: model.PmConfig, story, sid: str, sstat: str,
+def _story_self(cfg: vocabulary.PmConfig, story, sid: str, sstat: str,
                 ready: _Ready) -> None:
     """The READY warnings a story earns on its OWN document."""
     srel = cfg.rel(story.path)
-    live = ready.grading(cfg, model.GRAIN_STORY, sstat)
+    live = ready.grading(cfg, vocabulary.GRAIN_STORY, sstat)
     if live is None:
         return
-    why = model.empty_section(story.path, model.ACCEPTANCE_HEADING)
+    why = inventory.empty_section(story.path, inventory.ACCEPTANCE_HEADING)
     if why:
         ready.gap(live, f'story {sid} is {sstat!r} and {why} — past todo, and '
                         f'nothing says what must be true  [{srel}]')
-    if live and not story.field(model.FIELD_OWNER):
+    if live and not story.field(vocabulary.FIELD_OWNER):
         # A LIVE BUG, not a tidy-up: two modules READ `owner:` and nothing
         # asked whether the claim had set it (`pm-execution.md` step 1).
-        ready.gap(True, f'story {sid} is {sstat!r} ({model.IN_PROGRESS}) and '
+        ready.gap(True, f'story {sid} is {sstat!r} ({vocabulary.IN_PROGRESS}) and '
                         f'carries no owner: — somebody is working on it and '
                         f'the tree cannot say who  [{srel}]')
 
 
-def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
+def _unreached_self(cfg: vocabulary.PmConfig, enabled: set[str], seen: set[str],
                     report, ready: _Ready) -> None:
     """Every SELF rule, for the grains the descent did not visit.
 
@@ -297,32 +297,32 @@ def _unreached_self(cfg: model.PmConfig, enabled: set[str], seen: set[str],
     still never reaches it, so it fell between both passes at exit 0. SELF
     rules only: D5 and D11 need a parent to compare against.
     """
-    if not model.is_pooled(cfg):
+    if not inventory.is_pooled(cfg):
         return
-    for kind in (model.GRAIN_FEATURE, model.GRAIN_STORY):
-        for path in model.pool_walk(cfg, kind):
-            grain = model.read_grain(cfg, path, kind)
+    for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_STORY):
+        for path in inventory.pool_walk(cfg, kind):
+            grain = inventory.read_grain(cfg, path, kind)
             if grain is None or grain.gid in seen:
                 continue
             rel = cfg.rel(path)
-            status = grain.field(model.FIELD_STATUS)
+            status = grain.field(vocabulary.FIELD_STATUS)
             if 'D4' in enabled:
-                reason = model.undeclared_status(cfg, kind, status)
+                reason = inventory.undeclared_status(cfg, kind, status)
                 if reason:
                     report(f'{kind} {grain.gid}: {reason}  [{rel}]')
-            if kind == model.GRAIN_FEATURE:
+            if kind == vocabulary.GRAIN_FEATURE:
                 if 'D1' in enabled:
                     # A fact about ONE document, and it was in the descent only.
-                    reason = model.drift_dangling_record(cfg, grain.gid)
+                    reason = inventory.drift_dangling_record(cfg, grain.gid)
                     if reason:
                         report(f'feature {grain.gid}: {reason} — point it at a '
                                f'real file or remove the field  [{rel}]')
-                _feature_self(cfg, model.read_feature(cfg, path), ready)
+                _feature_self(cfg, inventory.read_feature(cfg, path), ready)
             else:
                 _story_self(cfg, grain, grain.gid, status, ready)
 
 
-def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
+def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
                 report, warn, ready: _Ready) -> tuple[int, int, set[str]]:
     """D1-D6 over every grain the descent reaches, plus the READY warnings.
 
@@ -335,13 +335,13 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
 
     for milestone in found_milestones:
         mfile = milestone.path
-        mid = milestone.field(model.FIELD_ID)
-        mstat = milestone.field(model.FIELD_STATUS)
-        m_cat = model.category_of(cfg, model.GRAIN_MILESTONE, mstat)
-        m_live = ready.grading(cfg, model.GRAIN_MILESTONE, mstat)
+        mid = milestone.field(vocabulary.FIELD_ID)
+        mstat = milestone.field(vocabulary.FIELD_STATUS)
+        m_cat = vocabulary.category_of(cfg, vocabulary.GRAIN_MILESTONE, mstat)
+        m_live = ready.grading(cfg, vocabulary.GRAIN_MILESTONE, mstat)
 
         if 'D4' in enabled:
-            reason = model.undeclared_status(cfg, model.GRAIN_MILESTONE, mstat)
+            reason = inventory.undeclared_status(cfg, vocabulary.GRAIN_MILESTONE, mstat)
             if reason:
                 report(f'milestone {mid}: {reason}  [{cfg.rel(mfile)}]')
 
@@ -351,7 +351,7 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
                                   f'branch: — past todo, and a fresh checkout '
                                   f'cannot find where its work lives  '
                                   f'[{cfg.rel(mfile)}]')
-            why = model.empty_section(mfile, model.SHIP_HEADING)
+            why = inventory.empty_section(mfile, inventory.SHIP_HEADING)
             if why:
                 ready.gap(m_live, f'milestone {mid} is {mstat!r} and {why} — '
                                   f'past todo, and nothing says what done '
@@ -359,20 +359,20 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
             # Never auto-minted, so its ABSENCE is the signal. IN_PROGRESS only:
             # a handoff is a cold-start aid, so warning on `done` would fire
             # once per historical milestone on every consumer's tree.
-            handoff = model.shared_doc(cfg, mfile, model.HANDOFF_FILE_NAME)
+            handoff = inventory.shared_doc(cfg, mfile, vocabulary.HANDOFF_FILE_NAME)
             if m_live and not handoff.is_file():
                 ready.gap(True, f'milestone {mid} is {mstat!r} with no '
-                                f'{model.HANDOFF_FILE_NAME} — past todo, and a '
+                                f'{vocabulary.HANDOFF_FILE_NAME} — past todo, and a '
                                 f'cold session has nowhere to start; `pm new '
                                 f'handoff {mid}` mints one  '
                                 f'[{cfg.rel(handoff)}]')
 
-        views = [model.read_feature(cfg, ffile)
-                 for ffile in model.feature_files(cfg, mid)]
+        views = [inventory.read_feature(cfg, ffile)
+                 for ffile in inventory.feature_files(cfg, mid)]
         # D6's census. The per-feature half went to D11 with D3.
-        finished = model.holds(cfg, model.GRAIN_FEATURE,
+        finished = vocabulary.holds(cfg, vocabulary.GRAIN_FEATURE,
                                ((v.fid, v.status) for v in views),
-                               model.DONE_CATEGORY)
+                               vocabulary.DONE_CATEGORY)
         for view in views:
             frel = cfg.rel(view.path)
             seen.add(view.fid)
@@ -380,13 +380,13 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
             n_stories += view.total
 
             if 'D4' in enabled:
-                reason = model.undeclared_status(cfg, model.GRAIN_FEATURE,
+                reason = inventory.undeclared_status(cfg, vocabulary.GRAIN_FEATURE,
                                                  view.status)
                 if reason:
                     report(f'feature {view.fid}: {reason}  [{frel}]')
 
             if 'D1' in enabled:
-                reason = model.drift_dangling_record(cfg, view.fid)
+                reason = inventory.drift_dangling_record(cfg, view.fid)
                 if reason:
                     report(f'feature {view.fid}: {reason} — point it at a real '
                            f'file or remove the field  [{frel}]')
@@ -394,45 +394,45 @@ def _drift_walk(cfg: model.PmConfig, enabled: set[str], found_milestones,
             _feature_self(cfg, view, ready)
 
             for story in view.stories:
-                sid = story.field(model.FIELD_ID)
+                sid = story.field(vocabulary.FIELD_ID)
                 seen.add(sid)
-                sstat = story.field(model.FIELD_STATUS)
+                sstat = story.field(vocabulary.FIELD_STATUS)
                 srel = cfg.rel(story.path)
                 if 'D4' in enabled:
-                    reason = model.undeclared_status(cfg, model.GRAIN_STORY,
+                    reason = inventory.undeclared_status(cfg, vocabulary.GRAIN_STORY,
                                                      sstat)
                     if reason:
                         report(f'story {sid}: {reason}  [{srel}]')
                 _story_self(cfg, story, sid, sstat, ready)
-                if 'D5' in enabled and model.drift_ahead_of_parent(
+                if 'D5' in enabled and inventory.drift_ahead_of_parent(
                         cfg, sstat, view.status):
                     warn(f'story {sid} is {sstat!r} '
-                         f'({_cat(cfg, model.GRAIN_STORY, sstat)}) but its feature '
+                         f'({_cat(cfg, vocabulary.GRAIN_STORY, sstat)}) but its feature '
                          f'{view.fid} is still {view.status!r} '
-                         f'({_cat(cfg, model.GRAIN_FEATURE, view.status)}) — the story '
+                         f'({_cat(cfg, vocabulary.GRAIN_FEATURE, view.status)}) — the story '
                          f'is at work and the feature says it has not '
                          f'started (two places in this tree disagree, D5)'
                          f'  [{srel}]')
 
             if 'D2' in enabled:
-                reason = model.drift_stalled(cfg, view)
+                reason = inventory.drift_stalled(cfg, view)
                 if reason:
                     warn(f'feature {view.fid}: {reason} '
-                         f'({_cat(cfg, model.GRAIN_FEATURE, view.status)}) — all '
-                         f'{view.total} stories are {model.DONE_CATEGORY}; '
+                         f'({_cat(cfg, vocabulary.GRAIN_FEATURE, view.status)}) — all '
+                         f'{view.total} stories are {vocabulary.DONE_CATEGORY}; '
                          f'{ADVANCE_IT} (D2)  [{frel}]')
 
-        if ('D6' in enabled and m_cat == model.TODO
+        if ('D6' in enabled and m_cat == vocabulary.TODO
                 and finished.counted > 0 and finished):
             warn(f'milestone {mid} is {mstat!r} ({m_cat}) but all '
-                 f'{finished.counted} features are {model.DONE_CATEGORY} — '
+                 f'{finished.counted} features are {vocabulary.DONE_CATEGORY} — '
                  f'you finished the features and the milestone still calls '
                  f'itself {mstat!r}; {ADVANCE_IT} (D6)  [{cfg.rel(mfile)}]')
 
     return n_features, n_stories, seen
 
 
-def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     """U1 — a state the project DECLARED and no grain has ever held.
 
     A WARN with the count, never a finding: a tree mid-adoption legitimately has
@@ -446,8 +446,8 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
     if 'U1' not in enabled:
         return
     clauses, unused_total, declared_total = [], 0, 0
-    for kind in model.FLOW_KINDS:
-        counts = model.state_usage(cfg).get(kind)
+    for kind in vocabulary.FLOW_KINDS:
+        counts = inventory.state_usage(cfg).get(kind)
         if not counts:
             continue
         unused = [state for state, n in counts.items() if n == 0]
@@ -467,13 +467,13 @@ def _unused_states(cfg: model.PmConfig, enabled: set[str], warn) -> None:
          f'declares each one (U1)')
 
 
-def _asks_something(cfg: model.PmConfig, kind: str, state: str) -> bool:
+def _asks_something(cfg: vocabulary.PmConfig, kind: str, state: str) -> bool:
     """Does `[pm.arrive.<kind>.<state>]` type any answer to record?"""
-    arrival = model.arrival_at(cfg, kind, state)
+    arrival = vocabulary.arrival_at(cfg, kind, state)
     return bool(arrival and arrival.answers)
 
 
-def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
+def _unanswered_arrivals(cfg: vocabulary.PmConfig, enabled: set[str], warn,
                          census) -> None:
     """U5 — a grain whose CURRENT state was arrived at with no disposition.
 
@@ -499,16 +499,16 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
         if arrive.disposition_of(row):
             answered[(row.get(ledger.GRAIN_FIELD),
                       row.get('state'))] = row.get('answer')
-    quiet = [g.gid for g in sorted(model.grain_index(cfg).values(),
+    quiet = [g.gid for g in sorted(inventory.grain_index(cfg).values(),
                                    key=lambda g: g.gid)
-             if g.kind in model.FLOW_KINDS
-             and model.category_of(cfg, g.kind, g.status) == model.IN_PROGRESS
+             if g.kind in vocabulary.FLOW_KINDS
+             and vocabulary.category_of(cfg, g.kind, g.status) == vocabulary.IN_PROGRESS
              and _asks_something(cfg, g.kind, g.status)
              and answered.get((g.gid, g.status)) in (None,
                                                      ledger.NO_DISPOSITION)]
     if not quiet:
         return
-    warn(f'{len(quiet)} of {census.open_count} {model.IN_PROGRESS} grain(s) '
+    warn(f'{len(quiet)} of {census.open_count} {vocabulary.IN_PROGRESS} grain(s) '
          f'reached the state they are in with no disposition: '
          f'{", ".join(quiet)} — a bare move is allowed and records '
          f'`answer: {ledger.NO_DISPOSITION}`; re-running the move with the '
@@ -525,7 +525,7 @@ def _unanswered_arrivals(cfg: model.PmConfig, enabled: set[str], warn,
 # gate that mutates to measure is a gate that lies about what it measured.
 
 
-def _ledger_rows(cfg: model.PmConfig) -> tuple[list[tuple[Path, dict]], list[str]]:
+def _ledger_rows(cfg: vocabulary.PmConfig) -> tuple[list[tuple[Path, dict]], list[str]]:
     """An unreadable or unparseable ledger is NEITHER answer — it is named and
     the scan continues, so one damaged file cannot make the tree look silent.
     """
@@ -561,7 +561,7 @@ def _settings_couriers(path: Path) -> tuple[tuple[str, ...], str]:
     settings file is the pair this milestone kept finding."""
     from agentic_sdlc.repo.checks import hooks as check_hooks
     commands, why = check_hooks.settings_commands(path)
-    return tuple(sorted(name for name in model.LEDGER_COURIERS
+    return tuple(sorted(name for name in vocabulary.LEDGER_COURIERS
                         if any(name in command for command in commands))), why
 
 
@@ -652,7 +652,7 @@ class Recording(NamedTuple):
     unreadable: tuple[str, ...]     # the ledgers this could not read
 
 
-def hook_recording(cfg: model.PmConfig) -> Recording:
+def hook_recording(cfg: vocabulary.PmConfig) -> Recording:
     """Every ledger in the tree, read for the LAST row a courier wrote.
 
     Ordered by the row's own `ts`, never the file's mtime or line order: a
@@ -680,7 +680,7 @@ def recording_phrase(rec: Recording) -> str:
     return f'{_kind_of(rec.last)}, {_age_of(rec.last)}'
 
 
-def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
+def _tree_has_a_row(cfg: vocabulary.PmConfig) -> tuple[bool, list[str]]:
     """(does any ledger hold a row, the ledgers this could not read).
 
     Both homes (0.4.0/D3), and existence is not enough — an empty file is what
@@ -704,7 +704,7 @@ def _tree_has_a_row(cfg: model.PmConfig) -> tuple[bool, list[str]]:
     return found, unreadable
 
 
-def _recording_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+def _recording_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     """U2 — the ledger couriers are wired and the tree holds no row.
 
     **This rule exists because the telemetry was off for a whole milestone and
@@ -763,7 +763,7 @@ def _hook_written(row: dict) -> bool:
     return isinstance(session, str) and bool(session.strip())
 
 
-def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
+def _hook_recording_findings(cfg: vocabulary.PmConfig, enabled: set[str],
                              warn) -> None:
     """U4 — the couriers are wired, and the last row THEY wrote, with its age.
 
@@ -828,7 +828,7 @@ def _hook_recording_findings(cfg: model.PmConfig, enabled: set[str],
           f'from a courier; {seen}  [{rec.where}] (U4)')
 
 
-def _emit_sink_findings(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+def _emit_sink_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     """U3 — `[emit]` is declared and its sink has never been written to.
 
     **The same trap as `recording-is-on-or-the-gate-is-red` on a fresh
@@ -908,13 +908,13 @@ def _emitted(row: dict, taps: tuple[str, ...]) -> bool:
     return _kind_of(row).rsplit('.', 1)[-1] in taps
 
 
-def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
+def _flow_findings(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:
     """D9/D10 over every `in_progress` milestone; two in progress is two answers."""
-    live = (model.in_progress_milestones(cfg)
-            if enabled & set(model.FLOW_CHECKS) else [])
+    live = (inventory.in_progress_milestones(cfg)
+            if enabled & set(vocabulary.FLOW_CHECKS) else [])
 
 
-    mainline = model.mainline_branch() if 'D10' in enabled and live else ''
+    mainline = vocabulary.mainline_branch() if 'D10' in enabled and live else ''
 
     for mid, branch, mfile in live:
         if 'D9' in enabled and not branch:
@@ -931,7 +931,7 @@ def _flow_findings(cfg: model.PmConfig, enabled: set[str], report) -> None:
                        f'{mainline!r}, not on it (D10)  [{cfg.rel(mfile)}]')
 
 
-def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
+def _changelog_answered(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     """D12 — a grain in `done` that answered the changelog question neither way.
 
     A WARN: the release belt refuses at the rung that ships, and reddening
@@ -946,11 +946,11 @@ def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
         return
     from agentic_sdlc.repo.pm import changelog as clog
     graded = silent = 0
-    for gid, grain in sorted(model.grain_index(cfg).items()):
-        if grain.kind not in model.FLOW_KINDS:
+    for gid, grain in sorted(inventory.grain_index(cfg).items()):
+        if grain.kind not in vocabulary.FLOW_KINDS:
             continue
-        status = grain.field(model.FIELD_STATUS)
-        if model.category_of(cfg, grain.kind, status) != model.DONE_CATEGORY:
+        status = grain.field(vocabulary.FIELD_STATUS)
+        if vocabulary.category_of(cfg, grain.kind, status) != vocabulary.DONE_CATEGORY:
             continue
         if _shipped_parent(cfg, grain):
             continue
@@ -958,7 +958,7 @@ def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
         if grain.field(clog.FIELD).strip():
             continue
         silent += 1
-        warn(f'{grain.kind} {gid} is {status!r} ({model.DONE_CATEGORY}) and '
+        warn(f'{grain.kind} {gid} is {status!r} ({vocabulary.DONE_CATEGORY}) and '
              f'carries no `{clog.FIELD}:` — `agentic-sdlc pm set {gid} '
              f'{clog.FIELD} "<sentence>"`, or `{clog.NEEDS_NONE}` to say it '
              f'earned no consumer-visible line (D12)  [{cfg.rel(grain.path)}]')
@@ -966,20 +966,20 @@ def _changelog_answered(cfg: model.PmConfig, enabled: set[str], warn) -> None:
           f'answered, shipped milestones excluded (D12)')
 
 
-def _shipped_parent(cfg: model.PmConfig, grain) -> bool:
+def _shipped_parent(cfg: vocabulary.PmConfig, grain) -> bool:
     """Is this grain's milestone in `done`? Followed through the bindings."""
-    mid = model.milestone_of(cfg, grain.gid)
+    mid = inventory.milestone_of(cfg, grain.gid)
     if not mid:
         return False
-    parent = model.grain_index(cfg).get(mid)
+    parent = inventory.grain_index(cfg).get(mid)
     if parent is None:
         return False
-    return model.category_of(cfg, model.GRAIN_MILESTONE,
-                             parent.field(model.FIELD_STATUS)
-                             ) == model.DONE_CATEGORY
+    return vocabulary.category_of(cfg, vocabulary.GRAIN_MILESTONE,
+                             parent.field(vocabulary.FIELD_STATUS)
+                             ) == vocabulary.DONE_CATEGORY
 
 
-def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
+def _containment(cfg: vocabulary.PmConfig, enabled: set[str], report) -> None:
     """D11 — a parent in `done` over a child that is not, at every level.
 
     ONE walk off `BINDS_TO`; a FINDING unconditionally, because a parent
@@ -989,24 +989,24 @@ def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
     """
     if 'D11' not in enabled:
         return
-    index = model.grain_index(cfg)
+    index = inventory.grain_index(cfg)
     graded = 0
     for child in sorted(index.values(), key=lambda g: g.gid):
-        bind = model.BINDS_TO.get(child.kind)
+        bind = vocabulary.BINDS_TO.get(child.kind)
         if bind is None or not child.binding:
             continue
         parent = index.get(child.binding)
         if parent is None:
             continue
         graded += 1
-        p_status = parent.field(model.FIELD_STATUS)
-        if model.category_of(cfg, parent.kind, p_status) != model.DONE_CATEGORY:
+        p_status = parent.field(vocabulary.FIELD_STATUS)
+        if vocabulary.category_of(cfg, parent.kind, p_status) != vocabulary.DONE_CATEGORY:
             continue
-        c_status = child.field(model.FIELD_STATUS)
-        if model.category_of(cfg, child.kind, c_status) == model.DONE_CATEGORY:
+        c_status = child.field(vocabulary.FIELD_STATUS)
+        if vocabulary.category_of(cfg, child.kind, c_status) == vocabulary.DONE_CATEGORY:
             continue
         report(f'{parent.kind} {parent.gid} is {p_status!r} '
-               f'({model.DONE_CATEGORY}) but {child.kind} {child.gid} is '
+               f'({vocabulary.DONE_CATEGORY}) but {child.kind} {child.gid} is '
                f'{c_status!r} ({_cat(cfg, child.kind, c_status)}) — a parent '
                f'does not close over an unresolved child; finish it, or '
                f'`agentic-sdlc pm remove {parent.gid} {child.gid}` returns it '
@@ -1015,31 +1015,31 @@ def _containment(cfg: model.PmConfig, enabled: set[str], report) -> None:
           f'parent (D11)')
     for gid, grain in sorted(index.items()):
         # PRESENCE, not value: an empty one is the shape that gated nothing.
-        for field, why in sorted(model.RETIRED_FIELDS.items()):
+        for field, why in sorted(vocabulary.RETIRED_FIELDS.items()):
             if not grain.declares(field):
                 continue
             report(f'{grain.kind} {gid} carries `{field}:` — {why} (D11)  '
                    f'[{cfg.rel(grain.path)}]')
 
 
-def _unbound_rows(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+def _unbound_rows(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The unbound family one level down from R1, in both directions (V7 at the
     top of this module). COUNTED, never a finding, because a tree mid-planning
     legitimately has many and a gate that reddens on planning gets switched off.
     """
     if 'V7' not in enabled:
         return
-    for kind, ids in sorted(model.unbound_grains(cfg).items()):
-        field = model.BINDS_TO[kind][1]
+    for kind, ids in sorted(inventory.unbound_grains(cfg).items()):
+        field = vocabulary.BINDS_TO[kind][1]
         print(f'  UNBOUND  {len(ids)} {kind}(s) name no {field}: — '
               f'{", ".join(ids)}; `agentic-sdlc pm add <{field}-id> <id>` '
               f'binds and sequences one (V7)')
     _sequence_rows(cfg, report, warn)
 
 
-def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
+def _sequence_rows(cfg: vocabulary.PmConfig, report, warn) -> None:
     """Every container's `order` against what it holds — one walk, every level."""
-    index = model.grain_index(cfg)
+    index = inventory.grain_index(cfg)
     # The ROOT is R1's, not this walk's: the plan has carried its own rule and
     # its own line, and two lines for one fact is a second
     # scoreboard.
@@ -1047,15 +1047,15 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
     # `BINDS_TO` and NOT `[pm.contains]`: that key says what `pm add` may
     # WRITE, and reading it here let a narrowed mapping ungate the level it
     # dropped. No config narrows what an `order` says about what it holds.
-    holds = {parent for parent, _field in model.BINDS_TO.values()}
+    holds = {parent for parent, _field in vocabulary.BINDS_TO.values()}
     parents = [g for g in index.values()
-               if g.kind in holds and g.kind != model.ROOT_KIND]
+               if g.kind in holds and g.kind != vocabulary.ROOT_KIND]
     unsequenced: dict[str, int] = {}
     for parent in sorted(parents, key=lambda g: g.gid):
-        seq = model.sequence_census(cfg, parent, index)
+        seq = inventory.sequence_census(cfg, parent, index)
         for gid in seq.dangling:
             child = index[gid]
-            bind = model.BINDS_TO.get(child.kind)
+            bind = vocabulary.BINDS_TO.get(child.kind)
             report(f'DANGLING: {parent.gid} sequences {gid} in its `order` and '
                    f'does not hold it — {gid} names '
                    + (f'{child.binding or "no " + bind[0]}' if bind
@@ -1081,7 +1081,7 @@ def _sequence_rows(cfg: model.PmConfig, report, warn) -> None:
               f'| --before <id> | --after <id>]` places one (V7)')
 
 
-def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
+def _unbound_family(cfg: vocabulary.PmConfig, enabled: set[str], order: list[str],
                     report, warn) -> None:
     """R1-R4 and R6 — the plan and the tree held to each other.
 
@@ -1091,18 +1091,18 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
     the family here costs a sentence; naming it later costs a rename in every
     consumer's output that greps these lines.
     """
-    claims = model.version_claims(cfg)
+    claims = inventory.version_claims(cfg)
     scheduled = set(order)
-    root = model.root_grain(cfg)
+    root = inventory.root_grain(cfg)
 
     if 'R1' in enabled and root is not None:
         # The root's half of the sequence pair, spelled here because the plan
         # is the one container a config can turn off on its own.
-        seq = model.sequence_census(cfg, root)
+        seq = inventory.sequence_census(cfg, root)
         for mid in seq.unverifiable:
             # Never a failure: the row survives its milestone on purpose.
             warn(f'UNBOUND: {mid} is in '
-                 f'{cfg.rel(model.releases_file(cfg))} `order` and no milestone '
+                 f'{cfg.rel(inventory.releases_file(cfg))} `order` and no milestone '
                  f'in this tree declares that id — DANGLING if it was never '
                  f'written, UNVERIFIABLE if it was retired (R1)')
         if seq.unsequenced:
@@ -1115,9 +1115,9 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
     if 'R2' in enabled:
         # Backlog: a named, counted line, never a finding — a healthy tree has
         # many (the same reason as `_unbound_rows`).
-        backlog = [mid for _, mid in model.known_milestones(cfg)
+        backlog = [mid for _, mid in inventory.known_milestones(cfg)
                    if mid and mid not in scheduled
-                   and not model.milestone_version(cfg, mid)]
+                   and not inventory.milestone_version(cfg, mid)]
         if backlog:
             print(f'  BACKLOG  {len(backlog)} milestone(s) declare no '
                   f'version: and are not proposed as releases — '
@@ -1140,32 +1140,32 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
         # what lets version_at = "start" mean anything.
         first_open = None
         for mid in order:
-            if model.entry_is_shipped(cfg, mid):
+            if inventory.entry_is_shipped(cfg, mid):
                 if first_open is not None:
                     report(f'history is not a prefix: {mid} has shipped and '
                            f'sits AFTER {first_open}, which has not — '
                            f'`agentic-sdlc pm add` re-sequences the plan (R4)')
-            elif first_open is None and not model.entry_is_dangling(cfg, mid):
+            elif first_open is None and not inventory.entry_is_dangling(cfg, mid):
                 first_open = mid
 
     if 'R6' in enabled:
-        last = model.last_shipped_index(cfg)
+        last = inventory.last_shipped_index(cfg)
         for i, mid in enumerate(order):
-            if i > last or model.entry_is_shipped(cfg, mid):
+            if i > last or inventory.entry_is_shipped(cfg, mid):
                 continue
-            milestone = model.grain(cfg, mid, model.GRAIN_MILESTONE)
+            milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
             if milestone is None:
                 continue
-            status = milestone.field(model.FIELD_STATUS)
+            status = milestone.field(vocabulary.FIELD_STATUS)
             report(f'{mid} sits at position {i + 1}, behind the last '
                    f'shipped release, and is {status!r} — its work went out '
                    f'under someone else\'s version and the record never '
                    f'moved (R6)')
         for version, mid in claims:
-            milestone = model.grain(cfg, mid, model.GRAIN_MILESTONE)
-            status = milestone.field(model.FIELD_STATUS) if milestone else ''
-            done = model.category_of(cfg, model.GRAIN_MILESTONE,
-                                     status) == model.DONE_CATEGORY
+            milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+            status = milestone.field(vocabulary.FIELD_STATUS) if milestone else ''
+            done = vocabulary.category_of(cfg, vocabulary.GRAIN_MILESTONE,
+                                     status) == vocabulary.DONE_CATEGORY
             if done and mid not in scheduled:
                 report(f'milestone {mid} is {status!r}, claims version '
                        f'{version} and is on no plan — a milestone that '
@@ -1173,34 +1173,34 @@ def _unbound_family(cfg: model.PmConfig, enabled: set[str], order: list[str],
                        f'release (R6)')
 
 
-def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> None:
+def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn) -> None:
     """The release family. R1-R4 and R6 are in `_unbound_family`; R5, below, is
     the version file against the CURRENT release — a POSITION in `order`, never
     a parse, so it fits bump-at-start and bump-at-close both ([pm] version_at)
     and has no opinion about what a version string looks like.
     """
-    if not enabled & set(model.RELEASE_CHECKS):
+    if not enabled & set(vocabulary.RELEASE_CHECKS):
         return
     # A plan that is THERE and unreadable is a finding, not the absence of one:
     # "declares no `order`" over a BOM-damaged file is rule 4's first sin.
-    defect = model.plan_defect(cfg)
+    defect = inventory.plan_defect(cfg)
     if defect is not None:
-        report(f'{cfg.rel(model.releases_file(cfg))} {defect} — R5 cannot read '
+        report(f'{cfg.rel(inventory.releases_file(cfg))} {defect} — R5 cannot read '
                f'the plan, so {cfg.version_file} was NOT graded (R5)')
         return
-    order = model.declared_order(cfg)
+    order = inventory.declared_order(cfg)
     _unbound_family(cfg, enabled, order, report, warn)
     if 'R5' not in enabled:
         return
     if not order:
         # A tree mid-adoption has no plan yet; a rule that fails every fresh
         # consumer gets switched off.
-        warn(f'R5 is enabled and {cfg.rel(model.releases_file(cfg))} declares '
+        warn(f'R5 is enabled and {cfg.rel(inventory.releases_file(cfg))} declares '
              f'no `order` — nothing to grade {cfg.version_file} against; '
-             f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
+             f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
              f'writes the plan')
         return
-    accepted, why = model.graded_release_accepts(cfg)
+    accepted, why = inventory.graded_release_accepts(cfg)
     current = accepted[0] if accepted else None
     if current is None:
         # The reason is READ, never invented: "every entry has shipped" over a
@@ -1208,26 +1208,26 @@ def _release_findings(cfg: model.PmConfig, enabled: set[str], report, warn) -> N
         warn(f'R5 has nothing to grade {cfg.version_file} against — {why} '
              f'(under [pm] version_at = {cfg.version_at!r})')
         return
-    version = model.shipped_version(cfg)
+    version = inventory.shipped_version(cfg)
     if version is None:
         report(f'no version found in {cfg.version_file} — R5 cannot verify it '
                f'against the current release {current!r} (R5)')
         return
     if version in accepted:
         return
-    mid = model.milestone_of_version(cfg, current)
+    mid = inventory.milestone_of_version(cfg, current)
     claims = (f'the milestone {mid!r} claims it'
               if mid is not None
               else 'no milestone claims it — an `order` entry nothing carries')
     named = ' or '.join(repr(v) for v in accepted)
     report(f'{cfg.version_file} version {version!r} does not match '
            f'{named} ({claims}), which is the '
-           f'{"first unshipped" if cfg.version_at == model.VERSION_AT_START else "last shipped"} '
-           f'entry in {cfg.rel(model.releases_file(cfg))} under [pm] '
+           f'{"first unshipped" if cfg.version_at == vocabulary.VERSION_AT_START else "last shipped"} '
+           f'entry in {cfg.rel(inventory.releases_file(cfg))} under [pm] '
            f'version_at = {cfg.version_at!r} (R5)')
 
 
-def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
+def _census(cfg: vocabulary.PmConfig, n_milestones: int, n_features: int,
             n_stories: int, n_bugs: int) -> str:
     """`'4 milestone(s), 44 feature(s), 79 story/ies, 11 bug(s)'` — with every
     narrowing each walk made, rendered beside the count it narrowed.
@@ -1237,20 +1237,20 @@ def _census(cfg: model.PmConfig, n_milestones: int, n_features: int,
     it, and a census counting only what the descent saw would quietly drop the
     document `unkeyed_documents` just reported by name.
     """
-    if model.is_pooled(cfg):
-        return ', '.join(model.pool_census(cfg, kind, label) for kind, label in
-                         ((model.GRAIN_MILESTONE, 'milestone(s)'),
-                          (model.GRAIN_FEATURE, 'feature(s)'),
-                          (model.GRAIN_STORY, 'story/ies'),
-                          (model.GRAIN_BUG, 'bug(s)')))
+    if inventory.is_pooled(cfg):
+        return ', '.join(inventory.pool_census(cfg, kind, label) for kind, label in
+                         ((vocabulary.GRAIN_MILESTONE, 'milestone(s)'),
+                          (vocabulary.GRAIN_FEATURE, 'feature(s)'),
+                          (vocabulary.GRAIN_STORY, 'story/ies'),
+                          (vocabulary.GRAIN_BUG, 'bug(s)')))
     census = (f'{n_milestones} milestone(s), {n_features} feature(s), '
               f'{n_stories} story/ies')
     # `Walk` renders every narrowing itself, so a new filter discloses without an edit here.
-    census += model.tree_walk(cfg).disclosures()
+    census += inventory.tree_walk(cfg).disclosures()
     return census + f', {n_bugs} bug(s)'
 
 
-def _verdict(cfg: model.PmConfig, findings: list[str], warnings: list[str],
+def _verdict(cfg: vocabulary.PmConfig, findings: list[str], warnings: list[str],
              census: str, v_on: set[str], v_census: dict) -> int:
     """The census + verdict; warnings are counted separately and never decide the code."""
     print()

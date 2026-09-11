@@ -43,7 +43,7 @@ from support import REPO_ROOT  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.repo import dispatch, init, install  # noqa: E402
-from agentic_sdlc.repo.pm import model  # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
@@ -227,7 +227,7 @@ CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygie
 # rather than as prose: the byte-identical guarantee is GATES-ONLY, and these
 # are what it is not about.
 DECLARATIONS = {
-    '[pm.states.*]': lambda: model.missing_flow_defect({}),
+    '[pm.states.*]': lambda: vocabulary.missing_flow_defect({}),
     '[verify]': lambda: _refusal(verify_rules.read, {}),
     # 0.6.0: the preamble a dispatched agent gets. Its `contracts` are the
     # project's own authored files and the tool cannot invent them (rule 8),
@@ -240,7 +240,7 @@ def _refusal(reader, section) -> str:
     """Why this reader refuses an absent section, or '' if it does not."""
     try:
         reader(section)
-    except model.ConfigError as err:
+    except vocabulary.ConfigError as err:
         return str(err)
     return ''
 
@@ -269,7 +269,7 @@ def test_the_config_template_carries_every_section_the_gates_read():
         f'template drift: {sorted(set(offered) ^ set(CONFIG_SECTIONS))}')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
-    seeded = [ln for ln in model.render_seed().splitlines() if ln.strip()]
+    seeded = [ln for ln in vocabulary.render_seed().splitlines() if ln.strip()]
     assert live == seeded, (
         f'the template declares something outside the flow: '
         f'{[ln for ln in live if ln not in seeded]}')
@@ -429,7 +429,7 @@ def test_a_differing_project_owned_file_is_reported_not_refused():
     assert done.returncode == 0, done.stdout + done.stderr
     assert kept[1:] == [mine] * 2, 'a project-owned file was overwritten'
     assert kept[0].startswith(mine), 'devkit.toml lost the project\'s bytes'
-    assert model.render_seed() in kept[0], kept[0]
+    assert vocabulary.render_seed() in kept[0], kept[0]
     assert done.stdout.count('is yours — left alone') == 3, done.stdout
     assert 'appended the flow to devkit.toml' in done.stdout, done.stdout
 
@@ -459,7 +459,7 @@ def test_init_appends_the_flow_to_a_config_it_did_not_write_byte_preserving():
         appended = first[len(theirs):].decode()
         assert '\n' not in appended.replace('\r\n', ''), (
             'the appended block does not use the file\'s CRLF')
-        assert appended.replace('\r\n', '\n').endswith(model.render_seed())
+        assert appended.replace('\r\n', '\n').endswith(vocabulary.render_seed())
         again = devkit(root, 'init')
         assert again.returncode == 0, again.stdout + again.stderr
         assert path.read_bytes() == first, 'a second run rewrote devkit.toml'

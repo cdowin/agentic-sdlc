@@ -46,7 +46,7 @@ from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo.checks import pm as pm_check  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import inventory, ledger, vocabulary  # noqa: E402
 
 VERSION = '9.9.9'
 # The milestone this project is actually building when the pin bump is folded
@@ -229,7 +229,7 @@ def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
         # Asked of the reader the belt itself uses, so "no such milestone" is
         # a fact about the frontmatter and not about a path that happens not
         # to exist.
-        assert model.milestone_file(model.load(), VERSION) is None, (
+        assert inventory.milestone_file(vocabulary.load(), VERSION) is None, (
             'the fixture grew a milestone carrying the adopted version')
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
@@ -710,8 +710,8 @@ def _couriers(root, *names) -> None:
 
 
 def ledger_couriers():
-    from agentic_sdlc.repo.pm import model
-    return model.LEDGER_COURIERS
+    from agentic_sdlc.repo.pm import vocabulary
+    return vocabulary.LEDGER_COURIERS
 
 
 def _ledger_line(root, row: dict) -> None:
@@ -719,7 +719,7 @@ def _ledger_line(root, row: dict) -> None:
     (0.4.0/D3), which is where a courier files when nothing exported
     `GDK_LEDGER_GRAIN`. The path comes from `ledger.grainless_path`, never
     from a second spelling of it here."""
-    path = ledger.grainless_path(model.PmConfig(root=root).roadmap)
+    path = ledger.grainless_path(vocabulary.PmConfig(root=root).roadmap)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'a', encoding='utf-8') as handle:
         handle.write(ledger.dumps(row) + '\n')
@@ -948,7 +948,7 @@ def test_the_ledger_outranks_the_config_and_an_unreadable_one_is_neither():
         _couriers(root)
         (root / 'Makefile').write_text(VEHICLE, encoding='utf-8')
         _settings(root, WIRED)
-        path = ledger.grainless_path(model.PmConfig(root=root).roadmap)
+        path = ledger.grainless_path(vocabulary.PmConfig(root=root).roadmap)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('not a row\n', encoding='utf-8')
         answer = check('telemetry-live', root)

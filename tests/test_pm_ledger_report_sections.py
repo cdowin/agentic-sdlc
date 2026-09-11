@@ -33,13 +33,13 @@ from support.pm import (bug, declaring, decision_line, dispatch_line,
                         status_line, write, write_config)
 from support.pm import tree as _seed_tree
 
-from agentic_sdlc.repo.pm import model as _model
+from agentic_sdlc.repo.pm import vocabulary
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
 # written under rather than being rewritten: tests/test_pm_ledger.py, beside the
 # same `LEGACY_FLOW`.
-LEGACY_FLOW = declaring(feature=_model.DEFAULT_FLOWS['milestone'],
-                        story=_model.DEFAULT_FLOWS['milestone'])
+LEGACY_FLOW = declaring(feature=vocabulary.DEFAULT_FLOWS['milestone'],
+                        story=vocabulary.DEFAULT_FLOWS['milestone'])
 
 
 def tree(**kwargs):

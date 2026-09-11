@@ -234,8 +234,8 @@ def _is_ledger():
     is the consumer-settable `[pm] ledger_dir`, and a directory-wide rule
     pointed at a source tree would take real inputs out of the state."""
     try:
-        from agentic_sdlc.repo.pm import model
-        cfg = model.load()
+        from agentic_sdlc.repo.pm import vocabulary
+        cfg = vocabulary.load()
         roadmap, pool = cfg.roadmap, ledger.ledgers_dir(cfg)
     except Exception:  # noqa: BLE001 - no PM tree, no ledgers, no exception
         return lambda path: False
@@ -261,8 +261,8 @@ def ledger_file(root: Path) -> Path | None:
     """The ledger a verdict row lands in — the TREE's, the file `verify --plan`
     and `check budget` read. None means no record and no reuse."""
     try:
-        from agentic_sdlc.repo.pm import model
-        return ledger.grainless_path(model.load().roadmap)
+        from agentic_sdlc.repo.pm import vocabulary
+        return ledger.grainless_path(vocabulary.load().roadmap)
     except Exception:  # noqa: BLE001 - every failure means the same: no record
         return None
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 FIELD = 'changelog'
 # "This one is internal", typed by hand, so compared case-insensitively.
@@ -43,11 +43,11 @@ def _text(grain) -> str:
 # The tool's own mapping, inverted — NOT `[pm.contains]`, which a project may
 # narrow, and a narrowed one would drop a level's entries in silence (D11).
 _CHILD_KINDS: dict[str, tuple[str, ...]] = {}
-for _kind, (_parent, _field) in model.BINDS_TO.items():
+for _kind, (_parent, _field) in vocabulary.BINDS_TO.items():
     _CHILD_KINDS[_parent] = _CHILD_KINDS.get(_parent, ()) + (_kind,)
 
 
-def collect(cfg: model.PmConfig, gid: str,
+def collect(cfg: vocabulary.PmConfig, gid: str,
             seen: set[str] | None = None) -> list[Entry]:
     """`gid` and everything beneath it, in the `order:` each parent declares.
 
@@ -56,19 +56,19 @@ def collect(cfg: model.PmConfig, gid: str,
     kind-by-kind would reorder the notes away from what shipped when.
     """
     seen = set() if seen is None else seen
-    index = model.grain_index(cfg)
+    index = inventory.grain_index(cfg)
     grain = index.get(gid)
     if grain is None or gid in seen:
         return []
     seen.add(gid)
-    out = [Entry(gid, grain.kind, grain.field(model.FIELD_STATUS),
+    out = [Entry(gid, grain.kind, grain.field(vocabulary.FIELD_STATUS),
                  _text(grain))]
     for child in _children(cfg, index, grain):
         out.extend(collect(cfg, child, seen))
     return out
 
 
-def _children(cfg: model.PmConfig, index: dict, grain) -> list[str]:
+def _children(cfg: vocabulary.PmConfig, index: dict, grain) -> list[str]:
     """Bound to `grain`, sequenced by its `order:` then by id — the rule
     `_children_paths` uses one kind at a time."""
     kinds = _CHILD_KINDS.get(grain.kind, ())
@@ -76,7 +76,7 @@ def _children(cfg: model.PmConfig, index: dict, grain) -> list[str]:
         return []
     bound = {gid: g for gid, g in index.items()
              if g.kind in kinds and g.binding == grain.gid}
-    declared = grain.list_field(model.ORDER_KEY)
+    declared = grain.list_field(vocabulary.ORDER_KEY)
     out = [gid for gid in declared if gid in bound]
     placed = set(out)
     return out + sorted(gid for gid in bound if gid not in placed)
@@ -89,11 +89,11 @@ def rows(entries: list[Entry]) -> list[tuple[str, ...]]:
             for e in entries if e.said_something]
 
 
-def unanswered(cfg: model.PmConfig, entries: list[Entry]) -> list[Entry]:
+def unanswered(cfg: vocabulary.PmConfig, entries: list[Entry]) -> list[Entry]:
     """Closed grains carrying neither a sentence nor `none`. The release check
     grades THIS rather than a file's line count, so it names the grain."""
     return [e for e in entries
-            if model.category_of(cfg, e.kind, e.status) == model.DONE_CATEGORY
+            if vocabulary.category_of(cfg, e.kind, e.status) == vocabulary.DONE_CATEGORY
             and not e.text.strip()]
 
 
@@ -136,13 +136,13 @@ def main(argv: list[str]) -> int:
         print(f'agentic-sdlc changelog: takes one grain id, got {len(rest)}',
               file=sys.stderr)
         return 2
-    cfg = model.load()
+    cfg = vocabulary.load()
     gid = rest[0] if rest else _current(cfg)
     if not gid:
         print('agentic-sdlc changelog: no grain named and no current release '
               'in the plan — name one', file=sys.stderr)
         return 2
-    if gid not in model.grain_index(cfg):
+    if gid not in inventory.grain_index(cfg):
         print(f'agentic-sdlc changelog: no grain resolves from {gid!r}',
               file=sys.stderr)
         return 2
@@ -163,12 +163,12 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-def _current(cfg: model.PmConfig) -> str:
+def _current(cfg: vocabulary.PmConfig) -> str:
     """The current release, or ''. NAMED on stderr: a verb that picks a
     subject silently is one whose output nobody can attribute."""
     import sys
-    mid = model.current_milestone(cfg)
+    mid = inventory.current_milestone(cfg)
     if mid:
         print(f'[changelog] no id given — using {mid}, the current entry in '
-              f'{cfg.rel(model.releases_file(cfg))}', file=sys.stderr)
+              f'{cfg.rel(inventory.releases_file(cfg))}', file=sys.stderr)
     return mid or ''

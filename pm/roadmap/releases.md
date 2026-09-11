@@ -9,6 +9,7 @@ order:
   - "ms-a-move-is-an-event"
   - "ms-the-rule-reaches-the-work"
   - "ms-nothing-is-hand-rolled"
+  - "ms-a-consumer-can-take-the-bump"
 ---
 
 # The release plan

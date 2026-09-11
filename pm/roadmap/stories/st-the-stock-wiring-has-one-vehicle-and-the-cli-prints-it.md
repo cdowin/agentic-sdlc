@@ -1,0 +1,52 @@
+---
+id: st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it
+kind: story
+feature: ft-every-printed-command-runs-in-a-stock-consumer
+milestone: "ms-a-consumer-can-take-the-bump"
+name: the stock wiring reaches every verb, and every line the CLI renders names it
+status: planning
+owner:
+depends_on: []
+changelog:
+---
+
+# the stock wiring reaches every verb, and every line the CLI renders names it
+
+Issues: #22 (the vehicle, the rendered hints, STATIC GATES), #36.
+
+**Blocked on the feature's decision** (passthrough / shim / declared key). Written for the
+recommended option, a generic `Makefile.devkit` passthrough over the existing `$(DEVKIT)`.
+
+The lines the CLI RENDERS, as opposed to the prose it installs (the next story):
+
+- `dispatch.py:167`, the RECORDING line under *"rendered here, run by you"*:
+  `agentic-sdlc pm ledger record --grain … --agent-type …`;
+- the D11 and D12 finding hints in `checks/pm.py` (`:961`, `:1011`). The D12 hint printed 157 times on
+  one consumer tree;
+- `next:` lines from the belts, and the `pm/inventory.py:1109` / `conveyor/steps.py` hints;
+- `dispatch.py:192-193`, STATIC GATES: `_roster()` renders `[checks] all` and never `[gates] extra`.
+
+## Acceptance criteria
+
+1. `Makefile.devkit` has one target that reaches every CLI verb through the pinned `$(DEVKIT)`, and
+   `install-gates` installs it. This repo's own copy is re-installed byte-current.
+2. Every command the CLI renders for a human to run names the vehicle, whether from a single
+   constant or a declared value. Nothing is detected from the Makefile (rule 9).
+3. `dispatch --grain <id>`'s RECORDING line, pasted verbatim into a scratch consumer wired as the
+   README says with nothing on PATH, runs and files its row.
+4. STATIC GATES lists `[checks] all` AND `[gates] extra`, or says in words that `make check` runs
+   more than it lists.
+5. `bash -c 'command -v agentic-sdlc'` is empty in the probe consumer. The proof must not pass
+   because the builder's shell has the tool on PATH.
+
+## How this is proven
+
+| criterion | tier | the case that proves it | existing? |
+|---|---|---|---|
+| 2 | unit | every rendered command string resolves through the vehicle | the next story's census covers rendered strings too |
+| 3, 5 | integration (it IS a process) | scratch consumer, paste the rendered line | new, the only process case in the feature |
+| 4 | unit | render the preamble over a config with `[gates] extra` | amend the dispatch render case |
+
+## Semver
+
+Minor: a new `Makefile.devkit` target and changed rendered line shapes (rule 6).

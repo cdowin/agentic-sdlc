@@ -149,34 +149,6 @@ TOMBSTONES: dict[str, str] = {}
 # honest answer is usually that the file belongs to the other kit.
 ENGINE_TOMBSTONES: dict[str, str] = {}
 
-# THE MIGRATION DOCUMENT — one file, one clause, and both halves of the
-# exemption written down.
-#
-# This package was split out of a larger one, and the record of that split has
-# to say which repo each step happens in. A migration plan written in SHAPES
-# ("the repo the verbs stayed in") is not a plan anybody can follow. So exactly
-# one path is exempt, and the exemption is deliberately the narrowest thing
-# that works:
-#
-#   * ONE EXACT PATH, compared with `==`. Not a prefix, not a glob, not a
-#     directory — nothing can arrive inside it, and a sibling file one
-#     character away is scanned like everything else (asserted below).
-#   * ONE CLAUSE. Only the consumer-NAME clause. The migration doc is scanned
-#     for outside-checkout reads like every other file, which is why the
-#     home-relative path literal it used to open with was REWRITTEN, not
-#     exempted.
-#   * IT CANNOT REACH CODE. A single top-level `.md` is not package source, not
-#     an installable, not a workflow, not a hook — the four places a leak would
-#     actually ship. Structural, and asserted rather than asserted-in-prose.
-#   * IT DECLARES ITSELF. The file carries the marker below, so the exemption
-#     is visible from the document as well as from the gate: taking it means
-#     editing both sides, in one diff.
-#   * IT EXPIRES. The gate fails if the entry outlives the file, and fails if
-#     the file stops needing it.
-#
-# When the migration lands, both halves go. Until then this is the one place in
-# the tree, other than the tombstones, where a repo may be named.
-
 # Rule 4: a census that collapses must FAIL, not pass over nothing. The tree is
 # ~330 content files today; the floor is well under that and still far above
 # zero.
@@ -295,14 +267,10 @@ def offending_lines(path: Path, patterns: tuple[str, ...],
     """Findings for one file — including "I could not read it".
 
     A file this gate cannot decode is a file it cannot CLEAR, so the decode
-    failure is a finding rather than a skip. This returned `[]` on
-    `UnicodeDecodeError` until this release, which meant one stray byte
-    anywhere in a file removed the whole file from the scan without a word: the
-    planted name plus a two-byte tail passed the suite. Same shape as the write
-    plane's own refusal (`godot/write.utf8_refusal_reason` — "not valid UTF-8
-    (… at byte N) — refusing to rewrite bytes this tool cannot read"), stated
-    here rather than imported, because nothing in the repo family may reach
-    into the godot family (CLAUDE.md § Where things live).
+    failure is a finding rather than a skip: returning `[]` on
+    `UnicodeDecodeError` means one stray byte anywhere in a file removes the
+    whole file from the scan without a word, and a planted name plus a two-byte
+    tail passes the suite.
     """
     rel = path.relative_to(root).as_posix()
     try:
@@ -342,8 +310,8 @@ def test_the_census_is_not_empty_and_covers_the_package_and_the_harness():
 def test_the_census_accounts_for_every_file_it_walked():
     """The question the old census could not answer: what did you DROP?
 
-    Both holes this gate shipped with hid behind a count of what the walk KEPT
-    — 313 files, floor 120, green — while 21 files left the scan unnamed. The
+    A count of what the walk KEPT is green while files leave the scan unnamed —
+    the shape of both holes in the module docstring above. The
     walk is repeated INDEPENDENTLY here rather than read off the census, so a
     silent `continue` growing back inside `take_census` stops covering this one
     and that is the failure.
@@ -539,8 +507,7 @@ class TestTheCensusOnAScratchTree:
 
     def test_a_name_in_a_project_godot_is_a_finding(self, tmp_path):
         """The exact file the suffix allowlist dropped, and the exact artifact
-        a fixture gets vendored from. Ten of them are in this repo; a planted
-        name in one passed all 1,761 tests before this release."""
+        a fixture gets vendored from."""
         _scratch_tree(tmp_path)
         target = tmp_path / 'tests' / 'fixtures' / 'canon_repo' / 'project.godot'
         assert not _names_found(tmp_path), 'the scratch tree started dirty'
@@ -618,18 +585,11 @@ class TestTheCensusOnAScratchTree:
         assert '1 denied' in census.summary()
 
 
-# --------------------------------------------------------------------------
-# The exemption, attacked on the same scratch tree.
-#
-# An exemption is a hole with a reason attached, and the reason is only worth
-# anything if the hole is the size it claims. These cases plant the SAME name
-# the migration doc is allowed to spell in the four places a leak would
-# actually ship — package source, an installable, a workflow, a hook — plus the
-# Makefile and three near-miss spellings of the exempt path itself, and assert
-# every one of them is still reported. They run `names_a_consumer`, the
-# function the repo-wide test runs, so an exemption widened later is caught
-# here rather than proven safe against a copy of itself.
-# --------------------------------------------------------------------------
+# The rosters below are the shipping paths and the near-miss spellings a
+# migration-document exemption used to be attacked with. NOTHING READS THEM —
+# the exemption left with the document, and the three names under this line are
+# unreferenced (reported at st-the-tests-ceiling-is-declared-and-argued; this
+# story removes English, not code).
 
 # Where a rule-8 leak would reach a consumer. Not an arbitrary list: `src/` is
 # the wheel, `installables/` is copied verbatim into consumer repos,

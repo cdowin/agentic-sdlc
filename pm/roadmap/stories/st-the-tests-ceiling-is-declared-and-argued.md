@@ -7,7 +7,7 @@ name: the tests ceiling is declared and argued
 status: planning
 owner:
 depends_on: []
-changelog:
+changelog: `tests/` gets its own declared prose ceiling — `TESTS_CEILING = 0.55`, the measured ratio after the cut rounded up to the next twentieth — with a dated per-module argument and the reason `src/`'s third does not transfer: 0.6.0/D7 moves 223 printed-`--help` docstring lines into `src/`'s code and `tests/` gets none of that.
 ---
 
 # the tests ceiling is declared and argued
@@ -119,3 +119,92 @@ gates probing, and a third number would be cargo.
 Sorting the self-policing from the behaviour tests — `st-a-source-shaped-guard-names-what-it-protects`.
 
 Trimming `src/`, `CLAUDE.md`, or any grain document.
+
+## Close
+
+THE NUMBER: `TESTS_CEILING = 0.55` in `tests/test_prose_census.py`, a module constant beside
+`PYTHON_CEILING` with a dated argument block above it in the shape `devkit.toml`'s `[tests] cases`
+uses. **The derivation is a rule anybody can re-run, not a number somebody picked**: the measured
+ratio after the cut, rounded UP to the next twentieth — 0.5267 -> 0.55, which is 4.4% of relative
+headroom and 499 prose lines of room at today's code size, against the 4.0% `src/` carries over its
+own measurement. Rejected: a `[prose]` section in `devkit.toml` — hard rule 5 makes a GATE key ship a
+stock default and this module is this repo's own test rather than a shipped gate, so the key would
+stand behind nothing in every consumer's tree.
+
+THE CUT, PER MODULE, and it came first (prose lines, then prose words):
+
+| module | before | after | cut | words | what left |
+|---|---|---|---|---|---|
+| `test_consumer_independence.py` | 301 | 262 | **-39** | -403 | a 28-line block documenting a migration-document exemption the code no longer has (no `MIGRATION_DOC`, no `==`, no marker check — `names_a_consumer` applies `TOMBSTONES` alone); 12 lines introducing cases that were deleted; three retellings of the 0.24.0 census holes the module docstring already states |
+| `test_fuzz_inputs.py` | 154 | 120 | **-34** | -304 | the v0.16.0 incident narrative and the 2026-08-30 run transcript — the blocker's shape is already in `test_the_corpus_separates_the_pre_fix_resolver`'s own docstring and the commit is already at `_pre_fix_bug_resolver`; the retired scene-plane paragraphs; an incantation CLAUDE.md now forbids (`pytest tests/<module>.py`) |
+| `test_init_verb.py` | 220 | 197 | **-23** | -194 | four tombstone enumerations of files, sections and paths that left at 0.2.0, each compressed to its claim plus the decision record that holds it (`0.2.0/D1`, `D2`, `R3`) |
+| `test_fresh_project.py` | 169 | 147 | **-22** | -271 | the same, one root over: "28 targets through 0.1.0", "22 of the 23 that left", the hook-census literal's story, and "THE SURFACE MOVED" |
+| `test_gate_library.py` | 159 | 149 | **-10** | -116 | 9 lines on the module's own rename from `test_runners_installable.py` (a file that does not exist, so the cross-reference was dead), and the departed-artefact list inside the language-neutral clause |
+| `test_pm_verbs.py` | 618 | 610 | **-8** | -112 | the 0.3.0 batched-review measurement, which lives in `ft-every-move-breadcrumbs-the-next-step` and is cited on the line above it; the three-hole enumeration from `bg-a-proof-row-names-a-case-that-proves-half`, which is cited too; two "amended from the case that…" paragraphs reduced to the claim the case makes now. The file reads 626 now — a sibling story added a case to it after this measurement |
+| `test_install.py` | 627 | 621 | **-6** | -60 | a `CHANGELOG.md` scoping rule and its own retirement notice (the file left the list at 0.6.0), and `install-runners`' 0.1.0 roster |
+| `test_pm_ledger_record.py` | 375 | 370 | **-5** | -66 | the all-seven-seed paragraph, which was **the same 8 lines in four modules**: kept whole in `test_pm_ledger.py` and pointed at from the other three |
+| `test_pm_ledger_report.py` | 312 | 307 | **-5** | -66 | the same |
+| `test_pm_ledger_report_sections.py` | 207 | 202 | **-5** | -66 | the same |
+| `test_wheel_payload.py` | 51 | 48 | **-3** | -39 | a cross-reference to the `MIGRATION_DOC` entry deleted above, and the removed-entry-count story |
+| `test_verdict.py` | 206 | 205 | **-1** | -6 | a repo-local reviewer definition that left in 0.2.0 |
+| `test_pm_gate.py` | 1011 | 1011 | 0 | -3 | `execlist.py` — a module that does not exist — named as a reader of `owner:`; rewritten in place, not removed |
+| **cut total** | | | **-161** | **-1,703** | 12 modules net, a 13th rewritten in place |
+| `test_prose_census.py` | 119 | 187 | **+68** | +662 | the ceiling, its derivation, its three measurements and its rejected alternative |
+
+Net **-93** prose lines. Every removal is prose the reader does not need (a dead reference, a deleted
+mechanism, the same paragraph a fourth time) or an incident whose grain or decision record is NAMED on
+the line that replaced it — nothing moved to a placement that did not already hold it, because this
+story writes no new grain.
+
+WHAT WAS MEASURED AND KEPT: `test_boundaries.py` (717 prose lines, the largest in the suite) and
+`test_gate_roster.py`, read in full and cut by nothing — their comments ARE the rules the AST guards
+enforce. `test_install.py` gave up 6 of 627 for the same reason. `test_shell_mark.py` was read and
+left alone: a sibling story was editing it in this worktree.
+
+**SO THE FEATURE'S PREMISE IS HALF RIGHT, AND THIS IS THE HONEST FINDING.** 30% of `tests/` is
+English, and it is not mostly rot: 47% of the suite's prose was read line by line and 1.5% came out.
+What was removable was dead cross-references (four paths named in prose that are not in the tree,
+found by sweeping every backticked path), blocks describing deleted mechanisms, and one paragraph
+pasted into four modules — a suite-wide sweep for repeated sentences found nothing else non-trivial.
+The ratio is what the style costs, not what neglect left behind.
+
+STILL OVER `src/`, STATED RATHER THAN SATISFIED (criterion 9): 0.5267 against `src/`'s 0.3206, and
+the like-for-like comparison is against 0.3415 because `0.6.0/D7` moves 223 `src/` docstring lines
+into `code` and `tests/` gets none of that — nothing under `tests/` is ever printed as `--help`, so
+the exclusion is legitimately EMPTY here where for `src/` an empty one means the derivation went
+blind. That difference is declared on the `Root` and asserted by
+`test_which_roots_are_graded_and_which_are_only_reported`, not assumed. At 1/3 the suite would be 58%
+over on day one and the only way green is deleting 4,130 lines of English nobody reviewed.
+
+THE CASE THE CODE TOLD ME TO DELETE, AMENDED INSTEAD.
+`test_which_roots_are_graded_and_which_are_only_reported` asserted `'tests' in ungraded` and its own
+message said to *"delete it in the commit that lands `tests/`'s ceiling"* — against criterion 8 and
+gotcha 3. Deleting it leaves the hole rule 11 is about: nothing would notice a third root arriving at
+`ceiling=None`, reporting `NO CEILING` on a green transcript and passing over any amount of prose. So
+it keeps its name and both directions with the tree's new answer — every root graded, the roster not
+shrunk to make that true, and the two ceilings DIFFERENT, which is the "inherited rather than argued"
+failure the previous story refused by name.
+
+PROBE, on a scratch copy of `tests/`, five directions (BEFORE -> AFTER):
+
+    BEFORE  11,188 prose / 21,313 code = 0.5249 vs ceiling 0.5500  PASS
+    AFTER   12,388 prose / 21,313 code = 0.5812 vs ceiling 0.5500  FAIL  (1,200 comment
+                                                                         lines planted)
+    roster: a third root at ceiling=None  FAIL · the roster cut to one root  FAIL ·
+    tests/ with publishes_help=True  FAIL · tests/ graded at PYTHON_CEILING  FAIL, but
+    only after a fix: the first spelling compared the two CONSTANTS, passed the probe,
+    and is now asked of the ROSTER — the half-guard
+    `bg-a-proof-row-names-a-case-that-proves-half` names, caught before it shipped.
+    headroom: tests/ at a ceiling under its own measurement  FAIL
+
+CRITERIA: 1, 2, 3, 5, 7, 9 met. 6 met for both roots, watched failing. 4 met *by this story* — no
+file under `src/` was touched, which `git diff --name-only` shows; the absolute `src/` ratio DID move,
+0.3155 -> 0.3206, because a sibling story is editing `src/` in this worktree, reported rather than
+claimed away. 8 met — the 14 modules I edited carry a byte-identical set of test callables, proven by
+AST before and after; the two that gained one (`test_pm_verbs.py`, `test_cli_surface.py`) gained it
+from that sibling story, which is also why `[tests] cases` is no longer at 1575 (1,595 collected).
+
+NOT VERIFIED: that the 53% of prose I did not read line by line is free of rot. It was swept
+mechanically — every backticked path checked for existence, every sentence over 45 characters checked
+for a repeat elsewhere, narrative density measured per module — and the unread remainder is 8-26%
+narrative by that measure. A second pass is a second story.

@@ -13,11 +13,9 @@ the PM templates, and the guidance markdown read back through
 `importlib.resources`. Anything else is a blob nobody asked for.
 
 Proven against a real build at 0.2.0: top-level `core/` and `repo/` only, no
-`data/`, no `.tscn`. The entry COUNT that used to be restated here is gone —
-it said 85 where the build was 84, and a number this file cannot re-derive
-(there is no build in it) is a number that only ever drifts. What the shape
-assertions below prove is proven at every run; what a stale count proves is
-that somebody typed it once (E4).
+`data/`, no `.tscn`. No entry COUNT is restated here — a number this file cannot
+re-derive (there is no build in it) only ever drifts, and it drifted: 85 where
+the build was 84 (E4).
 """
 from __future__ import annotations
 
@@ -76,8 +74,7 @@ class TestTheWheelCarriesOnlyWhatHasAReader:
         If one MOVES, the exemption above stops exempting and the files inside
         it become stray — loud, and correct. If one is DELETED and the entry
         outlives it, the exemption list is documentation of something that is
-        not there. Same discipline as the MIGRATION_DOC entry in
-        test_consumer_independence.py.
+        not there.
 
         Asked of the PATH since E4, so a directory that moved elsewhere in the
         tree can no longer answer for the one that is named.

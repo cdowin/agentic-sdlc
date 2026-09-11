@@ -443,9 +443,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
 
     def test_a_story_in_progress_with_no_owner_warns(self):
         """A LIVE BUG, not a tidy-up. `pm-execution.md` step 1 says to set
-        `owner:` in the same edit as the claim; `execlist.py` and `cli.py` both
-        READ the field; nothing asked whether it was there. So a tree could run
-        a whole milestone with every story unowned and the gate silent.
+        `owner:` in the same edit as the claim and the CLI READS the field;
+        nothing asked whether it was there. So a tree could run a whole
+        milestone with every story unowned and the gate silent.
 
         Asked of the CATEGORY, never the word — a project spelling its
         in-progress state `wip` gets the same line.
@@ -2373,6 +2373,19 @@ class DamagedFrontmatter(unittest.TestCase):
                     self.assertIn('declares no `id:`', out)
                     self.assertIn('SKIPPED by this scan', out)
                     self.assertIn('1 story/ies', out)
+                    # BOTH findings, by their own wording. V1 walks the pool
+                    # through `model.every_grain`, which reads each document
+                    # with `doc_grain` — the TOTAL read. Resolving those with
+                    # `read_grain` instead drops a no-id document out of the
+                    # walk entirely, and this gate then printed one finding
+                    # over 172 grains where it had printed two over 173: a
+                    # census that shrank in silence (rule 4,
+                    # `st-the-engine-asks-by-id-not-by-path`). Asserting the
+                    # substring `declares no id:` alone could not see that,
+                    # because the OTHER line carries it too.
+                    self.assertIn(': missing id: or status: in the frontmatter',
+                                  out)
+                    self.assertIn('2 status-drift / integrity violation(s)', out)
 
     def test_a_damaged_bug_is_reported_not_dropped(self):
         for form in DAMAGE_FORMS:

@@ -50,14 +50,9 @@ from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import arrive, ledger
 from agentic_sdlc.repo.pm import model
 
-# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
-# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
-# gives each kind the states its belt writes (a story: `building`, `done`), and
-# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
-# `in_progress` number whatever the word — so the tree keeps the declaration
-# the rows were written under rather than rewriting every row to a word that
-# proves nothing different. `support.pm.tree` is the builder; this only fixes
-# its `config`.
+# THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
+# written under rather than being rewritten: tests/test_pm_ledger.py, beside the
+# same `LEGACY_FLOW`.
 from support.pm import declaring as _declaring, tree as _seed_tree  # noqa: E402
 from agentic_sdlc.repo.pm import model as _model  # noqa: E402
 

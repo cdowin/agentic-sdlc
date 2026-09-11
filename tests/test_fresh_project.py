@@ -5,14 +5,12 @@ targets work with zero hand edits. This file is that sentence made runnable —
 one fixture project and every claim below asked of it rather than of a
 hand-written stand-in.
 
-WHAT THE SHIP CRITERION IS NOW. Through 0.1.0 the installed include carried a
-language's whole target roster, so most of this file was `make -n` over
-targets that would boot an engine nothing here has. Decision D1 split that out:
-`Makefile.devkit` keeps `help`, `pm`, `check`, `precommit` and `milestone`, and
-a LANGUAGE KIT contributes its tiers through `-include $(GDK_TIERS_MK)` and two
-variables. This package ships no tier file, so the fresh project this builds is
-the TIERLESS shape — which is not a degraded case but a supported one, and it
-gets its own test: `precommit` there is `check` alone, and it SAYS so.
+WHAT THE SHIP CRITERION IS. `Makefile.devkit` keeps `help`, `pm`, `check`,
+`precommit` and `milestone`; a LANGUAGE KIT contributes its tiers through
+`-include $(GDK_TIERS_MK)` and two variables (0.2.0/D1). This package ships no
+tier file, so the fresh project this builds is the TIERLESS shape — a supported
+case rather than a degraded one, and it gets its own test: `precommit` there is
+`check` alone, and it SAYS so.
 
 `make check` IS run for real here, and that is not a hedge — the gate roster is
 pure parse and boots nothing, so a dry run of it was never the best this file
@@ -72,19 +70,12 @@ PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
                  'config/features=PackedStringArray("4.6")\n')
 ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 
-# THE STANDARD SET, spelled out. It was 28 targets through 0.1.0, when the
-# include carried a language kit's whole roster; decision D1 moved every one of
-# those behind the `-include $(GDK_TIERS_MK)` seam, and what `install-gates`
-# writes is these five and two internal announce targets. The set is asserted
-# as an EQUALITY, which is stronger than the count-plus-four-names it replaces:
-# a target quietly dropped from the include would shrink the sweep and still
-# pass a count that somebody remembered to lower, and a target ADDED without a
-# line here now fails too.
-#
-# 22 of the 23 that left are a language kit's; the twenty-third, `doctor`, has
-# no replacement in the include at all — the question it answered ("is this
-# checkout's hook corpus armed?") is `agentic-sdlc check hooks` now, and the
-# case at the bottom of this file is where that coupling is held.
+# THE STANDARD SET, spelled out: what `install-gates` writes is these five and
+# two internal announce targets, everything a language kit contributes arriving
+# behind the `-include $(GDK_TIERS_MK)` seam (0.2.0/D1). The set is asserted as
+# an EQUALITY, which is stronger than a count: a target quietly dropped from the
+# include would shrink the sweep and still pass a count somebody remembered to
+# lower, and a target ADDED without a line here fails too.
 STANDARD = ('help', 'pm', 'check', 'precommit', 'milestone')
 DOCUMENTED = re.compile(r'^([a-z][a-z0-9-]*):.*?## ', re.MULTILINE)
 
@@ -164,13 +155,11 @@ EMPTY_CENSUS = 'scanned 0 of 0 tracked'
 # What a blank project holds nothing of. Spelled out, so a gate JOINING this
 # set is a decision somebody makes here rather than a silent widening.
 #
-# IT IS EMPTY NOW, and that is the assertion rather than an oversight. It held
-# `uid`, `tres` and `props` — the three gates that read engine files — and all
-# three left this package in 0.2.0. Every gate on the stock roster today reads
-# markdown, shell or git, which a blank repo has, so nothing is excused from
-# `test_the_gates_that_do_apply_to_a_blank_project_pass` and that case now
-# covers the whole roster. An entry added back here has to carry the sentence
-# saying which file kind a fresh repo genuinely does not have.
+# IT IS EMPTY, and that is the assertion rather than an oversight: every gate
+# on the stock roster reads markdown, shell or git, which a blank repo has, so
+# nothing is excused from `test_the_gates_that_do_apply_to_a_blank_project_pass`
+# and that case covers the whole roster. An entry added here has to carry the
+# sentence saying which file kind a fresh repo genuinely does not have.
 GATES_WITH_NOTHING_TO_SCAN: set[str] = set()
 
 
@@ -302,22 +291,11 @@ def test_precommit_on_a_tierless_project_is_check_alone_and_says_the_list_is_emp
 
 
 # --- the hook census: the gate's count vs the install roster -------------------
-# The number of hooks the ARMING gate reports must equal the number
-# `install-hooks` ships. A gate once carried that number as a hand-written
-# literal, and the two 0.22.0 ledger couriers turned it into `8 tracked hook(s)
-# armed, 6 installed` on the day they landed — red about a roster, not about
-# behaviour. The gate itself was never wrong: it counts what is IN tools/hooks/
-# precisely so a hook added after it was written is still covered. The literal
-# was the only roster in the loop, so the census is asked of the install PLAN
-# here, in the suite, where a new hook cannot be discovered by a gate first.
-#
-# THE SURFACE MOVED, THE COUPLING DID NOT. This was `tools/dev/checks/doctor.sh`
-# until 0.2.0, when doctor left with the language kit (decision D2).
-# `agentic-sdlc check hooks` is what reports an unarmed or dead corpus now — it
-# asks the DIRECTORY the same way, excludes the same two shapes (`_*` sourced
-# libraries, `*.local` drop-ins), and prints the same repair — so the case is
-# re-pointed rather than dropped. A coupling that stops being asserted because
-# the thing asserting it moved is a coupling that breaks on the next hook.
+# The number of hooks `check hooks` reports must equal the number
+# `install-hooks` ships. The gate counts what is IN tools/hooks/, so a hook
+# added after it was written is covered; the census is asked of the install
+# PLAN here, in the suite, because a hand-written roster literal anywhere in
+# that loop goes red about a roster rather than about behaviour.
 HOOKS_DIR = 'tools/hooks'
 CC_PREFIX = 'cc-'
 # `<n> hook(s) under tools/hooks/; <n> fail open on a payload they cannot read,

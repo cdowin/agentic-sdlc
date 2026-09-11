@@ -167,11 +167,10 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          'tools/dev/agent-worktree.sh',
          'tools/setup-hooks.sh')
 # The gate FRAMEWORK, and the whole of it: the library that gives every gate one
-# verdict line, and the include that calls it. It was `install-runners` through
-# 0.1.0 and carried twelve engine runners besides — the gate framework and one
-# language's roster under one verb, which is what blocked splitting this package
-# in two (decision D2). A language kit installs its own runners and a
-# `Makefile.tiers` that hangs them off this include's `-include` seam.
+# verdict line, and the include that calls it. A language kit installs its own
+# runners and a `Makefile.tiers` that hangs them off this include's `-include`
+# seam (decision D2) — one verb carrying both is what blocked splitting this
+# package in two.
 GATES = ('tools/dev/gdk_gate.sh',
          'Makefile.devkit')
 # The fifth verb, and the only one whose body is GENERATED: the release
@@ -298,13 +297,10 @@ def test_force_overwrites_every_entry(command):
 # first of those to delete its CI.
 #
 # The trigger is the paragraph that IS the instruction — the one carrying
-# "follow-up" — never prose that merely mentions the flag. CHANGELOG.md is
-# scoped to `## Unreleased`: a released section is a RECORD and is never
-# rewritten to satisfy a rule written after it.
-# `CHANGELOG.md` left this list at 0.6.0: it is frozen at v0.5.0 and nothing
-# writes to it. The live release notes are `changelog:` on each grain, and
-# `_grain_notes()` reads them so the rule follows its subject rather than the
-# file that used to hold it.
+# "follow-up" — never prose that merely mentions the flag. The release notes are
+# `changelog:` on each grain and `_grain_notes()` reads them, so the rule follows
+# its subject rather than the file that used to hold it; a released record is
+# never rewritten to satisfy a rule written after it.
 INSTRUCTION_SITES = ('.claude/skills/release/SKILL.md',)
 INSTRUCTION_MARKER = 'follow-up'
 # The cost, in any of the words somebody would reach for. A closed list, so
@@ -1412,9 +1408,7 @@ def test_every_config_headed_installable_reads_as_header_only_when_edited():
                                                       body), rel
     # A floor, not a count: it catches a census that COLLAPSES (a moved
     # PLANS key, a broken `body_of`) without going stale every time the roster
-    # changes size. It was 25 when install-gates carried thirteen engine
-    # runners; the roster is 18 now and the floor moved with it, deliberately
-    # and in the open.
+    # changes size. It moves with the roster, deliberately and in the open.
     assert checked >= 15, f'only {checked} config-headed installables scanned'
 
 

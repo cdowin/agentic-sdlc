@@ -31,6 +31,7 @@ sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
 from agentic_sdlc.repo import install  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, sdlc_doc, steps  # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 
 
 DEST = 'docs/sdlc-protocol.md'
@@ -154,6 +155,37 @@ def test_the_rendered_protocol_carries_every_check_the_write_and_the_after_list(
         for line in steps.after_lines(operation, commands, version='<version>',
                                       branch='<branch>', mainline='<mainline>'):
             assert f'- {line}' in body, (operation, line)
+
+
+# Inputs no belt reads since 0.6.0: the file, its section, the bug fields.
+RETIRED_INPUTS = (('CHANGELOG.md', 'Unreleased')
+                  + tuple(sorted(vocabulary.RETIRED_FIELDS)))
+
+
+def test_every_registry_sentence_names_what_its_check_reads_and_nothing_retired():
+    """Bites: a check re-pointed at a new input keeping its old sentence.
+    `changelog-unreleased-nonempty` has graded each closed grain's
+    `changelog:` field since 0.6.0, and `install-sdlc` went on rendering it as
+    counting bullets under `## Unreleased` (#33). The step id stays — an id is
+    contract — so only the sentence can tell a consumer what runs.
+
+    Here, not in test_conveyor_steps.py: that module spawns, so a case in it
+    runs only in the `shell` tier, and this one reads a dict."""
+    from agentic_sdlc.repo.pm import changelog as clog
+    for name, sentence in steps.STEP_DOC.items():
+        for retired in RETIRED_INPUTS:
+            assert retired not in sentence, (name, retired, sentence)
+    # What each release check reads, spelled as its sentence must name it.
+    reads = {
+        'tree-clean': '`git status --porcelain`',
+        'on-milestone-branch': '`branch:`',
+        'changelog-unreleased-nonempty': f'`{clog.FIELD}:`',
+        'features-done': '`pm ready-for milestone',
+        'findings-resolved': '`pm ready-for tag',
+    }
+    for name, token in reads.items():
+        assert token in steps.STEP_DOC[name], (name, token,
+                                              steps.STEP_DOC[name])
 
 
 def test_a_configured_command_is_shown_and_an_unconfigured_one_is_not():

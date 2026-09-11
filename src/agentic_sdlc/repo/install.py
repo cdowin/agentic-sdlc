@@ -6,14 +6,16 @@ as agent definitions), `install-hooks` (the guard corpus and the script that arm
 rendered from the step lists). A destination that exists and differs is refused by
 name, with `--force` and moving it aside as the remedies; an entry with nothing in the
 way is still written, and the run exits 1 because a replacement was withheld. A
-difference confined to the `project config` header is reported as one. No manifest,
-no merge, no sync: after the write the file is the repo's.
+difference confined to the `project config` header is CURRENT: named as one, exit 0,
+nothing written. No manifest, no merge, no sync: after the write the file is the
+repo's.
 
 Two things `--force` does NOT take, because this package already knows they are the
 project's: a file named in `[adopt] ours` (read through `conveyor.steps.ours_of`, the
 belt's own reader) is left alone unless it is named on the command line, and a
 project-config block present on both sides is carried into the new body byte for byte
-(feature D1 — bytes carried, nothing computed).
+(feature D1 — bytes carried, nothing computed). In an agent brief that block is the
+```text fence inside `## Project config`, not the section (feature D2).
 
 Two things the report owes a consumer, and both are about SILENCE: every destination
 gets ONE `[install]` line whatever its disposition, because `grep '^\\[install\\]'` is
@@ -107,7 +109,8 @@ install-ci      three workflows under .github/workflows/: verify.yml
 install-agents  the review/build contract plus the base agent roster, as
                 AGENT DEFINITIONS under .claude/agents/ — the one place a
                 subagent actually reads. Each roster file carries a
-                `Project config` section — yours to edit after install.
+                `Project config` section whose ```text block is yours to edit
+                after install; the rest of the file is the kit's.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine)
                 plus the two ledger couriers
@@ -153,13 +156,18 @@ install-sdlc    docs/sdlc-protocol.md — YOUR protocol, rendered from the
 A destination that already exists and differs is REFUSED — that file, not the
 roster: the entries with nothing in their way are written, every collision is
 named, and the run exits 1 because a replacement was withheld. A difference
-confined to the `project config` header is reported as one, and the rest of
-that file is byte-current, so it needs no --force. --force overwrites the file
+confined to the `project config` header is CURRENT: its line says so, nothing
+is written, and it does not make the run exit 1. --force overwrites the file
 but KEEPS two things that are yours: a `project config` block that both your
 file and the installable carry is carried into the new body byte for byte (the
 line says so; --diff afterwards shows the packaged block beside yours), and a
 file named in `[adopt] ours` in devkit.toml is left alone and named, with a
-count. A file with no block on either side is replaced whole.
+count. A file with no block on either side is replaced whole. The block is a
+hook's `project config` comment block, or an agent brief's ```text fence
+inside `## Project config` — the heading and prose around it are the kit's
+and --force updates them. A kept block that lacks a name the packaged one
+declares (`NAME=` in a hook, `key:` in a fence) has each such name on its line:
+copy it in from --diff, because a hook reading an unset name fails open.
 <path>...       take only these destinations, spelled exactly as the plan
                 spells them (the paths above; --diff prints each one). Naming
                 a path is how you take a claimed file: `install-agents --force
@@ -230,9 +238,11 @@ _NEXT_STEP = {
                      'grain from the tree, or omits the key.',
     'install-agents': 'the verification pair carries the review and build '
                       'contract; the rest are the base roster. Each roster '
-                      'file opens with a `Project config` section — edit its '
-                      'stock values (gate commands, pm tree, doc layout) to '
-                      'your spellings: the files are yours now. `model:` in '
+                      'file opens with a `Project config` section — edit the '
+                      'stock values in its ```text block (pm tree, doc '
+                      'layout) to your spellings: that block is yours and '
+                      '--force keeps it; the rest of the file is the kit\'s. '
+                      '`model:` in '
                       'the frontmatter is doing proven work; `effort:` is '
                       'carried unverified. The SDLC these agents run is '
                       'SDLC.md at the agentic-sdlc repo root.',
@@ -404,20 +414,16 @@ def _settings_write(root: Path, target: Path, body: str,
     return SETTINGS_WROTE.format(rel=AGENT_SETTINGS, root=root), False, False
 
 
-HEADER_ONLY_NOTE = '   (project-config header only)'
-
-
 def collision_refusal(collisions: list[str],
                       wrote: list[str] | None = None,
-                      header_only: tuple[str, ...] | list[str] = (),
                       undecodable: tuple[str, ...] | list[str] = (),
                       ) -> tuple[str, str]:
     """(what collided, what that means), plural-correct; shared with `pm install-skills`.
 
-    `wrote` is what the same run landed; `header_only` names the collisions
-    confined to the editable block, whose repair is to do nothing.
+    `wrote` is what the same run landed. A difference confined to the
+    project-config block is never here: it is current (feature D1), and
+    `--force` would write nothing to it.
     """
-    flagged = set(header_only)
     # Review I5: a file that cannot be decoded did not "differ" — it could not
     # be compared. `--force` still replaces it, which is why it is a collision
     # and not a defect, but the reader is told which of the two this is.
@@ -430,27 +436,13 @@ def collision_refusal(collisions: list[str],
             return (f'{rel} {UNDECODABLE_NOTE}',
                     'Nothing was written. `--force` replaces it whole; there '
                     'is no diff to read first.')
-        if rel in flagged:
-            head = (f'{rel} exists and differs ONLY inside its project-config '
-                    f'header — the rest of the file is byte-current, so there '
-                    f'is nothing in it to take; leave it as yours — --force '
-                    f'keeps the header, so it would write nothing to this file')
-        else:
-            head = (f'{rel} exists and differs from what this would '
-                    f'write — move your version aside, or pass --force')
+        head = (f'{rel} exists and differs from what this would '
+                f'write — move your version aside, or pass --force')
     else:
-        listed = '\n'.join(
-            f'    {rel}' + (HEADER_ONLY_NOTE if rel in flagged else '')
-            for rel in collisions)
+        listed = '\n'.join(f'    {rel}' for rel in collisions)
         head = (f'{len(collisions)} destinations exist and differ from what '
                 f'this would write — move your versions aside, or pass '
                 f'--force:\n{listed}')
-        if flagged:
-            head += (f'\n{len(flagged)} of them differ only inside the '
-                     f'project-config header the file invites you to edit: '
-                     f'the rest of each is byte-current, so there is nothing '
-                     f'in them to take, and --force keeps each header, so it '
-                     f'would write nothing to them')
     if wrote:
         landed = f'{len(wrote)} file(s) with nothing in the way'
         landed += ' was written' if len(wrote) == 1 else ' were written'
@@ -506,44 +498,107 @@ def read_destination(target: Path) -> tuple[str | None, str]:
         return None, f'cannot be read ({err.strerror or err})'
 
 
-# The editable block's two spellings: a shell rule comment pair, a markdown heading pair.
-_BLOCK_GRAMMARS = (
-    ('--- project config (yours to edit after install',
-     re.compile(r'^#\s*-{5,}\s*$')),
-    ('## Project config (yours to edit after install)',
-     re.compile(r'^## ')),
-)
+# The editable block's two spellings. A SHELL block is the lines between the
+# `--- project config (yours to edit after install` comment and the next rule
+# line. A MARKDOWN block is the contents of the ```text fence inside the
+# `## Project config` section, and nothing else of that section (feature D2):
+# the heading, the dispatch sentence and the prose are the kit's, so a bump
+# reaches them. A section with no such fence has no project-owned block.
+SHELL_OPENING = '--- project config (yours to edit after install'
+_SHELL_CLOSING = re.compile(r'^#\s*-{5,}\s*$')
+_MD_SECTION = re.compile(r'^## Project config\b')
+_MD_SECTION_END = re.compile(r'^## ')
+_MD_FENCE_OPEN = re.compile(r'^```text[ \t]*$')
+_MD_FENCE_CLOSE = re.compile(r'^```[ \t]*$')
+# What a block DECLARES, per grammar, read only to name what a kept block
+# lacks: a shell `NAME=` / `NAME=(` assignment, a fence's `key:` line. Both
+# at line start, so a comment or a continuation line declares nothing.
+_DECLARES = {
+    'shell': (re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=\(?'), '{}='),
+    'markdown': (re.compile(r'^([A-Za-z][A-Za-z0-9 _.-]*?):(?:[ \t]|$)'),
+                 '{}:'),
+}
 
 
-def config_block_span(text: str) -> tuple[int, int] | None:
-    """The half-open line range of the editable project-config block, markers excluded,
-    or None; locating less than is there is the only safe direction."""
-    lines = text.splitlines()
-    for opening, closing in _BLOCK_GRAMMARS:
-        for start, line in enumerate(lines):
-            if opening not in line:
-                continue
-            for end in range(start + 1, len(lines)):
-                if closing.match(lines[end]):
-                    return start + 1, end
-            return start + 1, len(lines)
+def _shell_block(lines: list[str]) -> tuple[int, int] | None:
+    for start, line in enumerate(lines):
+        if SHELL_OPENING not in line:
+            continue
+        for end in range(start + 1, len(lines)):
+            if _SHELL_CLOSING.match(lines[end]):
+                return start + 1, end
+        return start + 1, len(lines)
     return None
 
 
+def _markdown_block(lines: list[str]) -> tuple[int, int] | None:
+    for start, line in enumerate(lines):
+        if not _MD_SECTION.match(line):
+            continue
+        for opened in range(start + 1, len(lines)):
+            if _MD_SECTION_END.match(lines[opened]):
+                return None    # the section ended with no fence in it
+            if _MD_FENCE_OPEN.match(lines[opened]):
+                for end in range(opened + 1, len(lines)):
+                    if _MD_FENCE_CLOSE.match(lines[end]):
+                        return opened + 1, end
+                return opened + 1, len(lines)
+        return None
+    return None
+
+
+def _locate(text: str) -> tuple[str, tuple[int, int]] | None:
+    """(grammar, span) of the one project-config block, shell first, or None."""
+    lines = text.splitlines()
+    for grammar, finder in (('shell', _shell_block),
+                            ('markdown', _markdown_block)):
+        span = finder(lines)
+        if span is not None:
+            return grammar, span
+    return None
+
+
+def config_block_span(text: str) -> tuple[int, int] | None:
+    """The half-open line range of the editable project-config block, markers
+    excluded (a shell block's two comment lines, a markdown fence's two ```
+    lines), or None; locating less than is there is the only safe direction.
+
+    THE one span: `--diff`'s header-only verdict, `installables-current` and
+    the `--force` carry all reach it through `carry_config_block`, so the three
+    cannot disagree about which bytes are the project's."""
+    found = _locate(text)
+    return None if found is None else found[1]
+
+
 def header_only_difference(existing: str, body: str) -> bool:
-    """True when the two texts differ only inside the project-config block, decided by
-    deleting both blocks and comparing the rest byte for byte."""
-    mine = config_block_span(existing)
-    theirs = config_block_span(body)
-    if mine is None or theirs is None:
-        return False
-    return _outside_block(existing, mine) == _outside_block(body, theirs)
+    """True when `existing` is `body` with only its own project-config block in
+    place of the packaged one — exactly when `--force` would write nothing,
+    because that is how it is decided (`carry_config_block`)."""
+    return carry_config_block(existing, body) == existing
 
 
-def _outside_block(text: str, span: tuple[int, int]) -> list[str]:
-    # keepends, so a trailing-newline difference is still a difference.
-    lines = text.splitlines(keepends=True)
-    return lines[:span[0]] + lines[span[1]:]
+def lacking_names(existing: str, body: str) -> list[str]:
+    """Each name the packaged block declares and `existing`'s block does not,
+    spelled `NAME=` or `key:`, in the packaged block's order.
+
+    A READ for the kept line, never a merge: a hook reads its header under
+    `set -u` behind a fail-open trap, so a stock variable a new version adds
+    and a carried old block lacks turns the guard off in silence (rule 11).
+    """
+    mine, theirs = _locate(existing), _locate(body)
+    if mine is None or theirs is None or mine[0] != theirs[0]:
+        return []
+    pattern, spelling = _DECLARES[theirs[0]]
+
+    def declared(text: str, span: tuple[int, int]) -> list[str]:
+        return [found.group(1) for line in text.splitlines()[span[0]:span[1]]
+                if (found := pattern.match(line))]
+    kept = set(declared(existing, mine[1]))
+    missing: list[str] = []
+    for name in declared(body, theirs[1]):
+        if name not in kept and spelling.format(name) not in missing:
+            missing.append(spelling.format(name))
+    return missing
 
 
 def carry_config_block(existing: str, body: str) -> str | None:
@@ -555,11 +610,13 @@ def carry_config_block(existing: str, body: str) -> str | None:
     with no closing marker runs to the end of its file (`config_block_span`),
     so carrying it would carry the OLD body under the new one — that side
     has no block this can take, and the file is replaced whole, as before.
+    A block in the OTHER grammar is not this file's block either.
     """
-    mine = config_block_span(existing)
-    theirs = config_block_span(body)
-    if mine is None or theirs is None:
+    found_mine, found_theirs = _locate(existing), _locate(body)
+    if (found_mine is None or found_theirs is None
+            or found_mine[0] != found_theirs[0]):
         return None
+    mine, theirs = found_mine[1], found_theirs[1]
     old = existing.splitlines(keepends=True)
     new = body.splitlines(keepends=True)
     if mine[1] >= len(old) or theirs[1] >= len(new):
@@ -607,6 +664,19 @@ WROTE_KEPT_HEADER = ('wrote {rel} — kept its project-config header byte for '
                      'the packaged header beside yours')
 HEADER_KEPT = ('{rel} differs ONLY inside its project-config header, which '
                '--force keeps — nothing to write')
+# Appended to either kept line when the packaged block declares a name the kept
+# one does not (`lacking_names`). Named, never spliced: the bytes are yours.
+KEPT_LACKS = ('; the kept header LACKS {names}, which the packaged one '
+              'declares — copy {pronoun} in from --diff')
+
+
+def kept_lacks(existing: str, body: str) -> str:
+    """`KEPT_LACKS` filled in for this pair, or '' when the kept block lacks nothing."""
+    names = lacking_names(existing, body)
+    if not names:
+        return ''
+    return KEPT_LACKS.format(names=', '.join(f'`{name}`' for name in names),
+                             pronoun='it' if len(names) == 1 else 'them')
 # A claimed file: the project said it is theirs, and the belt reads the same
 # claim through the same function (`conveyor.steps.ours_of`).
 CLAIM_OPERATION = 'adopt'
@@ -1015,9 +1085,9 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # defect refuses the whole command below, before any of that is printed.)
     plan: list[tuple[str, Path, str, str]] = []   # (kind, target, rel, body)
     collisions: list[str] = []
-    header_only: list[str] = []
     undecodable: list[str] = []
     defects: list[str] = []
+    lacks: dict[str, str] = {}   # rel -> the kept line's KEPT_LACKS suffix
     for target, rel, body in entries:
         kind = 'write'
         if rel in claimed:
@@ -1033,10 +1103,15 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
             if unreadable:
                 defects.append(f'{rel} {unreadable}')
                 continue
-            if force and existing is not None and existing != body:
-                # Feature D1: the project's block rides into the new body.
+            if existing is not None and existing != body:
+                # Feature D1: the project's block rides into the new body
+                # under --force; and a file whose ONLY difference is that
+                # block is current without it, because --force would write
+                # nothing there either.
                 carried = carry_config_block(existing, body)
-                if carried is not None and carried != body:
+                if carried is not None and carried != body and (
+                        force or carried == existing):
+                    lacks[rel] = kept_lacks(existing, body)
                     body = carried
                     kind = 'kept'
             unbit = (rel.endswith(EXECUTABLE_SUFFIX)
@@ -1056,8 +1131,6 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
                     # Review I5: not a file that "differs" — one that cannot be
                     # compared at all, which is a different thing to be told.
                     undecodable.append(rel)
-                elif header_only_difference(existing, body):
-                    header_only.append(rel)
                 plan.append(('withheld', target, rel, body))
                 continue
         plan.append((kind, target, rel, body))
@@ -1084,7 +1157,6 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         _claim_census(command, entries, claimed)
         if collisions:
             head, tail = collision_refusal(collisions,
-                                           header_only=header_only,
                                            undecodable=undecodable)
             print(f'agentic-sdlc {command}: {head}\n'
                   f'agentic-sdlc {command}: {tail}', file=sys.stderr)
@@ -1109,9 +1181,10 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
         elif kind == 'claimed':
             _say(CLAIMED_SKIP.format(rel=rel, command=command))
         elif kind == 'header-kept':
-            _say(HEADER_KEPT.format(rel=rel))
+            _say(HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:
-            _say((WROTE_KEPT_HEADER if kind == 'kept' else WROTE).format(rel=rel))
+            _say(WROTE_KEPT_HEADER.format(rel=rel) + lacks[rel]
+                 if kind == 'kept' else WROTE.format(rel=rel))
         elif rel == failed:
             _say(WRITE_FAILED.format(rel=rel))
         else:
@@ -1128,7 +1201,6 @@ def main(command: str, argv: list[str], next_step: bool = True) -> int:
     # Before the next-step paragraph, so the pasteable settings block stays last on stdout.
     if collisions:
         head, tail = collision_refusal(collisions, wrote=written,
-                                       header_only=header_only,
                                        undecodable=undecodable)
         print(f'agentic-sdlc {command}: {head}\n'
               f'agentic-sdlc {command}: {tail}', file=sys.stderr)

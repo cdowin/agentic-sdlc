@@ -105,34 +105,6 @@ def test_the_release_registry_is_exactly_the_shipped_list_and_every_check_has_a_
         assert name not in steps.RELEASE_STEPS, f'{name} survived D12'
 
 
-# Inputs no belt reads since 0.6.0: the file, its section, the bug fields.
-RETIRED_INPUTS = (('CHANGELOG.md', 'Unreleased')
-                  + tuple(sorted(vocabulary.RETIRED_FIELDS)))
-
-
-def test_every_registry_sentence_names_what_its_check_reads_and_nothing_retired():
-    """Bites: a check re-pointed at a new input keeping its old sentence.
-    `changelog-unreleased-nonempty` has graded each closed grain's
-    `changelog:` field since 0.6.0, and `install-sdlc` went on rendering it as
-    counting bullets under `## Unreleased` (#33). The step id stays — an id is
-    contract — so only the sentence can tell a consumer what runs."""
-    from agentic_sdlc.repo.pm import changelog as clog
-    for name, sentence in steps.STEP_DOC.items():
-        for retired in RETIRED_INPUTS:
-            assert retired not in sentence, (name, retired, sentence)
-    # What each release check reads, spelled as its sentence must name it.
-    reads = {
-        'tree-clean': '`git status --porcelain`',
-        'on-milestone-branch': '`branch:`',
-        'changelog-unreleased-nonempty': f'`{clog.FIELD}:`',
-        'features-done': '`pm ready-for milestone',
-        'findings-resolved': '`pm ready-for tag',
-    }
-    for name, token in reads.items():
-        assert token in steps.STEP_DOC[name], (name, token,
-                                              steps.STEP_DOC[name])
-
-
 # --- tree-clean ---------------------------------------------------------------
 def test_tree_clean_names_every_modified_path_and_the_first_is_not_short_by_one():
     """Bites: `git status --porcelain` is COLUMNAR and a blanket strip ate

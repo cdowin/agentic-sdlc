@@ -11,7 +11,7 @@ effort: high
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
 **Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster

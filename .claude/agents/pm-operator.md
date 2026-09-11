@@ -11,7 +11,7 @@ effort: medium
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
 **Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
@@ -24,6 +24,8 @@ pm tree:    pm/roadmap/   (one pool per kind: milestones/ features/
              stories/ bugs/. Identity and parentage are FRONTMATTER —
              `id:`, `kind:`, and `milestone:`/`feature:` — never the path;
              schemas in pm/README.md, read it, don't reinvent them)
+bugs bind:  the milestone-of-catch   (this project's POLICY for which
+             milestone a new bug's `milestone:` names; overwrite it here)
 pm skills:  <pm-operations / writing-stories skills, if the project ships
              them — load them first; if a skill disagrees with this file,
              the skill wins>

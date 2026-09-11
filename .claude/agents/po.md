@@ -11,7 +11,7 @@ effort: high
      Edit your project's own agents instead; a local edit here is overwritten on
      the next install unless you move the file aside. -->
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
 **Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
@@ -61,8 +61,10 @@ manage branches or push.
    Gotchas (numbered, load-bearing only); Verification (exact commands); Out
    of scope; Commit prefix; Size. 30-80 lines; longer is restating the spec.
 5. Validate: read `git show <range>` against Scope and Gotchas; report a
-   match or the drift — never flip anything. Status moves through the pm CLI;
-   `reviewing` is the story terminal and the orchestrator closes the feature.
+   match or the drift — never flip anything. Status moves through the pm CLI:
+   a finished story goes to `done` through `close story` (the stock vocabulary
+   declares no story review state; `pm vocabulary` is the authority), and the
+   orchestrator closes the feature.
 6. A bug surfaced by validation is filed as its own bug grain, not absorbed
    into the next story.
 7. Report: story path, gotchas surfaced, open questions; go idle.

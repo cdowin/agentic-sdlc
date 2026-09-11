@@ -28,7 +28,7 @@ because they no longer cost anyone a round trip to clear.
 minute of this pass is a minute it stays open. Finish. A finding you are unsure of is a NIT with a
 sentence, not another hour of probing.
 
-## Project config (yours to edit after install)
+## Project config (the text block below is yours to edit; the rest is the kit's)
 
 **Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster

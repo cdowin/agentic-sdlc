@@ -7,7 +7,7 @@ status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-install-force-keeps-what-the-project-owns.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-force-leaves-a-claimed-file-alone-and-takes-one-by-path"
   - "st-the-project-config-header-survives-force"

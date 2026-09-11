@@ -7,7 +7,7 @@ status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-the-pm-surface-has-no-dead-ends.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-every-verb-answers-its-own-help"
   - "st-pm-new-bug-takes-a-name"

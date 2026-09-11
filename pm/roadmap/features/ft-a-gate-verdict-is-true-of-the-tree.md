@@ -7,7 +7,7 @@ status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-a-gate-verdict-is-true-of-the-tree.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-a-roster-that-omits-a-stock-on-rule-says-so"
   - "st-check-doc-reads-a-code-span-across-a-line-break"

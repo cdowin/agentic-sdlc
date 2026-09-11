@@ -6,7 +6,7 @@ status: building
 depends_on: ["ms-nothing-is-hand-rolled"]
 branch: milestone/0.8.0-a-consumer-can-take-the-bump
 version: 0.8.0
-changelog:
+changelog: **Take `Makefile.devkit` first when you bump:** `uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.8.0" agentic-sdlc install-gates --force` — it adds `make sdlc ARGS='<verb> …'`, and every command the kit now prints or installs is spelled through `make pm|sdlc ARGS='…'`, so it runs in a consumer with nothing else on PATH. `install-* --force` keeps what is yours: files in `[adopt] ours` are left alone and named, your project-config block (a hook's header, or the ```text fence of an agent brief) is carried byte for byte, and `install-* --force <path>` takes one file. Three gates now fail trees they passed at 0.7.0: `check pm` reports a retired `fix_milestone:`/`caught_in:` whatever your `[pm] checks` roster (and names stock rules it omits), `check doc` reads code spans across line breaks and inside blockquotes, and `release` grades the milestone's own `changelog:`. New: `pm <verb> --help`, `pm new bug … <name...>`, the `pm retire --version --name` backfill, `install-* --since`, a `CLOSE` WARN naming a close the tree is ready for, and shipped hook defaults that no longer assume a `staging` branch.
 order:
   - "bg-the-suite-run-in-a-worktree-mutates-the-host-repo"
   - "bg-check-hooks-calls-a-linked-worktree-misdirected"

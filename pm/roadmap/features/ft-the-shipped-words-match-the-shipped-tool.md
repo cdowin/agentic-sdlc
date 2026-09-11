@@ -7,7 +7,7 @@ status: done
 reviewed: docs/reviews/2026-09-11-0.8.0-the-shipped-words-match-the-shipped-tool.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-the-auto-loaded-rule-is-true-at-this-version"
   - "st-a-role-brief-states-the-tools-fact-not-a-projects-policy"

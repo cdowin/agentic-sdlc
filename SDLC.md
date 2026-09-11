@@ -87,7 +87,8 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 **Builders:**
 
-- never commit — they write, verify their slice, and report;
+- in a SHARED worktree, never commit: they write, verify their slice, and report. In their OWN
+  worktree, they commit once, by explicit pathspec, and report the branch and hash;
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
   HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
@@ -99,6 +100,26 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
   every tier in it, including the cases that spawn real processes, which is how
   one builder's "quick check" saturates the machine every other builder shares.
   A builder that believes it needs a wide gate reports and stops.
+
+**The orchestrator runs the belts as the NEXT ACTION, never as a batch.** Parallel or not, each grain
+still goes open → complete → reviewed → closed, and the belt runs the moment its input exists:
+
+    a slice is verified and committed     →  close story <id>, same turn
+    a feature's last story is done        →  pm feature reviewing <id>, then dispatch its review
+    a review record lands                 →  commit it, same turn
+    its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
+                                             deferred:<bug> / rejected:<why>), close feature <id>,
+                                             close its GitHub issues — then the next feature
+
+Built for 0.8.0 because it did not hold: after 1h8m of parallel build, 15 stories had committed code
+and 0 were `done`, and four reviews had run with no feature in `reviewing`. **Parallel builders in one
+worktree starve the story belt**: its `committed` check is false while ANY builder has files in
+flight. So when more than one builder runs at once, each gets its own worktree and commits there, and
+the orchestrator merges each branch forward (a merge, never a rebase). Reviewers run in detached
+worktrees and hand back a record, which the orchestrator commits on arrival. The main tree stays
+clean and the belts can always run. (0.8.0 `ft-every-printed-command-runs-in-a-stock-consumer` D3.)
+**A fix dispatch after a review lands the MAJOR-and-worse findings only**, per §0: a MINOR is recorded,
+not held for.
 
 **The orchestrator:**
 

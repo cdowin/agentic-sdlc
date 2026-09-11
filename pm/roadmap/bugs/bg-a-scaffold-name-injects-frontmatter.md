@@ -3,9 +3,9 @@ id: bg-a-scaffold-name-injects-frontmatter
 kind: bug
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a newline or a flag in a scaffold name is written into the new grain
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: A `pm new` name carrying a newline, or starting with `-`, is refused at exit 2 for every grain kind — a newline used to inject a second frontmatter line (a grain could be born reading `done`), and `--name X` was written as the name.
 ---
 
 # a newline or a flag in a scaffold name is written into the new grain

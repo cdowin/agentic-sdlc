@@ -269,3 +269,6 @@
 {"ts":"2026-09-11T14:53:24Z","kind":"status","grain":"ft-a-gate-verdict-is-true-of-the-tree","from":"building","to":"reviewing"}
 {"ts":"2026-09-11T14:53:24Z","kind":"disposition","grain":"ft-a-gate-verdict-is-true-of-the-tree","state":"reviewing","answer":"none"}
 {"ts":"2026-09-11T14:53:24Z","kind":"rung.leave","grain":"ft-a-gate-verdict-is-true-of-the-tree","state":"reviewing","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["agentic-sdlc close feature <feature-id>"],"have":[]}
+{"ts":"2026-09-11T14:55:22Z","kind":"status","grain":"bg-a-scaffold-name-injects-frontmatter","from":"open","to":"closed"}
+{"ts":"2026-09-11T14:55:22Z","kind":"disposition","grain":"bg-a-scaffold-name-injects-frontmatter","state":"closed","answer":"none"}
+{"ts":"2026-09-11T14:55:22Z","kind":"rung.leave","grain":"bg-a-scaffold-name-injects-frontmatter","state":"closed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}

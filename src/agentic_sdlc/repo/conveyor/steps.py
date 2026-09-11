@@ -1647,7 +1647,9 @@ STEP_DOC: dict[str, str] = {
         'its `done`, and the field is read on each grain — no file is.',
     'features-done':
         '`pm ready-for milestone <milestone>` exits 0 — every feature is in '
-        'the `done` category and no open bug names the milestone.',
+        'the `done` category and its `reviewed:` names a review record that '
+        'is there and not empty, and every bug whose `milestone:` names the '
+        'milestone is in the `done` category.',
     'findings-resolved':
         '`pm ready-for tag <milestone>` exits 0 — no finding in any record '
         'the milestone\'s grains point at is `open`.',

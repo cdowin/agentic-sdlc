@@ -48,7 +48,8 @@ overwritten by `--force`; `devkit.toml`, `Makefile`, `CLAUDE.md` and the tree ar
 first write and never touched again.
 
 **Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, read the release notes
-(`agentic-sdlc changelog <milestone-id>` on the source tree — the changelog is a `changelog:` field
+(`agentic-sdlc changelog <milestone-id>` on the source tree, where `agentic-sdlc pm roadmap` prints
+each release's version beside its milestone id — the changelog is a `changelog:` field
 on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only in the retired
 file at its tag, and `git show v0.5.0:CHANGELOG.md` in a clone of this repo prints v0.5.0 back to
 v0.2.0), run

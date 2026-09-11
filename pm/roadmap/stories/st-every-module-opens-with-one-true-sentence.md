@@ -33,6 +33,26 @@ Two findings the census already turned up:
   none of its jobs. **`st-the-work-provider-leaves-the-config-module` retires it; this story does not
   re-litigate it**, it grades the two sentences that replaced it.
 
+## Re-measured 2026-09-11, at the end of the feature — and criterion 4 no longer fails
+
+The five sibling stories landed between the reading above and this one. **The tree now holds 50
+modules, 47 with a docstring**; the same three zero-length package markers are the only ones
+without. `model.py` is gone, `vocabulary.py`, `inventory.py`, `frontmatter.py`, `spawn.py` and
+`cite.py` are new, and `ledger.py` took seven row renderers from `cli.py`.
+
+**The collision this story was written to catch does not collide any more, and the reason is the
+finding.** `conveyor/__init__.py` opens *"conveyor — the belts: every check, then at most one write
+(D12)"* and `conveyor/driver.py` opens *"driver.py — the conveyor: every check, then at most one
+write (D12)"*. Same CLAIM, different words. An exact-sentence test — including one that strips the
+`<name> — ` prefix 20 of the 47 carry — passes over both, which is rule 4's first sin sitting inside
+the gate this story is adding.
+
+So criterion 4 is answered in two halves rather than dropped: the GATE catches exact collisions,
+which is cheap and lasts and fails the day someone copy-pastes a header; the near-duplicate is the
+AUDIT's to fix, in criterion 5, because "these two sentences make the same claim" is judgement and a
+test asserting it would be the second scoreboard. **The story must show the gate failing on a
+PLANTED collision instead of on this one**, and say so rather than quietly restating criterion 4.
+
 ## The naming question, per module the feature names
 
 `model.py`, `driver.py`, `steps.py`, `verdict.py`, `report.py` — a reader cannot tell from the name

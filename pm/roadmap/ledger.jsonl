@@ -5116,3 +5116,10 @@
 {"ts":"2026-09-11T17:38:17Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":92734,"census":1689}
 {"ts":"2026-09-11T17:38:23Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":5952}
 {"ts":"2026-09-11T17:39:23Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3138}
+{"ts":"2026-09-11T17:40:44Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":9649,"rank":1}
+{"ts":"2026-09-11T17:40:44Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":9229,"rank":2}
+{"ts":"2026-09-11T17:40:44Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":8633,"rank":3}
+{"ts":"2026-09-11T17:40:44Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":8358,"rank":4}
+{"ts":"2026-09-11T17:40:44Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":7497,"rank":5}
+{"ts":"2026-09-11T17:40:44Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":57078,"census":1689}
+{"ts":"2026-09-11T17:40:44Z","kind":"verify","rung":"feature","gate":"test","verdict":"PASS","exit_code":0,"duration_ms":57191,"state":"02397aae81e5324bcdd076b65d3b85838e7bcfbd52d625f421bca956a62d1a32","graded":"f65f2e9a0924450a55424701bc9dfd65e75b8377cac4676477e9c783cb8bb6ae","census":1689}

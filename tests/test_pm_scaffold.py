@@ -715,8 +715,37 @@ class BugNamesItsCause(unittest.TestCase):
             self.assertEqual(
                 frontmatter.field_of(root / self.BUGS / 'bg-joined.md', 'caused_by'),
                 '0.1/alpha')
+            # #24: `<name...>` after the slug is written to `name:`, and the
+            # flag still pairs wherever it sits.
+            code, out = run_cli(root, 'new', 'bug', '0.1', 'named', 'the',
+                                'seed', '--caused-by', '0.1/alpha', 'is', 'zero')
+            self.assertEqual(code, 0, out)
+            named = root / self.BUGS / 'bg-named.md'
+            self.assertEqual(frontmatter.field_of(named, 'name'),
+                             'the seed is zero')
+            self.assertEqual(frontmatter.field_of(named, 'caused_by'), '0.1/alpha')
+            # A multi-line name would inject frontmatter: refused, unwritten.
+            code, out = run_cli(root, 'new', 'bug', '0.1', 'forged',
+                                'x\nstatus: fixed')
+            self.assertEqual(code, 1, out)
+            self.assertIn('nothing was written', out)
+            self.assertFalse((root / self.BUGS / 'bg-forged.md').exists())
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(run_gate(root)[0], 0)
+            # The sizing trap: a project template with NO `{name}` slot and
+            # no `name:` line at all — what a render alone would silently drop.
+            write_config(root, '[pm]\ntemplate_dir = "pm/templates"\n')
+            tdir = root / 'pm/templates'
+            tdir.mkdir(parents=True)
+            (tdir / 'bug.md').write_text(
+                '---\nid: {id}\nkind: {kind}\nmilestone: "{milestone}"\n'
+                'status: open\n---\n\n# {slug}\n', encoding='utf-8')
+            code, out = run_cli(root, 'new', 'bug', '0.1', 'slotless',
+                                'Nameless', 'template')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(frontmatter_lines(root / self.BUGS / 'bg-slotless.md'), [
+                'id: bg-slotless', 'kind: bug', 'milestone: "0.1"',
+                'status: open', 'name: Nameless template'])
 
     # --- the refusal matrix ---------------------------------------------------
     # Every one of these exits 2 naming the value, and NONE of them writes: the
@@ -759,8 +788,8 @@ class BugNamesItsCause(unittest.TestCase):
     def test_a_flag_that_carries_no_id_refuses_and_never_eats_the_slug(self):
         # `--caused-by=` storing '' would file the bug with the field silently
         # unset, at exit 0, after the caller asked for it — and `--caused-by
-        # <id>` is consumed as a PAIR, so what is left has to be exactly the
-        # milestone and the slug, never three positional args.
+        # <id>` is consumed as a PAIR, so what is left is the milestone, the
+        # slug and the name: the id never becomes a word of the name (#24).
         with tree() as root:
             for argv in (('new', 'bug', '0.1', 'x', '--caused-by', ''),
                          ('new', 'bug', '0.1', 'x', '--caused-by='),
@@ -772,8 +801,11 @@ class BugNamesItsCause(unittest.TestCase):
                     self.assertEqual(self._bug_dir(root), [])
             code, out = run_cli(root, 'new', 'bug', '0.1', 'x', 'y',
                                 '--caused-by', '0.1/alpha')
-            self.assertEqual(code, 2, out)
-            self.assertEqual(self._bug_dir(root), [])
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self._bug_dir(root), ['bg-x.md'])
+            bug = root / self.BUGS / 'bg-x.md'
+            self.assertEqual(frontmatter.field_of(bug, 'name'), 'y')
+            self.assertEqual(frontmatter.field_of(bug, 'caused_by'), '0.1/alpha')
 
 
 class NewRefusesUnsafeSlugs(unittest.TestCase):

@@ -55,8 +55,8 @@ OPEN_VERSION = '0.1.0'
 # Where the scratch project records the bump: a milestone of its own, or a
 # feature bound to `OPEN_VERSION` and no milestone carrying `9.9.9` anywhere.
 AS_MILESTONE, AS_FEATURE = 'milestone', 'feature'
-# What the belts say when no milestone carries the id — the writing belt
-# refuses with it, the checks-only belt reports it and runs anyway.
+# What a writing belt says when no milestone carries the id, refusing. The
+# checks-only belt does not say it: a milestone is no place it could write.
 NOWHERE = f'no milestone {VERSION!r} in pm/roadmap/'
 # Pooled: one ledger per milestone, in a table of its own named by id.
 LEDGER_REL = f'pm/roadmap/{ledger.LEDGERS_POOL}/{VERSION}.jsonl'
@@ -234,24 +234,29 @@ def test_adopt_runs_every_check_where_the_bump_is_tracked_as_a_feature():
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert 'refused' not in out, out
-        # It says THAT it recorded: nowhere, because it writes nothing.
+        # It says it writes nothing, and that no milestone is needed.
         assert driver.NOTHING_RECORDED in out, out
         assert driver.ANYWHERE in out, out
-        assert NOWHERE in out, out
+        assert f'milestone carrying {VERSION}' in out, out
+        assert NOWHERE not in out, out
         assert snapshot(root) == before, 'adopt wrote into the tree'
 
 
-def test_adopt_names_the_ledger_when_the_bump_is_tracked_as_a_milestone():
-    """The other half of the same sentence: with a milestone carrying the
-    version, the run says WHERE a row would land — the ledger named for that
-    id, not one buried under a slug — and still that none did, because `adopt`
-    writes nothing (D12)."""
+def test_adopt_names_no_ledger_when_the_bump_is_tracked_as_a_milestone():
+    """The other half of the same sentence. It used to say WHERE a row would
+    land — `a row would land in <ledger>` — which read as a write this belt
+    might make, and the no-milestone form (`there is no milestone … to land
+    one in`) as a write it would make if one existed (#25). A checks-only belt
+    says the same sentence over either tree, and writes nothing (D12)."""
     with tree({'Makefile': PIN + 'include Makefile.devkit\n'}) as root:
         code, out = adopt()
         assert code != 2, out
         assert asked(out) == list(steps.DEFAULT_ADOPT_STEPS), out
         assert driver.NOTHING_RECORDED in out, out
-        assert LEDGER_REL in out, out
+        assert f'milestone carrying {VERSION}' in out, out
+        assert LEDGER_REL not in out, out
+        said = [ln for ln in out.splitlines() if driver.NOTHING_RECORDED in ln]
+        assert len(said) == 1 and 'land' not in said[0], said
         assert not (root / LEDGER_REL).exists(), (
             'a belt that writes nothing minted a ledger')
 

@@ -1429,6 +1429,40 @@ class PmMoveIsRetiredByName(unittest.TestCase):
         self.assertIn('move', cli.RETIRED_COMMANDS)
 
 
+class EveryVerbAnswersItsOwnHelp(unittest.TestCase):
+    """#25. `pm set --help` was exit 2 and the ~480-line roster on stderr, and
+    `pm add --help` was `unknown flag '--help'`: the router only read help as
+    `argv[0]`. Over the ROUTER'S OWN TABLE, so a verb added tomorrow is asked
+    the day it lands, and an exit code rather than prose — a verb whose USAGE
+    entry is missing fails here by name."""
+
+    def test_every_routed_verb_answers_help_anywhere_at_exit_0_and_writes_nothing(self):
+        with tree(milestone_status='done', feature_status='done',
+                  story_statuses=('done',)) as root:
+            def snapshot():
+                return sorted((p.relative_to(root), p.read_bytes())
+                              for p in root.rglob('*') if p.is_file())
+            before = snapshot()
+            for verb in cli.commands():
+                entry = cli.verb_help(verb)
+                self.assertTrue(entry, f'USAGE has no entry for {verb!r}')
+                # `retire 0.1 --help` is the one that would bite: a flag read
+                # past a real argument must still never reach the write.
+                for argv in ((verb, '--help'), (verb, '-h'),
+                             (verb, '0.1', '--help')):
+                    with self.subTest(argv=argv):
+                        code, out = run_cli(root, *argv, stdout_only=True)
+                        self.assertEqual(code, 0, out)
+                        self.assertIn(entry.splitlines()[0], out)
+                        self.assertNotIn('ERROR', out)
+            self.assertEqual(snapshot(), before)
+            # A sub-form narrows to its own entry, and never to nothing.
+            code, out = run_cli(root, 'new', 'bug', '--help', stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn('new bug <milestone>', out)
+            self.assertNotIn('new story', out)
+
+
 class StoryResolution(unittest.TestCase):
     """`story_file` and `story_files` must agree about what a story IS.
 
@@ -1823,6 +1857,30 @@ class Retire(unittest.TestCase):
     — is reported below the line that says what moved, never a precondition.
     """
 
+    # #31's backfill form: the inputs it refuses at exit 2, BEFORE a byte is
+    # written. Its facts are the caller's and nothing can check them, so the
+    # grammar is the whole defence (SDLC.md §5).
+    MALFORMED = ('', ' ', '.', '..', 'a/b', 'a b', ' x', 'x ', '*', '0.?',
+                 '/abs', 'a\\b', 'https://x', 'x' * 129, 'a\nb')
+    BACKFILL_REFUSED = (
+        # (why, argv after `retire`, a phrase the refusal must carry)
+        ('id in the tree', ('0.1', '--version', '0.1.0', '--name', 'D'),
+         'pm retire 0.1 [<summary...>]'),
+        ('no --name', ('gone', '--version', '0.1.0'), '--name'),
+        ('no --version', ('gone', '--name', 'D'), '--version'),
+        ('empty --name', ('gone', '--version', '1', '--name', '  '), '--name'),
+        ('--name=', ('gone', '--version', '1', '--name='), '--name'),
+        ('bare flag', ('gone', '--name', 'D', '--version'), 'needs a value'),
+        ('twice', ('gone', '--version', '1', '--version', '2', '--name', 'D'),
+         'given twice'),
+        ('multi-line name', ('gone', '--version', '1', '--name', 'a\nb'),
+         'one line'),
+        *((f'version {v!r}', ('gone', '--version', v, '--name', 'D'), '')
+          for v in MALFORMED if v.strip()),
+        *((f'id {v!r}', (v, '--version', '1', '--name', 'D'), '')
+          for v in MALFORMED if v.strip()),
+    )
+
     def test_every_refusal_leaves_the_tree_standing(self):
         with tree() as root:
             code, out = run_cli(root, 'retire', '9.9')
@@ -1830,6 +1888,27 @@ class Retire(unittest.TestCase):
             self.assertIn('is not a milestone', out)
             self.assertIn('0.1', out)
             self.assertTrue((root / 'pm/roadmap').is_dir())
+            before = sorted((p.relative_to(root), p.read_bytes())
+                            for p in root.rglob('*') if p.is_file())
+            for why, argv, phrase in self.BACKFILL_REFUSED:
+                with self.subTest(why=why):
+                    code, out = run_cli(root, 'retire', *argv)
+                    self.assertEqual(code, 2, out)
+                    self.assertIn(phrase, out)
+                    self.assertNotIn('Traceback', out)
+            self.assertEqual(sorted((p.relative_to(root), p.read_bytes())
+                                    for p in root.rglob('*') if p.is_file()),
+                             before)
+        with tree() as root:
+            # A RECORDED retirement is never superseded by a reconstruction.
+            (root / 'pm/roadmap/ledger.jsonl').write_text(
+                ledger.dumps(ledger.retire_row('gone', '0.3.0', 'Real'))
+                + '\n', encoding='utf-8')
+            code, out = run_cli(root, 'retire', 'gone', '--version', '0.3.0',
+                                '--name', 'Guessed')
+            self.assertEqual(code, 1, out)
+            self.assertIn('RECORDED retire row', out)
+            self.assertEqual(len(ledger_rows(root, 'pm/roadmap/ledger.jsonl')), 1)
         if hasattr(os, 'geteuid') and os.geteuid() == 0:
             return  # permission bits are not an obstruction as root
         # The obstruction. With ROADMAP.md gone the plan is ONE step, so the

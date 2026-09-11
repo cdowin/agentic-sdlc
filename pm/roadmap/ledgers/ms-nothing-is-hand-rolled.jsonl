@@ -315,3 +315,4 @@
 {"ts":"2026-09-11T04:28:43Z","kind":"status","grain":"ft-the-suite-is-measured-like-the-source","from":"reviewing","to":"done"}
 {"ts":"2026-09-11T04:28:43Z","kind":"disposition","grain":"ft-the-suite-is-measured-like-the-source","state":"done","answer":"none"}
 {"ts":"2026-09-11T04:28:43Z","kind":"rung.leave","grain":"ft-the-suite-is-measured-like-the-source","state":"done","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["agentic-sdlc release <version>"],"have":[]}
+{"ts":"2026-09-11T04:29:16Z","kind":"decision","grain":"ms-nothing-is-hand-rolled","entry":"D3","title":"the case ceiling is on the suite, not the tier"}

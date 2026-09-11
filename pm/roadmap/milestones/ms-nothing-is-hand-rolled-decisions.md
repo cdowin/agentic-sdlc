@@ -80,3 +80,36 @@ is always the same uninteresting file, which trains the blind `git add` that
 `tools/hooks/cc-commit-pathspec.sh` exists to block. That guard fired on this
 session's own orchestrator once, correctly, and is the mitigation already in
 place.
+
+## D3 — 2026-09-11 — the case ceiling is on the suite, not the tier
+
+`[tests] cases` was `{ unit = 1140, integration = 430 }` and is now `{ test = 1575 }`: one
+ceiling, on the run that collects the whole suite. `[tests] budget` stays per TIER.
+
+**What forced it: a per-tier COUNT measures tier MEMBERSHIP, not growth.**
+`bg-the-integration-tier-counts-fixtures-not-integration` moved 62 cases from `integration` to
+`unit` by deleting a dead function-local `import subprocess` and one `git_tree as tree` alias.
+Nothing was written, nothing was deleted, and no assertion changed. The suite went 1,571 → 1,586
+collected — real growth of 15 — while the `unit` ceiling read **+72 over** and the `integration`
+one gained 56 of headroom it had not earned. A gate that reddens hardest when the tier boundary
+is CORRECTED teaches people not to correct it, which is the shape of a gate that makes the tree
+worse.
+
+**Rejected: drop the count and keep only the clock.** Chris put this directly — unit tests are
+pure function checks, so what we care about there is time. The clock cannot carry it: `unit` went
+706 → 1,212 cases, **+72%, for 8.2s → 9.6s, +17%**, because xdist absorbs the rest. A tier really
+can double inside its time budget. So the split is: **time per TIER**, because that is what a
+human waits for and it differs per tier; **count per SUITE**, because that is what grows and it
+does not care which side of the mark a case sits on.
+
+**Also rejected: keep both, per tier and per suite.** Three numbers to re-argue at every close,
+two of which move when nothing grows.
+
+`test` is the whole suite in one run (`$(PYTEST) $(PYTEST_N)`, no `-m`), so its census IS the
+number — and `GDK_MILESTONE_TIERS` gained `test` in the same change, because a limit graded from
+a measurement the gate never takes is exactly the hole
+`bg-an-uncounted-tier-passes-the-case-ceiling` records.
+
+The number carries no headroom on purpose: growth is argued, not absorbed, and it is re-set once
+at each close with the reason. The full working is in `devkit.toml` beside the key, where the
+next author stands; this record is the durable half, because a config comment dies with its key.

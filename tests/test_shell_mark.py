@@ -119,6 +119,14 @@ UNMARKED_MODULES = (
     # state or out of it — proven by CALL, so the rung that runs on every edit
     # exercises the one piece that can report a verdict nobody measured.
     'test_verify_cache.py',
+    # 0.7.0: `Repo` there builds with a `.git` MARKER rather than `git init` —
+    # `repo_root` walks up for the directory and no longer shells out — after
+    # which 14 of its 28 cases spawn nothing. The three classes that DO are
+    # `test_verify_spawns.py`: the tree-state cache, and the two that run real
+    # make targets through the verb. conftest's RUNTIME guard named all three
+    # by nodeid when the split first tried to demote them, which is the
+    # derivation checked from the other side.
+    'test_verify_main.py',
     'test_verify_rules.py',
     'test_wheel_payload.py',
 )

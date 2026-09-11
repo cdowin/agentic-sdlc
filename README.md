@@ -236,9 +236,12 @@ contains = { roadmap = ["milestone"], milestone = ["feature", "bug"], feature = 
                                               # which kinds `pm add` lets hold which. It
                                               # NARROWS the stock mapping — drop "bug" and
                                               # `pm add <ms> <bug>` refuses by name
-checks = ["D1", "D2", "D3", "D4", "D5", "D6", # + D9 D10 R5, opt-in.
-          "U1", "U2", "U3", "U4", "U5",       # U2: the ledger couriers are wired and the
-          "V1", "V4", "V5", "V7"]             # tree holds no row at all. U3: [emit] is
+checks = ["D1", "D2", "D4", "D5", "D6",       # the stock roster, DEFAULT_CHECKS; a declared
+          "D11", "D12", "U1",                 # list REPLACES it, and `check pm` names any
+          "V1", "V4", "V5", "V7"]             # stock rule it omits on a ROSTER line.
+                                              # Opt-in: D9 D10 R1-R6 U2-U5.
+                                              # U2: the ledger couriers are wired and the
+                                              # tree holds no row at all. U3: [emit] is
                                               # declared and its sink has never been
                                               # written to. U4: the LAST hook-written row,
                                               # named with its age — recording that goes

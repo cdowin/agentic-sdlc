@@ -9,6 +9,7 @@ version: 0.8.0
 changelog:
 order:
   - "bg-the-suite-run-in-a-worktree-mutates-the-host-repo"
+  - "bg-check-hooks-calls-a-linked-worktree-misdirected"
   - "ft-the-shipped-words-match-the-shipped-tool"
   - "bg-the-release-belt-and-the-render-verb-disagree-about-changelog"
   - "ft-install-force-keeps-what-the-project-owns"
@@ -16,6 +17,7 @@ order:
   - "bg-a-scaffold-name-injects-frontmatter"
   - "bg-the-gate-help-names-one-of-its-four-rule-families"
   - "ft-a-gate-verdict-is-true-of-the-tree"
+  - "bg-check-doc-reads-into-quoted-prose"
   - "bg-a-close-the-tree-is-ready-for-is-named-by-nothing"
   - "bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not"
   - "bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed"

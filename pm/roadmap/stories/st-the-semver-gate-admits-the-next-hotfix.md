@@ -7,7 +7,7 @@ name: the semver gate admits the next hotfix, not only the first
 status: done
 owner: agent
 depends_on: []
-changelog: The semver gate admits the next hotfix of a done milestone's version (`0.28.4.1` → `0.28.4.2` where `0.28.4` is done), and its OK line now names the rule that admitted the bump, `appended hotfix` or `incremented hotfix` — a CI step that greps `(hotfix` no longer matches.
+changelog: The semver gate admits the next hotfix of a done milestone's version (`0.28.4.1` → `0.28.4.2` where `0.28.4` is done, but not over a main that is itself a release); its OK line names the rule — `appended hotfix` or `incremented hotfix` — so a CI step grepping `(hotfix` no longer matches, and a refused increment gets its own `::error::` line.
 ---
 
 # the semver gate admits the next hotfix, not only the first

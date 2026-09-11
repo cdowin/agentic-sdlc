@@ -60,3 +60,23 @@ project's to keep. Values belong in the fence. The Project config heading's word
 after install") is narrowed to say which part is yours.
 
 Orchestrator decision under Chris's standing "go with the recommendations" for 0.8.0.
+
+## D3 — 2026-09-11 — three edges the review found, settled
+
+From `docs/reviews/2026-09-11-0.8.0-install-force-keeps-what-the-project-owns.md`, landed in `f01ab43`.
+
+1. **A CRLF file's kept block is written LF, and the line says "line for line", not "byte for byte"
+   (M5).** The packaged body is LF, and a file with mixed line endings is worse than either. The Ship
+   criterion's "byte-identical, or the decision says why not" is this sentence. The kept VALUES are
+   identical; only the terminators follow the packaged file.
+2. **A hook header line that is not blank, a comment, an assignment or an array continuation means
+   the file has no block (M4).** For example `[ -n "$CI" ] && X=1`. The belt then calls the file
+   `differs`, and `--force` writes it whole, saying plainly `wrote`. Carrying a line the grammar cannot
+   read would be computing, not carrying (D1). No shipped header, no header in this repo and no
+   fixture has such a line.
+3. **A kept header that lacks a name the packaged one declares still PASSES `installables-current`,
+   and the line names the missing name (M6).** It is a named line, not a failure, because the project
+   owns that block and may omit a key on purpose. A failure would push consumers to take the stock
+   value in order to go green, which is the overwrite this feature removed.
+
+Orchestrator decision under Chris's standing "go with the recommendations" for 0.8.0.

@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: install --force keeps what the project owns
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-11-0.8.0-install-force-keeps-what-the-project-owns.md
 depends_on: []
 consumed_by: []
 changelog:

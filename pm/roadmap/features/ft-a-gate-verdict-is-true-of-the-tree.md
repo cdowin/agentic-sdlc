@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a gate verdict is true of the tree
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-11-0.8.0-a-gate-verdict-is-true-of-the-tree.md
 depends_on: []
 consumed_by: []
 changelog:

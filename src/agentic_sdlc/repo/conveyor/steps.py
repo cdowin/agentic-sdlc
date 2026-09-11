@@ -928,32 +928,58 @@ def check_pin_bumped(ctx: Context) -> Answer:
         f'and does not add one')
 
 
-def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
-    """(verb, path, verdict) for every file the `install-*` verbs write, from
-    `install.PLANS`; `not-installed` is not drift, and a path the project
-    claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
+def _every_plan() -> list[tuple[str, list[tuple[str, str]]]]:
+    """(verb, plan) for all SIX installers, not the five in one module:
+    the guidance files drifted invisibly here (review O2)."""
+    from agentic_sdlc.repo import install
+
+    from agentic_sdlc.repo.pm import skills
+
+    return [(verb, list(plan)) for verb, plan in install.PLANS.items()] + [
+        (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
+
+
+# `./x`, a directory, a glob or `//` passes `ours_of` and claims NOTHING:
+# named, never refused, in ONE wording for every reader (review M2).
+CLAIMS_MATCH_NOTHING = (
+    '{count} claim(s) in [{operation}] ours name no file {version} installs, '
+    'so each matches nothing and leaves nothing alone — a claim is a '
+    'destination spelled exactly as --diff heads it: {paths}')
+
+
+def claims_matching_nothing(operation: str) -> str:
+    """The one line the belt and all six installers print (every run,
+    `--diff` too) naming claims that match no destination, or ''."""
+    planned = {rel for _verb, plan in _every_plan() for _name, rel in plan}
+    unmatched = [rel for rel in ours_of(operation) if rel not in planned]
+    if not unmatched:
+        return ''
+    return CLAIMS_MATCH_NOTHING.format(
+        count=len(unmatched), operation=operation, version=__version__,
+        paths=_clip(', '.join(repr(rel) if rel != rel.strip() else rel
+                              for rel in unmatched)))
+
+
+def _graded(ctx: Context) -> list[tuple[str, str, str, list[str]]]:
+    """`_installable_drift`'s rows, each with what a header-only file's
+    kept block lacks (`install.lacking_names`), else []."""
     from agentic_sdlc.repo import install
 
     from agentic_sdlc.repo.pm import skills
 
     claimed = frozenset(ours_of(ctx.operation))
-    out: list[tuple[str, str, str]] = []
-    # All SIX installers (CLAUDE.md's self-hosting list), not the five that
-    # happen to share a module: the two guidance files drifted invisibly here,
-    # with no `ours` key in play at all (review O2).
-    everything = list(install.PLANS.items()) + [
-        (skills.GUIDANCE_VERB, list(skills.GUIDANCE_PLAN))]
-    for verb, plan in everything:
+    out: list[tuple[str, str, str, list[str]]] = []
+    for verb, plan in _every_plan():
         for name, rel in plan:
             if rel in claimed:
                 # The project declared this file its own. Grading it would be
                 # this package holding an opinion about somebody else's file
                 # — and the claim is printed, so it hides nothing.
-                out.append((verb, rel, CLAIMED))
+                out.append((verb, rel, CLAIMED, []))
                 continue
             target = ctx.root / rel
             if not target.is_file():
-                out.append((verb, rel, NOT_INSTALLED))
+                out.append((verb, rel, NOT_INSTALLED, []))
                 continue
             text, _defect = install.read_destination(target)
             try:
@@ -962,18 +988,39 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
                         else install.resolve_body(name, rel))
             except (OSError, UnicodeDecodeError, ConfigError) as err:
                 out.append((verb, rel,
-                            f'unrenderable({_clip(str(err), RENDER_ERROR_LIMIT)})'))
+                            f'unrenderable({_clip(str(err), RENDER_ERROR_LIMIT)})',
+                            []))
                 continue
             if text is None:
-                out.append((verb, rel, 'unreadable'))
+                out.append((verb, rel, 'unreadable', []))
             elif text == body:
-                out.append((verb, rel, CURRENT))
+                out.append((verb, rel, CURRENT, []))
             elif install.header_only_difference(text, body):
                 # The operator's own project-config header; not drift.
-                out.append((verb, rel, HEADER_ONLY))
+                out.append((verb, rel, HEADER_ONLY,
+                            install.lacking_names(text, body)))
             else:
-                out.append((verb, rel, 'differs'))
+                out.append((verb, rel, 'differs', []))
     return out
+
+
+def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
+    """(verb, path, verdict) for every file the `install-*` verbs write, from
+    `install.PLANS`; `not-installed` is not drift, and a path the project
+    claimed in `[<op>] ours` is CLAIMED — never read, never graded."""
+    return [(verb, rel, verdict) for verb, rel, verdict, _ in _graded(ctx)]
+
+
+def _lacks_clause(graded: list[tuple[str, str, str, list[str]]]) -> str:
+    """Each kept header lacking a packaged name (review M6): not drift, but
+    a hook reading an unset name fails OPEN, so a pass names it."""
+    lacking = [f'{rel} lacks ' + ', '.join(f'`{name}`' for name in names)
+               + f' (`agentic-sdlc {verb} --diff`)'
+               for verb, rel, _verdict, names in graded if names]
+    if not lacking:
+        return ''
+    return (f'; {len(lacking)} kept header(s) lack a name the packaged one '
+            f'declares: ' + _clip(', '.join(lacking)))
 
 
 def _claim_clause(operation: str,
@@ -989,16 +1036,13 @@ def _claim_clause(operation: str,
     byte-identically to one with no devkit.toml at all (rule 5).
     """
     claimed = [rel for _, rel, verdict in drift if verdict == CLAIMED]
-    planned = {rel for _, rel, _ in drift}
-    unplanned = [rel for rel in ours_of(operation) if rel not in planned]
+    unmatched = claims_matching_nothing(operation)
     clause = ''
     if claimed:
         clause += (f'; {len(claimed)} claimed by [{operation}] ours and not '
                    f'graded: ' + _clip(', '.join(claimed)))
-    if unplanned:
-        clause += (f'; {len(unplanned)} claim(s) in [{operation}] ours name '
-                   f'no file {__version__} installs: '
-                   + _clip(', '.join(unplanned)))
+    if unmatched:
+        clause += f'; {unmatched}'
     return clause
 
 
@@ -1007,13 +1051,14 @@ def check_installables_current(ctx: Context) -> Answer:
     header-only different; each that is not is named with the verb that shows
     the diff, and what `[<op>] ours` claimed is counted and named beside it.
     """
-    drift = _installable_drift(ctx)
+    graded = _graded(ctx)
+    drift = [(verb, rel, verdict) for verb, rel, verdict, _ in graded]
     stale = [(verb, rel, verdict) for verb, rel, verdict in drift
              if verdict not in NOT_DRIFT]
     counted = sum(1 for _, _, v in drift if v not in UNCOUNTED)
     # After the clip, never inside it: the claim is the one part of this line
     # that must survive a hundred drifted files.
-    claims = _claim_clause(ctx.operation, drift)
+    claims = _claim_clause(ctx.operation, drift) + _lacks_clause(graded)
     if stale:
         return Answer.no(
             f'{len(stale)} of {counted} installed file(s) differ from what '

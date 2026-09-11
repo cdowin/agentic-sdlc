@@ -531,7 +531,7 @@ def test_every_input_this_verb_refuses_is_exit_2_and_writes_nothing():
     command = 'install-agents'
     with repo({CLAIMED: MINE, DRIFTED: 'stale\n'}) as root:
         before = snapshot(root)
-        cases = ([(('--force', AGENTS[0], bad), repr(install.shown(bad)))
+        cases = ([(('--force', AGENTS[0], bad), install.shown(bad))
                   for bad in REFUSED_PATHS]
                  + [(('--force', '--since', bad), '--since')
                     for bad in REFUSED_SINCE]
@@ -554,6 +554,44 @@ def test_every_input_this_verb_refuses_is_exit_2_and_writes_nothing():
             assert (code, out) == (2, ''), (toml, code, out, err)
             assert '[adopt] ours' in err, err
             assert snapshot(root) == before, f'{toml!r} wrote to the tree'
+
+
+# The claim list's NEIGHBOUR: spellings `ours_of` accepts (they stay inside
+# the checkout) that match no destination, because a claim is matched spelled
+# exactly. Named, not honoured: each is a claim that leaves nothing alone, so
+# it is said on every run, `--diff` included, before `--force` takes the file.
+UNMATCHED_CLAIMS = ('./' + CLAIMED, '.claude/agents', '.claude/agents/',
+                    '.claude/agents/*.md', CLAIMED.replace('/', '//', 1),
+                    CLAIMED + '/', ' ' + CLAIMED, CLAIMED[1:])
+
+
+def test_a_claim_that_matches_nothing_is_named_by_every_run():
+    """Review M2: each spelling below exited 0 under `--force`, overwrote the
+    file it meant, and no line anywhere mentioned the claim — only the belt
+    named it, after the write. The installer prints the belt's own clause,
+    through the belt's own function, so the two cannot word it apart."""
+    from agentic_sdlc.repo.conveyor import steps
+
+    command, at = 'install-agents', install.REPORT_PREFIX
+    for spelling in UNMATCHED_CLAIMS:
+        with repo({'devkit.toml': claims(spelling), CLAIMED: MINE}) as root:
+            said = steps.claims_matching_nothing('adopt')
+            assert said and spelling in said, (spelling, said)
+            for argv in (('--diff',), ('--force',), ('--force', CLAIMED)):
+                code, out = run(command, *argv)
+                assert code == 0, (spelling, argv, out)
+                assert headers(out).count(f'{at} {said}') == 1, (
+                    spelling, argv, out)
+            # Named, not honoured: the claim claimed nothing, so --force took
+            # the file — and said so before it did, on the --diff.
+            assert (root / CLAIMED).read_text(encoding='utf-8') == (
+                install.body_of('architect.md'))
+    # A claim that DOES match prints no such line: a repo that claims
+    # exactly prints what it printed before.
+    with repo({'devkit.toml': claims(CLAIMED), CLAIMED: MINE}):
+        assert steps.claims_matching_nothing('adopt') == ''
+        code, out = run(command, '--diff')
+        assert 'matches nothing' not in out, out
 
 
 # --- what a verb STOPPED shipping ---------------------------------------------
@@ -649,9 +687,15 @@ def test_the_shipped_table_names_the_changelog_writer_at_0_6_0():
     assert rows, 'the 0.6.0 retirement row is gone'
     files = [f for r in rows for f in r.files]
     assert '.claude/agents/changelog-writer.md' in files, files
-    # It reports at 0.6.0 and is silent before it.
+    # It reports at 0.6.0 and is silent before it — and the line names the
+    # version that withdrew it, not only the span it scanned (review N8).
     after = install.retirement_report('install-agents', None, current='0.6.0')
-    assert any('changelog-writer' in line for line in after), after
+    assert any('changelog-writer.md (in v0.6.0)' in line for line in after), (
+        after)
+    later = install.retirement_report('install-agents', 'v0.4.0',
+                                      current='0.8.0')
+    assert any('changelog-writer.md (in v0.6.0) — withdrawn between v0.4.0 '
+               'and v0.8.0' in line for line in later), later
     before = install.retirement_report('install-agents', None, current='0.5.0')
     assert not any('changelog-writer' in line for line in before), before
 
@@ -756,7 +800,7 @@ def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
                                       current='0.8.0',
                                       source=install.SINCE_SOURCE)
     assert lines == [install.WITHDRAWN_FILES.format(
-        what='.claude/agents/changelog-writer.md',
+        what='.claude/agents/changelog-writer.md (in v0.6.0)',
         span='between v0.4.0 and v0.8.0')], lines
     # Through the verb, pin already bumped: the line names the pin and where
     # it was read, and --since replaces it.
@@ -769,7 +813,8 @@ def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
         code, out = run('install-agents', '--diff', '--since', 'v0.5.0')
         assert code == 0, out
         assert 'compared nothing' not in out, out
-        assert f'changelog-writer.md — withdrawn between v0.5.0 and v{THIS}' in (
+        assert (f'changelog-writer.md (in v0.6.0) — withdrawn between v0.5.0 '
+                f'and v{THIS}') in (
             out), out
 
 
@@ -1610,6 +1655,57 @@ def test_force_keeps_an_edited_header_and_takes_the_stale_body():
     open_ended = swap(STOCK, f'{SHELL_CLOSE}\n', '')
     assert install.carry_config_block(open_ended, STOCK) is None
     assert install.carry_config_block(STOCK, open_ended) is None
+    # Review C1 / M4: a block left open whose file carries a LATER close — a
+    # later section's fence, a rule line lower in the body — is still open.
+    # Borrowing that close carried the old body into the new one, whole.
+    borrowed = {
+        'markdown': (swap(MD_STOCK, 'project: yours\n```\n',
+                          'project: yours\n'), MD_STOCK),
+        'shell': (swap(swap(STOCK, f'{SHELL_CLOSE}\n', ''), 'exit 0',
+                       f'{SHELL_CLOSE}\nexit 0'), STOCK),
+    }
+    for grammar, (mine, packaged) in borrowed.items():
+        assert install.carry_config_block(mine, packaged) is None, grammar
+        assert install.carry_config_block(
+            stale_body(header_edited(mine)), packaged) is None, grammar
+
+
+def test_an_unclosed_block_never_borrows_a_later_close():
+    """Review C1, through the verb, on the record's own input: `reviewer.md`
+    with its fence edited, the fence's close deleted and a stale kit line in
+    `## Checklist`. The fence took the close of the ```text fence in `## The
+    record`, `--force` wrote 198 lines against the packaged 127 and SAID it
+    kept the header, and from then on the second `--force` and the belt both
+    called the file current. A block with no close of its own is no block:
+    the file is replaced whole, the line says plainly `wrote`, and the next
+    run finds it current. Review M4 is the same class in the hook grammar."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    rel = '.claude/agents/reviewer.md'
+    packaged = install.body_of(Path(rel).name)
+    lines = header_edited(packaged).splitlines(keepends=True)
+    opened = next(i for i, line in enumerate(lines) if line == '```text\n')
+    close = next(i for i in range(opened + 1, len(lines))
+                 if lines[i] == '```\n')
+    checklist = next(i for i, line in enumerate(lines)
+                     if line.startswith('## Checklist'))
+    mine = ''.join(lines[:close] + lines[close + 1:checklist + 1]
+                   + ['- a stale kit line\n'] + lines[checklist + 1:])
+    hook = 'tools/hooks/pre-push'
+    shell = header_edited(install.body_of('pre-push'))
+    shell = shell.replace(SHELL_CLOSE + '\n', '', 1)
+    shell = shell.replace('\ncd ', f'\n{SHELL_CLOSE}\ncd ', 1)
+    assert shell.count(SHELL_CLOSE) == 1, 'the fixture moved no rule line'
+    with repo({rel: mine, hook: shell}) as root:
+        for verb, path in ((command, rel), ('install-hooks', hook)):
+            code, out = run(verb, '--force', path)
+            assert code == 0, out
+            assert (root / path).read_text(encoding='utf-8') == (
+                install.body_of(Path(path).name)), (
+                f'{path}: an open block borrowed a later close')
+            assert dispositions(out, verb)[path] == [f'{at} wrote {path}'], out
+            code, out = run(verb, '--force', path)
+            assert dispositions(out, verb)[path] == [
+                f'{at} ' + install.IS_CURRENT.format(rel=path)], out
 
 
 BRIEF = '.claude/agents/pm-operator.md'
@@ -1669,6 +1765,27 @@ def test_force_on_a_brief_takes_the_kit_section_and_keeps_the_fence():
         assert snapshot(root) == before
         assert dispositions(out, command)[BRIEF] == [
             f'{at} ' + install.HEADER_KEPT.format(rel=BRIEF)], out
+
+
+def test_a_crlf_file_keeps_its_block_line_for_line_and_the_line_says_no_more():
+    """Review M5. The read is universal-newline (and stays so), so a CRLF
+    file's kept block is written LF: its LINES are carried, its bytes are
+    not. The kept line said "byte for byte" over bytes that changed; it says
+    only what holds."""
+    command, at = 'install-agents', install.REPORT_PREFIX
+    packaged = install.body_of(Path(BRIEF).name)
+    mine = header_edited(a_070_brief(packaged), 'my key:     my value')
+    with repo({BRIEF: ''}) as root:
+        (root / BRIEF).write_bytes(mine.replace('\n', '\r\n').encode('utf-8'))
+        code, out = run(command, '--force', BRIEF)
+        assert code == 0, out
+        assert (root / BRIEF).read_bytes() == header_edited(
+            packaged, 'my key:     my value').encode('utf-8'), (
+            'the kept block is not the same LINES')
+        [line] = dispositions(out, command)[BRIEF]
+        assert line == f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=BRIEF)
+        assert 'byte for byte' not in line, (
+            f'CRLF went in and LF came out, and the line says: {line}')
 
 
 def without_declaration(text: str, opens: str) -> str:
@@ -1746,6 +1863,19 @@ def test_installables_current_reads_the_fence_as_the_projects_and_the_rest_as_th
         verdict, answer = graded(root)
         assert verdict == steps.HEADER_ONLY, verdict
         assert answer.is_true, answer.detail
+        assert 'LACK' not in answer.detail, answer.detail
+        # Review M6: a kept block lacking a name the packaged one declares is
+        # still the project's (header-only, current) — and the belt NAMES the
+        # name, as the install line does, rather than passing in silence.
+        hook = 'tools/hooks/cc-stop-gate.sh'
+        (root / hook).parent.mkdir(parents=True)
+        (root / hook).write_text(without_declaration(
+            install.body_of(Path(hook).name), 'GATE_STATIC='), encoding='utf-8')
+        verdict, answer = graded(root)
+        assert answer.is_true, answer.detail
+        assert (f'{hook} lacks `GATE_STATIC=` (`agentic-sdlc install-hooks '
+                f'--diff`)') in answer.detail, answer.detail
+        (root / hook).unlink()
         (root / BRIEF).write_text(a_070_brief(packaged), encoding='utf-8')
         verdict, answer = graded(root)
         assert verdict == 'differs', verdict
@@ -1837,6 +1967,9 @@ STOCK = ('#!/usr/bin/env bash\n'
          f'{SHELL_CLOSE}\n'
          'echo "$BRANCH"\n'
          'exit 0\n')
+# The LATER fence is the shape of `reviewer.md`, `milestone-reviewer.md` and
+# `simplifier.md`: a second ```text fence in a later section, whose bare close
+# an unclosed project-config fence would otherwise borrow (review C1).
 MD_STOCK = ('---\nname: x\n---\n'
             '\n'
             f'{MD_OPEN}\n'
@@ -1844,7 +1977,9 @@ MD_STOCK = ('---\nname: x\n---\n'
             '\n```text\nproject: yours\n```\n'
             '\nThe role intro.\n'
             '\n## How you work\n'
-            'the body\n')
+            'the body\n'
+            '\n## The record\n'
+            '\n```text\nverdict: kit\n```\n')
 
 
 def swap(text: str, old: str, new: str) -> str:
@@ -1903,10 +2038,31 @@ HOSTILE = {
         (swap(MD_STOCK, MD_OPEN, MD_OPEN_THROUGH_070), False),
     'a markdown fence re-tagged':
         (swap(MD_STOCK, '```text', '```yaml'), False),
-    'a markdown fence left open':
+    'a markdown fence left open, a later fence closed':
         (swap(MD_STOCK, 'project: yours\n```\n', 'project: yours\n'), False),
     'a markdown fence line added':
         (swap(MD_STOCK, 'project: yours', 'project: yours\nmore: mine'), True),
+    # Review C1, the file the FIRST corrupt --force left behind: its fence
+    # runs across a `## ` heading (or another fence's opening) to a close
+    # that is not its own. Read as a block, the predicate called it
+    # header-only, so every later reader called the corruption current.
+    'a markdown fence that runs across a heading to its close':
+        (swap(MD_STOCK, 'project: yours\n',
+              'project: yours\n\n## Checklist\na stale kit line\n'), False),
+    'a markdown fence that runs across another fence opening':
+        (swap(MD_STOCK, 'project: yours\n',
+              'project: yours\n```text\nnested: kit\n'), False),
+    # Review M4, the same class in the hook grammar: the header's close is
+    # only its own when no line the header grammar does not own comes first.
+    'a body line inside the shell block before its close':
+        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH="main"\necho "$BRANCH"\n'),
+         False),
+    'the closing marker deleted, a later rule line closes it':
+        (swap(swap(STOCK, f'{SHELL_CLOSE}\n', ''), 'exit 0',
+              f'{SHELL_CLOSE}\nexit 0'), False),
+    'a blank line, an indented continuation and a close paren in the block':
+        (swap(STOCK, 'BRANCH="main"\n', 'BRANCH="main"\n\nPUSH=(\n  a b\n)\n'
+              'export MORE=1\n'), True),
 }
 
 
@@ -1941,9 +2097,12 @@ def test_the_span_excludes_its_own_markers_and_stops_at_the_first_close():
     assert lines[start:end] == ['# the branch you protect', 'BRANCH="main"']
     # An unterminated block runs to the end of the file rather than to a
     # guessed boundary — and the pair test above proves that answers False.
+    # A line the header grammar does not own, met before any close, ends the
+    # search with NO block (review M4): the close after it is not this one's.
     open_ended = swap(STOCK, f'{SHELL_CLOSE}\n', '')
-    assert install.config_block_span(open_ended) == (
-        5, len(open_ended.splitlines()))
+    assert install.config_block_span(open_ended) is None
+    header_to_eof = f'{SHELL_OPEN}\n# a comment\nBRANCH="main"\n'
+    assert install.config_block_span(header_to_eof) == (1, 3)
     assert install.config_block_span('') is None
     assert install.config_block_span('nothing in here\n') is None
     # Markdown (D2): the fence's two ``` lines are its markers, and the
@@ -2125,6 +2284,81 @@ def test_the_sixth_installer_heads_its_files_under_the_same_prefix():
         assert len(heads) == len(skills.GUIDANCE_PLAN), buf.getvalue()
         for _name, rel in skills.GUIDANCE_PLAN:
             assert any(rel in h for h in heads), buf.getvalue()
+
+
+def test_the_sixth_installer_reads_the_same_claim_list():
+    """Review M7: `_installable_drift` grades all SIX installers and leaves a
+    file claimed in `[adopt] ours` alone, and `pm install-skills --force`
+    overwrote that same file — the belt and the sixth installer disagreeing
+    about what a claim is. It asks `ours_of` the way `install.main` does:
+    a claimed file is left alone and named, on `--force` and on the plain run
+    (which updates a merely stale generated file), a claim matching nothing
+    is named, and naming the path — the command the skip line prints — is
+    how the file is taken. Every path the grammar refuses is exit 2 and
+    writes nothing."""
+    from agentic_sdlc.repo.conveyor import steps
+    from agentic_sdlc.repo.pm import cli as pm_cli, skills
+
+    def pm(*argv: str) -> tuple[int, str]:
+        load_config.cache_clear()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = pm_cli.main(list(argv))
+        return code, buf.getvalue()
+
+    (name, rel), (_other, sibling) = skills.GUIDANCE_PLAN[:2]
+    verb, at = skills.GUIDANCE_VERB, install.REPORT_PREFIX
+    mine = skills.guidance_body(name) + '\nmy own doctrine, deliberately\n'
+    with repo() as root:
+        (root / 'devkit.toml').write_text(_flow(), encoding='utf-8')
+        assert pm('install-skills')[0] == 0
+        # Claimed AFTER the install: a claimed file is never written, even
+        # an absent one — which is what held `make test` red (review M3).
+        (root / 'devkit.toml').write_text(
+            _flow() + claims(rel, 'docs/nothing-installs-this.md'),
+            encoding='utf-8')
+        (root / rel).write_text(mine, encoding='utf-8')
+        # Generated and merely stale: the plain run updates it, no --force.
+        (root / sibling).write_text(skills.guidance_body(_other) + 'stale\n',
+                                    encoding='utf-8')
+        skip = f'{at} ' + install.CLAIMED_SKIP.format(rel=rel, command=verb)
+        for argv in ((), ('--force',)):
+            code, out = pm('install-skills', *argv)
+            assert code == 0, (argv, out)
+            assert (root / rel).read_text(encoding='utf-8') == mine, argv
+            assert skip in out.splitlines(), out
+            assert f'{at} {steps.claims_matching_nothing("adopt")}' in (
+                out.splitlines()), out
+        assert (root / sibling).read_text(encoding='utf-8') == (
+            skills.guidance_body(_other)), 'the unclaimed file was not taken'
+        code, out = pm('install-skills', '--diff')
+        assert f'{rel} exists and differs' in out and (
+            install.CLAIMED_MARK in out), out
+        before = snapshot(root)
+        for bad in REFUSED_PATHS + (AGENTS[0],):
+            code, out = pm('install-skills', '--force', bad)
+            assert code == 2, (bad, code, out)
+            assert snapshot(root) == before, f'{bad!r} wrote to the tree'
+        # The skip line's own command, run as printed: that one file.
+        printed = skip.split('name it to take it: agentic-sdlc pm ', 1)[1]
+        code, out = pm(*shlex.split(printed))
+        assert code == 0, out
+        assert (root / rel).read_text(encoding='utf-8') == (
+            skills.guidance_body(name))
+        assert [line for line in out.splitlines()
+                if line.startswith(at) and rel in line] == [
+            f'{at} wrote {rel}'], out
+        code, out = pm('install-skills', '--force', rel)
+        assert '] wrote ' not in out, out
+        # A claim list the belt refuses is refused here, before any write —
+        # returned, not raised, because `init` calls this verb directly.
+        for toml in REFUSED_CLAIMS:
+            (root / 'devkit.toml').write_text(_flow() + f'[adopt]\n{toml}\n',
+                                              encoding='utf-8')
+            before = snapshot(root)
+            code, out = pm('install-skills', '--force')
+            assert code == 2 and '[adopt] ours' in out, (toml, code, out)
+            assert snapshot(root) == before, f'{toml!r} wrote to the tree'
 
 
 def _flow() -> str:

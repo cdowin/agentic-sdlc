@@ -458,8 +458,12 @@ def test_a_claimed_file_is_named_on_every_run_and_hides_no_other_drift():
     with tree({'Makefile': PIN + f'include {GATE_MK}\n'},
               config=config) as root:
         buf = io.StringIO()
+        # Named, because a claimed file is never written by a plain run — even
+        # an absent one (`test_force_leaves_a_claimed_file_alone…`); naming a
+        # path is how a claimed file is taken, and this case needs it on disk.
         with contextlib.redirect_stdout(buf):
-            assert install.main('install-gates', []) == 0, buf.getvalue()
+            assert install.main('install-gates',
+                                [GATE_LIB_REL, GATE_MK]) == 0, buf.getvalue()
         fork(root, GATE_MK)
         fork(root, GATE_LIB_REL)
         answer = check('installables-current', root)

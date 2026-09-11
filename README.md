@@ -154,9 +154,11 @@ Every installer writes a file once. A destination that differs is refused by pat
 or `--force`); `--diff` prints what would change and writes nothing; a difference confined to a
 file's project-config block — a hook's `project config` header, an agent brief's ```` ```text ````
 fence — is reported as one and is current. **`--force` keeps what is yours**: that block is carried
-into the new body byte for byte and named on the file's line, with any stock key the packaged block
-has and yours lacks; a file `[adopt] ours` claims is left alone and named. `install-* --force <path>`
-takes one destination, claimed or not. The withdrawal report's floor is the pin; after the bump the pin
+into the new body line for line (a CRLF file comes back LF) and named on the file's line, with any
+stock key the packaged block has and yours lacks; a file `[adopt] ours` claims is left alone and named,
+by `pm install-skills` too. A claim is a destination spelled exactly, and one that matches none is
+named on every run, `--diff` included. `install-* --force <path>` takes one destination, claimed or
+not. The withdrawal report's floor is the pin; after the bump the pin
 IS the running version and the report says it compared nothing — pass `--since <the version you are
 leaving>`.
 

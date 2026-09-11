@@ -37,7 +37,7 @@ was never updated.
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 3 | unit | a description ↔ check case in tests/test_conveyor_steps.py | search first; new if none |
+| 3 | unit | `tests/test_install_sdlc.py::test_every_registry_sentence_names_what_its_check_reads_and_nothing_retired` (moved from tests/test_conveyor_steps.py in 73a72ac to run in the unit tier; widened to all 23 checks in baf3f08) | new |
 | 4 | unit | tests/test_install.py byte-current | yes |
 
 ## Semver

@@ -17,6 +17,7 @@ order:
   - "bg-the-gate-help-names-one-of-its-four-rule-families"
   - "ft-a-gate-verdict-is-true-of-the-tree"
   - "bg-a-close-the-tree-is-ready-for-is-named-by-nothing"
+  - "bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not"
   - "bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed"
   - "ft-every-printed-command-runs-in-a-stock-consumer"
 ---

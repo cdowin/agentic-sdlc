@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the shipped words match the shipped tool
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-11-0.8.0-the-shipped-words-match-the-shipped-tool.md
 depends_on: []
 consumed_by: []
 changelog:

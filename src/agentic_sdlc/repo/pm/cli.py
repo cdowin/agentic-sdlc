@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import unicodedata
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,8 +101,11 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `backfilled: true` so it never reads
                                            as a recorded retirement. Accepted
                                            ONLY for an id no grain in the tree
-                                           claims — one that is there is refused
-                                           naming the form above. The same
+                                           claims — one that is there, or a
+                                           near miss of one (case, `.md`, a
+                                           kind prefix), is refused naming
+                                           it. A value or word led by `-` is
+                                           refused as a flag. The same
                                            backfill twice is one row; a
                                            different one supersedes a
                                            backfilled row and never a recorded
@@ -1061,6 +1065,33 @@ def _plan_note(cfg: vocabulary.PmConfig, mid: str, *,
             f'retiring gives it a row there')
 
 
+def _near_key(text: str) -> str:
+    """`text` as a near miss compares: format (Cf) characters dropped — a
+    zero-width space is invisible where it is typed — casefolded, and a `.md`
+    suffix, the file an id was read off, stripped."""
+    key = ''.join(ch for ch in text
+                  if unicodedata.category(ch) != 'Cf').casefold()
+    return key[:-3] if key.endswith('.md') else key
+
+
+def _held_near(cfg: vocabulary.PmConfig,
+               mid: str) -> tuple[inventory.Grain | None, bool]:
+    """(the grain holding `mid` or a near miss of it, whether it was exact).
+    A backfilled row can never be removed, so a typo of an id in the tree is
+    refused as surely as the id: the same key, or the key with a kind prefix
+    (`foo` for `ms-foo`)."""
+    index = inventory.grain_index(cfg)
+    if mid in index:
+        return index[mid], True
+    key = _near_key(mid)
+    wanted = {key, *(inventory.mint_id(kind, key)
+                     for kind in inventory.KIND_PREFIX)}
+    for gid, held in index.items():
+        if _near_key(gid) in wanted:
+            return held, False
+    return None, False
+
+
 def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
                      pairs: list[tuple[str, str]], summary_words: list[str],
                      dry_run: bool) -> int:
@@ -1075,21 +1106,29 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
     a recorded retirement from a reconstructed one. The same backfill twice is
     one row; a backfill never supersedes a RECORDED row.
     """
-    # Deferred: `pm/` imports nothing from `conveyor/` at load. ONE grammar
-    # for a version and a milestone id, the one the belts join onto the tree.
+    # Deferred: `pm/` imports nothing from `conveyor/` at load. The VERSION's
+    # grammar is the one the belts join onto the tree; the id's is an id's,
+    # less `/`, which no milestone id has (N8 of the 0.8.0 review).
     from agentic_sdlc.repo.conveyor import driver
-    defect = driver.version_defect(mid)
+    defect = inventory.id_defect(mid) or (
+        f'{mid!r} carries a "/" or whitespace, which no milestone id has'
+        if '/' in mid or any(ch.isspace() for ch in mid) else '')
     if defect:
         raise Usage(f'retire: {defect} — nothing was written')
-    held = inventory.grain_index(cfg).get(mid)
+    held, exact = _held_near(cfg, mid)
     if held is not None:
+        said = (f'{mid!r} is a {held.kind or "grain"} in this tree'
+                if exact else f'{mid!r} is a near miss of {held.gid!r}, a '
+                f'{held.kind or "grain"} in this tree')
+        advice = (f'Retire it the normal way, which reads its version and name '
+                  f'off the document: `{PROG} retire {held.gid} '
+                  f'[<summary...>]`' if held.kind == vocabulary.GRAIN_MILESTONE
+                  else f'It is not a milestone, and retire takes only a '
+                  f'milestone')
         raise Usage(
-            f'{mid!r} is a {held.kind or "grain"} in this tree '
-            f'({cfg.rel(held.path)}), so there is nothing to backfill — '
+            f'{said} ({cfg.rel(held.path)}), so there is nothing to backfill — '
             f'{RETIRE_VERSION_FLAG} and {RETIRE_NAME_FLAG} are for a milestone '
-            f'whose documents are already gone. Retire it the normal way, '
-            f'which reads its version and name off the document: '
-            f'`{PROG} retire {mid} [<summary...>]`. Nothing was written')
+            f'whose documents are already gone. {advice}. Nothing was written')
     given: dict[str, str] = {}
     for flag, value in pairs:
         if flag in given:
@@ -1175,6 +1214,16 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     dry_run = False
     mid = ''
     summary_words: list[str] = []
+    # A flag-shaped value or word is a flag, never data — on BOTH paths: a
+    # `--dry-run` taken as a `--version`, or a `--dryrun` typo taken as a
+    # summary word, was a real retirement and a permanent ledger row.
+    for a in ([value for _, value in pairs]
+              + [word for word in args if word != '--dry-run']):
+        if a.startswith('-'):
+            raise Usage(f'{a!r} looks like a flag — retire takes --dry-run, '
+                        f'{RETIRE_VERSION_FLAG} <ver> and {RETIRE_NAME_FLAG} '
+                        f'<name>, and no value or summary word may start with '
+                        f'"-". Nothing was written')
     for a in args:
         if a == '--dry-run':
             dry_run = True
@@ -2009,6 +2058,30 @@ def _claim(cfg: vocabulary.PmConfig, kind: str, slug: str,
     return minted, None
 
 
+def _name_words(kind: str, words: list[str]) -> str:
+    """The `<name...>` every create takes, joined — or a refusal at exit 2
+    before anything is written (`bg-a-scaffold-name-injects-frontmatter`).
+    A CR or LF would write a second frontmatter line, so a grain could be born
+    reading `done`; a first word led by `-` is a flag no create takes (`--name
+    T` was stamped as `name: --name T`). Whitespace collapses, as the retire
+    backfill's name does: a tab would shift a `pm list` column."""
+    name = ' '.join(words)
+    if '\n' in name or '\r' in name:
+        # The same bar `pm set` holds: a multi-line scalar injects lines into
+        # the frontmatter it is stamped on.
+        raise Usage(f'{NAME_ARG}: a frontmatter scalar is one line — nothing '
+                    f'was written')
+    name = ' '.join(name.split())
+    if name.startswith('-'):
+        # The form's USAGE line, less its parenthetical: ONE text.
+        synopsis = (verb_help('new', [kind]).splitlines()[0].strip()
+                    .split(' (', 1)[0].rstrip())
+        raise Usage(f'{name.split()[0]!r} looks like a flag — `pm new {kind}` '
+                    f'takes the name positionally, as its last words: '
+                    f'`{PROG} {synopsis}` — nothing was written')
+    return name
+
+
 def _name_required(kind: str, gid: str, typed: str) -> 'Usage':
     """The refusal for a CREATE with no name, leading with the ARGUMENT that
     was omitted: *"feature 'x' does not exist yet"* read as *this grain is
@@ -2038,7 +2111,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         if not rest:
             raise Usage(USAGE)
         version = _version(pairs)
-        slug, name = _check_slug('milestone slug', rest[0]), ' '.join(rest[1:])
+        name = _name_words(vocabulary.GRAIN_MILESTONE, rest[1:])
+        slug = _check_slug('milestone slug', rest[0])
         mid, found = _claim(cfg, vocabulary.GRAIN_MILESTONE, slug)
         if found is None and not name:
             raise _name_required(vocabulary.GRAIN_MILESTONE, mid, slug)
@@ -2056,8 +2130,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:
             raise Usage(USAGE)
+        name = _name_words(vocabulary.GRAIN_FEATURE, rest[2:])
         mid, slug = rest[0], _check_slug('feature slug', rest[1])
-        name = ' '.join(rest[2:])
         if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
         fid, found = _claim(cfg, vocabulary.GRAIN_FEATURE, slug, mid)
@@ -2073,8 +2147,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if grain == vocabulary.GRAIN_STORY:
         if len(rest) < 3:
             raise Usage(USAGE)
+        name = _name_words(vocabulary.GRAIN_STORY, rest[2:])
         fid, slug = rest[0], _check_slug('story slug', rest[1])
-        name = ' '.join(rest[2:])
         feature = inventory.grain(cfg, fid, vocabulary.GRAIN_FEATURE)
         if feature is None:
             raise Usage(f'no feature resolves from id {fid!r}')
@@ -2104,13 +2178,8 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         # Resolved before the slug guard and any write: a bug with an
         # unresolvable cause is not created.
         cause = _caused_by(cfg, pairs)
+        name = _name_words(vocabulary.GRAIN_BUG, rest[2:])
         mid, slug = rest[0], _check_slug('bug slug', rest[1])
-        name = ' '.join(rest[2:])
-        if '\n' in name or '\r' in name:
-            # The same bar `pm set` holds: a multi-line scalar injects lines
-            # into the frontmatter it is stamped on.
-            raise Refused(f'{NAME_ARG}: a frontmatter scalar is one line — '
-                          f'nothing was written')
         if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
         bid, held = _claim(cfg, vocabulary.GRAIN_BUG, slug, mid)
@@ -2123,12 +2192,13 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         # is offered to a template that has the slot, and the name is STAMPED
         # after the render either way: the packaged bug.md has no slot, nor
         # does any copy `pm templates` wrote out, and a render alone would drop
-        # the name for every one of those trees without a word.
+        # the name for every one of those trees without a word. Offered EMPTY
+        # too, so a slot renders to what the `next:` line says rather than a
+        # literal `{name}`.
         values = {vocabulary.FIELD_ID: bid,
                   vocabulary.FIELD_KIND: vocabulary.GRAIN_BUG,
-                  vocabulary.GRAIN_MILESTONE: mid, 'slug': slug}
-        if name:
-            values[vocabulary.FIELD_NAME] = name
+                  vocabulary.GRAIN_MILESTONE: mid, 'slug': slug,
+                  vocabulary.FIELD_NAME: name}
         body = templates.render(templates.load(cfg, vocabulary.GRAIN_BUG),
                                 values)
         _mint(cfg, bf, body)
@@ -3340,10 +3410,27 @@ def commands() -> tuple[str, ...]:
     return tuple(_table())
 
 
-# `<verb> --help` / `-h`, ANYWHERE after the verb. Not the bare word `help`:
-# that is a legal value in a title, a summary or a name, and the two flags are
-# not (a flag-shaped title is already refused).
+# `<verb> --help` / `-h`. Not the bare word `help`: that is a legal value in a
+# title, a summary or a name. The two flags are READ anywhere after the verb,
+# so no write is ever reached past one, but they are SUCCESS only as the
+# verb's first argument (or its sub-form's, `new bug --help`). Later they may
+# be words someone meant — `decide` refuses only a title LED by `--` — so
+# there the verb's block goes to stderr at exit 2, and a script never reads a
+# dropped write as done.
 HELP_FLAGS = ('-h', '--help')
+
+
+def _sub_forms(verb: str) -> set[str]:
+    """The second words USAGE gives `verb` a form of its own under (`new bug`,
+    `ledger report`, `ready-for story|feature|…`) — a word, never a slot."""
+    out: set[str] = set()
+    for block in _usage_blocks():
+        words = block[0].split()
+        if words[0] == verb and len(words) > 1:
+            alts = words[1].split('|')
+            if all(a.replace('-', '').isalpha() and a.islower() for a in alts):
+                out.update(alts)
+    return out
 
 # The block `<kind> <status> <id> [<answer>...]` in USAGE describes every verb
 # that ARRIVES, so each of those verbs' help carries it.
@@ -3401,14 +3488,23 @@ def _help_for(verb: str, rest: Sequence[str]) -> str:
 
 
 def main(argv: list[str], *, skipped: Skipped = ()) -> int:
+    if argv[:1] == ['help'] and argv[1:2] and argv[1] in _table():
+        print(_help_for(argv[1], argv[2:]))
+        return 0
     if not argv or argv[0] in ('-h', '--help', 'help'):
         print(USAGE)
         return 0 if argv else 2
     # Before the config is read: help is answered from constants, so it works
     # in a tree that declares nothing, and a `retire 0.1 --help` never retires.
-    if argv[0] in _table() and any(a in HELP_FLAGS for a in argv[1:]):
-        print(_help_for(argv[0], argv[1:]))
-        return 0
+    at = next((i for i, a in enumerate(argv[1:], 1) if a in HELP_FLAGS), 0)
+    if argv[0] in _table() and at:
+        if at == 1 or (at == 2 and argv[1] in _sub_forms(argv[0])):
+            print(_help_for(argv[0], argv[1:]))
+            return 0
+        print(_help_for(argv[0], argv[1:]), file=sys.stderr)
+        print(f'[pm] ERROR — {argv[at]!r} was read as a help flag, nothing was '
+              f'written; quote the words to use it as text', file=sys.stderr)
+        return 2
     try:
         cfg = vocabulary.load()
     except vocabulary.ConfigError as err:
@@ -3449,6 +3545,8 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
     except (Usage, inventory.AmbiguousStory, vocabulary.ConfigError) as err:
         # `ConfigError` here is the declaration's lazy half — `flow_of` refuses
         # mid-walk — and it must be one line at exit 2, since a traceback at
-        # exit 1 reads as findings.
-        print(f'[pm] ERROR — {err}', file=sys.stderr)
+        # exit 1 reads as findings. An arity refusal raises the whole roster;
+        # it is answered with the verb's own block instead.
+        said = _help_for(cmd, rest) if str(err) == USAGE else err
+        print(f'[pm] ERROR — {said}', file=sys.stderr)
         return 2

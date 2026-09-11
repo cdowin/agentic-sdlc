@@ -349,6 +349,9 @@ def test_help_exits_zero_for_every_verb(capsys, monkeypatch):
     # checks-only is described as one, so the next such belt needs no case.
     assert '[release] forced — <version> → <state>' in driver.render_usage(
         'release')
+    # A writing belt over a grain already there exits 0 having written nothing
+    # (`pm story done`'s no-op), and its help says so.
+    assert '0 written (or nothing to write)' in driver.render_usage(driver.OP_STORY)
     monkeypatch.setitem(driver.WRITES, 'release', '')
     checks_only = driver.render_usage('release')
     assert 'forced' not in checks_only and 'after a write' not in checks_only

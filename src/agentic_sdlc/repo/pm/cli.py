@@ -255,7 +255,11 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            what replaced the hand-maintained
                                            ROADMAP.md. Writes nothing)
   validate                                (structural + referential integrity)
-  install-skills [--force] [--diff]       (write the shared rule + operations skill)
+  install-skills [--force] [--diff] [<path>...]
+                                          (write the shared rule + operations skill;
+                                           a file [adopt] ours claims is left
+                                           alone and named — name its path to
+                                           take it)
   init                                    (scaffold a fresh tree + install guidance)
   new milestone <slug> <name...> [--version <ver>]
                                           (mints id `ms-<slug>` — the kind

@@ -318,41 +318,57 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
 def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Write the execution-loop guidance into the consuming repo as an
     auto-loading rule; only what the CLI itself enforces ships here.
+    A claimed file is left alone as `install.main` leaves it (review M7).
     """
     force = False
     diff = False
+    named: list[str] = []
     for a in args:
         if a == '--force':
             force = True
         elif a == '--diff':
             diff = True
-        else:
+        elif a.startswith('-'):
             raise Usage(f'unknown flag {a!r}')
+        else:
+            named.append(a)
+    refusal = install.not_planned(named, [rel for _, rel in GUIDANCE_PLAN])
+    if refusal:
+        raise Usage(refusal)
 
-    from importlib import resources
     from agentic_sdlc import __version__
+    from agentic_sdlc.repo.conveyor.steps import ours_of
 
+    try:
+        ours = ours_of(install.CLAIM_OPERATION)
+    except vocabulary.ConfigError as err:
+        # Here, not in `pm`'s router: `init` calls this directly (exit 2).
+        print(f'[pm] ERROR — {err}', file=sys.stderr)
+        return 2
     # (source markdown, destination): the rule auto-loads on any tree edit; the
     # skill is invoked deliberately.
-    plan = [(name, cfg.root / rel) for name, rel in GUIDANCE_PLAN]
-    # Decided for both entries before either is written, so "nothing was
+    plan = [(name, cfg.root / rel) for name, rel in GUIDANCE_PLAN
+            if not named or rel in named]
+    claimed = {cfg.rel(target) for _, target in plan
+               if cfg.rel(target) in ours and cfg.rel(target) not in named}
+    entries = [(target, cfg.rel(target), guidance_body(name))
+               for name, target in plan]
+    # Decided for every entry before any is written, so "nothing was
     # written" is true of the whole command; --diff prints off the same helper
     # the install-* verbs use.
     if diff:
-        for name, target in plan:
-            body = (resources.files('agentic_sdlc.repo.pm.guidance')
-                    .joinpath(name).read_text(encoding='utf-8'))
-            install.print_diff(cfg.rel(target), target,
-                               body.replace('{version}', f'v{__version__}'))
+        for target, rel, body in entries:
+            install.print_diff(rel, target, body, claimed=rel in claimed)
+        install.claim_census(GUIDANCE_VERB, entries, claimed)
         return 0
 
     actions: list[tuple[str, Path, str]] = []
     collisions: list[str] = []
     defects: list[str] = []
-    for name, target in plan:
-        body = (resources.files('agentic_sdlc.repo.pm.guidance')
-                .joinpath(name).read_text(encoding='utf-8'))
-        body = body.replace('{version}', f'v{__version__}')
+    for target, rel, body in entries:
+        if rel in claimed:
+            actions.append(('claimed', target, body))
+            continue
         # A directory, unwritable or undecodable destination is a refusal
         # naming the path, never a traceback with one file already on disk.
         defect = install.destination_defect(target)
@@ -385,7 +401,7 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # One plan: destinations decided above, `core.apply` reports which landed.
     writes = apply.Plan()
     for kind, target, body in actions:
-        if kind != 'current':
+        if kind == 'write':
             writes.overwrite(target, body, newline=None, label=cfg.rel(target))
     result = writes.apply(decide=False)
     written = [step.label for step in result.landed]
@@ -402,10 +418,14 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         rel = cfg.rel(target)
         if kind == 'current':
             install._say(install.IS_CURRENT.format(rel=rel))
+        elif kind == 'claimed':
+            install._say(install.CLAIMED_SKIP.format(rel=rel,
+                                                     command=GUIDANCE_VERB))
         elif rel in landed:
             install._say(f'wrote {rel}')
         else:
             install._say(install.NOT_REACHED.format(rel=rel))
+    install.claim_census(GUIDANCE_VERB, entries, claimed)
     if result.failed is not None:
         raise Refused(
             f'{result.failed.label} could not be written '

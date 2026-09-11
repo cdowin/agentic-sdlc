@@ -21,20 +21,29 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import run_check  # noqa: E402
 
+from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import doc
-from agentic_sdlc.repo.pm import vocabulary
+from agentic_sdlc.repo.pm import skills, vocabulary
 
 FLOW = vocabulary.render_seed()
+# #26's consumer: a feature ladder with no `reviewing`.
+NO_FEATURE_REVIEW = vocabulary.render_seed(
+    {**vocabulary.DEFAULT_FLOWS,
+     'feature': {'todo': ('planning', 'ready'), 'in_progress': ('building',),
+                 'done': ('done',)}})
 
 
 @contextmanager
-def tree(config: str = ''):
+def tree(config: str = '', flow: str = FLOW):
+    """`flow` REPLACES the seed's `[pm.states.*]` rather than joining it: two
+    declarations of one table are a TOML error, the vocabulary then loads as
+    nothing, and every rule reading it passes vacuously."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'repo'
         (root / 'pm' / 'roadmap').mkdir(parents=True)
         (root / '.git').mkdir()
-        (root / 'devkit.toml').write_text(config + FLOW, encoding='utf-8')
+        (root / 'devkit.toml').write_text(config + flow, encoding='utf-8')
         previous = Path.cwd()
         os.chdir(root)
         repo_root.cache_clear()
@@ -84,18 +93,33 @@ class AnInvocationIsAClaimAboutTheTree(unittest.TestCase):
              'story': {'todo': ('planning', 'ready'),
                        'in_progress': ('building', 'reviewing'),
                        'done': ('done', 'obe')}})
-        with tree(config=declared) as root:
+        with tree(flow=declared) as root:
+            # Not vacuous: until #26 this tree declared the seed TWICE, loaded
+            # as no vocabulary at all, and the rule passed by reading nothing.
+            self.assertIn('reviewing', doc.declared_states()['story'])
             self.assertEqual(
                 scan(root, 'Move it with `pm story reviewing <id>`.'), [])
 
     def test_a_deliberate_negative_citation_is_allowed_out(self):
         """The two in this repo are correct prose SAYING the call exits 2. The
-        escape is the gate's existing one, never a code change."""
+        escape is the gate's existing one, never a code change.
+
+        A WRAPPED span binds the marker to the line it STARTS on, which is the
+        line its finding names — so a marker never suppresses a finding
+        reported on a line that does not carry it (#26)."""
         with tree() as root:
             found = scan(
                 root,
                 '`pm story reviewing <id>` exits 2.  <!-- doc-scan:allow -->')
             self.assertEqual(found, [])
+            self.assertEqual(scan(
+                root, '<!-- doc-scan:allow --> So `pm story',
+                'reviewing <id>` exits 2.'), [])
+            found = scan(
+                root, 'So `pm story',
+                'reviewing <id>` exits 2.  <!-- doc-scan:allow -->')
+            self.assertEqual(len(found), 1, found)
+            self.assertIn('DOC.md:1  `pm story reviewing <id>`', found[0])
 
     def test_a_tree_with_no_declared_flow_reports_NOTHING(self):
         """It reads a vocabulary; with none to read it invents none. A rule
@@ -276,3 +300,147 @@ class ADecisionCitationResolvesAgainstTheMilestoneThatOwnsIt(unittest.TestCase):
         with tree() as root:
             milestone(root, 'ms-one', '', '1')
             self.assertEqual(doc.decision_index(), {})
+
+
+def shown(path: Path, findings: list[str]) -> list[str]:
+    """Findings with the scratch path read as the document's name."""
+    return [f.replace(str(path), 'DOC.md') for f in findings]
+
+
+class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
+    """#26. The three span rules read `INLINE_CODE` a line at a time, so a span
+    wrapped across a line never formed — and every backtick after it on the
+    next line paired with the wrong partner. The installed `pm-execution.md`
+    shipped `pm feature` + newline + `reviewing <id>`, and a consumer with no
+    `reviewing` feature state was told to run a refused command by the one
+    file the rule exists to read.
+    """
+
+    REAL = '`pm story reviewing <id>`'  # the seed's story ladder has no review word
+
+    def test_a_status_call_wrapped_across_a_line_is_a_FINDING_on_the_line_it_STARTS(self):
+        """THE BROKEN PROBE, #26's own pair: the wrapped half passed."""
+        with tree(flow=NO_FEATURE_REVIEW) as root:
+            self.assertNotIn('reviewing', doc.declared_states()['feature'])
+            unwrapped = scan(
+                root, '# unwrapped', '',
+                'Review is `pm feature reviewing <id>` while the record is written.')
+            wrapped = scan(
+                root, '# wrapped', '', 'Review is `pm feature',
+                '   reviewing <id>` while the record is written.')
+        for found in (unwrapped, wrapped):
+            self.assertEqual(len(found), 1, found)
+            self.assertIn(
+                'DOC.md:3  `pm feature reviewing <id>` names a state '
+                '[pm.states.feature] does not declare — this exits 2. '
+                'Declared: planning ready building done', found[0])
+
+    def test_a_wrapped_make_target_and_a_wrapped_path_are_read(self):
+        """The path and make-target rules shared the hole. A path holds no
+        space, so its own span wraps only at an edge; the common miss is a
+        wrapped span BEFORE it, which left its backticks mispaired."""
+        with tree() as root:
+            path = root / 'DOC.md'
+            (root / 'docs').mkdir()
+            (root / 'docs' / 'here.md').write_text('', encoding='utf-8')
+            lines = list(enumerate((
+                'Before a commit run `make',
+                'wombat` and read it; `make unit` is real.',
+                '',
+                'The call `pm story',
+                'building <id>` writes `docs/gone-for-good.md` too.',
+                '',
+                'The record lives at `',
+                'docs/also-gone.md`, and the live one at `',
+                'docs/here.md`.'), start=1))
+            targets = doc.check_make_targets(path, lines, {'unit'})
+            paths = doc.check_backtick_paths(path, lines)
+        self.assertEqual(shown(path, targets),
+                         ['DOC.md:1  unknown make target: `make wombat`'])
+        self.assertEqual(shown(path, paths), [
+            'DOC.md:5  dead path: `docs/gone-for-good.md`',
+            'DOC.md:7  dead path: `docs/also-gone.md`'])
+
+    def test_a_span_never_crosses_a_paragraph_break(self):
+        """The spec scout's definition (m2), each break shown by a stray
+        backtick BEFORE it: joined across the break, the stray would pair with
+        the real span's opening backtick and swallow the claim. The first case
+        is the control — no break, so the stray does pair, as CommonMark
+        renders it — which is what makes every other case able to fail."""
+        cases = {
+            'no break (control)': (['a stray ` here', self.REAL], 0),
+            'blank line': (['a stray ` here', '', self.REAL], 1),
+            'heading': (['a stray ` here', f'## {self.REAL}'], 1),
+            'after a heading': (['## a stray ` heading', self.REAL], 1),
+            'list-item start': (['a stray ` here', f'- {self.REAL}'], 1),
+            'ordered item start': (['a stray ` here', f'2. {self.REAL}'], 1),
+            'table row': (['a stray ` here', f'| {self.REAL} | x |'], 1),
+            'after a table row': (['| a stray ` cell |', self.REAL], 1),
+        }
+        with tree() as root:
+            for name, (body, expected) in cases.items():
+                with self.subTest(name):
+                    found = scan(root, *body)
+                    self.assertEqual(len(found), expected, found)
+                    if expected:
+                        self.assertIn(f'DOC.md:{len(body)}  ', found[0])
+            path = root / 'DOC.md'
+            states = doc.declared_states()
+            with self.subTest('a gap in line numbers'):
+                found = doc.check_invocations(
+                    path, [(1, 'a stray ` here'), (3, self.REAL)], states)
+                self.assertEqual(shown(path, found)[0][:9], 'DOC.md:3 ')
+            with self.subTest('a fence, which non_fenced_lines drops'):
+                lines, _ = non_fenced_lines(
+                    f'a stray ` here\n```\ncode\n```\n{self.REAL}\n')
+                found = doc.check_invocations(path, lines, states)
+                self.assertEqual(shown(path, found)[0][:9], 'DOC.md:5 ')
+            with self.subTest('an UNTERMINATED fence, which it keeps'):
+                lines, unterminated = non_fenced_lines(
+                    f'a stray ` here\n```\n{self.REAL}\n')
+                self.assertEqual(unterminated, 2)
+                found = doc.check_invocations(path, lines, states)
+                self.assertEqual(shown(path, found)[0][:9], 'DOC.md:3 ')
+
+    def test_a_backtick_run_pairs_only_with_a_run_of_its_own_width(self):
+        """CommonMark's pairing. One backtick at a time was harmless on one
+        line; across a paragraph a ``double`` span or a stray ``` shifted every
+        pairing after it and hid the claim — the second line here."""
+        with tree() as root:
+            found = scan(
+                root, 'A ``double `quoted` span`` and a stray ``` run,',
+                f'then {self.REAL} on the next line.')
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('DOC.md:2  `pm story reviewing <id>`', found[0])
+
+    def test_the_installed_rule_names_no_refused_state_where_feature_review_is_undeclared(self):
+        """`st-the-auto-loaded-rule-is-true-at-this-version` criterion 3, and
+        #26's own consumer: the INSTALLED `pm-execution.md`, read by the
+        paragraph reader, in a tree whose feature ladder omits `reviewing`.
+
+        Its one `doc-scan:allow` still suppresses exactly what it did: strip
+        the marker and the only new finding, across all three span rules, is
+        `pm story reviewing <id>` on the marked line."""
+        body = skills.guidance_body('pm-execution.md')
+        marked = [n for n, line in enumerate(body.split('\n'), 1)
+                  if doc.ALLOW_MARKER in line]
+        self.assertEqual(len(marked), 1, marked)
+        with tree(flow=NO_FEATURE_REVIEW) as root:
+            path = root / 'pm-execution.md'
+            states = doc.declared_states()
+
+            def findings(text: str) -> list[str]:
+                lines, unterminated = non_fenced_lines(text)
+                self.assertEqual(unterminated, 0)
+                return shown(path, doc.check_invocations(path, lines, states)
+                             + doc.check_make_targets(path, lines, set())
+                             + doc.check_backtick_paths(path, lines))
+
+            as_shipped = findings(body)
+            unmarked = findings(body.replace(doc.ALLOW_MARKER, ''))
+        self.assertEqual(
+            [f for f in as_shipped if 'does not declare' in f], [])
+        suppressed = [f for f in unmarked if f not in as_shipped]
+        self.assertEqual(len(suppressed), 1, suppressed)
+        self.assertTrue(suppressed[0].startswith(
+            f'DOC.md:{marked[0]}  `pm story reviewing <id>`'), suppressed)

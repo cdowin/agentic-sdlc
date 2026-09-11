@@ -4,9 +4,11 @@
 Over `[doc] scope` (default CLAUDE.md, .claude/rules/*.md, .claude/agents/*.md): a dead
 path in a backtick span, a `make <target>` no Makefile or include declares, a dead
 markdown link, a flat `.claude/skills/<name>.md` that never loads. Fenced blocks are
-skipped; an unterminated fence is reported and masks nothing. A line ending in
-`<!-- doc-scan:allow -->` is never flagged. `[doc] ephemeral` names directories whose
-cited files are expected to be gone.
+skipped; an unterminated fence is reported and masks nothing. A backtick span is
+read across the line breaks of its paragraph and reported on the line it starts on.
+A line ending in `<!-- doc-scan:allow -->` is never flagged, and neither is a span
+starting on it. `[doc] ephemeral` names directories whose cited files are expected
+to be gone.
 
     agentic-sdlc check doc
 """
@@ -14,9 +16,11 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from agentic_sdlc.core import makefile
-from agentic_sdlc.core.markdown import non_fenced_lines
+from agentic_sdlc.core.markdown import (
+    code_span_matches, non_fenced_lines, paragraphs, span_text)
 from agentic_sdlc.core import walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import repo_root
@@ -32,8 +36,6 @@ ALLOW_MARKER = 'doc-scan:allow'
 SKILL_DIR = '.claude/skills'
 SKILL_FILENAME = 'SKILL.md'
 
-INLINE_CODE = re.compile(r'`([^`]+)`')
-MD_LINK_TEXT = re.compile(r'`[^`]+`\]\(')  # [`text`](href): the claim is the href
 MD_LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
 MAKE_INVOCATION = re.compile(r'\bmake\s+([a-zA-Z][a-zA-Z0-9_-]*)')
 PATH_CANDIDATE = re.compile(r'^[A-Za-z0-9_./-]+\.(gd|tscn|tres|py|sh|md)$')
@@ -129,35 +131,47 @@ def check_links(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
     return findings
 
 
+def code_spans(lines: list[tuple[int, str]]) -> Iterator[tuple[int, str, bool]]:
+    """(the line a span STARTS on, its text, is it a link's text) for every
+    code span the three span rules read — undeclared state, path, make target.
+
+    Paired across a PARAGRAPH, never a line (#26): `pm feature` + newline +
+    `reviewing <id>` is one span, and a line-at-a-time reader both missed it
+    and paired every backtick after it with the wrong partner. A finding names
+    the line the span starts on, and so does `doc-scan:allow`: a span starting
+    on a marked line is not read, and a marker on any other line it covers
+    suppresses nothing — the line a finding names is the line its marker goes on.
+    """
+    for para in paragraphs(lines):
+        for start, end, raw in code_span_matches(para.text):
+            lineno, line = para.at(start)
+            if is_allowed(line):
+                continue
+            # [`text`](href): the claim is the href, read by the link rule
+            yield lineno, span_text(raw), para.text.startswith('](', end)
+
+
 def check_make_targets(doc: Path, lines: list[tuple[int, str]], real_targets: set[str]) -> list[str]:
     findings: list[str] = []
-    for lineno, line in lines:
-        if is_allowed(line):
-            continue
-        for span in INLINE_CODE.findall(line):
-            for match in MAKE_INVOCATION.finditer(span):
-                target = match.group(1)
-                if target not in real_targets:
-                    findings.append(f'{rel(doc)}:{lineno}  unknown make target: `make {target}`')
+    for lineno, span, _ in code_spans(lines):
+        for match in MAKE_INVOCATION.finditer(span):
+            target = match.group(1)
+            if target not in real_targets:
+                findings.append(f'{rel(doc)}:{lineno}  unknown make target: `make {target}`')
     return findings
 
 
 def check_backtick_paths(doc: Path, lines: list[tuple[int, str]]) -> list[str]:
     findings: list[str] = []
-    for lineno, line in lines:
-        if is_allowed(line):
+    for lineno, span, link_text in code_spans(lines):
+        if link_text:
             continue
-        link_text_ends = {m.end() for m in MD_LINK_TEXT.finditer(line)}
-        for match in INLINE_CODE.finditer(line):
-            if match.end() + 2 in link_text_ends:  # `text`](  — the '](' follows right after
-                continue
-            span = match.group(1)
-            if '/' not in span or any(ch in span for ch in PLACEHOLDER_CHARS):
-                continue
-            if not PATH_CANDIDATE.match(span):
-                continue
-            if not resolve_path(span, doc):
-                findings.append(f'{rel(doc)}:{lineno}  dead path: `{span}`')
+        if '/' not in span or any(ch in span for ch in PLACEHOLDER_CHARS):
+            continue
+        if not PATH_CANDIDATE.match(span):
+            continue
+        if not resolve_path(span, doc):
+            findings.append(f'{rel(doc)}:{lineno}  dead path: `{span}`')
     return findings
 
 
@@ -196,21 +210,18 @@ def check_invocations(doc: Path, lines: list[tuple[int, str]],
     findings: list[str] = []
     if not states:
         return findings
-    for lineno, line in lines:
-        if is_allowed(line):
+    for lineno, span, _ in code_spans(lines):
+        match = _STATUS_FORM.match(span.strip())
+        if match is None:
             continue
-        for span in INLINE_CODE.findall(line):
-            match = _STATUS_FORM.match(span.strip())
-            if match is None:
-                continue
-            kind, status = match.group(1), match.group(2)
-            declared = states.get(kind)
-            if not declared or status in declared:
-                continue
-            findings.append(
-                f'{rel(doc)}:{lineno}  `{span.strip()}` '
-                f'names a state [pm.states.{kind}] does not declare — this '
-                f'exits 2. Declared: {" ".join(declared)}')
+        kind, status = match.group(1), match.group(2)
+        declared = states.get(kind)
+        if not declared or status in declared:
+            continue
+        findings.append(
+            f'{rel(doc)}:{lineno}  `{span.strip()}` '
+            f'names a state [pm.states.{kind}] does not declare — this '
+            f'exits 2. Declared: {" ".join(declared)}')
     return findings
 
 

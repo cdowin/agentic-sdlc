@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: the work provider leaves the config module
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `pm config --seed` prints one changed comment line: the seed's own note about where its bytes come from now names `vocabulary.render_seed()`, because the module it used to name no longer exists.
@@ -169,3 +169,5 @@ adds exactly ONE case.
 finding: the rename lengthened lines it did not reflow — `checks/pm.py:151` is 120 characters where it
 was 106. A reflow is a body edit.
 finding: `changelog:` is still empty. The sentence it owes is the first finding above.
+
+done: cdce244 — `vocabulary.py` (DECLARES) and `inventory.py` (CONTAINS); zero AST residual inside the move.

@@ -45,3 +45,7 @@ Patch.
 
 Backfilling `changelog:` onto 159 pre-0.6.0 grains. The five milestone-level `pm set` writes are the
 cheaper alternative if the README line proves insufficient, and that is a later call.
+
+## Close
+
+done: 61d6a52 — README pins vX.Y.Z; the adoption steps name `git show v0.5.0:CHANGELOG.md` for pre-0.6.0 notes.

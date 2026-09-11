@@ -60,3 +60,7 @@ Minor: a new report line, and `--force` writes different bytes than it did.
 7. The self-host test (`test_this_repo_carries_the_roles_it_runs_byte_current`) accepts a fence-only
    difference, the way the hooks' self-host already accepts a header-only one. This repo's own
    installed agents are then current under the narrowed span.
+
+## Close
+
+done: b4e4606, 73a72ac — --force carries the project-config block byte for byte (D1), narrowed to the ```text fence for markdown (D2); a kept block names what it lacks; header-only without --force is exit 0.

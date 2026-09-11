@@ -52,3 +52,7 @@ write if one existed.
 
 `bg-the-gate-help-names-one-of-its-four-rule-families`, the same shape on `check pm`. It is bound to
 this milestone as its own bug and ordered right after this feature.
+
+## Close
+
+done: 72b1028 — `pm <verb> --help` prints that verb's usage at exit 0 (one case over the router, 72 subtests); adopt's help is checks-only. Review M4 (help mid-argv) lands at the feature.

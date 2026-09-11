@@ -49,3 +49,7 @@ Stamp it with `_stamp_field` after the render, the way `--version` is stamped on
 ## Semver
 
 Minor: a new positional argument.
+
+## Close
+
+done: 72b1028, 65b7a5e — `pm new bug <ms> <slug> [<name...>]` stamps name:; without one it creates and prints a next: line (feature D1). Review M2/M6/N7 land at the feature.

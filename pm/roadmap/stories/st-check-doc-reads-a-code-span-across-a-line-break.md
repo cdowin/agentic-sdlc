@@ -57,3 +57,7 @@ Minor: the gate now fails a tree it passed, the same call 0.7.0 made about its t
 boundary (`non_fenced_lines` drops fences, so a naive join would cross them), a heading, a list-item
 start, a table row, and any gap in line numbers. A span may cross a line break inside a paragraph and
 never crosses a break between two paragraphs.
+
+## Close
+
+done: 1a98b94 — spans read per paragraph, CommonMark backtick pairing, findings on the span's first line; #26's wrapped pair, a wrapped path and a wrapped target all FAIL; README:367 reflowed.

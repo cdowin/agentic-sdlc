@@ -50,3 +50,7 @@ Patch.
 
 Choosing a different stock default. `milestone-that-will-fix-it` is what the tool's model implies and
 is the obvious default, but this story only moves the line.
+
+## Close
+
+done: 61d6a52, 73a72ac — no stock brief binds bugs to the milestone-of-catch; `bugs bind:` is a Project config fence line; po.md's story-terminal line fixed; this repo's agents byte-current.

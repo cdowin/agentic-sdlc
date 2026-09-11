@@ -51,3 +51,7 @@ cardinal sin, *a write that looks legitimate and is not*. So:
 ## Semver
 
 Minor: new flags on an existing verb.
+
+## Close
+
+done: 72b1028 — `pm retire <id> --version --name` backfills a retire row marked backfilled:true for an id not in the tree. Review M1/M3/M5 land at the feature.

@@ -56,3 +56,7 @@ Minor: the WARN's line shape changes (rule 6).
 Ledger `status` rows carry `grain`, not the kind. The kind is resolved through the grain index. A row
 whose grain is no longer in the tree (retired) is skipped, and the skipped rows are counted on the line,
 never silently. The sentence at `pm/skills.py:252` ("a flow you are not running") goes with the WARN's.
+
+## Close
+
+done: 526cacf — U1 and pm init's census count ledger status/disposition rows; retired-grain rows skipped and counted; check pm +16.5 ms over 7,717 rows (121.5 -> 138.0 ms median).

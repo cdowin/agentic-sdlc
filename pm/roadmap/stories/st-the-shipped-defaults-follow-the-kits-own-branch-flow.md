@@ -90,3 +90,7 @@ Minor: a header default changes, and two new stderr lines.
 - **Correction to the story body:** HEAD's `agent-worktree.sh new` already refuses a missing
   `staging` before `git worktree add` (exit 1, `base branch 'staging' does not exist`). What it lacks
   is where to set the base. `cc-stop-gate.sh` is silent, exactly as described.
+
+## Close
+
+done: 7486920 — both script headers default to the remote's HEAD; an unresolved base is named (stop gate) or refused (agent-worktree new); --no-track; 6 cases failed at HEAD.

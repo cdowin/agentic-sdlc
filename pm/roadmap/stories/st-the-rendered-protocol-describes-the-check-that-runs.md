@@ -49,3 +49,7 @@ Patch: the rendered doc's text changes and the step id does not.
 `bg-the-release-belt-and-the-render-verb-disagree-about-changelog`, the neighbouring defect #33
 names as "related but not the same". It is bound to this milestone as its own bug and ordered right
 after this feature. It touches the same check, so the same builder should take it next.
+
+## Close
+
+done: b4e4606 (steps.py hunks), 61d6a52, 73a72ac — the changelog-unreleased-nonempty description says what it reads; `_unreleased_span` deleted; a unit case (moved to tests/test_install_sdlc.py) fails on a description naming a retired input.

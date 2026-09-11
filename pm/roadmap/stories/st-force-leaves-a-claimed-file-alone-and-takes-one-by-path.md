@@ -50,3 +50,7 @@ Minor: a new flag or argument, and a new report disposition line (rule 6's CLOSE
 ## Out of scope
 
 The config header, which is `st-the-project-config-header-survives-force`.
+
+## Close
+
+done: b4e4606 — `[adopt] ours` claims are left alone and named by every install-* run; `--force <path>` takes one destination; a path outside the plan is exit 2. Review C1/M2/M3 land at the feature.

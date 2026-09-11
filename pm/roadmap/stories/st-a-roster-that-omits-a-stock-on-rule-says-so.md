@@ -63,3 +63,7 @@ Minor: a new counted line, and a gate that now exits 1 on a tree it passed.
 
 Making D11 containment itself unconditional. It keeps its `KNOWN_CHECKS` toggle, and criterion 2
 makes the toggle visible.
+
+## Close
+
+done: 526cacf — retired fields reported ungated at exit 1 (0.6.0 D2); a ROSTER line names omitted DEFAULT_CHECKS rules; the D3/D8 refusal names the successor. Probe: pre-0.6.0 roster PASS/0 -> exit 1 + ROSTER line.

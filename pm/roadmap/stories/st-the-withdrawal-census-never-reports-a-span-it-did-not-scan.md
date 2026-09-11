@@ -49,3 +49,7 @@ Minor: a new line shape and a new flag.
 
 A version stamp in installed files. Their GENERATED headers carry no number, and adding one is
 another byte-current surface.
+
+## Close
+
+done: b4e4606 — floor >= ceiling says it compared nothing and names the floor's source; `--since` sets the floor; `--since v0.4.0` from 0.8.0 names changelog-writer.md.

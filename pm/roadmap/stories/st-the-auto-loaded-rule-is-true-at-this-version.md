@@ -57,3 +57,7 @@ Patch: the installed text changes and no line shape does.
 
 Rendering the rule from `[pm.states.*]` at install time. That makes the file config-dependent and
 breaks `test_install`'s byte-current check. Wording it to defer to `pm vocabulary` is the fix.
+
+## Close
+
+done: 61d6a52 — pm-execution.md says D11 FAILS a leftover story, offers `reviewing` only where declared, and drops two more false sentences; re-installed. Criterion 3 proven by 1a98b94's `test_the_installed_rule_names_no_refused_state_where_feature_review_is_undeclared`. The #15 contract/mechanic sort moved nothing — every contract there binds several roles and only the main session reads this file.

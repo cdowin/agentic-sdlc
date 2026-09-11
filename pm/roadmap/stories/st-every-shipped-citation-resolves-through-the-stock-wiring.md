@@ -4,7 +4,7 @@ kind: story
 feature: ft-every-printed-command-runs-in-a-stock-consumer
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every shipped citation resolves through the stock wiring
-status: building
+status: done
 owner: agent
 depends_on: ["st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it"]
 changelog: Every command the shipped agent briefs, rules, skills, SDLC template, seed `devkit.toml` and project templates tell you to run is now spelled through the stock wiring — `make sdlc ARGS='…'` or `make pm ARGS='…'` — so it runs in a consumer with nothing else on PATH, and `check doc` reads those spellings as the status calls they are.

@@ -45,3 +45,5 @@
 {"ts":"2026-09-10T23:16:34Z","kind":"rung.leave","grain":"bg-an-uncounted-tier-passes-the-case-ceiling","state":"fixed","answer":"none","next_rung":"","next_checks":[],"next_actions":[],"have":[]}
 {"ts":"2026-09-11T01:28:51Z","kind":"status","grain":"bg-rule-11-is-gated-in-one-direction-only","from":"open","to":"fixed"}
 {"ts":"2026-09-11T01:28:51Z","kind":"disposition","grain":"bg-rule-11-is-gated-in-one-direction-only","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T01:29:09Z","kind":"status","grain":"bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator","from":"open","to":"fixed"}
+{"ts":"2026-09-11T01:29:09Z","kind":"disposition","grain":"bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator","state":"fixed","answer":"none"}

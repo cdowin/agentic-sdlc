@@ -3,9 +3,9 @@ id: bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: dispatch --grain leads with an export an agent operator cannot deliver, and never names the serial path that needs none
-status: open
+status: fixed
 caused_by:
-changelog: none
+changelog: The auto-loaded execution rule now names `agentic-sdlc dispatch --grain <id>`, the serial path that attributes a dispatch with no export at all, and the `pm ledger record --grain` form for an orchestrator that cannot export into the courier's environment.
 ---
 
 # the export that attributes a dispatch cannot be run by its operator
@@ -94,3 +94,24 @@ premise, and a derived grain is the guess D2 forbids.
 
 Serialising dispatch as a rule. Concurrency has a real cost here already — a
 shared worktree — and that is a different argument in the 0.6.0 handoff.
+
+## What landed
+
+Both halves of the fix, in `src/agentic_sdlc/repo/pm/guidance/pm-execution.md`
+(the SOURCE; the installed `.claude/rules/` copy is re-rendered from it):
+
+  * **The serial path is named**, because it is the one that works: one story
+    `building` at a time and the row attributes itself, since the courier reads
+    the tree at the moment the agent stops. No export, no hand entry.
+  * **`pm ledger record --grain <id> --tokens-total N ...` is named as the form
+    for an orchestrator that cannot export** into the courier's environment —
+    which is any operator whose shell state does not persist between tool
+    calls. `--tokens-total` is already documented as "what a subagent
+    completion actually reports — ONE number", which is exactly what a dispatch
+    hands back.
+  * **`agentic-sdlc dispatch --grain <id>` is named at all**, for the first
+    time, in a surface an orchestrator loads.
+
+Held by `TestACapabilityIsCitedWhereItsOperatorStands`
+(`bg-rule-11-is-gated-in-one-direction-only`), so the citation cannot quietly
+leave again.

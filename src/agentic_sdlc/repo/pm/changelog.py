@@ -89,11 +89,15 @@ def rows(entries: list[Entry]) -> list[tuple[str, ...]]:
             for e in entries if e.said_something]
 
 
-def unanswered(cfg: vocabulary.PmConfig, entries: list[Entry]) -> list[Entry]:
-    """Closed grains carrying neither a sentence nor `none`. The release check
-    grades THIS rather than a file's line count, so it names the grain."""
+def unanswered(cfg: vocabulary.PmConfig, entries: list[Entry],
+               releasing: str = '') -> list[Entry]:
+    """Closed grains carrying neither a sentence nor `none`, and `releasing` —
+    the grain a release is FOR, not closed until the belt writes it — whatever
+    its state. The release check grades THIS, so it names the grain."""
     return [e for e in entries
-            if vocabulary.category_of(cfg, e.kind, e.status) == vocabulary.DONE_CATEGORY
+            if (e.gid == releasing
+                or vocabulary.category_of(cfg, e.kind, e.status)
+                == vocabulary.DONE_CATEGORY)
             and not e.text.strip()]
 
 

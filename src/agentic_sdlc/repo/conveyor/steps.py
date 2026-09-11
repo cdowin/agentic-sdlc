@@ -308,8 +308,8 @@ def _make(ctx: Context, *args: str) -> tuple[int, str]:
 
 def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
     """This package's own verb as a subprocess (`repo/` may not import
-    `cli`), with `PYTHONPATH` naming the running package; returns the argv
-    it ran so a test can assert what was run."""
+    `cli`), with `PYTHONPATH` naming the running package; returns the whole
+    output, unclipped, and the argv it ran so a test can assert what was run."""
     import agentic_sdlc
 
     parent = str(Path(agentic_sdlc.__file__).resolve().parent.parent)
@@ -326,17 +326,21 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
         return CANNOT_RUN, f'`agentic-sdlc {" ".join(argv)}` could not be run ({err})', argv
-    return done.returncode, _clip(done.stdout + done.stderr), argv
+    return done.returncode, done.stdout + done.stderr, argv
 
 
-def _own_verdict(ctx: Context, *argv: str, found: str = '') -> Answer:
+def _own_verdict(ctx: Context, *argv: str, found: str = '',
+                 after=None) -> Answer:
     """One of this package's own gates as a check: exit 2 is UNVERIFIABLE
-    (D11) — only for this callee, since a configured command is any shell."""
-    code, said, _ = _own_cli(ctx, *argv)
+    (D11) — only for this callee, since a configured command is any shell.
+    `after(output)` appends a clause to a TRUE detail, after the clip."""
+    code, printed, _ = _own_cli(ctx, *argv)
+    said = _clip(printed)
     spoken = f'`agentic-sdlc {" ".join(argv)}`'
     if code == 0:
         return Answer.yes(f'{spoken} exited 0{f" — {found}" if found else ""}'
-                          + (f': {said}' if said else ''))
+                          + (f': {said}' if said else '')
+                          + (after(printed) if after else ''))
     if code == 2:
         return Answer.unverifiable(
             f'{spoken} exited 2 — a CONFIG or usage error, not a finding, so '
@@ -805,7 +809,8 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
 
     It counted BULLETS IN A FILE: one bullet passed a release of forty grains,
     and nothing bound a bullet to the work it described. It names the GRAIN
-    now. The step KEEPS its name — a step id is contract (rule 6).
+    now. The step KEEPS its name — a step id is contract (rule 6). The
+    milestone is graded whatever its state: this runs before its `done` (0.8.0).
     """
     from agentic_sdlc.repo.pm import changelog as clog
     cfg = _pm_cfg(ctx)
@@ -816,13 +821,18 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     entries = clog.collect(cfg, mid)
     if not entries:
         return Answer.unverifiable(f'{mid} holds no grains to read')
-    silent = clog.unanswered(cfg, entries)
+    silent = clog.unanswered(cfg, entries, releasing=mid)
     if silent:
-        named = ', '.join(e.gid for e in silent[:SHOWN_MAX])
-        more = (f' (+{len(silent) - SHOWN_MAX} more)'
-            if len(silent) > SHOWN_MAX else '')
+        closed = [e.gid for e in silent if e.gid != mid]
+        who = ([f'{mid}, the milestone this release is for,']
+               if len(closed) < len(silent) else [])
+        if closed:
+            more = (f' (+{len(closed) - SHOWN_MAX} more)'
+                    if len(closed) > SHOWN_MAX else '')
+            who.append(f'{len(closed)} closed grain(s)')
+        listed = (f': {", ".join(closed[:SHOWN_MAX])}{more}' if closed else '')
         return Answer.no(
-            f'{len(silent)} closed grain(s) answered neither: {named}{more} — '
+            f'{" and ".join(who)} answered neither{listed} — '
             f'`agentic-sdlc pm set <id> {clog.FIELD} "<sentence>"`, or '
             f'`{clog.NEEDS_NONE}` to say it earned no consumer-visible line')
     said = clog.rows(entries)
@@ -831,7 +841,8 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     declined = sum(1 for e in entries if e.declined)
     return Answer.yes(f'{len(said)} entry/ies across {len(entries)} grain(s), '
                       f'{declined} declined with `{clog.NEEDS_NONE}`; every '
-                      f'closed grain answered')
+                      f'closed grain answered, and so did {mid}, the '
+                      f'milestone this release is for')
 
 
 def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:
@@ -1301,12 +1312,47 @@ def check_runner_targets_resolve(ctx: Context) -> Answer:
 
 
 def check_checks_pass(ctx: Context) -> Answer:
-    """THIS package's `check all` — never the consumer's `make check`."""
+    """THIS package's `check all` — never the consumer's `make check`. A TRUE
+    detail names what it did NOT run (0.8.0, rule 11); reading a make file for
+    what else is armed would be deciding what a project meant (rule 9)."""
     command = _configured(ctx, 'checks-pass')
     if command:
         return run_command(ctx, 'checks-pass', command)
     return _own_verdict(ctx, 'check', 'all',
-                        found='the roster this version ships')
+                        found='the roster this version ships',
+                        after=lambda printed: _not_run_clause(ctx, printed))
+
+
+# Every gate prints `[check:<gate>] …` on every path (rule 6), so the gates
+# that printed one are the gates `check all` ran.
+_GATE_LINE = re.compile(r'^\[check:([a-z][a-z0-9-]*)\]', re.MULTILINE)
+
+
+def _not_run_clause(ctx: Context, printed: str) -> str:
+    """'; NOT run: …', or ''. Gates are read off `check all`'s own lines, never
+    a copy of the router's stock roster, which this layer may not import."""
+    from agentic_sdlc.repo import gates_extra
+
+    ran = set(_GATE_LINE.findall(printed))
+    gates = sorted(gate_universe() - ran)
+    try:
+        targets: tuple[str, ...] | None = gates_extra.targets()
+    except ConfigError:
+        targets = None
+    parts = []
+    if gates:
+        parts.append(f'{len(gates)} gate(s) outside the roster '
+                     f'({", ".join(gates)})')
+    if targets:
+        parts.append(f'{len(targets)} [gates] extra target(s) '
+                     f'({_clip(", ".join(targets), LIST_LIMIT)})')
+    clause = (f'; NOT run: {" and ".join(parts)} — '
+              f'`[{ctx.operation}.commands] checks-pass` is the command that '
+              f'would run them' if parts else '')
+    if targets is None:
+        clause += ('; [gates] extra could not be read, so none of its targets '
+                   'is named — `config-updated` says why')
+    return clause
 
 
 def check_pm_validates(ctx: Context) -> Answer:
@@ -1595,9 +1641,10 @@ STEP_DOC: dict[str, str] = {
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
     'changelog-unreleased-nonempty':
-        'every grain in the milestone, the milestone included, that is in the '
-        '`done` category answers its `changelog:` field with a sentence or '
-        '`none` — the field is read on each grain, and no file is.',
+        'the milestone itself, whatever its state, and every grain in it that '
+        'is in the `done` category answer the `changelog:` field with a '
+        'sentence or `none`. The milestone is graded before `release` writes '
+        'its `done`, and the field is read on each grain — no file is.',
     'features-done':
         '`pm ready-for milestone <milestone>` exits 0 — every feature is in '
         'the `done` category and no open bug names the milestone.',
@@ -1629,7 +1676,10 @@ STEP_DOC: dict[str, str] = {
         'list passes and says so.',
     'checks-pass':
         'this package\'s `agentic-sdlc check all` exits 0 — not '
-        '`make check`, which verifies your code against your rules.',
+        '`make check`, which verifies your code against your rules. Its '
+        '`ok:` line names what it did NOT run — every gate outside the '
+        'roster, every `[gates] extra` target — and `[adopt.commands] '
+        'checks-pass` is the command that would run them.',
     'pm-validates':
         '`pm validate` exits 0; a repo with no PM tree is refused.',
     # --- story ---

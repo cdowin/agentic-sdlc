@@ -34,7 +34,7 @@ tree, in CI and pre-push.
 |---|---|---|---|
 | 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. What is modified INSIDE it is neither read nor counted, because the belt writes there by design: the status it lands, `gate`'s cost rows, every `[emit]` event. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
-| 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | every grain in the milestone, the milestone included, that is in the `done` category answers its `changelog:` field with a sentence or `none` — the field is read on each grain, and no file is. |
+| 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the milestone itself, whatever its state, and every grain in it that is in the `done` category answer the `changelog:` field with a sentence or `none`. The milestone is graded before `release` writes its `done`, and the field is read on each grain — no file is. |
 | 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and no open bug names the milestone. |
 | 5 | `findings-resolved` | `agentic-sdlc pm ready-for tag <id>` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — no finding in any record the milestone's grains point at is `open`. |
 | 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version; read, never bumped. |
@@ -64,7 +64,7 @@ tree, in CI and pre-push.
 | 4 | `hooks-self-test` | `agentic-sdlc check hooks` *(shipped)* | `check hooks` exits 0 — the installed guards still return the verdicts their own corpus asserts. |
 | 5 | `telemetry-live` | `make -s pm ARGS=vocabulary` *(shipped)* | BOTH ledger couriers are registered with your harness AND `make -s pm` reaches the verb in THIS tree — a probe of your vehicle, not a file read and not the courier's own hermetic self-test, which passes from an empty directory. The registration is read out of `.claude/settings.json` and `.claude/settings.local.json`, and a courier row in the ledger outranks both: it proves the path wherever the config lives. Never mandatory: a tree that has opted out is quiet, not broken. |
 | 6 | `runner-targets-resolve` | `make -n <[adopt] runner_targets>` *(shipped)* | the composed gate targets resolve under `make -n`; an empty tier list passes and says so. |
-| 7 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0 — not `make check`, which verifies your code against your rules. |
+| 7 | `checks-pass` | `agentic-sdlc check all` *(shipped)* | this package's `agentic-sdlc check all` exits 0 — not `make check`, which verifies your code against your rules. Its `ok:` line names what it did NOT run — every gate outside the roster, every `[gates] extra` target — and `[adopt.commands] checks-pass` is the command that would run them. |
 | 8 | `pm-validates` | `agentic-sdlc pm validate` *(shipped)* | `pm validate` exits 0; a repo with no PM tree is refused. |
 
 **Then:** nothing. `adopt` writes nothing; it is checks only, and `--force` is refused.

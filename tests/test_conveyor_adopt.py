@@ -308,16 +308,27 @@ MAKEFILE_SENTINEL = (
     '\t@touch EXTRA-GATE-RAN\n' % __version__)
 
 
+# What `check all` prints over the stock roster, in its own line shapes.
+RAN = ('doc', 'shell', 'grain-shape')
+CHECK_ALL_SAID = '\n\n'.join(f'[check:{gate}] PASS — scratch' for gate in RAN)
+
+
 def test_checks_pass_never_runs_make(monkeypatch):
     """Bites: the one line that regresses the first time somebody makes
     adoption 'more thorough' — `checks-pass` reaching for the consumer's
     `make check`. The recorder sees what RAN; the sentinel proves the
-    consumer's targets did not."""
+    consumer's targets did not.
+
+    And the other half (0.8.0): it SAYS what it did not run. `ok: checks-pass`
+    beside a red `check budget` the consumer armed as a make target was the
+    belt staying quiet — so the TRUE line names every gate outside the roster
+    `check all` printed, every `[gates] extra` target, and the key that would
+    run them. The verdict does not move."""
     recorded: list[tuple[str, ...]] = []
 
     def recorder(context, *argv):
         recorded.append(argv)
-        return 0, 'recorded', ('agentic-sdlc',) + argv
+        return 0, CHECK_ALL_SAID, ('agentic-sdlc',) + argv
 
     config = ('[adopt]\nsteps = ["checks-pass"]\n\n'
               '[gates]\nextra = ["my-gate"]\n')
@@ -329,6 +340,12 @@ def test_checks_pass_never_runs_make(monkeypatch):
             f'checks-pass ran {recorded!r} — adoption verifies the ADOPTION')
         assert not (root / 'MAKE-CHECK-RAN').exists()
         assert not (root / 'EXTRA-GATE-RAN').exists()
+    off = sorted(steps.gate_universe() - set(RAN))
+    assert 'budget' in off, off
+    assert answer.detail.endswith(
+        f'; NOT run: {len(off)} gate(s) outside the roster ({", ".join(off)}) '
+        f'and 1 [gates] extra target(s) (my-gate) — `[adopt.commands] '
+        f'checks-pass` is the command that would run them'), answer.detail
 
 
 def test_the_whole_belt_writes_nothing_and_touches_no_repo_but_this_one():

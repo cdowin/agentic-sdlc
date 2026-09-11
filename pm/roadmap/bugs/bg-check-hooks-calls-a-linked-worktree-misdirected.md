@@ -14,16 +14,21 @@ Reported by three isolated builders on 2026-09-11. In every linked worktree, `ch
 `MISDIRECTED core.hooksPath is '/Users/…/agentic-sdlc/tools/hooks'`, and 7 `test_makefile_gates` cases
 failed with it.
 
-## Root cause: this checkout's config, not the kit
+## Root cause: the agent-worktree harness, not this repo's arming
 
-The stock arming, `tools/setup-hooks.sh`, sets `core.hooksPath` to the RELATIVE `tools/hooks`. Git
-resolves that against each worktree's own root, so a linked worktree runs its own corpus and the check
-passes. This repo's shared `.git/config` held an ABSOLUTE path, set by something other than the stock
-script, which pointed every linked worktree at the main checkout's hooks.
+**First reading, wrong, and corrected here rather than silently.** It was closed at first as a local
+config trap: the stock `tools/setup-hooks.sh` sets the RELATIVE `tools/hooks`, which resolves per
+worktree. Re-arming made it pass. Within the hour the value was ABSOLUTE again. Nothing in this repo
+writes that, and `.git/config`'s mtime (11:28 local) matched the moment the Claude Code harness created
+two agent worktrees (`isolation: worktree`). **The harness writes an absolute `core.hooksPath`
+naming the main worktree's corpus into the SHARED config.** Every consumer that runs agents in
+worktrees gets the same red line, and no repair clears it, because the harness re-writes it.
 
-## Fix
+## Fix — 8571e36
 
-Re-armed with `bash tools/setup-hooks.sh` (2026-09-11): `core.hooksPath` is `tools/hooks` again and
-`check hooks` passes. No code change. A code change to accept the absolute form was written and then
-backed out, because the stock path never produces it. Closed as a local-config trap. It is recorded
-here, and in the milestone handoff's traps, so the next session re-arms rather than patches.
+`checks/hooks.py`: when this checkout is a LINKED worktree and `core.hooksPath` resolves to the MAIN
+worktree's `tools/hooks`, it is armed, not misdirected. It is named on a `note` line, because git then
+runs the main worktree's corpus, which may differ from this checkout's copy (rule 11). Anything else
+that points elsewhere is still MISDIRECTED. Paths are compared resolved, because git answers
+`/private/var` where the config says `/var`. The case
+`test_a_linked_worktree_armed_at_the_main_worktrees_corpus_is_not_misdirected` fails at HEAD.

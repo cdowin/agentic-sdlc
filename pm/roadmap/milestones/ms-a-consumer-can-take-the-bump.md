@@ -2,7 +2,7 @@
 id: "ms-a-consumer-can-take-the-bump"
 kind: milestone
 name: a consumer can take the bump
-status: planning
+status: building
 depends_on: ["ms-nothing-is-hand-rolled"]
 branch: milestone/0.8.0-a-consumer-can-take-the-bump
 version: 0.8.0

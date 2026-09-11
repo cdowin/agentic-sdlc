@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-pm-surface-has-no-dead-ends
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every verb answers its own --help, and adopt's describes the belt that ships
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

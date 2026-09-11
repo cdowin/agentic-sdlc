@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-pm-surface-has-no-dead-ends
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a milestone retired before 0.5.0 can still get its retire row
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

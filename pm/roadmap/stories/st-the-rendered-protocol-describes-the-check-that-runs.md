@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the rendered protocol describes the check that runs
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

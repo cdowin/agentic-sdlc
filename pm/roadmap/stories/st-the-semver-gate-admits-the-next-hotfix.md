@@ -4,8 +4,8 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the semver gate admits the next hotfix, not only the first
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

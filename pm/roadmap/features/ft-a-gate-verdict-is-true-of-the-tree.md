@@ -3,7 +3,7 @@ id: ft-a-gate-verdict-is-true-of-the-tree
 kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a gate verdict is true of the tree
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

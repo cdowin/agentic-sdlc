@@ -1,0 +1,43 @@
+Cold-start only. Everything derivable is a command — never restate `pm status`, `git log` or `pm ledger report`.
+
+# ms-a-consumer-can-take-the-bump a consumer can take the bump — handoff
+
+## 1. Where the work lives
+
+| | |
+|---|---|
+| **Branch** | `milestone/0.8.0-a-consumer-can-take-the-bump`, off `main` at `4dae916` (the v0.7.0 merge) |
+| **Version** | 0.8.0 (planned as 0.7.1; re-versioned in D1). The bump is at CLOSE, so `__version__` stays 0.7.0 until the release commit |
+| **Tree** | `/Users/cdowin/workspace/agentic-sdlc`, one shared worktree. Builders run concurrently on DISJOINT file sets; reviewers use a detached worktree under the session scratchpad, removed after |
+
+## 2. Where to pick up
+
+```bash
+git log --oneline 4dae916..HEAD
+agentic-sdlc pm status ms-a-consumer-can-take-the-bump
+agentic-sdlc pm ledger report ms-a-consumer-can-take-the-bump
+```
+
+Reading order: the three decisions files (milestone D1, and D1 on each of the two install and
+vehicle features) before any feature, so their rejected alternatives are not re-argued.
+
+The dispatch phases, by file set. Overlapping work is serialized:
+
+    A  ft-install-force… (install.py)  ·  ft-the-pm-surface… (pm/cli.py, driver.py)
+       ft-the-shipped-words… (guidance, briefs, README, steps.py descriptions)
+       st-the-semver-gate… (ci-semver-gate.yml)
+    B  the rest of ft-a-gate-verdict… (doc.py after the words land; checks/pm.py,
+       vocabulary.py, inventory.py) + the three bound bugs
+    C  ft-every-printed-command… LAST: its sweep rewrites text the others touch
+
+Every feature acceptance closes its GH issues (SDLC.md §2): push, comment with the hash, close.
+
+## 3. Traps this milestone has already sprung
+
+- **The story belt's `committed` check fails whenever another builder has files in flight.** It
+  reads "nothing uncommitted outside pm/roadmap/". So stories are closed after their phase's
+  builders have all reported and each slice is committed by pathspec, not the moment one reports.
+- **The pre-push gate leaves one `gate` row in `pm/roadmap/ledger.jsonl`.** That is correct
+  (0.7.0/D2). It rides with the next commit; do not chase it.
+- **U1 on this tree reports `building` as never held,** which is #30 itself. Do not "fix" the
+  vocabulary because of that WARN.

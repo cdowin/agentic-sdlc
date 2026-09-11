@@ -3,7 +3,7 @@ id: ft-install-force-keeps-what-the-project-owns
 kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: install --force keeps what the project owns
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

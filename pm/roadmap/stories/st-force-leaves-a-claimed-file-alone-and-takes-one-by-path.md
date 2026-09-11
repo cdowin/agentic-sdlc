@@ -4,8 +4,8 @@ kind: story
 feature: ft-install-force-keeps-what-the-project-owns
 milestone: "ms-a-consumer-can-take-the-bump"
 name: --force leaves an adopt-ours claim alone, and one installable can be taken by path
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

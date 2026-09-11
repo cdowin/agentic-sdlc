@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a role brief states the tool's fact, not a project's policy
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

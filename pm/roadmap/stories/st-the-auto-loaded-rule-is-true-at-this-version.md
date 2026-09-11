@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the auto-loaded pm-execution rule is true at this version
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

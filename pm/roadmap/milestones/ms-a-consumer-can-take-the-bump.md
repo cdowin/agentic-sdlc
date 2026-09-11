@@ -22,6 +22,7 @@ order:
   - "bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not"
   - "bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed"
   - "ft-every-printed-command-runs-in-a-stock-consumer"
+reviewed: docs/reviews/2026-09-11-0.8.0-milestone-review.md
 ---
 
 # 0.8.0 — a consumer can take the bump

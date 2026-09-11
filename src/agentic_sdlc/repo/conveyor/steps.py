@@ -1436,12 +1436,19 @@ def check_evidence_written(ctx: Context) -> Answer:
         text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
+    return evidence_in(cfg.rel(path), text)
+
+
+def evidence_in(rel: str, text: str) -> Answer:
+    """`evidence-written`'s whole grammar over a story's text: the one reader
+    of a `done:` line, which `check pm`'s CLOSE line asks too — with the text
+    off the gate's own single read, since the gate opens each document once."""
     lines = [m.group('body').strip()
              for m in (EVIDENCE_LINE.match(raw) for raw in text.split('\n'))
              if m is not None]
     if not lines:
         return Answer.no(
-            f'{cfg.rel(path)} carries no `done:` line — step 6 of '
+            f'{rel} carries no `done:` line — step 6 of '
             f'pm-execution.md: `done: <hash(es)> — <what shipped>`, at most '
             f'{EVIDENCE_BUDGET} lines, so a fresh session picks this story up '
             f'from the tree alone')
@@ -1452,12 +1459,12 @@ def check_evidence_written(ctx: Context) -> Answer:
         said = EVIDENCE_LANDED.sub('', body).strip(' \t—–-:;,.')
         if not said:
             return Answer.no(
-                f'{cfg.rel(path)} `done: {_clip(body, QUOTED_LIMIT)}` names what landed '
+                f'{rel} `done: {_clip(body, QUOTED_LIMIT)}` names what landed '
                 f'and not what shipped — the second half of the line is the '
                 f'part a fresh session reads')
-        return Answer.yes(f'{cfg.rel(path)} carries `done: {_clip(body, QUOTED_LIMIT)}`')
+        return Answer.yes(f'{rel} carries `done: {_clip(body, QUOTED_LIMIT)}`')
     return Answer.no(
-        f'{cfg.rel(path)} `done: {_clip(lines[0], QUOTED_LIMIT)}` names no commit — a '
+        f'{rel} `done: {_clip(lines[0], QUOTED_LIMIT)}` names no commit — a '
         f'hash of {HASH_MIN}-{HASH_MAX} hex characters, or the literal '
         f'`{IN_PLACE}` for a fix that has not been committed yet')
 

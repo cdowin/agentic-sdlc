@@ -253,10 +253,12 @@ def print_ladder() -> None:
             print(f'  {"":<10} never held: {", ".join(never)}')
     print()
     print('  "never held" read each grain\'s current status plus the ledger\'s')
-    print('  status and disposition rows.')
+    # Only the rows it could place, the moment one could not be (M1).
+    print('  status and disposition rows'
+          + (' it could place.' if history.skipped else '.'))
     if history.skipped:
-        print(f'  {history.skipped} ledger row(s) name a grain no longer in the '
-              f'tree and were skipped.')
+        print(f'  {history.skipped} ledger row(s) name {inventory.UNPLACED_ID} '
+              f'and were skipped.')
     if history.unreadable:
         print(f'  {len(history.unreadable)} ledger(s) would not read and were '
               f'not counted: {", ".join(history.unreadable)}.')

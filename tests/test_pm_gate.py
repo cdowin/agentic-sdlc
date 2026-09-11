@@ -495,7 +495,13 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 line = "story 0.1/alpha/s0 is %r and has an empty `## Acceptance criteria`" % status
                 self.assertEqual(line in out, expect, out)
-                self.assertEqual('warning(s)' in out, expect, out)
+                # The one other WARN this fixture earns: its only story `done`
+                # under a `building` feature with no record is a close the tree
+                # is ready for (CLOSE) — named, and nothing else is.
+                self.assertEqual('(CLOSE)' in out, status == 'done', out)
+                others = [ln for ln in out.splitlines()
+                          if ln.startswith('  WARN') and '(CLOSE)' not in ln]
+                self.assertEqual(bool(others), expect, out)
         # The feature's and the milestone's own sections, plus the
         # frontmatter fact a milestone past `todo` needs: a branch. A grain
         # with NO such heading at all says so in different words from an empty
@@ -3073,7 +3079,9 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
         every `in_progress` rung never held — one consumer closed four `fixed`
         bugs and was told `fixed never held` while its ledger had just gained
         four `"from":"fixed"` rows. Criterion 3 is the first half: with no
-        ledger, the census names exactly what it always did."""
+        ledger, the census names exactly what it always did. A new case, not
+        an amended `test_it_names_the_unused_states_with_the_count_in_use`:
+        that one holds a tree with no bug, and this needs one read twice."""
         with tree(milestone_status='building', feature_status='building',
                   story_statuses=('done',),
                   config='[pm]\nchecks = ["U1"]\n') as root:
@@ -3105,8 +3113,16 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             self.assertNotIn('reviewing', self._never_held(after, 'feature'))
             # A state named nowhere still is.
             self.assertIn('obe', self._never_held(after, 'story'))
-            self.assertIn('1 ledger row(s) naming a grain no longer in the '
-                          'tree skipped', after)
+            # The review's M1: `pm rename` leaves the ledger under the OLD id,
+            # so a skipped row may name a grain still in the tree. The clause
+            # says only what is true of either, and the headline is qualified
+            # the moment a row could not be placed.
+            self.assertIn('1 ledger row(s) naming an id no grain in the tree '
+                          'declares (retired, or renamed: `pm rename` does not '
+                          'rewrite the ledger) skipped', after)
+            self.assertNotIn('no longer in the tree', after)
+            self.assertIn('named by no ledger row it could place', after)
+            self.assertNotIn('it could place', before)
             self.assertNotIn('a flow the project is not running', after)
             # A ledger that will not parse is NAMED, not read as silence: the
             # census falls back to what it could read, and says so (rule 4).
@@ -3144,6 +3160,79 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('wombat', out)
+
+
+class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
+    """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`: 15 stories
+    carried a `done:` line and 0 were `done`, four features had every story
+    finished, and `check pm` passed quietly — a belt that is never run tells
+    nobody anything. Each close the tree is ready for is ONE counted WARN line
+    naming the grains and the next command, read through the belts' own
+    checks; never the exit code, and never gated by `[pm] checks`."""
+
+    VERDICT = ('```\nverdict: SHIP-WITH-FIXES\n| id | severity | disposition |\n'
+               '| W1 | MAJOR | {} |\n```\n')
+
+    @staticmethod
+    def _close_lines(root) -> tuple[int, list[str]]:
+        code, out = run_gate(root)
+        return code, [ln for ln in out.splitlines() if ln.endswith('(CLOSE)')]
+
+    def test_each_ready_close_is_one_line_naming_its_next_command(self):
+        with tree(feature_status='building', story_statuses=('building', 'done'),
+                  with_record=False) as root:
+            code, lines = self._close_lines(root)
+            self.assertEqual((code, lines), (0, []))        # nothing is ready
+            s0 = root / STORY_REL
+            write(s0, {'id': '0.1/alpha/s0', 'kind': 'story',
+                       'feature': '0.1/alpha', 'milestone': '"0.1"',
+                       'name': 'S0', 'status': 'building'},
+                  body='done: 3a42f19ad0 — the belt walks\n')
+            code, lines = self._close_lines(root)
+            self.assertEqual(code, 0, lines)
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn("1 story/ies ready for `close story`", lines[0])
+            self.assertIn("0.1/alpha/s0 ('building')", lines[0])
+            self.assertIn('next: `agentic-sdlc close story <id>`', lines[0])
+            self.assertIn('<WARN: 1 story/ies ready for `close story`>',
+                          run_cli(root, 'status')[1])
+            # The roster does not narrow it: a belt is not a `[pm] checks` rule.
+            write_config(root, '[pm]\nchecks = ["D1"]\n')
+            self.assertEqual(self._close_lines(root), (0, lines))
+            write_config(root, '')
+
+            frontmatter.set_field(s0, 'status', 'done')
+            code, lines = self._close_lines(root)
+            self.assertEqual(code, 0, lines)
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn('1 feature(s) need a review record', lines[0])
+            self.assertIn("0.1/alpha ('building')", lines[0])
+            self.assertIn('next: the review, then `agentic-sdlc pm set <id> '
+                          'reviewed <path>`', lines[0])
+            self.assertIn('<WARN: needs a review record>',
+                          run_cli(root, 'status')[1])
+
+            feature = root / 'pm/roadmap/features/alpha.md'
+            record = root / 'docs/reviews/alpha.md'
+            record.parent.mkdir(parents=True)
+            record.write_text(self.VERDICT.format('open'), encoding='utf-8')
+            frontmatter.set_field(feature, 'reviewed', 'docs/reviews/alpha.md')
+            # A MAJOR still open: findings-landed says no, so no close is ready.
+            self.assertEqual(self._close_lines(root), (0, []))
+
+            record.write_text(self.VERDICT.format('landed in-place'),
+                              encoding='utf-8')
+            frontmatter.set_field(feature, 'status', 'reviewing')
+            code, lines = self._close_lines(root)
+            self.assertEqual(code, 0, lines)
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn('1 feature(s) ready for `close feature`', lines[0])
+            self.assertIn("0.1/alpha ('reviewing')", lines[0])
+            self.assertIn('next: `agentic-sdlc close feature <id>`', lines[0])
+            # `pm status` marks the same grain inline.
+            code, board = run_cli(root, 'status')
+            self.assertEqual(code, 0, board)
+            self.assertIn('<WARN: ready for `close feature`>', board)
 
 
 class TheHelpStatesTheRosterTheCodeRuns(unittest.TestCase):

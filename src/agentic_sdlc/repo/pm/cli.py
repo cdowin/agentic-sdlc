@@ -1398,6 +1398,17 @@ def _age_cell(cfg: vocabulary.PmConfig, kind: str, gid: str, status: str,
     return f'  open {opened.get(gid) or ledger.human_duration(None)}'
 
 
+def _close_mark(ready, view) -> str:
+    """The inline form of `check pm`'s CLOSE lines, off the same read."""
+    if any(fid == view.fid for fid, _ in ready.closable):
+        return '  <WARN: ready for `close feature`>'
+    if any(fid == view.fid for fid, _ in ready.unreviewed):
+        return '  <WARN: needs a review record>'
+    ids = {sid for sid, _ in ready.stories}
+    n = sum(1 for s in view.stories if s.field(vocabulary.FIELD_ID) in ids)
+    return f'  <WARN: {n} story/ies ready for `close story`>' if n else ''
+
+
 def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     only = args[0] if args else ''
     # Rule 4: a scan that saw nothing says so instead of an empty print at exit
@@ -1415,6 +1426,9 @@ def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # prints whole.
     width = max(len(word) for word in vocabulary.flow_of(cfg,
                                                     vocabulary.GRAIN_FEATURE).order)
+    # `check pm`'s CLOSE lines, marked on the row they are about — one read.
+    from agentic_sdlc.repo.checks import pm as pm_check
+    ready = pm_check.close_ready(cfg)
     for mdir, milestone in known:
         mid = milestone.gid
         if only and only != mid:
@@ -1435,7 +1449,8 @@ def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             dangling = inventory.drift_dangling_record(cfg, view.fid)
             stalled = inventory.drift_stalled(cfg, view)
             drift = (f'  <DRIFT: {dangling}>' if dangling
-                     else f'  <WARN: {stalled}>' if stalled else '')
+                     else f'  <WARN: {stalled}>' if stalled
+                     else _close_mark(ready, view))
             rows.append((view,
                          f'  feature {_short(mid, view.fid):<40} '
                          f'[{view.status:<{width}}] stories '

@@ -58,8 +58,9 @@ Every feature acceptance closes its GH issues (SDLC.md §2): push, comment with 
   `git config core.bare` FIRST.
 - **The harness creates isolated worktrees from `main`, not the milestone branch.** Every isolated
   builder is briefed to `git merge --ff-only milestone/0.8.0-…` first.
-- **`core.hooksPath` must be the RELATIVE `tools/hooks`** (`bash tools/setup-hooks.sh`). An absolute
-  value makes every linked worktree MISDIRECTED.
+- **The Claude Code harness rewrites `core.hooksPath` to an ABSOLUTE path** when it makes an agent
+  worktree, and re-arming does not stick. Since 8571e36, `check hooks` accepts a linked worktree armed
+  at the main worktree's corpus and prints a `note` line; before that, every worktree was MISDIRECTED.
 - **`git commit -- pm/roadmap` does not take NEW files.** `pm new` and `pm decide` create untracked
   files, so `git add` them first. Two grain files went uncommitted this way.
 - **A review disposition must match the verdict grammar:** `landed <one-hash>`, `landed in-place`,

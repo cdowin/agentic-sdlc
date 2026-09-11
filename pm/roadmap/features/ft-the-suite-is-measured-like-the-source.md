@@ -3,7 +3,7 @@ id: ft-the-suite-is-measured-like-the-source
 kind: feature
 milestone: "ms-nothing-is-hand-rolled"
 name: the suite is measured like the source
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []

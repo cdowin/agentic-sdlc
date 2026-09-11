@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: the work provider leaves the config module
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

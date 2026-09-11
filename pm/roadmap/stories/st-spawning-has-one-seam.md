@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: spawning has one seam
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: none
@@ -148,3 +148,5 @@ seam's own path is `SPAWN_SEAM`.
 finding: trap 2 is real and now measured. On an emit path planted with `spawn.run(...)`,
 `module_spawns(emit.py)` answers **False** — the old question passes over it — while the
 re-pointed case names `repo/emit.py:10` and `:126`.
+
+done: 3267075 — `core/spawn.py`, one `import subprocess` in `src/`, residual 24 lines all imports.

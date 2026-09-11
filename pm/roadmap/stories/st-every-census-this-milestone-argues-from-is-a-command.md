@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-suite-is-measured-like-the-source
 milestone: "ms-nothing-is-hand-rolled"
 name: every census this milestone argues from is a command
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `agentic-sdlc cite [--sites]` is new: the rule-citation census over the tracked text of the tree you are standing in — how many times each `rule <n>` is cited and where. Columns in order: `rule citations files`, and with `--sites` one row per citation, `rule path line text`; rows on stdout, the census line on stderr, and a census of ZERO files is exit 1 naming what it scanned.

@@ -336,3 +336,4 @@
 {"ts":"2026-09-11T05:30:19Z","kind":"status","grain":"st-every-module-opens-with-one-true-sentence","from":"building","to":"done"}
 {"ts":"2026-09-11T05:30:19Z","kind":"disposition","grain":"st-every-module-opens-with-one-true-sentence","state":"done","answer":"none"}
 {"ts":"2026-09-11T05:30:19Z","kind":"rung.leave","grain":"st-every-module-opens-with-one-true-sentence","state":"done","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["agentic-sdlc close feature <feature-id>"],"have":[]}
+{"ts":"2026-09-11T05:45:03Z","kind":"rung.enter","grain":"ft-the-module-says-what-it-does","rung":"feature","ready":true,"blockers":[]}

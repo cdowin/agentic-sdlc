@@ -57,7 +57,8 @@ or milestone status.
    spec for deletion, and file a bug where the spec promised what the code
    never built.
 4. PM tree: shipping notes on done stories (gates, verdict, hashes,
-   follow-ups); file post-ship bugs under the milestone-of-catch; a story
+   follow-ups); file post-ship bugs as bug grains — a bug's `milestone:` is
+   its parent, and that milestone cannot close while the bug is open; a story
    stuck in `building` after work shipped is surfaced, not fixed.
 5. README only when the feature changes something user-facing.
 6. Bullets, present tense, no emojis, read the code rather than guess.

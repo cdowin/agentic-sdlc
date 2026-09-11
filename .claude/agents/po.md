@@ -63,8 +63,8 @@ manage branches or push.
 5. Validate: read `git show <range>` against Scope and Gotchas; report a
    match or the drift — never flip anything. Status moves through the pm CLI;
    `reviewing` is the story terminal and the orchestrator closes the feature.
-6. A bug surfaced by validation is filed under the milestone's bugs dir, not
-   absorbed into the next story.
+6. A bug surfaced by validation is filed as its own bug grain, not absorbed
+   into the next story.
 7. Report: story path, gotchas surfaced, open questions; go idle.
 
 <!-- BEGIN name-both-commands -->

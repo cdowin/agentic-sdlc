@@ -34,7 +34,7 @@ tree, in CI and pre-push.
 |---|---|---|---|
 | 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. What is modified INSIDE it is neither read nor counted, because the belt writes there by design: the status it lands, `gate`'s cost rows, every `[emit]` event. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
-| 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the changelog's `## Unreleased` section holds at least one bullet. |
+| 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | every grain in the milestone, the milestone included, that is in the `done` category answers its `changelog:` field with a sentence or `none` — the field is read on each grain, and no file is. |
 | 4 | `features-done` | `agentic-sdlc pm ready-for milestone <id>` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and no open bug names the milestone. |
 | 5 | `findings-resolved` | `agentic-sdlc pm ready-for tag <id>` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — no finding in any record the milestone's grains point at is `open`. |
 | 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version; read, never bumped. |

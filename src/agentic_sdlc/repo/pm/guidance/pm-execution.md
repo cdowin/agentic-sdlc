@@ -106,17 +106,21 @@ does not declare is refused by name.
    `planning` milestone records too — and a tree whose couriers are wired and whose
    ledgers are empty is `check pm`'s U2, not something a status flip fixes.
 2. **Commit atomically.** One logical unit per commit.
-3. **Ready for review — a FEATURE act in the shipped vocabulary.** `pm feature
-   reviewing <id>` while the record is written. The seed declares no review word for a
-   STORY (`planning` `ready` | `building` | `done` `obe`), so `pm story reviewing <id>`  <!-- doc-scan:allow -->
-   is refused at exit 2 naming `[pm.states.story]` unless your project declared one —
-   `pm vocabulary` is the authority, and a story that is finished goes to `done`
-   through `close story`.
+3. **Ready for review — a FEATURE act, where your vocabulary has the word.** The
+   seed's `[pm.states.feature]` declares `reviewing`, held while the record is
+   written, and a feature moves into it like any state (`pm feature <state> <id>`).
+   A project whose feature ladder omits it has no feature review state, and asking
+   for one is refused at exit 2 naming `[pm.states.feature]`. The seed declares no
+   review word for a STORY (`planning` `ready` | `building` | `done` `obe`), so `pm story reviewing <id>`  <!-- doc-scan:allow -->
+   is refused at exit 2 naming `[pm.states.story]` unless your project declared one.
+   For either kind `pm vocabulary` is the authority, and a story that is finished
+   goes to `done` through `close story`.
 4. **Close the feature.** `pm feature done <id> --review-record <path>` — any state in
    the `done` category is the close — sets the feature's status and **touches nothing
-   else**, and prints only what it wrote; a story left behind is `check pm`'s WARN, and each is closed by name through the
-   story belt (`agentic-sdlc close story <id>`), never by a command aimed at the
-   feature.
+   else**, and prints only what it wrote. A story left behind is not a warning:
+   `check pm` D11, stock-on, FAILS a `done` parent over any child not in `done`. Each is closed
+   by name through the story belt (`agentic-sdlc close story <id>`), never by a
+   command aimed at the feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves
    every other byte, including the file's line endings. Creation too: `pm new
    milestone|feature|story|bug` renders the grain from its template and starts it at
@@ -144,10 +148,10 @@ asked:
 - **`--review-record <path>` naming no file is refused**, whole: no stamp, no story
   touched. A pointer resolving to nothing is what `check pm` D1 reports. There is no
   bar beyond "the file is there".
-- **A feature move into `in_progress` and a milestone move into `done` REPORT, never
-  refuse.** Stories not in `done`, features not in `done` — the verb names them with
-  the word each file holds and does what it was asked. What the tree is then left
-  holding is D5/D11's question, asked of the tree.
+- **A feature or milestone move is never refused over its children, and does not list
+  them.** Stories not in `done`, features not in `done` — the verb does what it was
+  asked and prints what it wrote. What the tree is then left holding is D5/D11's
+  question, asked of the tree by `check pm`.
 - **Malformed frontmatter is refused**, because a file with no `---` block has nowhere
   to put the field.
 
@@ -181,8 +185,8 @@ a list of ids and nothing else — never a rendered roster.
   BIND and SEQUENCE in one act: membership is the child's field, sequence is the
   parent's `order:` list. Neither argument names a kind. `pm remove` is the pair.
   `order` is optional: an unsequenced child is counted, never a finding.
-- `pm list [--status …] [--owner …] [--milestone …]` — one tab-separated row per story,
-  filtered. `pm list --status building,reviewing` is "what is open right now" where
+- `pm list [--status …] [--category …] [--owner …] [--milestone …]` — one tab-separated row per story,
+  filtered. `pm list --category in_progress` is "what is open right now" where
   `pm status` is "what is everything doing".
 - `pm validate` — frontmatter is well-formed, every binding names a grain of the right
   kind that is in the tree, `depends_on`/`consumed_by` resolve, the feature graph is

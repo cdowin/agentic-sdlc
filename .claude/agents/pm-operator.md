@@ -59,9 +59,12 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
    more stories; every story has criteria phrased as user observation; every
    issue has a milestone; titles are user-facing; a new named construct
    carries its existing-construct audit line.
-5. Bugs file under the milestone-of-catch. A report interprets `pm status`,
-   never dumps grep output. A rebalance maps every cross-reference and
-   previews the move list before `--commit`.
+5. A bug's `milestone:` is its parent, and that milestone cannot close while
+   the bug is open. Which one it names is the `bugs bind:` line in Project
+   config; a header kept from an older install has none, and then the
+   milestone is not obvious (item 7). A report interprets `pm status`, never
+   dumps grep output. A rebalance maps every cross-reference and previews the
+   move list before `--commit`.
 6. Previews show the YAML you would write; report paths, not pasted bodies;
    never claim a transition you did not re-read.
 7. Stop and ask when the milestone is not obvious, two distinct stories

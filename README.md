@@ -27,16 +27,17 @@ about your words.
 
 ## Install
 
-Pin a tag so every machine and CI runs identical code:
+Pin a tag so every machine and CI runs identical code. `vX.Y.Z` below is the release you pin;
+`git ls-remote --tags https://github.com/cdowin/agentic-sdlc` lists them:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc --version
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc --version
 ```
 
 Then, from inside a git repo:
 
 ```bash
-uvx --from "git+https://github.com/cdowin/agentic-sdlc@v0.4.0" agentic-sdlc init
+uvx --from "git+https://github.com/cdowin/agentic-sdlc@vX.Y.Z" agentic-sdlc init
 make help
 ```
 
@@ -48,7 +49,9 @@ first write and never touched again.
 
 **Adopting a bump** is: bump `DEVKIT_VERSION` in your Makefile, read the release notes
 (`agentic-sdlc changelog <milestone-id>` on the source tree — the changelog is a `changelog:` field
-on each grain, not a file, since 0.6.0), run
+on each grain, not a file, since 0.6.0; a release before 0.6.0 has its notes only in the retired
+file at its tag, and `git show v0.5.0:CHANGELOG.md` in a clone of this repo prints v0.5.0 back to
+v0.2.0), run
 `install-* --diff` to see what the release would change, take what you want, re-run `pm init`
 once, and `agentic-sdlc adopt <version>` to read the result.
 
@@ -339,7 +342,7 @@ bumps in the release commit.
 one-line diff:
 
 ```make
-DEVKIT_VERSION := v0.4.0
+DEVKIT_VERSION := vX.Y.Z
 include Makefile.devkit
 
 my-scan: ## a gate this project owns

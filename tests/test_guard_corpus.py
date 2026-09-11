@@ -186,8 +186,11 @@ UNCOVERED = frozenset((
     # fixed node set rather than classifying which node it is looking at — the
     # blindness this census narrows to. Its own arithmetic is probed in
     # 0.6.0/D7 instead: withdraw the printing and the exclusion drops from 9
-    # modules to 2. Load-bearing INVERTED: it is the only thing that can fail
-    # when a ceiling is met by trimming a file that was not the one that grew.
+    # modules to 2. Load-bearing: it is the only thing that fails when a ceiling
+    # leaves no ABSOLUTE room to add a documented module, which the ratio case
+    # cannot see. It does NOT catch a ceiling met by trimming a file that did
+    # not grow — that judgement stood here until 0.7.0's feature review
+    # disproved it (M1), and trimming elsewhere still goes green on both cases.
     'test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling',
     # The three classes below declare `PROTECTS` and owe only a corpus.
     'test_shell_mark.py::Census',
@@ -744,6 +747,16 @@ class EveryGuardDeclaresWhatItMustCatch(unittest.TestCase):
             f'exists to end.')
 
     def test_every_corpus_holds_a_violation_and_a_clean_case(self):
+        # The floor, because its three siblings have one and this did not:
+        # pointed at an empty tree it printed PASS over a census of zero, which
+        # is the sin this module exists to catch (0.7.0 review M6). Its
+        # population is the COVERED guards, so it needs its own.
+        covered = [guard for guard in _roster() if guard.covered]
+        self.assertGreaterEqual(
+            len(covered), MIN_GUARDS,
+            f'{len(covered)} guard(s) declare a corpus, under the floor of '
+            f'{MIN_GUARDS} — the population collapsed rather than every case '
+            f'holding both a violation and a clean row')
         thin: list[str] = []
         for guard in _roster():
             if not guard.covered:

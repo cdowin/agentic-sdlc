@@ -54,8 +54,8 @@ PYTHON_CEILING = 1 / 3
 #
 #   THE DERIVATION, so anybody can re-run it: the measured ratio, rounded UP to
 #   the next twentieth. 0.5106 -> 0.55. That is 7.7% of relative headroom and
-#   874 prose lines of room at today's code size — enough to write a new test
-#   module documented the way this suite documents, which
+#   874 prose lines of room at today's code size — more than a median module's
+#   117, which is what
 #   `test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling` asserts
 #   for both roots and `bg-the-prose-ceiling-has-no-headroom` is the reason for.
 #   `src/` carries 5.6% over its own measurement, which is the same order.
@@ -193,7 +193,18 @@ def prose_and_code(path: Path) -> tuple[int, int]:
     counts, not the overlap this fixes, and moving it is a different argument.
     """
     source = path.read_text(encoding='utf-8')
-    lines = source.splitlines()
+    # `split('\n')`, never `splitlines()`, for `core/frontmatter._split`'s
+    # reason one root over: `splitlines()` also breaks on U+2028, U+2029, form
+    # feed and \x1c-\x1e, while `tokenize` and `ast` break only on a newline.
+    # After the first such character every later line number SHIFTS, so the
+    # partition below misattributes blanks and docstring lines for the rest of
+    # the file — fail-OPEN, overstating code. Three modules here hold four of
+    # them, because they are fixtures for a line-separator bug (0.7.0 review M2).
+    # `read_text` has already normalised \r\n and \r, so a newline is the only
+    # separator left; a trailing '' from a final newline is not a line.
+    lines = source.split('\n')
+    if lines and lines[-1] == '':
+        lines.pop()
     prose_lines: set[int] = {
         tok.start[0]
         for tok in tokenize.generate_tokens(io.StringIO(source).readline)
@@ -376,12 +387,19 @@ def test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling():
     > a feature that adds a well-documented module must go green without any
     > comment in any OTHER file changing.
 
-    Measured at the repo's OWN average, so it cannot be satisfied by picking a
-    flattering module: a new file the size of the median one, documented the way
-    this package documents, has to fit. When it does not, the ceiling has become
-    a growth gate wearing a quality gate's clothes — which is the defect, and
+    Measured in ABSOLUTE prose lines — the room under the ceiling at today's code
+    size, against what a median module actually carries. When there is less, the
+    ceiling has become a growth gate wearing a quality gate's clothes, and
     trimming somebody else's reasoning to clear it is what the milestone brief
     forbids by name.
+
+    **The first form of this case could not fail, and 0.7.0's feature review
+    proved it twice.** It added a module whose prose share was the repo's OWN
+    fraction `f = p/(p+c)`, so `(p+tf)/(c+t(1-f))` reduces to exactly `p/c` —
+    the main ceiling assertion, restated. Independent power: one prose line out
+    of 830 on `tests/`, zero on `src/`. At a ceiling leaving 2.6 lines of room
+    in the whole suite it was still green. Rule 4's first sin, inside the census
+    that exists to measure it.
 
     BOTH ROOTS, since `tests/` gained its number: the clause generalises
     unchanged, and a ceiling with no room to write a new test module is the same
@@ -390,15 +408,15 @@ def test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling():
     """
     for root in (root for root in ROOTS if root.graded):
         prose, code, _ = census(root)
-        sizes = sorted(sum(prose_and_code(path)) for path in modules(root).paths)
-        typical = sizes[len(sizes) // 2]
-        added_prose = round(typical * (prose / (prose + code)))
-        ratio = (prose + added_prose) / (code + typical - added_prose)
-        assert ratio < root.ceiling, (
-            f'a median {root.name} module ({typical} lines) documented at this '
-            f'repo\'s own rate lands the census at {ratio:.4f}, over '
-            f'{root.ceiling:.4f}. There is no room to write a new file, so the '
-            f'next feature pays for itself out of somebody else\'s comments')
+        per_module = sorted(prose_and_code(path)[0]
+                            for path in modules(root).paths)
+        typical = per_module[len(per_module) // 2]
+        slack = root.ceiling * code - prose
+        assert slack >= typical, (
+            f'{root.name} has {slack:.0f} prose line(s) of room under its '
+            f'{root.ceiling:.4f} ceiling and a median module carries {typical}. '
+            f'There is no room to write a new file, so the next feature pays '
+            f'for itself out of somebody else\'s comments')
 
 
 def test_the_shell_installables_are_under_a_fifth_comment_lines():

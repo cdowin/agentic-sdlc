@@ -44,7 +44,7 @@ from support.pm import (
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.checks import pm as pm_check
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 
 def gate_both_streams(root: Path) -> tuple[int, str]:
@@ -118,7 +118,7 @@ class OneReadPerDocument(unittest.TestCase):
 
     @contextlib.contextmanager
     def counting(self):
-        """`model.read_raw`, wrapped to count the opens per path."""
+        """`frontmatter.read_raw`, wrapped to count the opens per path."""
         counts: dict[str, int] = {}
         original = frontmatter.read_raw
 
@@ -188,28 +188,28 @@ class OneReadPerDocument(unittest.TestCase):
             cfg = cfg_for(root)
             story = root / STORY_REL
             sid = frontmatter.unquote(frontmatter.field_of(story, 'id'))
-            with model.reading_tree():
-                first = model.grain_index(cfg)
+            with inventory.reading_tree():
+                first = inventory.grain_index(cfg)
                 with self.counting() as counts:
-                    again = model.grain_index(cfg)
+                    again = inventory.grain_index(cfg)
                 self.assertEqual(sorted(first), sorted(again))
                 self.assertEqual(counts, {}, 'the second walk re-read the tree')
                 # A write INSIDE a read scope is still seen: the snapshot is
                 # dropped by the mutation rather than held to the end of the
                 # block, so no verb can be answered off its own stale tree.
                 frontmatter.set_field(story, 'status', 'building')
-                self.assertEqual(model.grain_index(cfg)[sid].status, 'building')
+                self.assertEqual(inventory.grain_index(cfg)[sid].status, 'building')
 
     def test_the_scope_does_not_outlive_its_block(self):
         with tree() as root:
             cfg = cfg_for(root)
-            with model.reading_tree():
-                inside = set(model.grain_index(cfg))
+            with inventory.reading_tree():
+                inside = set(inventory.grain_index(cfg))
             new = root / 'pm/roadmap/stories/s9.md'
             write(new, {'id': '0.1/alpha/s9', 'kind': 'story',
                         'status': 'ready', 'feature': '0.1/alpha'})
             self.assertNotIn('0.1/alpha/s9', inside)
-            self.assertIn('0.1/alpha/s9', model.grain_index(cfg))
+            self.assertIn('0.1/alpha/s9', inventory.grain_index(cfg))
 
     def test_two_gate_runs_in_one_process_read_the_tree_twice(self):
         with tree() as root:
@@ -347,9 +347,9 @@ class DriftGate(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
             for kind in ('milestone', 'feature', 'story'):
-                order = ' '.join(model.DEFAULT_FLOWS[kind][cat][i]
-                                 for cat in model.CATEGORIES
-                                 for i in range(len(model.DEFAULT_FLOWS[kind][cat])))
+                order = ' '.join(vocabulary.DEFAULT_FLOWS[kind][cat][i]
+                                 for cat in vocabulary.CATEGORIES
+                                 for i in range(len(vocabulary.DEFAULT_FLOWS[kind][cat])))
                 self.assertEqual(out.count(f'not in ({order})'), 1,
                                  (kind, out))
 
@@ -436,9 +436,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
         # An `in_progress` milestone also wants its handoff; it is never
         # auto-minted, so the fixture writes one or the milestone's own line
         # drowns the story's.
-        model.shared_doc(cfg_for(root), root / MFILE_REL,
-                         model.HANDOFF_FILE_NAME).write_text(
-            model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+        inventory.shared_doc(cfg_for(root), root / MFILE_REL,
+                         vocabulary.HANDOFF_FILE_NAME).write_text(
+            vocabulary.SLOT_HEADER[vocabulary.HANDOFF_FILE_NAME] + '\n',
             encoding='utf-8')
 
     def test_a_story_in_progress_with_no_owner_warns(self):
@@ -530,9 +530,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
                                      'status': 'building',
                                      'branch': 'milestone/0.1'}, self.SHIP)
-            model.shared_doc(cfg_for(root), root / MFILE_REL,
-                             model.HANDOFF_FILE_NAME).write_text(
-                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+            inventory.shared_doc(cfg_for(root), root / MFILE_REL,
+                             vocabulary.HANDOFF_FILE_NAME).write_text(
+                vocabulary.SLOT_HEADER[vocabulary.HANDOFF_FILE_NAME] + '\n',
                 encoding='utf-8')
             self._story(root, 'planning', 'x')
             code, out = run_gate(root)
@@ -561,8 +561,8 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                       self.SHIP)
                 self._story(root, mstatus,
                             '# S0\n\n## Acceptance criteria\n\n- it works\n')
-                handoff = model.shared_doc(cfg_for(root), root / MFILE_REL,
-                                           model.HANDOFF_FILE_NAME)
+                handoff = inventory.shared_doc(cfg_for(root), root / MFILE_REL,
+                                           vocabulary.HANDOFF_FILE_NAME)
                 self.assertFalse(
                     handoff.is_file(),
                     'the input this asks about is the ABSENT handoff; with '
@@ -570,7 +570,7 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                 code, out = run_gate(root)
                 self.assertEqual(code, 0, out)
                 said = (f'milestone 0.1 is {mstatus!r} with no '
-                        f'{model.HANDOFF_FILE_NAME}')
+                        f'{vocabulary.HANDOFF_FILE_NAME}')
                 self.assertEqual(said in out, expect, out)
 
     def test_a_closed_grains_gap_is_counted_on_one_line_and_never_silent(self):
@@ -590,9 +590,9 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
             write(root / MFILE_REL, {'id': '"0.1"', 'name': 'Demo',
                                      'status': 'building',
                                      'branch': 'milestone/0.1'}, self.SHIP)
-            model.shared_doc(cfg_for(root), root / MFILE_REL,
-                             model.HANDOFF_FILE_NAME).write_text(
-                model.SLOT_HEADER[model.HANDOFF_FILE_NAME] + '\n',
+            inventory.shared_doc(cfg_for(root), root / MFILE_REL,
+                             vocabulary.HANDOFF_FILE_NAME).write_text(
+                vocabulary.SLOT_HEADER[vocabulary.HANDOFF_FILE_NAME] + '\n',
                 encoding='utf-8')
             # The feature is `done` with BOTH sections missing (2 gaps) and the
             # story `building` with no `## Acceptance criteria` and no
@@ -649,25 +649,25 @@ class ReadyIsAStampWithACheck(unittest.TestCase):
                         f"`## Acceptance criteria` section" in out, expect, out)
                     counts.append((status, out.count('  WARN  ')))
                     cfg = cfg_for(root)
-                    self.assertTrue(model.left_todo(cfg, 'story', 'doing'))
-                    self.assertTrue(model.left_todo(cfg, 'story', 'shipped'))
-                    self.assertFalse(model.left_todo(cfg, 'story', 'shaped'))
-                    self.assertFalse(model.left_todo(cfg, 'story', 'queued'))
-                    self.assertFalse(model.left_todo(cfg, 'story', 'wombat'))
+                    self.assertTrue(inventory.left_todo(cfg, 'story', 'doing'))
+                    self.assertTrue(inventory.left_todo(cfg, 'story', 'shipped'))
+                    self.assertFalse(inventory.left_todo(cfg, 'story', 'shaped'))
+                    self.assertFalse(inventory.left_todo(cfg, 'story', 'queued'))
+                    self.assertFalse(inventory.left_todo(cfg, 'story', 'wombat'))
         self.assertEqual(counts[:3], counts[3:], counts)
 
     def test_the_section_reader_stops_at_the_next_heading_and_sees_through_comments(self):
         text = ('---\nstatus: ready\n---\n# T\n\n## Acceptance criteria\n'
                 '<!-- a\nmulti-line\nprompt -->\n\n## Out of scope\n- real\n')
-        lines = model.section_lines(text, model.ACCEPTANCE_HEADING)
+        lines = inventory.section_lines(text, inventory.ACCEPTANCE_HEADING)
         self.assertEqual(lines, ['<!-- a', 'multi-line', 'prompt -->', ''])
-        self.assertTrue(model.section_is_empty(lines))
-        self.assertFalse(model.section_is_empty(['<!-- x --> said', '']))
-        self.assertIsNone(model.section_lines(text, model.SHIP_HEADING))
+        self.assertTrue(inventory.section_is_empty(lines))
+        self.assertFalse(inventory.section_is_empty(['<!-- x --> said', '']))
+        self.assertIsNone(inventory.section_lines(text, inventory.SHIP_HEADING))
         # `### Acceptance criteria` is not the scaffolded heading.
-        self.assertIsNone(model.section_lines(
+        self.assertIsNone(inventory.section_lines(
             text.replace('## Acceptance', '### Acceptance'),
-            model.ACCEPTANCE_HEADING))
+            inventory.ACCEPTANCE_HEADING))
 
 
 FFILE_REL = 'pm/roadmap/features/alpha.md'
@@ -722,8 +722,8 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
         # `done` is no longer the only story state the rule can see. A story
         # BUILDING under a feature that says it has not started is the same
         # disagreement, and the old equality was blind to it.
-        started = [st for cat in (model.IN_PROGRESS, model.DONE_CATEGORY)
-                   for st in model.DEFAULT_FLOWS['story'][cat]]
+        started = [st for cat in (vocabulary.IN_PROGRESS, vocabulary.DONE_CATEGORY)
+                   for st in vocabulary.DEFAULT_FLOWS['story'][cat]]
         assert started == ['building', 'done', 'obe'], started
         for fstat in ('planning', 'ready'):
             for sstat in started:
@@ -764,7 +764,7 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
     # (a `blocked` word in `in_progress`, the rest alphabetical).
     def _alphabetised(kind: str) -> dict:
         return {cat: tuple(sorted(states))
-                for cat, states in model.DEFAULT_FLOWS[kind].items()}
+                for cat, states in vocabulary.DEFAULT_FLOWS[kind].items()}
 
     SORTED_STORY_SET = declaring('[pm]\nchecks = ["D4","D5"]\n',
                                  story=_alphabetised('story'))
@@ -784,8 +784,8 @@ class D5AStoryAheadOfItsFeature(unittest.TestCase):
     # The words BOTH kinds declare: the same word on a story and its feature
     # is only askable where both flows hold it (a story never holds
     # `accepted`; that is D4's finding, not D5's question).
-    SHARED = [st for st in model.LIFECYCLE
-              if all(any(st in sts for sts in model.DEFAULT_FLOWS[k].values())
+    SHARED = [st for st in vocabulary.LIFECYCLE
+              if all(any(st in sts for sts in vocabulary.DEFAULT_FLOWS[k].values())
                      for k in ('story', 'feature'))]
 
     def test_one_word_on_both_sides_is_never_a_disagreement(self):
@@ -850,7 +850,7 @@ class AStaleRuleIdStopsTheGATE_NotTheReadVerbs(unittest.TestCase):
 
     A version bump that retires a rule is exactly what leaves a stale id in a
     consumer's config, and one consumer names sixteen rules explicitly. Raised
-    from `model.load()`, that typo killed `pm status`, `pm get`, `pm new`,
+    from `vocabulary.load()`, that typo killed `pm status`, `pm get`, `pm new`,
     `pm validate`, `pm vocabulary --json` and `check pm` at exit 2 together —
     so the consumer could neither read its own tree nor ask the tool what the
     new vocabulary is while deciding what to do about it.
@@ -1149,8 +1149,18 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             self.assertEqual(code, 0, out)
             # The OLDEST row, not the newest: the span is how long the tree has
             # been recording, and `1h` here would be the last thing it did.
-            self.assertIn('never in the 40d these ledgers have been '
-                          'recording', out)
+            #
+            # The DAY component, by regex, because the literal `40d` made this
+            # clock-coupled with a tolerance of `1 - frac(now)` seconds (0.7.0
+            # review M5). `hours_ago()` formats through `TS_FORMAT`, which has no
+            # sub-second field, so the row is already `frac(now)` older than an
+            # exact 40 days; `_recording_span` floors with `int()` and
+            # `human_duration` renders the remainder, so the real output is `40d`
+            # on an idle machine and `40d 1s` on a busy one. The renderer is
+            # right and the assertion was too tight.
+            self.assertRegex(
+                out, r'never in the 40d( \d+[a-z]+)? these ledgers have been '
+                     r'recording')
         with tree(story_statuses=('ready',)) as root:
             self._settings(root, self.WIRED)
             code, out = self._gate(root)
@@ -2102,7 +2112,7 @@ class Validate(unittest.TestCase):
 
     def _run(self, root: Path):
         from agentic_sdlc.repo.pm import validate
-        return validate.run(model.PmConfig(root=root))
+        return validate.run(vocabulary.PmConfig(root=root))
 
     def test_a_clean_tree_validates(self):
         with tree(story_statuses=('ready',)) as root:
@@ -2185,7 +2195,7 @@ class CausedBy(unittest.TestCase):
 
     def _validate(self, root: Path, **kw):
         from agentic_sdlc.repo.pm import validate
-        return validate.run(model.PmConfig(root=root), **kw)
+        return validate.run(vocabulary.PmConfig(root=root), **kw)
 
     def test_a_dangling_cause_reports_like_a_dangling_depends_on(self):
         # The SAME line, word for word, but for the key and the path — one
@@ -2307,7 +2317,7 @@ class RefParsing(unittest.TestCase):
         ff = root / 'pm/roadmap/features/alpha.md'
         self.assertTrue(frontmatter.set_field(ff, 'depends_on', raw))
         from agentic_sdlc.repo.pm import validate
-        return validate.run(model.PmConfig(root=root))
+        return validate.run(vocabulary.PmConfig(root=root))
 
     def test_unreadable_shapes_are_reported_not_silently_dropped(self):
         for raw in ('["0.1/ghost"]  # note', '0.1/ghost', '[["0.1/ghost"]]',
@@ -2328,7 +2338,7 @@ class RefParsing(unittest.TestCase):
             ff = root / 'pm/roadmap/features/alpha.md'
             frontmatter.set_field(ff, 'depends_on', '["0.1/alpha"]')
             from agentic_sdlc.repo.pm import validate
-            cfg = model.PmConfig(root=root)
+            cfg = vocabulary.PmConfig(root=root)
             self.assertEqual(validate.run(cfg, {'V1'})[1]['refs'],
                              validate.run(cfg, {'V4'})[1]['refs'])
 
@@ -2374,7 +2384,7 @@ class DamagedFrontmatter(unittest.TestCase):
                     self.assertIn('SKIPPED by this scan', out)
                     self.assertIn('1 story/ies', out)
                     # BOTH findings, by their own wording. V1 walks the pool
-                    # through `model.every_grain`, which reads each document
+                    # through `inventory.every_grain`, which reads each document
                     # with `doc_grain` — the TOTAL read. Resolving those with
                     # `read_grain` instead drops a no-id document out of the
                     # walk entirely, and this gate then printed one finding
@@ -2414,7 +2424,7 @@ class DamagedFrontmatter(unittest.TestCase):
                     # is in no index and the resolver genuinely cannot reach
                     # it. What must NOT happen is the answer stopping there.
                     self.assertIsNone(
-                        model.story_file(cfg_for(root), '0.1/alpha/s0'))
+                        inventory.story_file(cfg_for(root), '0.1/alpha/s0'))
                     code, out = run_cli(root, 'story', 'building', '0.1/alpha/s0')
                     self.assertEqual(code, 2, out)
                     # The file, by path, and why it cannot be keyed on — so
@@ -2432,7 +2442,7 @@ class DamagedFrontmatter(unittest.TestCase):
                 with tree(story_statuses=('ready',)) as root:
                     sfile = root / STORY_REL
                     damage(sfile, form)
-                    self.assertTrue(model._is_grain_doc(sfile))
+                    self.assertTrue(inventory._is_grain_doc(sfile))
                     self.assertEqual(frontmatter.field_of(sfile, 'status'), '')
                     before = sfile.read_bytes()
                     self.assertFalse(frontmatter.set_field(sfile, 'status', 'building'))
@@ -2671,7 +2681,7 @@ class ARenamedVocabularyGetsTheSameAnswers(unittest.TestCase):
         declared = {st for kind in config['pm']['states'].values()
                     for states in kind.values() for st in states}
         self.assertEqual(declared, set(self.RENAME))
-        seed = {st for kind in model.DEFAULT_FLOWS.values()
+        seed = {st for kind in vocabulary.DEFAULT_FLOWS.values()
                 for states in kind.values() for st in states}
         self.assertEqual(set(self.RENAME.values()), seed)
         self.assertFalse(declared & seed)

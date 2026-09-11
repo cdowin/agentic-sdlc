@@ -140,7 +140,7 @@ THE CUT, PER MODULE, and it came first (prose lines, then prose words):
 | `test_init_verb.py` | 220 | 197 | **-23** | -194 | four tombstone enumerations of files, sections and paths that left at 0.2.0, each compressed to its claim plus the decision record that holds it (`0.2.0/D1`, `D2`, `R3`) |
 | `test_fresh_project.py` | 169 | 147 | **-22** | -271 | the same, one root over: "28 targets through 0.1.0", "22 of the 23 that left", the hook-census literal's story, and "THE SURFACE MOVED" |
 | `test_gate_library.py` | 159 | 149 | **-10** | -116 | 9 lines on the module's own rename from `test_runners_installable.py` (a file that does not exist, so the cross-reference was dead), and the departed-artefact list inside the language-neutral clause |
-| `test_pm_verbs.py` | 618 | 610 | **-8** | -112 | the 0.3.0 batched-review measurement, which lives in `ft-every-move-breadcrumbs-the-next-step` and is cited on the line above it; the three-hole enumeration from `bg-a-proof-row-names-a-case-that-proves-half`, which is cited too; two "amended from the case that…" paragraphs reduced to the claim the case makes now. The file reads 626 now — a sibling story added a case to it after this measurement |
+| `test_pm_verbs.py` | 618 | — | **LOST** | — | the cut was real and never landed: the file was held back from this story's commit because a concurrent story had amended it, and that story then committed its OWN copy. Prose is 614 at `main` and **626 now**, +12. Recorded rather than re-cut — 0.7.0 review M3, and the clearest single cost of two stories sharing one worktree |
 | `test_install.py` | 627 | 621 | **-6** | -60 | a `CHANGELOG.md` scoping rule and its own retirement notice (the file left the list at 0.6.0), and `install-runners`' 0.1.0 roster |
 | `test_pm_ledger_record.py` | 375 | 370 | **-5** | -66 | the all-seven-seed paragraph, which was **the same 8 lines in four modules**: kept whole in `test_pm_ledger.py` and pointed at from the other three |
 | `test_pm_ledger_report.py` | 312 | 307 | **-5** | -66 | the same |
@@ -148,10 +148,10 @@ THE CUT, PER MODULE, and it came first (prose lines, then prose words):
 | `test_wheel_payload.py` | 51 | 48 | **-3** | -39 | a cross-reference to the `MIGRATION_DOC` entry deleted above, and the removed-entry-count story |
 | `test_verdict.py` | 206 | 205 | **-1** | -6 | a repo-local reviewer definition that left in 0.2.0 |
 | `test_pm_gate.py` | 1011 | 1011 | 0 | -3 | `execlist.py` — a module that does not exist — named as a reader of `owner:`; rewritten in place, not removed |
-| **cut total** | | | **-161** | **-1,703** | 12 modules net, a 13th rewritten in place |
+| **cut total** | | | **-153** | **-1,591** | 11 modules landed, a 12th rewritten in place, one cut LOST |
 | `test_prose_census.py` | 119 | 187 | **+68** | +662 | the ceiling, its derivation, its three measurements and its rejected alternative |
 
-Net **-93** prose lines. Every removal is prose the reader does not need (a dead reference, a deleted
+Net **-85** prose lines, after review M3 took the lost cut out of the total. Every removal is prose the reader does not need (a dead reference, a deleted
 mechanism, the same paragraph a fourth time) or an incident whose grain or decision record is NAMED on
 the line that replaced it — nothing moved to a placement that did not already hold it, because this
 story writes no new grain.

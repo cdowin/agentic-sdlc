@@ -1,5 +1,4 @@
-"""verdict.py — the machine-readable verdict block at the end of a review
-record.
+"""verdict.py — the machine-readable verdict block at the end of a review record.
 
     verdict: SHIP-WITH-FIXES
     | id | severity | disposition |

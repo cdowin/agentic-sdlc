@@ -1,9 +1,9 @@
-"""skills.py — the pm verbs that install devkit-owned files into the consumer.
+"""skills.py — the pm verbs over devkit-owned files, installed or printed.
 
-`cmd_init`, `cmd_install_skills` and `cmd_templates` are
-`repo/install.py`'s concern rather than status verbs, so they live here and
-`cli.py` routes. The refusal helpers and the diff printer are single-homed
-in `repo/install.py`.
+`cmd_init`, `cmd_install_skills` and `cmd_templates` write into the consumer
+and `cmd_config` prints the seed: `repo/install.py`'s concern rather than
+status verbs, so they live here and `cli.py` routes. The refusal helpers and
+the diff printer are single-homed in `repo/install.py`.
 """
 from __future__ import annotations
 

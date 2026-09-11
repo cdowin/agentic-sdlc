@@ -1,7 +1,8 @@
-"""What a PM TREE CONTAINS, and every fact read off it: the grains, the pools
-they live in, the index that finds one by id, the children a binding claims, the
-sections inside a grain document, the plan that orders the milestones, and the
-drift a gate asks about.
+"""What a PM TREE CONTAINS, and every fact read off it.
+
+The grains, the pools they live in, the index that finds one by id, the children
+a binding claims, the sections inside a grain document, the plan that orders the
+milestones, and the drift a gate asks about.
 
 Identity is frontmatter and location is convention: `id:` and `kind:` are read
 from the document, the pools are where documents live, and neither is derived

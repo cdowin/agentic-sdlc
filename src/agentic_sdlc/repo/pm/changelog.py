@@ -1,12 +1,12 @@
-"""`changelog:` — the consumer-visible sentence a grain earned, on the grain.
+"""`changelog:` — the field a grain earned, and the view that renders it in `order:`.
 
 `CHANGELOG.md` goes the way of `ROADMAP.md` (0.3.0). 0.5.0's `## Unreleased`
 was 469 lines by ~12 authors with no binding between an entry and the grain it
 described, so an entry could outlive a retired grain, a grain could close with
 none, and the ORDER was append-order rather than the parent's `order:`.
 
-The field is the record and this module is the view. `none` is an ANSWER, not
-an absence — it separates *decided* from *forgotten* (rule 11).
+`none` is an ANSWER, not an absence — it separates *decided* from *forgotten*
+(rule 11).
 """
 from __future__ import annotations
 

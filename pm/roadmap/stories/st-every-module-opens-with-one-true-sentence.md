@@ -7,7 +7,7 @@ name: every module opens with one true sentence
 status: building
 owner: architect
 depends_on: []
-changelog:
+changelog: none
 ---
 
 # every module opens with one true sentence
@@ -126,8 +126,8 @@ not here.
 
 | criterion | tier | the case that proves it | existing? |
 |---|---|---|---|
-| 1, 2, 3 | unit | `tests/test_boundaries.py::EveryModuleSaysWhatItDoes` — `test_every_module_opens_with_a_sentence`, over `_sources()`, with the exemption roster failing both ways | new; `_package_docstring` (line 1644) already reads a module docstring by AST for `agentic_sdlc/__init__.py` and is the reader to widen, not to re-invent |
-| 4 | unit | the same class: sentences are collected into a dict and a collision is named by both paths | new — same guard, one more assertion, so one `CORPUS` covers it |
+| 1, 2, 3 | unit | `tests/test_boundaries.py::EveryModuleSaysWhatItDoes::test_every_module_opens_with_one_sentence_and_no_two_the_same`, over `_sources()`, with `EMPTY_PACKAGES` failing in three directions | new — ONE case, not three: the suite has no headroom under `[tests] cases`, and all three questions are asked of one census read. `_package_docstring` was the reader widened, not re-invented |
+| 4 | unit | the same case: sentences are collected into a dict, prefix-stripped, and a collision is named by both paths | new — same guard, same reader, so one `CORPUS` of planted CENSUSES covers it. Shown failing on a PLANTED collision, per the re-measured section |
 | 5, 6, 7 | — | the written audit in the close, graded by the feature review against the changeset | not a test — "is this sentence true of this module" is judgement, and a test asserting it would be a second scoreboard |
 | 8 | — | the AST comparison, by hand, reported in the close; residual expected zero | not a test |
 | 9 | unit | `test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code` | existing |
@@ -140,3 +140,66 @@ A length rule on a docstring, a line-count gate on a module, or a required secti
 docstring. The ship criterion is one TRUE sentence, and 0.6.0's ruling against size gates stands.
 
 `tests/` — its docstrings are `ft-the-suite-is-measured-like-the-source`'s.
+
+## Close
+
+**The audit is `docs/reviews/2026-09-11-0.7.0-every-module-opens-with-one-true-sentence.md`** — all
+50 rows (module, opening sentence, does the path say the layer, verdict), the rename prices, the
+`print()` answer. Re-measured, nothing inherited: **50 modules, 47 with a docstring.**
+
+**Criterion 1 FAILED at HEAD on six modules, not zero.** `inventory`, `ready_for`, `report`,
+`templates/`, `verdict` and `vocabulary` opened on a FRAGMENT wrapping onto line two — a sentence
+in the diff, half a sentence in `help()`. The gate's classifier over `git show HEAD:` sources names
+all six by path; over the worktree, none.
+
+**Criterion 4, in two halves as the re-measured section requires.** No two sentences collide today,
+even with the `<name> — ` prefix stripped (30 of 47 carry one; stripped BEFORE the comparison, so a
+pasted header cannot hide behind the filename it was pasted into). So the gate is shown failing on
+a PLANTED collision: a scratch `src/` with `driver.py`'s first line replaced by its package's, run
+through the real test method with `SRC` patched, fails naming both paths.
+
+**The two modules making one claim: `driver.py` was the wrong one.** A package docstring says what
+the package is and assigns each module its role — `conveyor/__init__.py` already said *"`driver` is
+the machine and the verb"* — and `driver.py` restated the claim instead of taking it. It now reads
+*"the engine all four belts run on, and the verb that starts one"*: the engine, as against
+`steps.py`, which holds the lists. `(D12)` moved one sentence down, so no pointer was lost.
+
+**11 sentences changed, 39 kept.** Six fragments, four untrue or stale of their module (`pm/cli.py`
+said *"the PM-tree status CLI"* while routing 24 sub-verbs and writing five other fields;
+`skills.py` said *"the verbs that install files"* while `cmd_config` prints; `changelog.py`
+described the FIELD, not the module; `report.py` said *"raw rows"* while reading review records and
+git-rev grains), and the duplicate claim. **All four named renames KEPT, priced** — `driver.py`
+23 import sites / 175 refs, `steps.py` 22/68 (`steps` is the `devkit.toml` key a consumer writes),
+`verdict.py` 5/64 (the record's own keyword), `report.py` 8/42 (named after its verb, like
+`cite.py`). `model.py` is gone.
+
+**The `print()` answer is NO RENDERER**, corroborating `st-the-pm-cli-helpers-find-a-home` from an
+independent count: **316 sites across 24 of 50 modules**, AST-measured (`grep -o` agrees exactly).
+26 modules print nothing and every one is a reader, so the compute layer is already print-free and
+what prints is the CLI edge; the line shapes are pinned where produced, and a renderer would move
+them one hop from the assertions holding them. No named defect is on record.
+
+**Criterion 8: residual ZERO** — 50 modules, 50 character-identical against `ast.unparse` with
+docstrings stripped; probed both ways first (a docstring-only edit stayed green, one character in a
+regex constant turned it red). **`src/` census 14,939 code / 4,839 prose / 0.3239 before, 14,939 /
+4,838 / 0.3239 after** (ceiling 0.3333): one prose line fewer, code untouched.
+
+**TWO findings filed, not fixed, both because the fix is outside a docstring story's contract.**
+`bg-verdict-names-three-unrelated-things`: `pm/verdict.py` (the review-record block),
+`driver.Verdicts`/`verdict_row()` (a belt run's results) and `checks/pm._verdict()` (a gate's
+verdict line) share one word — fixing it renames code, and the new gate cannot see it, since a name
+used three ways across three packages is not a sentence repeated.
+`bg-the-gate-help-names-one-of-its-four-rule-families`: `check pm --help` opens *"statuses do not
+contradict each other"*, the D family, while the gate also runs U, V and (opt-in) R — the same
+shape as the ledger-report bug this milestone just closed. KEPT here rather than widened, because a
+published `--help` line is rule 6 and a minor bump is not a docstring edit's to make.
+
+The gate is `tests/test_boundaries.py::EveryModuleSaysWhatItDoes` (primitive 13): `PROTECTS`, a
+10-row `CORPUS` over planted CENSUSES (one corpus, because a collision is a relation between two
+modules), and `EMPTY_PACKAGES`, a roster failing in three directions — an unnamed module with no
+docstring, a named marker that gained content, an entry naming nothing in the census.
+
+done: — 10 module docstrings, 1 new guard, and an audit of all 50 in
+`docs/reviews/2026-09-11-0.7.0-every-module-opens-with-one-true-sentence.md`. Criterion 1 failed at
+HEAD on SIX modules, not zero: six sentences wrapped onto a second line. Criterion 4 was planted,
+as the re-measured section required. Residual zero across all 50, verified twice.

@@ -1,13 +1,13 @@
-"""report.py — `pm ledger report`: a milestone's raw rows, added up, or
-more than one milestone's totals side by side.
+"""report.py — `pm ledger report`: a milestone's rows and records, added up.
 
-The ledger never judges; this is the caller judgement is left to. It may
-**sum, count, subtract and group, never weight, price or label** — no `size:`
-as a divisor, no dollar figure, no score. Stated here rather than cited,
-because a dangling decision id reads as settled while stopping an argument
-that was never had. Absent is `-`, not zero; the tree is walked, so every grain
-gets a row; nothing is dropped. It fails only on a document that will not
-parse, never on a number.
+One milestone's ledger rows and review records, or more than one milestone's
+totals side by side. The ledger never judges; this is the caller judgement is
+left to. It may **sum, count, subtract and group, never weight, price or
+label** — no `size:` as a divisor, no dollar figure, no score. Stated here
+rather than cited, because a dangling decision id reads as settled while
+stopping an argument that was never had. Absent is `-`, not zero; the tree is
+walked, so every grain gets a row; nothing is dropped. It fails only on a
+document that will not parse, never on a number.
 """
 from __future__ import annotations
 

@@ -1,5 +1,4 @@
-"""ready_for.py — the four belt-entry conditions, each answering with an exit
-code.
+"""ready_for.py — the four belt-entry conditions, each answering with an exit code.
 
     ready-for story     <story-id>      the story belt's own checks, narrowed
                                         to what the registry declares an entry

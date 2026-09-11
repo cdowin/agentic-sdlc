@@ -1,9 +1,9 @@
-"""driver.py — the conveyor: every check, then at most one write (D12).
+"""driver.py — the engine all four belts run on, and the verb that starts one.
 
 `close story <id>`, `close feature <id>`, `release <version>` and
-`adopt <version>` are one machine over four check lists. Every check prints
-one line — `ok: <check> — <detail>`, `error: <check>: <what is false>` or
-`unverifiable: <check>: <why>` (counts as false) — then: all true → the
+`adopt <version>` are one machine over four check lists (D12). Every check
+prints one line — `ok: <check> — <detail>`, `error: <check>: <what is false>`
+or `unverifiable: <check>: <why>` (counts as false) — then: all true → the
 grain's status is set to the first state of `[pm.states.<kind>] done`, exit 0;
 any false → no status written, exit 1; `--force` → the write anyway and a
 ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2

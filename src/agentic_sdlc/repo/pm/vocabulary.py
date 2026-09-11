@@ -1,6 +1,7 @@
-"""What a project DECLARES — the categories and the state words, the arrival
-table, the rule ids, the document slots — and `PmConfig`, which reads them out
-of `[pm]` and refuses a declaration of the wrong shape by name.
+"""What a project DECLARES, and `PmConfig`, which reads it out of `[pm]`.
+
+The categories and the state words, the arrival table, the rule ids, the
+document slots; a declaration of the wrong shape is refused by name.
 
 `[pm]` in devkit.toml, under hard rule 5: every gate key has a stock default,
 the flow (`[pm.states.<kind>]`) has none and `pm init` writes it. Every question

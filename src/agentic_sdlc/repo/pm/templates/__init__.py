@@ -1,5 +1,4 @@
-"""templates/ — the grain and doc templates, and where a project overrides
-them.
+"""templates/ — the grain and doc templates, and where a project overrides them.
 
 The package holds both the loader and the `.md` files, addressed through
 `importlib.resources`. `{name}` placeholders are filled by `render`. A file

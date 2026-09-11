@@ -33,6 +33,7 @@ import ast
 import re
 import tomllib
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 
 # The derivation that puts the `shell` mark on a spawning module. Imported
@@ -3081,3 +3082,217 @@ class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
             len({rel for rel, _ in spawns}), 5,
             f'{len({rel for rel, _ in spawns})} module(s) spawn `git` — the '
             f'integration tier collapsed, or the census stopped seeing it')
+
+
+# --- primitive 13: every module opens with one sentence, and no two the same ---
+# `ft-the-module-says-what-it-does`. Four stories split this package's biggest
+# modules and the fifth graded the result; this is the gate under it, and the
+# reason it is a gate rather than a review note is what the grading found: SIX of
+# the 47 docstrings here opened with a FRAGMENT wrapped onto the second line
+# (`report.py — … a milestone's raw rows, added up, or`), which reads as a
+# sentence in a diff and is not one in `help()`, and nothing could say so.
+#
+# WHAT IT HOLDS, AND WHAT IT DOES NOT. It holds that every shipped module opens
+# with a terminated sentence, and that no two modules open with the SAME one
+# after their own name prefix is stripped. Whether a sentence is TRUE of its
+# module is judgement, graded in the audit at
+# `st-every-module-opens-with-one-true-sentence`'s close, and a test asserting it
+# would be a second scoreboard with no ground truth to read. So this is the
+# cheap half — and it is the half that fails the day someone copy-pastes a
+# header, which is the defect that was sitting in the tree when it was written:
+# `conveyor/__init__.py` and `conveyor/driver.py` shipped ONE claim in two
+# spellings, close enough that an exact comparison passed over both.
+TERMINAL = ('.', '?', '!')
+HEADING_MARK = '#'
+# In the spirit of `MIN_SOURCES`: `"""walk.py"""` is a label and `"""The one
+# place this package enumerates a filesystem."""` is a sentence. Nothing shipped
+# here is under six words, so this is a floor and not a style rule — 0.6.0's
+# ruling against size gates stands, and a LENGTH rule on a docstring is out of
+# scope for the story that added this.
+MIN_SENTENCE_WORDS = 4
+# The house prefix — `driver.py — `, `check budget — `, `templates/ — `, `pm — `.
+# STRIPPED before the collision comparison, because two modules saying the same
+# thing after their own names is exactly the finding, and keeping the prefix
+# would let a pasted header hide behind the filename it was pasted into. At most
+# two bare tokens, so `What a project DECLARES — the categories…` keeps its whole
+# sentence: that em dash is prose, not a name.
+SENTENCE_PREFIX = re.compile(r'^[\w./-]+(?: [\w./-]+)? — ')
+# The floor under the census of SENTENCES rather than of files. `_sources()`
+# already refuses an empty tree; this refuses a READER that stopped returning
+# sentences, which is the other way an empty offender list is produced. Well
+# under the 47 really there and well over zero.
+MIN_SENTENCES = 20
+# The three zero-length package markers, exempt BY NAME with the reason written
+# down: `core/`, `repo/` and `repo/checks/` declare nothing and re-export
+# nothing, so `help(agentic_sdlc.core)` has no subject and a sentence there would
+# be prose about an empty file. `repo/pm/__init__.py` and `repo/verify/__init__.py`
+# are NOT here, because they say what their package is and earn their line.
+#
+# THE ROSTER FAILS IN THREE DIRECTIONS, all three of them build failures, which
+# is the property `tests/test_guard_corpus.py`'s `UNCOVERED` has: a module with
+# no docstring that is not named here is a finding; an entry whose file has
+# GAINED CONTENT is a module now and owes a sentence (graded by
+# `_docstring_findings`, probed in `CORPUS`); and an entry naming nothing in the
+# census has moved or been renamed, so the line goes. An entry matching nothing
+# is as much a finding as a file missing from the list.
+EMPTY_PACKAGES = frozenset((
+    'core/__init__.py',
+    'repo/__init__.py',
+    'repo/checks/__init__.py',
+))
+
+
+def _opening_sentence(source: str) -> str | None:
+    """The first line of a module's docstring, or None when there is none.
+
+    By AST and never by import, for `_package_docstring`'s reason one primitive
+    up: the docstring is a literal in the source, so reading it this way boots
+    nothing (rule 2) and returns exactly the line `help()` opens with.
+    """
+    doc = ast.get_docstring(ast.parse(source), clean=False)
+    if doc is None or not doc.strip():
+        return None
+    return doc.strip().splitlines()[0].strip()
+
+
+def _sentence_defect(source: str) -> str:
+    """Why this module's opening line is not a sentence, or '' when it is."""
+    first = _opening_sentence(source)
+    if first is None:
+        return 'no module docstring — `help()` prints nothing about it'
+    if first.startswith(HEADING_MARK):
+        return f'opens with a heading rather than a sentence: {first!r}'
+    if not first.endswith(TERMINAL):
+        return (f'the first line is a FRAGMENT — it does not end in one of '
+                f'{TERMINAL}, so the sentence wraps and `help()` opens on half '
+                f'of it: {first!r}')
+    if len(first.split()) < MIN_SENTENCE_WORDS:
+        return f'the first line is a label rather than a sentence: {first!r}'
+    return ''
+
+
+def _collation(sentence: str) -> str:
+    """One opening sentence, as the collision comparison sees it."""
+    return ' '.join(SENTENCE_PREFIX.sub('', sentence).split()).casefold()
+
+
+def _docstring_findings(census: Iterable[tuple[str, str]]) -> list[str]:
+    """Every module in `census` that does not open with its OWN sentence.
+
+    `census` is (module-relative posix path, source) pairs: the real tree for the
+    case below, a planted one for `CORPUS`. Both halves of the question live in
+    this one reader so that one corpus covers both — a module with no sentence,
+    and two modules with the same sentence. A collision is a relation BETWEEN two
+    modules, and a classifier handed one file at a time could never see one.
+    """
+    out: list[str] = []
+    by_sentence: dict[str, list[str]] = {}
+    for rel, source in census:
+        if rel in EMPTY_PACKAGES:
+            if source.strip():
+                out.append(
+                    f'{rel}: named on EMPTY_PACKAGES and not empty any more — '
+                    f'it holds code now, so it is a module and owes a sentence, '
+                    f'and the exemption line goes in the same change')
+            continue
+        defect = _sentence_defect(source)
+        if defect:
+            out.append(f'{rel}: {defect}')
+            continue
+        sentence = _opening_sentence(source)
+        assert sentence is not None  # `_sentence_defect` already said so
+        by_sentence.setdefault(_collation(sentence), []).append(rel)
+    out.extend(f'{" and ".join(sorted(rels))}: both open with the same sentence '
+               f'— two modules cannot each be the one place something happens'
+               for rels in by_sentence.values() if len(rels) > 1)
+    return sorted(out)
+
+
+class EveryModuleSaysWhatItDoes(unittest.TestCase):
+    """PRIMITIVE 13 — one module, one opening sentence, and no two the same.
+
+    The first line of a module docstring is what `help()` opens with and what a
+    reader opening the file lands on, and it was the one prose surface in `src/`
+    with nothing pointed at it: `check doc` grades markdown, primitive 7 grades
+    the PACKAGE docstring against `pyproject.toml`, and between them 49 modules
+    could say anything, or nothing, or the same thing twice.
+    """
+
+    PROTECTS = (
+        'every shipped module opens with a terminated sentence, no two modules '
+        'open with the same one, and the three empty package markers are exempt '
+        'by name in a roster that fails in both directions',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'docstring is prose inside a .py file, so no behaviour test can see one '
+        'go missing or go stale, and a pasted header leaves two modules each '
+        'claiming to be the one place something happens. Six modules opened on a '
+        'fragment and `conveyor/__init__.py` and `conveyor/driver.py` shipped one '
+        'claim in two spellings when this was written',
+    )
+
+    # The planted input is a whole CENSUS — ((rel, source), …) — because half of
+    # what this guard grades is a relation between two modules. One corpus, both
+    # halves, and the exemption's content direction probed in it rather than
+    # asserted twice.
+    CORPUS = (
+        ((('a.py', ''),), True),
+        ((('a.py', '"""# The walker"""\n'),), True),
+        ((('a.py', '"""walk.py"""\n'),), True),
+        # The real defect at HEAD: a sentence wrapped onto line two, which reads
+        # as a sentence in the diff and is a fragment in `help()`.
+        ((('a.py', '"""the four belt-entry conditions, each answering with an\n'
+                   'exit code.\n"""\n'),), True),
+        # Two modules, one sentence: the pasted header.
+        ((('a.py', '"""The one place this package enumerates a filesystem."""\n'),
+          ('b.py', '"""The one place this package enumerates a filesystem."""\n')),
+         True),
+        # The same collision behind the house prefix, which is why the prefix is
+        # stripped BEFORE the comparison and not after.
+        ((('a.py', '"""a.py — the belts: every check, then one write."""\n'),
+          ('b.py', '"""b.py — the belts: every check, then one write."""\n')),
+         True),
+        # The exemption's own direction: a named marker that gained content.
+        ((('core/__init__.py', 'X = 1\n'),), True),
+        ((('a.py', '"""The one place this package enumerates a filesystem."""\n'),),
+         False),
+        ((('a.py', '"""a.py — the engine all four belts run on."""\n'),
+          ('b.py', '"""b.py — the four check lists that engine runs."""\n')), False),
+        # An empty marker that IS named, which is what all three really are.
+        ((('core/__init__.py', ''),), False),
+    )
+
+    @staticmethod
+    def catches(planted: tuple[tuple[str, str], ...]) -> bool:
+        return bool(_docstring_findings(planted))
+
+    def test_every_module_opens_with_one_sentence_and_no_two_the_same(self):
+        """Three questions of one census read, for `test_guard_corpus.py`'s
+        reason: the suite has no case headroom under `[tests] cases`, and a
+        second and third walk of 50 modules to assert the roster's other
+        direction would buy nothing the named messages below do not already say.
+        """
+        census = [(rel, path.read_text(encoding='utf-8'))
+                  for rel, path in _sources()]
+        findings = _docstring_findings(census)
+        self.assertEqual(
+            [], findings,
+            'a module that does not open with its own sentence. The first line '
+            'is what `help()` prints and what a reader lands on, so it says what '
+            'this module IS in one sentence — terminated, on one line — and no '
+            'other module says the same thing:\n  ' + '\n  '.join(findings))
+        sentences = [rel for rel, source in census
+                     if rel not in EMPTY_PACKAGES
+                     and _opening_sentence(source) is not None]
+        self.assertGreaterEqual(
+            len(sentences), MIN_SENTENCES,
+            f'{len(sentences)} opening sentence(s) read across '
+            f'{len(census)} module(s) — expected at least {MIN_SENTENCES}. The '
+            f'assertion above is an EMPTY offender list, and a reader that '
+            f'stopped returning sentences produces one too.')
+        dangling = sorted(EMPTY_PACKAGES - {rel for rel, _ in census})
+        self.assertEqual(
+            [], dangling,
+            'EMPTY_PACKAGES names a module that is not in the census — it moved '
+            'or was renamed, and an entry nothing matches is a hole waiting for '
+            'a module to move into it. Delete the line:\n  '
+            + '\n  '.join(dangling))

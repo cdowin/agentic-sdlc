@@ -1,10 +1,10 @@
-"""cli.py — the PM-tree status CLI.
+"""cli.py — the `pm` router, and the verbs it owns: create, move, bind, read, record.
 
-A verb validates the target against the grain's declared flow, writes only
-the `status:` line (plus `reviewed:` on a feature close), preserves every
-other byte, and is idempotent; every question is asked of a status's
-category, never of the word, and there is no transition graph — `check pm`
-reports the end state. Exit 0 ok · 1 refused, nothing written · 2 usage.
+A STATUS verb validates the target against the grain's declared flow, writes
+only the `status:` line (plus `reviewed:` on a feature close), preserves every
+other byte, and is idempotent; every question is asked of a status's category,
+never of the word, and there is no transition graph — `check pm` reports the
+end state. Exit 0 ok · 1 refused, nothing written · 2 usage.
 """
 from __future__ import annotations
 

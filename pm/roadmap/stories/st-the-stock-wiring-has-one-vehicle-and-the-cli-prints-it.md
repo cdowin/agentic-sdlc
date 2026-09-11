@@ -76,3 +76,5 @@ Minor: a new `Makefile.devkit` target and changed rendered line shapes (rule 6).
 ## Close
 
 done: 188c831 — `make sdlc ARGS=` over the pinned $(DEVKIT) with value/unexport/MAKEFLAGS= quoting; one helper (repo/vehicle.py) spells every rendered command (73 -> 20 bare strings in src/, the rest usage/prefixes); STATIC GATES names [gates] extra and the stock roster; Makefile.devkit remedy is the pinned uvx install-gates; a pasted RECORDING line runs with nothing on PATH (tests/test_makefile_include.py). Hand-typed double-quoted ARGS still expands $ — the shell does it before the CLI sees it; the single-quote rule is documented, no guard possible.
+
+**Proof, amended at review (N9):** the rendered strings are held by `tests/test_vehicle.py` (shlex round-trip over every call site, a new module that D2 criterion 7 calls for) and, after the M2 fix, by the census reading string VALUES off the AST. The row above that says the census covers rendered strings was false until then.

@@ -7,7 +7,7 @@ status: reviewing
 reviewed:
 depends_on: ["ft-the-shipped-words-match-the-shipped-tool"]
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-the-shipped-defaults-follow-the-kits-own-branch-flow"
   - "st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it"

@@ -40,8 +40,11 @@ PYTHON_CEILING = 1 / 3
 # SET 2026-09-11, at st-the-tests-ceiling-is-declared-and-argued, and this is
 # that argument.
 #
-#   THE MEASUREMENT, 2026-09-11: 11,250 prose lines against 21,361 of code over
-#   63 modules — ratio 0.5267. Two sibling stories were landing code in the same
+#   THE MEASUREMENT, 2026-09-11: 11,328 prose lines against 22,186 of code over
+#   63 modules — ratio 0.5106. RE-DERIVED after
+#   bg-the-prose-census-subtracts-a-docstrings-blank-lines-twice: the first
+#   reading of this block said 0.5267, off a census that subtracted a
+#   docstring's blank lines twice and understated code on both roots. Two sibling stories were landing code in the same
 #   tree that day, so the figure a run prints will differ in the third decimal;
 #   it is the TRANSCRIPT that is authoritative, not this paragraph, because
 #   `_announce` puts both roots on every run, green or red. The cut that preceded
@@ -50,27 +53,27 @@ PYTHON_CEILING = 1 / 3
 #   Nothing under `src/` paid for it.
 #
 #   THE DERIVATION, so anybody can re-run it: the measured ratio, rounded UP to
-#   the next twentieth. 0.5267 -> 0.55. That is 4.4% of relative headroom and
-#   499 prose lines of room at today's code size — enough to write a new test
+#   the next twentieth. 0.5106 -> 0.55. That is 7.7% of relative headroom and
+#   874 prose lines of room at today's code size — enough to write a new test
 #   module documented the way this suite documents, which
 #   `test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling` asserts
 #   for both roots and `bg-the-prose-ceiling-has-no-headroom` is the reason for.
-#   `src/` carries 4.0% over its own measurement, which is the same order.
+#   `src/` carries 5.6% over its own measurement, which is the same order.
 #
 #   IT IS NOT `src/`'s THIRD, AND THAT IS STATED RATHER THAN SATISFIED. At 1/3
-#   the suite is 58% over on the day it was declared, and the only way green is
-#   deleting 4,130 lines of English nobody reviewed — a growth gate wearing a
+#   the suite is 53% over on the day it was declared, and the only way green is
+#   deleting 3,933 lines of English nobody reviewed — a growth gate wearing a
 #   quality gate's clothes, which the milestone brief forbids by name.
 #   Three measurements say the two roots are not the same artefact:
 #
 #     * 0.6.0/D7 MOVES 223 `src/` docstring lines into `code` because `main()`
 #       prints them as `--help`. Nothing under `tests/` is ever printed — pytest
 #       is a test docstring's only reader — so the exclusion is legitimately
-#       empty here and the like-for-like `src/` number is 0.3415, not 0.3206.
+#       empty here and the like-for-like `src/` number is 0.3362, not 0.3157.
 #       The argument does not transfer, and `published_docstrings` says so on
 #       the `Root` rather than leaving it to be discovered.
 #     * the suite is 1.49 lines of test code per line of source, and the prose
-#       that documents it is per CASE — 1,588 collected against 47 source
+#       that documents it is per CASE — 1,595 collected against 47 source
 #       modules — where `src/`'s is per function.
 #     * the modules carrying the most prose are the AST-shaped guards, where the
 #       comment IS the rule being enforced (`test_boundaries.py`, 717 prose
@@ -170,19 +173,42 @@ def modules(root: Root) -> Modules:
 
 
 def prose_and_code(path: Path) -> tuple[int, int]:
-    """(comment + docstring lines, code lines) for one Python module."""
+    """(comment + docstring lines, code lines) for one Python module.
+
+    A PARTITION over line numbers, not three independent sums, and that is the
+    whole of `bg-the-prose-census-subtracts-a-docstrings-blank-lines-twice`. The
+    old form returned `prose, total - blank - prose`, and a blank line INSIDE a
+    docstring is in both subtrahends — `count('\\n') + 1` spans it and
+    `not line.strip()` matches it — so it came off twice and `code` was
+    understated. A five-line module whose docstring holds one blank line and
+    whose only statement is `x = 1` reported `code=0`; deleting 29 docstring
+    lines from a real module moved its code count 339 UP to 343.
+
+    Every ratio quoted against this was therefore overstated on both roots —
+    conservatively, so the gate was stricter than it claimed and nothing shipped
+    that the honest number would have caught.
+
+    A line carrying code AND a trailing comment stays PROSE, which is what the
+    old arithmetic did too: that is a judgement about which half of a mixed line
+    counts, not the overlap this fixes, and moving it is a different argument.
+    """
     source = path.read_text(encoding='utf-8')
     lines = source.splitlines()
-    comments = sum(1 for tok in tokenize.generate_tokens(io.StringIO(source).readline)
-                   if tok.type == tokenize.COMMENT)
-    docstrings = sum(
-        ast.get_docstring(node, clean=False).count('\n') + 1
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
-                             ast.ClassDef))
-        and ast.get_docstring(node))
-    blank = sum(1 for line in lines if not line.strip())
-    prose = comments + docstrings
+    prose_lines: set[int] = {
+        tok.start[0]
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+        if tok.type == tokenize.COMMENT}
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.Module, ast.FunctionDef,
+                                 ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if not ast.get_docstring(node):
+            continue
+        doc = node.body[0]
+        prose_lines.update(range(doc.lineno, (doc.end_lineno or doc.lineno) + 1))
+    blank = sum(1 for n, line in enumerate(lines, start=1)
+                if not line.strip() and n not in prose_lines)
+    prose = len(prose_lines)
     return prose, len(lines) - blank - prose
 
 

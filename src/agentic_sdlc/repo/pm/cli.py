@@ -547,17 +547,6 @@ def _mint(cfg: vocabulary.PmConfig, path: Path, body: str) -> None:
                       f'{cfg.rel(path.parent)}/ writable') from err
 
 
-def _slugify(text: str) -> str:
-    """ASCII-only, because the result becomes a permanent directory name and
-    `str.isalnum()` is Unicode-aware.
-    """
-    keep = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    out = ''.join(c if c in keep else '-' for c in text.lower())
-    while '--' in out:
-        out = out.replace('--', '-')
-    return out.strip('-')
-
-
 def _was(grain: inventory.Grain) -> str:
     """The status a grain currently carries, for the message only; the verb
     never gates on it, so a hand-edited word is repaired rather than
@@ -1055,16 +1044,6 @@ def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     for n in notices:
         _ok(f'  noticed: {n}')
     return 0
-
-
-# --- move -----------------------------------------------------------------
-def _known_feature_ids(cfg: vocabulary.PmConfig) -> list[str]:
-    out = []
-    for milestone in inventory.milestones(cfg):
-        out.extend(ff.field(vocabulary.FIELD_ID)
-                   or f'{milestone.gid}/{ff.path.parent.name}'
-                   for ff in inventory.feature_grains(cfg, milestone.gid))
-    return sorted(out)
 
 
 # --- status -------------------------------------------------------------------
@@ -2467,14 +2446,14 @@ def cmd_ledger_show(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         line = f'{row.data.get(ledger.TS_FIELD, "")}  {kind:<{KIND_COLUMN}}'
         if kind == ledger.KIND_STATUS:
             line += f'  {row.data.get("from")} -> {row.data.get("to")}'
-            gap = _gap(previous, row)
+            gap = ledger._gap(previous, row)
             if previous is not None and gap is not None:
                 line += f'  +{gap}s'
             previous = row
         elif arrive.disposition_of(row.data):
-            line += _disposition_cells(row.data)
-        elif kind in ROW_CELLS:
-            line += ROW_CELLS[kind](row.data)
+            line += ledger._disposition_cells(row.data)
+        elif kind in ledger.ROW_CELLS:
+            line += ledger.ROW_CELLS[kind](row.data)
         print(line.rstrip())
     status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS]
     total = ledger.total_seconds(cfg, _grain_kind(cfg, gid), status)
@@ -2483,87 +2462,13 @@ def cmd_ledger_show(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def _lesson_cells(row: dict) -> str:
-    """The rule, the text, and ALWAYS the source, so the reader goes to the
-    record rather than trusting this line. `lesson show` filters them."""
-    return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
-            f'(source: {row.get("source", "")})')
-
-
-def _enter_cells(row: dict) -> str:
-    """The rung asked, the answer `pm ready-for` gave, and what blocked it."""
-    cells = (f'  {row.get("rung", "")}  '
-             + (ledger.READY if row.get(ledger.READY_FIELD)
-                else ledger.NOT_READY))
-    blockers = row.get('blockers')
-    named = [str(one.get('check') or one.get('why', ''))
-             for one in (blockers if isinstance(blockers, list) else [])
-             if isinstance(one, dict)]
-    return cells + (f'  blocked: {", ".join(named)}' if named else '')
-
-
-def _verdict_cells(row: dict) -> str:
-    """The rung, the check, the verdict word, the belt's own detail and what
-    it ran — without them a refused run and a passed one read alike here."""
-    cells = (f'  {row.get("rung", "")}  {row.get("check", "")}  '
-             f'{row.get("verdict", "")}')
-    if row.get('detail'):
-        cells += f' — {row["detail"]}'
-    return cells + (f'  (ran: {row["ran"]})' if row.get('ran') else '')
-
-
-def _leave_cells(row: dict) -> str:
-    """The arrival the one write recorded, then the belt named NEXT."""
-    cells = _arrival_cells(row)
-    if not row.get('next_rung'):
-        return cells
-    cells += f'  next: {row["next_rung"]}'
-    checks = row.get('next_checks')
-    if isinstance(checks, list) and checks:
-        cells += f' ({", ".join(str(one) for one in checks)})'
-    return cells
-
-
-# Every kind whose payload this verb renders, and the column the kind sits in,
-# off the kinds themselves — `{kind:<8}` predated `check.verdict` (13).
-ROW_CELLS = {ledger.KIND_LESSON: _lesson_cells,
-             ledger.KIND_ENTER: _enter_cells,
-             ledger.KIND_VERDICT: _verdict_cells,
-             ledger.KIND_LEAVE: _leave_cells}
+# How wide the kind column this verb prints is, off `ledger`'s own kinds —
+# `{kind:<8}` predated `check.verdict` (13). It stays here, with the only line
+# that formats against it, and it has to: `vars(ledger)` is a question only a
+# module OUTSIDE `ledger` can ask of it. The cells it lines up moved to
+# `ledger.py`, beside the `*_row` minters whose keys they read.
 KIND_COLUMN = max(len(word) for name, word in vars(ledger).items()
                   if name.startswith('KIND_') and isinstance(word, str))
-
-
-def _arrival_cells(row: dict) -> str:
-    """The state reached and the answer given, `none` and its value included."""
-    cells = f'  {row.get("state", "")}  {row.get("answer", "")}'
-    return cells + (f' {row["value"]}' if row.get('value') else '')
-
-
-def _disposition_cells(row: dict) -> str:
-    """The arrival, plus every check a belt answered instead of asking
-    (0.5.0/D6). Read defensively: a hand-written row must not make a grain
-    unprintable."""
-    cells = _arrival_cells(row)
-    entries = row.get('skipped')
-    if not isinstance(entries, list) or not entries:
-        return cells
-    return cells + '  skipped: ' + ', '.join(
-        f'{one.get("check")} — "{one.get("why")}"' if isinstance(one, dict)
-        else str(one) for one in entries)
-
-
-def _gap(earlier, later) -> int | None:
-    """Whole seconds between two rows' stamps, or None when either will not
-    parse — a fabricated interval is worse than a missing one.
-    """
-    if earlier is None:
-        return None
-    start = ledger.parse_ts(earlier.data.get(ledger.TS_FIELD))
-    end = ledger.parse_ts(later.data.get(ledger.TS_FIELD))
-    if start is None or end is None:
-        return None
-    return int((end - start).total_seconds())
 
 
 # --- ledger report ------------------------------------------------------------

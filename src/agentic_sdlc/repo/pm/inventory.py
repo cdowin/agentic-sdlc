@@ -452,21 +452,6 @@ def milestone_of(cfg: PmConfig, gid: str) -> str:
     return ''
 
 
-def duplicate_ids(cfg: PmConfig) -> dict[str, list[Path]]:
-    """{id: every document claiming it}, for the ids more than one claims. Per
-    KIND is the uniqueness rule: the same slug in two different kinds is fine,
-    because the prefix distinguishes them.
-    """
-    seen: dict[tuple[str, str], list[Path]] = {}
-    for kind in FLOW_KINDS:
-        for path in pool_walk(cfg, kind):
-            grain = read_grain(cfg, path, kind)
-            if grain is not None:
-                seen.setdefault((grain.kind, grain.gid), []).append(path)
-    return {gid: paths for (_kind, gid), paths in seen.items()
-            if len(paths) > 1}
-
-
 def undeclared_kinds(cfg: PmConfig) -> list[tuple[Path, str]]:
     """(document, the `kind:` it declares) for kinds this project does not
     have. A fact about the INPUT — refused by name where a verb reads one,
@@ -1187,7 +1172,7 @@ def root_id(cfg: PmConfig) -> str:
 
 
 @dataclass(frozen=True)
-class Sequence:
+class SequenceCensus:
     """One container's `order` against the children it holds — THREE numbers,
     each a different fact (rule 4): `dangling` names a grain the tree HAS and
     this parent does not hold (drift); `unverifiable` names no grain at all (a
@@ -1199,13 +1184,13 @@ class Sequence:
 
 
 def sequence_census(cfg: PmConfig, parent: Grain,
-                    index: dict[str, Grain] | None = None) -> Sequence:
+                    index: dict[str, Grain] | None = None) -> SequenceCensus:
     """`parent`'s `order` graded against the children bound to it. A caller
     grading MANY parents passes the index it already walked."""
     index = grain_index(cfg) if index is None else index
     held = {g.gid for g in contained(cfg, parent, index)}
     declared = parent.list_field(ORDER_KEY)
-    return Sequence(
+    return SequenceCensus(
         dangling=[gid for gid in declared
                   if gid not in held and gid in index],
         unverifiable=[gid for gid in declared if gid not in index],

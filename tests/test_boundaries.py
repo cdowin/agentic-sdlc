@@ -1720,6 +1720,148 @@ class NoImportIsDead(unittest.TestCase):
             'change:\n  ' + '\n  '.join(offenders))
 
 
+# --- primitive 12: a module binds each name once -------------------------------
+# Primitive 4a asks whether every name in the table is READ. This asks whether
+# the table has one entry per name — the other way the table can lie.
+def _bound_names(tree: ast.Module):
+    """(name, lineno) for every name this module binds at MODULE LEVEL, spelled
+    the way PYTHON binds it.
+
+    NOT `_module_level_bindings` above, and the difference is the whole reader:
+    that one yields BOTH halves of an import, because primitive 9 asks *is this
+    mechanic spelled here at all* and `from ...frontmatter import read_raw as
+    put` has to answer for `read_raw`. The question here is which name the
+    module's namespace ends up HOLDING, which is one per alias — so the
+    re-export yields `put` alone, and two imports reaching one name through two
+    spellings do not read as a collision Python never makes.
+
+    Column 0 only, for the same reason: a `def` in a class body is a method, and
+    a rebinding under `if TYPE_CHECKING:` or in a `try:` fallback is a BRANCH,
+    where exactly one of the two runs. `AugAssign` is absent because `X += …`
+    needs the name to already exist, so it mutates one binding rather than
+    making a second.
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            yield node.name, node.lineno
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                # `A, B = 'a', 'b'` binds two; a subscript or an attribute
+                # target binds no module-level name at all. `A, *REST = …`
+                # binds `REST` too — unwrapped, because a reader blind to one
+                # shape is a narrowing rather than a simpler rule.
+                leaves = (target.elts
+                          if isinstance(target, (ast.Tuple, ast.List))
+                          else [target])
+                for leaf in leaves:
+                    if isinstance(leaf, ast.Starred):
+                        leaf = leaf.value
+                    if isinstance(leaf, ast.Name):
+                        yield leaf.id, node.lineno
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target,
+                                                            ast.Name):
+            yield node.target.id, node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != '*':
+                    yield alias.asname or alias.name, node.lineno
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.asname or alias.name.split('.')[0], node.lineno
+
+
+def _double_bound_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every module-level name bound more than once, with every line that binds
+    it and which one wins."""
+    seen: dict[str, list[int]] = {}
+    for name, lineno in _bound_names(tree):
+        seen.setdefault(name, []).append(lineno)
+    return [f'{rel}: {name} bound at '
+            + ', '.join(str(n) for n in lines)
+            + f' — only line {lines[-1]} is reachable'
+            for name, lines in seen.items() if len(lines) > 1]
+
+
+class NoNameIsBoundTwice(unittest.TestCase):
+    """PRIMITIVE 12 — one module-level name, one binding.
+
+    `pm/cli.py` defined `_slugify` at line 549 and again at 1720, byte-identical
+    bodies and differently worded docstrings, with the only call site below both
+    (`bg-a-helper-is-defined-twice-and-nothing-could-see-it`). The first was
+    dead from the line it was written on, and a 1,236-case suite could not see
+    it because nothing asks this question and Python does not warn.
+
+    Rule 11 from the source side: a capability nobody can find is a capability
+    you do not have — here it existed TWICE, in one file, and the second author
+    could not see the first.
+    """
+
+    PROTECTS = (
+        'a module binds each of its top-level names exactly once, so the '
+        'definition a reader finds is the definition that runs',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'second binding makes the first CORRECT, not wrong — every call reaches '
+        'the right answer from the wrong line — so no behaviour test can ever '
+        'observe one. The suite ran 1,236 green cases over a dead `_slugify`',
+    )
+
+    CORPUS = (
+        # The shipped defect's shape: two `def`s, one name.
+        ('def slug(t):\n    return t\n\n\ndef slug(t):\n    return t', True),
+        ('NAME = 1\nNAME = 2', True),
+        # A `def` and a `class` collide exactly as two `def`s do.
+        ('def Row(x):\n    return x\n\n\nclass Row:\n    pass', True),
+        ('from a import b\nfrom c import b', True),
+        # Both bind `os`; harmless at run, and one of the two is still dead.
+        ('import os.path\nimport os', True),
+        ('A, B = 1, 2\nB = 3', True),
+        ('A, *REST = 1, 2, 3\nREST = []', True),
+        # A BRANCH is not a second binding: one of the two runs.
+        ('from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n'
+         '    from a import Said\nSaid = 1', False),
+        ('try:\n    import tomllib\nexcept ImportError:\n'
+         '    import tomli as tomllib', False),
+        # A METHOD sharing a module function's name. Column 0 is the question.
+        ('def field(key):\n    return key\n\n\nclass Grain:\n'
+         '    def field(self, key):\n        return key', False),
+        ('A, B = 1, 2\nC = 3', False),
+        # The import asymmetry that `_module_level_bindings` would fail on:
+        # this binds `put` and `read_raw`, which is one each.
+        ('from a import read_raw as put\nfrom c import read_raw', False),
+        ('X = 1\nX += 1', False),
+        # Prose naming it twice is not a binding.
+        ("def slug(t):\n    return t\n\n\nHELP = 'slug, and slug again'",
+         False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_double_bound_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_no_module_binds_a_top_level_name_twice(self):
+        offenders: list[str] = []
+        bound = 0
+        for rel, path in _sources():
+            tree = _tree(path)
+            bound += sum(1 for _ in _bound_names(tree))
+            offenders.extend(_double_bound_sites(rel, tree))
+        # The zero-census floor, in the spirit of `MIN_SOURCES`: this case
+        # asserts an EMPTY offender list, and a reader that stopped reading
+        # hands back one too.
+        self.assertGreaterEqual(
+            bound, 500,
+            f'{bound} module-level binding(s) across {len(_sources())} module(s) '
+            f'— the name census collapsed, so this case is asserting emptiness '
+            f'over nothing')
+        self.assertEqual(
+            [], offenders,
+            'a module-level name bound twice. Python binds both and the LAST '
+            'one wins, so the earlier definition is unreachable from the line '
+            'it was written on and nothing that runs can tell you. Delete the '
+            'dead one:\n  ' + '\n  '.join(offenders))
+
+
 # A module in the bottom layer, for grading a planted import as `core/` sees it.
 CORE_SCRATCH = 'core/scratch_not_a_layer.py'
 

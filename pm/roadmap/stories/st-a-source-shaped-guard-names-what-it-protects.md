@@ -170,3 +170,10 @@ session, and the declaration is read in the same walk. Zero new collected cases 
 after across the seven modules): `[tests] cases` is at 1575 of 1575 and `devkit.toml` belongs to
 another story this session, so the third declaration had to fit inside the existing case — it does,
 as three assertions over one roster read.
+
+done: 13bd43c — `PROTECTS = (the property, the judgement)` on 22 guard classes, a comment beside each
+of the 13 bare functions, and `shaped_roster()` answering the whole set in one call. 35 guards judged:
+28 against rule 4's first sin, 6 against its second, 1 inverted, 0 wholly second scoreboards — but TWO
+CASES are, named inside their own guard's `PROTECTS` rather than deleted. The stale floors comment is
+corrected AND declared unmaintained, because a hand-written number beside the census that answers it
+is what this milestone is named against.

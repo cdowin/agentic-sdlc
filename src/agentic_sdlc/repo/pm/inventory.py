@@ -1385,6 +1385,81 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
     return used
 
 
+@dataclass(frozen=True)
+class StateHistory:
+    """Which DECLARED states the tree has held: now, or on a ledger row.
+
+    `state_usage` alone is a snapshot, and on a tree at rest every
+    `in_progress` rung reads as never held — one consumer closed four `fixed`
+    bugs and was told `fixed never held` beside four `"from":"fixed"` rows
+    (#30). This adds what the rows SAY and nothing they do not: a `status`
+    row's `from`/`to` and a `disposition` row's `state`, for the kind of the
+    grain the row names. That kind is read off the grain index, so a row whose
+    grain is no longer in the tree cannot be placed and is SKIPPED — counted
+    here, never dropped silently (rule 4), and so is a ledger that will not read.
+    """
+
+    usage: dict[str, dict[str, int]]    # `state_usage`: current holders
+    named: dict[str, frozenset[str]]    # declared states a ledger row names
+    skipped: int = 0                   # of those, naming no grain in the tree
+    unreadable: tuple[str, ...] = ()    # ledgers that would not parse
+
+    def held(self, kind: str) -> list[str]:
+        """The kind's declared states held now OR named by a row, in order."""
+        named = self.named.get(kind, frozenset())
+        return [s for s, n in self.usage.get(kind, {}).items()
+                if n or s in named]
+
+    def never(self, kind: str) -> list[str]:
+        """The kind's declared states held by neither, in declared order."""
+        held = set(self.held(kind))
+        return [s for s in self.usage.get(kind, {}) if s not in held]
+
+
+def state_history(cfg: PmConfig) -> StateHistory:
+    """`state_usage` plus every ledger's status and disposition rows — ONE pass
+    over the ledgers, through `ledger.read_rows`, the reader every other row
+    consumer uses."""
+    from agentic_sdlc.repo.pm import ledger
+    usage = state_usage(cfg)
+    index = grain_index(cfg)
+    named: dict[str, set[str]] = {kind: set() for kind in usage}
+    skipped = 0
+    unreadable: list[str] = []
+    for path in ledger.ledger_paths(cfg):
+        if not path.is_file():
+            continue
+        try:
+            found = ledger.read_rows(path)
+        except ledger.LedgerError:
+            unreadable.append(cfg.rel(path))
+            continue
+        for row in found:
+            data = row.data
+            row_kind = data.get(ledger.KIND_FIELD)
+            if row_kind == ledger.KIND_STATUS:
+                states = (data.get('from'), data.get('to'))
+            elif row_kind == ledger.KIND_DISPOSITION:
+                states = (data.get('state'),)
+            else:
+                continue
+            gid = data.get(ledger.GRAIN_FIELD)
+            grain = index.get(gid) if isinstance(gid, str) else None
+            if grain is None:
+                skipped += 1
+                continue
+            bucket = usage.get(grain.kind)
+            if bucket is None:
+                continue
+            # A word the kind never declared is D4's, exactly as in the census.
+            named[grain.kind].update(s for s in states
+                                     if isinstance(s, str) and s in bucket)
+    return StateHistory(usage=usage,
+                        named={k: frozenset(v) for k, v in named.items()},
+                        skipped=skipped,
+                        unreadable=tuple(unreadable))
+
+
 def undeclared_status(cfg: PmConfig, kind: str, status: str) -> str | None:
     """D4's one sentence: the word, and the words the project did declare; None
     when `status` is in some category. One wording for every grain kind.

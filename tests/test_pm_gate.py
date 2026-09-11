@@ -2836,15 +2836,45 @@ class D11AParentDoesNotCloseOverAnUnresolvedChild(unittest.TestCase):
             self.assertIn('CONTAINMENT  2 bound child/ren graded', out)
 
     def test_a_retired_binding_field_is_named_where_it_survives(self):
-        with tree(milestone_status='building', feature_status='building',
-                  story_statuses=('ready',)) as root:
-            bug(root, 'legacy', status='open',
-                fix_milestone='"0.1"', caught_in='"0.1"')
+        """UNGATED since #19, and both rosters are the proof. The finding rode
+        inside D11, so a roster that followed the D3 retirement message to the
+        letter dropped it and printed PASS over 117 `fix_milestone:` lines on
+        one consumer's tree. Still exit 1 — drift, not a config error (0.6.0 D2)."""
+        for config in ('', '[pm]\nchecks = ["D1"]\n'):
+            with self.subTest(config=config), tree(
+                    milestone_status='building', feature_status='building',
+                    story_statuses=('ready',), config=config) as root:
+                bug(root, 'legacy', status='open',
+                    fix_milestone='"0.1"', caught_in='"0.1"')
+                code, out = run_gate(root)
+                self.assertEqual(code, 1, out)
+                self.assertIn('carries `fix_milestone:`', out)
+                self.assertIn('carries `caught_in:`', out)
+                self.assertIn('retired in 0.6.0', out)
+                # No `pm` verb removes a field, so the hint cannot name one.
+                self.assertIn('delete the line by hand', out)
+
+    def test_a_pre_060_roster_names_what_it_omits_and_still_fails(self):
+        """#19 criteria 2 and 4: the roster a consumer was left holding after
+        removing D3 — the stock one without D11 or D12. Its omissions are ONE
+        counted line (the roster is the project's declaration, so never the
+        exit code), and the retired field still reddens the gate."""
+        pre = [c for c in vocabulary.DEFAULT_CHECKS if c not in ('D11', 'D12')]
+        roster = '[pm]\nchecks = [' + ', '.join(f'"{c}"' for c in pre) + ']\n'
+        with tree(story_statuses=('ready',), config=roster) as root:
+            bug(root, 'legacy', status='open', fix_milestone='"0.1"')
             code, out = run_gate(root)
             self.assertEqual(code, 1, out)
-            self.assertIn('carries `fix_milestone:`', out)
-            self.assertIn('carries `caught_in:`', out)
-            self.assertIn('retired in 0.6.0', out)
+            self.assertIn('bug 0.1/bugs/legacy carries `fix_milestone:`', out)
+            said = [ln for ln in out.splitlines() if ln.startswith('  ROSTER  ')]
+            self.assertEqual(len(said), 1, out)
+            self.assertIn(f'omits 2 of {len(vocabulary.DEFAULT_CHECKS)} '
+                          f'stock-on rule(s): D11, D12', said[0])
+        # The stock roster omits nothing, so it says nothing.
+        with tree(story_statuses=('ready',)) as root:
+            code, out = run_gate(root)
+            self.assertEqual(code, 0, out)
+            self.assertNotIn('ROSTER', out)
 
     def test_a_retired_field_that_is_EMPTY_is_still_named(self):
         """PRESENCE, not value. An empty `fix_milestone:` is precisely the
@@ -2866,6 +2896,10 @@ class D11AParentDoesNotCloseOverAnUnresolvedChild(unittest.TestCase):
             self.assertEqual(code, 2, out)
             self.assertIn('D3', out)
             self.assertIn('became D11', out)
+            # #19: "remove D3" alone left a roster with no containment at all.
+            self.assertIn('replace D3 with D11', out)
+            # False for any declared roster that omits D11.
+            self.assertNotIn('unconditional', out)
 
 
 class TheUnboundFamily(unittest.TestCase):
@@ -3017,14 +3051,70 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             self.assertEqual(code, 0, out)          # a WARN never decides the code
             self.assertIn('(U1)', out)
             self.assertIn('WARN', out)
-            self.assertIn('declared state(s) have never been held', out)
+            self.assertIn('declared state(s) are held by no grain', out)
             # The milestone kind declares 8 and this tree holds one word. ONE
             # line for every kind since 0.6.0 — three near-identical paragraphs
             # saying one sentence about `[pm.states.*]` is the shape that
             # taught people to scroll.
-            self.assertIn('milestone: 1 of 8 in use', out)
+            self.assertIn('milestone: 1 of 8 held', out)
             self.assertIn('packaging', out)
             self.assertEqual(out.count('(U1)'), 1, out)
+
+    @staticmethod
+    def _never_held(line: str, kind: str) -> list[str]:
+        """The states U1's clause for `kind` names as never held; [] when the
+        line carries no clause for that kind (every state held)."""
+        found = re.search(rf'{kind}: \d+ of \d+ (?:in use|held), '
+                          rf'([^;—]+?) never held', line)
+        return found.group(1).split(', ') if found else []
+
+    def test_a_state_the_ledger_shows_held_is_not_called_never_held(self):
+        """#30. U1 read each grain's CURRENT status, so a tree at rest called
+        every `in_progress` rung never held — one consumer closed four `fixed`
+        bugs and was told `fixed never held` while its ledger had just gained
+        four `"from":"fixed"` rows. Criterion 3 is the first half: with no
+        ledger, the census names exactly what it always did."""
+        with tree(milestone_status='building', feature_status='building',
+                  story_statuses=('done',),
+                  config='[pm]\nchecks = ["U1"]\n') as root:
+            bug(root, 'crash', status='closed')
+
+            def u1_line() -> str:
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                u1 = [ln for ln in out.splitlines() if '(U1)' in ln]
+                self.assertEqual(len(u1), 1, out)
+                return u1[0]
+
+            before = u1_line()
+            self.assertEqual(self._never_held(before, 'bug'), ['open', 'fixed'])
+            self.assertIn('reviewing', self._never_held(before, 'feature'))
+
+            put_ledger(
+                root,
+                status_line('2026-09-01T00:00:00Z', '0.1/bugs/crash', 'open', 'fixed'),
+                status_line('2026-09-02T00:00:00Z', '0.1/bugs/crash', 'fixed', 'closed'),
+                json.dumps({'ts': '2026-09-03T00:00:00Z', 'kind': 'disposition',
+                            'grain': '0.1/alpha', 'state': 'reviewing',
+                            'answer': 'none'}),
+                # A grain retired out of the tree: its kind cannot be read, so
+                # the row is skipped — and COUNTED, never silently.
+                status_line('2026-09-04T00:00:00Z', 'bg-gone', 'open', 'fixed'))
+            after = u1_line()
+            self.assertEqual(self._never_held(after, 'bug'), [])
+            self.assertNotIn('reviewing', self._never_held(after, 'feature'))
+            # A state named nowhere still is.
+            self.assertIn('obe', self._never_held(after, 'story'))
+            self.assertIn('1 ledger row(s) naming a grain no longer in the '
+                          'tree skipped', after)
+            self.assertNotIn('a flow the project is not running', after)
+            # A ledger that will not parse is NAMED, not read as silence: the
+            # census falls back to what it could read, and says so (rule 4).
+            put_ledger(root, 'not json')
+            damaged = u1_line()
+            self.assertEqual(self._never_held(damaged, 'bug'), ['open', 'fixed'])
+            self.assertIn('1 ledger(s) unreadable and not read '
+                          '(pm/roadmap/ledgers/0.1.jsonl)', damaged)
 
     def test_a_kind_with_no_grains_at_all_is_silent_rather_than_all_unused(self):
         # "Every declared state unused" means the tree holds no grain of that
@@ -3054,6 +3144,38 @@ class D7ADeclaredStateNobodyUses(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertNotIn('wombat', out)
+
+
+class TheHelpStatesTheRosterTheCodeRuns(unittest.TestCase):
+    """`bg-the-gate-help-names-one-of-its-four-rule-families`: `check pm
+    --help` IS this module's docstring, and it opened on one family of four
+    while its "default:" roster listed four rules that are off by default and
+    omitted one that is on. Both halves are parsed out of the page and held to
+    the tuples the gate reads, so neither can be restated wrong again."""
+
+    DOC = pm_check.__doc__ or ''
+
+    def test_the_stated_default_is_DEFAULT_CHECKS_and_the_rest_are_opt_in(self):
+        found = re.search(r'\(default: ([^;]+); ([^)]+?) are opt-in', self.DOC)
+        self.assertIsNotNone(found, self.DOC[:600])
+        default = re.findall(r'[A-Z]\d+', found.group(1))
+        opt_in = re.findall(r'[A-Z]\d+', found.group(2))
+        self.assertEqual(sorted(default), sorted(vocabulary.DEFAULT_CHECKS))
+        self.assertEqual(sorted(opt_in), sorted(set(vocabulary.KNOWN_CHECKS)
+                                                - set(vocabulary.DEFAULT_CHECKS)))
+
+    def test_every_rule_it_can_run_is_enumerated_and_nothing_else(self):
+        listed = {rid for m in re.finditer(r'^  ([A-Z]\d+(?:/[A-Z]\d+)*)\s',
+                                           self.DOC, re.M)
+                  for rid in m.group(1).split('/')}
+        # Rule 4: a scrape that matched nothing would make the equality vacuous.
+        self.assertGreaterEqual(len(listed), 20, sorted(listed))
+        self.assertEqual(sorted(listed), sorted(vocabulary.KNOWN_CHECKS))
+
+    def test_the_opening_sentence_names_every_family(self):
+        opening = self.DOC.strip().split('\n\n')[0]
+        for family in sorted({rid[0] for rid in vocabulary.KNOWN_CHECKS}):
+            self.assertIn(f'({family}', opening, opening)
 
 
 class AConfigErrorIsComplete(unittest.TestCase):

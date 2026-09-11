@@ -218,7 +218,10 @@ def print_ladder() -> None:
         fresh = vocabulary.reload()
         # ONE walk of the tree, not one per kind: this reads `field_of` on
         # every grain, and four passes for one report is three too many.
-        usage = inventory.state_usage(fresh)
+        # And the ledger's status/disposition rows with it (#30): a state a row
+        # shows was held is not "never held", here or in U1.
+        history = inventory.state_history(fresh)
+        usage = history.usage
     except vocabulary.ConfigError as err:
         # The flow was just written, so this should not happen — and if it
         # does, saying so beats printing nothing and looking like success.
@@ -233,8 +236,8 @@ def print_ladder() -> None:
         counts = usage.get(kind)
         if not counts:
             continue
-        in_use = [state for state, n in counts.items() if n]
-        never = [state for state, n in counts.items() if not n]
+        in_use = history.held(kind)
+        never = history.never(kind)
         if not in_use:
             # EVERY state unused means the tree holds no grain of this kind —
             # a different fact, and the one a fresh tree is full of. `U1` skips
@@ -249,8 +252,15 @@ def print_ladder() -> None:
         if never:
             print(f'  {"":<10} never held: {", ".join(never)}')
     print()
-    print('  A state you declare and never use is a flow you are not running.')
-    print('  `check pm` U1 keeps saying so after this scrolls away, as a WARN')
+    print('  "never held" read each grain\'s current status plus the ledger\'s')
+    print('  status and disposition rows.')
+    if history.skipped:
+        print(f'  {history.skipped} ledger row(s) name a grain no longer in the '
+              f'tree and were skipped.')
+    if history.unreadable:
+        print(f'  {len(history.unreadable)} ledger(s) would not read and were '
+              f'not counted: {", ".join(history.unreadable)}.')
+    print('  `check pm` U1 names them after this scrolls away, as a WARN')
     print('  with the count — never a finding, because a tree mid-adoption')
     print('  legitimately has unused states.')
 

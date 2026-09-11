@@ -203,13 +203,17 @@ def _flow_defect(kind: str, by_category: dict[str, tuple[str, ...]]) -> str:
 # project is not drifting. D10 is stricter than D9. R5 is off for the same
 # reason: a tree with no plan yet has nothing for it to grade.
 # D11 replaced D3, STOCK-ON in its place: containment is the tool's mapping.
+# THIS TUPLE IS "STOCK-ON", in so many words: it is what runs with no `[pm]
+# checks`, and a declared roster that omits one of these is named on
+# `check pm`'s ROSTER line (#19). `check pm --help` states it and a test holds
+# the page to it.
 DEFAULT_CHECKS = ('D1', 'D2', 'D4', 'D5', 'D6', 'D11', 'D12', 'U1',
                   'V1', 'V4', 'V5', 'V7')
 # The USAGE family: what the tree DOES with the vocabulary (U1) and the
-# capabilities (U2) it declared, as opposed to whether a word is declared at
-# all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. Both are
-# STOCK-ON: an opt-in rule nobody enables answers "is this flow being used"
-# with silence, which is the failure they were filed to end, and a WARN cannot
+# capabilities (U2-U5) it declared, as opposed to whether a word is declared at
+# all (D4). A NEW LETTER on purpose — see RETIRED_CHECKS['D7'] below. U1 alone
+# is STOCK-ON (it is in DEFAULT_CHECKS above); U2-U5 are OPT-IN and run only
+# when `[pm] checks` names them — the seed says the same, and a WARN cannot
 # redden anyone; a tree that wires nothing stays quiet either way (0.4.0/D5).
 # U5 (0.5.0) is the same question asked of the EDGE: a grain whose current
 # state was arrived at with no disposition. A bare move records `answer: none`
@@ -256,13 +260,30 @@ RETIRED_CHECKS = {
           'off `BINDS_TO` — milestone/feature, milestone/bug and '
           'feature/story — and FAILS rather than warning. D3 warned about one '
           'pair, so a milestone could close over an open bug and print PASS. '
-          'Containment is unconditional: the opt-out is `pm remove <parent> '
-          '<child>`, which returns the child to its pool',
+          'D11 is stock-on, and a declared `[pm] checks` runs only what it '
+          'names; the opt-out for one child is `pm remove <parent> <child>`, '
+          'which returns it to its pool',
     'D8': 'became R5 — the version file is graded against the CURRENT entry in '
           'pm/roadmap/releases.md `order` ([pm] version_at selects which), not '
           'against the id of whichever milestone happens to be in progress. '
           'D8 welded the version to the id; `version:` separates them',
 }
+# The rule a retired id's question moved INTO, where there is one. "Remove D3"
+# alone was followed to the letter and left a declared roster with no
+# containment at all (#19), so the message names the replacement. D7 and the V
+# retirements have none: U1 took a new letter precisely so D7 is not one.
+RETIRED_SUCCESSORS = {'D3': 'D11', 'D8': 'R5'}
+
+
+def retired_check_message(check: str) -> str:
+    """The ONE refusal for a retired rule id in `[pm] checks` — both config
+    readers print it, so the two cannot drift into different advice."""
+    successor = RETIRED_SUCCESSORS.get(check)
+    act = (f'Removing it alone turns the question off: replace {check} with '
+           f'{successor} in the list'
+           if successor else 'Remove it from the list')
+    return (f'[pm] checks names {check}, which was retired — '
+            f'{RETIRED_CHECKS[check]}. {act}.')
 
 # RETIRED_CHECKS' frontmatter sibling, named where it survives.
 RETIRED_FIELDS = {
@@ -1016,8 +1037,7 @@ def all_config_defects(sect: dict | None = None) -> list[str]:
                   if isinstance(c, str)) if isinstance(raw_checks, list) else DEFAULT_CHECKS
     for check in named:
         if check in RETIRED_CHECKS:
-            add(f'[pm] checks names {check}, which was retired — '
-                f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+            add(retired_check_message(check))
     unknown = [c for c in named
                if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
     if unknown:
@@ -1041,8 +1061,7 @@ def config_complaints(cfg: PmConfig, sect: dict | None = None) -> list[str]:
     out: list[str] = []
     for check in cfg.checks:
         if check in RETIRED_CHECKS:
-            out.append(f'[pm] checks names {check}, which was retired — '
-                       f'{RETIRED_CHECKS[check]}. Remove it from the list.')
+            out.append(retired_check_message(check))
     unknown = [c for c in cfg.checks
                if c not in KNOWN_CHECKS and c not in RETIRED_CHECKS]
     if unknown:

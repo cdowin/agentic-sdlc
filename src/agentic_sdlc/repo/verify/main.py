@@ -42,6 +42,7 @@ from typing import Callable, Sequence
 from agentic_sdlc.core import makefile, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import ledger
 from agentic_sdlc.repo.verify import cache, rules
 from agentic_sdlc.repo.verify.rules import (EXIT_CONFIG, FEATURE, MILESTONE,
@@ -365,8 +366,9 @@ def _roster_without_rows(root: Path, costs: dict) -> list[str]:
     except Exception as err:  # noqa: BLE001 - reported, never swallowed
         # A roster `check all` refuses at exit 2 read here as a clean plan.
         return [f'unrun     [checks] all could not be read ({err}), so no '
-                f'gate was joined to a cost row — `agentic-sdlc check all` '
-                f'is the verb that refuses this by name']
+                f'gate was joined to a cost row — '
+                f'`{vehicle.command("check", "all")}` is the verb that '
+                f'refuses this by name']
     if not roster:
         return []
     missing = [name for name in roster if name not in costs]

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from agentic_sdlc.core.config import ConfigError
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 
@@ -645,6 +645,12 @@ def _quote(value: str) -> str:
     return repr(shown)
 
 
+def _plan_move(*flags: str) -> str:
+    """The `pm add` that puts a milestone on the plan, through the vehicle."""
+    return vehicle.command('pm', 'add', vocabulary.ROOT_ID,
+                           inventory.MILESTONE_SLOT, *flags)
+
+
 def version_defect(value: str) -> str:
     """'' when `value` may be joined onto the roadmap directory, else why
     not."""
@@ -838,8 +844,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
             return _refuse(
                 f'unknown grain {rest[0]!r} — `{CLOSE_VERB}` closes one of '
                 f'{", ".join(CLOSE_OPERATIONS)}. A milestone closes through '
-                f'`agentic-sdlc release <version>`, which is the belt above '
-                f'these two')
+                f'`{vehicle.command("release", vehicle.Slot("<version>"))}`, '
+                f'which is the belt above these two')
         operation, rest = rest[0], rest[1:]
     if operation not in OPERATIONS:
         return _refuse(f'unknown operation {operation!r} '
@@ -926,8 +932,8 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                     f'{spoken} needs a version, and the plan cannot supply one: '
                     f'{cfg.rel(inventory.releases_file(cfg))} declares no `order` '
                     f'(or every entry in it has shipped). Name the version, or '
-                    f'schedule the milestone that carries it: `agentic-sdlc pm '
-                    f'add {vocabulary.ROOT_ID} <milestone-id>`')
+                    f'schedule the milestone that carries it: '
+                    f'`{_plan_move()}`')
             subject = current
             defect = subject_defect(operation, subject)
             if defect:
@@ -943,9 +949,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                 f'{spoken} {subject}: the current release is {current!r} — '
                 f'shipping out of the order declared in '
                 f'{cfg.rel(inventory.releases_file(cfg))} is refused, and nothing '
-                f'was written. Re-sequence the plan with `agentic-sdlc pm add '
-                f'{vocabulary.ROOT_ID} <milestone-id> --before <id>` if {subject} '
-                f'really goes first')
+                f'was written. Re-sequence the plan with '
+                f'`{_plan_move("--before", vehicle.Slot("<id>"))}` '
+                f'if {subject} really goes first')
 
     mid = _milestone_id(cfg, operation, subject)
     # The GRAIN, not a directory: what a belt needs is the milestone's document

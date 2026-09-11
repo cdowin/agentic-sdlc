@@ -117,6 +117,9 @@ UNMARKED_MODULES = (
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',
+    # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
+    # one case in `test_makefile_include.py`.
+    'test_vehicle.py',
     'test_verdict.py',
     # The reuse trust boundary — a row read or refused, a ledger row in the
     # state or out of it — proven by CALL, so the rung that runs on every edit

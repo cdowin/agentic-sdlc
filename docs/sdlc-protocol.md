@@ -44,7 +44,7 @@ tree, in CI and pre-push.
 
 **Yours, after the write** (printed as `next:` lines):
 
-- render the release notes: `agentic-sdlc changelog <milestone-id>` — they come off each grain's `changelog:` field, in the `order:` the milestone declares, and no file is maintained
+- render the release notes: `make sdlc ARGS='changelog <milestone-id>'` — they come off each grain's `changelog:` field, in the `order:` the milestone declares, and no file is maintained
 - commit the roadmap directory as the release commit
 - push the branch: `git push -u origin <branch>` — never the mainline
 - open the PR from <branch> to <mainline>
@@ -87,7 +87,7 @@ tree, in CI and pre-push.
 **Yours, after the write** (printed as `next:` lines):
 
 - commit the roadmap directory — the status line and the ledger row this belt wrote
-- when every story of the feature is done: `agentic-sdlc close feature <feature-id>`
+- when every story of the feature is done: `make sdlc ARGS='close feature <feature-id>'`
 
 ## `feature` — the checks
 
@@ -103,7 +103,7 @@ tree, in CI and pre-push.
 **Yours, after the write** (printed as `next:` lines):
 
 - commit the roadmap directory — the status line and the ledger row this belt wrote
-- when every feature of the milestone is done: `agentic-sdlc release <version>`
+- when every feature of the milestone is done: `make sdlc ARGS='release <version>'`
 
 ## The events a belt emits
 

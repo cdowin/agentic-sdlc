@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from agentic_sdlc.repo import emit
+from agentic_sdlc.repo import emit, vehicle
 from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 from agentic_sdlc.repo.pm.cli import Usage, _grain_of, _ok
 
@@ -52,7 +52,8 @@ NO_ENTRY_EDGE: dict[str, str] = {
            '(hard rule 2). The derived entry condition is therefore EMPTY, so '
            'this rung could only ever answer NOT READY, on every tree, '
            'forever. It was declined rather than hand-written: see D4 in the '
-           "milestone's decisions log. `agentic-sdlc adopt <version>` runs the "
+           "milestone's decisions log. "
+           f'`{vehicle.command(ADOPT, vehicle.Slot("<version>"))}` runs the '
            'checks and writes nothing, which is the answer you wanted',
 }
 

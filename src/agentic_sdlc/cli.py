@@ -70,10 +70,14 @@ KNOWN_GATES = {
 FIXABLE_CHECKS: frozenset[str] = frozenset()
 
 
+def stock_roster() -> tuple[str, ...]:
+    """What `check all` runs when `[checks] all` is undeclared."""
+    return tuple(name for name, on in KNOWN_GATES.items() if on)
+
+
 def all_roster() -> tuple[str, ...]:
     """`[checks] all`, else the stock default; an unknown name is refused, never skipped."""
-    default = tuple(name for name, on in KNOWN_GATES.items() if on)
-    roster = str_tuple(config_section('checks'), 'checks', 'all', default)
+    roster = str_tuple(config_section('checks'), 'checks', 'all', stock_roster())
     unknown = [c for c in roster if c not in KNOWN_GATES]
     if unknown:
         # A roster error must not HIDE the config errors of the gates that were
@@ -234,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         return verify_main.main(rest, _verify_section)
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
-        return dispatch.main(rest)
+        return dispatch.main(rest, stock_roster())
     if cmd == CITE_VERB:
         from agentic_sdlc.repo import cite
         return cite.main(rest)

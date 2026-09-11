@@ -424,7 +424,7 @@ def test_no_plan_and_no_argument_is_refused_naming_pm_order():
         assert code == 2, out
         # The remedy a refusal names must itself be a live verb: `pm
         # order` retired into `pm add` against the root.
-        assert 'pm add' in out
+        assert "`make pm ARGS='add roadmap <milestone-id>'`" in out
         assert 'pm order' not in out
 
 
@@ -436,7 +436,7 @@ def test_every_entry_shipped_and_no_argument_is_refused_rather_than_guessed():
         assert code == 2, out
         # The remedy a refusal names must itself be a live verb: `pm
         # order` retired into `pm add` against the root.
-        assert 'pm add' in out
+        assert "`make pm ARGS='add roadmap <milestone-id>'`" in out
         assert 'pm order' not in out
 
 

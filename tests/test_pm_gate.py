@@ -1482,7 +1482,7 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
             code, out = run_gate(root)
             self.assertEqual(code, 0, out)
             self.assertIn('WARN', out)
-            self.assertIn('pm add roadmap <milestone-id>', out)
+            self.assertIn("`make pm ARGS='add roadmap <milestone-id>'`", out)
         finally:
             ctx.__exit__(None, None, None)
 
@@ -2067,7 +2067,7 @@ class StructuralIntegrity(unittest.TestCase):
             self.assertIn('0.1/alpha/s0', out)
             # The line names the command that binds one, because a count with
             # no next step is a count somebody has to go looking behind.
-            self.assertIn('pm add <feature-id> <id>', out)
+            self.assertIn("`make pm ARGS='add <feature-id> <id>'`", out)
             self.assertNotIn('DRIFT', out)
 
     def test_a_tree_that_is_ENTIRELY_unbound_still_exits_zero(self):
@@ -2801,7 +2801,7 @@ class D11AParentDoesNotCloseOverAnUnresolvedChild(unittest.TestCase):
             self.assertIn('a parent does not close over an unresolved child',
                           out)
             # The named remedy is the opt-out, and it is an ACT with a verb.
-            self.assertIn('pm remove 0.1 0.1/bugs/crash', out)
+            self.assertIn("`make pm ARGS='remove 0.1 0.1/bugs/crash'`", out)
             self.assertIn('(D11)', out)
 
     def test_a_done_milestone_over_an_unfinished_feature_fails(self):
@@ -2960,7 +2960,7 @@ class TheUnboundFamily(unittest.TestCase):
             self.assertIn('gone', out)          # names no milestone, warned
             self.assertIn('UNSEQUENCED', out)
             self.assertIn('b', out)             # on no plan, counted
-            self.assertIn('pm add roadmap <milestone-id>', out)
+            self.assertIn("`make pm ARGS='add roadmap <milestone-id>'`", out)
 
     def test_r2_counts_the_backlog_and_never_reddens_on_it(self):
         # A healthy tree has many, and a gate that reddens on planning is a
@@ -3193,7 +3193,8 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertEqual(len(lines), 1, lines)
             self.assertIn("1 story/ies ready for `close story`", lines[0])
             self.assertIn("0.1/alpha/s0 ('building')", lines[0])
-            self.assertIn('next: `agentic-sdlc close story <id>`', lines[0])
+            self.assertIn("next: `make sdlc ARGS='close story <id>'`",
+                          lines[0])
             self.assertIn('<WARN: 1 story/ies ready for `close story`>',
                           run_cli(root, 'status')[1])
             # The roster does not narrow it: a belt is not a `[pm] checks` rule.
@@ -3207,8 +3208,8 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertEqual(len(lines), 1, lines)
             self.assertIn('1 feature(s) need a review record', lines[0])
             self.assertIn("0.1/alpha ('building')", lines[0])
-            self.assertIn('next: the review, then `agentic-sdlc pm set <id> '
-                          'reviewed <path>`', lines[0])
+            self.assertIn("next: the review, then `make pm ARGS='set <id> "
+                          "reviewed <path>'`", lines[0])
             self.assertIn('<WARN: needs a review record>',
                           run_cli(root, 'status')[1])
 
@@ -3228,7 +3229,8 @@ class ACloseTheTreeIsReadyForIsNamed(unittest.TestCase):
             self.assertEqual(len(lines), 1, lines)
             self.assertIn('1 feature(s) ready for `close feature`', lines[0])
             self.assertIn("0.1/alpha ('reviewing')", lines[0])
-            self.assertIn('next: `agentic-sdlc close feature <id>`', lines[0])
+            self.assertIn("next: `make sdlc ARGS='close feature <id>'`",
+                          lines[0])
             # `pm status` marks the same grain inline.
             code, board = run_cli(root, 'status')
             self.assertEqual(code, 0, board)

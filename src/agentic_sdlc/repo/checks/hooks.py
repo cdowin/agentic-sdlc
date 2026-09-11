@@ -26,11 +26,13 @@ from pathlib import Path
 from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
+from agentic_sdlc.repo import vehicle
 
 HOOKS_DIR = 'tools/hooks'
 CC_PREFIX = 'cc-'
 # A consumer must be able to run the repair; no make target wraps it.
 ARM_COMMAND = 'bash tools/setup-hooks.sh'
+INSTALL_COMMAND = vehicle.command('install-hooks')
 
 # Every Claude Code hook promises exit 0 and a reason on stderr for this.
 UNREADABLE_PAYLOAD = 'not json {{{'
@@ -241,14 +243,14 @@ def run() -> int:
 
     if not hooks.is_dir():
         print(f'[check:hooks] FAIL — there is no {HOOKS_DIR}/ directory; '
-              f'`agentic-sdlc install-hooks` ships the corpus and '
+              f'`{INSTALL_COMMAND}` ships the corpus and '
               f'`{ARM_COMMAND}` arms it')
         return 1
     entries = _entries(hooks)
     census = entries.census(f'hook(s) under {HOOKS_DIR}/')
     if not entries.kept:
         print(f'[check:hooks] FAIL — {census}, so this reports on nothing; '
-              f'`agentic-sdlc install-hooks` ships the corpus')
+              f'`{INSTALL_COMMAND}` ships the corpus')
         return 1
     if shutil.which('bash') is None:
         # The corpus is bash, so no bash is the finding, not a caveat.

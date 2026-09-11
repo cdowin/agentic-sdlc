@@ -173,7 +173,7 @@ def test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name():
     message = str(err.value)
     assert '[pm.states.story]' in message
     assert 'there is no default' in message
-    assert 'agentic-sdlc pm init' in message
+    assert '`make pm ARGS=init`' in message
     assert '[pm.states.milestone]' not in message, (
         'the refusal pasted the seed instead of naming the verb that writes it')
     # The same refusal through the CLI — the path every consumer takes on the
@@ -187,7 +187,7 @@ def test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name():
     assert code == 2, out
     assert 'Traceback' not in out, out
     assert '[pm] ERROR — ' in out and '[pm.states.' in out, out
-    assert 'agentic-sdlc pm init' in out, out
+    assert '`make pm ARGS=init`' in out, out
 
 
 # --- the three opinions, each refused at exit 2 -------------------------------
@@ -413,7 +413,7 @@ def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
         prose = ' '.join(out.split())
         assert '[pm.states.*] is not in devkit.toml' in prose
         assert 'no default' in prose
-        assert 'agentic-sdlc pm init' in prose
+        assert '`make pm ARGS=init`' in prose
         # Indented by two in the transcript, so a reader cannot mistake it for
         # the tree's own config — and byte-identical once that indent is gone.
         pasted = '\n'.join(

@@ -3,7 +3,7 @@ id: bg-a-helper-is-defined-twice-and-nothing-could-see-it
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: pm/cli.py defines _slugify twice and the first has never been reachable
-status: open
+status: fixed
 caused_by:
 changelog: none
 ---
@@ -57,3 +57,20 @@ criterion is what we did, and a bug is what was wrong.
 
 The other 74 helpers, and where they go. That is the story, and it is a move
 rather than a deletion.
+
+## Fixed
+
+`2198600` — `_slugify`'s dead twin deleted and the gate written
+(`test_boundaries.py::NoNameIsBoundTwice`, 14 `CORPUS` cases). `inspect.getsourcelines`
+confirmed the interpreter picked 1725, not 549 — the line numbers here are stale by one.
+
+**The symptom's central claim is too narrow, and the gate is why we know.** "the only
+duplicated top-level binding in the module" is true of `cli.py` and false of `src/`: the
+gate failed at HEAD with THREE offenders. `inventory.py::Sequence` (20/1190) was a
+dataclass shadowing `collections.abc.Sequence`, so `get_type_hints` on that module raised
+`TypeError` — a live defect, not a dead twin. `inventory.py::duplicate_ids` (455/667) had
+two DIFFERENT return shapes, `dict` and `list[tuple]`, and both callers unpack tuples, so
+the dead one could never have served them. Both predate the `model.py` split; the root
+cause above describes that file too. A 7-line dead `_known_feature_ids` went with them,
+found by reading rather than by the gate — reachability is a different shape, and stays
+uncovered.

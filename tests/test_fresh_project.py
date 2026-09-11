@@ -236,6 +236,14 @@ def test_the_installed_contracts_do_not_redden_a_consumers_gates():
         project.load_config.cache_clear()
         try:
             assert install.main('install-agents', []) == 0
+            # Since 0.8.0 every command a definition cites is a target of
+            # the stock wiring (`make sdlc`/`make pm`, feature D1), so the
+            # consumer is the README's: a pin, an include, and the include.
+            # Without it `check doc` is RIGHT to call `make sdlc` unknown.
+            assert install.main('install-gates', []) == 0
+            (root / 'Makefile').write_text(
+                'DEVKIT_VERSION := v0.0.0\ninclude Makefile.devkit\n',
+                encoding='utf-8')
         finally:
             os.chdir(previous)
             project.repo_root.cache_clear()

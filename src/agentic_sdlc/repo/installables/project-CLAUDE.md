@@ -8,7 +8,7 @@ with what is true here. The tooling is
 one status, `check` reads the same files and echoes findings, and a belt
 (`close story`, `close feature`, `release`, `adopt`) runs its checks and then
 writes one status or refuses; `--force` writes anyway, on the record.
-`agentic-sdlc install-* --diff` shows what a pin bump would change.
+`make sdlc ARGS='install-* --diff'` shows what a pin bump would change.
 
 ## What this project is
 
@@ -29,14 +29,14 @@ changed — if the check you need is not a target, add the target.
 | you changed | run |
 |---|---|
 | the PM tree, or a doc | `make check` |
-| code, inner loop | `agentic-sdlc verify --story` — what `[verify] story` names |
+| code, inner loop | `make sdlc ARGS='verify --story'` — what `[verify] story` names |
 | code, before a commit | `make precommit` — `check` + this project's `GDK_PRECOMMIT_TIERS` |
-| closing a story | `agentic-sdlc close story <id>` |
-| closing a feature | `agentic-sdlc close feature <id>` — what `[verify] feature` names |
-| closing a milestone | `agentic-sdlc release <version>` — its `gate` check is `make milestone` |
-| bumping the devkit pin | `agentic-sdlc adopt <version>` |
+| closing a story | `make sdlc ARGS='close story <id>'` |
+| closing a feature | `make sdlc ARGS='close feature <id>'` — what `[verify] feature` names |
+| closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check is `make milestone` |
+| bumping the devkit pin | `make sdlc ARGS='adopt <version>'` |
 
-`agentic-sdlc verify --plan` prints each rung with the cost it last took.
+`make sdlc ARGS='verify --plan'` prints each rung with the cost it last took.
 `make check` is `[checks] all` plus this project's `[gates] extra`, and boots
 nothing; `precommit` and `milestone` add `GDK_PRECOMMIT_TIERS` /
 `GDK_MILESTONE_TIERS` from `Makefile.tiers`.
@@ -47,7 +47,7 @@ installed.)*
 ## How we work
 
 - **The PM tree is `pm/roadmap/`.** Status moves through the CLI, never a hand
-  edit (`make pm ARGS="story building <id>"`); `agentic-sdlc check pm` is the
+  edit (`make pm ARGS='story building <id>'`); `make sdlc ARGS='check pm'` is the
   drift gate. The loop auto-loads from `.claude/rules/pm-execution.md`; the
   manual is `.claude/skills/pm-operations/SKILL.md`; the belts' check lists
   are `docs/sdlc-protocol.md`, rendered from `devkit.toml`.
@@ -55,7 +55,7 @@ installed.)*
   config` section — edit it to this project's spellings.
 - **The guards are armed by `tools/setup-hooks.sh`**: a `git commit` names its
   own paths, a write outside the agent's tree is refused, a push to a
-  protected branch is blocked. `agentic-sdlc check hooks` says whether this
+  protected branch is blocked. `make sdlc ARGS='check hooks'` says whether this
   checkout is armed.
 - *(Your branching, review and release flow goes here.)*
 

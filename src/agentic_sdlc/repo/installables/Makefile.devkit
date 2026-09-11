@@ -90,7 +90,7 @@ help: ## Show this help (authoritative target list)
 	@echo 'Args: ARGS="…"  VERBOSE=1     Tiers: $(GDK_TIERS_MK) -> precommit=[$(strip $(GDK_PRECOMMIT_TIERS))] milestone=[$(strip $(GDK_MILESTONE_TIERS))]'
 	@echo 'Gates print ONE verdict line naming .gate-reports/<gate>.log; VERBOSE=1 streams it.'
 
-pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS="story building <id>"
+pm: ## PM-tree CLI (the ONLY sanctioned status transition):  make pm ARGS='story building <id>'
 	@MAKEFLAGS= $(DEVKIT) pm $(if $(value ARGS),$(value ARGS),--help)
 
 sdlc: ## Every verb, at the pin:  make sdlc ARGS='close story <id>'. make exits 2 on any failure; the verb's own exit code is the N in make's "Error N"

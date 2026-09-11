@@ -860,9 +860,9 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if flag_defect:
         return _refuse(f'{spoken}: {flag_defect}')
     if not positional and operation != 'release':
+        example = '0.2.0' if segments == 1 else vehicle.Slot(shape)
         return _refuse(f'{spoken} needs a {shape} — the {noun} to close, e.g. '
-                       f'`agentic-sdlc {spoken} '
-                       f'{"0.2.0" if segments == 1 else shape}`')
+                       f'`{vehicle.command(*spoken.split(), example)}`')
     if len(positional) > 1:
         return _refuse(f'{spoken} takes exactly one {shape}; got '
                        f'{len(positional)} — one operation, one grain')

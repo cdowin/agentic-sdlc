@@ -13,14 +13,14 @@ effort: medium
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
 project's own judgement calls.
 
 ```text
-doc gate:     agentic-sdlc check doc   (run it FIRST; treat its findings as
+doc gate:     make sdlc ARGS='check doc'   (run it FIRST; treat its findings as
                pre-verified dead refs. `make check` runs the whole roster.)
 append-only:  <the dirs you never touch — decisions logs, changelogs,
                reviews, lessons>
@@ -39,9 +39,9 @@ PM tree, code) is noted, never edited.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc install-agents --diff` — is a file under `.claude/agents/` a
+- `make sdlc ARGS='install-agents --diff'` — is a file under `.claude/agents/` a
   local edit to a generated one?
-- `agentic-sdlc pm install-skills --diff` — the same question, asked of the
+- `make pm ARGS='install-skills --diff'` — the same question, asked of the
   rules and skills this toolkit writes
 <!-- END role-verbs -->
 

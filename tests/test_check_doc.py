@@ -77,6 +77,32 @@ class AnInvocationIsAClaimAboutTheTree(unittest.TestCase):
             # The declared set is NAMED, so the fix is in the finding.
             self.assertIn('planning ready building done obe', found[0])
 
+    def test_the_vehicle_spellings_are_the_same_claim(self):
+        """C2 of the 0.8.0 spec review: the sweep respelled every shipped call
+        as `make pm ARGS='…'` / `make sdlc ARGS='pm …'`, and a rule anchored at
+        `pm` read none of them — the #26 consumer's refused call would have
+        passed again, in every file the sweep touched. Both quote styles reach
+        the verb, so both are read; a wrapped vehicle span is one span."""
+        refused = ("`make pm ARGS='feature reviewing x'`",
+                   '`make pm ARGS="feature reviewing x"`',
+                   "`make sdlc ARGS='pm feature reviewing x'`",
+                   '`make sdlc ARGS="pm feature reviewing <id>"`')
+        with tree(flow=NO_FEATURE_REVIEW) as root:
+            for span in refused:
+                with self.subTest(span):
+                    found = scan(root, f'Review with {span}.')
+                    self.assertEqual(len(found), 1, found)
+                    self.assertIn('[pm.states.feature] does not declare',
+                                  found[0])
+            self.assertEqual(len(scan(
+                root, "Review with `make pm ARGS='feature", "reviewing x'`.")),
+                1)
+            self.assertEqual(scan(
+                root, "Build with `make pm ARGS='feature building x'`.",
+                "Then `make sdlc ARGS='check pm'` and `make pm ARGS=vocabulary`.",
+                "A broken quote `make pm ARGS='feature reviewing x` is unread."),
+                [])
+
     def test_a_state_the_project_DID_declare_is_silent(self):
         """The other half. `reviewing` is a FEATURE word in the seed, so the
         same shape on a feature must pass — otherwise the rule is just a ban on

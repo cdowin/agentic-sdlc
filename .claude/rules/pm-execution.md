@@ -35,7 +35,7 @@ The rungs, narrow to wide, and nothing runs one wider than the thing it changed:
     closing a milestone     release <version>           its `gate` check is the full gate
 
 **Every rung has an ENTRY edge as well as an exit one, and it is
-`agentic-sdlc pm ready-for story|feature|milestone|tag <id>`.** Exit 0 ready,
+`make pm ARGS='ready-for story|feature|milestone|tag <id>'`.** Exit 0 ready,
 exit 1 not ready naming every blocker (never a tally), exit 2 usage. It writes
 nothing, runs nothing and boots nothing, so it is safe to ask as often as you
 like — including as a predicate in a Makefile. **Ask it instead of guessing
@@ -53,8 +53,8 @@ over a story still in motion.
 
 There is no `ready-for adopt`: every check in the adopt belt is either the work
 the bump does or one that runs a command, so there is nothing decidable up
-front and the rung would only ever say NOT READY. Run `agentic-sdlc adopt
-<version>` — it is checks only and writes nothing.
+front and the rung would only ever say NOT READY. Run
+`make sdlc ARGS='adopt <version>'` — it is checks only and writes nothing.
 
 Where `[emit]` declares a sink, each rung files a `rung.enter` event carrying
 the answer and the blocker list, which is the same work queue the exit code
@@ -62,7 +62,7 @@ summarises. A tree that declares no `[emit]` emits nothing.
 
 `make check`, `precommit` and `milestone` are the compositions `install-gates`
 ships; the tiers inside the last two are yours (`GDK_PRECOMMIT_TIERS`). What
-each rung COSTS is your tree's business — `agentic-sdlc verify --plan` prints
+each rung COSTS is your tree's business — `make sdlc ARGS='verify --plan'` prints
 each one with the cost it last took, read from your ledger. **Ask it rather
 than guessing**; guessing is how a wide gate ends up in an inner loop.
 
@@ -74,7 +74,7 @@ exit 1. `--force` writes anyway and the ledger's `deviation` row names the check
 that were false. Nothing else is written, moved, bumped, pushed or tagged; what is
 yours to do next is printed as `next:` lines.
 
-`agentic-sdlc pm` writes a `status:` line. `agentic-sdlc check pm` reports a tree
+`make pm` writes a `status:` line. `make sdlc ARGS='check pm'` reports a tree
 whose statuses contradict each other. Neither has an opinion about which state may
 follow which — the ORDER below is a shape that works, not something the tool enforces.
 
@@ -120,7 +120,7 @@ does not declare is refused by name.
    else**; stdout carries only what it wrote, and stderr the derived `next:`, `ready:`
    and open-work census. A story left behind is not a warning:
    `check pm` D11, stock-on, FAILS a `done` parent over any child not in `done`. Each is closed
-   by name through the story belt (`agentic-sdlc close story <id>`), never by a
+   by name through the story belt (`make sdlc ARGS='close story <id>'`), never by a
    command aimed at the feature.
 5. **Move `status:` with the CLI, not an editor.** It rewrites one line and preserves
    every other byte, including the file's line endings. Creation too: `pm new
@@ -203,7 +203,7 @@ a list of ids and nothing else — never a rendered roster.
 - `pm ledger show <grain-id>` — that grain's TELEMETRY, oldest first: every
   status flip, decision and dispatch, with the seconds between them. What a
   story COST, rather than where it is.
-- **`agentic-sdlc dispatch --grain <id>`** — the prompt you hand a subagent, and
+- **`make sdlc ARGS='dispatch --grain <id>'`** — the prompt you hand a subagent, and
   it is RENDERED rather than pasted: this project's contract, the grain's id,
   kind, status and brief, the ladder, the gate roster and the vocabulary, all
   read out of `devkit.toml` so they cannot go stale. **Run it before you write a

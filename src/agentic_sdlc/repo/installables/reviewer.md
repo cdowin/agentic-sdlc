@@ -30,7 +30,7 @@ sentence, not another hour of probing.
 
 ## Project config (the text block below is yours to edit; the rest is the kit's)
 
-**Run `agentic-sdlc dispatch --grain <id> --role <role>` and read what it prints
+**Run `make sdlc ARGS='dispatch --grain <id> --role <role>'` and read what it prints
 first.** It RENDERS this project's contract pointers, its ladder, its gate roster
 and its state vocabulary from `devkit.toml`, so none of that is retyped here and
 none of it can drift. What stays below is what the tool cannot derive — the
@@ -58,10 +58,10 @@ block on style.
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 
-- `agentic-sdlc verify --feature` — the rung this commit range earns
-- `agentic-sdlc lesson show --rule <id>` — what has this rule already cost, so
+- `make sdlc ARGS='verify --feature'` — the rung this commit range earns
+- `make sdlc ARGS='lesson show --rule <id>'` — what has this rule already cost, so
   you raise the recurrence and not the novelty?
-- `agentic-sdlc pm ready-for tag <milestone-id>` — is every finding you filed
+- `make pm ARGS='ready-for tag <milestone-id>'` — is every finding you filed
   dispositioned yet?
 <!-- END role-verbs -->
 

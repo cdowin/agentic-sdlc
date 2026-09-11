@@ -4,7 +4,7 @@ kind: story
 feature: ft-install-force-keeps-what-the-project-owns
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the withdrawal census never reports a span it did not scan
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: The withdrawal report no longer says "withdrawn nothing" when the pin already names the running version: it says it compared nothing, names where the floor came from, and `--since <version>` sets the floor — pass the pin you are leaving.

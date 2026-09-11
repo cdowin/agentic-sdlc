@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a state the ledger shows was held is not called never held
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `check pm` U1 and `pm init`'s census count a state as held when a ledger `status` or `disposition` row names it, so a tree at rest no longer reports its transient rungs as never held, and the WARN says what it read instead of calling the state "a flow the project is not running".

@@ -4,7 +4,7 @@ kind: story
 feature: ft-install-force-keeps-what-the-project-owns
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the project-config header survives --force
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `install-* --force` carries your project-config block into the new body byte for byte — a hook's `project config` header, or the ```text fence under an agent brief's `## Project config`, whose heading, dispatch sentence and prose are now the kit's and DO update — and names each `NAME=` or `key:` the packaged block declares that yours lacks; a difference only inside that block is current, exit 0.

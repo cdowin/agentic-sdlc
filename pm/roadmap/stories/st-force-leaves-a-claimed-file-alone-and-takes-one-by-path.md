@@ -4,7 +4,7 @@ kind: story
 feature: ft-install-force-keeps-what-the-project-owns
 milestone: "ms-a-consumer-can-take-the-bump"
 name: --force leaves an adopt-ours claim alone, and one installable can be taken by path
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: Every `install-*` verb leaves a file named in `[adopt] ours` alone — `--force` included — naming and counting each one, and `install-* --force <path>...` takes just the destinations you name, claimed or not; a path the verb does not write is exit 2. Every `install-*` verb now reads `devkit.toml`, so an invalid `[adopt] ours` is exit 2 for all of them.

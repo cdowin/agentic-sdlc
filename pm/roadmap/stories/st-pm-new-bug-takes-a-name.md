@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-pm-surface-has-no-dead-ends
 milestone: "ms-a-consumer-can-take-the-bump"
 name: pm new bug takes a name, like every other scaffold
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `pm new bug <milestone> <slug> <name...>` writes `name:` — under a project template with no `{name}` slot too — and without a name it still creates the bug and prints a `next:` line naming the empty `name:`.

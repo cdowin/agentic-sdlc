@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-pm-surface-has-no-dead-ends
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every verb answers its own --help, and adopt's describes the belt that ships
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `pm <verb> --help` (or `-h`) prints that verb's own usage at exit 0 instead of the whole roster at exit 2, and `adopt --help` describes the checks-only belt it is; its run line no longer names a ledger it never writes.

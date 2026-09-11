@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: a role brief states the tool's fact, not a project's policy
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: The stock pm-operator, tech-writer and po briefs no longer bind bugs to the milestone-of-catch — that is a `bugs bind:` line in pm-operator's Project config fence, which `install-agents --force` names as missing from a fence kept from an older install — and po no longer calls `reviewing` the story terminal.

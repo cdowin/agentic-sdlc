@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the README a consumer copies from is current, for every release
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: The README Install and Wiring examples pin `vX.Y.Z` instead of `v0.4.0`, and the adoption steps say the notes for releases before 0.6.0 are `git show v0.5.0:CHANGELOG.md`.

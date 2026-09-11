@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-shipped-words-match-the-shipped-tool
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the auto-loaded pm-execution rule is true at this version
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: The installed pm-execution rule now says a story left open under a done feature is a D11 failure, not a warning, offers the feature `reviewing` state only where `[pm.states.feature]` declares it, and no longer suggests `pm list --status building,reviewing` (exit 2 on the stock vocabulary) — re-run `pm install-skills --force`.

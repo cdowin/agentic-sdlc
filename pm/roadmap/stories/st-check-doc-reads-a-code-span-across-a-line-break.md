@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: check doc reads a code span across a line break
-status: building
+status: done
 owner: agent
 depends_on: ["st-the-auto-loaded-rule-is-true-at-this-version"]
 changelog: `check doc` reads a code span across the line breaks of its paragraph and pairs backticks the CommonMark way, so a wrapped status call, path or `make` target that used to pass is now a finding on the line the span starts on — `<!-- doc-scan:allow -->` on that line suppresses it.

@@ -4,7 +4,7 @@ kind: story
 feature: ft-every-printed-command-runs-in-a-stock-consumer
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the shipped defaults follow the kit's own branch flow, not a staging branch
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `agent-worktree.sh`'s `FALLBACK_BASE` and `cc-stop-gate.sh`'s `DEFAULT_BASE` default to empty — the remote's HEAD — instead of `staging`; a base that does not resolve is named on stderr by the Stop gate and refused by `agent-worktree.sh new`. `install-hooks --force` keeps your header, so check both values and clear a `staging` your flow does not have.

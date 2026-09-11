@@ -4,7 +4,7 @@ kind: story
 feature: ft-a-gate-verdict-is-true-of-the-tree
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the semver gate admits the next hotfix, not only the first
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: The semver gate admits the next hotfix of a done milestone's version (`0.28.4.1` → `0.28.4.2` where `0.28.4` is done), and its OK line now names the rule that admitted the bump, `appended hotfix` or `incremented hotfix` — a CI step that greps `(hotfix` no longer matches.

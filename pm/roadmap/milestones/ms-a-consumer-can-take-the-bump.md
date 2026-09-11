@@ -8,6 +8,7 @@ branch: milestone/0.8.0-a-consumer-can-take-the-bump
 version: 0.8.0
 changelog:
 order:
+  - "bg-the-suite-run-in-a-worktree-mutates-the-host-repo"
   - "ft-the-shipped-words-match-the-shipped-tool"
   - "bg-the-release-belt-and-the-render-verb-disagree-about-changelog"
   - "ft-install-force-keeps-what-the-project-owns"

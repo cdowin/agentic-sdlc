@@ -4,8 +4,8 @@ kind: story
 feature: ft-every-printed-command-runs-in-a-stock-consumer
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every shipped citation resolves through the stock wiring
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: ["st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it"]
 changelog:
 ---

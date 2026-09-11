@@ -3,7 +3,7 @@ id: ft-every-printed-command-runs-in-a-stock-consumer
 kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every command the kit prints runs in a stock consumer
-status: planning
+status: building
 reviewed:
 depends_on: ["ft-the-shipped-words-match-the-shipped-tool"]
 consumed_by: []

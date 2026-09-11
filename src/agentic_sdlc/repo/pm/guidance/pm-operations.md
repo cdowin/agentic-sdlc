@@ -58,7 +58,7 @@ pm/roadmap/
                                  (both optional — they appear on first write)
   features/<slug>.md             milestone: <milestone-id>   ← its binding
   stories/<slug>.md              feature: <feature-id>
-  bugs/<slug>.md                 milestone: the one that will FIX it
+  bugs/<slug>.md                 milestone: <milestone-id>   ← its parent (which one: `bugs bind:`)
   ledgers/<milestone-id>.jsonl   that milestone's rows
   ledger.jsonl                   rows naming no grain
 ```

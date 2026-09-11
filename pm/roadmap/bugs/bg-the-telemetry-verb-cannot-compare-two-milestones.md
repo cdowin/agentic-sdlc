@@ -1,7 +1,7 @@
 ---
 id: bg-the-telemetry-verb-cannot-compare-two-milestones
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: ledger report takes one grain, and every telemetry question asked of it is comparative
 status: open
 caused_by:

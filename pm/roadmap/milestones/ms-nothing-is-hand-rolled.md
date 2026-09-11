@@ -14,6 +14,12 @@ order:
   - "ft-the-suite-is-measured-like-the-source"
   - "bg-the-integration-tier-counts-fixtures-not-integration"
   - "bg-an-uncounted-tier-passes-the-case-ceiling"
+  - "bg-a-read-verb-names-three-of-its-thirteen-sections"
+  - "bg-the-telemetry-verb-cannot-compare-two-milestones"
+  - "bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator"
+  - "bg-rule-11-is-gated-in-one-direction-only"
+  - "bg-the-always-loaded-surface-states-properties-not-procedures"
+  - "bg-the-push-gate-dirties-the-tree-it-just-cleaned"
 ---
 
 # 0.7.0 — nothing is hand-rolled

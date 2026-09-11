@@ -1,7 +1,7 @@
 ---
 id: bg-the-always-loaded-surface-states-properties-not-procedures
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: CLAUDE.md is 1.8 negatives per positive and 6 of 11 rules open with a prohibition; a constraint fires only from inside the mistake
 status: open
 caused_by:

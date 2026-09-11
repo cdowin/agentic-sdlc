@@ -1,7 +1,7 @@
 ---
 id: bg-rule-11-is-gated-in-one-direction-only
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: a citation is checked for resolving and a capability is never checked for being cited — 13 of 48 verbs
 status: open
 caused_by:

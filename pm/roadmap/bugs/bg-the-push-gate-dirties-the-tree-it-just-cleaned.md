@@ -1,7 +1,7 @@
 ---
 id: bg-the-push-gate-dirties-the-tree-it-just-cleaned
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: the pre-push gate files a ledger row, so a pushed tree is never clean
 status: open
 caused_by:

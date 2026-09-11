@@ -1,7 +1,7 @@
 ---
 id: bg-a-read-verb-names-three-of-its-thirteen-sections
 kind: bug
-milestone: 
+milestone: ms-nothing-is-hand-rolled
 name: pm ledger report prints 13 sections and --help names 3
 status: open
 caused_by:

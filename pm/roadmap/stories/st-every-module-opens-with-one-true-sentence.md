@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: every module opens with one true sentence
-status: building
+status: done
 owner: architect
 depends_on: []
 changelog: none
@@ -199,7 +199,7 @@ The gate is `tests/test_boundaries.py::EveryModuleSaysWhatItDoes` (primitive 13)
 modules), and `EMPTY_PACKAGES`, a roster failing in three directions — an unnamed module with no
 docstring, a named marker that gained content, an entry naming nothing in the census.
 
-done: — 10 module docstrings, 1 new guard, and an audit of all 50 in
+done: f106d27 — 10 module docstrings, 1 new guard, and an audit of all 50 in
 `docs/reviews/2026-09-11-0.7.0-every-module-opens-with-one-true-sentence.md`. Criterion 1 failed at
 HEAD on SIX modules, not zero: six sentences wrapped onto a second line. Criterion 4 was planted,
 as the re-measured section required. Residual zero across all 50, verified twice.

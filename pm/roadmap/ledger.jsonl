@@ -4216,3 +4216,10 @@
 {"ts":"2026-09-11T05:29:41Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":648,"rank":5}
 {"ts":"2026-09-11T05:29:41Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":10187,"census":1254}
 {"ts":"2026-09-11T05:29:41Z","kind":"gate","gate":"precommit","verdict":"PASS","duration_ms":13360}
+{"ts":"2026-09-11T05:30:18Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_a_new_module_at_this_repos_own_ratio_fits_under_the_ceiling","duration_ms":2712,"rank":1}
+{"ts":"2026-09-11T05:30:18Z","kind":"test","tier":"unit","nodeid":"tests/test_pm_flow.py::NoVocabularyLiteralSurvivesOutsideItsHome::test_every_vocabulary_is_spelled_at_its_home_and_nowhere_else","duration_ms":1300,"rank":2}
+{"ts":"2026-09-11T05:30:18Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[tests]","duration_ms":833,"rank":3}
+{"ts":"2026-09-11T05:30:18Z","kind":"test","tier":"unit","nodeid":"tests/test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code[src]","duration_ms":794,"rank":4}
+{"ts":"2026-09-11T05:30:18Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":695,"rank":5}
+{"ts":"2026-09-11T05:30:18Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":10528,"census":1254}
+{"ts":"2026-09-11T05:30:18Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":10631,"state":"b3881f1ec6d3ab6f6adf510f2c3e5b7c9f33e0eb376ff00263de8b1dde6b473e","graded":"d6062c5888e38482427a458aaaafdb471f479c4154564f112b077cc02254c806","census":1254}

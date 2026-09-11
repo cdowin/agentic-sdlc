@@ -4386,3 +4386,4 @@
 {"ts":"2026-09-11T06:20:18Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[exits-nonzero]@the-real-repo","duration_ms":3289,"rank":5}
 {"ts":"2026-09-11T06:20:18Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":41125,"census":1616}
 {"ts":"2026-09-11T06:20:18Z","kind":"verify","rung":"feature","gate":"test","verdict":"PASS","exit_code":0,"duration_ms":41238,"state":"f667901c294df18744181ae31975f2573f3828b2563f84def812129bc392f88e","graded":"a3d0d97d2dcad4de8130469ca4b51253e0ae51f55f2cdaa6918535e85b744dea","census":1616}
+{"ts":"2026-09-11T06:20:37Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2958}

@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: the pm CLI helpers find a home
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: none
@@ -192,7 +192,7 @@ at one: `_ledger_of`/`_plan_path`, one-line private aliases for `ledger.ledger_o
 `inventory.releases_file` — re-exports by criterion 5's words, 8 call sites, and `cmd_roadmap`
 already calls the latter directly. Neither is reachable by this gate; reachability is another shape.
 
-done: — seven row renderers and `ROW_CELLS` to `ledger.py`, which already held their
+done: 2198600 — seven row renderers and `ROW_CELLS` to `ledger.py`, which already held their
 `READY`/`NOT_READY` payload; `report.py` rejected in writing. The new `NoNameIsBoundTwice` failed
 at HEAD naming THREE offenders where the bug named one: `_slugify`, a `Sequence` dataclass
 shadowing `collections.abc.Sequence` (a live `get_type_hints` `TypeError`), and a `duplicate_ids`

@@ -255,14 +255,14 @@ def _feature_self(cfg: vocabulary.PmConfig, view, ready: _Ready) -> None:
     if view.total == 0:
         ready.gap(live, f'feature {view.fid} is {view.status!r} with no '
                         f'stories — past todo, and nothing to build  [{frel}]')
-    why = inventory.empty_section(view.path, inventory.SHIP_HEADING)
+    why = view.feature.section_defect(inventory.SHIP_HEADING)
     if why:
         ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
                         f'past todo, and nothing says what done means  [{frel}]')
     # The anti-bloat contract, never verified to exist until here: an empty
     # proof budget is how a feature ships twice its budget with nobody able to
     # say so.
-    why = inventory.empty_section(view.path, inventory.PROOF_HEADING)
+    why = view.feature.section_defect(inventory.PROOF_HEADING)
     if why:
         ready.gap(live, f'feature {view.fid} is {view.status!r} and {why} — '
                         f'past todo, and nothing says what it should COST  '
@@ -276,7 +276,7 @@ def _story_self(cfg: vocabulary.PmConfig, story, sid: str, sstat: str,
     live = ready.grading(cfg, vocabulary.GRAIN_STORY, sstat)
     if live is None:
         return
-    why = inventory.empty_section(story.path, inventory.ACCEPTANCE_HEADING)
+    why = story.section_defect(inventory.ACCEPTANCE_HEADING)
     if why:
         ready.gap(live, f'story {sid} is {sstat!r} and {why} — past todo, and '
                         f'nothing says what must be true  [{srel}]')
@@ -300,11 +300,10 @@ def _unreached_self(cfg: vocabulary.PmConfig, enabled: set[str], seen: set[str],
     if not inventory.is_pooled(cfg):
         return
     for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_STORY):
-        for path in inventory.pool_walk(cfg, kind):
-            grain = inventory.read_grain(cfg, path, kind)
-            if grain is None or grain.gid in seen:
+        for grain in inventory.every_grain(cfg, kind):
+            if not grain.gid or grain.gid in seen:
                 continue
-            rel = cfg.rel(path)
+            rel = cfg.rel(grain.path)
             status = grain.field(vocabulary.FIELD_STATUS)
             if 'D4' in enabled:
                 reason = inventory.undeclared_status(cfg, kind, status)
@@ -317,7 +316,7 @@ def _unreached_self(cfg: vocabulary.PmConfig, enabled: set[str], seen: set[str],
                     if reason:
                         report(f'feature {grain.gid}: {reason} — point it at a '
                                f'real file or remove the field  [{rel}]')
-                _feature_self(cfg, inventory.read_feature(cfg, path), ready)
+                _feature_self(cfg, inventory.feature_view(cfg, grain), ready)
             else:
                 _story_self(cfg, grain, grain.gid, status, ready)
 
@@ -351,7 +350,7 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
                                   f'branch: — past todo, and a fresh checkout '
                                   f'cannot find where its work lives  '
                                   f'[{cfg.rel(mfile)}]')
-            why = inventory.empty_section(mfile, inventory.SHIP_HEADING)
+            why = milestone.section_defect(inventory.SHIP_HEADING)
             if why:
                 ready.gap(m_live, f'milestone {mid} is {mstat!r} and {why} — '
                                   f'past todo, and nothing says what done '
@@ -367,8 +366,8 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
                                 f'handoff {mid}` mints one  '
                                 f'[{cfg.rel(handoff)}]')
 
-        views = [inventory.read_feature(cfg, ffile)
-                 for ffile in inventory.feature_files(cfg, mid)]
+        views = [inventory.feature_view(cfg, feature)
+                 for feature in inventory.feature_grains(cfg, mid)]
         # D6's census. The per-feature half went to D11 with D3.
         finished = vocabulary.holds(cfg, vocabulary.GRAIN_FEATURE,
                                ((v.fid, v.status) for v in views),

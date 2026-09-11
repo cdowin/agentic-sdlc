@@ -124,6 +124,13 @@ class Grain:
         """Why this grain's block list under `key` cannot be rewritten, or ''."""
         return frontmatter.sequence_defect(self.path, key)
 
+    def section_defect(self, heading: str) -> str | None:
+        """Why this grain has no written `## <heading>`, or None — the
+        id-addressed side of `empty_section`. Without it a caller holding a
+        grain had to hand `.path` back to storage, which four `check pm` rules
+        did."""
+        return empty_section(self.path, heading)
+
 
 def pool_dir(cfg: PmConfig, kind: str) -> Path:
     """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`,
@@ -1256,28 +1263,35 @@ class FeatureView:
     """One feature plus the tallies every reader needs; `done_n` counts the
     `done` category through `holds`.
 
-    `stories` are GRAINS, not paths: every reader of this view then asks each
-    story what it SAYS rather than handing storage a file, and `doc_grain`
-    keeps a story declaring no `id:` in the list, so `total` counts the same
-    documents it always did.
+    `feature` and `stories` are GRAINS, not paths: every reader of this view
+    then asks a document what it SAYS rather than handing storage a file, and
+    `doc_grain` keeps a story declaring no `id:` in the list, so `total` counts
+    the same documents it always did.
     """
+    feature: Grain
     fid: str
     status: str
-    path: Path
     stories: list[Grain] = field(default_factory=list)
     done_n: int = 0
+
+    @property
+    def path(self) -> Path:
+        """The feature's own document, for a caller RENDERING where it is."""
+        return self.feature.path
 
     @property
     def total(self) -> int:
         return len(self.stories)
 
 
-def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
-    feature = doc_grain(ffile, GRAIN_FEATURE)
+def feature_view(cfg: PmConfig, feature: Grain) -> FeatureView:
+    """One feature's tallies, asked of the GRAIN `feature_grains` hands back.
+    It took a `Path` until 0.7.0, which is how four callers outside this layer
+    came to turn a file into a feature themselves."""
     view = FeatureView(
+        feature=feature,
         fid=feature.field(FIELD_ID),
         status=feature.field(FIELD_STATUS),
-        path=ffile,
         stories=story_grains(cfg, feature.field(FIELD_ID)),
     )
     finished = holds(cfg, GRAIN_STORY,
@@ -1451,7 +1465,8 @@ def section_is_empty(lines: list[str]) -> bool:
 
 
 def empty_section(path: Path, heading: str) -> str | None:
-    """'' when `## <heading>` is present and written; else why it is not."""
+    """None when `## <heading>` is present and written; else why it is not.
+    `Grain.section_defect` is how a caller holding a grain asks."""
     lines = section_lines_in(frontmatter.document(path).lines, heading)
     if lines is None:
         return f'has no `## {heading}` section'

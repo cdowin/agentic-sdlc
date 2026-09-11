@@ -175,9 +175,14 @@ git-rev grains), and the duplicate claim. **All four named renames KEPT, priced*
 
 **The `print()` answer is NO RENDERER**, corroborating `st-the-pm-cli-helpers-find-a-home` from an
 independent count: **316 sites across 24 of 50 modules**, AST-measured (`grep -o` agrees exactly).
-26 modules print nothing and every one is a reader, so the compute layer is already print-free and
-what prints is the CLI edge; the line shapes are pinned where produced, and a renderer would move
-them one hop from the assertions holding them. No named defect is on record.
+26 modules print nothing and every one is a reader. **The sentence that stood here — *"so the
+compute layer is already print-free and what prints is the CLI edge"* — is WITHDRAWN as stronger
+than its measurement** (0.7.0 feature review, F6): re-derived from the same AST, **17 of the 50
+modules both read the tree and print**, `core/project.py:46` among them — one warning on stderr,
+from `core/`. **16 print from outside `main()`/`run()`/`cmd_*` at all.** Nothing follows from
+either number, because the answer never rested on them: the line shapes are pinned where produced,
+and a renderer would move them one hop from the assertions holding them. No named defect is on
+record.
 
 **Criterion 8: residual ZERO** — 50 modules, 50 character-identical against `ast.unparse` with
 docstrings stripped; probed both ways first (a docstring-only edit stayed green, one character in a

@@ -1231,8 +1231,8 @@ def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         print(f'milestone {mid:<10} [{mstat}]'
               + _age_cell(cfg, vocabulary.GRAIN_MILESTONE, mid, mstat, opened))
         rows = []
-        for ffile in inventory.feature_files(cfg, mid):
-            view = inventory.read_feature(cfg, ffile)
+        for feature in inventory.feature_grains(cfg, mid):
+            view = inventory.feature_view(cfg, feature)
             # The markers reuse the gate's predicates, so report and gate
             # cannot describe a tree differently.
             dangling = inventory.drift_dangling_record(cfg, view.fid)
@@ -1321,8 +1321,8 @@ def cmd_list(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     for mdir, mid in known:
         if milestone and milestone != mid:
             continue
-        for ffile in inventory.feature_files(cfg, mid):
-            view = inventory.read_feature(cfg, ffile)
+        for feature in inventory.feature_grains(cfg, mid):
+            view = inventory.feature_view(cfg, feature)
             for story in view.stories:
                 scanned += 1
                 status = story.field(vocabulary.FIELD_STATUS)

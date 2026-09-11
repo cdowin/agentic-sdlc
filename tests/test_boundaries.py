@@ -187,16 +187,51 @@ GRAIN_LAYER_MODULE = 'repo/pm/inventory.py'
 GRAIN_LAYER_OWNER = 'inventory'
 # The storage reads that take a PATH and answer *what does this document say*.
 # `field_in` is absent on purpose: its first argument is LINES, so it cannot
-# hand storage a path; `read_raw` is absent because *what are this file's
-# bytes* is a question about a FILE, which a template, a version file and a
-# shared doc all legitimately ask.
+# hand storage a path.
 STORAGE_FIELD_READS = ('field_of', 'list_field_of', 'document',
                        'sequence_defect')
-# The ONE file-to-grain adapter, and it is graded here too — otherwise every
+# The rest of what the census below finds in the storage module, each with the
+# reason it may still be handed a path. `read_raw` asks *what are this file's
+# bytes*, which is a question about a FILE that a template, a version file and
+# a shared doc all legitimately ask; the three setters are WRITES, and who may
+# write by path is primitive 2's question rather than this one's.
+STORAGE_BY_PATH_OK = {
+    'read_raw': "a FILE's bytes — not a question about what a grain says",
+    'set_field': 'the write side — primitive 2 owns who may write',
+    'set_fields': 'the write side — primitive 2 owns who may write',
+    'set_list_field': 'the write side — primitive 2 owns who may write',
+}
+# The ONE file-to-grain adapter, graded here too — otherwise every
 # `frontmatter.field_of(p, k)` could become `inventory.doc_grain(p).field(k)`,
 # the gate would go green and nothing would have changed. A module that really
 # holds a file is a ROSTER entry with a reason, not a `doc_grain` call.
 GRAIN_ADAPTER = 'doc_grain'
+# ...AND THE ADAPTER'S SIBLINGS, which is M1 of `ft-the-module-says-what-it-
+# does`'s review: grading `doc_grain` alone left `read_grain` — `doc_grain`
+# plus a `None` filter, three lines below it in the same file — answering the
+# identical question ungraded, so the substitution the banner above forbids
+# worked one name over and eight live sites were doing it. The tuple is not
+# maintained by hand: `test_every_by_path_read_an_owner_exposes_is_named`
+# derives the census from the layer's own source and fails on a name that is in
+# neither this tuple nor the excusal below.
+GRAIN_LAYER_PATH_READS = (GRAIN_ADAPTER, 'read_grain', 'empty_section')
+# The grain layer's own file-questions, the `read_raw` case one layer up: a
+# SHARED DOC declares no `id:` at all, so there is nothing to ask it by and
+# `templates` asking a doc it just minted for its header is not addressable any
+# other way. The two predicates answer *is this file a grain document* about a
+# path a walk just produced, which is the same question one step earlier.
+GRAIN_LAYER_BY_PATH_OK = {
+    'header_of': "a shared doc's first line — a shared doc declares no id",
+    '_is_grain_doc': 'does this FILE open a frontmatter fence',
+    '_is_shared_doc': 'is this FILE a grain\'s shared doc, by name and fence',
+}
+# The dotted module behind each owner name. The classifier matches the RECEIVER
+# (`frontmatter.field_of`, `inventory.doc_grain`), so an import bound under any
+# other name is invisible to it — F2 of the same review. These are what
+# `_renamed_owner_sites` holds the import side to, so the convention is a test
+# rather than a habit.
+FRONTMATTER_DOTTED = 'agentic_sdlc.core.frontmatter'
+GRAIN_LAYER_DOTTED = 'agentic_sdlc.repo.pm.inventory'
 # Modules that may still address a storage read BY PATH, each with the reason
 # it holds a file rather than an id. SHRINKS ONLY — `ROSTER_OPENED_AT` below
 # fails the build on a fourth entry, because the convenient fourth entry is
@@ -224,6 +259,20 @@ PATH_ADDRESSED_ROSTER = {
 # `st-the-engine-asks-by-id-not-by-path`: an entry added to make this green is
 # the defect, so adding one breaks the build and has to be argued for here.
 ROSTER_OPENED_AT = 3
+# THE CENSUS THE TWO TUPLES ABOVE ARE CHECKED AGAINST, per owner module:
+# (module, the reads at the bottom of it, the graded names, the excused ones).
+# A hand-kept list of names is exactly how this gate shipped grading five of
+# eight — so the names are DERIVED from the owner's own source and the tuples
+# above only say what was DECIDED about each. `read_raw`/`document` are where
+# every question about a document bottoms out in the storage module; the four
+# storage reads are where every question about a document bottoms out in the
+# grain layer, which is one layer up and asks nothing else.
+DOCUMENT_READ_CENSUS = (
+    (FRONTMATTER_MODULE, {'read_raw': 0, 'document': 0},
+     STORAGE_FIELD_READS, STORAGE_BY_PATH_OK),
+    (GRAIN_LAYER_MODULE, {name: 0 for name in STORAGE_FIELD_READS},
+     GRAIN_LAYER_PATH_READS, GRAIN_LAYER_BY_PATH_OK),
+)
 # `unquote` is idempotent on every value whose stripped form is not itself
 # quote-wrapped, and NOT a no-op on the rest: `unquote('""x""')` is `'x'` where
 # one strip gives `'"x"'`. Every reader below unquotes as it parses, so an
@@ -507,9 +556,10 @@ def _path_addressed_sites(rel: str, tree: ast.Module) -> list[str]:
     """Every read in one module that ASKS A PATH what a grain says.
 
     Decided by the NAME of the function called, not by guessing which argument
-    is path-shaped: every name here takes the document first by signature, so
-    reaching one at all IS handing storage a path. A `Grain.field(key)` call
-    carries no path to hand over and is invisible to this reader.
+    is path-shaped: every name here takes the document as a parameter of the
+    CALLER's, so reaching one at all IS handing storage a path — whether it
+    arrives first (`field_of(p, k)`) or second (`read_grain(cfg, p, kind)`). A
+    `Grain.field(key)` call carries no path to hand over and is invisible here.
     """
     out = []
     for node in _calls(tree):
@@ -517,11 +567,81 @@ def _path_addressed_sites(rel: str, tree: ast.Module) -> list[str]:
         if name in STORAGE_FIELD_READS and receiver in ('', FRONTMATTER_OWNER):
             out.append(f'{rel}:{node.lineno}: {name}(<path>, …) — ask '
                        f'`grain(cfg, gid).{name.replace("_of", "")}` instead')
-        elif name == GRAIN_ADAPTER and receiver in ('', GRAIN_LAYER_OWNER):
-            out.append(f'{rel}:{node.lineno}: {GRAIN_ADAPTER}(<path>) — the '
-                       f'file-to-grain adapter, and only a module that holds a '
-                       f'FILE may call it')
+        elif name in GRAIN_LAYER_PATH_READS and receiver in ('', GRAIN_LAYER_OWNER):
+            out.append(f'{rel}:{node.lineno}: {name}(<path>, …) — the grain '
+                       f'layer read that turns a FILE into what a document '
+                       f'says, and only a module that holds a file may call it')
     return out
+
+
+def _renamed_owner_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every import that binds an owner, or a graded read out of one, under a
+    name the classifier above cannot see.
+
+    `_path_addressed_sites` matches the RECEIVER — `frontmatter.field_of`,
+    `inventory.doc_grain` — so `from ...core import frontmatter as fm` and then
+    `fm.field_of(p, k)` reads as somebody else's function and the gate is
+    blind. The bare `from ...frontmatter import field_of` form is already
+    caught at the CALL, because the reader accepts an empty receiver; the two
+    spellings that are not are the renamed module and the renamed function, and
+    both are bindings, so both are visible right here.
+    """
+    out = []
+    for name, source, lineno in _import_bindings(rel, tree):
+        for dotted, owner, graded in (
+                (FRONTMATTER_DOTTED, FRONTMATTER_OWNER, STORAGE_FIELD_READS),
+                (GRAIN_LAYER_DOTTED, GRAIN_LAYER_OWNER, GRAIN_LAYER_PATH_READS)):
+            read = (source[len(dotted) + 1:]
+                    if source.startswith(dotted + '.') else '')
+            if source == dotted and name != owner:
+                out.append(f'{rel}:{lineno}: binds {dotted} as {name!r} — the '
+                           f'gate reads the receiver, so every {owner}.<read> '
+                           f'call in this module is invisible to it')
+            elif read in graded and name != read:
+                out.append(f'{rel}:{lineno}: binds {dotted}.{read} as '
+                           f'{name!r} — a graded read under another name is '
+                           f'the same blindness one size down')
+    return out
+
+
+def _document_addressed(tree: ast.Module, roots: dict[str, int]) -> set[str]:
+    """Every module-level function in one owner that hands a document read one
+    of its OWN parameters — the census `DOCUMENT_READ_CENSUS` grades.
+
+    A fixpoint, because the question arrives second-hand: `read_grain(cfg,
+    path, kind)` never names `frontmatter.document`, it calls `doc_grain(path,
+    kind)`, which does. `roots` says which ARGUMENT of each bottom read is the
+    document, and a caller inherits the position it passed its own parameter
+    in, so `read_grain`'s is 1 where `doc_grain`'s is 0.
+
+    Two limits, stated rather than implied: a document arriving by KEYWORD and
+    a read declared inside a `class` body are both invisible to this reader.
+    Neither exists in either owner, and `Grain.field(key)` is a method holding
+    `self.path`, which is the shape this whole primitive is FOR.
+    """
+    funcs = {node.name: node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    arrives: dict[str, set[int]] = {name: {pos} for name, pos in roots.items()}
+    grown = True
+    while grown:
+        grown = False
+        for name, node in funcs.items():
+            params = [arg.arg for arg in node.args.args]
+            for call in _calls(node):
+                _, called = _called_name(call)
+                for pos in tuple(arrives.get(called, ())):
+                    if pos >= len(call.args):
+                        continue
+                    passed = call.args[pos]
+                    if not isinstance(passed, ast.Name) or passed.id not in params:
+                        continue
+                    here = arrives.setdefault(name, set())
+                    if params.index(passed.id) not in here:
+                        here.add(params.index(passed.id))
+                        grown = True
+    # What THIS module exposes: the grain layer's roots are the storage
+    # module's four reads, and they are graded where they are defined.
+    return set(arrives) & set(funcs)
 
 
 def _double_strip_sites(rel: str, tree: ast.Module) -> list[str]:
@@ -869,12 +989,16 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
     is the read; `PATH_ADDRESSED_ROSTER` is the closed set of modules that
     legitimately hold a FILE instead, each with its reason.
 
-    Three halves, because this roster is the one that rots:
+    Halves, because this roster is the one that rots:
       * no module off the roster addresses a storage read by path,
       * every entry ON it still matches at least one site — an entry nothing
-        matches is a hole waiting for a file to move into it, and
+        matches is a hole waiting for a file to move into it,
       * the roster has not GROWN, because the convenient fourth entry is how
-        this gate goes green while nothing improved.
+        this gate goes green while nothing improved,
+      * every by-path read the two owners EXPOSE is either graded or excused by
+        name — the half that was missing, and the one that let the substitution
+        the banner forbids work one name over, and
+      * neither owner is bound under a name the classifier cannot see.
     """
 
     PROTECTS = (
@@ -902,7 +1026,28 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
         # grain, so it cannot be the way round this rule.
         ('beside = inventory.doc_grain(path)', True),
         ('beside = doc_grain(path)', True),
+        # ...and its siblings, which answer the same question and were the
+        # substitution that still worked (M1). The document arrives SECOND in
+        # the first of them, which is why the reader grades the name.
+        ("grain = inventory.read_grain(cfg, path, 'story')", True),
+        ("why = inventory.empty_section(grain.path, 'Close')", True),
+        ("why = empty_section(path, 'Ship')", True),
+        # The owner under another name, in both spellings — the module and the
+        # read — because the classifier matches the receiver (F2).
+        ('from agentic_sdlc.core import frontmatter as fm', True),
+        ('from agentic_sdlc.repo.pm import inventory as inv', True),
+        ('from agentic_sdlc.core.frontmatter import field_of as grab', True),
+        ('import agentic_sdlc.repo.pm.inventory as inv', True),
+        # The owner under ITS name is how every module reaches it.
+        ('from agentic_sdlc.core import frontmatter', False),
+        ('from agentic_sdlc.repo.pm import inventory, vocabulary', False),
+        ('from agentic_sdlc.core.frontmatter import unquote', False),
+        # The bare re-export is not caught HERE — it is caught at the call,
+        # where the reader accepts an empty receiver (the row below it).
+        ('from agentic_sdlc.core.frontmatter import field_of', False),
+        ("status = field_of(p, 'status')", True),
         # Asking the GRAIN. No path is handed to anything.
+        ("why = grain.section_defect('Close')", False),
         ("status = grain.field('status')", False),
         ("order = parent.list_field('order')", False),
         ("found = inventory.grain(cfg, gid, 'story').field('status')", False),
@@ -926,7 +1071,8 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
     def catches(planted: str) -> bool:
         tree = ast.parse(planted)
         return bool(_path_addressed_sites(SCRATCH_MODULE, tree)
-                    or _double_strip_sites(SCRATCH_MODULE, tree))
+                    or _double_strip_sites(SCRATCH_MODULE, tree)
+                    or _renamed_owner_sites(SCRATCH_MODULE, tree))
 
     def test_no_module_off_the_roster_asks_a_path(self):
         offenders: list[str] = []
@@ -958,6 +1104,50 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
             'rostered module(s) that address nothing by path any more — the '
             'exemption has outlived what it was granted for. Delete the '
             'line:\n  ' + '\n  '.join(idle))
+
+    def test_every_by_path_read_an_owner_exposes_is_named(self):
+        """The half M1 found missing: the graded tuple was kept BY HAND beside
+        a layer that kept growing, so `read_grain` — `doc_grain` plus a `None`
+        filter, three lines below it — answered the same question ungraded and
+        eight live sites used it.
+
+        Derived, and asserted in BOTH directions, which is also this case's
+        floor: a reader that went blind returns the roots alone, a moved owner
+        returns nothing at all, and neither equals the tuples above.
+        """
+        for rel, roots, graded, excused in DOCUMENT_READ_CENSUS:
+            with self.subTest(module=rel):
+                found = _document_addressed(_tree(SRC / rel), roots)
+                named = set(graded) | set(excused)
+                self.assertEqual(
+                    [], sorted(found - named),
+                    f'{rel} hands a document read one of its own parameters '
+                    f'under (a) name(s) this gate has never heard of, so a '
+                    f'caller can ask by path through it and nothing says so — '
+                    f'M1 exactly. Grade it beside {graded[0]!r}, or excuse it '
+                    f'with the reason it answers a question about a FILE:\n  '
+                    + '\n  '.join(sorted(found - named)))
+                self.assertEqual(
+                    [], sorted(named - found),
+                    f'{rel} no longer exposes (a) name(s) this gate grades or '
+                    f'excuses, so the classifier is policing a name nothing '
+                    f'implements and a real one may have moved in behind '
+                    f'it:\n  ' + '\n  '.join(sorted(named - found)))
+
+    def test_no_module_binds_an_owner_under_another_name(self):
+        """F2: both seams pinned the import name by convention. `from
+        ...core import frontmatter as fm` then `fm.field_of(p, k)` passes every
+        case above, because the classifier matches the receiver."""
+        offenders: list[str] = []
+        for rel, path in _sources():
+            offenders.extend(_renamed_owner_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            f'an owner bound under a name the by-path classifier cannot see. '
+            f'Import {FRONTMATTER_DOTTED} as {FRONTMATTER_OWNER!r} and '
+            f'{GRAIN_LAYER_DOTTED} as {GRAIN_LAYER_OWNER!r}, which is what '
+            f'every module in this package already does:\n  '
+            + '\n  '.join(offenders))
 
     def test_the_roster_has_not_grown(self):
         self.assertLessEqual(
@@ -997,7 +1187,8 @@ class TheEngineAsksByIdNotByPath(unittest.TestCase):
             params = inspect.signature(fn).parameters
             for arg in args:
                 self.assertIn(arg, params, f'{GRAIN_LAYER_OWNER}.{name}({arg})')
-        for name in ('field', 'list_field', 'declares', 'sequence_defect'):
+        for name in ('field', 'list_field', 'declares', 'sequence_defect',
+                     'section_defect'):
             self.assertTrue(
                 callable(getattr(inventory.Grain, name, None)),
                 f'Grain.{name} is gone — every caller that stopped naming a '

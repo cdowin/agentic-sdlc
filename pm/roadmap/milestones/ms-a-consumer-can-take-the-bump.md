@@ -12,6 +12,7 @@ order:
   - "bg-the-release-belt-and-the-render-verb-disagree-about-changelog"
   - "ft-install-force-keeps-what-the-project-owns"
   - "ft-the-pm-surface-has-no-dead-ends"
+  - "bg-a-scaffold-name-injects-frontmatter"
   - "bg-the-gate-help-names-one-of-its-four-rule-families"
   - "ft-a-gate-verdict-is-true-of-the-tree"
   - "bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed"

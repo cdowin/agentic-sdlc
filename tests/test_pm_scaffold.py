@@ -685,7 +685,11 @@ class BugNamesItsCause(unittest.TestCase):
         # guessed at. Both flag spellings stamp the same value, and the stamped
         # bug leaves `validate` and the gate clean.
         with tree(story_statuses=('ready',)) as root:
-            self.assertEqual(run_cli(root, 'new', 'bug', '0.1', 'unattributed')[0], 0)
+            code, out = run_cli(root, 'new', 'bug', '0.1', 'unattributed')
+            self.assertEqual(code, 0, out)
+            # No name given: still created (the form scripts rely on), and the
+            # empty `name:` is NAMED with the write that fills it (rule 11).
+            self.assertIn("next: `pm set bg-unattributed name '<name>'`", out)
             self.assertEqual(frontmatter_lines(root / self.BUGS / 'bg-unattributed.md'), [
                 'id: bg-unattributed',
                 # 0.4.0: a grain states its own kind, so nothing has to infer

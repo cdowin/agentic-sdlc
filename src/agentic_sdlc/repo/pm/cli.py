@@ -300,7 +300,8 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            is stamped on `name:` after the
                                            render, so a template with no
                                            {name} slot still gets it; omitted,
-                                           `name:` is left empty. A bug is ONE
+                                           `name:` is left empty and a `next:`
+                                           line names it. A bug is ONE
                                            authored file: a second `new bug`
                                            for its id refuses and writes
                                            nothing — `pm set <bug-id> name` is
@@ -2134,6 +2135,13 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         _ok(f'created {cfg.rel(bf)}')
         if name:
             _stamp_field(cfg, bf, bid, vocabulary.FIELD_NAME, name)
+        elif cfg.breadcrumbs:
+            # The no-name form stays: scripts written against it exit 0 and a
+            # refusal would break them (rule 7). The gap is NAMED instead (rule
+            # 11), on stderr, so stdout stays the one line the write wrote.
+            print(f"[pm] next: `pm set {bid} name '<name>'` — `name:` is "
+                  f'empty, so the bug is addressable by its id alone',
+                  file=sys.stderr)
         if cause:
             _stamp_field(cfg, bf, bid, CAUSED_BY, cause)
         return 0

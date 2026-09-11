@@ -4,7 +4,7 @@ kind: story
 feature: ft-every-printed-command-runs-in-a-stock-consumer
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the stock wiring reaches every verb, and every line the CLI renders names it
-status: building
+status: done
 owner: agent
 depends_on: []
 changelog: `Makefile.devkit` gains `make sdlc ARGS='<verb> …'`, which reaches every verb at your pin, and every command the CLI prints for you to run is now spelled `make pm|sdlc ARGS='…'` with free text single-quoted; `ARGS` no longer leaks into sub-makes, the dispatch preamble's STATIC GATES lists `[gates] extra` and the stock roster, and a stale `Makefile.devkit` is remedied first with the pinned `uvx … install-gates --force` — run `install-gates --force` before anything else when you take this bump.

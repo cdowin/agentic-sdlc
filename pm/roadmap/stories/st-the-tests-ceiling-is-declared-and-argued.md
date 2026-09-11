@@ -209,6 +209,4 @@ mechanically — every backticked path checked for existence, every sentence ove
 for a repeat elsewhere, narrative density measured per module — and the unread remainder is 8-26%
 narrative by that measure. A second pass is a second story.
 
-done: f7a8114, b89a80c — `TESTS_CEILING = 0.55`, the measured post-cut ratio rounded up to the next
-twentieth, with the per-module cut table above. `b89a80c` then fixed the census that produced the
-measurement and re-derived every number here; 0.5106 rounds to 0.55 too, so the ceiling held.
+done: f7a8114, b89a80c — the ceiling, and the census fix that re-derived every number above it.

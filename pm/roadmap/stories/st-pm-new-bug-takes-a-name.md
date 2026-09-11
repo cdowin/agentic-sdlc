@@ -7,7 +7,7 @@ name: pm new bug takes a name, like every other scaffold
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `pm new bug <milestone> <slug> <name...>` writes `name:` — under a project template with no `{name}` slot too — and without a name it still creates the bug and prints a `next:` line naming the empty `name:`.
 ---
 
 # pm new bug takes a name, like every other scaffold

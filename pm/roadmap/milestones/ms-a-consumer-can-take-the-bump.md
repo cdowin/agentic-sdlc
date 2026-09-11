@@ -48,6 +48,10 @@ and #36 is the sharpest case of #22. Each pair is one story, and every issue num
                      refused, a WARN that says "never held" about held states    #19 #26 #27 #30
     the vehicle      ~109 shipped `agentic-sdlc <verb>` citations plus the rendered
                      lines, and a stock consumer has no such command on PATH         #22 #36
+                     and two scripts default to a `staging` branch the flow never makes  #37
+
+#37 was filed later the same day and joined the vehicle feature: the same cause, a shipped command
+that does not run in a consumer following the kit's own main → branch → main flow.
 
 ## Ship criterion
 

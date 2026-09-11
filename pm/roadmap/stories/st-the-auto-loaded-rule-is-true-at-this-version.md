@@ -7,7 +7,7 @@ name: the auto-loaded pm-execution rule is true at this version
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: The installed pm-execution rule now says a story left open under a done feature is a D11 failure, not a warning, offers the feature `reviewing` state only where `[pm.states.feature]` declares it, and no longer suggests `pm list --status building,reviewing` (exit 2 on the stock vocabulary) — re-run `pm install-skills --force`.
 ---
 
 # the auto-loaded pm-execution rule is true at this version

@@ -7,7 +7,7 @@ name: a milestone retired before 0.5.0 can still get its retire row
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `pm retire <id> --version <v> --name <name> [<summary...>]` backfills a `retire` row, marked `backfilled: true`, for a milestone whose documents were pruned before 0.5.0, so `pm roadmap` can print the whole shipped history.
 ---
 
 # a milestone retired before 0.5.0 can still get its retire row

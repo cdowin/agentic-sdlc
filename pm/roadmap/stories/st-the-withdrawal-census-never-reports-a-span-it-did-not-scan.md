@@ -7,7 +7,7 @@ name: the withdrawal census never reports a span it did not scan
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: The withdrawal report no longer says "withdrawn nothing" when the pin already names the running version: it says it compared nothing, names where the floor came from, and `--since <version>` sets the floor — pass the pin you are leaving.
 ---
 
 # the withdrawal census never reports a span it did not scan

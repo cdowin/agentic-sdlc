@@ -9,13 +9,16 @@ depends_on: ["ft-the-shipped-words-match-the-shipped-tool"]
 consumed_by: []
 changelog:
 order:
+  - "st-the-shipped-defaults-follow-the-kits-own-branch-flow"
   - "st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it"
   - "st-every-shipped-citation-resolves-through-the-stock-wiring"
 ---
 
 # every command the kit prints runs in a stock consumer
 
-Issues: #22 #36 (#36 is the sharpest case of #22: a line headed "run by you" that cannot be run).
+Issues: #22 #36 (#36 is the sharpest case of #22: a line headed "run by you" that cannot be run),
+and #37 (two shipped scripts default to a `staging` branch the kit's main → branch → main flow never
+creates, so `agent-worktree.sh new` dies and the Stop gate silently widens).
 
 The stock wiring never puts `agentic-sdlc` on PATH. `Makefile.devkit` defines
 `DEVKIT := uvx --from "git+…@$(DEVKIT_VERSION)" agentic-sdlc` and passes through only `pm`,
@@ -48,7 +51,7 @@ line the CLI renders runs as printed. A test resolves every shipped `agentic-sdl
 through the stock wiring and fails by file and line on one that would not run. The dispatch preamble
 names the whole static gate set the project's `make check` runs.
 
-**Accepted means closed on GitHub:** #22 and #36 are each closed with a comment citing this feature
+**Accepted means closed on GitHub:** #22, #36 and #37 are each closed with a comment citing this feature
 and its commit hash(es) (SDLC.md §2).
 
 ## Proof budget

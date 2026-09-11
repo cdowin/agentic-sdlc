@@ -7,7 +7,7 @@ name: the rendered protocol describes the check that runs
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: The rendered protocol describes release check `changelog-unreleased-nonempty` as what it reads — the `changelog:` field of every done grain — rather than the retired `## Unreleased` section; re-run `install-sdlc --force`.
 ---
 
 # the rendered protocol describes the check that runs

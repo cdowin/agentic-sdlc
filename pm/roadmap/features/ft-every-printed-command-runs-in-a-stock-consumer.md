@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-consumer-can-take-the-bump"
 name: every command the kit prints runs in a stock consumer
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-11-0.8.0-every-printed-command-runs-in-a-stock-consumer.md
 depends_on: ["ft-the-shipped-words-match-the-shipped-tool"]
 consumed_by: []
 changelog: none

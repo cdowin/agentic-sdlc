@@ -397,3 +397,6 @@
 {"ts":"2026-09-11T16:37:16Z","kind":"status","grain":"st-every-shipped-citation-resolves-through-the-stock-wiring","from":"building","to":"done"}
 {"ts":"2026-09-11T16:37:16Z","kind":"disposition","grain":"st-every-shipped-citation-resolves-through-the-stock-wiring","state":"done","answer":"none"}
 {"ts":"2026-09-11T16:37:16Z","kind":"rung.leave","grain":"st-every-shipped-citation-resolves-through-the-stock-wiring","state":"done","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["make sdlc ARGS='close feature <feature-id>'"],"have":[]}
+{"ts":"2026-09-11T16:37:16Z","kind":"status","grain":"ft-every-printed-command-runs-in-a-stock-consumer","from":"building","to":"reviewing"}
+{"ts":"2026-09-11T16:37:16Z","kind":"disposition","grain":"ft-every-printed-command-runs-in-a-stock-consumer","state":"reviewing","answer":"none"}
+{"ts":"2026-09-11T16:37:16Z","kind":"rung.leave","grain":"ft-every-printed-command-runs-in-a-stock-consumer","state":"reviewing","answer":"none","next_rung":"feature","next_checks":["stories-done","feature-verified","review-recorded","findings-landed"],"next_actions":["make sdlc ARGS='close feature <feature-id>'"],"have":[]}

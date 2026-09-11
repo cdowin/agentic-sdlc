@@ -3,7 +3,7 @@ id: bg-a-read-verb-names-three-of-its-thirteen-sections
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: pm ledger report prints 13 sections and --help names 3
-status: open
+status: fixed
 caused_by:
 changelog: `pm --help` names every block `pm ledger report` prints — twenty-three of them, with each block's columns in order — where it named three.
 ---
@@ -151,3 +151,5 @@ grain', 'deferred to', 'escapes', 'feature', 'findings by severity', 'gate',
 section could not use', 'session deltas', 'spend per grain', 'story', 'time per
 actor', 'time per state', 'verdict', 'verdict distribution', 'yield per review
 pass']"*. Green after.
+
+Fixed in `8ffcbeb`.

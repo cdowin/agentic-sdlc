@@ -3,7 +3,7 @@ id: bg-a-gate-compares-a-rendered-clock
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: a gate compares a rendered clock across two CLI calls and flakes at the second boundary
-status: open
+status: fixed
 caused_by:
 changelog: none
 ---
@@ -51,3 +51,5 @@ the clock for this one assertion would hide the race rather than remove it.
 
 Any other clock in the suite. This is the one that was WATCHED failing; a sweep for siblings is a
 census, and `grep -n "oldest\|human_duration" tests/` is how somebody would start it.
+
+Fixed in `8ffcbeb`.

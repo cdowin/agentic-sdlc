@@ -316,3 +316,10 @@
 {"ts":"2026-09-11T04:28:43Z","kind":"disposition","grain":"ft-the-suite-is-measured-like-the-source","state":"done","answer":"none"}
 {"ts":"2026-09-11T04:28:43Z","kind":"rung.leave","grain":"ft-the-suite-is-measured-like-the-source","state":"done","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["agentic-sdlc release <version>"],"have":[]}
 {"ts":"2026-09-11T04:29:16Z","kind":"decision","grain":"ms-nothing-is-hand-rolled","entry":"D3","title":"the case ceiling is on the suite, not the tier"}
+{"ts":"2026-09-11T05:01:43Z","kind":"status","grain":"bg-the-telemetry-verb-cannot-compare-two-milestones","from":"open","to":"fixed"}
+{"ts":"2026-09-11T05:01:43Z","kind":"disposition","grain":"bg-the-telemetry-verb-cannot-compare-two-milestones","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T05:01:43Z","kind":"status","grain":"bg-a-read-verb-names-three-of-its-thirteen-sections","from":"open","to":"fixed"}
+{"ts":"2026-09-11T05:01:43Z","kind":"disposition","grain":"bg-a-read-verb-names-three-of-its-thirteen-sections","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T05:01:43Z","kind":"status","grain":"bg-a-gate-compares-a-rendered-clock","from":"open","to":"fixed"}
+{"ts":"2026-09-11T05:01:43Z","kind":"disposition","grain":"bg-a-gate-compares-a-rendered-clock","state":"fixed","answer":"none"}
+{"ts":"2026-09-11T05:01:45Z","kind":"dispatch","grain":"bg-the-telemetry-verb-cannot-compare-two-milestones","duration_s":1729,"tool_calls":130,"tokens_total":234098,"tree":{"milestones_building":["ms-nothing-is-hand-rolled"],"features_building":["ft-the-module-says-what-it-does"],"features_review":[],"stories_wip":[],"stories_review":[],"milestones_in_progress":["ms-nothing-is-hand-rolled"],"features_in_progress":["ft-the-module-says-what-it-does"],"stories_in_progress":[]}}

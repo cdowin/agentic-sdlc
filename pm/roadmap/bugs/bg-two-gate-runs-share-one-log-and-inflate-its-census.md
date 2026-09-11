@@ -1,7 +1,7 @@
 ---
 id: bg-two-gate-runs-share-one-log-and-inflate-its-census
 kind: bug
-milestone: 
+milestone: ms-the-ledger-is-a-stamp
 name: two concurrent make check runs share .gate-reports/check.log and the verdict counts 10 of a 5-gate roster
 status: open
 caused_by:

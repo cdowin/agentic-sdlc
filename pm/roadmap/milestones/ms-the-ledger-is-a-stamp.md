@@ -7,6 +7,13 @@ depends_on: ["ms-a-consumer-can-take-the-bump"]
 branch: milestone/0.9.0-the-ledger-is-a-stamp
 version: 0.9.0
 changelog:
+order:
+  - "ft-a-milestone-reports-only-its-own-rows"
+  - "ft-work-is-stamped-with-its-issue-and-agent"
+  - "ft-a-concurrent-dispatch-attributes-itself"
+  - "ft-the-report-is-the-stamp-table"
+  - "bg-an-unknown-agent-type-is-recorded-as-a-dispatch"
+  - "bg-two-gate-runs-share-one-log-and-inflate-its-census"
 ---
 
 # 0.9.0 — the ledger is a stamp
@@ -38,13 +45,24 @@ milestone is decomposed from.
 
 ## Ship criterion
 
-<!-- Written from the audit. The shape Chris asked for, as a first cut:
-     - a person can stamp START and STOP on a unit of work, with the grain and the external issue id(s)
-       it serves, and token use when it is known, each with one verb and none inferred;
-     - every row a milestone's report counts is that milestone's, and a comparison of two milestones
-       shares no row between them;
-     - concurrent work is attributable without an environment variable the orchestrator cannot export;
-     - what the ledger cannot say, it says it cannot say (rule 11), rather than printing a shared number. -->
+Four features, one per work unit (the audit's six candidates, consolidated), plus two bound bugs:
+
+    ft-a-milestone-reports-only-its-own-rows       D-A: no shared rows; rows claimed by branch:
+    ft-work-is-stamped-with-its-issue-and-agent    start/stop/issue/agent/tokens as one verb
+                                                   (+ bg-an-unknown-agent-type-is-recorded-as-a-dispatch)
+    ft-a-concurrent-dispatch-attributes-itself     D-B: the dispatch carries its stamp; one row each
+    ft-the-report-is-the-stamp-table               "simple": the report IS the stamp table
+                                                   (+ bg-two-gate-runs-share-one-log-and-inflate-its-census)
+
+**Ship criterion.** Someone can stamp START and STOP on a unit of work, with its grain, the external
+issue id(s) it serves, its agent and its tokens, with one verb each and nothing inferred. Every row a
+milestone's report counts is that milestone's, and a comparison of two milestones shares no row.
+Concurrent dispatches attribute themselves without an environment variable nobody can export, and a
+dispatch counts once. `pm ledger report <milestone>` is the stamp table. What the ledger cannot place,
+it counts on a named line; it never prints a shared number as one milestone's.
+
+**Decomposition into stories happens when 0.8.0 has shipped**, by the same flow: a scout against the
+code at that point, then stories.
 
 ## Risks
 

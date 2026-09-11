@@ -1,7 +1,7 @@
 ---
 id: bg-an-unknown-agent-type-is-recorded-as-a-dispatch
 kind: bug
-milestone: 
+milestone: ms-the-ledger-is-a-stamp
 name: an unknown agent type is recorded as a dispatch
 status: open
 caused_by:

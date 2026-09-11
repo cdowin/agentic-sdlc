@@ -3,9 +3,9 @@ id: bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed
 kind: bug
 milestone: ms-a-consumer-can-take-the-bump
 name: adopt reports checks-pass while an opt-in gate the consumer armed exits 1
-status: open
+status: fixed
 caused_by:
-changelog: 
+changelog: `adopt`'s `ok: checks-pass` line now ends `; NOT run: …`, naming every gate outside the `check all` roster, every `[gates] extra` target, and the `[adopt.commands] checks-pass` key that would run them; the verdict is unchanged.
 ---
 
 # the bump belt does not run the gate a consumer armed
@@ -74,3 +74,5 @@ names what it did NOT run. That means the `[gates] extra` targets (already read 
 the `KNOWN_GATES` that are off, and the `[adopt.commands] checks-pass` override that would run them.
 Reading a make file to find the armed gates is rejected (rule 9). Serialized after the changelog bug
 on `steps.py`.
+
+Known, not changed: `check_checks_pass`'s `found='the roster this version ships'` is wrong when a consumer declares `[checks] all` (the roster is then theirs). Rewording it is a line-shape change for little gain; left for the milestone review to weigh.

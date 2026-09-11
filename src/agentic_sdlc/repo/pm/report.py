@@ -1,4 +1,5 @@
-"""report.py — `pm ledger report`: the milestone's raw rows, added up.
+"""report.py — `pm ledger report`: a milestone's raw rows, added up, or
+more than one milestone's totals side by side.
 
 The ledger never judges; this is the caller judgement is left to. It may
 **sum, count, subtract and group, never weight, price or label** — no `size:`
@@ -1881,3 +1882,252 @@ def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
     for section in SECTIONS:
         lines.extend(section.lines(cfg, data))
     return lines
+
+
+# --- more than one milestone, side by side ------------------------------------
+# **The comparison is these same sections' own totals, put beside each other.**
+# Every number below is read out of a document `build` already returned, so
+# `pm ledger report <a> <b>` is two reports and an arithmetic, never a new
+# measurement: no ratio, no per-case cost, nothing this module was not already
+# allowed to do (sum, count, subtract, group).
+#
+# THE SHAPE, and why the delta is a ROW when the brief asked for a column. Rows
+# are MILESTONES, so a block has the same columns whether two ids are named or
+# five and `… | awk '$1 == "delta"'` means one thing every time. A column per
+# milestone would make column 4 a different measure per invocation — rule 6's
+# line shapes moving under a consumer, for a table nobody could pipe.
+COMPARE_TITLE = 'milestone comparison'
+# The row key AND the column header, which is `MILESTONE_KEY` rather than a
+# second spelling of the word: a comparison's rows are indexed by the same key
+# a one-milestone document carries at its top level.
+COMPARE_COLUMN = MILESTONE_KEY
+DELTA_ROW = 'delta'
+# The plan is READ to sequence ids the caller named; it never chooses them
+# (rule 9). Which basis was used is printed, because a reordered argument list
+# that says nothing is the tool deciding quietly.
+ORDER_PLAN = 'plan'
+ORDER_GIVEN = 'given'
+# Two blocks read rows that name no grain, so both read the tree's own ledger
+# (0.4.0/D3) rather than the milestone's — and they are NOT the same case, which
+# is why there are two notes and not one. A GATE row carries no `tree` snapshot,
+# so every milestone reads the identical set and the delta is 0 by construction.
+# An unattributed DISPATCH row does carry one, and `named_grains` bills it to
+# the single story that was in progress when it was filed — so the same row is
+# unattributed under one milestone and attributed under another, and the delta
+# is REAL. Measured: 9 grainless dispatch rows in this tree read as 9 under
+# 0.6.0's milestone and 8 under 0.7.0's, one of them having been filed while
+# exactly one 0.7.0 story was building. A single note saying "0 by
+# construction" over those numbers would be rule 4's first sin in prose.
+TREE_WIDE_NOTE = ('the same rows under every milestone: these name no grain, '
+                  'so they live in the tree\'s ledger and this delta is 0 by '
+                  'construction')
+NO_GRAIN_NOTE = ('read from the tree\'s ledger, not this milestone\'s — so a '
+                 'row whose `tree` snapshot held exactly one story in progress '
+                 'is billed to that story instead and leaves this bucket, '
+                 'which is why the delta is real and not 0')
+# What `*` means here, in gate cost's own words: the corpus moved, so the
+# delta is printed and is not a regression.
+MOVED_NOTE = 'census that moved or is absent'
+ACTORS_COLUMN = 'actors'
+GRAINS_CENSUS = GRAINS_COLUMN
+
+
+class CompareBlock(NamedTuple):
+    """One block of the comparison: what it is called, the measures it lifts
+    out of one milestone's document, and WHICH of those measures is the corpus
+    the others were taken over — the column a moved census is read off, exactly
+    as `gates_data` reads `census` off a gate's first and last run."""
+    title: str
+    measures: Callable[[vocabulary.PmConfig, dict], dict]
+    census: str
+    note: str
+
+
+def _flat(totals: dict) -> dict:
+    """One section's `totals` as flat cells. `usage` is the only nested key any
+    section carries and it is spelled in section 1's column labels, so a
+    comparison row and a spend row use one vocabulary."""
+    out: dict = {}
+    for key, value in totals.items():
+        if key == 'usage' and isinstance(value, dict):
+            out.update({USAGE_LABELS[k]: v for k, v in value.items()
+                        if k in USAGE_LABELS})
+        else:
+            out[key] = value
+    return out
+
+
+def _compare_spend(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """Section 1's totals, which are about the FILE and not the milestone's
+    grains — `spend_data` folds every dispatch row in before any narrowing, the
+    tree's grainless ones included, exactly as the summary line does. So each
+    ROW carries a tree-wide component and the DELTA cancels it; a reader who
+    wants one milestone's own spend reads the per-grain tables."""
+    return _flat(doc['totals'])
+
+
+def _compare_clock(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """The milestone's OWN roll-up row — `clock_data` already summed every
+    descendant into it, so this lifts a row rather than adding anything. The
+    grain census rides along because it is what the roll-up rolled over."""
+    rows = doc['clock']['rows']
+    root = rows[0] if rows else {}
+    spent = root.get('state_s') or {}
+    states = clock_columns(cfg, rows)
+    return {GRAINS_CENSUS: doc['totals'][GRAINS_CENSUS],
+            **{f'{state}{STATE_SUFFIX}': spent.get(state) for state in states},
+            CLOSED_COLUMN: root.get(CLOSED_COLUMN),
+            OPEN_COLUMN: root.get(OPEN_COLUMN)}
+
+
+def _compare_actors(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """How many actors were named, over how many arrivals, for how long. A
+    stint still running contributed no seconds to `actor_rows` and contributes
+    none here either."""
+    actors = doc['clock']['actors']
+    seconds = None
+    for entry in actors:
+        seconds = _plus(seconds, entry[SECONDS_COLUMN])
+    return {ACTORS_COLUMN: len(actors),
+            ARRIVALS_COLUMN: sum(e[ARRIVALS_COLUMN] for e in actors),
+            SECONDS_COLUMN: seconds}
+
+
+def _compare_unattributed(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """The rows that named no grain — the tree's own ledger by construction
+    (D3), and NOT the same case as `gate cost` even though both read it.
+
+    A dispatch row carries a `tree` snapshot, so `named_grains` bills it to the
+    one story that was in progress when it was filed; the row then leaves this
+    bucket under that story's milestone and stays in it under every other. The
+    delta here is therefore real, which is why this block carries
+    `NO_GRAIN_NOTE` rather than `TREE_WIDE_NOTE`.
+    """
+    return _flat(doc['unattributed'])
+
+
+def _compare_section(name: str) -> Callable[[vocabulary.PmConfig, dict], dict]:
+    """One later section's totals, by section key."""
+    def measures(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+        return _flat(doc[name]['totals'])
+    return measures
+
+
+# The registry, in the order the report prints its sections; a block is added
+# here and nowhere else, and `--help` names every title in it.
+COMPARE_BLOCKS = (
+    CompareBlock(SPEND_TITLE, _compare_spend, GRAINS_CENSUS, ''),
+    CompareBlock(CLOCK_TITLE, _compare_clock, GRAINS_CENSUS, ''),
+    CompareBlock(ACTOR_TITLE, _compare_actors, ACTORS_COLUMN, ''),
+    CompareBlock(NO_GRAIN_TITLE, _compare_unattributed, DISPATCHES_COLUMN,
+                 NO_GRAIN_NOTE),
+    CompareBlock(YIELD_TITLE, _compare_section(SECTION_YIELD), 'records', ''),
+    CompareBlock(REWORK_TITLE, _compare_section(SECTION_REWORK), 'passes', ''),
+    CompareBlock(ESCAPES_TITLE, _compare_section(SECTION_ESCAPES),
+                 'features', ''),
+    CompareBlock(OVERHEAD_TITLE, _compare_section(SECTION_OVERHEAD),
+                 'dispatch_rows', ''),
+    CompareBlock(GATES_TITLE, _compare_section(SECTION_GATES), 'gates',
+                 TREE_WIDE_NOTE))
+
+
+def _columns_of(cells: list[dict]) -> tuple[str, ...]:
+    """Every measure any of these milestones carried, first seen first. A
+    state one milestone never held is a column the other still gets, with `-`
+    on the row that never held it — the clock's own rule, across grains."""
+    out: list[str] = []
+    for row in cells:
+        for key in row:
+            if key not in out:
+                out.append(key)
+    return tuple(out)
+
+
+def _difference(first: object, last: object) -> int | None:
+    """`last - first`, or None when either end was never recorded. Half a pair
+    is no answer — `_gate_census_cell`'s rule, applied to the numbers."""
+    if any(isinstance(v, bool) or not isinstance(v, int)
+           for v in (first, last)):
+        return None
+    return int(last) - int(first)  # type: ignore[arg-type]
+
+
+def compare_data(cfg: vocabulary.PmConfig, documents: list[tuple[str, dict]],
+                 basis: str) -> dict:
+    """More than one milestone as ONE object — what `--json` prints when more
+    than one id is named, and the shape is DECIDED here rather than left to the
+    caller.
+
+    A single id still prints `build`'s nested document, byte for byte; two or
+    more print this, because joining N nested documents on matching section
+    keys is the `jq` nobody should have to write. Top level::
+
+        {"milestones": [<id>, ...],        # in the order compared
+         "order": "plan" | "given",        # what sequenced them
+         "blocks": [{"block": <title>,
+                     "columns": [<measure>, ...],
+                     "census": <measure>,   # the corpus the rest was taken over
+                     "moved": <bool>,       # did that corpus move, first to last
+                     "note": <str>,         # '' unless the rows are tree-wide
+                     "rows": [{"milestone": <id>, <measure>: <n|null>, ...}],
+                     "delta": {<measure>: <n|null>, ...}}]}   # last - first
+
+    `delta` is `last - first` and the milestones between them are printed and
+    not differenced — `gates_data`'s arithmetic, across grains instead of
+    within one.
+    """
+    blocks = []
+    for block in COMPARE_BLOCKS:
+        cells = [block.measures(cfg, doc) for _mid, doc in documents]
+        columns = _columns_of(cells)
+        first, last = cells[0], cells[-1]
+        moved = _difference(first.get(block.census),
+                            last.get(block.census)) != 0
+        blocks.append({
+            'block': block.title, 'columns': list(columns),
+            'census': block.census, 'moved': moved, 'note': block.note,
+            'rows': [{COMPARE_COLUMN: mid,
+                      **{c: row.get(c) for c in columns}}
+                     for (mid, _doc), row in zip(documents, cells)],
+            'delta': {c: _difference(first.get(c), last.get(c))
+                      for c in columns}})
+    return {'milestones': [mid for mid, _doc in documents],
+            'order': basis, 'blocks': blocks}
+
+
+def _delta_cell(value: int | None, moved: bool) -> str:
+    """One delta: signed, `-` when either end was absent, `*` when the census
+    under it moved — `gates_lines`' cell, and the same mark. A delta that is
+    `-` is never marked: gate cost leaves `comparable` None when there is no
+    delta, and a mark on a number nobody has says nothing twice."""
+    if value is None:
+        return DASH
+    return f'{value:+d}{INCOMPARABLE_MARK}' if moved else f'{value:+d}'
+
+
+def compare_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
+    """The comparison as lines: one heading, then one block per section with a
+    row per milestone and a `delta` row under them."""
+    marked = sum(1 for block in data['blocks'] if block['moved'])
+    out = [f'{HEADING_PREFIX} {CENSUS_ARROW.join(data["milestones"])} — '
+           f'{COMPARE_TITLE} — {len(data["milestones"])} milestone(s) in '
+           f'{data["order"]} order, {len(data["blocks"])} block(s), '
+           f'{marked} block(s) marked {INCOMPARABLE_MARK} for a '
+           f'{MOVED_NOTE}']
+    for block in data['blocks']:
+        columns = tuple(block['columns'])
+        headers = (COMPARE_COLUMN, *columns)
+        body = [(row[COMPARE_COLUMN], *(_cell(row[c]) for c in columns))
+                for row in block['rows']]
+        # The census column's own delta IS the statement that it moved, so it
+        # is the one cell the mark would be noise on.
+        body.append((DELTA_ROW,
+                     *(_delta_cell(block['delta'][c],
+                                   block['moved'] and c != block['census'])
+                       for c in columns)))
+        out.append('')
+        out.extend(_table(f'{block["block"]} ({len(block["rows"])})',
+                          headers, (LEFT,) + (RIGHT,) * len(columns), body))
+        if block['note']:
+            out.append(f'   {block["census"]}: {block["note"]}')
+    return out

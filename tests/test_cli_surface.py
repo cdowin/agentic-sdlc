@@ -704,6 +704,24 @@ class TestTheSurfaceSaysTelemetry:
         flat = ' '.join(entry.split())
         for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
             assert ' '.join(columns) in flat, (columns, flat)
+
+    def test_the_help_and_the_auto_loaded_rule_name_the_COMPARISON(self):
+        """`bg-the-telemetry-verb-cannot-compare-two-milestones`. Every
+        telemetry question asked of this tree is comparative, and the agent that
+        asked one read this entry, saw ONE id, and hand-rolled four censuses
+        over the raw `.jsonl`. So the form is named twice: in `--help`, and in
+        the rule that AUTO-LOADS — which is where an orchestrator is standing
+        when the question arrives, and `--help` is not."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
+        assert 'MORE THAN ONE MILESTONE ID COMPARES' in ' '.join(entry.split())
+        assert '[<grain-id>...]' in (pm_cli.USAGE or ''), (
+            'the usage line still takes one id, so the roster below it is '
+            'documenting a form the synopsis denies')
+        said = ' '.join(' '.join(_operator_lines()).split())
+        assert 'pm ledger report <a> <b>' in said, (
+            'the comparison is in `--help` and in no surface an operator '
+            'reads — rule 11 wants the auto-loaded rule too')
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 

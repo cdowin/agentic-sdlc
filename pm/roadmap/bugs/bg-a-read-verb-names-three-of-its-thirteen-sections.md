@@ -5,7 +5,7 @@ milestone: ms-nothing-is-hand-rolled
 name: pm ledger report prints 13 sections and --help names 3
 status: open
 caused_by:
-changelog: none
+changelog: `pm --help` names every block `pm ledger report` prints — twenty-three of them, with each block's columns in order — where it named three.
 ---
 
 # a read verb names three of its thirteen sections
@@ -89,3 +89,65 @@ undocumented presence — `bg-the-telemetry-verb-cannot-compare-two-milestones`.
 
 Shortening the report. Thirteen sections of arithmetic nobody has to hand-roll
 is the verb working.
+
+## Fixed
+
+`pm --help`'s `ledger report` entry now carries a ROSTER: every block the verb
+prints, in print order, each with its columns in order. A `(heading)` carries a
+census rather than a table, and those same words are its row in the comparison
+— so it is one roster and not two.
+
+The gate is the SET, not the roster. `tests/test_pm_ledger_report_sections.py`
+parses the roster out of `pm --help` (never restates it — a roster written down
+in a test goes stale exactly the way the one it guards did), scrapes the block
+titles the verb actually PRINTS from four seeds, and compares the two sets BOTH
+ways: a block that prints and is not named fails, and a block named that no
+longer prints fails. A census case holds the count above 20 so neither
+direction can pass over an empty scrape.
+
+### What the brief got wrong: it undercounted again, by nine
+
+The brief says thirteen sections and lists them. **The verb prints twenty-two
+distinct block titles in the one-id form**, twenty-three with the comparison
+this milestone added. The nine the brief missed, having named the other
+thirteen correctly:
+
+    story  feature  bug                 section 1's three per-kind tables
+    rows naming no grain                the second home's bucket
+    verdict                             the row per review pass
+    findings by severity
+    deferred to
+    verdict distribution
+    gate                                the cost table INSIDE `gate cost`
+
+So the grain that was filed wrong, rewritten because *"the error IS the
+finding"*, was still wrong: the author counted the sections they could see in
+the output they had read and stopped. **Thirteen was never the denominator.**
+Run against HEAD, the gate reads: *"`pm --help` names 2 of 22 blocks"* — 2, not
+3, because the reader takes a block as named only when the roster names it in
+the parseable shape, and HEAD's two `columns IN ORDER:` paragraphs named `time
+per state` and `time per actor` that way and `spend per grain` only in prose.
+
+`time per actor` needed a seed of its own. The existing fixtures have no
+disposition rows, so that block only ever printed its `(0)` heading — a block
+whose columns had never been printed at all, which is how a column roster goes
+stale with no table changing.
+
+### How this is proven
+
+| claim | case |
+|---|---|
+| every block printed is named in `--help` | `tests/test_pm_ledger_report_sections.py::TestTheHelpNamesEveryBlockItPrints::test_every_block_printed_is_named_in_help` |
+| `--help` names no block that stopped printing | `…::test_help_names_no_block_that_stopped_printing` |
+| the block census is not zero, so neither direction passes over nothing | `…::test_the_census_of_blocks_is_not_zero` |
+| every column named is a column printed | `…::test_every_column_named_is_a_column_printed` |
+
+**Red at HEAD, watched**: the same two set comparisons over the three seeds
+HEAD already has (the comparison seed removed, so what reddens is the roster
+and nothing else) fail with *"`pm --help` names 2 of 22 blocks; unnamed:
+['bug', 'bugs naming a cause', 'decision to next status row', 'decisions per
+grain', 'deferred to', 'escapes', 'feature', 'findings by severity', 'gate',
+'gate cost', 'overhead shape', 'rework', 'rows naming no grain', 'rows this
+section could not use', 'session deltas', 'spend per grain', 'story', 'time per
+actor', 'time per state', 'verdict', 'verdict distribution', 'yield per review
+pass']"*. Green after.

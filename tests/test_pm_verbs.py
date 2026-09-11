@@ -346,6 +346,19 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
     def _stderr(out: str, word: str) -> list[str]:
         return [ln for ln in out.splitlines() if word in ln]
 
+    # The `open:` line carries `, oldest <id> <age>` (arrive.py:243), and an
+    # age RE-RENDERS between two CLI calls — `0s` becomes `1s` the moment the
+    # pair straddles a second boundary. A census compared across two calls
+    # compares the counts, so the age comes off first; comparing the whole
+    # line made the verdict a coin flip at the boundary.
+    @staticmethod
+    def _census(line: str) -> str:
+        head, sep, rest = line.partition(', oldest ')
+        if not sep:
+            return line
+        _age, dash, clauses = rest.partition(' — ')
+        return head + (dash + clauses if dash else '')
+
     # --- 3: the disposition, or `none` ------------------------------------
     def test_a_bare_move_still_writes_and_is_never_invisible(self):
         """The line between asking and refusing, for all four kinds.
@@ -447,7 +460,8 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertEqual(rows[0]['value'], 'agent developer')
             # Asking somebody what they just told you is the nag this is not.
             self.assertNotIn(self.ASK, out)
-            before, census = ledger_rows(root), self._stderr(out, 'open:')[0]
+            before = ledger_rows(root)
+            census = self._census(self._stderr(out, 'open:')[0])
             code, out = run_cli(root, 'feature', 'building', '0.1/alpha')
             self.assertEqual(code, 0, out)
             self.assertIn('(no-op)', out)
@@ -455,7 +469,7 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                              'a no-op wrote a row over an answered arrival')
             self.assertNotIn(self.ASK, out)
             # The census counted the shadow too, and went `1 of 2` -> `2 of 2`.
-            self.assertEqual(self._stderr(out, 'open:')[0], census)
+            self.assertEqual(self._census(self._stderr(out, 'open:')[0]), census)
 
     def test_a_flag_the_arrival_does_not_declare_is_refused_by_name(self):
         """Rule 11: the refusal carries the answers this arrival DOES declare,

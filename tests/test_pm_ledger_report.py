@@ -497,7 +497,13 @@ REFUSALS = [
     # Neither spelling is a flag here, and a verb that quietly accepted one
     # would be inventing a grammar its own --help does not print.
     (('--json=1',), 'unknown flag'),
-    (('0.1', '0.2'), 'one grain id'),
+    # Two ids is a COMPARISON since `bg-the-telemetry-verb-cannot-compare-
+    # two-milestones`, so what refuses here is the SECOND id naming no grain in
+    # this tree. The comparison's own matrix — an id that is not a milestone,
+    # one id named twice, `--from` beside more than one — is in
+    # tests/test_pm_ledger_report_sections.py, beside the fixture that holds
+    # two milestones to compare.
+    (('0.1', '0.2'), "no grain resolves from id '0.2'"),
     (('0.1/../0.1',), 'resolves from id'),
     (('/etc/hosts',), 'resolves from id'),
     (('0.*',), 'resolves from id'),

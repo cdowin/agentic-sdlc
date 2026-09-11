@@ -241,6 +241,14 @@ a list of ids and nothing else — never a rendered roster.
   The id names the LEVEL: a milestone id reports all of it, a feature or story
   id reports the clock rooted at that grain and its descendants. The ledger is
   still the milestone's, because that is where the rows are.
+  **Every telemetry question is comparative — *where are we, compared to the
+  previous milestone, how are we improving* — so name MORE THAN ONE milestone:
+  `pm ledger report <a> <b>` gives every block one row per milestone and a
+  `delta` row, `last - first`, marked `*` where the census under it moved. Ask
+  it instead of looping the one-id form and joining the JSON by hand.** Which
+  milestones is yours to name; the plan's `order` sequences the ids you gave
+  when it holds all of them, and the heading says `plan` or `given`. `--help`
+  names every block it prints, with that block's columns in order.
 
 Run the gate in your per-change gate set. A PM tree is only worth what it can be
 trusted to say.

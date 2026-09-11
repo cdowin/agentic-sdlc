@@ -355,7 +355,7 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
                                            disagree about a row)
-  ledger report [<grain-id>] [--json] [--from <rev>]
+  ledger report [<grain-id>...] [--json] [--from <rev>]
                                           (THE TELEMETRY REPORT — token spend,
                                            tool calls, wall-clock and gate cost,
                                            per grain, from rows the tree already
@@ -383,11 +383,107 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            descendants, rolled — since the LEVEL
                                            is the id's and the ledger is still
                                            the milestone's.
-                                           `time per state`, columns IN ORDER:
-                                             grain  <state>_s  closed_s
-                                             open_s  open_state
-                                           then `time per actor`:
-                                             actor  arrivals  grains  seconds
+                                           MORE THAN ONE MILESTONE ID COMPARES
+                                           THEM, which is the comparative
+                                           question this verb exists for: every
+                                           block below gets one row per
+                                           milestone and a `delta` row,
+                                           `last - first`, marked * where the
+                                           census under it moved — `gate cost`'s
+                                           own arithmetic, across grains instead
+                                           of within one. WHICH milestones is
+                                           yours to name; the plan's `order`
+                                           SEQUENCES the ids you gave when it
+                                           holds every one of them, and the
+                                           heading says `plan` or `given` so the
+                                           basis is never guessed at.
+                                           `--json` then prints ONE JOINED
+                                           document — {"milestones": [<id>...],
+                                           "order": plan|given, "blocks":
+                                           [{"block", "columns", "census",
+                                           "moved", "note", "rows", "delta"}]} —
+                                           rather than a nested report per
+                                           milestone for you to join by hand.
+                                           ONE id still prints that nested
+                                           document, byte for byte.
+                                           Two blocks carry the SAME rows under
+                                           every milestone and say so on the
+                                           line: a gate row and an unattributed
+                                           row names no grain, so both live in
+                                           the tree's ledger and both deltas are
+                                           0 by construction.
+                                           Refused at exit 2: one id named
+                                           twice, a feature or story id beside
+                                           another id, and --from with more than
+                                           one.
+                                           EVERY BLOCK IT PRINTS, in print order.
+                                           A (heading) carries a census rather
+                                           than a table, and those same words
+                                           are its row in the comparison, so
+                                           this is one roster and not two —
+                                           columns IN ORDER:
+                                             spend per grain (heading)
+                                               dispatch_rows status_rows
+                                               grains
+                                             story / feature / bug
+                                               grain size dispatches in out
+                                               cache_create cache_read
+                                               tokens_total tool_calls
+                                               duration_s todo in_progress
+                                               done total_s
+                                             time per state
+                                               grain <state>_s closed_s
+                                               open_s open_state
+                                             time per actor
+                                               actor arrivals grains seconds
+                                             rows naming no grain
+                                               dispatches in out
+                                               cache_create cache_read
+                                               tokens_total tool_calls
+                                               duration_s
+                                             yield per review pass (heading)
+                                               records passes findings
+                                             verdict
+                                               feature record pass verdict
+                                               findings landed rejected
+                                               deferred open
+                                             findings by severity
+                                               feature pass severity
+                                               findings
+                                             deferred to
+                                               target feature pass findings
+                                             rework (heading)
+                                               passes
+                                             verdict distribution
+                                               verdict passes
+                                             escapes (heading)
+                                               bugs features
+                                             bugs naming a cause
+                                               caused_by bug status
+                                               feature_status
+                                             overhead shape (heading)
+                                               dispatch_rows decision_rows
+                                               session_rows
+                                             story
+                                               story dispatches
+                                               before_first_write calls
+                                             decisions per grain
+                                               grain decisions
+                                             decision to next status row
+                                               grain entry ts next_status_s
+                                             session deltas
+                                               session_id ts out tool_calls
+                                             gate cost (heading)
+                                               rows gates incomparable
+                                               unusable
+                                             gate
+                                               gate runs first_ms last_ms
+                                               delta_ms census
+                                             rows this section could not use
+                                               gate why ts
+                                             milestone comparison (heading)
+                                               milestones order blocks
+                                               marked
                                            `<state>_s` is one column per state
                                            this milestone's rows HELD, so
                                            `… | awk` is the filter and no flag
@@ -2486,7 +2582,9 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """One milestone's rows, added up per grain — see report.py. The building
     milestone by default, an explicit id otherwise; no `ledger.jsonl` prints
     one line at exit 0. `--from <rev>` runs the same `report.build` over
-    `report.GitSource`, writing nothing and touching no index."""
+    `report.GitSource`, writing nothing and touching no index. MORE THAN ONE
+    milestone id compares them — `_ledger_compare` below, the same sections'
+    totals side by side."""
     as_json = JSON_FLAG in args
     rest = [a for a in args if a != JSON_FLAG]
     # Whether `--from` was given and what it was given are two questions: an
@@ -2508,9 +2606,14 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         if arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r} (ledger report takes '
                         f'{JSON_FLAG}, {FROM_FLAG} <rev> and a grain id)')
-    if len(rest) > 1:
-        raise Usage(f'ledger report takes one grain id, not '
-                    f'{" ".join(rest)!r}')
+    if given and len(rest) > 1:
+        # Two subjects, one rev: the pair is only comparable if both were read
+        # at the SAME moment, and one `--from` cannot say which moment each
+        # milestone should be read at without picking for the caller.
+        raise Usage(f'{FROM_FLAG} reads ONE rev and {len(rest)} milestone ids '
+                    f'were named — which rev each should be read at is not a '
+                    f'thing one {FROM_FLAG} can say. Report them one at a '
+                    f'time, or drop {FROM_FLAG} to compare them on the tree')
     if given and not rest:
         # "The building milestone" is a fact about today's tree, not about a
         # rev.
@@ -2519,6 +2622,8 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                     f'a rev may not take its subject from one tree and its '
                     f'rows from another — `pm ledger report <milestone-id> '
                     f'{FROM_FLAG} <rev>`')
+    if len(rest) > 1:
+        return _ledger_compare(cfg, rest, as_json)
     try:
         src: report.Source = (report.GitSource(cfg.root, rev) if given
                               else report.DiskSource())
@@ -2651,6 +2756,73 @@ def _report_grain_dir(cfg: vocabulary.PmConfig, gid: str) -> tuple[Path, str]:
                     f'tree, so none of its rows is in a ledger — bind it with '
                     f'`pm set {gid} milestone <id>`, or name a milestone')
     return holder.path, gid
+
+
+def _ledger_compare(cfg: vocabulary.PmConfig, ids: list[str],
+                    as_json: bool) -> int:
+    """More than one milestone, side by side — one `report.build` per id, then
+    `report.compare_data`. Reads and writes nothing, like the one-id form.
+
+    WHICH milestones is the caller's to say (rule 9); what the tree may supply
+    is the SEQUENCE, and only when it declared one for every id named.
+    """
+    twice = [gid for i, gid in enumerate(ids) if gid in ids[:i]]
+    if twice:
+        raise Usage(f'{twice[0]!r} was named twice — a milestone compared with '
+                    f'itself is a delta of zero by construction, and which '
+                    f'other one was meant is not a thing this verb may pick')
+    src = report.DiskSource()
+    handles: dict[str, Path] = {}
+    for gid in ids:
+        # The shared refusal for an id that resolves to nothing comes from
+        # `_report_grain_dir`, so two ids get the one sentence every verb
+        # gives a bad id rather than a second wording invented here.
+        mdir, focus = _report_grain_dir(cfg, gid)
+        if focus:
+            kind = inventory.grain_index(cfg)[gid].kind
+            raise Usage(f'{gid!r} is a {kind} and a comparison is between '
+                        f'MILESTONES — a ledger is per milestone (D6), so two '
+                        f'{kind}s under one milestone would be one ledger read '
+                        f'twice. Name the milestones, or one id alone for the '
+                        f'clock at that level')
+        handles[gid] = mdir
+    order = inventory.declared_order(cfg)
+    # All of them or none: sequencing HALF the list by the plan and the rest by
+    # the argument line is a rule nobody could read off the output.
+    planned = all(gid in order for gid in ids)
+    basis = report.ORDER_PLAN if planned else report.ORDER_GIVEN
+    root = ledger.grainless_path(cfg.roadmap)
+    documents: list[tuple[str, dict]] = []
+    missing: list[str] = []
+    for gid in (sorted(ids, key=order.index) if planned else ids):
+        mdir = handles[gid]
+        mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
+        path = src.ledger_for(cfg, mid)
+        try:
+            rows = src.ledger_rows(path)
+            if root != path:
+                rows += src.ledger_rows(root)
+        except ledger.LedgerError as err:
+            raise Usage(f'{err}') from err
+        if not src.is_file(path):
+            missing.append(mid)
+        try:
+            documents.append((mid, report.build(cfg, mid, mdir, rows, src)))
+        except report.RecordError as err:
+            raise Usage(f'{err}') from err
+    data = report.compare_data(cfg, documents, basis)
+    if as_json:
+        print(json.dumps(data, ensure_ascii=False))
+        return 0
+    lines = report.compare_lines(cfg, data)
+    print(lines[0])
+    # Under the heading rather than at the end: a milestone contributing no
+    # rows of its own is why a column is 0, and a reader meets the zero first.
+    for mid in missing:
+        print(f'   {mid} — {report.NO_LEDGER}')
+    for line in lines[1:]:
+        print(line)
+    return 0
 
 
 # --- dispatch -----------------------------------------------------------------

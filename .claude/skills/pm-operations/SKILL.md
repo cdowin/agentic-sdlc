@@ -29,6 +29,10 @@ version, name and summary after its documents are gone. All of them in `ledger.j
                                     dispatches, tokens in and out, cache
                                     creation and reads, tool calls, wall-clock,
                                     and seconds in each category
+    pm ledger report <a> <b>        TWO OR MORE MILESTONES SIDE BY SIDE: every
+                                    block gets one row per milestone and a
+                                    `delta` row — the comparative question,
+                                    answered without a loop or a `jq` join
 
 `report` also carries review yield, rework, escapes and **gate cost** — what
 `make check` / `make unit` / `make test` took, and whether it moved. `--json`

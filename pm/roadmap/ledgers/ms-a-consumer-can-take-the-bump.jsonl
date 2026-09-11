@@ -412,3 +412,6 @@
 {"ts":"2026-09-11T17:40:44Z","kind":"status","grain":"ft-every-printed-command-runs-in-a-stock-consumer","from":"reviewing","to":"done"}
 {"ts":"2026-09-11T17:40:44Z","kind":"disposition","grain":"ft-every-printed-command-runs-in-a-stock-consumer","state":"done","answer":"none"}
 {"ts":"2026-09-11T17:40:45Z","kind":"rung.leave","grain":"ft-every-printed-command-runs-in-a-stock-consumer","state":"done","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["make sdlc ARGS='release <version>'"],"have":[]}
+{"ts":"2026-09-11T17:41:19Z","kind":"status","grain":"ms-a-consumer-can-take-the-bump","from":"building","to":"reviewing"}
+{"ts":"2026-09-11T17:41:19Z","kind":"disposition","grain":"ms-a-consumer-can-take-the-bump","state":"reviewing","answer":"none"}
+{"ts":"2026-09-11T17:41:19Z","kind":"rung.leave","grain":"ms-a-consumer-can-take-the-bump","state":"reviewing","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["make sdlc ARGS='release <version>'"],"have":[]}

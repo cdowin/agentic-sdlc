@@ -43,6 +43,10 @@ v0.7.1 tool contradicts. A consumer with no `reviewing` feature state and one wi
 installed rule that is true for them. Every release a README reader can bump across has notes they can
 reach from the README.
 
+**Accepted means closed on GitHub:** #32, #23, #33, #34 and #35 are each closed with a comment citing
+this feature and its commit hash(es) (SDLC.md §2). #15 is closed too if its audit was the last thing
+open on it. Otherwise it gets a comment saying what remains.
+
 ## Proof budget
 
   cases: 2–4. Most of this is text, and text is proven by the existing byte-current and doc gates.

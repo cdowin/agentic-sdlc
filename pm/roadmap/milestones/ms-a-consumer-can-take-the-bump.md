@@ -57,7 +57,9 @@ nothing else on PATH) does a 0.4.0 → 0.7.1 bump by following only what the kit
 - `check pm` on a roster written before 0.6.0 either grades D11/D12 or says by name that it does not;
 - the rule `pm install-skills` installs contains no sentence the tool contradicts.
 
-Each GH issue listed above is closed by the commit that fixes it.
+Every GH issue listed above is closed when its feature is accepted, with a comment citing the
+feature and the fixing commit hash(es), following SDLC.md §2. The GitHub milestone `0.7.1` has no
+open issues left.
 
 ## Semver: this is not a patch as written
 

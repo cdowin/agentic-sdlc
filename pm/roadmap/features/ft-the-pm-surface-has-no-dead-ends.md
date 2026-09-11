@@ -42,6 +42,9 @@ checks-only belt. `pm new bug <ms> <slug> <name...>` writes `name:`. A milestone
 tree can be given a `retire` row that `pm roadmap` prints, and an id that IS in the tree is refused
 that path.
 
+**Accepted means closed on GitHub:** #25, #24 and #31 are each closed with a comment citing this
+feature and its commit hash(es) (SDLC.md §2).
+
 ## Proof budget
 
   cases: 4–6

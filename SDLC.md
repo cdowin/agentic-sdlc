@@ -106,7 +106,14 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 - runs the one authoritative full gate (`make milestone`) itself;
 - commits per feature by **explicit pathspec**;
 - moves every status through the pm CLI — `check pm` is the drift gate;
-- applies proposed shared-doc wording, appends decisions, opens the close.
+- applies proposed shared-doc wording, appends decisions, opens the close;
+- **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the
+  feature's `Issues:` line, it pushes the branch first so the hash resolves on GitHub. Then it posts
+  a comment naming the feature id, the commit hash(es) that fixed the issue and the version it ships
+  in, and runs `gh issue close <n> --reason completed`. **Cite a hash, never the branch:** `milestone/*`
+  branches are deleted after the merge, and hashes survive it because `main` is merge-commit-only and
+  forward-only. An issue the feature only partly fixes gets the comment, stays open, and the comment
+  names what remains and where it is tracked.
 
 ## 3. The model mix
 

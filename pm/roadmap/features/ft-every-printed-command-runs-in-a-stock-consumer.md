@@ -56,6 +56,9 @@ line the CLI renders runs as printed. A test resolves every shipped `agentic-sdl
 through the stock wiring and fails by file and line on one that would not run. The dispatch preamble
 names the whole static gate set the project's `make check` runs.
 
+**Accepted means closed on GitHub:** #22 and #36 are each closed with a comment citing this feature
+and its commit hash(es) (SDLC.md §2).
+
 ## Proof budget
 
   cases: 2–3

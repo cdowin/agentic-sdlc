@@ -47,6 +47,9 @@ A deliberately broken probe for each story, in a scratch copy of a fixture:
   milestone's version is still refused;
 - a state named in the ledger's `status` rows is not reported as never held.
 
+**Accepted means closed on GitHub:** #19, #26, #27 and #30 are each closed with a comment citing this
+feature and its commit hash(es) (SDLC.md §2).
+
 ## Proof budget
 
   cases: 6–8. These are gate semantics, so each story needs the probe that turns the gate red

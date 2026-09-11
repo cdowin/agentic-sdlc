@@ -48,6 +48,9 @@ is byte-identical afterwards, or the story's decision says why not. One installa
 path. The withdrawal line either names what the span withdrew or says it could not see the span. It
 never says "withdrawn nothing" about a span it did not scan.
 
+**Accepted means closed on GitHub:** #20, #29, #21 and #28 are each closed with a comment citing this
+feature and its commit hash(es) (SDLC.md §2).
+
 ## Proof budget
 
   cases: 4–6

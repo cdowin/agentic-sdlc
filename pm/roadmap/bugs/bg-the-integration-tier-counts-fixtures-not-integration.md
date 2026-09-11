@@ -3,9 +3,9 @@ id: bg-the-integration-tier-counts-fixtures-not-integration
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: 125 of 436 integration cases spawn nothing or only a fixture git
-status: open
+status: fixed
 caused_by:
-changelog: none
+changelog: The integration tier drops 436 -> 360 cases with nothing deleted and no assertion changed: a dead function-local `import subprocess`, a `git_tree as tree` alias and a `git init` that only needed a `.git` marker were each holding whole modules in a tier they never spawned in.
 ---
 
 # the integration tier counts fixtures, not integration
@@ -105,3 +105,36 @@ safe. Making it per-case would delete the property 0.3.0 paid for.
 
 Lowering the count by deleting cases. The suite is 1.47:1 against source for a
 tool whose cardinal sins are a lying gate and a corrupting write.
+
+## What landed — all three parts
+
+    part                                              integration   unit
+    baseline                                                  436   1148
+    1  test_ci_workflows split (dead function-local
+       `import subprocess` held 26 parse-only cases)          412   1172
+    2  test_pm_scaffold dropped `git_tree as tree`
+       (38 cases, 3 git references in the module)             374   1210
+    3  test_verify_main's Repo marks instead of
+       initialising; 3 spawning classes split out             360   1218
+
+**76 cases demoted, nothing deleted, no assertion changed.** Wall clock barely
+moved (~36s), which is the finding restated: the count and the cost were never
+measuring the same thing.
+
+**The seam was measured from BOTH sides in part 3**, and that is the part worth
+keeping. The marker alone failed exactly the nine cases of
+`VerifyRemembersItsLastGreen`, which keys on tree state. Then `conftest.py`'s
+RUNTIME guard named `TheRungs` and `SelfHosting` by nodeid when the split tried
+to demote them — they run real `make` targets through the verb, which the static
+derivation cannot see. Static census plus runtime guard, disagreeing usefully.
+
+**`test_shell_mark.py`'s census refused all three changes until each was
+declared.** That gate counts modules rather than trusting the mark, and it
+earned its place three times in one milestone.
+
+## Still open, and deliberately
+
+The remaining tier is ~360 cases, of which ~198 exercise bash hooks, Makefiles,
+CI workflow scripts and the shell gate library. **A bash hook cannot be
+unit-tested**, and any further target for this tier is met by deleting coverage
+of the shipped shell rather than by moving it.

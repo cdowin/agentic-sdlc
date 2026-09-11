@@ -7,7 +7,7 @@ name: every shipped citation resolves through the stock wiring
 status: building
 owner: agent
 depends_on: ["st-the-stock-wiring-has-one-vehicle-and-the-cli-prints-it"]
-changelog:
+changelog: Every command the shipped agent briefs, rules, skills, SDLC template, seed `devkit.toml` and project templates tell you to run is now spelled through the stock wiring — `make sdlc ARGS='…'` or `make pm ARGS='…'` — so it runs in a consumer with nothing else on PATH, and `check doc` reads those spellings as the status calls they are.
 ---
 
 # every shipped citation resolves through the stock wiring
@@ -70,3 +70,7 @@ Minor, together with the previous story (the installed text changes to name a ne
    that NAME the CLI rather than instruct a run.
    The census regex is not backtick-bound. The two existing role-verb tests are rewritten, not amended,
    because after the sweep they match nothing.
+
+## Close
+
+done: 9840e91 — 102 shipped `agentic-sdlc <verb>` citations -> 0 (94 prose in 19 files, 3 quote fixes, 5 rendered strings); 156 left OUT by named class (headers, error prefixes, help bodies, usage, records); `tests/test_install.py::EveryShippedCitationResolvesThroughTheStockWiring` replaces the 0.6.0 role-verb pair (fails by file:line, fails on zero files, floors the vehicle-line count); `check doc` reads vehicle spans through `vehicle.argv_of` (C2). SHIPPED_ACTION values kept: each records what a belt itself ran. The install-day test now installs the gates with the agents, because the briefs cite make targets.

@@ -5003,3 +5003,4 @@
 {"ts":"2026-09-11T16:37:16Z","kind":"test","tier":"unit","nodeid":"tests/test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch::test_every_declared_corpus_is_replayed_case_by_case","duration_ms":1023,"rank":5}
 {"ts":"2026-09-11T16:37:16Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":12104,"census":1318}
 {"ts":"2026-09-11T16:37:16Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":12226,"state":"89a0cb829582dd4eaadeabcbd1b69bcefaeb7eed0cb61215b1fe52a440f0ee4b","graded":"5986a581608a6630a86fda3374137e9d84995b84357912381248b5ee76f0ec5c","census":1318}
+{"ts":"2026-09-11T16:37:20Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2938}

@@ -34,12 +34,16 @@ telemetry.
 
 ## The work: four stories
 
-1. **The dispatch is rendered, not written.** `agentic-sdlc dispatch --grain <id> --role <role>`
-   renders the WHOLE brief: the grain, its criteria and files, the git surface, and for
-   `--mode parallel` the agent-owned loop (`agent-worktree.sh new <slug>` on the milestone branch →
-   build → commit by pathspec → merge back into the milestone branch → `agent-worktree.sh done`). The
-   leader passes it verbatim and appends only what the brief cannot know. The installed architect
-   brief says: run `dispatch`, never write a brief.
+1. **The dispatch is the verb's output, verbatim.** It already exists: `agentic-sdlc dispatch --grain
+   <id> --role <role>` renders the grain and its brief file, the contract files to read first
+   (CLAUDE.md, SDLC.md, whose §2 holds the builder git rules, and the pm rule), the ladder, the gate
+   roster, the vocabulary, the exit-code contract and the recording line. The subagent TYPE is the
+   installed role brief. In 0.8.0 the orchestrator ran it once and then hand-wrote ~25 briefs
+   anyway, which is exactly what 0.7.0 ("nothing is hand-rolled") exists to stop. **The one real gap
+   is the mode:** the milestone declares `mode: serial|parallel`, and under parallel `dispatch`
+   renders the agent-owned loop (`agent-worktree.sh new <slug>` on the milestone's `branch:` → build →
+   commit by pathspec → merge back → `agent-worktree.sh done`). The installed architect brief says:
+   pass `dispatch`'s output verbatim, and add only what the grain file cannot know.
 2. **A git allowlist guard** (a PreToolUse Bash hook in the `cc-commit-pathspec.sh` family: stdlib,
    bash-3.2-safe, with a `--self-test` corpus). It allows `add`, `commit` with paths, `push` (never
    to the mainline, as `pre-push` already enforces), reads (`status|diff|log|show|rev-parse|config

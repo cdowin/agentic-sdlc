@@ -46,9 +46,14 @@ resolves all 71 citations against the router.
     definition -> CLI         test_every_verb_an_agent_definition_names_...
     CLI -> surface            NOTHING
 
-So "no definition cites a verb that does not exist" is a boolean, and "no verb
-exists that no surface names" is prose. Rule 11 is two claims and only one of
-them can fail.
+So **"every verb a definition names exists"** is a boolean, and **"every verb is
+declared where its operator reads"** is prose. Rule 11 is two claims and only
+one of them can fail.
+
+(Both halves were first written here as double negatives — "no verb exists that
+no surface names" — which is the same claim with the action removed.
+`bg-the-always-loaded-surface-states-properties-not-procedures` is that habit
+measured.)
 
 The same asymmetry one surface over: `pm ledger report` prints **13** sections
 and its `--help` declares **3** with their columns in order

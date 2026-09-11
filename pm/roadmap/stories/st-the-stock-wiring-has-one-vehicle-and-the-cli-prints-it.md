@@ -14,8 +14,8 @@ changelog:
 
 Issues: #22 (the vehicle, the rendered hints, STATIC GATES), #36.
 
-**Blocked on the feature's decision** (passthrough / shim / declared key). Written for the
-recommended option, a generic `Makefile.devkit` passthrough over the existing `$(DEVKIT)`.
+The vehicle is decided (feature D1): **`make sdlc ARGS="<verb> …"`**, one `Makefile.devkit` target
+over the existing `$(DEVKIT)`.
 
 The lines the CLI RENDERS, as opposed to the prose it installs (the next story):
 
@@ -28,10 +28,11 @@ The lines the CLI RENDERS, as opposed to the prose it installs (the next story):
 
 ## Acceptance criteria
 
-1. `Makefile.devkit` has one target that reaches every CLI verb through the pinned `$(DEVKIT)`, and
-   `install-gates` installs it. This repo's own copy is re-installed byte-current.
-2. Every command the CLI renders for a human to run names the vehicle, whether from a single
-   constant or a declared value. Nothing is detected from the Makefile (rule 9).
+1. `Makefile.devkit` has an `sdlc` target that reaches every CLI verb through the pinned
+   `$(DEVKIT)`, listed by `make help`, and `install-gates` installs it. This repo's own copy is
+   re-installed byte-current.
+2. Every command the CLI renders for a human to run is spelled `make sdlc ARGS="…"` (or
+   `make pm ARGS="…"` for a pm verb), from one constant. Nothing is detected from the Makefile (rule 9).
 3. `dispatch --grain <id>`'s RECORDING line, pasted verbatim into a scratch consumer wired as the
    README says with nothing on PATH, runs and files its row.
 4. STATIC GATES lists `[checks] all` AND `[gates] extra`, or says in words that `make check` runs

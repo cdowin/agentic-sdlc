@@ -29,7 +29,7 @@ files=('.claude/agents/changelog-writer.md',))`, is exactly the one it should ha
 1. When floor == ceiling, the line says nothing was compared and how to compare something (run it
    before bumping, or `--since <version>`). It never says "withdrawn nothing".
 2. `--since <version>` sets the floor explicitly, and a malformed version exits 2.
-3. With `--since v0.4.0` run from 0.7.1, `install-agents` names `changelog-writer.md` as withdrawn in 0.6.0.
+3. With `--since v0.4.0` run from 0.8.0, `install-agents` names `changelog-writer.md` as withdrawn in 0.6.0.
 4. Not chosen by the tool on its own: reading `HEAD:Makefile` when the working tree differs. It is
    only acceptable if the line says which pin it read and where from. Otherwise it is inferring the
    span (rule 9). The builder picks, and the close says which.

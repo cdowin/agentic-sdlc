@@ -39,7 +39,7 @@ drift cannot come back.
 ## Ship criterion
 
 The installed rule, the two briefs, the rendered protocol and the README make no claim that the
-v0.7.1 tool contradicts. A consumer with no `reviewing` feature state and one with it both read an
+v0.8.0 tool contradicts. A consumer with no `reviewing` feature state and one with it both read an
 installed rule that is true for them. Every release a README reader can bump across has notes they can
 reach from the README.
 

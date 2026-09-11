@@ -1,7 +1,7 @@
 ---
 id: bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed
 kind: bug
-milestone:
+milestone: ms-a-consumer-can-take-the-bump
 name: adopt reports checks-pass while an opt-in gate the consumer armed exits 1
 status: open
 caused_by:

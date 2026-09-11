@@ -4,18 +4,21 @@ kind: milestone
 name: a consumer can take the bump
 status: planning
 depends_on: ["ms-nothing-is-hand-rolled"]
-branch: milestone/0.7.1-a-consumer-can-take-the-bump
-version: 0.7.1
+branch: milestone/0.8.0-a-consumer-can-take-the-bump
+version: 0.8.0
 changelog:
 order:
   - "ft-the-shipped-words-match-the-shipped-tool"
+  - "bg-the-release-belt-and-the-render-verb-disagree-about-changelog"
   - "ft-install-force-keeps-what-the-project-owns"
   - "ft-the-pm-surface-has-no-dead-ends"
+  - "bg-the-gate-help-names-one-of-its-four-rule-families"
   - "ft-a-gate-verdict-is-true-of-the-tree"
+  - "bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed"
   - "ft-every-printed-command-runs-in-a-stock-consumer"
 ---
 
-# 0.7.1 — a consumer can take the bump
+# 0.8.0 — a consumer can take the bump
 
 > ## Northstar: **a consumer bumping the pin follows what the kit prints, and ends up with a correct
 > tree without restoring anything from git.** Every command the kit prints runs, every sentence it
@@ -49,7 +52,7 @@ and #36 is the sharpest case of #22. Each pair is one story, and every issue num
 ## Ship criterion
 
 A scratch consumer wired exactly as the README says (`DEVKIT_VERSION` + `include Makefile.devkit`,
-nothing else on PATH) does a 0.4.0 → 0.7.1 bump by following only what the kit prints. At the end:
+nothing else on PATH) does a 0.4.0 → 0.8.0 bump by following only what the kit prints. At the end:
 
 - every command it pasted exited 0 or 1 and never with `command not found`;
 - every `[adopt] ours` file and every project-config header is byte-identical to before the bump;
@@ -58,28 +61,36 @@ nothing else on PATH) does a 0.4.0 → 0.7.1 bump by following only what the kit
 - the rule `pm install-skills` installs contains no sentence the tool contradicts.
 
 Every GH issue listed above is closed when its feature is accepted, with a comment citing the
-feature and the fixing commit hash(es), following SDLC.md §2. The GitHub milestone `0.7.1` has no
-open issues left.
+feature and the fixing commit hash(es), following SDLC.md §2. The GitHub milestone `0.8.0` has no
+open issues left, and the three pool bugs bound here are `closed`.
 
-## Semver: this is not a patch as written
+## Semver: 0.8.0, a minor bump (D1)
 
-**Rule 7 makes most of this a minor bump.** New flags (`--only`, backfill `pm retire`), a new
-positional (`pm new bug <name...>`), a new `Makefile.devkit` target, changed WARN and hint lines
-(rule 6), and a gate that now fails a tree it passed (`check doc` #26, the same call 0.7.0 made about
-its two gates). Each story's `## Semver` line says which it is. Only the words, the semver-gate fix
-and the README are patch-shaped. **Either this milestone ships as 0.8.0, or 0.7.1 takes only the
-patch-shaped stories and the rest re-bind to an 0.8.0.** The slug is not the version, so either is one
-`pm set <id> version` plus a branch name.
+This was planned as 0.7.1. By rule 7, 12 of its 16 stories need a minor bump: new flags, a new
+positional, a new `Makefile.devkit` target, changed WARN and hint lines, and a gate that now fails a
+tree it passed. It ships whole as 0.8.0. The reasoning and the rejected split are in
+`ms-a-consumer-can-take-the-bump-decisions.md` D1. Each story's `## Semver` line still says which
+shape it is, for the changelog.
+
+## Also bound here
+
+Three bugs from the pool that sit right next to issues here, each ordered after the feature it
+neighbours (D1):
+
+    bg-the-release-belt-and-the-render-verb-disagree-about-changelog   next to #33, the same check
+    bg-the-gate-help-names-one-of-its-four-rule-families               next to #25, check pm's help
+    bg-the-bump-belt-does-not-run-the-gate-a-consumer-armed            the bump belt itself
 
 ## Risks
 
-- **The vehicle decision (#22) reaches every other feature.** The stories that rewrite shipped text
-  must use the spelling it picks, so it is decided first even though the sweep lands last.
+- **The vehicle is decided: `make sdlc ARGS="…"`** (`ft-every-printed-command-runs-in-a-stock-consumer`
+  D1). Every story that rewrites shipped text spells commands through it, even though the sweep lands last.
 - **#26 before #32 turns consumers red on a file they cannot edit.** Closing the gate hole flags the
   wrapped `pm feature reviewing` in the installed rule for any project with no `reviewing` feature
   state. The words land first: `st-check-doc-reads-a-code-span-across-a-line-break` depends on
   `st-the-auto-loaded-rule-is-true-at-this-version`.
-- **Splicing the config header is a rule-3 question**, not a convenience. It is decided with
-  `pm decide` before the story is dispatched, not by the builder.
+- **Splicing the config header was a rule-3 question**, and it is decided:
+  `ft-install-force-keeps-what-the-project-owns` D1 records why a carried block is still a whole-file
+  write. The review should hold the builder to exactly that boundary: carry bytes, compute nothing.
 - **"Fix the message" can be the whole fix, and that is fine.** Rule 11 says to fix at the cheapest
   layer. A named line is preferred over a new verb in every story here.

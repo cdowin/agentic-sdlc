@@ -32,20 +32,12 @@ The stock wiring never puts `agentic-sdlc` on PATH. `Makefile.devkit` defines
 passthrough at all. The dispatch preamble's STATIC GATES line also lists `[checks] all` and not
 `[gates] extra`, so an agent that trusts it runs 4 of one consumer's 25 static gates.
 
-## The decision this feature opens with
+## The vehicle, decided (D1)
 
-**How does a stock consumer reach every verb?** It must be decided before the stories are dispatched,
-with `pm decide` on this feature:
-
-1. **A generic passthrough in `Makefile.devkit`**, e.g. `make sdlc ARGS="dispatch --grain x"`. This
-   is the cheapest: one target over the `$(DEVKIT)` that already exists, and no new file. (recommended)
-2. An installed shim, `tools/dev/agentic-sdlc`, that reads the pin. It makes the bare citations true
-   as written, but it is another installable to keep byte-current.
-3. A declared vehicle key that the CLI renders. It is config over forks (rule 5), but every consumer
-   has to declare it before any line is right.
-
-**Detecting "this Makefile includes Makefile.devkit" and rendering to match is out.** That is the
-tool deciding what the project is (rule 9).
+**`make sdlc ARGS="<verb> …"`**: one target in `Makefile.devkit` over the `$(DEVKIT)` it already
+defines, and every command the kit prints or installs is spelled through it. The shim and the
+declared key are rejected, and detecting the Makefile is out (rule 9). The reasoning is in
+`ft-every-printed-command-runs-in-a-stock-consumer-decisions.md` D1.
 
 Changing rendered lines is a line-shape change (rule 6), so this is a minor bump at least.
 

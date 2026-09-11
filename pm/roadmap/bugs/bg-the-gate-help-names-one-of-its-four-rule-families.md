@@ -1,7 +1,7 @@
 ---
 id: bg-the-gate-help-names-one-of-its-four-rule-families
 kind: bug
-milestone:
+milestone: ms-a-consumer-can-take-the-bump
 name: check pm's opening line names the drift family and not the other three it runs
 status: open
 caused_by:

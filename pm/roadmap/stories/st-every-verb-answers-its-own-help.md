@@ -50,5 +50,5 @@ write if one existed.
 
 ## Out of scope
 
-`bg-the-gate-help-names-one-of-its-four-rule-families` (open, in the pool), the same shape on
-`check pm`. It is not bound here unless the planning report's NEEDS YOU says otherwise.
+`bg-the-gate-help-names-one-of-its-four-rule-families`, the same shape on `check pm`. It is bound to
+this milestone as its own bug and ordered right after this feature.

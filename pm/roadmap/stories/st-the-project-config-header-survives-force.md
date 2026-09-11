@@ -21,22 +21,15 @@ replaces the header anyway, because the header-only branch is skipped under forc
 were reset to stock on the 0.4.0 bump and again on the 0.7.0 bump, and restored from git both times.
 The tool has both facts it needs: `config_block_span()` finds the block on both sides.
 
-## The decision this story needs before dispatch
+## Decided (feature D1)
 
-**Rule 3 says an installer "writes a whole file or refuses by path", and `body_of()` says "there is
-no substitution and no template".** Splicing the existing block into the new body is a whole-file
-write whose bytes are not the packaged bytes. It needs `pm decide` on the feature before a builder
-starts. The candidates:
-
-1. `--force` splices the existing block when the block exists on both sides and the rest differs.
-   This is the default, and it names what it kept.
-2. A `--keep-config` flag does the splice, and plain `--force` stays lossy but WARNS that it reset a
-   non-stock header.
-3. No splice. `--force` refuses a file whose only difference is the header, and says to use `--diff`.
+`--force` carries the existing block into the packaged body by default, whenever the block exists on
+both sides. It is still a whole-file write. The kit simply stops claiming bytes that `--diff` and
+`installables-current` already treat as the project's. `--keep-config` and refuse-on-header-only are
+rejected. The reasoning, and the boundary the review holds (carry bytes, compute nothing), is in
+`ft-install-force-keeps-what-the-project-owns-decisions.md` D1.
 
 ## Acceptance criteria
-
-(Written for option 1. Re-cut if the decision picks another.)
 
 1. On a hook whose header is edited and whose body is stale, `--force` writes the new body with the
    old header, byte-for-byte, and prints that it kept the header.
@@ -53,5 +46,4 @@ starts. The candidates:
 
 ## Semver
 
-Minor under options 1 and 2 (a new report line or flag). Option 3 is also minor, because `--force`
-starts refusing something it used to write.
+Minor: a new report line, and `--force` writes different bytes than it did.

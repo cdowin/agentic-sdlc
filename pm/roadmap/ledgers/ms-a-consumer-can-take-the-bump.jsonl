@@ -1,0 +1,3 @@
+{"ts":"2026-09-11T13:39:34Z","kind":"decision","grain":"ms-a-consumer-can-take-the-bump","entry":"D1","title":"this ships as 0.8.0, whole"}
+{"ts":"2026-09-11T13:39:34Z","kind":"decision","grain":"ft-every-printed-command-runs-in-a-stock-consumer","entry":"D1","title":"a stock consumer reaches every verb through one make sdlc passthrough"}
+{"ts":"2026-09-11T13:39:34Z","kind":"decision","grain":"ft-install-force-keeps-what-the-project-owns","entry":"D1","title":"install --force carries the existing project-config block into the new body"}

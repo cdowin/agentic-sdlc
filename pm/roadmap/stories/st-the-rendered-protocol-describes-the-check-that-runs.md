@@ -46,6 +46,6 @@ Patch: the rendered doc's text changes and the step id does not.
 
 ## Out of scope
 
-`bg-the-release-belt-and-the-render-verb-disagree-about-changelog` (open, in the pool). It is the
-neighbouring defect #33 names as "related but not the same" and is not bound here, unless the NEEDS
-YOU list on this milestone's planning report says otherwise.
+`bg-the-release-belt-and-the-render-verb-disagree-about-changelog`, the neighbouring defect #33
+names as "related but not the same". It is bound to this milestone as its own bug and ordered right
+after this feature. It touches the same check, so the same builder should take it next.

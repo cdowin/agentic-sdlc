@@ -21,6 +21,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import run_check  # noqa: E402
 
+from agentic_sdlc.core import markdown
 from agentic_sdlc.core.markdown import non_fenced_lines
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import doc
@@ -319,7 +320,10 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
     REAL = '`pm story reviewing <id>`'  # the seed's story ladder has no review word
 
     def test_a_status_call_wrapped_across_a_line_is_a_FINDING_on_the_line_it_STARTS(self):
-        """THE BROKEN PROBE, #26's own pair: the wrapped half passed."""
+        """THE BROKEN PROBE, #26's own pair: the wrapped half passed. The
+        QUOTED half is the review's m3: inside a blockquote the join read
+        `pm feature > reviewing <id>`, which no status form matches, so the
+        container marker is stripped before the join."""
         with tree(flow=NO_FEATURE_REVIEW) as root:
             self.assertNotIn('reviewing', doc.declared_states()['feature'])
             unwrapped = scan(
@@ -328,7 +332,10 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
             wrapped = scan(
                 root, '# wrapped', '', 'Review is `pm feature',
                 '   reviewing <id>` while the record is written.')
-        for found in (unwrapped, wrapped):
+            quoted = scan(
+                root, '# quoted', '', '> Review is `pm feature',
+                '> reviewing <id>` while the record is written.')
+        for found in (unwrapped, wrapped, quoted):
             self.assertEqual(len(found), 1, found)
             self.assertIn(
                 'DOC.md:3  `pm feature reviewing <id>` names a state '
@@ -338,7 +345,13 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
     def test_a_wrapped_make_target_and_a_wrapped_path_are_read(self):
         """The path and make-target rules shared the hole. A path holds no
         space, so its own span wraps only at an edge; the common miss is a
-        wrapped span BEFORE it, which left its backticks mispaired."""
+        wrapped span BEFORE it, which left its backticks mispaired.
+
+        The join also put PROSE within reach (the review's m4): GNU make's
+        `No rule to make target` wrapped over two lines read as `make target`.
+        An invocation is `make` opening the span or following a shell
+        separator, a command string's quote or a `NAME=value`, so the quote is
+        silent and the three call shapes the old regex read still read."""
         with tree() as root:
             path = root / 'DOC.md'
             (root / 'docs').mkdir()
@@ -352,11 +365,17 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
                 '',
                 'The record lives at `',
                 'docs/also-gone.md`, and the live one at `',
-                'docs/here.md`.'), start=1))
+                'docs/here.md`.',
+                '',
+                'It printed `make: *** No rule to make',
+                "target 'x'.  Stop.` and `cd sub && make",
+                'wombat`, `[verify] story = "make wombat"`',
+                'and `GDK_TIERS=unit make wombat`.'), start=1))
             targets = doc.check_make_targets(path, lines, {'unit'})
             paths = doc.check_backtick_paths(path, lines)
-        self.assertEqual(shown(path, targets),
-                         ['DOC.md:1  unknown make target: `make wombat`'])
+        self.assertEqual(shown(path, targets), [
+            f'DOC.md:{n}  unknown make target: `make wombat`'
+            for n in (1, 12, 13, 14)])
         self.assertEqual(shown(path, paths), [
             'DOC.md:5  dead path: `docs/gone-for-good.md`',
             'DOC.md:7  dead path: `docs/also-gone.md`'])
@@ -376,6 +395,13 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
             'ordered item start': (['a stray ` here', f'2. {self.REAL}'], 1),
             'table row': (['a stray ` here', f'| {self.REAL} | x |'], 1),
             'after a table row': (['| a stray ` cell |', self.REAL], 1),
+            # A blockquote is a container: its marker is stripped before the
+            # join (m3), and a change of quote depth is a break.
+            'one quote (control)': (['> a stray ` here', f'> {self.REAL}'], 0),
+            'into a quote': (['a stray ` here', f'> {self.REAL}'], 1),
+            'out of a quote': (['> a stray ` here', self.REAL], 1),
+            'a deeper quote': (['> a stray ` here', f'> > {self.REAL}'], 1),
+            'a blank quoted line': (['> a stray ` here', '>', f'> {self.REAL}'], 1),
         }
         with tree() as root:
             for name, (body, expected) in cases.items():
@@ -405,13 +431,20 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
     def test_a_backtick_run_pairs_only_with_a_run_of_its_own_width(self):
         """CommonMark's pairing. One backtick at a time was harmless on one
         line; across a paragraph a ``double`` span or a stray ``` shifted every
-        pairing after it and hid the claim — the second line here."""
+        pairing after it and hid the claim — the second line here.
+
+        The per-line reader that paired that way is gone from `core.markdown`
+        (the review's n5): it had no caller, and under the name `code_spans` it
+        was one import away from reopening #26 in the next rule."""
         with tree() as root:
             found = scan(
                 root, 'A ``double `quoted` span`` and a stray ``` run,',
                 f'then {self.REAL} on the next line.')
         self.assertEqual(len(found), 1, found)
         self.assertIn('DOC.md:2  `pm story reviewing <id>`', found[0])
+        self.assertEqual(
+            [name for name in ('code_spans', 'CODE_SPAN')
+             if hasattr(markdown, name)], [])
 
     def test_the_installed_rule_names_no_refused_state_where_feature_review_is_undeclared(self):
         """`st-the-auto-loaded-rule-is-true-at-this-version` criterion 3, and

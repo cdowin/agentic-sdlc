@@ -28,8 +28,11 @@ All of it was improvised git.
 1. **The installed architect brief carries the serial loop** (`installables/architect.md`): one
    builder at a time, directly on the milestone branch; claim → build → `make unit` → commit by
    pathspec → `close story` → … → review → land MAJOR+ → `close feature` → close issues → next.
-   Parallelism is an opt-in the operator names. The same banned-git list binds the orchestrator as
-   binds builders.
+   Parallelism is an opt-in the operator names, and it has ONE mechanism: the dispatch tells the
+   agent to run the kit's `tools/dev/agent-worktree.sh new <slug>` (based on the milestone's
+   declared `branch:`, never a harness's worktree option, which bases on the default branch), commit,
+   merge back into the milestone branch, and `done`. The orchestrator never enters a worktree. The
+   same banned-git list binds the orchestrator as binds builders.
 2. **A git allowlist guard hook** in the `cc-commit-pathspec.sh` family (a PreToolUse Bash guard,
    stdlib, bash-3.2-safe, with a `--self-test` corpus). An agent session may run `git add`,
    `git commit` with paths, `git push` (never to the mainline, as `pre-push` already enforces),

@@ -87,9 +87,10 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 **Builders:**
 
-- never commit: they write, verify their slice, and report, and the orchestrator commits by
-  pathspec. (Only under the parallel opt-in, in their OWN worktree, do they commit once, by explicit
-  pathspec, and report the branch and hash.);
+- in the serial default, never commit: they write, verify their slice, and report, and the
+  orchestrator commits by pathspec. Under the parallel opt-in, they own their worktree end to end:
+  `agent-worktree.sh new`, commit by pathspec, merge into the milestone branch, `agent-worktree.sh
+  done`, and report the merge hash;
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
   HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
@@ -123,8 +124,13 @@ worktrees traded that for merges, worktrees born off the wrong base, a harness t
 `core.hooksPath`, and an orchestrator `git bisect` in a linked worktree that flipped the repo to
 `core.bare = true`. Agents ran about 2.5× in parallel, and the wall clock was dominated by review,
 rework and coordination anyway. **Parallelism is an explicit opt-in** for large features on disjoint
-files, and then each builder gets its own worktree and commits there, and the orchestrator merges
-forward (0.8.0 vehicle D3).
+files, and it has exactly one mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
+harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
+branch, not the milestone's). The AGENT owns the whole loop: `agent-worktree.sh new <slug>` (based
+on the in-progress milestone's declared `branch:`, with the Stop gate's scope marker written), build,
+verify, commit by pathspec, merge its branch into the milestone branch, `agent-worktree.sh done
+<slug>` (which refuses to drop uncommitted or unmerged work). **The orchestrator never enters a
+worktree.** It verifies the merged result on the branch and runs the belts.
 
 **The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
 `checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by

@@ -254,6 +254,16 @@ class TheRouterReaderSeesEveryBranchShape:
     unreadable would pass the corpus alone.
     """
 
+    PROTECTS = (
+        'the router reader either yields the verbs a branch routes or SAYS it '
+        'could not read the branch',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS), and '
+        'it was one of the four hollow gates found at the close of 0.6.0. A '
+        'comparator shape the reader does not know produces no verb and no '
+        'complaint, and the --help census downstream then compares against a '
+        'router it half read',
+    )
+
     CORPUS = tuple((source, unreadable) for source, _, unreadable in _SHAPES)
 
     @staticmethod

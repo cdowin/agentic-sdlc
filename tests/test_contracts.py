@@ -192,6 +192,15 @@ class OnePointerResolver(unittest.TestCase):
     all share — so a fourth verb wiring itself up is covered on arrival.
     """
 
+    PROTECTS = (
+        'every verb taking a pointer refuses an escaping one through the same '
+        'predicate, and no caller hand-rolls a second escape check',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): F1 '
+        'landed a path from outside the checkout verbatim in an append-only '
+        'row, because one verb used the resolver that lacked the check while '
+        'its sibling three files away had one',
+    )
+
     def test_every_escaping_shape_is_refused(self):
         for pointer in ESCAPING:
             with self.subTest(pointer=pointer):

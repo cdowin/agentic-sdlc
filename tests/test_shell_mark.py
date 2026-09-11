@@ -204,6 +204,17 @@ def _census() -> tuple[list[str], list[str]]:
 class Census(unittest.TestCase):
     """What the derivation says about this repo, right now."""
 
+    PROTECTS = (
+        'the derived shell mark over THIS repo is the census it was last '
+        'decided to be, and the support package the derivation reads was '
+        'actually found',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'module that changes sides stops running on three interpreters, or '
+        'starts spawning inside the unit tier, and the tier reports green '
+        'either way. A moved support package empties the spawn set and unmarks '
+        'the whole suite in silence',
+    )
+
     def test_the_module_census_is_what_the_matrix_will_skip(self):
         marked, unmarked = _census()
         self.assertEqual(tuple(unmarked), UNMARKED_MODULES,
@@ -254,6 +265,15 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
     callers unmarked too. A module that already carries the mark cannot hide a
     spawn: it is skipped on three interpreters either way.
     """
+
+    PROTECTS = (
+        'no unmarked module and no support helper starts a process by a '
+        'spelling tests/conftest.py does not read',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'derivation is the only thing deciding the tier, so a hole in it is '
+        'silent by construction — the module simply stops being skipped and '
+        'nothing reports a mark that was never applied',
+    )
 
     def test_no_unmarked_module_spawns_by_a_spelling_the_derivation_skips(self):
         unmarked = [p for p in _modules() if not conftest.module_spawns(p)]

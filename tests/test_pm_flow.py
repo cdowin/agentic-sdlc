@@ -757,6 +757,16 @@ class NoVocabularyLiteralSurvivesOutsideItsHome(unittest.TestCase):
     means. `tests/` is out of scope — its economics are `check budget`'s.
     """
 
+    PROTECTS = (
+        'grain kinds, frontmatter fields and row fields are spelled at their '
+        'constant and nowhere else, so a second spelling is a NameError at '
+        'import',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): '
+        'lessons.FIELDS spelled the durable stamp `at` while every reader keyed '
+        '`ts`, so those rows sorted to the beginning of time and no test could '
+        'see it — neither spelling is wrong to a string',
+    )
+
     CORPUS = (
         (_A_BARE_KIND, True),
         (_A_NAMED_KIND, False),

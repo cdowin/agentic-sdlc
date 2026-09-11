@@ -345,6 +345,15 @@ class TheCensusIsTheRealTree(unittest.TestCase):
 class OneWalk(unittest.TestCase):
     """PRIMITIVE 1 — filesystem enumeration lives in exactly one module."""
 
+    PROTECTS = (
+        'every filesystem enumeration under src/ goes through core/walk.py, so '
+        'no census can reach a number without carrying what it dropped',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'second rglob returns a shorter list, and nothing that RUNS can tell a '
+        'narrowed census from a small tree. Six of them narrowed in silence '
+        'before this existed',
+    )
+
     CORPUS = (
         ("for path in root.rglob('*.py'):\n    pass", True),
         ("names = sorted(root.glob('*.md'))", True),
@@ -387,6 +396,15 @@ class OneWalk(unittest.TestCase):
 
 class OneApply(unittest.TestCase):
     """PRIMITIVE 2 — filesystem mutation lives in exactly one module."""
+
+    PROTECTS = (
+        'every filesystem mutation under src/ goes through core/apply.py, which '
+        'decides the whole plan before it writes any of it',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'writer that decides as it goes lands half a plan when step three '
+        'refuses, which the scaffolder, install-agents and `pm collapse` each '
+        'did, and each left a tree neither before nor after',
+    )
 
     CORPUS = (
         ('target.write_text(payload)', True),
@@ -436,6 +454,15 @@ class OneStorage(unittest.TestCase):
     empty roster is why there is no stale-entry case here — there is no entry
     to go stale.
     """
+
+    PROTECTS = (
+        'frontmatter I/O has exactly one implementation, so the byte-for-byte '
+        'preservation rule 3 promises has one place to be true',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'second parser carries a second set of preservation rules, and the line '
+        'ending or the blank line it drops reads as a clean single-line write '
+        'from outside',
+    )
 
     CORPUS = (
         # A second module-level spelling of the mechanics, by any binding.
@@ -569,6 +596,18 @@ class TheOpenModeIsReadFromTheRightArgument(unittest.TestCase):
     rule 4 calls the cardinal sin.
     """
 
+    PROTECTS = (
+        'the mutation classifier reads an open() mode off the right argument, '
+        'so the one-writer boundary standing on it is graded rather than '
+        'assumed',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): this '
+        'IS the miss that shipped, every p.open(w) under src/ classified as a '
+        'read. Its scratch-file plant and its non-empty open census are '
+        'unduplicated; its OPEN_SPELLINGS loop is now a second scoreboard for '
+        'test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch, which replays '
+        'the same table through the same classifier',
+    )
+
     # Already (planted, must it be caught) — the table this feature generalised.
     CORPUS = OPEN_SPELLINGS
 
@@ -623,6 +662,14 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
     collide. The exception it earns is one file in one mode — not an allowlist
     entry that would also excuse an overwrite, a `mkdir`, or a `write_text`.
     """
+
+    PROTECTS = (
+        'append outside ledger.append_row is a finding, and the exception it '
+        'earns is one file in one mode rather than an allowlist entry',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'read-modify-write of the ledger drops rows when two appenders collide, '
+        'and the file it leaves behind is well-formed and short',
+    )
 
     # Graded AS the ledger, so every case asks what the exception admits.
     # Append is what it was granted for; an overwrite there rewrites the bytes
@@ -789,6 +836,14 @@ class WalkHasNoLength(unittest.TestCase):
     around it is a build break too. The counting API is `Walk.census(label)`,
     which renders the number and the disclosures as ONE string.
     """
+
+    PROTECTS = (
+        'no caller can reach a census number without the narrowings that '
+        'produced it: Walk.__len__ raises, and len(x.kept) is a build break too',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS) '
+        'expressed as a TypeError one layer below the gates, which is the '
+        'cheapest place it can be expressed at all',
+    )
 
     CORPUS = (
         ('total = len(found.kept)', True),
@@ -1034,6 +1089,14 @@ def _unguarded_collection_sites(rel: str, tree: ast.Module) -> list[str]:
 class ConfigGoesThroughTheGuards(unittest.TestCase):
     """PRIMITIVE 3 — every config VALUE crosses `core/config.py` on its way in."""
 
+    PROTECTS = (
+        'every config VALUE crosses core/config.py on its way in, so no gate '
+        'builds its population out of a raw lookup',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'bare string is iterable, so tuple(cfg.get(...)) yields characters and '
+        'the gate configured from it scans nothing while reporting a clean run',
+    )
+
     # Graded as a module that is NOT on the allowlist, which is what every
     # module written after this one is.
     CORPUS = (
@@ -1120,6 +1183,15 @@ class NoImportIsDead(unittest.TestCase):
     keeps them unquoted) or in `__all__` (the `__init__.py` re-export form).
     """
 
+    PROTECTS = (
+        'an import nobody reads is deleted, so the import block of a module is '
+        'a true list of what it depends on',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'dead import changes no behaviour by construction, so no behaviour test '
+        'can ever see one. Eight dead load_config imports survived an '
+        'extraction and left the claim that those modules read config',
+    )
+
     CORPUS = (
         ('import os', True),
         ('from agentic_sdlc.core.config import str_tuple', True),
@@ -1171,6 +1243,15 @@ class LayersPointDownward(unittest.TestCase):
     """PRIMITIVE 4b — core/ -> repo/ -> cli.py, downward only. An upward
     import is the architecture running backwards, however locally
     convenient."""
+
+    PROTECTS = (
+        'core/ -> repo/ -> cli.py, downward only, so core never learns what a '
+        'grain family is',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): an '
+        'upward import runs perfectly until it cycles, so the architecture is '
+        'invisible to anything that executes and visible only to a reader of '
+        'the imports',
+    )
 
     CORPUS = (
         ('from agentic_sdlc.repo import emit', True),
@@ -1264,6 +1345,18 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
     callable — and that is asserted rather than reviewed, because the change
     that would break it is one line long and reads as a convenience.
     """
+
+    PROTECTS = (
+        'the emit path opens a sink, appends and closes: it spawns nothing, '
+        'imports nothing named in config, and resolves no config string to a '
+        'callable',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): rule '
+        '2 is what lets a caller run any verb from a git hook, and the moment '
+        'one verb spawns, no caller can tell which ones are safe. Its '
+        'EMIT_EXECUTION_SPELLINGS loop is a second scoreboard for '
+        'test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch; the offender '
+        'list over the shipped module in the same case is not',
+    )
 
     CORPUS = EMIT_EXECUTION_SPELLINGS
 
@@ -1490,6 +1583,16 @@ class EveryEventFieldIsDerived(unittest.TestCase):
     thinks. The same shape as the breadcrumb's guard: assert the TRACE, not the
     sentence, because a hardcoded next-step passes every substring check."""
 
+    PROTECTS = (
+        'a minted payload carries what the tree said and never what the tool '
+        'decided, asserted against the TRACE rather than against the sentence',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): this '
+        'is the 0.5.0 incident itself. The reader walked ast.Return in a '
+        'function whose only return is a bare name, so a planted field was '
+        'invisible while the guard reported 4-of-4 and the count went to the '
+        'orchestrator as proof',
+    )
+
     # The table above says WHICH words a minter wrote; the corpus asks the one
     # question a blind reader fails — did it see anything at all.
     CORPUS = tuple((source, bool(expected))
@@ -1578,6 +1681,14 @@ def module_level_config_reads(path: Path) -> list[str]:
 
 class ConfigIsReadPerRunNeverAtImport(unittest.TestCase):
     """PRIMITIVE 6b — nothing binds a config value while it is being imported."""
+
+    PROTECTS = (
+        'no module binds a config value while it is being imported, so the '
+        'exit-2 contract is true every run rather than the first one',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'value bound at import belongs to whichever repo imported the module '
+        'first, and a malformed section in any later one silently stops raising',
+    )
 
     CORPUS = (
         ("SCOPE = config_section('doc')", True),
@@ -1673,6 +1784,15 @@ class NoCodePathParsesAVersion(unittest.TestCase):
     This is a source-shaped gate because the behaviour it protects is an
     ABSENCE, and an absence has no call site to assert against.
     """
+
+    PROTECTS = (
+        'order is a declared list, and no module turns a version string into '
+        'something ordered or numeric',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS), and '
+        'the guard argues it itself: the behaviour protected is an ABSENCE and '
+        'an absence has no call site to assert against. A comparator creeping '
+        'back sorts 0.90.3.2 wrong rather than raising',
+    )
 
     CORPUS = (
         ('import packaging', True),
@@ -1844,6 +1964,15 @@ class TheDocstringAndTheDescriptionNameOneProject(unittest.TestCase):
     and its scope is markdown, while a docstring is prose making a claim about
     what the package IS from inside a `.py` file. Nothing was pointed at it.
     """
+
+    PROTECTS = (
+        'the package describes itself with the same sentence in pyproject.toml '
+        'and in its own top-level docstring',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS) on the '
+        'read side: the sentence was wrong for four releases because check doc '
+        'grades markdown, and a docstring is a claim about what this package IS '
+        'made from inside a .py file that nothing was pointed at',
+    )
 
     # This reader takes TWO strings, so a planted case is the pair. The gate
     # replaying it hands `catches` whatever the guard put here and reads
@@ -2180,6 +2309,16 @@ class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
     syntactic and total: a `git` spawn either names a directory that is not this
     checkout, or it is a finding by `file:line`.
     """
+
+    PROTECTS = (
+        'every git spawn in this suite names a directory that is not this '
+        'checkout',
+        'load-bearing — sin 2 (a write that looks legitimate and is not), '
+        'turned on the suite rather than on the tool: a test that commits into '
+        'this checkout leaves a tree that looks like work somebody did. The '
+        'assertion is syntactic and total by file:line rather than the hope '
+        'that no test corrupts the repo',
+    )
 
     # `[[]]` is one git call with nothing against it — a CLEAN case that is
     # not an empty result, which is why "caught" is the guard's own word here

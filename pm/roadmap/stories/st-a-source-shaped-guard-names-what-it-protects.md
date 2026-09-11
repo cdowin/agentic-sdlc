@@ -7,7 +7,7 @@ name: a source-shaped guard names what it protects
 status: planning
 owner:
 depends_on: []
-changelog:
+changelog: none
 ---
 
 # a source-shaped guard names what it protects
@@ -125,3 +125,48 @@ The prose ceiling — `st-the-tests-ceiling-is-declared-and-argued`. A coverage 
 
 Probe rows. ~330 lifetime probe rows against 1,253 static cases is a real finding in the research and
 it belongs to a milestone that plans it, not to a roster story.
+
+## Close
+
+THE MECHANISM: a third declared attribute, `PROTECTS = (the property, the judgement)`, read off the
+class body by the same `_assigned` scan that finds `CORPUS` — no import, no second parse. **Against
+the class docstring's first line:** every guard already has one, so that rule would have had an empty
+offender list on the day it was written and would keep having one as new guards arrive with ordinary
+prose — a gate nobody can fail, inside the module that exists because an empty offender list is also
+what a reader that stopped reading produces. One of the thirteen does not even have a docstring
+(`test_prose_census.py::test_comments_and_docstrings_are_under_a_third_of_the_code`). A name is a
+decision; and a string assignment is CODE to the prose census, where 22 paragraphs of docstring would
+not have been. The argument is in `tests/test_guard_corpus.py`'s module docstring, where the next
+author stands. Its cost, per gotcha 1: the contract is three names wide now, and a bare FUNCTION can
+satisfy none of them — not a new exemption but the finding `_guards` already records about `CORPUS`,
+and all 13 are already named on `UNCOVERED`.
+
+THE ASK: `shaped_roster()` — one call, 35 AST-shaped guards with `.protects`, derived from source.
+
+THE JUDGEMENT, all 35 in the tree rather than here: 22 classes carry it in `PROTECTS`; the 13 bare
+functions carry it in a comment beside their `UNCOVERED` line, because that is the only place a bare
+function has. Verdict: **35 load-bearing, 0 wholly second scoreboards** — 28 against sin 1 (a gate
+that misses drift and prints PASS), 6 against sin 2 (a write that looks legitimate and is not), 1
+load-bearing inverted (the ceiling-is-not-a-growth-gate case). 17/5 of the 22 classes, 11/1/1 of the
+13 functions. The honest finding is one level down:
+**two CASES are second scoreboards now**, both named in their own `PROTECTS` —
+`test_boundaries.py::TheOpenModeIsReadFromTheRightArgument::test_every_spelling_of_open_is_classified_by_its_real_mode`
+and `TheToolEmitsAndNeverExecutes::test_the_emit_path_resolves_no_string_to_a_callable` each loop the
+guard's own `CORPUS` through the guard's own `catches`, which is exactly what
+`test_every_declared_corpus_is_replayed_case_by_case` does over the same table. They are the only two
+whose `CORPUS` is a named constant, so the search was total. Recorded, not deleted (gotcha 5).
+
+THE STALE COUNT: "56 modules, 30 AST-shaped guards, 155 replayed cases" → the reader says **59, 35,
+202**. Corrected, dated, and declared unmaintained: the refresh is not the fix, because the quote had
+gone stale by 3 modules and 5 guards in four days. Floors unmoved at 30/20/40.
+
+NOT MET / DEFERRED: criterion 7 is the census story's verb, as planned — the reader's own numbers,
+for that story to single-source, are 12 AST-shaped modules / **8,302 lines / 22.9% of 36,265 in 59
+`test_*.py`** at the commit before this one (the brief's 7,781 / 35,434 / 22% / 57 was a 2026-09-10
+reading; `test_*.py`, not all 62 `.py`, is the population `_modules()` globs). Criterion 8: the
+population's limits are unchanged — the nine planted edges still classify as before; what widened is
+the CONTRACT, which is criterion 3. Criterion 9: unit 9.7s of 20s, `_roster()` still read once per
+session, and the declaration is read in the same walk. Zero new collected cases (131 before, 131
+after across the seven modules): `[tests] cases` is at 1575 of 1575 and `devkit.toml` belongs to
+another story this session, so the third declaration had to fit inside the existing case — it does,
+as three assertions over one roster read.

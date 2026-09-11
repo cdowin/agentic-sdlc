@@ -300,7 +300,7 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     print('  1. Add `pm` to the gate roster your per-change set runs:')
     print()
     print('       [checks]')
-    print('       all = ["doc", "shell", "pm"]')
+    print('       all = ["doc", "shell", "grain-shape", "pm"]')
     print()
     print('  2. Declare any schema differences in devkit.toml (all optional):')
     print()
@@ -320,7 +320,8 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         print(f'       {line}')
     print()
     print('  4. Keep your OWN vocabulary local — what a milestone means here, which')
-    print('     surfaces exist, who reviews what. The two installed files carry only')
+    print(f'     surfaces exist, who reviews what. The {len(GUIDANCE_PLAN)} installed '
+          'files carry only')
     print('     what the CLI enforces and explains.')
     return 0
 

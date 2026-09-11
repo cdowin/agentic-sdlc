@@ -22,6 +22,11 @@ TRAILER_RE='^Co-Authored-By: Claude.*<noreply@anthropic\.com>'
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------
 
+# A header carried from an older install may lack a key: it runs at its stock value.
+declare -p TRAILER >/dev/null 2>&1 || TRAILER="Co-Authored-By: Claude <noreply@anthropic.com>"
+declare -p TRAILER_RE >/dev/null 2>&1 || TRAILER_RE='^Co-Authored-By: Claude.*<noreply@anthropic\.com>'
+declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
+
 # Inline, not sourced: a library the repo may lack would fail the hook.
 is_agent_context() {
 	local root

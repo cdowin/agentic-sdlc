@@ -606,9 +606,9 @@ def lacking_names(existing: str, body: str) -> list[str]:
     """Each name the packaged block declares and `existing`'s block does not,
     spelled `NAME=` or `key:`, in the packaged block's order.
 
-    A READ for the kept line, never a merge: a hook reads its header under
-    `set -u` behind a fail-open trap, so a stock variable a new version adds
-    and a carried old block lacks turns the guard off in silence (rule 11).
+    A READ for the kept line, never a merge: a hook body defaults a key its
+    header lacks to the stock value (review R1), so the hook then runs a value
+    the project's own header does not state — named, never silent (rule 11).
     """
     mine, theirs = _locate(existing), _locate(body)
     if mine is None or theirs is None or mine[0] != theirs[0]:

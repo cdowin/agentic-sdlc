@@ -819,8 +819,10 @@ def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
     _movable(cfg, vocabulary.GRAIN_STORY, to)
     story = inventory.story_grain(cfg, sid)
     if story is None:
-        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid,
-                          'expected <milestone>/<feature-slug>/<story-slug>')
+        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid, 'expected ' + (
+            inventory.mint_id(vocabulary.GRAIN_STORY, '<slug>')
+            if inventory.is_pooled(cfg)
+            else '<milestone>/<feature-slug>/<story-slug>'))
     cur = _was(story)
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
@@ -2117,11 +2119,11 @@ def _name_words(kind: str, words: list[str]) -> str:
     return name
 
 
-def _name_required(kind: str, gid: str, typed: str) -> 'Usage':
+def _name_required(kind: str, gid: str, *typed: str) -> 'Usage':
     """The refusal for a CREATE with no name, leading with the ARGUMENT that
     was omitted: *"feature 'x' does not exist yet"* read as *this grain is
     missing from your tree* and sent readers looking for a lost file."""
-    create = vehicle.command('pm', 'new', kind, typed, vehicle.Slot(NAME_ARG))
+    create = vehicle.command('pm', 'new', kind, *typed, vehicle.Slot(NAME_ARG))
     return Usage(f'{NAME_ARG} is required: `{create}`. Nothing in this tree '
                  f'declares {gid!r}, so this '
                  f'call CREATES a {kind} rather than filling the missing slots '
@@ -2172,7 +2174,7 @@ def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             raise Usage(f'no milestone resolves from {mid!r}')
         fid, found = _claim(cfg, vocabulary.GRAIN_FEATURE, slug, mid)
         if found is None and not name:
-            raise _name_required(vocabulary.GRAIN_FEATURE, fid, f'{mid} {slug}')
+            raise _name_required(vocabulary.GRAIN_FEATURE, fid, mid, slug)
         target = (found.path if found is not None
                   else _mint_path(cfg, vocabulary.GRAIN_FEATURE, fid, name, mid))
         name = name or found.field(vocabulary.FIELD_NAME)

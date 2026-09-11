@@ -33,6 +33,7 @@ from support.pm import tree
 
 
 from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import cli, inventory, templates, vocabulary
 
 LEGACY_LOG = '# legacy log\n\nM1 said something.\n'
@@ -611,6 +612,13 @@ class TheMintedIdIsThePrefixAndTheSlug(unittest.TestCase):
                     self.assertIn('is required', out)
                     self.assertNotIn('does not exist yet', out)
                     self.assertNotIn('needs a name', out)
+                    # Review R3: the words held while the printed command did
+                    # not run — the feature's parent and slug went out as ONE
+                    # quoted argument. The argv it hands the verb is the proof.
+                    printed = out.split(f'{cli.NAME_ARG} is required: `', 1)[1]
+                    self.assertEqual(
+                        vehicle.argv_of(printed.split('`', 1)[0]),
+                        ['pm', *argv, cli.NAME_ARG], out)
 
     def test_the_help_marks_the_name_required_on_every_create(self):
         # Rule 11's read side: the synopsis showed `[<name...>]` while the verb

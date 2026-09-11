@@ -28,6 +28,15 @@ FALLBACK_BASE=""
 PM_CMD=(make -s pm)
 # -----------------------------------------------------------------------------
 
+# A header carried from an older install may lack a key: it runs at its stock value.
+declare -p WORKTREE_PARENT >/dev/null 2>&1 || WORKTREE_PARENT=".claude/worktrees"
+declare -p BRANCH_PREFIX >/dev/null 2>&1 || BRANCH_PREFIX="feat/"
+declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
+declare -p WARM_DIRS >/dev/null 2>&1 || WARM_DIRS=()
+declare -p WARM_SIDECAR_GLOB >/dev/null 2>&1 || WARM_SIDECAR_GLOB=""
+declare -p FALLBACK_BASE >/dev/null 2>&1 || FALLBACK_BASE=""
+declare -p PM_CMD >/dev/null 2>&1 || PM_CMD=(make -s pm)
+
 # An empty FALLBACK_BASE is READ from the remote's HEAD, never guessed. A remote
 # with no HEAD (a `git remote add`, not a clone) leaves the name `origin/HEAD`,
 # which `new` then refuses by name.

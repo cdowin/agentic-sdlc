@@ -1810,9 +1810,9 @@ def without_declaration(text: str, opens: str) -> str:
 
 
 def test_a_kept_header_names_each_packaged_name_it_lacks():
-    """A hook reads its header under `set -u` behind a fail-open trap, so a
-    stock variable a new version adds and a carried old block lacks turns
-    the guard off with nothing said. The carry stays bytes (D1): the kept
+    """A hook body defaults a key its carried header lacks to the stock value
+    (review R1), so the hook runs a value the project's header does not
+    state. The carry stays bytes (D1): the kept
     line NAMES what is missing (rule 11) and splices nothing in.
 
     Both grammars, both kept lines: a hook under --force (`NAME=`), and the

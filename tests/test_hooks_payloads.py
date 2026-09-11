@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -459,17 +460,91 @@ def test_pre_push_does_not_gate_a_tag_only_push(tmp_path):
     assert done.returncode == 0, done.stderr
 
 
+# --- a header carried from an older install still runs (review R1) -----------
+# The v0.4.0 `prepare-commit-msg` header, byte for byte: it has no `TRAILER_RE=`.
+V040_PREPARE_HEADER = (
+    "# --- project config (yours to edit after install — the file is your "
+    "repo's) --\n"
+    '# The trailer; keep it in step with the model line your agent prompts '
+    'name.\n'
+    'TRAILER="Co-Authored-By: Claude <noreply@anthropic.com>"\n'
+    '# The per-agent worktree marker written by tools/dev/agent-worktree.sh.\n'
+    'SCOPE_MARKER=".agent-scope"\n'
+    '# ' + '-' * 77 + '\n')
+ASSIGNMENT = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=(\(?)')
+DEFAULTED = re.compile(r'^declare -p ([A-Za-z_][A-Za-z0-9_]*) >/dev/null 2>&1 \|\| ')
+# Every installed file whose packaged header declares a key its body reads.
+HEADERED = tuple(
+    (name, rel) for name, rel in install.PLANS['install-hooks']
+    if (span := install.config_block_span(install.body_of(name)))
+    and any(ASSIGNMENT.match(line) for line in
+            install.body_of(name).splitlines()[span[0]:span[1]]))
+
+
+def _settled(text: str, names: list[str], defaulted: bool) -> str:
+    """`declare -p` of `names` once `text` has run through its header's close,
+    or through its last stock default."""
+    lines = text.splitlines()
+    upto = (max(n for n, line in enumerate(lines) if DEFAULTED.match(line))
+            if defaulted else install.config_block_span(text)[1]) + 1
+    script = '\n'.join(lines[:upto] + ['declare -p ' + ' '.join(names)])
+    return subprocess.run(['bash', '-c', script], capture_output=True, text=True,
+                          env=CLEAN_ENV).stdout
+
+
+def test_the_census_of_headered_hooks_is_the_six_that_read_a_key():
+    assert [rel for _name, rel in HEADERED] == [
+        STOP_GATE, LEDGER_SUBAGENT, LEDGER_SESSION, 'tools/hooks/pre-push',
+        'tools/hooks/prepare-commit-msg', WORKTREE]
+
+
+@pytest.mark.parametrize('name,rel', HEADERED, ids=[rel for _n, rel in HEADERED])
+def test_a_header_lacking_a_key_runs_the_body_on_its_stock_value(name, rel):
+    """Review R1: `--force` carries an older header byte for byte (D1), and a
+    body reading a key that header lacks aborted under `set -u`. The body
+    defaults every key: with NO key in the header each settles at the packaged
+    header's value, and a key the header sets — emptied, here — stays set."""
+    body = install.body_of(name)
+    lines = body.splitlines(keepends=True)
+    start, end = install.config_block_span(body)
+    names = [m.group(1) for line in lines[start:end]
+             if (m := ASSIGNMENT.match(line))]
+    assert [m.group(1) for line in lines if (m := DEFAULTED.match(line))] == names
+
+    def carried(swap) -> str:
+        return install.carry_config_block(''.join(
+            line if (m := ASSIGNMENT.match(line)) is None else swap(m)
+            for line in lines[:end + 1]), body)
+    stock = _settled(body, names, defaulted=False)
+    assert stock.count('declare ') == len(names), stock
+    assert _settled(carried(lambda m: ''), names, defaulted=True) == stock
+    emptied = carried(lambda m: m.group(1) + ('=()\n' if m.group(2) else "=''\n"))
+    kept = _settled(emptied, names, defaulted=True)
+    assert kept == _settled(emptied, names, defaulted=False) != stock, kept
+
+
 # --- prepare-commit-msg: agents stamped, the human never -----------------------
 def last_message(root: Path) -> str:
     return git(root, 'log', '-1', '--format=%B').stdout
 
 
 def test_prepare_commit_msg_stamps_agent_commits(tmp_path):
+    """The second commit is review R1's walk: `install-hooks --force` carries
+    a v0.4.0 header, which declares no `TRAILER_RE=`, and the body read it
+    under `set -eu` — `TRAILER_RE: unbound variable`, every agent commit
+    aborted."""
     root = corpus_repo(tmp_path)
     (root / MARKER).write_text('branch=feat/x\nbase=main\n', encoding='utf-8')
     assert git(root, 'commit', '-q', '--allow-empty',
                '-m', 'feat: x').returncode == 0
     assert 'Co-Authored-By: Claude' in last_message(root)
+    hook = root / 'tools/hooks/prepare-commit-msg'
+    hook.write_text(install.carry_config_block(
+        V040_PREPARE_HEADER, hook.read_text(encoding='utf-8')),
+        encoding='utf-8')
+    committed = git(root, 'commit', '-q', '--allow-empty', '-m', 'feat: y')
+    assert committed.returncode == 0, committed.stderr
+    assert last_message(root).count('Co-Authored-By: Claude') == 1
 
 
 def test_prepare_commit_msg_never_stamps_the_trunk(tmp_path):

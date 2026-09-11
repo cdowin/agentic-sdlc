@@ -396,7 +396,14 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
                 'It printed `make: *** No rule to make',
                 "target 'x'.  Stop.` and `cd sub && make",
                 'wombat`, `[verify] story = "make wombat"`',
-                'and `GDK_TIERS=unit make wombat`.'), start=1))
+                'and `GDK_TIERS=unit make wombat`.',
+                # Review R4: the m4 anchor dropped a make behind a wrapper
+                # word, which v0.7.0 read — a PASS over drift. One per line.
+                '`time make wombat`', '`sudo -u root make wombat`',
+                '`nice -n 5 make wombat`', '`env -i FOO=1 make wombat`',
+                '`command make wombat`', '`exec make wombat`',
+                '(`nohup make wombat &`)',
+                'but `time to make target` is prose.'), start=1))
             targets = doc.check_make_targets(path, lines, {'unit'})
             paths = doc.check_backtick_paths(path, lines)
             # Review N11: a vehicle target the include lacks is one stale
@@ -410,7 +417,7 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
                       stale[0])
         self.assertEqual(shown(path, targets), [
             f'DOC.md:{n}  unknown make target: `make wombat`'
-            for n in (1, 12, 13, 14)])
+            for n in (1, 12, 13, 14, *range(15, 22))])
         self.assertEqual(shown(path, paths), [
             'DOC.md:5  dead path: `docs/gone-for-good.md`',
             'DOC.md:7  dead path: `docs/also-gone.md`'])

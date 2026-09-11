@@ -2438,6 +2438,9 @@ class DamagedFrontmatter(unittest.TestCase):
                     # thing hunted for.
                     self.assertIn('pm/roadmap/stories/s0.md', out)
                     self.assertIn('declares no `id:`', out)
+                    # Review R8: the hint named the 0.4.0 nested id shape on
+                    # a pooled tree, whose stories are minted `st-<slug>`.
+                    self.assertIn('(expected st-<slug>)', out)
 
     def test_a_damaged_grain_is_never_quietly_accepted(self):
         # Lenient DETECTION must not become a lenient PARSER. A BOM'd file is a

@@ -39,9 +39,14 @@ SKILL_FILENAME = 'SKILL.md'
 
 MD_LINK = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
 # `make` opening the span or a command (`;&|(`, a quote, `$ `, `X=y `): read
-# anywhere, a wrapped `No rule to make target` read as `make target`.
+# anywhere, a wrapped `No rule to make target` read as `make target`. A
+# wrapper word and its flags (`sudo -u root`, `nice -n 5`) may stand between
+# the two, as v0.7.0 read them (review R4).
+_MAKE_WRAPPER = (r'(?:time|sudo|nice|env|command|exec|nohup)'
+                 r'(?:\s+-\S+(?:\s+\w+)?)*')
 MAKE_INVOCATION = re.compile(
-    r'(?:^|[;&|(`"\'$])\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*'
+    r'(?:^|[;&|(`"\'$])\s*'
+    r'(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|' + _MAKE_WRAPPER + r')\s+)*'
     r'make\s+([a-zA-Z][a-zA-Z0-9_-]*)')
 PATH_CANDIDATE = re.compile(r'^[A-Za-z0-9_./-]+\.(gd|tscn|tres|py|sh|md)$')
 PLACEHOLDER_CHARS = ('<', '>', '*', '$')

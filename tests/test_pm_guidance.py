@@ -264,6 +264,13 @@ class Guidance(unittest.TestCase):
                 code, out = run_cli(root, 'init')
                 self.assertEqual(code, 0, out)
                 self.assertIn('wrote the flow into devkit.toml', out)
+                # Review R6: the printed roster dropped the stock
+                # `grain-shape`, and the count said two files for three.
+                from agentic_sdlc.cli import stock_roster
+                roster = ', '.join(f'"{g}"' for g in (*stock_roster(), 'pm'))
+                self.assertIn(f'all = [{roster}]', out)
+                self.assertIn(
+                    f'The {len(skills.GUIDANCE_PLAN)} installed files', out)
                 config = (root / 'devkit.toml').read_text(encoding='utf-8')
                 self.assertTrue(config.endswith(vocabulary.render_seed()), config)
                 # The flow init tells the user to run must actually work.

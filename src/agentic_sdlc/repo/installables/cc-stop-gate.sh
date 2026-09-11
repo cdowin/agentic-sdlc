@@ -21,6 +21,13 @@ DEFAULT_BASE=""
 SCOPE_MARKER=".agent-scope"
 # -----------------------------------------------------------------------------
 
+# A header carried from an older install may lack a key: it runs at its stock value.
+declare -p GATE_STATIC >/dev/null 2>&1 || GATE_STATIC=(make check)
+declare -p GATE_UNIT >/dev/null 2>&1 || GATE_UNIT=(make unit)
+declare -p UNIT_SLICE_ROOT >/dev/null 2>&1 || UNIT_SLICE_ROOT="tests/unit"
+declare -p DEFAULT_BASE >/dev/null 2>&1 || DEFAULT_BASE=""
+declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
+
 # Inline, not sourced: a library the repo may lack would fail the hook.
 is_agent_context() {
 	local root="${1:-}"

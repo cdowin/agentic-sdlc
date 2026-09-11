@@ -120,6 +120,11 @@ class Grain:
         an absence (rule 4)."""
         return key in frontmatter.document(self.path).fields
 
+    @property
+    def text(self) -> str:
+        """The whole document, byte-exact, off the one cached read."""
+        return frontmatter.document(self.path).text
+
     def sequence_defect(self, key: str) -> str:
         """Why this grain's block list under `key` cannot be rewritten, or ''."""
         return frontmatter.sequence_defect(self.path, key)
@@ -1385,6 +1390,11 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
     return used
 
 
+# What a skipped row names, for U1 and `pm init` both (the 0.8.0 review's M1).
+UNPLACED_ID = ('an id no grain in the tree declares (retired, or renamed: '
+               '`pm rename` does not rewrite the ledger)')
+
+
 @dataclass(frozen=True)
 class StateHistory:
     """Which DECLARED states the tree has held: now, or on a ledger row.
@@ -1394,14 +1404,15 @@ class StateHistory:
     bugs and was told `fixed never held` beside four `"from":"fixed"` rows
     (#30). This adds what the rows SAY and nothing they do not: a `status`
     row's `from`/`to` and a `disposition` row's `state`, for the kind of the
-    grain the row names. That kind is read off the grain index, so a row whose
-    grain is no longer in the tree cannot be placed and is SKIPPED — counted
-    here, never dropped silently (rule 4), and so is a ledger that will not read.
+    grain the row names. That kind is read off the grain index, so a row naming
+    an id no grain declares (retired, or renamed) cannot be placed and is
+    SKIPPED — counted here, never dropped silently (rule 4), and so is a ledger
+    that will not read.
     """
 
     usage: dict[str, dict[str, int]]    # `state_usage`: current holders
     named: dict[str, frozenset[str]]    # declared states a ledger row names
-    skipped: int = 0                   # of those, naming no grain in the tree
+    skipped: int = 0                   # of those, naming an id no grain declares
     unreadable: tuple[str, ...] = ()    # ledgers that would not parse
 
     def held(self, kind: str) -> list[str]:

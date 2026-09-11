@@ -313,12 +313,20 @@ class Guidance(unittest.TestCase):
                      if ln.startswith('  story ')]
             self.assertIn('this tree uses 1 (ready)', story[0])
             # #30: a state a ledger row shows was held is not "never held".
+            self.assertNotIn('it could place', out)
             put_ledger(root, status_line('2026-09-01T00:00:00Z', '0.1/alpha/s0',
-                                         'planning', 'ready'))
+                                         'planning', 'ready'),
+                       # An id no grain declares — retired, or renamed (M1).
+                       status_line('2026-09-02T00:00:00Z', 'st-gone',
+                                   'planning', 'ready'))
             code, out = run_cli(root, 'init')
             self.assertEqual(code, 0, out)
             self.assertIn('story      declares 5; this tree uses 2 '
                           '(planning, ready)', out)
+            self.assertIn('status and disposition rows it could place.', out)
+            self.assertIn('1 ledger row(s) name an id no grain in the tree '
+                          'declares (retired, or renamed: `pm rename` does not '
+                          'rewrite the ledger) and were skipped.', out)
 
     def test_the_ladder_says_a_kind_has_no_grains_rather_than_all_unused(self):
         """Review P3: `U1` skips a kind with no grains because "every state

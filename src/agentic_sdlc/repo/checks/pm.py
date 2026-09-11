@@ -41,8 +41,9 @@ WARN (a line, never the exit code; both grains and both categories named):
   D6  a milestone in `todo` whose features are all `done`
   U1  a DECLARED state no grain of that kind holds now AND no ledger `status`
       (`from`/`to`) or `disposition` (`state`) row names — ONE line for every
-      kind, each naming those states beside its count held; a row whose grain
-      is no longer in the tree has no kind to read and is skipped, counted
+      kind, each naming those states beside its count held; a row naming an id
+      no grain declares (retired, or renamed — `pm rename` does not rewrite the
+      ledger) has no kind to read and is skipped, counted
   U2  the ledger couriers are wired in `.claude/settings.json` and the tree holds
       no row at all — recording that goes nowhere, which is silent by construction
   U3  `[emit]` is DECLARED and its sink has never been written to. A tree that
@@ -62,6 +63,14 @@ WARN (a line, never the exit code; both grains and both categories named):
          `pm new handoff <id>` is the fix. A CLOSED grain's gaps are COUNTED on
          one line rather than named: its criterion is nobody's next action, and
          that was 45 of this repo's 57 warnings
+  CLOSE  a close the tree is ready for, asked through the belts' own checks
+         and never gated by `[pm] checks`: one counted line per case, naming
+         the grains and the next command — stories whose `done:` line
+         evidence-written accepts, not in `done` (`close story`); `in_progress`
+         features over all-`done` stories with no review record (the review,
+         then `pm set <id> reviewed <path>`); features whose record
+         review-recorded and findings-landed accept (`close feature`). `pm
+         status` marks the same features inline
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
 INTEGRITY (each FAILs, naming the path; `pm validate` asks the same questions):
   V1  frontmatter is well-formed — every document declares an `id:` and a
@@ -190,6 +199,7 @@ def _run() -> int:
 
     _unreached_self(cfg, enabled, seen, report, ready)
     ready.report()
+    _close_ready_findings(cfg, warn)
     _containment(cfg, enabled, report)
     _changelog_answered(cfg, enabled, warn)
     _unbound_rows(cfg, enabled, report, warn)
@@ -454,6 +464,101 @@ def _drift_walk(cfg: vocabulary.PmConfig, enabled: set[str], found_milestones,
     return n_features, n_stories, seen
 
 
+class CloseReady(NamedTuple):
+    """The closes the tree is READY for, each read through the belt's own
+    check, so this and the belt cannot disagree. `(id, status)` pairs."""
+
+    stories: list[tuple[str, str]]      # evidence-written, not in `done`
+    unreviewed: list[tuple[str, str]]   # in_progress, stories done, no record
+    closable: list[tuple[str, str]]     # stories done, record read, findings landed
+
+
+def close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
+    """`bg-a-close-the-tree-is-ready-for-is-named-by-nothing`. A belt prints
+    its `next:` lines only when it is run, so one that is never run tells
+    nobody anything — 15 stories carried a `done:` line and 0 were `done`.
+
+    Nothing here is a second grammar: `review-recorded` and `findings-landed`
+    are the belts' own check functions, asked with the context the belt would
+    build; `evidence-written` is its own grammar, `steps.evidence_in`, handed
+    the text off this gate's single read; and `stories-done` is `pm ready-for
+    feature`'s two reads, `story_grains` and `holds`, which
+    `inventory.feature_view` composes (the verb itself prints and emits
+    `rung.enter`, so a gate cannot call it). An UNVERIFIABLE answer is no
+    answer: it lands in no list. Its own read scope, for `pm status`.
+    """
+    with inventory.reading_tree():
+        return _close_ready(cfg)
+
+
+def _close_ready(cfg: vocabulary.PmConfig) -> CloseReady:
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo.conveyor import steps as belt
+
+    def answer(check, operation: str, gid: str) -> 'driver.Answer':
+        return driver.ask(driver.Check(check.__name__, check),
+                          driver.Context(root=cfg.root, operation=operation,
+                                         version=gid))
+
+    ready = CloseReady([], [], [])
+    for story in inventory.every_grain(cfg, vocabulary.GRAIN_STORY):
+        status = story.field(vocabulary.FIELD_STATUS)
+        if not story.gid or vocabulary.category_of(
+                cfg, vocabulary.GRAIN_STORY, status) == vocabulary.DONE_CATEGORY:
+            continue
+        try:
+            text = story.text
+        except (OSError, UnicodeDecodeError):
+            continue    # unreadable is no answer; V1 is that finding's owner
+        if belt.evidence_in(cfg.rel(story.path), text).is_true:
+            ready.stories.append((story.gid, status))
+    for feature in inventory.every_grain(cfg, vocabulary.GRAIN_FEATURE):
+        view = inventory.feature_view(cfg, feature)
+        category = vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE,
+                                          view.status)
+        if (not view.fid or category in (None, vocabulary.DONE_CATEGORY)
+                or view.done_n != view.total):
+            continue
+        recorded = answer(belt.check_review_recorded, driver.OP_FEATURE,
+                          view.fid)
+        if recorded.truth is driver.Truth.FALSE:
+            if category == vocabulary.IN_PROGRESS:
+                ready.unreviewed.append((view.fid, view.status))
+        elif recorded.is_true and answer(belt.check_findings_landed,
+                                         driver.OP_FEATURE, view.fid).is_true:
+            ready.closable.append((view.fid, view.status))
+    return ready
+
+
+def _close_ready_findings(cfg: vocabulary.PmConfig, warn) -> None:
+    """CLOSE — one counted line per ready close, naming the grains and the ONE
+    next command, the handoff WARN's shape. Never the exit code, and never
+    gated by `[pm] checks`: a belt is not a rule, and READY is the precedent."""
+    ready = close_ready(cfg)
+    done = vocabulary.DONE_CATEGORY
+
+    def named(pairs: list[tuple[str, str]]) -> str:
+        return ', '.join(f'{gid} ({status!r})' for gid, status in pairs)
+
+    if ready.stories:
+        warn(f'{len(ready.stories)} story/ies ready for `close story` — each '
+             f'carries a `done:` line the story belt\'s evidence-written '
+             f'accepts and is not in `{done}`: {named(ready.stories)}; next: '
+             f'`agentic-sdlc close story <id>`, one per story (CLOSE)')
+    if ready.unreviewed:
+        warn(f'{len(ready.unreviewed)} feature(s) need a review record — '
+             f'{vocabulary.IN_PROGRESS}, every story in `{done}`, and '
+             f'review-recorded finds none: {named(ready.unreviewed)}; '
+             f'next: the review, then `agentic-sdlc pm set <id> reviewed '
+             f'<path>` (CLOSE)')
+    if ready.closable:
+        warn(f'{len(ready.closable)} feature(s) ready for `close feature` — '
+             f'every story in `{done}`, and review-recorded and '
+             f'findings-landed both accept the record: '
+             f'{named(ready.closable)}; next: `agentic-sdlc close feature '
+             f'<id>` (CLOSE)')
+
+
 def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     """U1 — a state the project DECLARED that no grain holds now and no ledger
     row names.
@@ -493,15 +598,18 @@ def _unused_states(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:
     # line must not move for it (`test_pm_ledger`'s byte-identity case).
     read = ('read from every grain\'s current status plus the ledger\'s '
             'status and disposition rows')
+    # Retired or renamed is written nowhere, so both are said (M1, rule 9).
+    placed = ''
     if history.skipped:
-        read += (f', {history.skipped} ledger row(s) naming a grain no longer '
-                 f'in the tree skipped')
+        placed = ' it could place'
+        read += (f', {history.skipped} ledger row(s) naming '
+                 f'{inventory.UNPLACED_ID} skipped')
     if history.unreadable:
         read += (f', {len(history.unreadable)} ledger(s) unreadable and not '
                  f'read ({", ".join(history.unreadable)})')
     warn(f'{unused_total} of {declared_total} declared state(s) are held by no '
-         f'grain and named by no ledger row — {"; ".join(clauses)} — {read}; '
-         f'`[pm.states.<kind>]` declares each one (U1)')
+         f'grain and named by no ledger row{placed} — {"; ".join(clauses)} — '
+         f'{read}; `[pm.states.<kind>]` declares each one (U1)')
 
 
 def _asks_something(cfg: vocabulary.PmConfig, kind: str, state: str) -> bool:

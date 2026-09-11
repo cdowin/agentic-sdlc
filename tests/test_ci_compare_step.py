@@ -139,7 +139,12 @@ COMPARE_ROWS = [
     ('0.28.4.1', '0.28.4.2',   (SLUG_28,),  (('ms-next', '0.28.4.2'),), False, "whose status is 'building', not done"),
     ('0.28.4.1', '0.28.4.2.1', (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
     ('0.28.4.1', '0.28.4.02',  (SLUG_28,),  (),           False, 'the version or id of no done milestone'),
-    ('0.90.2',   '0.90.3',     ('0.90.2',),  ('0.90.3',),  False, "whose status is 'building', not done"),
+    # The review's M2: a main that is itself a done milestone's version is a
+    # RELEASE, not a hotfix, so incrementing its final component is a bump no
+    # milestone declares — AC2's own refused `0.28.5`. Its hotfix is appended.
+    ('0.16.1',   '0.16.2',     ('0.16', '0.16.1'), (),    False, "a release, not a hotfix"),
+    ('0.28.4',   '0.28.5',     (('ms-a', '0.28'), SLUG_28), (), False, "a release, not a hotfix"),
+    ('0.90.2',  '0.90.3',     ('0.90.2',),  ('0.90.3',),  False, "whose status is 'building', not done"),
     ('0.90.3',   '0.90.4',     (),          ('0.90.4',),  False, "whose status is 'building', not done"),
     ('0.90.3',   '0.90.3',     (),          (),           False, 'Version must increase'),
     ('0.90.3',   '0.90.2',     ('0.90.2',),  (),           False, 'Version must increase'),

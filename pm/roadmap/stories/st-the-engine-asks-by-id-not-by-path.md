@@ -208,5 +208,4 @@ raising the ceiling is a decision with a written argument beside the others in `
 finding: `changelog:` is still empty here. The sentence the close owes: *"a frontmatter scalar is
 unquoted once rather than twice, and `pm decide` mints a decisions log carrying the grain's name"* —
 both are output shapes a consumer may grep, so **minor** at least (rule 6).
-
 done: 302ef1f — `field_of` 128 -> 16; residual 669 lines read; two behaviour defects fixed.

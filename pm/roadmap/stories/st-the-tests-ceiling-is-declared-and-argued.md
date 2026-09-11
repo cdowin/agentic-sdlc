@@ -208,5 +208,4 @@ NOT VERIFIED: that the 53% of prose I did not read line by line is free of rot. 
 mechanically — every backticked path checked for existence, every sentence over 45 characters checked
 for a repeat elsewhere, narrative density measured per module — and the unread remainder is 8-26%
 narrative by that measure. A second pass is a second story.
-
 done: f7a8114, b89a80c — the ceiling, and the census fix that re-derived every number above it.

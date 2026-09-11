@@ -48,4 +48,22 @@ Every feature acceptance closes its GH issues (SDLC.md §2): push, comment with 
 - **The pre-push gate leaves one `gate` row in `pm/roadmap/ledger.jsonl`.** That is correct
   (0.7.0/D2). It rides with the next commit; do not chase it.
 - **U1 on this tree reports `building` as never held,** which is #30 itself. Do not "fix" the
-  vocabulary because of that WARN.
+  vocabulary because of that WARN. (#30 landed in 526cacf/2376338; U1 now reads the ledger.)
+- **The belts were starved for 1h8m.** Parallel builders in the shared tree kept `committed` false.
+  The flow now: concurrent builders get isolated worktrees and commit there, and each belt runs as
+  the next action (SDLC.md §2). `check pm`'s CLOSE WARN names any close that is ready and not run.
+- **`git bisect run` of the suite in a linked worktree flipped this repo to `core.bare = true`** and
+  left stray `scratch` commits (it exports GIT_DIR). Fixed by 6baa086: conftest scrubs git's env and
+  a session ratchet fails on a moved host. If git ever says "must be run in a work tree", check
+  `git config core.bare` FIRST.
+- **The harness creates isolated worktrees from `main`, not the milestone branch.** Every isolated
+  builder is briefed to `git merge --ff-only milestone/0.8.0-…` first.
+- **`core.hooksPath` must be the RELATIVE `tools/hooks`** (`bash tools/setup-hooks.sh`). An absolute
+  value makes every linked worktree MISDIRECTED.
+- **`git commit -- pm/roadmap` does not take NEW files.** `pm new` and `pm decide` create untracked
+  files, so `git add` them first. Two grain files went uncommitted this way.
+- **A review disposition must match the verdict grammar:** `landed <one-hash>`, `landed in-place`,
+  `rejected: <why>` or `deferred: <grain-id>`. Anything else makes the record unverifiable, and the
+  feature belt refuses.
+- **Never put an apostrophe inside an unquoted shell argument or heredoc here** (zsh). One broke a
+  `pm new bug` call and ran prose as commands. Write grain bodies with the Write tool.

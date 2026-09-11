@@ -3,7 +3,7 @@ id: bg-the-brief-undercounts-the-coupling-it-argues-from
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: the brief undercounts the coupling it argues from
-status: fixed
+status: closed
 caused_by:
 changelog: none
 ---
@@ -58,11 +58,17 @@ records 476 files / 1,107 / `rule 4` 314; the same census on this branch reads
 commits. That is the argument, not an embarrassment: a citation census is a
 moving number and the only honest form of it is a command.
 
-**Did NOT land: the verb.** `ft-a-hand-rolled-command-is-a-missing-verb` owns
-it and the milestone brief deliberately moved that feature to the POOL ("not the
-conveyor"), so `pm` still cannot answer *how many times is rule N cited, and
-where* — a shell pipeline can, and the brief now carries it. The second half of
-this fix is still open, in the pool, by design rather than by oversight.
+**The verb LANDED after all, in this milestone rather than the pool.**
+`st-every-census-this-milestone-argues-from-is-a-command` shipped `agentic-sdlc
+cite` — one row per rule, `--sites` for every site — so the second half of this
+fix is closed. `ft-a-hand-rolled-command-is-a-missing-verb` keeps the RULE and
+its seven other candidates; this row is the one that had a brief quoting it.
+
+**And the verb's first act was to correct the correction.** This grain says
+1,107 and the brief was amended to 1,151, both hand-rolled; `cite` reads 1,262
+across 543 files, because a pipeline over a suffix list cannot see a citation
+wrapped across a line break and misses tracked files the list omits. Three
+hand-counts, three different answers, and the third was mine.
 
 ## Out of scope
 

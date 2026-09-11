@@ -121,3 +121,30 @@ call. Sixteen call sites change their receiver and nothing else.
 
 Making the tool RUN a consumer-named command. `0.5.0/D1` rejected the plugin design and primitive 5
 holds it shut; a seam that spawns is a place, not a permission.
+
+## Close
+
+**The seam is `core/spawn.py::run`, nine keywords spelled out rather than `**kwargs`.** Those nine
+are exactly what the sixteen sites already passed; every default is `subprocess.run`'s own, so a
+call naming none of them behaves as the bare call it replaced. `CalledProcessError`,
+`SubprocessError`, `TimeoutExpired` and `CompletedProcess` are re-exported, because a caller that
+had to import `subprocess` to NAME a failure would be the second importer.
+
+AST residual (criterion 8): **24 lines over 9 files, every one an import statement** — 9 removed
+`import subprocess`, 15 added-or-widened `from agentic_sdlc.core import … spawn`. Zero call-site
+lines: no site changed anything but its receiver, and `report.py` and `cache.py` still read bytes.
+
+finding: **the brief over-states gotcha 1.** `from subprocess import run` does NOT unarm the tier
+guard — `run` looks `Popen` up as a module global at call time, so the rebinding still reaches it,
+and a probe with that spelling passed. Only `from subprocess import Popen` with a direct
+construction unarms it; probed, the scratch-suite case went green over a real spawn in the unit
+tier. `test_the_seam_reaches_subprocess_by_attribute` bans BOTH spellings, since the difference is
+an implementation detail of the stdlib and not a thing to rely on.
+
+finding: `SPAWN_MODULE` and `SPAWNERS` already existed in `test_boundaries.py`, under primitive 8.
+Primitive 11 declares them and primitive 8 reads them, beside `OS_SPAWNERS` on the same terms; the
+seam's own path is `SPAWN_SEAM`.
+
+finding: trap 2 is real and now measured. On an emit path planted with `spawn.run(...)`,
+`module_spawns(emit.py)` answers **False** — the old question passes over it — while the
+re-pointed case names `repo/emit.py:10` and `:126`.

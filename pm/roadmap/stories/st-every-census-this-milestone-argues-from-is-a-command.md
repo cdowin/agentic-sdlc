@@ -7,7 +7,7 @@ name: every census this milestone argues from is a command
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: `agentic-sdlc cite [--sites]` is new: the rule-citation census over the tracked text of the tree you are standing in — how many times each `rule <n>` is cited and where. Columns in order: `rule citations files`, and with `--sites` one row per citation, `rule path line text`; rows on stdout, the census line on stderr, and a census of ZERO files is exit 1 naming what it scanned.
 ---
 
 # every census this milestone argues from is a command
@@ -133,3 +133,51 @@ a defect is a document asserting a number nobody can reproduce.
 
 The transcript harvester, the agent-kind census and the phase-declares-what-it-hands census — the
 conveyor milestone.
+
+## Close
+
+**Shipped: one verb.** `agentic-sdlc cite [--sites]` — `src/agentic_sdlc/repo/cite.py`, routed in
+`src/agentic_sdlc/cli.py`, a README row, `changelog:` set with `pm set`. Rows on stdout
+(`rule citations files`, or `rule path line text` with `--sites`), census line on stderr, exit 1 on a
+census of zero naming what it scanned. It reports and never grades (rule 9), and nothing here writes,
+so no refusal path or idempotence case is owed — the flag grammar's exit-2 matrix is, and is here.
+
+**The rule-8 tension, resolved: general over the tree the caller stands in.** Nothing in the module
+names a repo, a rule set or a path — the universe is `repo_root()` + `git ls-files`, the way every
+gate here resolves one, and the grammar is `rule <n>`. A tree that numbers its rules gets its census;
+one that does not gets a census of zero that SAYS so. A verb measuring THIS repo's prose would have
+been the violation, which is why row 2 below is a reason and not a module.
+
+| candidate | verdict |
+|---|---|
+| hard-rule citations | **`cite`.** Quoted in a doc, computed by nothing, and it moved 1,107 → 1,151 → 1,262 while this story was open |
+| prose/code per root | **No verb.** `tests/test_prose_census.py` IS the reader, a sibling story owns it, and a second reader is the second scoreboard this story forbids |
+| AST-shaped guards | **No verb.** Same shape: `shaped_roster()` is the ask and `st-a-source-shaped-guard-is-a-named-set` owns it |
+| the three case counts | **No verb; criterion 8's proof row is DELETED, not satisfied.** `check budget` already reports one of the three — the COLLECTED count, per tier, against the declared ceiling (`test 1595 of 1575`). The other two come from RUNNING pytest, which rule 2 forbids a verb; that is a make target |
+
+**Criterion 1 is NOT met, and is reported rather than narrowed.** The three files quote seven
+FAMILIES of number, not four: module/section line counts, call-site censuses (storage, spawn,
+`print`), prose per root, the guard roster, corpus declarations, case counts, citations. One is now a
+command; two are readers the sibling stories own; the call-site censuses became `test_boundaries.py`
+primitives this milestone; the line counts are claims about a tree `ft-the-module-says-what-it-does`
+is dismantling. Deleting the remainder is an edit to `pm/roadmap/**`, which this story may not make.
+
+**Criterion 4 — where the output was used:** the PROPOSED correction to
+`ms-the-rule-reaches-the-work`'s *"hard-rule NUMBERS are a public API"* paragraph (in the report,
+with the shipped one-liner it replaces, which reads 12 fewer — 6 wrapped citations it cannot see and
+6 in tracked files its suffix list omits), and the `1,107 → 1,260` line above.
+
+**Criterion 9 — the reconciliation.** TAKEN: the citation census, and the rule that a quoted number
+is a command's output. LEFT in the pool with `ft-a-hand-rolled-command-is-a-missing-verb`: the other
+seven candidates, the transcript harvester, the agent-kind census. The bug's Fix pointer — *"a verb
+that reports the citation census per rule"* — now resolves to `cite`.
+
+**Proven:** 8 cases (5 in `TestTheCitationCensusIsAskable`, 3 `CLAIMS` rows pairing the `--help` exit
+codes against the code's). Five planted defects, each watched failing: a loosened grammar, a census
+of zero returning 0, a help naming three of four columns, a swallowed bad argument, and the README
+row removed — `TestACapabilityIsCitedWhereItsOperatorStands` FAILS naming `cite`.
+
+done: — `agentic-sdlc cite [--sites]`: rows on stdout, census on stderr, so one rule is a `grep` and
+no `--rule` flag exists. Criterion 1 is NOT met and is reported rather than narrowed — three files
+quote SEVEN families of number, not four; the four that stayed hand-rolled each have a written
+reason, and three of them are "a gate already reads it, and a second reader is the second scoreboard".

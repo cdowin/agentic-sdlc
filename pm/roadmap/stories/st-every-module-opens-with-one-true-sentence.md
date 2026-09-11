@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: every module opens with one true sentence
-status: planning
-owner:
+status: building
+owner: architect
 depends_on: []
 changelog:
 ---

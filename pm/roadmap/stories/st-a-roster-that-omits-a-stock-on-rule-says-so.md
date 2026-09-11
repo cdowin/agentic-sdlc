@@ -32,13 +32,20 @@ under a `done` milestone. Adding D11 turned it into 259 findings.
 1. A retired rule's message names its successor: *"replace D3 with D11"*, not only *"remove D3"*.
    The word "unconditional" goes unless it becomes true.
 2. When a declared `[pm] checks` omits a rule that is stock-on, `check pm` prints one counted line
-   naming each omitted rule (rule 11: absence is a named line). A WARN, not the exit code, because
-   the project's roster is its declaration.
+   naming each omitted rule (rule 11: absence is a named line). A counted line, not the exit code,
+   because the project's roster is its declaration. **"Stock-on" means `DEFAULT_CHECKS`
+   (`pm/vocabulary.py:206`), in so many words.**
 3. The retired-field finding (`fix_milestone:`, `caught_in:`) no longer depends on D11 being enabled.
-   A retired field is a fact about the INPUT and is refused at exit 2 as the 0.6.0 bug grain promised,
-   whatever the roster says. It moves out of the D11 function.
-4. Deliberately broken probe: a scratch fixture with a pre-0.6.0 roster and a retired field → exit 2
-   naming the field, plus the omitted-rules line.
+   The `RETIRED_FIELDS` loop (`checks/pm.py:1015-1021`) moves out of `_containment` and runs ungated,
+   next to `stray_documents` (`:146-152`, "Never gated by `checks`"). **It stays exit 1, a DRIFT
+   finding**, as `ms-the-rule-reaches-the-work` D2 decided: a retired field is drift, not a config
+   error, and exit 2 would stop every other rule from running (`:109`, `:122`). The docstring's D11
+   line (`:12-13`) moves with the loop. The finding's hint says to delete the line by hand, because no
+   `pm` verb removes a field.
+4. Deliberately broken probe: a scratch fixture with a pre-0.6.0 roster (no D11, no D12) and a retired
+   field → **exit 1** naming the field, plus the omitted-rules line.
+
+*(Amended from the spec scout's B1 and m3: the brief first said exit 2, contradicting 0.6.0 D2.)*
 
 ## How this is proven
 
@@ -50,7 +57,7 @@ under a `done` milestone. Adding D11 turned it into 259 findings.
 
 ## Semver
 
-Minor: a new WARN line, and a gate that now exits 2 on a tree it passed.
+Minor: a new counted line, and a gate that now exits 1 on a tree it passed.
 
 ## Out of scope
 

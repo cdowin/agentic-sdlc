@@ -50,3 +50,9 @@ because of it.
 ## Semver
 
 Minor: the WARN's line shape changes (rule 6).
+
+## Amended from the spec scout (m1)
+
+Ledger `status` rows carry `grain`, not the kind. The kind is resolved through the grain index. A row
+whose grain is no longer in the tree (retired) is skipped, and the skipped rows are counted on the line,
+never silently. The sentence at `pm/skills.py:252` ("a flow you are not running") goes with the WARN's.

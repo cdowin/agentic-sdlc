@@ -54,11 +54,17 @@ and #36 is the sharpest case of #22. Each pair is one story, and every issue num
 A scratch consumer wired exactly as the README says (`DEVKIT_VERSION` + `include Makefile.devkit`,
 nothing else on PATH) does a 0.4.0 → 0.8.0 bump by following only what the kit prints. At the end:
 
-- every command it pasted exited 0 or 1 and never with `command not found`;
+- every command it pasted ran its verb, which exited 0 or 1, and make never said `No rule to make
+  target` or `command not found` (through make, a verb's 1 shows up as make's 2, with the code in
+  `Error N`; see the vehicle feature's D2);
 - every `[adopt] ours` file and every project-config header is byte-identical to before the bump;
 - `install-*` named the `changelog-writer.md` withdrawal, or said it could not see the span;
 - `check pm` on a roster written before 0.6.0 either grades D11/D12 or says by name that it does not;
 - the rule `pm install-skills` installs contains no sentence the tool contradicts.
+
+**Who walks it (spec scout M8):** the milestone review. It runs the walk in a scratch consumer with
+`DEVKIT=` pointed at this checkout, because 0.8.0 is not tagged and `uvx --from git+…@<pin>` would
+run old code. No story owns the walk. Each story proves its own slice.
 
 Every GH issue listed above is closed when its feature is accepted, with a comment citing the
 feature and the fixing commit hash(es), following SDLC.md §2. The GitHub milestone `0.8.0` has no

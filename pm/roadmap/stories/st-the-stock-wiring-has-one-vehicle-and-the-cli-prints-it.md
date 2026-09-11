@@ -51,3 +51,24 @@ The lines the CLI RENDERS, as opposed to the prose it installs (the next story):
 ## Semver
 
 Minor: a new `Makefile.devkit` target and changed rendered line shapes (rule 6).
+
+## Amended from the spec scout (C1, M1, M2, m4, m5, M8) — feature D2
+
+6. **Bootstrap:** every command that WRITES `Makefile.devkit` (`install-gates`, `init`'s next steps,
+   and `adopt`'s remedy for a stale `Makefile.devkit`) renders in the pinned form,
+   `uvx --from "git+…@v<__version__>" agentic-sdlc install-gates --force`, reading the tool's own
+   version. `adopt` names `install-gates` first. Probe: a scratch consumer holding a 0.7.0
+   `Makefile.devkit` (no `sdlc` target) is told the pinned command, not `make sdlc`.
+7. **Quoting:** the recipe uses `$(value ARGS)`, `unexport ARGS`, and runs `$(DEVKIT)` with
+   `MAKEFLAGS=`. `sdlc` is in `.PHONY`. Every rendered free-text argument is single-quoted. A unit
+   case round-trips every rendered vehicle line through `shlex.split`, and a probe writes
+   `pm set x changelog 'costs $5'` through the vehicle into a scratch tree and reads back `costs $5`.
+8. **Exit codes:** `make help`'s `sdlc` line and the dispatch preamble's EXIT CODES line say that
+   through make, a verb's code shows up in make's `Error N` line (D2).
+9. **STATIC GATES with nothing declared (m4):** `_roster()` returns `()` when `[checks] all` is not
+   declared (`dispatch.py:202-214`), so a stock consumer gets no line. The stock default must reach
+   the renderer without `repo/` importing `cli.py`'s `KNOWN_GATES` (move the constant down, or pass it
+   in).
+10. **The probe runs the checkout, not the network (M8):** criteria 3 and 5 set `DEVKIT=` to this
+    checkout (`Makefile.devkit:17-23` already supports that). 0.8.0 is not tagged, and `uvx --from
+    git+…@<pin>` would run old code.

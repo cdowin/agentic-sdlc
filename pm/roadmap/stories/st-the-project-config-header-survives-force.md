@@ -47,3 +47,16 @@ rejected. The reasoning, and the boundary the review holds (carry bytes, compute
 ## Semver
 
 Minor: a new report line, and `--force` writes different bytes than it did.
+
+## Amended — feature D2 (the markdown block is the text fence)
+
+5. For a MARKDOWN installable, the carried block is ONLY the ```` ```text ```` fence inside
+   `## Project config`. The heading, the dispatch sentence and the prose are the kit's. A brief with no
+   such fence has no project-owned block. The shell hooks' grammar is unchanged.
+6. `--diff`'s header-only verdict, `installables-current` and the `--force` carry all read the ONE
+   span. Probe: a brief whose fence is edited AND whose dispatch sentence is stale → `--force` writes
+   the new sentence and keeps the fence byte-for-byte. A brief edited only OUTSIDE the fence is drift,
+   not header-only.
+7. The self-host test (`test_this_repo_carries_the_roles_it_runs_byte_current`) accepts a fence-only
+   difference, the way the hooks' self-host already accepts a header-only one. This repo's own
+   installed agents are then current under the narrowed span.

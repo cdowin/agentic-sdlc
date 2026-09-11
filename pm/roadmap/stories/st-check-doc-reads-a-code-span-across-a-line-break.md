@@ -50,3 +50,10 @@ state, on a file they cannot edit without an `[adopt] ours` claim.
 ## Semver
 
 Minor: the gate now fails a tree it passed, the same call 0.7.0 made about its two gates.
+
+## Amended from the spec scout (m2)
+
+"Paragraph" is defined: a run of CONSECUTIVE non-fenced lines, broken at a blank line, a fence
+boundary (`non_fenced_lines` drops fences, so a naive join would cross them), a heading, a list-item
+start, a table row, and any gap in line numbers. A span may cross a line break inside a paragraph and
+never crosses a break between two paragraphs.

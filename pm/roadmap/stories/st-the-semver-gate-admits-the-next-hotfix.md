@@ -7,7 +7,7 @@ name: the semver gate admits the next hotfix, not only the first
 status: building
 owner: agent
 depends_on: []
-changelog:
+changelog: The semver gate admits the next hotfix of a done milestone's version (`0.28.4.1` → `0.28.4.2` where `0.28.4` is done), and its OK line now names the rule that admitted the bump, `appended hotfix` or `incremented hotfix` — a CI step that greps `(hotfix` no longer matches.
 ---
 
 # the semver gate admits the next hotfix, not only the first
@@ -47,3 +47,8 @@ the gate being routed around.
 ## Semver
 
 Patch: the gate admits a legitimate input it wrongly refused, and nothing it admitted before is refused.
+
+## Close
+
+done: 712a315 — the semver gate admits an incremented hotfix over a done milestone's version and names the rule on its OK line; 13 rows added to `test_ci_compare_step.py`, the 5 admit/label rows failed at HEAD.
+Semver, revised: the OK line's wording changed (`(hotfix N` → `(appended hotfix N`), which rule 6 counts as minor; the milestone is 0.8.0 either way. The block is bash, not POSIX as the brief said; the new lines are POSIX-clean.

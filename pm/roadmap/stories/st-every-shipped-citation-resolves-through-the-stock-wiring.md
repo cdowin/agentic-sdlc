@@ -52,3 +52,21 @@ sentences. This is a sweep, so it goes last.
 ## Semver
 
 Minor, together with the previous story (the installed text changes to name a new target).
+
+## Amended from the spec scout (C2, M3)
+
+5. **`check doc` keeps seeing the swept spans (C2):** `_STATUS_FORM` (`checks/doc.py:173-174`)
+   matches `make pm ARGS="<kind> <state> …"` and `make sdlc ARGS="pm <kind> <state> …"` as well as the
+   bare form. Probe: plant `make pm ARGS="feature reviewing x"` in a scratch consumer with no
+   `reviewing` feature state, and the gate FAILS. Without this, the sweep blinds the #26 fix and the
+   0.6.0 status-form rule, and the gate prints PASS over drift. **This story therefore also touches
+   `checks/doc.py`, after `st-check-doc-reads-a-code-span-across-a-line-break` lands.**
+6. **The census scope, named (M3).** At HEAD there are 148 citations, 111 backticked; 142 of them are
+   `agentic-sdlc <verb>` strings across 19 `.py` files.
+   IN: backticked and unbackticked commands in shipped prose (`installables/`, `pm/guidance/`,
+   `sdlc-template.md:10-13`, `doc-hygiene.md:23`), fenced and indented blocks, and every string the
+   CLI renders for a person to RUN: hints, `next:`, RECORDING, STATIC GATES, `init`'s next steps.
+   OUT: `usage:` synopses, `agentic-sdlc <verb>:` error prefixes, GENERATED headers and help bodies
+   that NAME the CLI rather than instruct a run.
+   The census regex is not backtick-bound. The two existing role-verb tests are rewritten, not amended,
+   because after the sweep they match nothing.

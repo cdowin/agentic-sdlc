@@ -32,3 +32,31 @@ mode.
 consumer hand-applying the body hunks, which is the chore the installer exists to remove.
 
 Chris, 2026-09-11: go with the recommendation.
+
+## D2 — 2026-09-11 — the markdown project-config block is the text fence, not the section
+
+From the spec scout, B2 (`docs/reviews/2026-09-11-0.8.0-spec-review.md`). The markdown block grammar
+(`install.py:486-487`) closes the block at the next `^## `, so in every agent brief lines ~15-38 are
+"the project's". That span holds the kit's own first instruction ("Run `agentic-sdlc dispatch …`",
+line 16 in 10 briefs), each role's intro paragraph and the `<!-- BEGIN role-verbs -->` marker. With D1's
+carry, the vehicle feature's rewrite of those kit lines could never reach an existing consumer. The
+ship criterion's first bullet (never `command not found`) and its second (the header byte-identical)
+would contradict each other.
+
+**For a markdown installable, the project-owned bytes are the ```` ```text ```` fence inside
+`## Project config`: the fence and its contents, nothing else.** The heading, the dispatch sentence
+and the prose in that section belong to the kit, and `--force` updates them. A brief with no such fence
+has no project-owned block. The shell hooks' grammar is unchanged. `--diff`'s header-only verdict,
+`installables-current` and the `--force` carry all read the ONE narrowed span, so they cannot
+disagree.
+
+**Rejected: keep the section span and print a line when a carried block differs from the packaged
+one.** That is honest, but it leaves every existing consumer's dispatch sentence stale until each one
+hand-merges. It is the chore this feature exists to remove, moved one level down.
+
+**Cost, accepted:** a consumer who edited PROSE in the section, outside the fence, now reads as drift,
+and `--force` replaces that prose. That is the correct reading: those values were never the
+project's to keep. Values belong in the fence. The Project config heading's wording ("yours to edit
+after install") is narrowed to say which part is yours.
+
+Orchestrator decision under Chris's standing "go with the recommendations" for 0.8.0.

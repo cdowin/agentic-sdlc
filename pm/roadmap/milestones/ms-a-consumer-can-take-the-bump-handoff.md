@@ -26,9 +26,17 @@ The dispatch phases, by file set. Overlapping work is serialized:
     A  ft-install-force… (install.py)  ·  ft-the-pm-surface… (pm/cli.py, driver.py)
        ft-the-shipped-words… (guidance, briefs, README, steps.py descriptions)
        st-the-semver-gate… (ci-semver-gate.yml)
-    B  the rest of ft-a-gate-verdict… (doc.py after the words land; checks/pm.py,
-       vocabulary.py, inventory.py) + the three bound bugs
-    C  ft-every-printed-command… LAST: its sweep rewrites text the others touch
+    A' the D2 narrowing of the markdown config block (install.py), the words
+       follow-ups (po.md, the test tier); both after A commits
+    B  three chains, in parallel with each other, serial within each:
+         checks/pm.py   #19 → #30 → bg-the-gate-help…
+         checks/doc.py  #26 (after the words land)
+         steps.py       bg-the-release-belt… → bg-the-bump-belt…
+    C  ft-every-printed-command… LAST: its sweep rewrites text the others touch,
+       and it amends checks/doc.py's _STATUS_FORM after #26
+
+Before phase B, read `docs/reviews/2026-09-11-0.8.0-spec-review.md`. Every grain it bears on has
+been amended, and the amendments are marked in each grain.
 
 Every feature acceptance closes its GH issues (SDLC.md §2): push, comment with the hash, close.
 

@@ -130,8 +130,8 @@ does not declare is refused by name.
    `milestone:`/`feature:`, never a piece of the id, so re-parenting is one `pm set`
    and the id is stable for life. `<name...>` is required to create a milestone,
    feature or story; a bug is created without one, and a `next:` line names its empty
-   `name:`. Give an id already in the tree and omit the name to fill missing slots
-   instead.
+   `name:`. Give a milestone or feature id already in the tree and omit the name to fill
+   its missing slots instead; a story takes no re-scaffold and is refused without a name.
 6. **Leave evidence at close.** One terse block at the grain that closed — below.
 
 **WHO performs steps 3 and 4 is your project's call, and your own rules must say.**

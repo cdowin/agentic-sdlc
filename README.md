@@ -73,7 +73,7 @@ Nothing runs a rung wider than the thing you changed.
 | closing a milestone | `make sdlc ARGS='release <version>'` — its `gate` check runs `make milestone` |
 | bumping the devkit pin | `make sdlc ARGS='adopt <version>'` — the adoption, never your own gates |
 
-`agentic-sdlc verify --plan` prints the three `verify` rungs with the cost each one last took, read
+`make sdlc ARGS='verify --plan'` prints the three `verify` rungs with the cost each one last took, read
 from your ledger. Ask it instead of guessing.
 
 A rung also RECORDS its verdict, against the state of the tree it ran on — so asking the same rung
@@ -100,7 +100,7 @@ A belt's output is one line per check, then one line saying what happened:
 
 ```
 [story] ok: story-exists — pm/roadmap/stories/works.md
-[story] ok: story-verified — `agentic-sdlc verify --story` exited 0 — the story rung [verify] names
+[story] ok: story-verified — `make sdlc ARGS='verify --story'` exited 0 — the story rung [verify] names
 [story] error: committed: 2 uncommitted path(s) outside pm/roadmap/: src/a.py, src/b.py — commit by explicit pathspec; this belt never commits
 [story] error: evidence-written: … carries no `done:` line — step 6 of pm-execution.md
 [story] error — 2 check(s) false; nothing written
@@ -147,7 +147,7 @@ question the tree answers.
 | `adopt <version>` | Checks only, nothing written: pin bumped, installables current — except the files `[adopt] ours` claims, which are named and counted on every run — config accepted, hooks armed, targets resolve, this package's `check all` and `pm validate` green — and `checks-pass` names every gate outside the roster and every `[gates] extra` target it did not run, beside the `[adopt.commands] checks-pass` key that would run them. Runs wherever the project tracks the bump (a milestone, a feature, a story, or nowhere); it sets no status and files no row of its own |
 | `init` | Everything below, in order, plus the files nothing else writes |
 | `install-ci` | `.github/workflows/`: `verify.yml` (arms the hooks, runs `make milestone`), `semver-gate.yml`, `auto-tag.yml` |
-| `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, doc-hygiene, pm-operator — each pointing at `agentic-sdlc dispatch` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install |
+| `install-agents` | `.claude/agents/`: the review/build contract (`verification-reviewer.md`, `verification-builder.md`) and the base roster — architect, po, developer, reviewer, milestone-reviewer, simplifier, test-writer, tech-writer, doc-hygiene, pm-operator — each pointing at `make sdlc ARGS='dispatch …'` for the ladder, gate roster and vocabulary rather than carrying a hand-edited copy, with the judgement calls the tool cannot derive left yours after install |
 | `install-hooks` | `tools/hooks/` (commit-pathspec, stop-gate, write-confine, two ledger couriers, `pre-push`, `prepare-commit-msg`), `tools/dev/agent-worktree.sh` and `tools/setup-hooks.sh`, which arms them. Names `.claude/settings.json` and prints its entries with ABSOLUTE, shell-quoted script paths; `--write-settings` writes that file when nothing is in the way, and never merges into or replaces one that exists. An absolute path names one machine, so a shared checkout puts the block in the gitignored `.claude/settings.local.json` — `check pm` and `adopt` read both. The couriers take their tree from **`GDK_LEDGER_ROOT`** when the session cwd is not inside it |
 | `install-gates` | `Makefile.devkit` (`help`, `pm`, `sdlc`, `check`, `precommit`, `milestone`) and `tools/dev/gdk_gate.sh`, the one-verdict-line gate library. `sdlc` reaches every verb at your pin, and it is how every command the CLI prints is spelled |
 | `install-sdlc` | `docs/sdlc-protocol.md`, **rendered** from your `[story]` / `[feature]` / `[release]` / `[adopt]` check lists and the `done` state each belt writes |
@@ -305,7 +305,7 @@ runner_targets = ["precommit", "milestone"]   # what `runner-targets-resolve` as
 ours = [".github/workflows/verify.yml"]        # installed files this project OWNS: not graded, named every run
 ```
 
-`agentic-sdlc pm vocabulary` prints your declared states with their categories and the rule ids
+`make pm ARGS=vocabulary` prints your declared states with their categories and the rule ids
 `[pm] checks` may name — read it after a pin bump. A key this version no longer reads is named at
 exit 2, never silently ignored.
 

@@ -3804,3 +3804,6 @@
 {"ts":"2026-09-11T03:18:03Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":5720,"rank":5}
 {"ts":"2026-09-11T03:18:03Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":67946,"census":1596}
 {"ts":"2026-09-11T03:18:47Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3872}
+{"ts":"2026-09-11T03:19:34Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":117664}
+{"ts":"2026-09-11T03:19:34Z","kind":"gate","gate":"budget","verdict":"FAIL","duration_ms":200}
+{"ts":"2026-09-11T03:19:35Z","kind":"gate","gate":"milestone","verdict":"FAIL","duration_ms":190786}

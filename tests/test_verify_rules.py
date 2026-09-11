@@ -164,6 +164,16 @@ class TheModuleReadsNoFileAndSpawnsNothing(unittest.TestCase):
     runs dozens of times a day slower, which nothing else notices.
     """
 
+    PROTECTS = (
+        'repo/verify/rules.py takes its config section as an argument: it reads '
+        'no file, spawns no process and walks no tree',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS) aimed '
+        'at a claim in the module own prose rather than at a result: a spawn '
+        'added here fails nothing, it only makes the path `close story` runs '
+        'dozens of times a day slower, and the docstring quietly stops being '
+        'true',
+    )
+
     SPAWN = frozenset({
         'run', 'call', 'check_call', 'check_output', 'Popen', 'system', 'popen',
         'getoutput', 'getstatusoutput', 'fork', 'execv', 'execvp', 'spawnv'})

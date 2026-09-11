@@ -134,26 +134,26 @@ def _ladder() -> list[str]:
 
 def _vocabulary() -> list[str]:
     """Each kind's states by CATEGORY, off `[pm.states.*]`."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     try:
-        cfg = model.load()
+        cfg = vocabulary.load()
     except SystemExit:
         return ['  (no [pm.states.*] declared — `pm` cannot run here)']
     out = []
     for kind, flow in sorted(cfg.flows.items()):
         words = ' | '.join(' '.join(flow.by_category[c])
-                           for c in model.CATEGORIES if flow.by_category.get(c))
+                           for c in vocabulary.CATEGORIES if flow.by_category.get(c))
         out.append(f'  {kind:<10} {words}')
     return out
 
 
 def _grain(gid: str) -> list[str]:
-    from agentic_sdlc.repo.pm import model
-    cfg = model.load()
-    grain = model.grain_index(cfg).get(gid)
+    from agentic_sdlc.repo.pm import inventory, vocabulary
+    cfg = vocabulary.load()
+    grain = inventory.grain_index(cfg).get(gid)
     if grain is None:
         raise ConfigError(f'--grain {gid!r} resolves to no grain in this tree')
-    status = model.field_of(grain.path, model.FIELD_STATUS)
+    status = grain.field(vocabulary.FIELD_STATUS)
     return [f'  id       {gid}',
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',

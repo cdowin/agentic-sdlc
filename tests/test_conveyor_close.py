@@ -30,8 +30,9 @@ from support.pm import with_flow  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver, steps  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
 VERSION = '9.9.9'
 FEATURE_ID = f'{VERSION}/alpha'
@@ -142,7 +143,7 @@ def close(*args: str) -> int:
 
 
 def status_of(root: Path, rel: str) -> str:
-    return model.field_of(root / rel, 'status')
+    return frontmatter.field_of(root / rel, 'status')
 
 
 def rows(root: Path) -> list[dict]:
@@ -219,7 +220,7 @@ def snapshot(root: Path) -> dict[str, object]:
 def first_done(kind: str) -> str:
     """The state the belt must write, read from the tree's own declaration —
     never spelled here, so the test cannot agree with a literal."""
-    return driver.done_state(model.load(), kind)
+    return driver.done_state(vocabulary.load(), kind)
 
 
 # --- the census ---------------------------------------------------------------

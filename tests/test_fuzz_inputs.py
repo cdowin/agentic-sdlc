@@ -1,17 +1,12 @@
-"""test_fuzz_inputs.py — property fuzz: mangled input vs the CLI's universal negatives.
+"""Property fuzz: mangled input against the CLI's universal negatives.
 
-WHY THIS EXISTS
-Every release review of this package so far has returned NOT RELEASE-SAFE, and
-the blocker has always been the same shape: a docstring's universal negative
-("this cannot write a sibling grain") that no test attacked, because builders
-write existential tests for intended behavior. The v0.16.0 blocker —
-`pm bug fixed '0.1/bugs/../features/alpha/feature'` traversed and wrote a
-bug-vocabulary status into the sibling FEATURE file — sat behind exactly such a
-docstring. This harness is the standing adversarial stage: a seeded mangler
-composes hostile ids/paths (traversal, empty and dot segments, backslashes,
-globs, absolute paths, URL-ish schemes, whitespace, newlines, quotes, unicode
-confusables, over-long strings) and drives them through the REAL CLI against a
-scratch tree, asserting the property the docstrings claim:
+A docstring's universal negative ("this cannot write a sibling grain") is the
+one claim an existential test never attacks, and every blocker this harness was
+built for had that shape. So a seeded mangler composes hostile ids and paths —
+traversal, empty and dot segments, backslashes, globs, absolute paths, URL-ish
+schemes, whitespace, newlines, quotes, unicode confusables, over-long strings —
+and drives them through the REAL CLI against a scratch tree, asserting the
+property the docstrings claim:
 
   GRAIN CONTAINMENT (pm) — for every id fed to status verbs / set / get /
   move / decide: either the command refuses (exit 1/2, whole scratch tree
@@ -20,35 +15,11 @@ scratch tree, asserting the property the docstrings claim:
   an exception escaping `cli.main` (the real CLI's traceback), and never a
   write to a file the command did not name.
 
-A second property — VERB REFUSAL TOTALITY over `scene` / `refs --retarget` —
-ran here until those verbs left this package with the rest of the scene plane.
-The mangler is unchanged: it composes ids and paths, not scenes, and the same
-hostile classes are what the pm surface is attacked with.
-
-TEETH — proven against the pre-fix code, not assumed
-The pre-fix package (commit 76e28fb~1, the code the v0.16.0 release review
-caught) is runnable under this same harness via a PYTHONPATH overlay:
-
-    git archive 76e28fb~1 src | tar -x -C /tmp/prefix
-    DEVKIT_FUZZ_TARGET_SRC=/tmp/prefix/src \
-        uv run --with pytest python -m pytest tests/test_fuzz_inputs.py -q
-
-Run 2026-08-30 against that snapshot: test_grain_containment... FAILED with 4
-violations — ('pm', 'bug', 'fixed', '0.1/bugs/../features/alpha/feature') and
-its nested-slug twin exited 0 and wrote
-pm/roadmap/features/alpha.md (a bug-kind write landing on a
-feature grain), and `pm set` rode the same traversal twice. Same file, same
-seed, green on HEAD. The
-committed floor beneath that one-time run is
+TEETH, proven rather than assumed. `DEVKIT_FUZZ_TARGET_SRC=<dir>` points the
+harness at another checkout's `src/`, which is how the corpus was run against
+the resolver it was written for. The committed floor under that one-time run is
 `test_the_corpus_separates_the_pre_fix_resolver`, which keeps a transcription
 of the rejected resolver in-tree and proves the corpus still reaches it.
-
-Two of the three findings this harness caught on its first run (decide
-dot-segment traversal, the absolute-milestone-id NotImplementedError; the
-third was an overlong scene path, on the plane that has since left) were
-pinned as known findings, fixed in 0.17.0, and their pins replaced by the
-explicit refusal tests at the bottom of this file — the property runs at full
-strength with no judge carve-outs.
 """
 from __future__ import annotations
 
@@ -69,8 +40,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import support  # noqa: E402,F401 — imported for the side effect it owns: the
 # support package is what puts src/ on sys.path, and this module imports the
-# package below. It held `FIXTURES` too until the scene corpus left; the path
-# setup did not leave with it.
+# package below.
 
 # Teeth-proof overlay: point the harness at another src tree (see docstring).
 # Purging agentic_sdlc from sys.modules makes the overlay win even when another
@@ -87,7 +57,7 @@ from agentic_sdlc import cli  # noqa: E402
 from agentic_sdlc.repo.pm.ledger import LEDGER_FILE_NAME  # noqa: E402
 
 # BELOW the overlay purge on purpose: `support.pm` derives `FLOW_TOML` from
-# `model.render_seed()` at import, so importing it above would seed the scratch
+# `vocabulary.render_seed()` at import, so importing it above would seed the scratch
 # tree from THIS checkout's seed while the fuzz drove the overlaid one.
 from support.pm import FLOW_TOML  # noqa: E402
 
@@ -299,7 +269,7 @@ def _build_pm(outer: Path, root: Path) -> None:
     (outer / 'outside.md').write_text('---\nstatus: decoy\n---\n', encoding='utf-8')
     m = root / 'pm' / 'roadmap' / '0.1-demo'
     # THE FLOW IS PART OF THE TREE, not decoration. `[pm.states.*]` has no
-    # runtime fallback (model.py:718 `flow_of`), so every `pm` verb the fuzz
+    # runtime fallback (`vocabulary.flow_of`), so every `pm` verb the fuzz
     # drives would exit 2 on the DECLARATION rather than on the hostile id it
     # was handed — and a refusal matrix that refuses for the wrong reason is a
     # green suite proving nothing (hard rule 4).
@@ -455,11 +425,6 @@ def test_the_corpus_actually_exercises_every_hostile_class_and_both_verdicts():
     every hostile input class it advertises, and the run must contain both
     refusals AND accepted writes — a corpus the CLI always refuses would let
     the containment clauses rot unexercised.
-
-    It covered three verb families until the scene/retarget half of the CLI
-    left this package; the classes are unchanged (they are the MANGLER's, not
-    a verb's) and the verdict floors are now the pm run's alone. A census whose
-    subject shrank is still a census — one whose subject was deleted is not.
     """
     _, pm = _pm_results()
     for cls in HOSTILE_CLASSES:

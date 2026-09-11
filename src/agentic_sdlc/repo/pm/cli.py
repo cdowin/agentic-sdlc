@@ -1,10 +1,10 @@
-"""cli.py — the PM-tree status CLI.
+"""cli.py — the `pm` router, and the verbs it owns: create, move, bind, read, record.
 
-A verb validates the target against the grain's declared flow, writes only
-the `status:` line (plus `reviewed:` on a feature close), preserves every
-other byte, and is idempotent; every question is asked of a status's
-category, never of the word, and there is no transition graph — `check pm`
-reports the end state. Exit 0 ok · 1 refused, nothing written · 2 usage.
+A STATUS verb validates the target against the grain's declared flow, writes
+only the `status:` line (plus `reviewed:` on a feature close), preserves every
+other byte, and is idempotent; every question is asked of a status's category,
+never of the word, and there is no transition graph — `check pm` reports the
+end state. Exit 0 ok · 1 refused, nothing written · 2 usage.
 """
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentic_sdlc.core import apply
-from agentic_sdlc.repo.pm import (arrive, ledger, model, rename, report,
-                                   templates, validate)
+from agentic_sdlc.core import apply, frontmatter
+from agentic_sdlc.core.config import pointer_escapes
+from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
+                                  templates, validate, vocabulary)
 
 PROG = 'agentic-sdlc pm'
 
@@ -354,7 +355,7 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
                                            disagree about a row)
-  ledger report [<grain-id>] [--json] [--from <rev>]
+  ledger report [<grain-id>...] [--json] [--from <rev>]
                                           (THE TELEMETRY REPORT — token spend,
                                            tool calls, wall-clock and gate cost,
                                            per grain, from rows the tree already
@@ -382,11 +383,107 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            descendants, rolled — since the LEVEL
                                            is the id's and the ledger is still
                                            the milestone's.
-                                           `time per state`, columns IN ORDER:
-                                             grain  <state>_s  closed_s
-                                             open_s  open_state
-                                           then `time per actor`:
-                                             actor  arrivals  grains  seconds
+                                           MORE THAN ONE MILESTONE ID COMPARES
+                                           THEM, which is the comparative
+                                           question this verb exists for: every
+                                           block below gets one row per
+                                           milestone and a `delta` row,
+                                           `last - first`, marked * where the
+                                           census under it moved — `gate cost`'s
+                                           own arithmetic, across grains instead
+                                           of within one. WHICH milestones is
+                                           yours to name; the plan's `order`
+                                           SEQUENCES the ids you gave when it
+                                           holds every one of them, and the
+                                           heading says `plan` or `given` so the
+                                           basis is never guessed at.
+                                           `--json` then prints ONE JOINED
+                                           document — {"milestones": [<id>...],
+                                           "order": plan|given, "blocks":
+                                           [{"block", "columns", "census",
+                                           "moved", "note", "rows", "delta"}]} —
+                                           rather than a nested report per
+                                           milestone for you to join by hand.
+                                           ONE id still prints that nested
+                                           document, byte for byte.
+                                           Two blocks carry the SAME rows under
+                                           every milestone and say so on the
+                                           line: a gate row and an unattributed
+                                           row names no grain, so both live in
+                                           the tree's ledger and both deltas are
+                                           0 by construction.
+                                           Refused at exit 2: one id named
+                                           twice, a feature or story id beside
+                                           another id, and --from with more than
+                                           one.
+                                           EVERY BLOCK IT PRINTS, in print order.
+                                           A (heading) carries a census rather
+                                           than a table, and those same words
+                                           are its row in the comparison, so
+                                           this is one roster and not two —
+                                           columns IN ORDER:
+                                             spend per grain (heading)
+                                               dispatch_rows status_rows
+                                               grains
+                                             story / feature / bug
+                                               grain size dispatches in out
+                                               cache_create cache_read
+                                               tokens_total tool_calls
+                                               duration_s todo in_progress
+                                               done total_s
+                                             time per state
+                                               grain <state>_s closed_s
+                                               open_s open_state
+                                             time per actor
+                                               actor arrivals grains seconds
+                                             rows naming no grain
+                                               dispatches in out
+                                               cache_create cache_read
+                                               tokens_total tool_calls
+                                               duration_s
+                                             yield per review pass (heading)
+                                               records passes findings
+                                             verdict
+                                               feature record pass verdict
+                                               findings landed rejected
+                                               deferred open
+                                             findings by severity
+                                               feature pass severity
+                                               findings
+                                             deferred to
+                                               target feature pass findings
+                                             rework (heading)
+                                               passes
+                                             verdict distribution
+                                               verdict passes
+                                             escapes (heading)
+                                               bugs features
+                                             bugs naming a cause
+                                               caused_by bug status
+                                               feature_status
+                                             overhead shape (heading)
+                                               dispatch_rows decision_rows
+                                               session_rows
+                                             story
+                                               story dispatches
+                                               before_first_write calls
+                                             decisions per grain
+                                               grain decisions
+                                             decision to next status row
+                                               grain entry ts next_status_s
+                                             session deltas
+                                               session_id ts out tool_calls
+                                             gate cost (heading)
+                                               rows gates incomparable
+                                               unusable
+                                             gate
+                                               gate runs first_ms last_ms
+                                               delta_ms census
+                                             rows this section could not use
+                                               gate why ts
+                                             milestone comparison (heading)
+                                               milestones order blocks
+                                               marked
                                            `<state>_s` is one column per state
                                            this milestone's rows HELD, so
                                            `… | awk` is the filter and no flag
@@ -439,8 +536,8 @@ SHELL_SPLITTERS = (';', '&', '|')
 # makes: one arrival, one row, and the skip is a field on it (0.5.0/D6). Only
 # a verb that ARRIVES can carry them.
 Skipped = Sequence[tuple[str, str]]
-ARRIVES = (model.GRAIN_STORY, model.GRAIN_BUG, model.GRAIN_FEATURE,
-           model.GRAIN_MILESTONE)
+ARRIVES = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_BUG, vocabulary.GRAIN_FEATURE,
+           vocabulary.GRAIN_MILESTONE)
 
 
 def _skipped_defect(cmd: str, skipped: Skipped) -> str:
@@ -478,7 +575,7 @@ def _ok(msg: str) -> None:
 # `rung.leave` row, so a change reaching one and not the other cannot happen.
 
 
-def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
+def _unresolved(cfg: vocabulary.PmConfig, kind: str, gid: str, hint: str = '') -> Usage:
     """The refusal for an id that resolves to nothing, carrying the damage. A
     grain is found by `id:`, so a document whose frontmatter cannot be read is
     in no index and "no story resolves from id" is true and useless — those
@@ -487,7 +584,7 @@ def _unresolved(cfg: model.PmConfig, kind: str, gid: str, hint: str = '') -> Usa
     if hint:
         parts.append(f'({hint})')
     try:
-        damaged = model.unkeyed_documents(cfg)
+        damaged = inventory.unkeyed_documents(cfg)
     except OSError:
         damaged = []
     if damaged:
@@ -516,7 +613,7 @@ def _check_slug(kind: str, value: str) -> str:
     # The same guard every resolver runs, so a name the filesystem would refuse
     # is a refusal here rather than an OSError from the first write. It answers
     # without opening a file, which is why it can run before the pool is walked.
-    defect = model.id_defect(value)
+    defect = inventory.id_defect(value)
     if defect:
         raise Refused(f'{kind} {value!r} cannot name a grain: {defect} — '
                       f'nothing was written')
@@ -534,7 +631,7 @@ def _exists(path: Path) -> bool:
         return False
 
 
-def _mint(cfg: model.PmConfig, path: Path, body: str) -> None:
+def _mint(cfg: vocabulary.PmConfig, path: Path, body: str) -> None:
     """Write one new grain file, turning a filesystem refusal into a REFUSED
     rather than a traceback under exit 1.
     """
@@ -546,31 +643,21 @@ def _mint(cfg: model.PmConfig, path: Path, body: str) -> None:
                       f'{cfg.rel(path.parent)}/ writable') from err
 
 
-def _slugify(text: str) -> str:
-    """ASCII-only, because the result becomes a permanent directory name and
-    `str.isalnum()` is Unicode-aware.
-    """
-    keep = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    out = ''.join(c if c in keep else '-' for c in text.lower())
-    while '--' in out:
-        out = out.replace('--', '-')
-    return out.strip('-')
-
-
-def _was(path: Path) -> str:
+def _was(grain: inventory.Grain) -> str:
     """The status a grain currently carries, for the message only; the verb
     never gates on it, so a hand-edited word is repaired rather than
     refused. `(none)` when absent.
     """
-    return model.field_of(path, model.FIELD_STATUS) or '(none)'
+    return grain.field(vocabulary.FIELD_STATUS) or '(none)'
 
 
-def _set_status(cfg: model.PmConfig, path: Path, value: str, note: str = '') -> None:
+def _set_status(cfg: vocabulary.PmConfig, grain: inventory.Grain, value: str,
+                note: str = '') -> None:
     """Write the `status:` line and validate nothing; every caller has already
     asked `_movable`.
     """
-    if not model.set_field(path, model.FIELD_STATUS, value):
-        raise Usage(f'could not rewrite status in {cfg.rel(path)} '
+    if not frontmatter.set_field(grain.path, vocabulary.FIELD_STATUS, value):
+        raise Usage(f'could not rewrite status in {cfg.rel(grain.path)} '
                     f'(malformed frontmatter, or the file is not writable)'
                     + (f'. {note}' if note else ''))
 
@@ -585,10 +672,10 @@ def _ledger_id(path: Path, fallback: str,
     is absent. `src` may be `report.GitSource` for `ledger report --from`.
     """
     reader = report.DiskSource() if src is None else src
-    return model.unquote(reader.field_of(path, model.FIELD_ID)) or fallback
+    return reader.field_of(path, vocabulary.FIELD_ID) or fallback
 
 
-def _ledger_of(cfg: model.PmConfig, gid: str) -> Path | None:
+def _ledger_of(cfg: vocabulary.PmConfig, gid: str) -> Path | None:
     """The ledger file a grain's row belongs in, followed through its
     bindings — a story to its feature to its milestone (D1). None when the
     grain names no milestone, which is the row that lands at the root. The two
@@ -598,16 +685,15 @@ def _ledger_of(cfg: model.PmConfig, gid: str) -> Path | None:
     return ledger.ledger_of_grain(cfg, gid)
 
 
-def _stamp(cfg: model.PmConfig, path: Path, *rows: dict) -> None:
-    """Append rows to the ledger of the milestone that owns `path`. Never
+def _stamp(cfg: vocabulary.PmConfig, grain: inventory.Grain, *rows: dict) -> None:
+    """Append rows to the ledger of the milestone that owns `grain`. Never
     raises and never changes an exit code; a missing row is said on stderr.
     Varargs because ONE arrival mints two rows — the status and its
     disposition — and the ledger is resolved once for both: a grain no
     milestone owns is one WARNING about the event, not one per row."""
-    target = _ledger_of(cfg, model.unquote(model.field_of(path,
-                                                          model.FIELD_ID)))
+    target = _ledger_of(cfg, grain.field(vocabulary.FIELD_ID))
     if target is None:
-        print(f'[pm] WARNING — no milestone owns {cfg.rel(path)}, so '
+        print(f'[pm] WARNING — no milestone owns {cfg.rel(grain.path)}, so '
               f'no {ledger.LEDGER_FILE_NAME} row was appended for it; the '
               f'write itself landed', file=sys.stderr)
         return
@@ -621,7 +707,8 @@ def _stamp(cfg: model.PmConfig, path: Path, *rows: dict) -> None:
             return
 
 
-def _arrived(cfg: model.PmConfig, kind: str, path: Path, gid: str, frm: str,
+def _arrived(cfg: vocabulary.PmConfig, kind: str, grain: inventory.Grain, gid: str,
+             frm: str,
              to: str, said: 'arrive.Said' = arrive.NOTHING,
              skipped: Skipped = ()) -> None:
     """THE ONE EVENT — a grain reached a state, and everything else reads it.
@@ -637,7 +724,7 @@ def _arrived(cfg: model.PmConfig, kind: str, path: Path, gid: str, frm: str,
     write would look legitimate and not be (rule 4). With an answer it still
     records: that is how a skipped fork is answered.
     """
-    lid = _ledger_id(path, gid)
+    lid = _ledger_id(grain.path, gid)
     moved = frm != to
     # One clock read for both rows: a pair straddling a second is two events.
     stamp = ledger.utc_now()
@@ -646,11 +733,11 @@ def _arrived(cfg: model.PmConfig, kind: str, path: Path, gid: str, frm: str,
     if moved or skipped or not answered:
         rows.append(ledger.disposition_row(lid, to, said, skipped, ts=stamp))
     if rows:
-        _stamp(cfg, path, *rows)
+        _stamp(cfg, grain, *rows)
     arrive.emit_leave(cfg, arrive.report(cfg, kind, gid, to, said, answered))
 
 
-def _answered(cfg: model.PmConfig, kind: str, args: list[str],
+def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],
               other: tuple[str, ...] = ()) -> tuple['arrive.Said', list[str]]:
     """Split the arrival's declared answer off the command line. The target
     state is `args[0]` for every status verb, so the node — and therefore which
@@ -660,13 +747,13 @@ def _answered(cfg: model.PmConfig, kind: str, args: list[str],
     DOES declare rather than the useless truth that the flag is unknown
     (rule 11)."""
     to = args[0] if args else ''
-    node = model.arrival_at(cfg, kind, to) if to else None
+    node = vocabulary.arrival_at(cfg, kind, to) if to else None
     try:
         said, rest = arrive.take(node, list(args))
     except arrive.Incomplete as err:
         raise Usage(str(err)) from err
     stray = [a for a in rest
-             if a.startswith(model.ANSWER_PREFIX) and a not in other]
+             if a.startswith(vocabulary.ANSWER_PREFIX) and a not in other]
     if stray:
         raise Usage(f'unknown flag {stray[0]!r}'
                     + (arrive.unknown_flag_hint(node)
@@ -675,74 +762,75 @@ def _answered(cfg: model.PmConfig, kind: str, args: list[str],
     return said, rest
 
 
-def _movable(cfg: model.PmConfig, kind: str, to: str) -> None:
+def _movable(cfg: vocabulary.PmConfig, kind: str, to: str) -> None:
     """Exit 2 unless `to` is a state this project declared for `kind` — asked
     before the grain is resolved.
     """
-    defect = model.move_defect(cfg, kind, to)
+    defect = vocabulary.move_defect(cfg, kind, to)
     if defect:
         raise Usage(defect)
 
 
 # --- story --------------------------------------------------------------------
-def cmd_story(cfg: model.PmConfig, args: list[str],
+def cmd_story(cfg: vocabulary.PmConfig, args: list[str],
               skipped: Skipped = ()) -> int:
-    said, rest = _answered(cfg, model.GRAIN_STORY, args)
+    said, rest = _answered(cfg, vocabulary.GRAIN_STORY, args)
     if len(rest) != 2:
         raise Usage(USAGE)
     to, sid = rest
-    _movable(cfg, model.GRAIN_STORY, to)
-    sf = model.story_file(cfg, sid)
-    if sf is None:
-        raise _unresolved(cfg, model.GRAIN_STORY, sid,
+    _movable(cfg, vocabulary.GRAIN_STORY, to)
+    story = inventory.story_grain(cfg, sid)
+    if story is None:
+        raise _unresolved(cfg, vocabulary.GRAIN_STORY, sid,
                           'expected <milestone>/<feature-slug>/<story-slug>')
-    cur = _was(sf)
+    cur = _was(story)
     if cur == to:
         _ok(f'story {sid} already {to} (no-op)')
     else:
-        _set_status(cfg, sf, to)
+        _set_status(cfg, story, to)
         _ok(f'story {sid}: {cur} -> {to}')
-    _arrived(cfg, model.GRAIN_STORY, sf, sid, cur, to, said, skipped)
+    _arrived(cfg, vocabulary.GRAIN_STORY, story, sid, cur, to, said, skipped)
     return 0
 
 
 # --- bug ------------------------------------------------------------------
-def cmd_bug(cfg: model.PmConfig, args: list[str],
+def cmd_bug(cfg: vocabulary.PmConfig, args: list[str],
             skipped: Skipped = ()) -> int:
     """Move a bug's `status:` through code, `cmd_story`'s shape. **The guard is
     `kind:`, not the id's shape**: `/bugs/` in the id was a path test standing
     in for the kind test `grain_file(..., 'bug')` does properly, and it refused
     every flat `bg-` id the migration mints."""
-    said, rest = _answered(cfg, model.GRAIN_BUG, args)
+    said, rest = _answered(cfg, vocabulary.GRAIN_BUG, args)
     if len(rest) != 2:
         raise Usage(USAGE)
     to, bid = rest
-    _movable(cfg, model.GRAIN_BUG, to)
-    defect = model.id_defect(bid)
+    _movable(cfg, vocabulary.GRAIN_BUG, to)
+    defect = inventory.id_defect(bid)
     if defect:
-        raise _unresolved(cfg, model.GRAIN_BUG, bid, defect)
-    bf = model.grain_file(cfg, bid, model.GRAIN_BUG)
-    if bf is None:
-        raise _unresolved(cfg, model.GRAIN_BUG, bid)
-    cur = _was(bf)
+        raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid, defect)
+    bug = inventory.grain(cfg, bid, vocabulary.GRAIN_BUG)
+    if bug is None:
+        raise _unresolved(cfg, vocabulary.GRAIN_BUG, bid)
+    cur = _was(bug)
     if cur == to:
         _ok(f'bug {bid} already {to} (no-op)')
     else:
-        _set_status(cfg, bf, to)
+        _set_status(cfg, bug, to)
         _ok(f'bug {bid}: {cur} -> {to}')
-    _arrived(cfg, model.GRAIN_BUG, bf, bid, cur, to, said, skipped)
+    _arrived(cfg, vocabulary.GRAIN_BUG, bug, bid, cur, to, said, skipped)
     return 0
 
 
 # --- feature ------------------------------------------------------------------
-def _feature_or_usage(cfg: model.PmConfig, fid: str) -> tuple[Path, str]:
-    ff = model.feature_file(cfg, fid)
-    if ff is None:
-        raise _unresolved(cfg, model.GRAIN_FEATURE, fid)
-    return ff, _was(ff)
+def _feature_or_usage(cfg: vocabulary.PmConfig,
+                      fid: str) -> tuple[inventory.Grain, str]:
+    feature = inventory.grain(cfg, fid, vocabulary.GRAIN_FEATURE)
+    if feature is None:
+        raise _unresolved(cfg, vocabulary.GRAIN_FEATURE, fid)
+    return feature, _was(feature)
 
 
-def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str],
+def cmd_feature_simple(cfg: vocabulary.PmConfig, to: str, args: list[str],
                        said: 'arrive.Said' = arrive.NOTHING,
                        skipped: Skipped = ()) -> int:
     """Any feature move that is not a close: one write, and it says so. A
@@ -752,13 +840,13 @@ def cmd_feature_simple(cfg: model.PmConfig, to: str, args: list[str],
     if len(args) != 1:
         raise Usage(USAGE)
     fid = args[0]
-    ff, cur = _feature_or_usage(cfg, fid)
+    feature, cur = _feature_or_usage(cfg, fid)
     if cur == to:
         _ok(f'feature {fid} already {to} (no-op)')
     else:
-        _set_status(cfg, ff, to)
+        _set_status(cfg, feature, to)
         _ok(f'feature {fid}: {cur} -> {to}')
-    _arrived(cfg, model.GRAIN_FEATURE, ff, fid, cur, to, said, skipped)
+    _arrived(cfg, vocabulary.GRAIN_FEATURE, feature, fid, cur, to, said, skipped)
     return 0
 
 
@@ -791,7 +879,7 @@ def _take_flags(args: list[str], flags: tuple[str, ...],
     return pairs, rest
 
 
-def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
+def cmd_feature_done(cfg: vocabulary.PmConfig, to: str, args: list[str],
                      said: 'arrive.Said' = arrive.NOTHING,
                      skipped: Skipped = ()) -> int:
     """Close a feature: a move into the `done` category, by whichever word,
@@ -815,104 +903,105 @@ def cmd_feature_done(cfg: model.PmConfig, to: str, args: list[str],
             fid = a
     if not fid:
         raise Usage(USAGE)
-    ff, cur = _feature_or_usage(cfg, fid)
+    feature, cur = _feature_or_usage(cfg, fid)
 
     if rec:
         # Escape FIRST: a pointer outside the checkout is refused before it is
         # resolved, so a file that happens to exist there cannot be stamped
         # (hard rule 8). This verb checked only that the path resolved.
-        if model.pointer_escapes(rec):
+        if pointer_escapes(rec):
             raise Refused(
                 f'feature {fid} -> {to}: review record {rec!r} names a path '
                 f'outside this checkout — nothing outside it is read (hard '
                 f'rule 8), and nothing was written')
         # The one thing checked about a record: the path resolves. Length is
         # not this tool's question.
-        target = model.record_path(cfg, rec)
-        if not model.record_resolves(target):
+        target = inventory.record_path(cfg, rec)
+        if not inventory.record_resolves(target):
             raise Refused(
                 f'feature {fid} -> {to}: review record {rec!r} names no file '
                 f'({cfg.rel(target)}). Nothing was written — stamping a pointer '
                 f'to nothing is the drift D1 reports.')
-        if not model.set_field(ff, 'reviewed', rec):
-            raise Usage(f'could not stamp reviewed: in {cfg.rel(ff)}')
+        if not frontmatter.set_field(feature.path, 'reviewed', rec):
+            raise Usage(f'could not stamp reviewed: in {cfg.rel(feature.path)}')
         _ok(f'feature {fid}: reviewed -> {rec}')
-    record = model.review_record_for(cfg, fid)
+    record = inventory.review_record_for(cfg, fid)
 
     if cur == to:
         _ok(f'feature {fid} already {to} (no-op)')
     else:
-        _set_status(cfg, ff, to)
+        _set_status(cfg, feature, to)
         _ok(f'feature {fid}: {cur} -> {to}'
             + (f' (review record: {record})' if record
                else ' (no review record)'))
-    _arrived(cfg, model.GRAIN_FEATURE, ff, fid, cur, to, said, skipped)
+    _arrived(cfg, vocabulary.GRAIN_FEATURE, feature, fid, cur, to, said, skipped)
     return 0
 
 
-def cmd_feature(cfg: model.PmConfig, args: list[str],
+def cmd_feature(cfg: vocabulary.PmConfig, args: list[str],
                 skipped: Skipped = ()) -> int:
     if not args:
         raise Usage(USAGE)
-    said, kept = _answered(cfg, model.GRAIN_FEATURE, args,
+    said, kept = _answered(cfg, vocabulary.GRAIN_FEATURE, args,
                            other=('--review-record',))
     if not kept:
         raise Usage(USAGE)
     sub, rest = kept[0], kept[1:]
     # The target is validated before any dispatch; the current state is never
     # gated on, so repair from any state stays.
-    _movable(cfg, model.GRAIN_FEATURE, sub)
+    _movable(cfg, vocabulary.GRAIN_FEATURE, sub)
     # A move into the `done` category is the close, by whichever word.
-    if model.category_of(cfg, model.GRAIN_FEATURE, sub) == model.DONE_CATEGORY:
+    if vocabulary.category_of(cfg, vocabulary.GRAIN_FEATURE, sub) == vocabulary.DONE_CATEGORY:
         return cmd_feature_done(cfg, sub, rest, said, skipped)
     return cmd_feature_simple(cfg, sub, rest, said, skipped)
 
 
 # --- milestone ----------------------------------------------------------------
-def cmd_milestone(cfg: model.PmConfig, args: list[str],
+def cmd_milestone(cfg: vocabulary.PmConfig, args: list[str],
                   skipped: Skipped = ()) -> int:
-    said, rest = _answered(cfg, model.GRAIN_MILESTONE, args)
+    said, rest = _answered(cfg, vocabulary.GRAIN_MILESTONE, args)
     if len(rest) != 2:
         raise Usage(USAGE)
     to, mid = rest
-    _movable(cfg, model.GRAIN_MILESTONE, to)
-    mf = model.milestone_file(cfg, mid)
-    if mf is None:
+    _movable(cfg, vocabulary.GRAIN_MILESTONE, to)
+    milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+    if milestone is None:
         raise Usage(f'no milestone resolves from id {mid!r}')
-    cur = _was(mf)
+    cur = _was(milestone)
     if cur == to:
         _ok(f'milestone {mid} already {to} (no-op)')
     else:
-        _set_status(cfg, mf, to)
+        _set_status(cfg, milestone, to)
         _ok(f'milestone {mid}: {cur} -> {to}')
-    _arrived(cfg, model.GRAIN_MILESTONE, mf, mid, cur, to, said, skipped)
+    _arrived(cfg, vocabulary.GRAIN_MILESTONE, milestone, mid, cur, to, said,
+             skipped)
     # No advisory about the features left behind: D3 asks that of the tree.
     return 0
 
 
-def _known_milestone_ids(cfg: model.PmConfig) -> list[str]:
+def _known_milestone_ids(cfg: vocabulary.PmConfig) -> list[str]:
     return sorted(mid or mdir.name
-                  for mdir, mid in model.known_milestones(cfg))
+                  for mdir, mid in inventory.known_milestones(cfg))
 
 
-def _retired_files(cfg: model.PmConfig, milestone) -> list[Path]:
+def _retired_files(cfg: vocabulary.PmConfig, milestone) -> list[Path]:
     """Every file `retire` removes for one milestone, in delete order: the
     milestone, everything bound to it, everything bound to THOSE, each grain's
     shared documents, and the milestone's ledger. The tree's own ledger is not
     touched — those rows were never about this milestone (0.4.0/D3)."""
     grains = [milestone]
-    for kind in (model.GRAIN_FEATURE, model.GRAIN_BUG):
-        for child in model.children(cfg, kind, milestone.gid):
+    for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_BUG):
+        for child in inventory.children(cfg, kind, milestone.gid):
             grains.append(child)
-            if kind == model.GRAIN_FEATURE:
-                grains.extend(model.children(cfg, model.GRAIN_STORY,
+            if kind == vocabulary.GRAIN_FEATURE:
+                grains.extend(inventory.children(cfg, vocabulary.GRAIN_STORY,
                                              child.gid))
     out: list[Path] = []
     for grain in grains:
         out.append(grain.path)
-        for slot in (model.DECISION_FILE_NAME, model.REVIEW_FILE_NAME,
-                     model.HANDOFF_FILE_NAME):
-            shared = model.shared_doc(cfg, grain, slot)
+        for slot in (vocabulary.DECISION_FILE_NAME, vocabulary.REVIEW_FILE_NAME,
+                     vocabulary.HANDOFF_FILE_NAME):
+            shared = inventory.shared_doc(cfg, grain, slot)
             if shared != grain.path and shared.is_file():
                 out.append(shared)
     ledger_path = ledger.ledger_for(cfg, milestone.gid)
@@ -921,7 +1010,7 @@ def _retired_files(cfg: model.PmConfig, milestone) -> list[Path]:
     return [p for p in out if p.is_file()]
 
 
-def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_retire(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Retire a finished milestone: remove its grains, and FILE what outlived
     them.
 
@@ -945,8 +1034,8 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
             summary_words.append(a)
     if not mid:
         raise Usage(USAGE)
-    grain = model.grain_index(cfg).get(mid)
-    if grain is None or grain.kind != model.GRAIN_MILESTONE:
+    grain = inventory.grain_index(cfg).get(mid)
+    if grain is None or grain.kind != vocabulary.GRAIN_MILESTONE:
         known = _known_milestone_ids(cfg)
         raise Usage(f'{mid!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(known) if known else "none scaffolded"})')
@@ -956,33 +1045,32 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
         notices.append(f'{cfg.rel(mfile)} is missing')
         status, canonical_id, name = '', mid, ''
     else:
-        status = model.field_of(mfile, model.FIELD_STATUS)
-        canonical_id = model.unquote(model.field_of(mfile,
-                                                    model.FIELD_ID)) or mid
-        name = model.field_of(mfile, model.FIELD_NAME)
-        if not model.holds(cfg, model.GRAIN_MILESTONE, [(mid, status)],
-                           model.DONE_CATEGORY):
+        status = grain.field(vocabulary.FIELD_STATUS)
+        canonical_id = grain.field(vocabulary.FIELD_ID) or mid
+        name = grain.field(vocabulary.FIELD_NAME)
+        if not vocabulary.holds(cfg, vocabulary.GRAIN_MILESTONE, [(mid, status)],
+                           vocabulary.DONE_CATEGORY):
             notices.append(f'milestone {mid} is {status or "(no status)"}, '
                            f'not done')
     # By ID, never by the directory the document sits in: under pools that is
     # the pool, so every unfinished feature reported as `features`.
     open_features = sorted(
-        name for name, _ in model.holds(
-            cfg, model.GRAIN_FEATURE,
-            ((model.unquote(model.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
-              model.field_of(ff, model.FIELD_STATUS))
-             for ff in model.feature_files(cfg, mid)),
-            model.DONE_CATEGORY).blockers)
+        name for name, _ in vocabulary.holds(
+            cfg, vocabulary.GRAIN_FEATURE,
+            ((ff.field(vocabulary.FIELD_ID) or cfg.rel(ff.path),
+              ff.field(vocabulary.FIELD_STATUS))
+             for ff in inventory.feature_grains(cfg, mid)),
+            vocabulary.DONE_CATEGORY).blockers)
     if open_features:
         notices.append(f'{len(open_features)} feature(s) not done: '
                        f'{" ".join(open_features)}')
     # "Still open" is "not in `done`": a bug at `fixed` is work that remains.
     open_bugs = sorted(
-        name for name, _ in model.holds(
-            cfg, model.GRAIN_BUG,
-            ((bf.stem, model.field_of(bf, model.FIELD_STATUS))
-             for bf in model.bug_files(cfg, mid)),
-            model.DONE_CATEGORY).blockers)
+        name for name, _ in vocabulary.holds(
+            cfg, vocabulary.GRAIN_BUG,
+            ((bug.path.stem, bug.field(vocabulary.FIELD_STATUS))
+             for bug in inventory.bug_grains(cfg, mid)),
+            vocabulary.DONE_CATEGORY).blockers)
     if open_bugs:
         notices.append(f'{len(open_bugs)} bug(s) still open: '
                        f'{" ".join(open_bugs)}')
@@ -990,7 +1078,7 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     # Whitespace collapsed at the WRITE, so the stored sentence can never forge
     # a column in the tab-separated row `pm roadmap` prints it in.
     summary = ' '.join(' '.join(summary_words).split())
-    version = model.field_of(mfile, 'version').strip() if mfile.is_file() else ''
+    version = grain.field('version').strip() if mfile.is_file() else ''
     row = ledger.retire_row(canonical_id, version, name, summary)
     ledger_file = ledger.grainless_path(cfg.roadmap)
     # What outlives the documents, and where. `order` keeps the id; the ledger
@@ -1002,10 +1090,10 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
             else f'{cfg.rel(ledger_file)} keeps the id and the date — this '
                  f'milestone declares no version and no name, and no summary '
                  f'was given, so there is nothing else to keep')
-    plan_note = ('' if canonical_id in model.declared_order(cfg)
+    plan_note = ('' if canonical_id in inventory.declared_order(cfg)
                  else f'; {canonical_id} is on no plan, so `pm roadmap` will '
                       f'not print it — `agentic-sdlc pm add '
-                      f'{model.root_id(cfg)} {canonical_id}` before retiring '
+                      f'{inventory.root_id(cfg)} {canonical_id}` before retiring '
                       f'gives it a row there')
 
     if dry_run:
@@ -1054,16 +1142,6 @@ def cmd_retire(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-# --- move -----------------------------------------------------------------
-def _known_feature_ids(cfg: model.PmConfig) -> list[str]:
-    out = []
-    for milestone in model.milestones(cfg):
-        out.extend(model.unquote(model.field_of(ff, model.FIELD_ID))
-                   or f'{milestone.gid}/{ff.parent.name}'
-                   for ff in model.feature_files(cfg, milestone.gid))
-    return sorted(out)
-
-
 # --- status -------------------------------------------------------------------
 def _short(mid: str, gid: str) -> str:
     """A child's id with the parent's prefix taken off, when it has one. A
@@ -1074,7 +1152,7 @@ def _short(mid: str, gid: str) -> str:
     return gid[len(head):] if gid.startswith(head) else gid
 
 
-def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
+def _open_for(cfg: vocabulary.PmConfig, mid: str) -> dict[str, str]:
     """{grain id: how long it has been open}, for the grains in one milestone
     that have not reached a terminal state. Read once per milestone off the two
     ledgers its rows can be in, so `pm status` costs one pass over each file
@@ -1112,36 +1190,36 @@ def _open_for(cfg: model.PmConfig, mid: str) -> dict[str, str]:
     return out
 
 
-def _age_cell(cfg: model.PmConfig, kind: str, gid: str, status: str,
+def _age_cell(cfg: vocabulary.PmConfig, kind: str, gid: str, status: str,
               opened: dict[str, str]) -> str:
     """`  open 3d 4h`, `  open -`, or nothing — nothing only for a grain that
     has REACHED a done state. An OPEN grain nobody has moved is `-`:
     unmeasured is a different fact from young, and omitting the cell made it
     indistinguishable from finished (rule 4)."""
-    if model.category_of(cfg, kind, status) == model.DONE_CATEGORY:
+    if vocabulary.category_of(cfg, kind, status) == vocabulary.DONE_CATEGORY:
         return ''
     return f'  open {opened.get(gid) or ledger.human_duration(None)}'
 
 
-def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_status(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     only = args[0] if args else ''
     # Rule 4: a scan that saw nothing says so instead of an empty print at exit
     # 0.
-    known = model.known_milestones(cfg)
+    known = inventory.known_milestone_grains(cfg)
     if not known:
         raise Usage(f'{cfg.roadmap_dir} holds no milestone at all — nothing to '
                     f'report, so this is a scope problem (wrong [pm] '
                     f'roadmap_dir, or an empty tree?), not a status')
-    if only and only not in {mid for _, mid in known}:
-        ids = sorted(mid for _, mid in known if mid)
+    if only and only not in {g.gid for _, g in known}:
+        ids = sorted(g.gid for _, g in known if g.gid)
         raise Usage(f'{only!r} is not a milestone in {cfg.roadmap_dir} '
                     f'({" ".join(ids)})')
     # As wide as the longest declared feature word; an undeclared word still
     # prints whole.
-    width = max(len(word) for word in model.flow_of(cfg,
-                                                    model.GRAIN_FEATURE).order)
-    for mdir, mid in known:
-        mfile = model.milestone_doc(mdir)
+    width = max(len(word) for word in vocabulary.flow_of(cfg,
+                                                    vocabulary.GRAIN_FEATURE).order)
+    for mdir, milestone in known:
+        mid = milestone.gid
         if only and only != mid:
             continue
         # 0.4.0/every-grain-is-on-a-stopwatch: how long each open grain has
@@ -1149,23 +1227,23 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # REPORT — nothing is gated on it, because a ceiling on how long a
         # feature may stay open is this package having an opinion (rule 9).
         opened = _open_for(cfg, mid)
-        mstat = model.field_of(mfile, model.FIELD_STATUS)
+        mstat = milestone.field(vocabulary.FIELD_STATUS)
         print(f'milestone {mid:<10} [{mstat}]'
-              + _age_cell(cfg, model.GRAIN_MILESTONE, mid, mstat, opened))
+              + _age_cell(cfg, vocabulary.GRAIN_MILESTONE, mid, mstat, opened))
         rows = []
-        for ffile in model.feature_files(cfg, mid):
-            view = model.read_feature(cfg, ffile)
+        for feature in inventory.feature_grains(cfg, mid):
+            view = inventory.feature_view(cfg, feature)
             # The markers reuse the gate's predicates, so report and gate
             # cannot describe a tree differently.
-            dangling = model.drift_dangling_record(cfg, view.fid)
-            stalled = model.drift_stalled(cfg, view)
+            dangling = inventory.drift_dangling_record(cfg, view.fid)
+            stalled = inventory.drift_stalled(cfg, view)
             drift = (f'  <DRIFT: {dangling}>' if dangling
                      else f'  <WARN: {stalled}>' if stalled else '')
             rows.append((view,
                          f'  feature {_short(mid, view.fid):<40} '
                          f'[{view.status:<{width}}] stories '
                          f'{view.done_n}/{view.total} done'
-                         + _age_cell(cfg, model.GRAIN_FEATURE, view.fid,
+                         + _age_cell(cfg, vocabulary.GRAIN_FEATURE, view.fid,
                                      view.status,
                                      opened) + drift))
         if not rows:
@@ -1173,9 +1251,9 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
         # IN THE MILESTONE'S DECLARED ORDER — `feature_files` reads the
         # parent's `order:` and falls back to id. `phase:` grouped this board
         # until 0.4.0 and retired with the execution list (D-note).
-        finished = model.holds(cfg, model.GRAIN_FEATURE,
+        finished = vocabulary.holds(cfg, vocabulary.GRAIN_FEATURE,
                                ((v.fid, v.status) for v, _ in rows),
-                               model.DONE_CATEGORY)
+                               vocabulary.DONE_CATEGORY)
         print(f'  -- {finished.counted - len(finished.blockers)}/{len(rows)} '
               f'feature(s) done')
         for _, line in rows:
@@ -1183,7 +1261,7 @@ def cmd_status(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_list(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """One tab-separated line per story, filtered — a view over facts, no
     ranking. Rows go to stdout and the census to stderr, so matching
     nothing and scanning nothing stay distinguishable.
@@ -1198,7 +1276,7 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
     statuses: set[str] = set()
     owner = ''
     milestone = ''
-    kind = model.GRAIN_STORY
+    kind = vocabulary.GRAIN_STORY
     category = ''
     for flag, value in pairs:
         if flag == '--status':
@@ -1214,23 +1292,23 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
     if kind not in LIST_KINDS:
         raise Usage(f'--kind names {kind!r}; this verb lists '
                     f'{" or ".join(LIST_KINDS)}')
-    if category and category not in model.CATEGORIES:
+    if category and category not in vocabulary.CATEGORIES:
         raise Usage(f'--category names {category!r} — the set is closed and '
-                    f'is exactly {" ".join(model.CATEGORIES)}')
+                    f'is exactly {" ".join(vocabulary.CATEGORIES)}')
     for status in sorted(statuses):
         _movable(cfg, kind, status)
-    if kind == model.GRAIN_MILESTONE:
+    if kind == vocabulary.GRAIN_MILESTONE:
         if owner or milestone:
             raise Usage('--owner and --milestone filter stories; '
                         '--kind milestone takes --status and --category')
         return _list_milestones(cfg, statuses, category, as_json)
-    if kind in (model.GRAIN_FEATURE, model.GRAIN_BUG):
+    if kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_BUG):
         if owner:
             raise Usage(f'--owner filters stories; a {kind} carries no owner:')
         return _list_bound(cfg, kind, statuses, category, milestone, as_json)
 
     # Enumerated once, to refuse a typo'd `--milestone` as well as to filter.
-    known = model.known_milestones(cfg)
+    known = inventory.known_milestones(cfg)
     if milestone and milestone not in {mid for _, mid in known}:
         ids = sorted(mid for _, mid in known if mid)
         raise Usage(f'--milestone names {milestone!r}, which is not a milestone '
@@ -1243,26 +1321,23 @@ def cmd_list(cfg: model.PmConfig, args: list[str]) -> int:
     for mdir, mid in known:
         if milestone and milestone != mid:
             continue
-        for ffile in model.feature_files(cfg, mid):
-            view = model.read_feature(cfg, ffile)
-            for sfile in view.stories:
+        for feature in inventory.feature_grains(cfg, mid):
+            view = inventory.feature_view(cfg, feature)
+            for story in view.stories:
                 scanned += 1
-                status = model.field_of(sfile, model.FIELD_STATUS)
-                who = model.unquote(model.field_of(sfile, model.FIELD_OWNER))
+                status = story.field(vocabulary.FIELD_STATUS)
+                who = story.field(vocabulary.FIELD_OWNER)
                 if statuses and status not in statuses:
                     continue
-                if category and model.category_of(cfg, model.GRAIN_STORY,
+                if category and vocabulary.category_of(cfg, vocabulary.GRAIN_STORY,
                                                   status) != category:
                     continue
                 if owner and who != owner:
                     continue
-                rows.append((model.unquote(model.field_of(sfile,
-                                                          model.FIELD_ID)),
+                rows.append((story.field(vocabulary.FIELD_ID),
                              status, who or DASH, view.fid,
-                             model.unquote(model.field_of(sfile,
-                                                          model.FIELD_NAME))
-                             or DASH))
-    _emit_rows(model.GRAIN_STORY, rows, as_json)
+                             story.field(vocabulary.FIELD_NAME) or DASH))
+    _emit_rows(vocabulary.GRAIN_STORY, rows, as_json)
     print(f'[pm] {len(rows)} of {scanned} story/ies', file=sys.stderr)
     return 0
 
@@ -1298,114 +1373,118 @@ def _emit_rows(kind: str, rows: list[tuple[str, ...]], as_json: bool) -> None:
 # Every kind is listable, so a script asks the CLI instead of grepping a
 # status word. It was story and milestone, so "show me what is unbound" looked
 # like it needed a flag: there was nothing to pipe (rule 11).
-LIST_KINDS = (model.GRAIN_STORY, model.GRAIN_MILESTONE, model.GRAIN_FEATURE,
-              model.GRAIN_BUG)
+LIST_KINDS = (vocabulary.GRAIN_STORY, vocabulary.GRAIN_MILESTONE, vocabulary.GRAIN_FEATURE,
+              vocabulary.GRAIN_BUG)
 
 # The columns each `--kind` emits, IN ORDER, spelled once. Three things read
 # this — the rows, `--json`'s keys and the `--help` line — and a column list
 # living in three places is the drift `--json` exists to make unhideable.
 LIST_COLUMNS = {
-    model.GRAIN_STORY: ('id', 'status', 'owner', 'feature', 'name'),
-    model.GRAIN_MILESTONE: ('id', 'status', 'category', 'branch', 'name'),
+    vocabulary.GRAIN_STORY: ('id', 'status', 'owner', 'feature', 'name'),
+    vocabulary.GRAIN_MILESTONE: ('id', 'status', 'category', 'branch', 'name'),
     # A grain that BINDS emits its binding, so `$4 == "-"` is "unbound" and
     # every other question about the edge is a pipe away.
-    model.GRAIN_FEATURE: ('id', 'status', 'milestone', 'reviewed', 'name'),
-    model.GRAIN_BUG: ('id', 'status', 'milestone', 'caused_by', 'name'),
+    vocabulary.GRAIN_FEATURE: ('id', 'status', 'milestone', 'reviewed', 'name'),
+    vocabulary.GRAIN_BUG: ('id', 'status', 'milestone', 'caused_by', 'name'),
 }
 
 
-def _list_bound(cfg: model.PmConfig, kind: str, statuses: set[str],
+def _list_bound(cfg: vocabulary.PmConfig, kind: str, statuses: set[str],
                 category: str, milestone: str, as_json: bool) -> int:
     """Features or bugs, one line each, with the binding as a COLUMN — `-`
     there is "written and not yet scheduled", answered by a pipe rather than a
     flag, which composes with every other filter (rule 11)."""
     scanned = 0
     rows = []
-    for gid, grain in sorted(model.grain_index(cfg).items()):
+    for gid, grain in sorted(inventory.grain_index(cfg).items()):
         if grain.kind != kind:
             continue
         scanned += 1
-        status = model.field_of(grain.path, model.FIELD_STATUS)
-        bound = model.unquote(model.field_of(grain.path,
-                                             model.GRAIN_MILESTONE))
+        status = grain.field(vocabulary.FIELD_STATUS)
+        bound = grain.field(vocabulary.GRAIN_MILESTONE)
         if statuses and status not in statuses:
             continue
-        if category and model.category_of(cfg, kind, status) != category:
+        if category and vocabulary.category_of(cfg, kind, status) != category:
             continue
         if milestone and bound != milestone:
             continue
-        second = 'reviewed' if kind == model.GRAIN_FEATURE else 'caused_by'
+        second = 'reviewed' if kind == vocabulary.GRAIN_FEATURE else 'caused_by'
         rows.append((gid, status or DASH, bound or DASH,
-                     model.unquote(model.field_of(grain.path, second)) or DASH,
-                     model.unquote(model.field_of(grain.path,
-                                                  model.FIELD_NAME)) or DASH))
+                     grain.field(second) or DASH,
+                     grain.field(vocabulary.FIELD_NAME) or DASH))
     _emit_rows(kind, rows, as_json)
     print(f'[pm] {len(rows)} of {scanned} {kind}(s)', file=sys.stderr)
     return 0
 
 
-def _list_milestones(cfg: model.PmConfig, statuses: set[str],
+def _list_milestones(cfg: vocabulary.PmConfig, statuses: set[str],
                      category: str, as_json: bool = False) -> int:
     """One tab-separated `<id> <status> <category> <branch> <name>` per
     milestone, `-` for an absent one, so a shell `read` gets a fixed column
     count. `LIST_COLUMNS['milestone']` is the order.
     """
-    known = model.known_milestones(cfg)
+    known = inventory.known_milestone_grains(cfg)
     if not known:
         raise Usage(f'{cfg.roadmap_dir} holds no milestone at all — nothing to '
                     f'list, so this is a scope problem (wrong [pm] '
                     f'roadmap_dir, or an empty tree?), not an empty set')
     rows = []
-    for mdir, mid in known:
-        mfile = model.milestone_doc(mdir)
-        status = model.field_of(mfile, model.FIELD_STATUS)
-        cat = model.category_of(cfg, model.GRAIN_MILESTONE, status)
+    for mdir, milestone in known:
+        status = milestone.field(vocabulary.FIELD_STATUS)
+        cat = vocabulary.category_of(cfg, vocabulary.GRAIN_MILESTONE, status)
         if statuses and status not in statuses:
             continue
         if category and cat != category:
             continue
-        rows.append((mid or mdir.name, status or DASH, cat or DASH,
-                     model.unquote(model.field_of(mfile, 'branch')) or DASH,
-                     model.unquote(model.field_of(mfile,
-                                                  model.FIELD_NAME)) or DASH))
-    _emit_rows(model.GRAIN_MILESTONE, rows, as_json)
+        rows.append((milestone.gid or mdir.name, status or DASH, cat or DASH,
+                     milestone.field('branch') or DASH,
+                     milestone.field(vocabulary.FIELD_NAME) or DASH))
+    _emit_rows(vocabulary.GRAIN_MILESTONE, rows, as_json)
     print(f'[pm] {len(rows)} of {len(known)} milestone(s)', file=sys.stderr)
     return 0
 
 
-def _grain_file(cfg: model.PmConfig, gid: str) -> Path:
-    """Resolve any grain id — milestone, feature, story or bug — to its file.
+def _grain_of(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain:
+    """Resolve any grain id — milestone, feature, story or bug — to the GRAIN.
     ONE lookup for all four kinds, because a grain declares its `id:` and the
     index is keyed on it. The four-branch version this replaced did arithmetic
     on a path, which is why a `..` or an empty segment had to be caught before
-    a join could hand a write to a sibling grain. Nothing is joined now."""
-    defect = model.id_defect(gid)
+    a join could hand a write to a sibling grain. Nothing is joined now.
+
+    A grain and not a file, so a verb that wants a FIELD asks `.field(key)`
+    instead of handing storage the path this used to return."""
+    defect = inventory.id_defect(gid)
     if defect:
         raise Usage(f'no grain resolves from id {gid!r} — {defect}')
-    found = model.grain_file(cfg, gid)
+    found = inventory.grain(cfg, gid)
     if found is None:
         raise Usage(f'no grain resolves from id {gid!r}')
     return found
 
 
-def cmd_get(cfg: model.PmConfig, args: list[str]) -> int:
+def _grain_file(cfg: vocabulary.PmConfig, gid: str) -> Path:
+    """`_grain_of`'s document, for the verbs that WRITE it or name it."""
+    return _grain_of(cfg, gid).path
+
+
+def cmd_get(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if len(args) != 2:
         raise Usage(USAGE)
     gid, key = args
-    print(model.field_of(_grain_file(cfg, gid), key))
+    print(_grain_of(cfg, gid).field(key))
     return 0
 
 
-def _binding_defect(cfg: model.PmConfig, gid: str, key: str,
+def _binding_defect(cfg: vocabulary.PmConfig, gid: str, key: str,
                     value: str) -> None:
     """Refuse a binding that names no grain, or one of the wrong kind — a fact
     about the INPUT, so exit 2 and nothing written (rule 9). Empty UNBINDS and
     is never refused; only the fields `BINDS_TO` names are asked, so `set`
     writes every other key with no opinion."""
-    want = {field: parent for parent, field in model.BINDS_TO.values()}.get(key)
+    want = {field: parent for parent, field in vocabulary.BINDS_TO.values()}.get(key)
     if want is None or not value:
         return
-    found = model.grain_index(cfg).get(model.unquote(value))
+    found = inventory.grain_index(cfg).get(frontmatter.unquote(value))
     if found is None:
         raise Usage(f'{key}: {value!r} names no grain in {cfg.roadmap_dir} — '
                     f'a binding that resolves to nothing is drift, not a plan; '
@@ -1413,7 +1492,7 @@ def _binding_defect(cfg: model.PmConfig, gid: str, key: str,
                     f'written')
     if found.kind != want:
         raise Usage(f'{key}: {value!r} is a {found.kind}, not a {want} — '
-                    f'a {model.kind_of(cfg, gid) or "grain"} names its '
+                    f'a {inventory.kind_of(cfg, gid) or "grain"} names its '
                     f'{want} in {key}:. Nothing was written')
 
 
@@ -1435,7 +1514,7 @@ def _shaped(key: str, value: str) -> str:
     return value
 
 
-def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Set one frontmatter field through a tool rather than a regex. `status`
     is refused by name: a status is a move, and only the status verbs ask
     `move_defect` and stamp the ledger; `order` likewise, being a block list
@@ -1446,16 +1525,16 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     gid, key, value = args
     if not key or not key.replace('_', '').isalnum():
         raise Usage(f'{key!r} is not a frontmatter key')
-    if key == model.FIELD_STATUS:
+    if key == vocabulary.FIELD_STATUS:
         # The grain's own kind when the tree holds it; the hint names a verb,
         # and a verb for a kind nobody declared would be a worse hint than a
         # generic one.
-        kind = _grain_kind(cfg, gid) or model.GRAIN_STORY
+        kind = _grain_kind(cfg, gid) or vocabulary.GRAIN_STORY
         raise Usage(f'status is a move, not a field: run `{PROG} {kind} '
                     f'{value} {gid}` — the {kind} verb checks {value!r} '
                     f'against [pm.states.{kind}] and stamps the ledger; '
                     f'`set` would do neither')
-    if key == model.ORDER_KEY:
+    if key == vocabulary.ORDER_KEY:
         raise Usage(f'{key} is a sequence, not a field: run `{PROG} add '
                     f'<parent-id> <child-id> [--position N | --before <id> | '
                     f'--after <id>]` (or `{PROG} remove`) — `{key}` is a BLOCK '
@@ -1464,17 +1543,18 @@ def cmd_set(cfg: model.PmConfig, args: list[str]) -> int:
     if '\n' in value or '\r' in value:
         raise Refused('a frontmatter scalar is one line')
     value = _shaped(key, value)
-    path = _grain_file(cfg, gid)
+    grain = _grain_of(cfg, gid)
+    path = grain.path
     _binding_defect(cfg, gid, key, value)
-    before = model.field_of(path, key)
-    if not model.set_field(path, key, value):
+    before = grain.field(key)
+    if not frontmatter.set_field(path, key, value):
         raise Usage(f'could not write {key}: in {cfg.rel(path)} '
                     f'(malformed frontmatter, or the file is not writable)')
     _ok(f'{gid}: {key} {before!r} -> {value!r}')
     return 0
 
 
-def cmd_rename(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_rename(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Rewrite one grain's `id:` and every reference naming it, whole or not
     at all. `rename.sweep` decides against the tree; this maps its verdict onto
     the exit codes and prints what moved.
@@ -1507,7 +1587,7 @@ def cmd_rename(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_vocabulary(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Print this version's declared surface — each kind's states with their
     category, and the rule ids `[pm] checks` may name — for the pin bump.
     Reads `cfg.flows` directly so an undeclared tree is reported, with the
@@ -1519,15 +1599,15 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
     # The flat sets stay (rule 6): category-major, then the project's order;
     # empty for a tree that declared nothing.
     grains = {
-        model.GRAIN_MILESTONE: cfg.milestone_states,
-        model.GRAIN_FEATURE: cfg.feature_states,
-        model.GRAIN_STORY: cfg.story_states,
-        model.GRAIN_BUG: cfg.bug_states,
+        vocabulary.GRAIN_MILESTONE: cfg.milestone_states,
+        vocabulary.GRAIN_FEATURE: cfg.feature_states,
+        vocabulary.GRAIN_STORY: cfg.story_states,
+        vocabulary.GRAIN_BUG: cfg.bug_states,
     }
     if as_json:
         print(json.dumps({
-            'categories': list(model.CATEGORIES),
-            'flow_kinds': list(model.FLOW_KINDS),
+            'categories': list(vocabulary.CATEGORIES),
+            'flow_kinds': list(vocabulary.FLOW_KINDS),
             # The absence is a value, not a missing key, so two pin versions
             # diff cleanly.
             'flow_declared': bool(cfg.flows),
@@ -1537,14 +1617,14 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
                     'flow': (None if g not in cfg.flows else {
                         'categories': {
                             cat: list(cfg.flows[g].by_category.get(cat, ()))
-                            for cat in model.CATEGORIES},
+                            for cat in vocabulary.CATEGORIES},
                         'order': list(cfg.flows[g].order),
                     }),
                 }
                 for g, states in grains.items()},
             # The seed travels in every payload: what a declaration diffs
             # against, or what `init` would write.
-            'seed': model.render_seed(),
+            'seed': vocabulary.render_seed(),
             'notes': {
                 'states': 'the flat per-kind `states` list is the declared '
                           'flow\'s order — category-major, then the project\'s '
@@ -1553,7 +1633,7 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
                           'declared in [pm.states.<kind>], and every question '
                           'the engine asks is asked of a category',
             },
-            'checks': list(model.KNOWN_CHECKS),
+            'checks': list(vocabulary.KNOWN_CHECKS),
         }, indent=2))
         return 0
     width = max(len(g) for g in grains)
@@ -1564,7 +1644,7 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
     print('`check pm` D4 holds a grain to. Every question the engine asks is')
     print('asked of a CATEGORY, never of a word. Below is the FLOW this project')
     print('declared — the category every state maps into. The category set is')
-    print(f'closed and is exactly {" ".join(model.CATEGORIES)}.')
+    print(f'closed and is exactly {" ".join(vocabulary.CATEGORIES)}.')
     print()
     if not cfg.flows:
         print('This tree declares NO flow: [pm.states.*] is not in')
@@ -1576,35 +1656,35 @@ def cmd_vocabulary(cfg: model.PmConfig, args: list[str]) -> int:
         print()
         # Indented by two so it is not mistaken for the tree's own config;
         # `render_seed()` is the only source.
-        for line in model.render_seed().splitlines():
+        for line in vocabulary.render_seed().splitlines():
             print(f'  {line}' if line else '')
         print()
     else:
-        cat_width = max(len(c) for c in model.CATEGORIES)
-        for kind in model.FLOW_KINDS:
+        cat_width = max(len(c) for c in vocabulary.CATEGORIES)
+        for kind in vocabulary.FLOW_KINDS:
             # Indexed, never `.get`: `_load_flows` refuses a partial
             # declaration, so it is all four kinds or none.
             flow = cfg.flows[kind]
             print(f'[pm.states.{kind}]')
-            for category in model.CATEGORIES:
+            for category in vocabulary.CATEGORIES:
                 states = flow.by_category.get(category, ())
                 print(f'  {category:<{cat_width}}  {" ".join(states)}')
             print()
-    print(f'rules  {" ".join(model.KNOWN_CHECKS)}')
+    print(f'rules  {" ".join(vocabulary.KNOWN_CHECKS)}')
     return 0
 
 
-def cmd_validate(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_validate(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Structural + referential integrity. The same predicates `check pm` runs."""
     if args:
         raise Usage(USAGE)
     # Same placement as the gate's: the two readers a stale rule id would
     # silently narrow.
-    stale = model.config_complaints(cfg)
+    stale = vocabulary.config_complaints(cfg)
     if stale:
         raise Usage('\n         '.join(stale))
     from agentic_sdlc.repo.pm import validate as _validate
-    findings, census = _validate.run(cfg, set(cfg.checks) & set(model.VALIDATE_CHECKS))
+    findings, census = _validate.run(cfg, set(cfg.checks) & set(vocabulary.VALIDATE_CHECKS))
     for msg in findings:
         print(f'  INVALID  {msg}')
     if not census['grains']:
@@ -1637,13 +1717,13 @@ VERSION = 'version'
 VERSION_FLAG = '--version'
 
 
-def _stamp_field(cfg: model.PmConfig, path: Path, gid: str, key: str,
+def _stamp_field(cfg: vocabulary.PmConfig, path: Path, gid: str, key: str,
                  value: str) -> None:
     """Write one frontmatter field onto a grain `new` just minted or filled,
     through `set_field` so a project's own template still gets it, and ECHO
     it: a field the caller asked for and never sees confirmed is one they have
     to go read the file to trust."""
-    if not model.set_field(path, key, value):
+    if not frontmatter.set_field(path, key, value):
         raise Refused(
             f'{cfg.rel(path)} was created, but {key}: could not be written '
             f'into it — its frontmatter has no `---` block to put the field '
@@ -1664,7 +1744,7 @@ def _version(pairs: list[tuple[str, str]]) -> str:
     return value.strip()
 
 
-def _caused_by(cfg: model.PmConfig, pairs: list[tuple[str, str]]) -> str:
+def _caused_by(cfg: vocabulary.PmConfig, pairs: list[tuple[str, str]]) -> str:
     """The `--caused-by` value, proven to name a feature that exists, or ''.
     Resolution is the whole gate, through the resolver the verbs use; any
     status resolves, since escape is the report's question. An OSError is
@@ -1679,7 +1759,7 @@ def _caused_by(cfg: model.PmConfig, pairs: list[tuple[str, str]]) -> str:
     if not value:
         return ''
     try:
-        found = model.feature_file(cfg, value)
+        found = inventory.feature_file(cfg, value)
     except OSError:
         found = None
     if found is None:
@@ -1690,7 +1770,7 @@ def _caused_by(cfg: model.PmConfig, pairs: list[tuple[str, str]]) -> str:
     return value
 
 
-def _scaffold(cfg: model.PmConfig, kind: str, doc: Path,
+def _scaffold(cfg: vocabulary.PmConfig, kind: str, doc: Path,
               values: dict[str, str]) -> int:
     """Fill a grain's canonical slots and report only what CHANGED."""
     try:
@@ -1727,26 +1807,26 @@ def _slugify(text: str) -> str:
     return out.strip('-')
 
 
-def _mint_path(cfg: model.PmConfig, kind: str, gid: str, name: str = '',
+def _mint_path(cfg: vocabulary.PmConfig, kind: str, gid: str, name: str = '',
                parent_id: str = '') -> Path:
     """The file a NEW grain is written to, in whichever layout the tree is in.
     A NESTED tree keeps its shape: minting into a pool there flips `is_pooled`,
     and every reader then sees the one new file and none of the tree behind it.
     `gid` is the MINTED ID and the stem; nothing READS a stem (rule 9)."""
-    if not model.is_nested(cfg):
-        return model.pool_dir(cfg, kind) / f'{gid}.md'
-    if kind == model.GRAIN_MILESTONE:
+    if not inventory.is_nested(cfg):
+        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+    if kind == vocabulary.GRAIN_MILESTONE:
         stem = f'{gid}-{_slugify(name)}' if name else gid
-        return cfg.roadmap / stem / model.MILESTONE_DOC
-    parent = (model.milestone_dir(cfg, parent_id) if kind != model.GRAIN_STORY
-              else model.feature_dir(cfg, parent_id))
+        return cfg.roadmap / stem / vocabulary.MILESTONE_DOC
+    parent = (inventory.milestone_dir(cfg, parent_id) if kind != vocabulary.GRAIN_STORY
+              else inventory.feature_dir(cfg, parent_id))
     if parent is None:
-        return model.pool_dir(cfg, kind) / f'{gid}.md'
-    if kind == model.GRAIN_FEATURE:
-        return parent / model.FEATURES_DIR / gid / model.FEATURE_DOC
-    if kind == model.GRAIN_STORY:
-        return parent / model.STORIES_DIR / f'{gid}.md'
-    return parent / model.BUGS_DIR / f'{gid}.md'
+        return inventory.pool_dir(cfg, kind) / f'{gid}.md'
+    if kind == vocabulary.GRAIN_FEATURE:
+        return parent / vocabulary.FEATURES_DIR / gid / vocabulary.FEATURE_DOC
+    if kind == vocabulary.GRAIN_STORY:
+        return parent / vocabulary.STORIES_DIR / f'{gid}.md'
+    return parent / vocabulary.BUGS_DIR / f'{gid}.md'
 
 
 NAME_ARG = '<name...>'   # a create's last argument, for the refusal and the synopsis
@@ -1759,23 +1839,23 @@ def _retired_id(kind: str, parent_id: str, slug: str) -> str:
     beside it, so the pin bump is not a duplicate factory (rule 3)."""
     if not parent_id:
         return ''
-    if kind == model.GRAIN_BUG:
-        return f'{parent_id}/{model.BUGS_DIR}/{slug}'
-    return f'{parent_id}/{slug}' if kind in (model.GRAIN_FEATURE,
-                                             model.GRAIN_STORY) else ''
+    if kind == vocabulary.GRAIN_BUG:
+        return f'{parent_id}/{vocabulary.BUGS_DIR}/{slug}'
+    return f'{parent_id}/{slug}' if kind in (vocabulary.GRAIN_FEATURE,
+                                             vocabulary.GRAIN_STORY) else ''
 
 
-def _claim(cfg: model.PmConfig, kind: str, slug: str,
-           parent_id: str = '') -> tuple[str, Path | None]:
-    """(the id this call is about, the document already holding it or None).
+def _claim(cfg: vocabulary.PmConfig, kind: str, slug: str,
+           parent_id: str = '') -> tuple[str, inventory.Grain | None]:
+    """(the id this call is about, the GRAIN already holding it or None).
     Three spellings LOOKED UP, one MINTED: the argument as a literal id, the id
     `mint_id` makes of it, and the retired compound one — first hit wins, and
-    none means the minted id is created. `story_file` for a story: only it
+    none means the minted id is created. `story_grain` for a story: only it
     resolves the nested layout's slug-plus-ordinal."""
-    minted = model.mint_id(kind, slug)
+    minted = inventory.mint_id(kind, slug)
     for gid in (slug, minted, _retired_id(kind, parent_id, slug)):
-        found = (model.story_file(cfg, gid) if kind == model.GRAIN_STORY
-                 else model.grain_file(cfg, gid, kind)) if gid else None
+        found = (inventory.story_grain(cfg, gid) if kind == vocabulary.GRAIN_STORY
+                 else inventory.grain(cfg, gid, kind)) if gid else None
         if found is not None:
             return gid, found
     return minted, None
@@ -1792,8 +1872,8 @@ def _name_required(kind: str, gid: str, typed: str) -> 'Usage':
                  f'that cannot be derived')
 
 
-def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
-    """Scaffold one grain, minting its id through `model.mint_id`.
+def cmd_new(cfg: vocabulary.PmConfig, args: list[str]) -> int:
+    """Scaffold one grain, minting its id through `inventory.mint_id`.
 
     **The parent argument BINDS; it is not identity** — it goes to the child's
     `milestone:`/`feature:` field, the fact `pm add` writes, and never into the
@@ -1805,67 +1885,71 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
     grain, rest = args[0], args[1:]
     # `new milestone` and `new feature` are idempotent — they fill missing
     # slots — so the name is optional when the grain is already there.
-    if grain == model.GRAIN_MILESTONE:
+    if grain == vocabulary.GRAIN_MILESTONE:
         pairs, rest = _take_flags(rest, (VERSION_FLAG,), noun='a version')
         if not rest:
             raise Usage(USAGE)
         version = _version(pairs)
         slug, name = _check_slug('milestone slug', rest[0]), ' '.join(rest[1:])
-        mid, found = _claim(cfg, model.GRAIN_MILESTONE, slug)
+        mid, found = _claim(cfg, vocabulary.GRAIN_MILESTONE, slug)
         if found is None and not name:
-            raise _name_required(model.GRAIN_MILESTONE, mid, slug)
-        target = found or _mint_path(cfg, model.GRAIN_MILESTONE, mid, name)
-        name = name or model.field_of(target, model.FIELD_NAME)
-        code = _scaffold(cfg, model.GRAIN_MILESTONE, target,
-                         {model.FIELD_ID: mid,
-                          model.FIELD_KIND: model.GRAIN_MILESTONE, model.FIELD_NAME: name})
+            raise _name_required(vocabulary.GRAIN_MILESTONE, mid, slug)
+        target = (found.path if found is not None
+                  else _mint_path(cfg, vocabulary.GRAIN_MILESTONE, mid, name))
+        # `found is None` implies a non-empty `name` (the refusal above), so
+        # the short-circuit is the whole of the None guard.
+        name = name or found.field(vocabulary.FIELD_NAME)
+        code = _scaffold(cfg, vocabulary.GRAIN_MILESTONE, target,
+                         {vocabulary.FIELD_ID: mid,
+                          vocabulary.FIELD_KIND: vocabulary.GRAIN_MILESTONE, vocabulary.FIELD_NAME: name})
         if version:
             _stamp_field(cfg, target, mid, VERSION, version)
         return code
-    if grain == model.GRAIN_FEATURE:
+    if grain == vocabulary.GRAIN_FEATURE:
         if len(rest) < 2:
             raise Usage(USAGE)
         mid, slug = rest[0], _check_slug('feature slug', rest[1])
         name = ' '.join(rest[2:])
-        if model.milestone_file(cfg, mid) is None:
+        if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
-        fid, found = _claim(cfg, model.GRAIN_FEATURE, slug, mid)
+        fid, found = _claim(cfg, vocabulary.GRAIN_FEATURE, slug, mid)
         if found is None and not name:
-            raise _name_required(model.GRAIN_FEATURE, fid, f'{mid} {slug}')
-        target = found or _mint_path(cfg, model.GRAIN_FEATURE, fid, name, mid)
-        name = name or model.field_of(target, model.FIELD_NAME)
-        return _scaffold(cfg, model.GRAIN_FEATURE, target,
-                         {model.FIELD_ID: fid,
-                          model.FIELD_KIND: model.GRAIN_FEATURE, model.GRAIN_MILESTONE: mid,
-                          model.FIELD_NAME: name})
-    if grain == model.GRAIN_STORY:
+            raise _name_required(vocabulary.GRAIN_FEATURE, fid, f'{mid} {slug}')
+        target = (found.path if found is not None
+                  else _mint_path(cfg, vocabulary.GRAIN_FEATURE, fid, name, mid))
+        name = name or found.field(vocabulary.FIELD_NAME)
+        return _scaffold(cfg, vocabulary.GRAIN_FEATURE, target,
+                         {vocabulary.FIELD_ID: fid,
+                          vocabulary.FIELD_KIND: vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_MILESTONE: mid,
+                          vocabulary.FIELD_NAME: name})
+    if grain == vocabulary.GRAIN_STORY:
         if len(rest) < 3:
             raise Usage(USAGE)
         fid, slug = rest[0], _check_slug('story slug', rest[1])
         name = ' '.join(rest[2:])
-        ffile = model.feature_file(cfg, fid)
-        if ffile is None:
+        feature = inventory.grain(cfg, fid, vocabulary.GRAIN_FEATURE)
+        if feature is None:
             raise Usage(f'no feature resolves from id {fid!r}')
         # The milestone comes from the feature's own frontmatter, never
         # re-derived from the id.
-        mid = model.field_of(ffile, model.GRAIN_MILESTONE)
-        sid, claimed = _claim(cfg, model.GRAIN_STORY, slug, fid)
+        mid = feature.field(vocabulary.GRAIN_MILESTONE)
+        sid, claimed = _claim(cfg, vocabulary.GRAIN_STORY, slug, fid)
         if claimed is not None:
             raise Refused(f'story id {sid!r} is already held by '
-                          f'{cfg.rel(claimed)} — two files claiming one id is '
-                          f'addressable by neither')
-        sf = _mint_path(cfg, model.GRAIN_STORY, sid, '', fid)
+                          f'{cfg.rel(claimed.path)} — two files claiming one '
+                          f'id is addressable by neither')
+        sf = _mint_path(cfg, vocabulary.GRAIN_STORY, sid, '', fid)
         if _exists(sf):
             raise Refused(f'{cfg.rel(sf)} already exists')
         body = templates.render(
-            templates.load(cfg, model.GRAIN_STORY),
-            {model.FIELD_ID: sid, model.FIELD_KIND: model.GRAIN_STORY,
-             model.GRAIN_FEATURE: fid, model.GRAIN_MILESTONE: mid,
-             model.FIELD_NAME: name})
+            templates.load(cfg, vocabulary.GRAIN_STORY),
+            {vocabulary.FIELD_ID: sid, vocabulary.FIELD_KIND: vocabulary.GRAIN_STORY,
+             vocabulary.GRAIN_FEATURE: fid, vocabulary.GRAIN_MILESTONE: mid,
+             vocabulary.FIELD_NAME: name})
         _mint(cfg, sf, body)
         _ok(f'created {cfg.rel(sf)}')
         return 0
-    if grain == model.GRAIN_BUG:
+    if grain == vocabulary.GRAIN_BUG:
         pairs, rest = _take_flags(rest, (CAUSED_BY_FLAG,), noun='a feature id')
         if len(rest) != 2:
             raise Usage(USAGE)
@@ -1873,19 +1957,19 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         # unresolvable cause is not created.
         cause = _caused_by(cfg, pairs)
         mid, slug = rest[0], _check_slug('bug slug', rest[1])
-        if model.milestone_file(cfg, mid) is None:
+        if inventory.milestone_file(cfg, mid) is None:
             raise Usage(f'no milestone resolves from {mid!r}')
-        bid, held = _claim(cfg, model.GRAIN_BUG, slug, mid)
+        bid, held = _claim(cfg, vocabulary.GRAIN_BUG, slug, mid)
         if held is not None:
             raise Refused(f'bug {bid!r} already exists')
-        bf = _mint_path(cfg, model.GRAIN_BUG, bid, '', mid)
+        bf = _mint_path(cfg, vocabulary.GRAIN_BUG, bid, '', mid)
         if _exists(bf):
             raise Refused(f'{cfg.rel(bf)} already exists')
         # The argument is the PARENT, written to `milestone:` alone.
         body = templates.render(
-            templates.load(cfg, model.GRAIN_BUG),
-            {model.FIELD_ID: bid, model.FIELD_KIND: model.GRAIN_BUG,
-             model.GRAIN_MILESTONE: mid, 'slug': slug})
+            templates.load(cfg, vocabulary.GRAIN_BUG),
+            {vocabulary.FIELD_ID: bid, vocabulary.FIELD_KIND: vocabulary.GRAIN_BUG,
+             vocabulary.GRAIN_MILESTONE: mid, 'slug': slug})
         _mint(cfg, bf, body)
         _ok(f'created {cfg.rel(bf)}')
         if cause:
@@ -1900,10 +1984,10 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         if len(rest) != 1:
             raise Usage(USAGE)
         mid = rest[0]
-        grain = model.grain_index(cfg).get(mid)
-        if grain is None or grain.kind != model.GRAIN_MILESTONE:
+        grain = inventory.grain_index(cfg).get(mid)
+        if grain is None or grain.kind != vocabulary.GRAIN_MILESTONE:
             raise Usage(f'no milestone resolves from {mid!r}')
-        doc = model.shared_doc(cfg, grain, model.HANDOFF_FILE_NAME)
+        doc = inventory.shared_doc(cfg, grain, vocabulary.HANDOFF_FILE_NAME)
         if doc.is_file():
             # Never clobbered: the traps section is the one thing in the tree
             # no command can regenerate.
@@ -1913,10 +1997,9 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
         try:
             body = templates.render(
                 templates.load(cfg,
-                               model.SLOT_TEMPLATE[model.HANDOFF_FILE_NAME]),
-                {model.FIELD_ID: mid,
-                 model.FIELD_NAME: model.field_of(grain.path,
-                                                  model.FIELD_NAME)})
+                               vocabulary.SLOT_TEMPLATE[vocabulary.HANDOFF_FILE_NAME]),
+                {vocabulary.FIELD_ID: mid,
+                 vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
         except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
             raise Usage(f'the handoff template cannot be read ({err}) — '
                         f'{cfg.rel(doc)} was not created') from err
@@ -1927,40 +2010,42 @@ def cmd_new(cfg: model.PmConfig, args: list[str]) -> int:
 
 
 # --- decide -------------------------------------------------------------------
-def _decision_log(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
+def _decision_log(cfg: vocabulary.PmConfig, gid: str) -> tuple[Path, str]:
     """(the decisions.md the grain `gid` names, its text — minted from the
     template if absent). Nothing is written here; the caller writes once.
     """
     depth = gid.count('/')
-    grain = model.grain_index(cfg).get(gid)
-    if grain is not None and grain.kind not in (model.GRAIN_MILESTONE,
-                                                model.GRAIN_FEATURE):
+    grain = inventory.grain_index(cfg).get(gid)
+    if grain is not None and grain.kind not in (vocabulary.GRAIN_MILESTONE,
+                                                vocabulary.GRAIN_FEATURE):
         raise Refused(f'{gid!r} is a {grain.kind} — those have no decision '
                       f'log; name the feature or milestone that owns the choice')
-    if grain is None and (depth > 1 or f'/{model.BUGS_DIR}/' in gid):
+    if grain is None and (depth > 1 or f'/{vocabulary.BUGS_DIR}/' in gid):
         raise Refused(f'{gid!r} is a story or a bug — those have no decision '
                       f'log; name the feature or milestone that owns the choice')
     if grain is None:
         raise Usage(f'no milestone or feature resolves from id {gid!r}')
-    log = model.shared_doc(cfg, grain, model.DECISION_FILE_NAME)
-    gdir = log.parent
+    log = inventory.shared_doc(cfg, grain, vocabulary.DECISION_FILE_NAME)
     if log.is_file():
         try:
-            return log, model.read_raw(log)
+            return log, frontmatter.read_raw(log)
         except (OSError, UnicodeDecodeError) as err:
             raise Usage(f'cannot read {cfg.rel(log)} ({err})') from err
     try:
         return log, templates.render(
-            templates.load(cfg, model.SLOT_TEMPLATE[model.DECISION_FILE_NAME]),
-            {model.FIELD_ID: gid, model.FIELD_NAME: model.field_of(
-                gdir / (model.MILESTONE_DOC if depth == 0
-                        else model.FEATURE_DOC), model.FIELD_NAME)})
+            templates.load(cfg, vocabulary.SLOT_TEMPLATE[vocabulary.DECISION_FILE_NAME]),
+            # The GRAIN's name. This read used to join `milestone.md` onto the
+            # log's own parent, which is the grain's directory in a NESTED tree
+            # and the pool in a pooled one — so every decisions log minted
+            # since 0.4.0 got `name:` as the empty string.
+            {vocabulary.FIELD_ID: gid,
+             vocabulary.FIELD_NAME: grain.field(vocabulary.FIELD_NAME)})
     except (OSError, UnicodeDecodeError, templates.MissingTemplate) as err:
         raise Usage(f'the decisions template cannot be read ({err}) — '
                     f'{cfg.rel(log)} was not created') from err
 
 
-def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_decide(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Append one dated, ordinal-stamped heading; the prose is the author's
     and no field schema is imposed. The title is the remaining argv joined
     with one space; a dangling operator left by a shell split is refused.
@@ -1989,10 +2074,10 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
             f'the whole title: make pm ARGS=\'decide {gid} "first half; '
             f'second half"\'')
     log, text = _decision_log(cfg, gid)
-    eid = model.next_entry_id(text)
+    eid = inventory.next_entry_id(text)
     when = datetime.now(timezone.utc).date().isoformat()
     try:
-        model.write_raw(log, model.append_heading(text, eid, when, title))
+        frontmatter.write_raw(log, inventory.append_heading(text, eid, when, title))
     except OSError as err:
         raise Usage(f'could not append to {cfg.rel(log)} ({err})') from err
     _ok(f'{cfg.rel(log)}: {eid} — {when} — {title}')
@@ -2000,7 +2085,7 @@ def cmd_decide(cfg: model.PmConfig, args: list[str]) -> int:
     # milestone's file, named by the grain.
     # The GRAIN's document, not the log's: a decisions.md declares no
     # `id:`, and the row belongs to the grain that made the choice.
-    _stamp(cfg, _grain_file(cfg, gid), ledger.decision_row(gid, eid, title))
+    _stamp(cfg, _grain_of(cfg, gid), ledger.decision_row(gid, eid, title))
     return 0
 
 
@@ -2058,7 +2143,7 @@ def _event_kind(raw: str) -> str:
     return kind
 
 
-def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
+def _row_ledger(cfg: vocabulary.PmConfig, grain: inventory.Grain | None) -> Path:
     """The ledger this row belongs to: the milestone that owns the row's GRAIN,
     read from the grain's own document and from nothing else (D1).
 
@@ -2068,21 +2153,20 @@ def _row_ledger(cfg: model.PmConfig, path: Path | None) -> Path:
     row's grain document, or None when the row names none (those land
     grainless, D3); the caller passes the PATH because resolution also stamps
     `grain`, so the id a reader sees and the ledger cannot disagree."""
-    if path is None:
+    if grain is None:
         if not cfg.roadmap.is_dir():
             raise Refused(f'there is no PM tree at {cfg.rel(cfg.roadmap)}, so '
                           f'there is no ledger a row naming no grain belongs '
                           f'to; no row was written')
         return ledger.grainless_path(cfg.roadmap)
-    found = _ledger_of(cfg, model.unquote(model.field_of(path,
-                                                         model.FIELD_ID)))
+    found = _ledger_of(cfg, grain.field(vocabulary.FIELD_ID))
     if found is None:
-        raise Refused(f'{cfg.rel(path)} names no milestone, so there is no '
-                      f'ledger its row belongs to; no row was written')
+        raise Refused(f'{cfg.rel(grain.path)} names no milestone, so there is '
+                      f'no ledger its row belongs to; no row was written')
     return found
 
 
-def _tree_snapshot(cfg: model.PmConfig) -> dict:
+def _tree_snapshot(cfg: vocabulary.PmConfig) -> dict:
     """The active tree's live state, verbatim, at the instant of the row (D3):
     every id sorted, empty lists when empty, no ranking. The category keys
     (`*_in_progress`) are what the row means; the frozen seed-word keys below
@@ -2097,43 +2181,42 @@ def _tree_snapshot(cfg: model.PmConfig) -> dict:
         ledger.STORIES_IN_PROGRESS: [],
     }
 
-    def add(snap: dict, bucket: str, path: Path) -> None:
-        gid = model.unquote(model.field_of(path, model.FIELD_ID))
+    def add(snap: dict, bucket: str, found: inventory.Grain) -> None:
+        gid = found.field(vocabulary.FIELD_ID)
         if gid:
             snap[bucket].append(gid)
 
     def in_progress(kind: str, status: str) -> bool:
-        return model.category_of(cfg, kind, status) == model.IN_PROGRESS
+        return vocabulary.category_of(cfg, kind, status) == vocabulary.IN_PROGRESS
 
-    for _milestone in model.milestones(cfg):
-        mfile = _milestone.path
-        mstat = model.field_of(mfile, model.FIELD_STATUS)
-        if in_progress(model.GRAIN_MILESTONE, mstat):
-            add(live, 'milestones_in_progress', mfile)
-        if mstat == model.BUILDING:
-            add(frozen, 'milestones_building', mfile)
-        for ffile in model.feature_files(cfg, _milestone.gid):
-            fstat = model.field_of(ffile, model.FIELD_STATUS)
-            if in_progress(model.GRAIN_FEATURE, fstat):
-                add(live, 'features_in_progress', ffile)
-            if fstat == model.BUILDING:
-                add(frozen, 'features_building', ffile)
-            elif fstat == model.REVIEWING:
-                add(frozen, 'features_review', ffile)
-            for sfile in model.story_files(
-                    cfg, model.unquote(model.field_of(ffile, model.FIELD_ID))):
-                sstat = model.field_of(sfile, model.FIELD_STATUS)
-                if in_progress(model.GRAIN_STORY, sstat):
-                    add(live, ledger.STORIES_IN_PROGRESS, sfile)
-                if sstat == model.BUILDING:
-                    add(frozen, 'stories_wip', sfile)
-                elif sstat == model.REVIEWING:
-                    add(frozen, 'stories_review', sfile)
+    for _milestone in inventory.milestones(cfg):
+        mstat = _milestone.field(vocabulary.FIELD_STATUS)
+        if in_progress(vocabulary.GRAIN_MILESTONE, mstat):
+            add(live, 'milestones_in_progress', _milestone)
+        if mstat == vocabulary.BUILDING:
+            add(frozen, 'milestones_building', _milestone)
+        for feature in inventory.feature_grains(cfg, _milestone.gid):
+            fstat = feature.field(vocabulary.FIELD_STATUS)
+            if in_progress(vocabulary.GRAIN_FEATURE, fstat):
+                add(live, 'features_in_progress', feature)
+            if fstat == vocabulary.BUILDING:
+                add(frozen, 'features_building', feature)
+            elif fstat == vocabulary.REVIEWING:
+                add(frozen, 'features_review', feature)
+            for story in inventory.story_grains(
+                    cfg, feature.field(vocabulary.FIELD_ID)):
+                sstat = story.field(vocabulary.FIELD_STATUS)
+                if in_progress(vocabulary.GRAIN_STORY, sstat):
+                    add(live, ledger.STORIES_IN_PROGRESS, story)
+                if sstat == vocabulary.BUILDING:
+                    add(frozen, 'stories_wip', story)
+                elif sstat == vocabulary.REVIEWING:
+                    add(frozen, 'stories_review', story)
     return {bucket: sorted(ids)
             for bucket, ids in (*frozen.items(), *live.items())}
 
 
-def cmd_ledger(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_ledger(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
     sub, rest = args[0], args[1:]
@@ -2145,7 +2228,7 @@ def cmd_ledger(cfg: model.PmConfig, args: list[str]) -> int:
                 f'({", ".join(ledger_commands())})')
 
 
-def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Append one row — dispatch/session from a transcript or by hand, or a
     gate. The forms are exclusive; every hand-form number is optional and an
     omitted one is an omitted key, never a zero, except the gate form's
@@ -2192,26 +2275,26 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
     # Resolved BEFORE the row is built, because it is both the row's `grain`
     # and the row's address: one resolution, so the id a reader sees and the
     # ledger it sits in cannot disagree.
-    gpath = _grain_file(cfg, grain) if grain else None
+    named = _grain_of(cfg, grain) if grain else None
     if source:
         kind = _event_kind(_required(flags, '--event'))
         fields.update(_from_transcript(source, flags))
-        if gpath is not None:
+        if named is not None:
             # The id the GRAIN declares, not the string the caller typed —
             # `_ledger_id` is what every other row is stamped with, so two rows
             # naming one grain cannot spell it two ways.
-            fields[ledger.GRAIN_FIELD] = _ledger_id(gpath, grain)
+            fields[ledger.GRAIN_FIELD] = _ledger_id(named.path, grain)
         else:
             # A resolved grain ROUTES the row as well as naming it — one rule
             # (D1), whichever way the grain arrived.
-            gpath = _resolved_grain_file(cfg, _grain_from_tree(fields['tree']))
-            if gpath is not None:
-                fields[ledger.GRAIN_FIELD] = _ledger_id(gpath, '')
+            named = _resolved_grain(cfg, _grain_from_tree(fields['tree']))
+            if named is not None:
+                fields[ledger.GRAIN_FIELD] = _ledger_id(named.path, '')
     else:
         kind = _event_kind(flags.get('--event', 'SubagentStop'))
-        fields.update(_by_hand(gpath, grain, flags))
+        fields.update(_by_hand(named, grain, flags))
     row = ledger.usage_row(kind, **fields)
-    target = _row_ledger(cfg, gpath)
+    target = _row_ledger(cfg, named)
     try:
         ledger.append_to(target, row)
     except OSError as err:
@@ -2221,7 +2304,7 @@ def cmd_ledger_record(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def _record_gate(cfg: model.PmConfig, flags: dict[str, str]) -> int:
+def _record_gate(cfg: vocabulary.PmConfig, flags: dict[str, str]) -> int:
     """The gate form: what one gate run cost, as one row. The calling shell
     wrapper discards this exit code, so nothing here may exit 0 having
     written nothing.
@@ -2325,8 +2408,8 @@ def _from_transcript(source: str, flags: dict[str, str]) -> dict:
     return {k: v for k, v in summary.items() if v is not None}
 
 
-def _resolved_grain_file(cfg: model.PmConfig, gid: str) -> Path | None:
-    """The document for a grain the VERB resolved, or None. A refusal here
+def _resolved_grain(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain | None:
+    """The grain a VERB resolved, or None. A refusal here
     would be a row lost to a lookup nobody asked for, so an id that will not
     resolve is treated as no resolution at all: the key is omitted and the row
     lands in `rows naming no grain`, a bucket somebody can read. `--grain` is
@@ -2335,10 +2418,10 @@ def _resolved_grain_file(cfg: model.PmConfig, gid: str) -> Path | None:
     if not gid:
         return None
     try:
-        return _grain_file(cfg, gid)
-    except (Usage, model.AmbiguousStory) as err:
+        return _grain_of(cfg, gid)
+    except (Usage, inventory.AmbiguousStory) as err:
         # BOTH, and the second is why this is not `except Usage`.
-        # `model.story_file` raises `AmbiguousStory`, a plain `Exception`, when
+        # `inventory.story_file` raises `AmbiguousStory`, a plain `Exception`, when
         # two files claim one id — so a duplicated id turned a lookup nobody
         # asked for into exit 2 with NO ROW WRITTEN ANYWHERE, breaking the
         # fail-open promise the couriers depend on. And it SAYS SO (W4): a
@@ -2376,16 +2459,17 @@ def _grain_from_tree(snap: dict) -> str:
     return ''
 
 
-def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:
-    """The hand form's fields, over the already-resolved grain document —
-    `--grain` resolves through `_grain_file` in the caller, because a typo'd id
-    in a ledger row is a lie nothing downstream can check, and the same path
-    routes the row."""
+def _by_hand(found: inventory.Grain, grain: str, flags: dict[str, str]) -> dict:
+    """The hand form's fields, over the already-resolved GRAIN — `--grain`
+    resolves through `_grain_of` in the caller, because a typo'd id in a ledger
+    row is a lie nothing downstream can check, and the same resolution routes
+    the row."""
     usage = {}
     for key, flag in zip(('input', 'output'), SPLIT_FLAGS):
         if flag in flags:
             usage[key] = _count_flag(flag, flags[flag])
-    fields: dict[str, object] = {ledger.GRAIN_FIELD: _ledger_id(path, grain)}
+    fields: dict[str, object] = {
+        ledger.GRAIN_FIELD: _ledger_id(found.path, grain)}
     if usage:
         # Only the keys the caller gave: absent, not 0, means nobody counted.
         fields['usage'] = usage
@@ -2398,16 +2482,16 @@ def _by_hand(path: Path, grain: str, flags: dict[str, str]) -> dict:
     return fields
 
 
-def _grain_kind(cfg: model.PmConfig, gid: str) -> str:
+def _grain_kind(cfg: vocabulary.PmConfig, gid: str) -> str:
     """Which vocabulary an id answers to — the kind the GRAIN declares. It
     used to count slashes, the nested id shape, so every pooled id read as a
     milestone and `open_seconds` asked the milestone vocabulary whether a
     feature had finished: harmless while two flows share a `done` word, a
     growing age beside `[shipped]` when they do not."""
-    return model.kind_of(cfg, gid)
+    return inventory.kind_of(cfg, gid)
 
 
-def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_ledger_show(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """One grain's rows, oldest first, with the seconds between status rows; a
     total only once the grain reached a finished state. No rows is exit 0 — a
     fact, not an error."""
@@ -2416,9 +2500,9 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
     if len(rest) != 1:
         raise Usage(USAGE)
     gid = rest[0]
-    path = _grain_file(cfg, gid)
-    owner = _ledger_of(cfg, model.unquote(model.field_of(path,
-                                                         model.FIELD_ID)) or gid)
+    found = _grain_of(cfg, gid)
+    path = found.path
+    owner = _ledger_of(cfg, found.field(vocabulary.FIELD_ID) or gid)
     if owner is None:
         raise Usage(f'{cfg.rel(path)} names no milestone, so no ledger owns '
                     f'{gid!r}')
@@ -2458,14 +2542,14 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
         line = f'{row.data.get(ledger.TS_FIELD, "")}  {kind:<{KIND_COLUMN}}'
         if kind == ledger.KIND_STATUS:
             line += f'  {row.data.get("from")} -> {row.data.get("to")}'
-            gap = _gap(previous, row)
+            gap = ledger._gap(previous, row)
             if previous is not None and gap is not None:
                 line += f'  +{gap}s'
             previous = row
         elif arrive.disposition_of(row.data):
-            line += _disposition_cells(row.data)
-        elif kind in ROW_CELLS:
-            line += ROW_CELLS[kind](row.data)
+            line += ledger._disposition_cells(row.data)
+        elif kind in ledger.ROW_CELLS:
+            line += ledger.ROW_CELLS[kind](row.data)
         print(line.rstrip())
     status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS]
     total = ledger.total_seconds(cfg, _grain_kind(cfg, gid), status)
@@ -2474,87 +2558,13 @@ def cmd_ledger_show(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def _lesson_cells(row: dict) -> str:
-    """The rule, the text, and ALWAYS the source, so the reader goes to the
-    record rather than trusting this line. `lesson show` filters them."""
-    return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
-            f'(source: {row.get("source", "")})')
-
-
-def _enter_cells(row: dict) -> str:
-    """The rung asked, the answer `pm ready-for` gave, and what blocked it."""
-    cells = (f'  {row.get("rung", "")}  '
-             + (ledger.READY if row.get(ledger.READY_FIELD)
-                else ledger.NOT_READY))
-    blockers = row.get('blockers')
-    named = [str(one.get('check') or one.get('why', ''))
-             for one in (blockers if isinstance(blockers, list) else [])
-             if isinstance(one, dict)]
-    return cells + (f'  blocked: {", ".join(named)}' if named else '')
-
-
-def _verdict_cells(row: dict) -> str:
-    """The rung, the check, the verdict word, the belt's own detail and what
-    it ran — without them a refused run and a passed one read alike here."""
-    cells = (f'  {row.get("rung", "")}  {row.get("check", "")}  '
-             f'{row.get("verdict", "")}')
-    if row.get('detail'):
-        cells += f' — {row["detail"]}'
-    return cells + (f'  (ran: {row["ran"]})' if row.get('ran') else '')
-
-
-def _leave_cells(row: dict) -> str:
-    """The arrival the one write recorded, then the belt named NEXT."""
-    cells = _arrival_cells(row)
-    if not row.get('next_rung'):
-        return cells
-    cells += f'  next: {row["next_rung"]}'
-    checks = row.get('next_checks')
-    if isinstance(checks, list) and checks:
-        cells += f' ({", ".join(str(one) for one in checks)})'
-    return cells
-
-
-# Every kind whose payload this verb renders, and the column the kind sits in,
-# off the kinds themselves — `{kind:<8}` predated `check.verdict` (13).
-ROW_CELLS = {ledger.KIND_LESSON: _lesson_cells,
-             ledger.KIND_ENTER: _enter_cells,
-             ledger.KIND_VERDICT: _verdict_cells,
-             ledger.KIND_LEAVE: _leave_cells}
+# How wide the kind column this verb prints is, off `ledger`'s own kinds —
+# `{kind:<8}` predated `check.verdict` (13). It stays here, with the only line
+# that formats against it, and it has to: `vars(ledger)` is a question only a
+# module OUTSIDE `ledger` can ask of it. The cells it lines up moved to
+# `ledger.py`, beside the `*_row` minters whose keys they read.
 KIND_COLUMN = max(len(word) for name, word in vars(ledger).items()
                   if name.startswith('KIND_') and isinstance(word, str))
-
-
-def _arrival_cells(row: dict) -> str:
-    """The state reached and the answer given, `none` and its value included."""
-    cells = f'  {row.get("state", "")}  {row.get("answer", "")}'
-    return cells + (f' {row["value"]}' if row.get('value') else '')
-
-
-def _disposition_cells(row: dict) -> str:
-    """The arrival, plus every check a belt answered instead of asking
-    (0.5.0/D6). Read defensively: a hand-written row must not make a grain
-    unprintable."""
-    cells = _arrival_cells(row)
-    entries = row.get('skipped')
-    if not isinstance(entries, list) or not entries:
-        return cells
-    return cells + '  skipped: ' + ', '.join(
-        f'{one.get("check")} — "{one.get("why")}"' if isinstance(one, dict)
-        else str(one) for one in entries)
-
-
-def _gap(earlier, later) -> int | None:
-    """Whole seconds between two rows' stamps, or None when either will not
-    parse — a fabricated interval is worse than a missing one.
-    """
-    if earlier is None:
-        return None
-    start = ledger.parse_ts(earlier.data.get(ledger.TS_FIELD))
-    end = ledger.parse_ts(later.data.get(ledger.TS_FIELD))
-    if start is None or end is None:
-        return None
-    return int((end - start).total_seconds())
 
 
 # --- ledger report ------------------------------------------------------------
@@ -2568,11 +2578,13 @@ REPORT_HINT = ', or name one: `pm ledger report <milestone-id>`'
 FROM_FLAG = '--from'
 
 
-def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """One milestone's rows, added up per grain — see report.py. The building
     milestone by default, an explicit id otherwise; no `ledger.jsonl` prints
     one line at exit 0. `--from <rev>` runs the same `report.build` over
-    `report.GitSource`, writing nothing and touching no index."""
+    `report.GitSource`, writing nothing and touching no index. MORE THAN ONE
+    milestone id compares them — `_ledger_compare` below, the same sections'
+    totals side by side."""
     as_json = JSON_FLAG in args
     rest = [a for a in args if a != JSON_FLAG]
     # Whether `--from` was given and what it was given are two questions: an
@@ -2594,9 +2606,14 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
         if arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r} (ledger report takes '
                         f'{JSON_FLAG}, {FROM_FLAG} <rev> and a grain id)')
-    if len(rest) > 1:
-        raise Usage(f'ledger report takes one grain id, not '
-                    f'{" ".join(rest)!r}')
+    if given and len(rest) > 1:
+        # Two subjects, one rev: the pair is only comparable if both were read
+        # at the SAME moment, and one `--from` cannot say which moment each
+        # milestone should be read at without picking for the caller.
+        raise Usage(f'{FROM_FLAG} reads ONE rev and {len(rest)} milestone ids '
+                    f'were named — which rev each should be read at is not a '
+                    f'thing one {FROM_FLAG} can say. Report them one at a '
+                    f'time, or drop {FROM_FLAG} to compare them on the tree')
     if given and not rest:
         # "The building milestone" is a fact about today's tree, not about a
         # rev.
@@ -2605,6 +2622,8 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
                     f'a rev may not take its subject from one tree and its '
                     f'rows from another — `pm ledger report <milestone-id> '
                     f'{FROM_FLAG} <rev>`')
+    if len(rest) > 1:
+        return _ledger_compare(cfg, rest, as_json)
     try:
         src: report.Source = (report.GitSource(cfg.root, rev) if given
                               else report.DiskSource())
@@ -2663,7 +2682,7 @@ def cmd_ledger_report(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def _report_milestone_dir_at(cfg: model.PmConfig, src: report.GitSource,
+def _report_milestone_dir_at(cfg: vocabulary.PmConfig, src: report.GitSource,
                              mid: str) -> Path:
     """The milestone's handle at a rev, or exit 2 naming what is not there —
     its document in the pool, or the `<mid>-*` directory a rev from before the
@@ -2671,12 +2690,12 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.GitSource,
     the message says which rev to reach for."""
     # Graded against TODAY's tree, so the refusal says which of the two it
     # is: the tree takes any grain id, and what refuses here is the rev.
-    grain = model.grain_index(cfg).get(mid)
-    if grain is not None and grain.kind != model.GRAIN_MILESTONE:
+    grain = inventory.grain_index(cfg).get(mid)
+    if grain is not None and grain.kind != vocabulary.GRAIN_MILESTONE:
         raise Usage(f'{mid!r} is a {grain.kind} in this tree, and {FROM_FLAG} '
                     f'reads ONE milestone out of git (D6) — name the milestone '
                     f'that held it; a report on the tree takes any grain id')
-    if not model.segment_is_literal(mid):
+    if not inventory.segment_is_literal(mid):
         raise Usage(f'no milestone resolves from id {mid!r} — the ledger is '
                     f'per milestone (D6), so {FROM_FLAG} reports a milestone '
                     f'id (`0.23.0`) and never a feature, story or bug')
@@ -2694,29 +2713,29 @@ def _report_milestone_dir_at(cfg: model.PmConfig, src: report.GitSource,
     return mdir
 
 
-def _report_nothing_declares(cfg: model.PmConfig, src: report.GitSource,
+def _report_nothing_declares(cfg: vocabulary.PmConfig, src: report.GitSource,
                              mid: str) -> str:
     """Where the rev was looked in, and what was not there."""
     if src.is_pooled(cfg):
-        pool = src.spec(model.pool_dir(cfg, model.GRAIN_MILESTONE))
+        pool = src.spec(inventory.pool_dir(cfg, vocabulary.GRAIN_MILESTONE))
         return f'no document in {pool} declares `id: {mid}`'
     return (f'no milestone directory {mid}-* under {cfg.roadmap_dir}/ or '
-            f'{cfg.roadmap_dir}/{model.ARCHIVE_DIR_NAME}/ at {src.rev}')
+            f'{cfg.roadmap_dir}/{vocabulary.ARCHIVE_DIR_NAME}/ at {src.rev}')
 
 
-def _report_default_dir(cfg: model.PmConfig) -> Path:
+def _report_default_dir(cfg: vocabulary.PmConfig) -> Path:
     """Which milestone a bare `ledger report` is ABOUT — the current release's,
     from `order` plus `[pm] version_at`. Not a routing rule and not
     `_row_ledger`'s twin: no row is placed by this (D1/D7). It answers a
     MISSING ARGUMENT from the plan, the same act as `pm next`, and refuses with
     the plan's own words when the plan cannot answer."""
-    mdir, why = model.release_milestone(cfg)
+    mdir, why = inventory.release_milestone(cfg)
     if mdir is None:
         raise Usage(f'{why}{REPORT_HINT}')
     return mdir
 
 
-def _report_grain_dir(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
+def _report_grain_dir(cfg: vocabulary.PmConfig, gid: str) -> tuple[Path, str]:
     """(the milestone document the report reads, the grain it is NARROWED to).
     The id names the LEVEL; a feature or story reports through the milestone
     that owns it, because that is where its rows are (D6). '' is a milestone
@@ -2725,18 +2744,85 @@ def _report_grain_dir(cfg: model.PmConfig, gid: str) -> tuple[Path, str]:
     # refusal every verb gives it — the shared grammar and the shared
     # sentence — rather than a second wording invented here.
     _grain_file(cfg, gid)
-    grain = model.grain_index(cfg).get(gid)
+    grain = inventory.grain_index(cfg).get(gid)
     if grain is None:
         raise Usage(f'no grain resolves from id {gid!r}')
-    if grain.kind == model.GRAIN_MILESTONE:
+    if grain.kind == vocabulary.GRAIN_MILESTONE:
         return grain.path, ''
-    owner = model.milestone_of(cfg, gid)
-    holder = model.grain_index(cfg).get(owner) if owner else None
+    owner = inventory.milestone_of(cfg, gid)
+    holder = inventory.grain_index(cfg).get(owner) if owner else None
     if holder is None:
         raise Usage(f'{gid!r} is a {grain.kind} bound to no milestone in this '
                     f'tree, so none of its rows is in a ledger — bind it with '
                     f'`pm set {gid} milestone <id>`, or name a milestone')
     return holder.path, gid
+
+
+def _ledger_compare(cfg: vocabulary.PmConfig, ids: list[str],
+                    as_json: bool) -> int:
+    """More than one milestone, side by side — one `report.build` per id, then
+    `report.compare_data`. Reads and writes nothing, like the one-id form.
+
+    WHICH milestones is the caller's to say (rule 9); what the tree may supply
+    is the SEQUENCE, and only when it declared one for every id named.
+    """
+    twice = [gid for i, gid in enumerate(ids) if gid in ids[:i]]
+    if twice:
+        raise Usage(f'{twice[0]!r} was named twice — a milestone compared with '
+                    f'itself is a delta of zero by construction, and which '
+                    f'other one was meant is not a thing this verb may pick')
+    src = report.DiskSource()
+    handles: dict[str, Path] = {}
+    for gid in ids:
+        # The shared refusal for an id that resolves to nothing comes from
+        # `_report_grain_dir`, so two ids get the one sentence every verb
+        # gives a bad id rather than a second wording invented here.
+        mdir, focus = _report_grain_dir(cfg, gid)
+        if focus:
+            kind = inventory.grain_index(cfg)[gid].kind
+            raise Usage(f'{gid!r} is a {kind} and a comparison is between '
+                        f'MILESTONES — a ledger is per milestone (D6), so two '
+                        f'{kind}s under one milestone would be one ledger read '
+                        f'twice. Name the milestones, or one id alone for the '
+                        f'clock at that level')
+        handles[gid] = mdir
+    order = inventory.declared_order(cfg)
+    # All of them or none: sequencing HALF the list by the plan and the rest by
+    # the argument line is a rule nobody could read off the output.
+    planned = all(gid in order for gid in ids)
+    basis = report.ORDER_PLAN if planned else report.ORDER_GIVEN
+    root = ledger.grainless_path(cfg.roadmap)
+    documents: list[tuple[str, dict]] = []
+    missing: list[str] = []
+    for gid in (sorted(ids, key=order.index) if planned else ids):
+        mdir = handles[gid]
+        mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
+        path = src.ledger_for(cfg, mid)
+        try:
+            rows = src.ledger_rows(path)
+            if root != path:
+                rows += src.ledger_rows(root)
+        except ledger.LedgerError as err:
+            raise Usage(f'{err}') from err
+        if not src.is_file(path):
+            missing.append(mid)
+        try:
+            documents.append((mid, report.build(cfg, mid, mdir, rows, src)))
+        except report.RecordError as err:
+            raise Usage(f'{err}') from err
+    data = report.compare_data(cfg, documents, basis)
+    if as_json:
+        print(json.dumps(data, ensure_ascii=False))
+        return 0
+    lines = report.compare_lines(cfg, data)
+    print(lines[0])
+    # Under the heading rather than at the end: a milestone contributing no
+    # rows of its own is why a column is 0, and a reader meets the zero first.
+    for mid in missing:
+        print(f'   {mid} — {report.NO_LEDGER}')
+    for line in lines[1:]:
+        print(line)
+    return 0
 
 
 # --- dispatch -----------------------------------------------------------------
@@ -2759,46 +2845,46 @@ the plan.
 """
 
 
-def _plan_path(cfg: model.PmConfig) -> Path:
-    return model.releases_file(cfg)
+def _plan_path(cfg: vocabulary.PmConfig) -> Path:
+    return inventory.releases_file(cfg)
 
 
-def _mint_plan(cfg: model.PmConfig) -> Path:
+def _mint_plan(cfg: vocabulary.PmConfig) -> Path:
     """The plan document, created from the scaffold if this is the first entry."""
     path = _plan_path(cfg)
     if not path.is_file():
         # Through `core.apply`, like every other mutation.
         apply.raise_on_error(apply.make_dir(path.parent))
-        model.write_raw(path, _PLAN_SCAFFOLD)
+        frontmatter.write_raw(path, _PLAN_SCAFFOLD)
     return path
 
 
-def _resolve(cfg: model.PmConfig, gid: str, role: str) -> model.Grain:
+def _resolve(cfg: vocabulary.PmConfig, gid: str, role: str) -> inventory.Grain:
     """One id to its grain, or exit 2 naming which argument."""
-    defect = model.id_defect(gid)
+    defect = inventory.id_defect(gid)
     if defect:
         raise Usage(f'the {role} id {gid!r} names no grain — {defect}')
-    found = model.grain_index(cfg).get(gid)
+    found = inventory.grain_index(cfg).get(gid)
     if found is None:
         raise Usage(f'no grain resolves from the {role} id {gid!r}')
     return found
 
 
-def _parent(cfg: model.PmConfig, gid: str) -> tuple[model.Grain, bool]:
+def _parent(cfg: vocabulary.PmConfig, gid: str) -> tuple[inventory.Grain, bool]:
     """(the parent grain, whether the plan has to be minted for it) — the ROOT
     does not exist until something is scheduled."""
-    if model.root_grain(cfg) is None and gid == model.ROOT_ID:
-        return model.Grain(gid=gid, kind=model.ROOT_KIND,
-                           path=model.releases_file(cfg)), True
+    if inventory.root_grain(cfg) is None and gid == vocabulary.ROOT_ID:
+        return inventory.Grain(gid=gid, kind=vocabulary.ROOT_KIND,
+                           path=inventory.releases_file(cfg)), True
     return _resolve(cfg, gid, 'parent'), False
 
 
-def _sequence(cfg: model.PmConfig, parent: model.Grain) -> list[str]:
+def _sequence(cfg: vocabulary.PmConfig, parent: inventory.Grain) -> list[str]:
     """The parent's declared `order`, refusing a list this writer cannot rewrite."""
-    defect = model.sequence_defect(parent.path)
+    defect = parent.sequence_defect(vocabulary.ORDER_KEY)
     if defect:
         raise Refused(f'{cfg.rel(parent.path)} {defect} — nothing was written')
-    return model.list_field_of(parent.path, model.ORDER_KEY)
+    return parent.list_field(vocabulary.ORDER_KEY)
 
 
 def _placed(entries: list[str], child: str, where: tuple[str, str],
@@ -2854,7 +2940,7 @@ def _where(args: list[str]) -> tuple[list[str], tuple[str, str]]:
     return ids, where
 
 
-def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_add(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Bind a child to a parent AND sequence it there — `set` plus a list
     insert, and nothing else. The KINDS come off the two ids, so one verb
     serves every level and `[pm.contains]` answers for all of them."""
@@ -2865,7 +2951,7 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
     parent, mint = _parent(cfg, ids[0])
     if parent.gid == child.gid:
         raise Refused(f'{parent.gid} cannot hold itself')
-    refusal = model.may_hold(cfg, parent.kind, child.kind)
+    refusal = vocabulary.may_hold(cfg, parent.kind, child.kind)
     if refusal:
         raise Refused(f'{parent.gid} is a {parent.kind} and {child.gid} is a '
                       f'{child.kind}: {refusal} — nothing was written')
@@ -2879,18 +2965,18 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
 
     # THE BIND — `set`, verbatim. A kind that binds to nothing (a milestone
     # under the root) is sequenced only: there is no field to write.
-    bind = model.BINDS_TO.get(child.kind)
+    bind = vocabulary.BINDS_TO.get(child.kind)
     wrote = []
     if bind is not None:
         field = bind[1]
-        before = model.unquote(model.field_of(child.path, field))
+        before = child.field(field)
         if before != parent.gid:
-            if not model.set_field(child.path, field, parent.gid):
+            if not frontmatter.set_field(child.path, field, parent.gid):
                 raise Refused(f'{cfg.rel(child.path)} has no frontmatter block '
                               f'to put `{field}:` in — nothing was written')
             wrote.append(f'{child.gid}: {field} {before!r} -> {parent.gid!r}')
             # ONLY when the old parent really lists it (0.6.0/D11).
-            former = model.grain_index(cfg).get(before) if before else None
+            former = inventory.grain_index(cfg).get(before) if before else None
             if former is not None and child.gid in _sequence(cfg, former):
                 wrote.append(f'  noticed: {before} still lists {child.gid} in '
                              f'its `order` — that entry is now DANGLING; '
@@ -2899,7 +2985,7 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
 
     # THE SEQUENCE — the parent's list, through the byte-honest writer.
     if placed != entries:
-        if not model.set_list_field(parent.path, model.ORDER_KEY, placed):
+        if not frontmatter.set_list_field(parent.path, vocabulary.ORDER_KEY, placed):
             raise Refused(f'{rel} could not be rewritten — it has no '
                           f'frontmatter block'
                           + (f'; {"; ".join(wrote)} DID land'
@@ -2914,7 +3000,7 @@ def cmd_add(cfg: model.PmConfig, args: list[str]) -> int:
     return 0
 
 
-def cmd_remove(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_remove(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """Unbind a child AND unsequence it, together — the pair `add` writes,
     taken back. `pm set <id> <field> ""` still unbinds alone."""
     if len(args) != 2:
@@ -2924,9 +3010,9 @@ def cmd_remove(cfg: model.PmConfig, args: list[str]) -> int:
     child = _resolve(cfg, args[1], 'child')
     rel = cfg.rel(parent.path)
     entries = _sequence(cfg, parent)
-    bind = model.BINDS_TO.get(child.kind)
+    bind = vocabulary.BINDS_TO.get(child.kind)
     field = bind[1] if bind is not None else ''
-    bound = (model.unquote(model.field_of(child.path, field))
+    bound = (child.field(field)
              if field else '')
     elsewhere = bool(field and bound and bound != parent.gid)
     if elsewhere and child.gid not in entries:
@@ -2934,12 +3020,12 @@ def cmd_remove(cfg: model.PmConfig, args: list[str]) -> int:
                       f'{parent.gid} — nothing was written')
     wrote = []
     if field and bound and not elsewhere:
-        if not model.set_field(child.path, field, ''):
+        if not frontmatter.set_field(child.path, field, ''):
             raise Refused(f'{cfg.rel(child.path)} could not be rewritten — '
                           f'nothing was written')
         wrote.append(f'{child.gid}: {field} {bound!r} -> \'\'')
     if child.gid in entries:
-        if not model.set_list_field(parent.path, model.ORDER_KEY,
+        if not frontmatter.set_list_field(parent.path, vocabulary.ORDER_KEY,
                                     [g for g in entries if g != child.gid]):
             raise Refused(f'{rel} could not be rewritten'
                           + (f'; {"; ".join(wrote)} DID land'
@@ -2978,7 +3064,7 @@ def _roadmap_row(cells: tuple[str, ...]) -> str:
     return '\t'.join((cell or DASH).replace('\t', ' ') for cell in cells)
 
 
-def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_roadmap(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """The plan: every scheduled milestone, then the backlog. Writes nothing —
     what `pm status` does for one milestone, for the SEQUENCE, and what
     replaced the hand-maintained `ROADMAP.md`. A retired entry prints from its
@@ -2986,9 +3072,9 @@ def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
     release's version, name and summary once its documents are gone."""
     if args:
         raise Usage(f'roadmap takes no arguments, got {" ".join(args)}')
-    entries = model.declared_order(cfg)
-    path = model.releases_file(cfg)
-    defect = model.plan_defect(cfg)
+    entries = inventory.declared_order(cfg)
+    path = inventory.releases_file(cfg)
+    defect = inventory.plan_defect(cfg)
     if defect is not None:
         raise Refused(f'{cfg.rel(path)} {defect}')
     try:
@@ -2997,58 +3083,55 @@ def cmd_roadmap(cfg: model.PmConfig, args: list[str]) -> int:
         raise Usage(f'{err}') from err
     if not entries:
         print(f'[pm] {cfg.rel(path)} declares no order — '
-              f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
+              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
               f'starts the plan')
     else:
         print(f'[pm] {len(entries)} scheduled release(s) in {cfg.rel(path)}')
         for mid in entries:
-            mfile = model.milestone_file(cfg, mid)
-            if mfile is None:
+            milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+            if milestone is None:
                 row = retired.get(mid, {})
                 print(_roadmap_row((
                     row.get('version', ''), mid,
                     RETIRED_STATE if row else DANGLING_STATE,
                     row.get('name', ''), row.get('summary', ''))))
                 continue
-            version = model.milestone_version(cfg, mid)
-            state = ('shipped' if model.entry_is_shipped(cfg, mid)
-                     else model.field_of(mfile, model.FIELD_STATUS) or DASH)
+            version = inventory.milestone_version(cfg, mid)
+            state = ('shipped' if inventory.entry_is_shipped(cfg, mid)
+                     else milestone.field(vocabulary.FIELD_STATUS) or DASH)
             print(_roadmap_row((version or NO_VERSION, mid, state,
-                                model.unquote(model.field_of(mfile,
-                                                             model.FIELD_NAME)),
-                                '')))
+                                milestone.field(vocabulary.FIELD_NAME), '')))
     scheduled = set(entries)
-    backlog = sorted(mid for _, mid in model.known_milestones(cfg)
+    backlog = sorted(mid for _, mid in inventory.known_milestones(cfg)
                      if mid and mid not in scheduled)
     if backlog:
         print(f'[pm] {len(backlog)} in backlog (on no plan — not scheduled '
               f'as a release)')
         for mid in backlog:
-            mfile = model.milestone_file(cfg, mid)
+            milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
             print(_roadmap_row((
-                model.milestone_version(cfg, mid), mid,
-                model.field_of(mfile, model.FIELD_STATUS) if mfile else '',
-                model.unquote(model.field_of(mfile,
-                                             model.FIELD_NAME)) if mfile else '',
+                inventory.milestone_version(cfg, mid), mid,
+                milestone.field(vocabulary.FIELD_STATUS) if milestone else '',
+                milestone.field(vocabulary.FIELD_NAME) if milestone else '',
                 '')))
     return 0
 
 
-def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
+def cmd_next(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     """The first entry in `order` that has not shipped, and what it claims."""
     if args:
         raise Usage(f'next takes no arguments, got {" ".join(args)}')
-    entries = model.declared_order(cfg)
+    entries = inventory.declared_order(cfg)
     if not entries:
         print(f'[pm] {cfg.rel(_plan_path(cfg))} declares no order — '
-              f'`agentic-sdlc pm add {model.root_id(cfg)} <milestone-id>` '
+              f'`agentic-sdlc pm add {inventory.root_id(cfg)} <milestone-id>` '
               f'starts the plan')
         return 0
     # ONE resolver. `pm next` answering differently from what `release` and the
     # ledger resolve, over the same tree, is two scoreboards (review B1).
-    mid = model.current_milestone(cfg)
+    mid = inventory.current_milestone(cfg)
     if mid is None:
-        dangling = [g for g in entries if model.entry_is_dangling(cfg, g)]
+        dangling = [g for g in entries if inventory.entry_is_dangling(cfg, g)]
         if dangling:
             print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has '
                   f'shipped; {len(dangling)} entry/ies are DANGLING (they name '
@@ -3056,9 +3139,9 @@ def cmd_next(cfg: model.PmConfig, args: list[str]) -> int:
         else:
             print(f'[pm] every release in {cfg.rel(_plan_path(cfg))} has shipped')
         return 0
-    mfile = model.milestone_file(cfg, mid)
-    print(f'{model.milestone_version(cfg, mid) or NO_VERSION}\t{mid}\t'
-          f'{model.field_of(mfile, model.FIELD_STATUS) if mfile else ""}')
+    milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+    print(f'{inventory.milestone_version(cfg, mid) or NO_VERSION}\t{mid}\t'
+          f'{milestone.field(vocabulary.FIELD_STATUS) if milestone else ""}')
     return 0
 
 
@@ -3068,8 +3151,8 @@ def _table() -> dict:
     from agentic_sdlc.repo.pm import ready_for, skills
     return {
         'ready-for': ready_for.cmd_ready_for,
-        model.GRAIN_STORY: cmd_story, model.GRAIN_BUG: cmd_bug, model.GRAIN_FEATURE: cmd_feature,
-        model.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
+        vocabulary.GRAIN_STORY: cmd_story, vocabulary.GRAIN_BUG: cmd_bug, vocabulary.GRAIN_FEATURE: cmd_feature,
+        vocabulary.GRAIN_MILESTONE: cmd_milestone, 'retire': cmd_retire,
         'status': cmd_status, 'list': cmd_list, 'new': cmd_new,
         'validate': cmd_validate, 'install-skills': skills.cmd_install_skills,
         'init': skills.cmd_init, 'set': cmd_set, 'get': cmd_get,
@@ -3092,14 +3175,14 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
         print(USAGE)
         return 0 if argv else 2
     try:
-        cfg = model.load()
-    except model.ConfigError as err:
+        cfg = vocabulary.load()
+    except vocabulary.ConfigError as err:
         # EVERY defect, flow first — one line each, exit 2 once. `load()` stops
         # at the first, and the first is rarely the one that matters: the tree
         # that motivated this was told about a retired key while its PM CLI was
         # refusing every work-moving verb for want of a flow (review D1).
         try:
-            defects = model.all_config_defects()
+            defects = vocabulary.all_config_defects()
         except Exception:  # noqa: BLE001 - the collector never masks the error
             defects = []
         for msg in defects or [str(err)]:
@@ -3128,7 +3211,7 @@ def main(argv: list[str], *, skipped: Skipped = ()) -> int:
     except Refused as err:
         print(f'[pm] REFUSED — {err}', file=sys.stderr)
         return 1
-    except (Usage, model.AmbiguousStory, model.ConfigError) as err:
+    except (Usage, inventory.AmbiguousStory, vocabulary.ConfigError) as err:
         # `ConfigError` here is the declaration's lazy half — `flow_of` refuses
         # mid-walk — and it must be one line at exit 2, since a traceback at
         # exit 1 reads as findings.

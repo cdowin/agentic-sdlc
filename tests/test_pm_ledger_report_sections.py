@@ -33,18 +33,14 @@ from support.pm import (bug, declaring, decision_line, dispatch_line,
                         status_line, write, write_config)
 from support.pm import tree as _seed_tree
 
-from agentic_sdlc.repo.pm import model as _model
+from agentic_sdlc.repo.pm import vocabulary
+from agentic_sdlc.repo.pm import report as report_module
 
-# THESE LEDGERS WERE WRITTEN UNDER THE 0.2.0 ALL-SEVEN SEED, where a story and
-# a feature walked `reviewing`, `accepted` and `packaging` too. The seed now
-# gives each kind the states its belt writes (a story: `building`, `done`), and
-# what these cases prove is CATEGORY arithmetic — a stint in `reviewing` is one
-# `in_progress` number whatever the word — so the tree keeps the declaration
-# the rows were written under rather than rewriting every row to a word that
-# proves nothing different. `support.pm.tree` is the builder; this only fixes
-# its `config`.
-LEGACY_FLOW = declaring(feature=_model.DEFAULT_FLOWS['milestone'],
-                        story=_model.DEFAULT_FLOWS['milestone'])
+# THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
+# written under rather than being rewritten: tests/test_pm_ledger.py, beside the
+# same `LEGACY_FLOW`.
+LEGACY_FLOW = declaring(feature=vocabulary.DEFAULT_FLOWS['milestone'],
+                        story=vocabulary.DEFAULT_FLOWS['milestone'])
 
 
 def tree(**kwargs):
@@ -284,10 +280,16 @@ def test_the_report_never_writes():
     one place it is asserted against every byte in the tree."""
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
         seeded(root)
+        second_milestone(root)
         before = {p: p.read_bytes() for p in sorted(root.rglob('*'))
                   if p.is_file()}
         assert report(root, '0.1')[0] == 0
         assert report(root, '0.1', '--json')[0] == 0
+        # The COMPARED form too: it opens a second milestone's ledger and a
+        # second milestone's grain documents, and a read verb that grew a
+        # second reader is a read verb with a second chance to write.
+        assert report(root, '0.1', SECOND)[0] == 0
+        assert report(root, '0.1', SECOND, '--json')[0] == 0
         after = {p: p.read_bytes() for p in sorted(root.rglob('*'))
                  if p.is_file()}
     assert after == before
@@ -866,3 +868,445 @@ def test_the_gate_json_carries_every_field_and_names_what_it_could_not_use():
         {'gate': 'unit', 'why': 'duration_ms is negative',
          'ts': '2026-09-03T10:03:00Z'},
         {'gate': None, 'why': 'no gate name', 'ts': '2026-09-03T10:04:00Z'}]
+
+
+# --- the roster: every block this report prints, named where a reader stands ---
+# `bg-a-read-verb-names-three-of-its-thirteen-sections`. The verb printed
+# twenty-three distinct block titles and `--help` named THREE, so the agent
+# that asked it the comparative question read the help, piped the output to
+# `head -60`, saw six sections and hand-rolled over the raw `.jsonl` two
+# censuses this report already computes.
+#
+# THE GATE IS THE SET, not the roster: `--help`'s block titles and the titles
+# the report PRINTS are compared both ways, so a fourteenth block reddens this
+# the day it lands and a block that retires reddens it too. The roster in
+# `--help` is what goes stale; this is what makes going stale a failure.
+SECTION_SEPARATOR = ' — '
+HEADING_MARK = ' (heading)'
+ROSTER_MARK = 'columns IN ORDER:'
+TITLE_INDENT, COLUMN_INDENT = 45, 47
+KIND_JOIN = ' / '
+
+
+def help_roster() -> dict[str, tuple[str, ...]]:
+    """`pm --help`'s block roster for `ledger report`, PARSED — one title to
+    the columns it names, in order. Parsed rather than restated: a roster
+    written down HERE would go stale exactly the way the one it guards did."""
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
+    roster: dict[str, list[str]] = {}
+    titles: list[str] = []
+    for line in entry.split(ROSTER_MARK)[-1].split('\n'):
+        indent = len(line) - len(line.rstrip('\n').lstrip())
+        if not line.strip():
+            continue
+        if indent < TITLE_INDENT:
+            break
+        if indent == TITLE_INDENT:
+            titles = line.strip().replace(HEADING_MARK, '').split(KIND_JOIN)
+            for title in titles:
+                roster.setdefault(title, [])
+        else:
+            for title in titles:
+                roster[title].extend(line.split())
+    return {title: tuple(columns) for title, columns in roster.items()}
+
+
+def printed_blocks(out: str) -> dict[str, set[str]]:
+    """One report's block titles to the column names it printed under them.
+
+    Both shapes count as a block: a section HEADING — the three-part
+    `<prefix> <id> — <title> — <census>` line — and a `-- <title> (n)` table.
+    The summary line and the `no ledger` line carry ONE separator and are
+    neither.
+    """
+    from agentic_sdlc.repo.pm import report as pm_report
+    lines = out.splitlines()
+    found: dict[str, set[str]] = {}
+    for i, line in enumerate(lines):
+        if (line.startswith(pm_report.HEADING_PREFIX)
+                and line.count(SECTION_SEPARATOR) >= 2):
+            found.setdefault(line.split(SECTION_SEPARATOR)[1], set())
+        elif line.startswith(f'{pm_report.BLOCK_PREFIX} '):
+            title = line[3:].rsplit(' (', 1)[0]
+            header = lines[i + 1] if i + 1 < len(lines) else ''
+            found.setdefault(title, set()).update(
+                header.split() if header.strip() else [])
+    return found
+
+
+SECOND = '0.2'
+SECOND_LEDGER = 'pm/roadmap/ledgers/0.2.jsonl'
+
+
+def second_milestone(root) -> None:
+    """A second milestone with a ledger of its own — what a comparison needs
+    two of, and the smallest tree that produces one."""
+    write(root / 'pm/roadmap/milestones/0.2.md',
+          {'id': f'"{SECOND}"', 'kind': 'milestone', 'name': 'Next',
+           'status': 'planning'})
+    write(root / 'pm/roadmap/features/omega.md',
+          {'id': '0.2/omega', 'kind': 'feature', 'milestone': f'"{SECOND}"',
+           'name': 'Omega', 'status': 'building', 'reviewed': ''})
+    put_ledger(root,
+               status_line('2026-09-04T10:00:00Z', '0.2/omega',
+                           'planning', 'building'),
+               dispatch_line('2026-09-04T10:05:00Z', grain='0.2/omega',
+                             tool_calls=5, usage={'output': 700}),
+               rel=SECOND_LEDGER)
+
+
+def compared_report(*argv) -> str:
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        second_milestone(root)
+        code, out = report(root, '0.1', SECOND, *argv)
+    assert code == 0, out
+    return out
+
+
+def actors_report(*argv) -> str:
+    """A ledger of ARRIVALS, so `time per actor` prints rows and not `(0)`.
+
+    Its own seed because the sections fixture above has none, and a block that
+    only ever printed its `(0)` heading has never shown its columns — which is
+    how a column roster goes stale without any table changing.
+    """
+    from agentic_sdlc.repo.pm import arrive, ledger as _ledger
+
+    def disposition(ts: str, grain: str, state: str, answer: str,
+                    value: str = '') -> str:
+        return _ledger.dumps(_ledger.disposition_row(
+            grain, state, arrive.Said(answer, value), ts=ts))
+
+    with tree(story_statuses=('done', 'ready')) as root:
+        put_ledger(
+            root,
+            status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
+            disposition('2026-09-03T10:00:00Z', A_S0, 'building',
+                        '--by', 'agent developer'),
+            status_line('2026-09-03T10:10:00Z', A_S0, 'building', 'done'),
+            disposition('2026-09-03T10:10:00Z', A_S0, 'done', '--by',
+                        'agent reviewer'))
+        code, out = report(root, '0.1', *argv)
+    assert code == 0, out
+    return out
+
+
+def every_block_printed() -> dict[str, set[str]]:
+    """Every block the verb has, from the four seeds that between them reach
+    all of them: the sections fixture, a ledger of gate rows, a ledger of
+    arrivals, and two milestones side by side."""
+    found: dict[str, set[str]] = {}
+    for out in (seeded_report(), gates_report(*THREE_PARSE_ONE_LINT),
+                actors_report(), compared_report()):
+        for title, columns in printed_blocks(out).items():
+            found.setdefault(title, set()).update(columns)
+    return found
+
+
+class TestTheHelpNamesEveryBlockItPrints:
+    """Rule 11's read side, gated in BOTH directions for `ledger report`."""
+
+    def test_the_census_of_blocks_is_not_zero(self):
+        """Rule 4: an empty scrape would make both directions below pass over
+        nothing. The number is the claim — twenty-three blocks, of which
+        `--help` named three when this was filed."""
+        printed = every_block_printed()
+        assert len(printed) >= 20, sorted(printed)
+        assert len(help_roster()) >= 20, sorted(help_roster())
+
+    def test_every_block_printed_is_named_in_help(self):
+        printed, roster = every_block_printed(), help_roster()
+        assert set(printed) - set(roster) == set(), (
+            f'{sorted(set(printed) - set(roster))} print(s) and `pm --help` '
+            f'names {len(roster)} of {len(printed)} blocks — a capability '
+            f'nobody can find is a capability you do not have')
+
+    def test_help_names_no_block_that_stopped_printing(self):
+        printed, roster = every_block_printed(), help_roster()
+        assert set(roster) - set(printed) == set(), (
+            f'{sorted(set(roster) - set(printed))} is named in `pm --help` '
+            f'and no seed printed it')
+
+    def test_every_column_named_is_a_column_printed(self):
+        """The roster's second half: a title with the wrong columns beside it
+        is the same defect one layer down. `<placeholder>` columns are the
+        clock's per-state ones, which are the project's words and not this
+        verb's."""
+        printed = every_block_printed()
+        for title, columns in help_roster().items():
+            if not printed.get(title):
+                continue
+            named = {c for c in columns if not c.startswith('<')}
+            assert named <= printed[title], (
+                f'{title}: `--help` names {sorted(named - printed[title])}, '
+                f'which is no column of {sorted(printed[title])}')
+
+
+# --- more than one milestone --------------------------------------------------
+# `bg-the-telemetry-verb-cannot-compare-two-milestones`. Every telemetry
+# question actually asked of this tree is comparative — *where are we, compared
+# to the previous milestone, how are we improving* — and the answer used to be
+# six invocations or a `jq` join over N nested documents. What is pinned here:
+#
+#   * ONE GOLDEN for the whole compared report. The block titles, the row per
+#     milestone, the `delta` row's arithmetic (`last - first`), the `*` on a
+#     delta whose census moved, the `-` on one whose ends were never both
+#     measured — and the two blocks that say out loud they are the tree's rows
+#     rather than the milestone's, so a 0 delta cannot read as "no change";
+#   * the `--json` SHAPE, which is the decision this grain had to make: one
+#     joined document, because a nested report per milestone is the join the
+#     brief says a caller should not have to write;
+#   * ORDER is read, never chosen (rule 9). The plan sequences the ids the
+#     caller named when it holds every one of them; otherwise the caller's
+#     order stands, and the heading says which;
+#   * the refusal matrix. Two ids where one resolves to nothing, an id that is
+#     not a milestone, one id named twice, `--from` beside more than one.
+PLAN_REL = 'pm/roadmap/releases.md'
+COMPARED_TABLE = """\
+[ledger:report] 0.1 → 0.2 — milestone comparison — 2 milestone(s) in given \
+order, 9 block(s), 6 block(s) marked * for a census that moved or is \
+absent
+
+-- spend per grain (2)
+milestone  dispatch_rows  status_rows  grains  total_rows  in  out  \
+cache_create  cache_read  tokens_total  tool_calls  duration_s
+0.1                    3            5      10           0   -    -         \
+    -           -             -          37           -
+0.2                    1            1       1           0   -  700         \
+    -           -             -           5           -
+delta                -2*          -4*      -9         +0*   -    -         \
+    -           -             -        -32*           -
+
+-- time per state (2)
+milestone  grains  building_s  reviewing_s  closed_s   open_s
+0.1            10        1080          120      1200    88500
+0.2             1           -            -         -     3600
+delta          -9           -            -         -  -84900*
+
+-- time per actor (2)
+milestone  actors  arrivals  seconds
+0.1             0         0        -
+0.2             0         0        -
+delta          +0        +0        -
+
+-- rows naming no grain (2)
+milestone  dispatches  in  out  cache_create  cache_read  tokens_total  \
+tool_calls  duration_s
+0.1                 0   -    -             -           -             -     \
+      -           -
+0.2                 0   -    -             -           -             -     \
+      -           -
+delta              +0   -    -             -           -             -     \
+      -           -
+   dispatches: read from the tree's ledger, not this milestone's — so a row \
+whose `tree` snapshot held exactly one story in progress is billed to that \
+story instead and leaves this bucket, which is why the delta is real and not 0
+
+-- yield per review pass (2)
+milestone  records  passes  findings
+0.1              3       2         7
+0.2              0       0         0
+delta           -3     -2*       -7*
+
+-- rework (2)
+milestone  passes
+0.1             2
+0.2             0
+delta          -2
+
+-- escapes (2)
+milestone  bugs  features
+0.1           2         2
+0.2           0         0
+delta       -2*        -2
+
+-- overhead shape (2)
+milestone  dispatch_rows  decision_rows  session_rows
+0.1                    3              2             2
+0.2                    1              0             0
+delta                 -2            -2*           -2*
+
+-- gate cost (2)
+milestone  rows  gates  incomparable  unusable
+0.1           0      0             0         0
+0.2           0      0             0         0
+delta        +0     +0            +0        +0
+   gates: the same rows under every milestone: these name no grain, so \
+they live in the tree's ledger and this delta is 0 by construction"""
+
+
+@pytest.fixture
+def frozen(monkeypatch):
+    """Read time held still. `open_s` is measured against NOW, and a golden
+    whose last column moved every second would prove nothing."""
+    from datetime import datetime, timezone
+    from agentic_sdlc.repo.pm import report as pm_report
+    when = datetime(2026, 9, 4, 11, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(pm_report, '_now', lambda: when)
+    return when
+
+
+def compare(root, *argv) -> tuple[int, str]:
+    return report(root, '0.1', SECOND, *argv)
+
+
+def two_milestones(root) -> None:
+    seeded(root)
+    second_milestone(root)
+
+
+class TestTwoMilestonesSideBySide:
+    """The comparative question, answered by the verb instead of by hand."""
+
+    def test_two_ids_print_this_exact_table(self, frozen):
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            two_milestones(root)
+            code, out = compare(root)
+        assert code == 0, out
+        assert out.rstrip('\n') == COMPARED_TABLE
+
+    def test_the_json_is_one_joined_document_and_not_two_reports(self, frozen):
+        """The shape decision, asserted where it is DECIDED — in
+        `report.compare_data`'s docstring and here. A caller gets the join; a
+        caller who wanted the nested document names one id."""
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            two_milestones(root)
+            code, out = compare(root, '--json')
+        assert code == 0, out
+        data = json.loads(out)
+        assert sorted(data) == ['blocks', 'milestones', 'order']
+        assert data['milestones'] == ['0.1', SECOND]
+        assert data['order'] == 'given'
+        # NOT a document per milestone: no milestone id is a top-level key,
+        # which is the join this verb exists to save.
+        assert SECOND not in data
+        spend = data['blocks'][0]
+        assert spend['block'] == 'spend per grain'
+        assert spend['census'] == 'grains' and spend['moved'] is True
+        assert [row['milestone'] for row in spend['rows']] == ['0.1', SECOND]
+        assert spend['rows'][0]['grains'] == 10
+        assert spend['rows'][1]['grains'] == 1
+        assert spend['delta']['grains'] == -9
+        # Absent stays absent through the subtraction, exactly as in the table.
+        assert spend['delta']['in'] is None
+        assert [b['block'] for b in data['blocks']] == [
+            'spend per grain', 'time per state', 'time per actor',
+            'rows naming no grain', 'yield per review pass', 'rework',
+            'escapes', 'overhead shape', 'gate cost']
+
+    def test_the_plan_sequences_the_ids_it_holds_and_says_so(self, frozen):
+        """Rule 9's edge. `releases.md` `order` is a DECLARATION, so reading it
+        to sequence two ids the caller named is reading; picking WHICH two
+        would be deciding, and nothing here does that."""
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            two_milestones(root)
+            write(root / PLAN_REL, {'id': 'roadmap', 'kind': 'roadmap',
+                                    'order': f'\n  - "{SECOND}"\n  - "0.1"'})
+            # Named 0.1 first; the plan ships 0.2 first, so the plan wins and
+            # the delta is measured the way the tree declared time runs.
+            code, out = compare(root)
+        assert code == 0, out
+        assert out.splitlines()[0].startswith(
+            f'[ledger:report] {SECOND} → 0.1 — milestone comparison — '
+            f'2 milestone(s) in plan order')
+
+    def test_an_id_the_plan_does_not_hold_leaves_the_order_given(self, frozen):
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            two_milestones(root)
+            write(root / PLAN_REL, {'id': 'roadmap', 'kind': 'roadmap',
+                                    'order': f'\n  - "{SECOND}"'})
+            code, out = compare(root)
+        assert code == 0, out
+        assert '2 milestone(s) in given order' in out.splitlines()[0]
+
+    def test_a_milestone_with_no_ledger_of_its_own_says_so(self, frozen):
+        """Rule 11: a column of zeros with no reason beside it reads as work
+        that cost nothing. The line names the milestone, under the heading,
+        before the numbers."""
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            seeded(root)
+            second_milestone(root)
+            (root / SECOND_LEDGER).unlink()
+            code, out = compare(root)
+        assert code == 0, out
+        assert out.splitlines()[1] == f'   {SECOND} — no ledger'
+
+    def test_a_note_claiming_a_zero_delta_sits_only_where_the_delta_is_zero(
+            self, frozen):
+        """Rule 4's first sin in PROSE, which is the form it took here.
+
+        Two blocks read rows that name no grain, so both read the tree's own
+        ledger rather than the milestone's — and they were given the same note,
+        saying the delta is *"0 by construction"*. It is, for a GATE row, which
+        carries no `tree` snapshot. It is not for an unattributed DISPATCH row,
+        which does: `named_grains` bills it to the single story in progress when
+        it was filed, so the row leaves this bucket under that story's milestone
+        and stays in it under every other. Shipped, the report printed
+        `dispatches -1` with "this delta is 0 by construction" underneath.
+
+        So the claim is gated rather than re-read: any block whose note says the
+        delta is zero must HAVE a zero delta, and the block that cannot must not
+        carry that note.
+        """
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            seeded(root)
+            second_milestone(root)
+            # A grainless dispatch in the TREE's ledger whose snapshot names the
+            # SECOND milestone's feature: unattributed under 0.1, billed to
+            # omega under 0.2. This is the row the shipped note lied about.
+            (root / 'pm/roadmap/ledger.jsonl').write_text(
+                dispatch_line('2026-09-05T10:00:00Z', tool_calls=11,
+                              tree=snapshot(features_building=['0.2/omega'])) + '\n',
+                encoding='utf-8')
+            code, out = compare(root, '--json')
+        assert code == 0, out
+        blocks = {b['block']: b for b in json.loads(out)['blocks']}
+        no_grain = blocks['rows naming no grain']
+        # The delta is REAL, which is the whole finding.
+        assert no_grain['delta']['dispatches'] == -1, no_grain
+        assert report_module.TREE_WIDE_NOTE not in no_grain['note']
+        # And every block that DOES claim zero delivers one, over this same
+        # tree — the sweep, so a third block cannot inherit the wrong note.
+        claiming = [b for b in blocks.values()
+                    if b['note'] == report_module.TREE_WIDE_NOTE]
+        assert claiming, 'nothing claims a zero delta; the sweep proves nothing'
+        for block in claiming:
+            assert all(cell in (0, None) for cell in block['delta'].values()), \
+                f'{block["block"]} claims a 0 delta and prints {block["delta"]}'
+
+    @pytest.mark.parametrize('argv, says', [
+        # An id that resolves to nothing: the ONE sentence every verb gives a
+        # bad id, not a second wording invented for this path.
+        (('0.1', 'no-such-milestone'),
+         "no grain resolves from id 'no-such-milestone'"),
+        # A LEVEL is a single-id question; two of them are one ledger read
+        # twice.
+        (('0.1', '0.1/alpha'), 'is a feature and a comparison is between'),
+        (('0.1', A_S0), 'is a story and a comparison is between'),
+        # A milestone against itself is a delta of zero by construction.
+        (('0.1', '0.1'), "'0.1' was named twice"),
+        # One rev cannot say which moment each milestone should be read at.
+        (('0.1', SECOND, '--from', 'HEAD'),
+         '--from reads ONE rev and 2 milestone ids were named'),
+    ])
+    def test_every_refusal_exits_2_and_names_what_it_refused(self, argv, says):
+        with tree(feature_status='done',
+                  story_statuses=('done', 'ready')) as root:
+            two_milestones(root)
+            before = {p: p.read_bytes() for p in sorted(root.rglob('*'))
+                      if p.is_file()}
+            code, out = report(root, *argv)
+            after = {p: p.read_bytes() for p in sorted(root.rglob('*'))
+                     if p.is_file()}
+        assert code == 2, out
+        assert says in out, out
+        # A refusal writes nothing, which is the half an exit code cannot say.
+        assert after == before

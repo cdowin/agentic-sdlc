@@ -23,9 +23,9 @@ from support import run_check  # noqa: E402
 
 from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo.checks import doc
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import vocabulary
 
-FLOW = model.render_seed()
+FLOW = vocabulary.render_seed()
 
 
 @contextmanager
@@ -79,8 +79,8 @@ class AnInvocationIsAClaimAboutTheTree(unittest.TestCase):
         """RULE 9's edge: this reads what the project declared, it does not
         decide what a story vocabulary should be. Declare `reviewing` for a
         story and the same sentence stops being a finding."""
-        declared = model.render_seed(
-            {**model.DEFAULT_FLOWS,
+        declared = vocabulary.render_seed(
+            {**vocabulary.DEFAULT_FLOWS,
              'story': {'todo': ('planning', 'ready'),
                        'in_progress': ('building', 'reviewing'),
                        'done': ('done', 'obe')}})
@@ -187,3 +187,92 @@ class TheRuleIsWiredIntoTheGate(unittest.TestCase):
             code, out = self._gate(root)
         self.assertEqual(code, 0, out)
         self.assertNotIn('story building', out)
+
+
+def milestone(root: Path, gid: str, version: str, *decisions: str) -> None:
+    """A milestone and its decisions file, in the pooled layout the seed declares."""
+    pool = root / 'pm' / 'roadmap' / 'milestones'
+    pool.mkdir(parents=True, exist_ok=True)
+    (pool / f'{gid}.md').write_text(
+        f'---\nid: "{gid}"\nkind: milestone\nstatus: done\n'
+        f'version: {version}\n---\n\n# {gid}\n', encoding='utf-8')
+    body = ''.join(f'## D{n} — a ruling\n\nprose\n\n' for n in decisions)
+    (pool / f'{gid}-decisions.md').write_text(
+        f'# {gid} — decisions\n\n{body}', encoding='utf-8')
+
+
+def cite(root: Path, *body: str) -> list[str]:
+    """The citation rule over one document, against the tree's own decisions."""
+    path = root / 'DOC.md'
+    path.write_text('\n'.join(body) + '\n', encoding='utf-8')
+    return doc.check_decision_citations(
+        path, list(enumerate(body, start=1)), doc.decision_index())
+
+
+class ADecisionCitationResolvesAgainstTheMilestoneThatOwnsIt(unittest.TestCase):
+    """D-numbers restart per milestone, so `D1` alone names five different
+    rulings. A grain written during 0.6.0's own close cited bare ``D1
+    (`emit`, never execute)``; 0.6.0's D1 is *a parent does not close over
+    unresolved children* and the ruling meant was 0.5.0's. The wrong answer
+    was available, plausible and silent.
+    """
+
+    def test_a_citation_naming_a_decision_the_milestone_does_not_record_is_a_FINDING(self):
+        with tree() as root:
+            milestone(root, 'ms-one', '0.6.0', '1', '2')
+            findings = cite(root, 'the ruling is `0.6.0/D9`')
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn('0.6.0/D9', findings[0])
+        self.assertIn('ms-one', findings[0])
+        self.assertIn('D1 D2', findings[0])
+
+    def test_a_citation_that_resolves_is_SILENT(self):
+        with tree() as root:
+            milestone(root, 'ms-one', '0.6.0', '1', '2')
+            self.assertEqual(cite(root, 'the ruling is `0.6.0/D2`'), [])
+
+    def test_a_version_no_milestone_declares_is_a_FINDING_naming_the_ones_that_do(self):
+        with tree() as root:
+            milestone(root, 'ms-one', '0.6.0', '1')
+            findings = cite(root, 'the ruling is `9.9.9/D1`')
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn('9.9.9/D1', findings[0])
+        self.assertIn('0.6.0', findings[0])
+
+    def test_the_same_number_resolves_differently_per_milestone(self):
+        """The defect's own shape: D1 is legal in one milestone and absent in
+        the next, and only the qualifier tells them apart."""
+        with tree() as root:
+            milestone(root, 'ms-one', '0.5.0', '1', '2', '3')
+            milestone(root, 'ms-two', '0.6.0', '1')
+            self.assertEqual(cite(root, '`0.5.0/D3` and `0.6.0/D1`'), [])
+            self.assertEqual(len(cite(root, '`0.6.0/D3`')), 1)
+
+    def test_a_bare_D_number_is_NOT_read_as_a_citation(self):
+        """Deliberate, and the measurement is the argument: `check pm`'s own
+        rule ids are D1..D12 in a flat namespace, and 32 of the 33 bare `D<n>`
+        in this repo's `[doc] scope` are gate rule ids where bare is correct.
+        A rule that flagged the bare form would be wrong far more often than
+        right (0.7.0/D1).
+        """
+        with tree() as root:
+            milestone(root, 'ms-one', '0.6.0', '1')
+            self.assertEqual(cite(root, 'a belt is its checks (D12)'), [])
+
+    def test_a_deliberate_citation_is_allowed_out(self):
+        with tree() as root:
+            milestone(root, 'ms-one', '0.6.0', '1')
+            self.assertEqual(
+                cite(root, 'once `0.6.0/D9` <!-- doc-scan:allow -->'), [])
+
+    def test_a_tree_with_no_decisions_file_reports_NOTHING(self):
+        """No index, no rule — the same shape `declared_states` uses. A gate
+        that invented a decision namespace would fail every consumer."""
+        with tree() as root:
+            self.assertEqual(doc.decision_index(), {})
+            self.assertEqual(cite(root, 'the ruling is `0.6.0/D9`'), [])
+
+    def test_a_milestone_declaring_no_version_is_unreachable_and_skipped(self):
+        with tree() as root:
+            milestone(root, 'ms-one', '', '1')
+            self.assertEqual(doc.decision_index(), {})

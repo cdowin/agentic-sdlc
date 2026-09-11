@@ -26,8 +26,9 @@ from pathlib import Path
 from support.pm import (bug, declaring, ledger_lines, ledger_rows, run_cli,
                         tree, write, write_config)
 
+from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo import emit
-from agentic_sdlc.repo.pm import ledger, model, ready_for
+from agentic_sdlc.repo.pm import ledger, ready_for
 
 FEATURE_STORIES = 'pm/roadmap/stories'
 REVIEWS = 'docs/reviews'
@@ -120,7 +121,7 @@ def stories(root: Path, **statuses: str) -> None:
 def bytes_of(root: Path) -> dict[str, bytes]:
     """Every file under the tree, by relative path — the write-nothing proof.
 
-    `.git/` is out: `model.load()` shells out to `git rev-parse` to find the
+    `.git/` is out: `vocabulary.load()` shells out to `git rev-parse` to find the
     root, and a reflog or index touched by READING is not this verb writing.
     """
     return {str(p.relative_to(root)): p.read_bytes()
@@ -721,7 +722,7 @@ class TagBelt(unittest.TestCase):
         # files the findings it gates on.
         with tree(feature_status='done', with_record=False) as root:
             pointer = put_record(root, 'cross.md', record(OPEN_BLOCK))
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'reviewed', pointer)
             code, out = run_cli(root, 'ready-for', 'tag', '0.1')
             self.assertEqual(code, 1, out)
@@ -855,7 +856,7 @@ class IdRefusals(unittest.TestCase):
 
     def test_every_id_in_the_matrix_exits_2_without_reading_a_grain(self):
         with tree() as root:
-            original, model.read_raw = model.read_raw, self._no_reads()
+            original, frontmatter.read_raw = frontmatter.read_raw, self._no_reads()
             try:
                 for kind in ready_for.KINDS:
                     for gid in self.MATRIX:
@@ -864,7 +865,7 @@ class IdRefusals(unittest.TestCase):
                             self.assertEqual(code, 2, out)
                             self.assertNotIn(UNROUTED, out)
             finally:
-                model.read_raw = original
+                frontmatter.read_raw = original
 
     def test_a_grain_of_the_wrong_kind_exits_2_and_names_the_id(self):
         """AMENDED at 0.4.0. It used to prove the refusal read no file at all,

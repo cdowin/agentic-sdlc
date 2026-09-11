@@ -17,7 +17,7 @@ note 250, review 120.
 A tree over a default raises its own ceiling here, visibly. No PM tree, or a tree with
 no grain yet, is a PASS that says so: `check pm` owns "is there a tree".
 
-Shared docs are also checked for the instruction line `model.SLOT_HEADER` gives them —
+Shared docs are also checked for the instruction line `vocabulary.SLOT_HEADER` gives them —
 the one channel reaching a dispatched subagent. Any KNOWN header passes.
 """
 from __future__ import annotations
@@ -25,27 +25,27 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import frontmatter, walk
 from agentic_sdlc.core.config import (ConfigError, config_section, number_table,
                                       relpath)
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 SECTION = 'grain_shape'
 CAPS_KEY = 'caps'
 
-MILESTONE = model.GRAIN_MILESTONE
-FEATURE = model.GRAIN_FEATURE
-STORY = model.GRAIN_STORY
-BUG = model.GRAIN_BUG
+MILESTONE = vocabulary.GRAIN_MILESTONE
+FEATURE = vocabulary.GRAIN_FEATURE
+STORY = vocabulary.GRAIN_STORY
+BUG = vocabulary.GRAIN_BUG
 DECISIONS = 'decisions'
 HANDOFF = 'handoff'
 NOTE = 'note'
 REVIEW = 'review'
 
 # Minted without a frontmatter block, so the grain filter would drop them.
-FRONTMATTERLESS_SLOTS = (model.DECISION_FILE_NAME, model.HANDOFF_FILE_NAME)
+FRONTMATTERLESS_SLOTS = (vocabulary.DECISION_FILE_NAME, vocabulary.HANDOFF_FILE_NAME)
 
 # Body lines; `decisions` runs highest because it is append-only for a whole milestone.
 DEFAULT_CAPS: dict[str, int] = {
@@ -104,25 +104,25 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     # a grain; the two shared docs open no frontmatter, so they cannot say
     # anything and fall through to the name.
     if lines is not None:
-        declared = model.unquote(model.field_in(lines, model.FIELD_KIND))
+        declared = frontmatter.field_in(lines, vocabulary.FIELD_KIND)
         if declared in _DECLARED:
             return _DECLARED[declared]
     slot = _slot_named(name, lines)
-    for named, kind in ((model.DECISION_FILE_NAME, DECISIONS),
-                        (model.HANDOFF_FILE_NAME, HANDOFF)):
+    for named, kind in ((vocabulary.DECISION_FILE_NAME, DECISIONS),
+                        (vocabulary.HANDOFF_FILE_NAME, HANDOFF)):
         if slot == named:
             return kind
-    if name == model.MILESTONE_DOC:
+    if name == vocabulary.MILESTONE_DOC:
         return MILESTONE
-    if name == model.FEATURE_DOC:
+    if name == vocabulary.FEATURE_DOC:
         return FEATURE
     # Every component, because `bugs/<topic>/<doc>.md` is a real shape — and a
     # POOL is that same shape one level up, so the stock pool names answer a
     # document that declared no kind.
     parts = rel.parts[:-1]
-    for pool, kind in ((model.STORIES_DIR, STORY), (model.BUGS_DIR, BUG),
-                       (model.POOL_NAME[MILESTONE], MILESTONE),
-                       (model.POOL_NAME[FEATURE], FEATURE)):
+    for pool, kind in ((vocabulary.STORIES_DIR, STORY), (vocabulary.BUGS_DIR, BUG),
+                       (inventory.POOL_NAME[MILESTONE], MILESTONE),
+                       (inventory.POOL_NAME[FEATURE], FEATURE)):
         if pool in parts:
             return kind
     return NOTE
@@ -140,14 +140,13 @@ def _repair_verb(shared: Path) -> str:
     which declares its own kind and id. An unreadable neighbour falls back to
     the generic sentence rather than guessing a verb.
     """
-    for slot in model.SLOT_HEADER:
+    for slot in vocabulary.SLOT_HEADER:
         if not shared.name.endswith(f'-{slot}'):
             continue
-        grain = shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix)
-        kind = model.unquote(model.field_of(grain, model.FIELD_KIND))
-        gid = model.unquote(model.field_of(grain, model.FIELD_ID))
-        if kind and gid:
-            return f'`pm new {kind} {gid}`'
+        beside = inventory.doc_grain(
+            shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix))
+        if beside.kind and beside.gid:
+            return f'`pm new {beside.kind} {beside.gid}`'
         break
     return '`pm new <kind> <id>` for the grain it sits beside'
 
@@ -159,16 +158,16 @@ def _slot_named(name: str, lines: list[str] | None = None) -> str:
     called `the-tradeoffs-decisions` is named like a shared doc and is not one.
     It says so by opening frontmatter, which the two shared docs never do.
     """
-    if lines is not None and model._opens_frontmatter(lines):
+    if lines is not None and inventory._opens_frontmatter(lines):
         return name
-    for slot in model.SLOT_HEADER:
+    for slot in vocabulary.SLOT_HEADER:
         if name == slot or name.endswith(f'-{slot}'):
             return slot
     return name
 
 
 def _header_line(lines: list[str]) -> str:
-    """The doc's first non-blank line, stripped — `model.header_of` computed off
+    """The doc's first non-blank line, stripped — `inventory.header_of` computed off
     lines already read, so the header check costs no second open.
     """
     for line in lines:
@@ -179,7 +178,7 @@ def _header_line(lines: list[str]) -> str:
 
 def _body_lines(lines: list[str]) -> int:
     """Body length in lines; a damaged frontmatter block makes the whole file the body."""
-    bounds = model._fence_bounds(lines)
+    bounds = frontmatter._fence_bounds(lines)
     body = list(lines) if bounds is None else lines[bounds[1] + 1:]
     while body and not body[-1].strip():
         body.pop()
@@ -190,7 +189,7 @@ def _read(path: Path, lines_of: dict[Path, list[str] | None]) -> list[str] | Non
     """The file's lines, read once into `lines_of`; None when it cannot be opened."""
     if path not in lines_of:
         try:
-            lines_of[path] = model._split(model.read_raw(path))
+            lines_of[path] = frontmatter._split(frontmatter.read_raw(path))
         except (OSError, UnicodeDecodeError):
             lines_of[path] = None
     return lines_of[path]
@@ -210,11 +209,11 @@ def _walk(roadmap: Path, lines_of: dict[Path, list[str] | None]) -> Walk:
         # and it opens no frontmatter either.
         if _slot_named(path.name, lines) in FRONTMATTERLESS_SLOTS:
             return True
-        return True if lines is None else model._opens_frontmatter(lines)
+        return True if lines is None else inventory._opens_frontmatter(lines)
 
     return (walk.descendants(roadmap, Kind.FILE, suffix='.md')
             .filter(_not_dotted(roadmap), SkipReason.DOTTED_NAME)
-            .filter(lambda p: model.ARCHIVE_DIR_NAME
+            .filter(lambda p: vocabulary.ARCHIVE_DIR_NAME
                     not in p.relative_to(roadmap).parts,
                     SkipReason.EXCLUDED_PATH)
             .filter(in_scope, SkipReason.NO_FRONTMATTER))
@@ -241,7 +240,7 @@ def _measured_line(seen: dict[str, int], caps: dict[str, int]) -> str:
 def run() -> int:
     caps = _caps()
     root = repo_root()
-    # The same `relpath` read `repo/pm/model.load` makes, so the two readers agree.
+    # The same `relpath` read `repo/pm/vocabulary.load` makes, so the two readers agree.
     roadmap_dir = relpath(config_section('pm'), 'pm', 'roadmap_dir', 'pm/roadmap')
     review_dir = relpath(config_section('pm'), 'pm', 'review_dir', 'docs/reviews')
     roadmap = root / roadmap_dir
@@ -290,8 +289,8 @@ def run() -> int:
         # stricter than the writer would red a doc `pm new` calls correct.
         # The slot's own name, whether it is `decisions.md` in a grain
         # directory or `0.1-decisions.md` beside its grain in a pool.
-        want = model.SLOT_HEADER.get(_slot_named(path.name, lines))
-        if want is not None and _header_line(lines) not in model.KNOWN_SLOT_HEADERS:
+        want = vocabulary.SLOT_HEADER.get(_slot_named(path.name, lines))
+        if want is not None and _header_line(lines) not in vocabulary.KNOWN_SLOT_HEADERS:
             findings.append((
                 'NO HEADER',
                 f'{rel} does not open with its slot instruction line — the one '

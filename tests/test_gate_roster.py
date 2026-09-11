@@ -85,7 +85,7 @@ class TestRosterEqualsDispatchable:
         assert unrostered == [], (
             f'{unrostered} ship under {CHECKS_DIR.name}/ and are in no '
             f'KNOWN_GATES entry, so nothing can dispatch them — add the key '
-            f'(and a README row and a CHANGELOG line), or `_`-prefix the '
+            f'(and a README row and the grain\'s `changelog:`), or `_`-prefix the '
             f'module if it is a helper rather than a gate')
 
     def test_the_roster_and_the_shipped_modules_are_the_same_set(self):

@@ -52,6 +52,7 @@ from test_check_budget import BUDGET, check as budget_check, gate_row, tree
 import pytest
 
 from agentic_sdlc import cli
+from agentic_sdlc.repo import cite
 
 # Every `agentic-sdlc <verb>` line in the docstring, first token only. The
 # docstring also shows sub-verbs (`pm story …`, `check doc`) — those are the
@@ -60,10 +61,12 @@ _INVOCATION = re.compile(r'^\s*agentic-sdlc ([a-z][a-z0-9-]*)', re.M)
 
 
 # Rule 11's read side, package-wide. The floor is what the tree holds today:
-# `pm cli` (6) plus `lesson show` (1). It is a FLOOR, so a verb that stops
-# naming its columns reddens wherever it lives.
+# `pm cli` (6), `lesson show` (1) and `cite`'s two row shapes (2). It is a
+# FLOOR, so a verb that stops naming its columns reddens wherever it lives —
+# and it RISES with each new read verb, or the next one could drop both its
+# declarations and still clear a number the verbs before it already met.
 NAMES_COLUMNS = 'columns IN ORDER:'
-READ_VERBS_NAMING_COLUMNS = 7
+READ_VERBS_NAMING_COLUMNS = 9
 
 
 def _package_sources() -> list[tuple[str, str]]:
@@ -254,6 +257,16 @@ class TheRouterReaderSeesEveryBranchShape:
     unreadable would pass the corpus alone.
     """
 
+    PROTECTS = (
+        'the router reader either yields the verbs a branch routes or SAYS it '
+        'could not read the branch',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS), and '
+        'it was one of the four hollow gates found at the close of 0.6.0. A '
+        'comparator shape the reader does not know produces no verb and no '
+        'complaint, and the --help census downstream then compares against a '
+        'router it half read',
+    )
+
     CORPUS = tuple((source, unreadable) for source, _, unreadable in _SHAPES)
 
     @staticmethod
@@ -394,6 +407,19 @@ def _budget_unmeasured(tmp_path: Path) -> int:
         return budget_check()[0]
 
 
+def _budget_uncounted_case_limit(tmp_path: Path) -> int:
+    """`integration` declares a CASE ceiling and has no `gate` row.
+
+    The sibling of `_budget_unmeasured`, and the pair is the point: the same
+    absence is exit 0 for a clock and exit 1 for a count, because a count moves
+    when the source moves and a clock does not.
+    """
+    config = ('[tests]\nbudget = { unit = 10, integration = 60 }\n'
+              'cases = { unit = 1250, integration = 800 }\n')
+    with tree(tmp_path, [gate_row('unit', 1_000, census=1_100)], config):
+        return budget_check()[0]
+
+
 def _budget_not_graded(tmp_path: Path) -> int:
     """Both tiers have a row, and the newest `unit` one ended FAIL."""
     with tree(tmp_path, [gate_row('unit', 1_000, verdict='FAIL'),
@@ -413,19 +439,48 @@ def _gates_extra_unusable(tmp_path: Path) -> int:
         return cli.main(['gates-extra'])
 
 
+def _cite_zero_census(tmp_path: Path) -> int:
+    """A tree whose tracked text is EMPTY — the census of zero (rule 4).
+
+    The reader is called directly rather than through `main()`, which would
+    reach `git ls-files`: a unit-tier spawn is refused by nodeid, and what this
+    claim is about is the code the help documents, not git's.
+    """
+    return cite.report({}, tmp_path)
+
+
+def _cite_one_file(tmp_path: Path) -> int:
+    """The other direction: one file, read, with a citation in it."""
+    return cite.report({'a.md': 'hard rule 4 says so'}, tmp_path)
+
+
+def _cite_unknown_flag(tmp_path: Path) -> int:
+    """Through the router, because the refusal has to happen BEFORE the tree is
+    read — a usage error that first enumerates a repo is a usage error that can
+    fail on somebody else's disk."""
+    return cli.main(['cite', '--rule', '4'])
+
+
 # Two surfaces, and both directions of each: a clause the help files under 0
 # and one it files under 1 or 2. `check budget` is the finding this section was
 # written for; `gates-extra` is here because one surface proves a reader, two
 # prove it is not shaped around one docstring.
 CLAIMS = (
     ExitClaim('check budget --help',
-              'a declared tier with no row is reported as unmeasured',
+              'a declared time budget with no row is reported as unmeasured',
               _budget_unmeasured),
+    ExitClaim('check budget --help',
+              'carries a declared case limit with no count',
+              _budget_uncounted_case_limit),
     ExitClaim('check budget --help', 'not graded', _budget_not_graded),
     ExitClaim('gates-extra --help', 'printed (possibly nothing)',
               _gates_extra_silent),
     ExitClaim('gates-extra --help', 'the value is not a usable roster',
               _gates_extra_unusable),
+    ExitClaim('cite --help', 'the census read at least one file',
+              _cite_one_file),
+    ExitClaim('cite --help', 'it read none', _cite_zero_census),
+    ExitClaim('cite --help', 'usage', _cite_unknown_flag),
 )
 
 
@@ -593,6 +648,17 @@ class TestTheSurfaceSaysTelemetry:
         # into `changelog:` on the grain, and rendering those in `order:` is a
         # read over the whole tree rather than a read of one grain.
         'changelog',
+        # 0.7.0/st-every-census-this-milestone-argues-from-is-a-command: the
+        # only one of that story's four candidate censuses that ships. It is a
+        # read over the tree's TEXT rather than over the PM tree, so it is no
+        # more a `pm` subcommand than `changelog` is; and it is not a `check`,
+        # because a rising citation count is what a rule being USED looks like
+        # and gating on it is out of scope by name. The other three stayed
+        # hand-rolled with the argument written in the story's close: two are
+        # already gated readers a sibling story owns, and a fourth verb whose
+        # only caller was one session is worse than the `python3 -` that
+        # produced it.
+        'cite',
     }
 
     def test_this_feature_added_no_verb(self):
@@ -638,6 +704,24 @@ class TestTheSurfaceSaysTelemetry:
         flat = ' '.join(entry.split())
         for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
             assert ' '.join(columns) in flat, (columns, flat)
+
+    def test_the_help_and_the_auto_loaded_rule_name_the_COMPARISON(self):
+        """`bg-the-telemetry-verb-cannot-compare-two-milestones`. Every
+        telemetry question asked of this tree is comparative, and the agent that
+        asked one read this entry, saw ONE id, and hand-rolled four censuses
+        over the raw `.jsonl`. So the form is named twice: in `--help`, and in
+        the rule that AUTO-LOADS — which is where an orchestrator is standing
+        when the question arrives, and `--help` is not."""
+        from agentic_sdlc.repo.pm import cli as pm_cli
+        entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
+        assert 'MORE THAN ONE MILESTONE ID COMPARES' in ' '.join(entry.split())
+        assert '[<grain-id>...]' in (pm_cli.USAGE or ''), (
+            'the usage line still takes one id, so the roster below it is '
+            'documenting a form the synopsis denies')
+        said = ' '.join(' '.join(_operator_lines()).split())
+        assert 'pm ledger report <a> <b>' in said, (
+            'the comparison is in `--help` and in no surface an operator '
+            'reads — rule 11 wants the auto-loaded rule too')
 class TestTheDocumentedExitCodeIsTheOneThatRuns:
     """No `--help` documents an exit code the code does not return."""
 
@@ -756,3 +840,243 @@ class TestTheHelpNamesTheBeltBesideThePathThatBypassesIt:
             assert named in entry, (
                 f'the `feature <done-state>` entry in `pm --help` never says '
                 f'{named!r}:\n{entry}')
+
+
+# --- a capability is cited where its operator STANDS ---------------------------
+# Rule 11's read side, as a boolean. `test_install.py` already asserts the other
+# direction — every verb an agent definition NAMES resolves against the router —
+# so "no definition cites a verb that does not exist" could fail and "every verb
+# is declared where its operator reads" could not. 0.7.0's own orchestrator
+# hand-rolled three shipped capabilities in one session, including the dispatch
+# preamble, and no gate went red
+# (`bg-rule-11-is-gated-in-one-direction-only`).
+REPO = Path(__file__).resolve().parents[1]
+OPERATOR_SURFACES = ('CLAUDE.md', 'README.md', 'SDLC.md',
+                     '.claude/rules/*.md', '.claude/skills/*/SKILL.md')
+
+# A verb whose operator surface is deliberately elsewhere. Each entry carries
+# its reason, and a STALE entry — one naming a verb this package no longer
+# routes, or one that is now cited anyway — fails, in the shape
+# `CONFIG_IMPORT_ALLOWLIST` uses in tests/test_boundaries.py. The roster is
+# meant to shrink.
+UNCITED_ALLOWED: dict[str, str] = {}
+
+
+def _operator_lines() -> list[str]:
+    """Every surface an operator of this repo reads, LINE BY LINE.
+
+    Lines rather than one blob, and that is not tidiness: a backtick span is
+    found by pairing backticks, and concatenating files re-pairs them across
+    the join — a roster that matched on its own line stopped matching inside
+    the blob, and this gate reported three false absences before the cause was
+    found. A markdown span does not cross a newline, so a line is the unit.
+    """
+    out: list[str] = []
+    for pattern in OPERATOR_SURFACES:
+        paths = sorted(REPO.glob(pattern)) if '*' in pattern else [REPO / pattern]
+        for path in paths:
+            if path.is_file():
+                out += path.read_text(encoding='utf-8').split('\n')
+    return out
+
+
+def every_routed_surface() -> tuple[str, ...]:
+    """Every invocable surface this package routes, sub-verbs included.
+
+    Assembled from the routers' OWN tables rather than a list here — the second
+    scoreboard this milestone kept finding. `pm cli.commands()` was hoisted in
+    0.6.0 for exactly this census and was used only in the resolving direction.
+    """
+    from agentic_sdlc.repo.conveyor import driver
+    from agentic_sdlc.repo import install
+    from agentic_sdlc.repo.pm import cli as pm_cli
+    names = set(routed_verbs())
+    names |= {f'pm {c}' for c in pm_cli.commands()}
+    names |= {f'check {g}' for g in cli.KNOWN_GATES}
+    names |= {f'close {o}' for o in driver.CLOSE_OPERATIONS}
+    names |= set(install.PLANS)
+    return tuple(sorted(names))
+
+
+def _cited(verb: str, lines: list[str]) -> bool:
+    """An INVOCATION, never a bare word — and a pipe ROSTER counts as one.
+
+    Four failures this had to survive, each found by RUNNING it:
+
+      too generous  a bare substring: `dispatch` appears in four files as "a
+                    dispatched agent", scoring this gate 10 verbs kind.
+      too strict    `<family> <sub>` adjacent: the idiomatic citation for a
+                    gate here is `check doc | shell | grain-shape | pm | hooks
+                    | repo-hygiene | budget`, which names seven adjacently
+                    spells none.
+      too generous  "a span opening with the family, containing the sub
+                    anywhere": `pm bug` matched ``pm add <ms> <bug>`` and `pm
+                    milestone` matched ``pm new milestone <slug>`` — both a
+                    DIFFERENT verb mentioning this one's noun.
+      wrong unit    scanning the files as one blob re-pairs backticks across
+                    the join, so a roster that matched alone stopped matching
+                    concatenated. A markdown span never crosses a newline.
+
+    So: a line carrying `agentic-sdlc <verb>` or a span opening with the whole
+    verb; or, for a sub-verb, a pipe roster of its family in which the sub-verb
+    is an alternative ON ITS OWN.
+    """
+    invocation = re.compile(r'(agentic-sdlc\s+|`)' + re.escape(verb) + r'\b')
+    if any(invocation.search(line) for line in lines):
+        return True
+    family, _, sub = verb.partition(' ')
+    if not sub:
+        return False
+    for line in lines:
+        for span in re.findall(r'`([^`]+)`', line):
+            # A markdown table escapes its pipes; the escape is not a token.
+            head, pipe, rest = span.replace('\\', '').partition('|')
+            # EXACTLY family + the first alternative. `pm new
+            # milestone|feature|story|bug` has a three-token head and is a
+            # roster of `pm new <kind>`, not of `pm <kind>` — it cited `pm bug`
+            # for a whole iteration of this gate, which is the same verb-shaped
+            # near-miss the case above records twice.
+            if not pipe or head.split()[:-1] != [family]:
+                continue
+            alts = [head.split()[-1:], *(a.split()[:1] for a in rest.split('|'))]
+            if any(alt == [sub] for alt in alts if alt):
+                return True
+    return False
+
+
+class TestACapabilityIsCitedWhereItsOperatorStands:
+
+    def test_every_routed_surface_is_named_in_a_surface_an_operator_reads(self):
+        lines = _operator_lines()
+        assert len(lines) > 500, 'the operator-surface census collapsed'
+        surfaces = every_routed_surface()
+        assert len(surfaces) > 30, f'only {len(surfaces)} surfaces — the roster collapsed'
+        missing = [v for v in surfaces
+                   if not _cited(v, lines) and v not in UNCITED_ALLOWED]
+        assert not missing, (
+            f'{len(missing)} routed surface(s) are named in no file an operator '
+            f'reads, so the only way to find them is to read the source:\n'
+            + '\n'.join(f'    {v}' for v in missing)
+            + '\n  Cite it in one of: ' + ', '.join(OPERATOR_SURFACES)
+            + '\n  or add it to UNCITED_ALLOWED with the reason its operator '
+              'surface is elsewhere.')
+
+    def test_the_allowlist_holds_no_entry_that_does_nothing(self):
+        """The stale half. An exemption for a verb that is now cited, or that
+        this package no longer routes, is a hole waiting for a verb to fall
+        into it — the same failure `CONFIG_IMPORT_ALLOWLIST` prunes for."""
+        lines = _operator_lines()
+        surfaces = set(every_routed_surface())
+        stale = sorted(v for v in UNCITED_ALLOWED
+                       if v not in surfaces or _cited(v, lines))
+        assert not stale, (
+            f'{len(stale)} exemption(s) no longer exempt anything — the verb is '
+            f'cited now, or is not routed at all: {", ".join(stale)}')
+
+
+# --- the census a brief quotes, as a command ----------------------------------
+# 0.7.0/st-every-census-this-milestone-argues-from-is-a-command. `cite` is the
+# one of that story's four candidate censuses that ships; the other three are
+# readers a sibling story owns or numbers a gate already reddens on, and the
+# argument is in the story's close. The defect it ends: a hand-rolled count
+# becomes a citation, the citation becomes a constraint, and three milestones
+# argue from a number the tree disagrees with by 2x.
+
+# (source text, the rules a citation reader must find in it). The near-misses
+# are the half a corpus of positives cannot prove: this grammar is one regex,
+# and a regex that matches too much reports a census nobody can reconcile.
+_CITATION_SHAPES = (
+    ('hard rule 4 says so', [4]),
+    ('Rule 4, and HARD RULE 11', [4, 11]),
+    # The wrapped citation: six of this repo's own are invisible to `grep -c`,
+    # which is the concrete reason the answer is a reader and not a one-liner.
+    ('a sentence ending in hard rule\n4 and continuing', [4]),
+    ('rules 4 and 5', []),
+    ('ruler 4', []),
+    ('rule4', []),
+    ('rule 4x', []),
+    # A dotted number reads as its first component, because the grammar is
+    # `<n>`. Pinned rather than left to be discovered in a census.
+    ('rule 4.1', [4]),
+)
+
+
+class TestTheCitationCensusIsAskable:
+    """`agentic-sdlc cite`, over inputs rather than over this repo.
+
+    Nothing here spawns or writes: the reader is called with `{path: text}`, so
+    the git enumeration stays in `tracked_texts()` and out of the unit tier (a
+    spawn here is refused by nodeid). That the verb writes no file is not
+    re-asserted per verb — `tests/test_boundaries.py` holds `core/apply.py` as
+    the one module in `src/` that may mutate a filesystem at all.
+    """
+
+    def test_the_reader_finds_every_citation_shape_and_no_near_miss(self):
+        wrong = {}
+        for source, expected in _CITATION_SHAPES:
+            found = [site.rule for site in cite.sites({'a.md': source})]
+            if found != expected:
+                wrong[source] = (found, expected)
+        assert not wrong, wrong
+
+    def test_a_tracked_path_that_is_not_text_is_skipped_and_COUNTED(self, tmp_path):
+        """Rule 11: a narrowing is never silent, and rule 8: a symlink may
+        leave the checkout, so it is refused rather than followed."""
+        (tmp_path / 'good.md').write_text('rule 4', encoding='utf-8')
+        (tmp_path / 'blob.bin').write_bytes(b'\xff\xfe\x00rule 4')
+        (tmp_path / 'away').symlink_to('/etc/passwd')
+        texts, skipped = cite.read_texts(
+            tmp_path, ['good.md', 'blob.bin', 'away', 'never-existed'])
+        assert sorted(texts) == ['good.md']
+        assert skipped == {cite.SYMLINKED: 1, cite.UNREADABLE: 2}
+
+    def test_a_census_of_zero_files_fails_and_names_what_it_scanned(
+            self, tmp_path, capsys):
+        """Rule 4's first sin, at this verb's floor. The exit code is graded
+        against the `--help` sentence by `CLAIMS`; what is here is the
+        DISCLOSURE, because a 1 that does not say what it looked at sends its
+        reader to the source."""
+        assert cite.report({}, tmp_path, skipped={cite.SYMLINKED: 3}) == 1
+        out = capsys.readouterr()
+        assert out.out == '', f'a census of zero printed rows: {out.out!r}'
+        for named in ('0 tracked text file(s)', str(tmp_path),
+                      'never a pass', f'3 {cite.SYMLINKED}'):
+            assert named in out.err, (named, out.err)
+
+    def test_the_help_names_the_columns_of_both_row_shapes_in_print_order(
+            self, capsys):
+        """Rule 11's read side. The declaration and the ROWS are asserted
+        together: a help line naming three columns over a four-column row is
+        the same defect as naming none, one word further on."""
+        said = ' '.join((cite.USAGE or '').split())
+        sources = {'a.md': 'rule 4 and rule 4', 'b.md': 'rule 11'}
+        for columns, sites_flag in ((cite.ROSTER_COLUMNS, False),
+                                    (cite.SITE_COLUMNS, True)):
+            assert NAMES_COLUMNS in said
+            assert ' '.join(columns) in said, columns
+            capsys.readouterr()
+            assert cite.report(sources, 'a tree', show_sites=sites_flag) == 0
+            rows = capsys.readouterr().out.splitlines()
+            widths = {len(row.split('\t')) for row in rows}
+            assert widths == {len(columns)}, (columns, rows)
+
+    def test_every_argument_outside_the_flag_grammar_is_refused_at_exit_2(
+            self, capsys):
+        """The refusal matrix for the one input surface this verb has.
+
+        It takes no path — the tree is `repo_root()`, the way every gate here
+        resolves one — so the grammar is a CLOSED set of two words and
+        everything else is exit 2 (rule 6) naming the argument. A refusal is
+        also the only path that must not read the tree: enumerating somebody's
+        repo before rejecting their typo is a usage error that can fail on
+        their disk.
+        """
+        refused = {}
+        for argument in ('--rule', '--sites=4', 'sites', '--SITES', '--',
+                         '../../../etc/passwd', '/etc/passwd', ''):
+            capsys.readouterr()
+            code = cli.main(['cite', argument])
+            out = capsys.readouterr()
+            if code != 2 or repr(argument) not in out.err or out.out:
+                refused[argument] = (code, out.out[:80], out.err[:120])
+        assert not refused, refused

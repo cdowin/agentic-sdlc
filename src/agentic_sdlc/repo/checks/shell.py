@@ -7,9 +7,8 @@ devkit.toml: [shell] roots = ["tools"]
 from __future__ import annotations
 
 import shutil
-import subprocess
 
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.walk import Kind
 from agentic_sdlc.core.project import git_lines, repo_root
 from agentic_sdlc.core.config import config_section, relpath_tuple
@@ -70,7 +69,7 @@ def run() -> int:
         print(f'[check:shell] FAIL — no shell scripts found under '
               f'{", ".join(roots)}/; check [shell] roots')
         return 1
-    result = subprocess.run(['shellcheck', '-x', *targets], cwd=root)
+    result = spawn.run(['shellcheck', '-x', *targets], cwd=root)
     if result.returncode != 0:
         print(f'[check:shell] FAIL — findings across {len(targets)} script(s)')
         return 1

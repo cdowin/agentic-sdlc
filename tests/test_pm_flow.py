@@ -46,13 +46,13 @@ from support.pm import run_cli, tree as grain_tree  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.config import ConfigError  # noqa: E402
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
 FULL = '\n'.join(
     f'[pm.states.{kind}]\n'
     + '\n'.join(f'{cat} = {list(states)!r}'.replace("'", '"')
-                for cat, states in model.DEFAULT_FLOWS[kind].items())
-    for kind in model.FLOW_KINDS)
+                for cat, states in vocabulary.DEFAULT_FLOWS[kind].items())
+    for kind in vocabulary.FLOW_KINDS)
 
 SEED_CONFIG = (REPO_ROOT / 'src' / 'agentic_sdlc' / 'repo' / 'installables'
                / 'project-devkit.toml')
@@ -78,9 +78,9 @@ def tree(config: str = ''):
             load_config.cache_clear()
 
 
-def load(config: str) -> model.PmConfig:
+def load(config: str) -> vocabulary.PmConfig:
     with tree(config):
-        return model.load()
+        return vocabulary.load()
 
 
 def with_story(story_block: str) -> str:
@@ -122,29 +122,29 @@ def test_the_seed_is_the_installables_LIVE_section_and_a_tree_seeded_with_it_LOA
         state no belt writes, under the all-seven seed).
     """
     body = SEED_CONFIG.read_text(encoding='utf-8')
-    assert model.render_seed() in body, (
+    assert vocabulary.render_seed() in body, (
         'the installable no longer carries render_seed() verbatim — the table '
         'was hand-edited in one of its two locations')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
-    assert live == [ln for ln in model.render_seed().splitlines() if ln.strip()]
+    assert live == [ln for ln in vocabulary.render_seed().splitlines() if ln.strip()]
 
     cfg = load(body)
-    assert sorted(cfg.flows) == sorted(model.FLOW_KINDS)
+    assert sorted(cfg.flows) == sorted(vocabulary.FLOW_KINDS)
     expected = {
-        'milestone': model.LIFECYCLE + ('obe',),
+        'milestone': vocabulary.LIFECYCLE + ('obe',),
         'feature': ('planning', 'ready', 'building', 'reviewing', 'done',
                     'obe'),
         'story': ('planning', 'ready', 'building', 'done', 'obe'),
     }
     for kind, order in expected.items():
-        flow = model.flow_of(cfg, kind)
+        flow = vocabulary.flow_of(cfg, kind)
         assert flow.order == order, kind
         assert flow.category('obe') == 'done', kind
     # A bug's vocabulary is declared exactly like the other three rather than
     # being a special case in the engine — which is the point of doing this per
     # KIND rather than once.
-    bug = model.flow_of(cfg, 'bug')
+    bug = vocabulary.flow_of(cfg, 'bug')
     assert bug.order == ('open', 'fixed', 'closed')
     assert bug.category('closed') == 'done'
 
@@ -153,10 +153,10 @@ def test_this_repo_declares_its_own_flow_and_its_abandoned_word_is_done():
     """Self-hosting: the tree that ships the reader declares the section, and
     the `also_done` defect stays fixed HERE — a story at `obe` is FINISHED, and
     under a bare-word predicate it held its feature open forever."""
-    cfg = model.load()
-    for kind in model.FLOW_KINDS:
-        assert model.flow_of(cfg, kind).order, kind
-    assert model.flow_of(cfg, 'story').category('obe') == 'done'
+    cfg = vocabulary.load()
+    for kind in vocabulary.FLOW_KINDS:
+        assert vocabulary.flow_of(cfg, kind).order, kind
+    assert vocabulary.flow_of(cfg, 'story').category('obe') == 'done'
 
 
 # --- absent is ABSENT, never the seed -----------------------------------------
@@ -169,7 +169,7 @@ def test_a_tree_declaring_nothing_gets_no_flow_and_is_refused_by_name():
     cfg = load('')
     assert cfg.flows == {}
     with pytest.raises(ConfigError) as err:
-        model.flow_of(cfg, 'story')
+        vocabulary.flow_of(cfg, 'story')
     message = str(err.value)
     assert '[pm.states.story]' in message
     assert 'there is no default' in message
@@ -261,14 +261,14 @@ class TestHolds:
 
     def test_it_answers_and_names_who_is_not_there(self):
         cfg = load(FULL)
-        held = model.holds(cfg, 'story', [('s1', 'done'), ('s2', 'building'),
+        held = vocabulary.holds(cfg, 'story', [('s1', 'done'), ('s2', 'building'),
                                           ('s3', 'planning')], 'done')
         assert not held
         assert held.names == ('s2 is building', 's3 is planning')
         assert held.counted == 3
         # An empty set is satisfied, and still says all of HOW MANY: a census
         # of zero that renders as a bare "all done" is rule 4 in a verb.
-        empty = model.holds(cfg, 'story', [], 'done')
+        empty = vocabulary.holds(cfg, 'story', [], 'done')
         assert empty
         assert empty.counted == 0
 
@@ -278,7 +278,7 @@ class TestHolds:
         it held its feature open forever. Jira ships that exact mistake as a
         documented training problem."""
         dropped = FULL.replace('done = ["done"]', 'done = ["done", "obe"]')
-        assert model.holds(load(dropped), 'story',
+        assert vocabulary.holds(load(dropped), 'story',
                            [('s1', 'done'), ('s2', 'obe')], 'done')
 
     def test_a_state_the_project_never_declared_BLOCKS_rather_than_passes(self):
@@ -288,15 +288,15 @@ class TestHolds:
         must mean (rule 9)."""
         cfg = load(FULL)
         assert cfg.flows['story'].category('wombat') is None
-        held = model.holds(cfg, 'story', [('s1', 'wombat')], 'done')
+        held = vocabulary.holds(cfg, 'story', [('s1', 'wombat')], 'done')
         assert not held
         assert held.names == ('s1 is wombat',)
 
     def test_it_refuses_a_bad_category_and_a_tree_that_declared_no_flow(self):
         with pytest.raises(ConfigError):
-            model.holds(load(FULL), 'story', [], 'wombat')
+            vocabulary.holds(load(FULL), 'story', [], 'wombat')
         with pytest.raises(ConfigError):
-            model.holds(load(''), 'story', [('s1', 'done')], 'done')
+            vocabulary.holds(load(''), 'story', [('s1', 'done')], 'done')
 
 
 class TestMove:
@@ -310,17 +310,17 @@ class TestMove:
         is permitted, and a word the project never declared is refused naming
         what it DOES have."""
         cfg = load(FULL)
-        for state in model.flow_of(cfg, 'story').order:
-            assert model.move_defect(cfg, 'story', state) == '', state
-        defect = model.move_defect(cfg, 'story', 'wombat')
+        for state in vocabulary.flow_of(cfg, 'story').order:
+            assert vocabulary.move_defect(cfg, 'story', state) == '', state
+        defect = vocabulary.move_defect(cfg, 'story', 'wombat')
         assert 'not a story state' in defect
         assert 'planning, ready, building' in defect
 
     def test_a_renamed_vocabulary_is_moved_through_exactly_as_the_stock_one(self):
         cfg = load(with_story('[pm.states.story]\ntodo = ["icebox"]\n'
                               'in_progress = ["in-dev"]\ndone = ["shipped"]\n'))
-        assert model.move_defect(cfg, 'story', 'in-dev') == ''
-        assert model.move_defect(cfg, 'story', 'building') != ''
+        assert vocabulary.move_defect(cfg, 'story', 'in-dev') == ''
+        assert vocabulary.move_defect(cfg, 'story', 'building') != ''
 
 
 def test_a_leftover_transitions_table_names_the_fix_and_the_reader_is_gone():
@@ -330,7 +330,7 @@ def test_a_leftover_transitions_table_names_the_fix_and_the_reader_is_gone():
     runs, the message says what replaced it — a belt writes the FIRST state of
     its kind's `done` list — and says to remove the table rather than pasting
     a replacement."""
-    assert not hasattr(model, 'transition_target')
+    assert not hasattr(vocabulary, 'transition_target')
     with pytest.raises(ConfigError) as err:
         load(FULL + '\n[pm.transitions.story]\nclaimed = "building"\n')
     message = str(err.value)
@@ -380,8 +380,8 @@ class TestVocabulary:
             code, out = vocab('--json')
         assert code == 0, out
         payload = json.loads(out)
-        assert payload['categories'] == list(model.CATEGORIES)
-        assert payload['flow_kinds'] == list(model.FLOW_KINDS)
+        assert payload['categories'] == list(vocabulary.CATEGORIES)
+        assert payload['flow_kinds'] == list(vocabulary.FLOW_KINDS)
         assert payload['flow_declared'] is True
         flow = payload['grains']['story']['flow']
         assert flow['categories']['in_progress'] == ['building']
@@ -390,7 +390,7 @@ class TestVocabulary:
         assert sorted(flow) == ['categories', 'order']
         assert 'published_steps' not in payload
         assert 'transitions' not in payload['notes']
-        assert payload['seed'] == model.render_seed()
+        assert payload['seed'] == vocabulary.render_seed()
 
 
 def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
@@ -421,11 +421,11 @@ def test_vocabulary_ANSWERS_the_tree_that_every_other_verb_refuses():
             if ln.startswith('  [pm.states.') or ln.startswith('  todo')
             or ln.startswith('  in_progress') or ln.startswith('  done'))
         _, payload = vocab('--json')
-    assert sorted(load(pasted).flows) == sorted(model.FLOW_KINDS)
+    assert sorted(load(pasted).flows) == sorted(vocabulary.FLOW_KINDS)
     absent = json.loads(payload)
     assert absent['flow_declared'] is False
     assert absent['grains']['story']['flow'] is None
-    assert absent['seed'] == model.render_seed()
+    assert absent['seed'] == vocabulary.render_seed()
 
 
 # --- the inference census (ship criterion 2; decision D6) ---------------------
@@ -444,28 +444,28 @@ PKG = SRC.parent
 
 # The words the seed spells. Any of these as a string CONSTANT in code outside
 # the seed is the engine comparing against a word.
-SEED_WORDS = frozenset(st for kind in model.DEFAULT_FLOWS.values()
+SEED_WORDS = frozenset(st for kind in vocabulary.DEFAULT_FLOWS.values()
                        for states in kind.values() for st in states)
 
 # Deleted, per criterion 3 and the census rows that said "deleted".
 DELETED = (
-    ('pm.model', 'STALLED_IF_ALL_STORIES_DONE'),
-    ('pm.model', 'work_started'),              # `at_or_past(BUILDING)`
-    ('pm.model', 'split_blind_vocabularies'),  # `states_without_building`
-    ('pm.model', 'is_terminal'),               # the `also_done` shim's reader
-    ('pm.model', 'building_milestones'),       # D8/D9/D10's one line
-    ('pm.model', 'DEFAULT_MILESTONE_STATES'),
-    ('pm.model', 'DEFAULT_FEATURE_STATES'),
-    ('pm.model', 'DEFAULT_STORY_STATES'),
-    ('pm.model', 'DEFAULT_BUG_STATES'),
+    ('pm.vocabulary', 'STALLED_IF_ALL_STORIES_DONE'),
+    ('pm.vocabulary', 'work_started'),              # `at_or_past(BUILDING)`
+    ('pm.vocabulary', 'split_blind_vocabularies'),  # `states_without_building`
+    ('pm.vocabulary', 'is_terminal'),               # the `also_done` shim's reader
+    ('pm.vocabulary', 'building_milestones'),       # D8/D9/D10's one line
+    ('pm.vocabulary', 'DEFAULT_MILESTONE_STATES'),
+    ('pm.vocabulary', 'DEFAULT_FEATURE_STATES'),
+    ('pm.vocabulary', 'DEFAULT_STORY_STATES'),
+    ('pm.vocabulary', 'DEFAULT_BUG_STATES'),
     ('pm.ledger', 'TERMINAL_STATE'),
     ('pm.ledger', 'terminal_state'),
     ('pm.ready_for', '_needs_state'),
-    ('pm.cli', 'cmd_feature_reviewing'),       # `model.REVIEWING`'s verb
+    ('pm.cli', 'cmd_feature_reviewing'),       # `vocabulary.REVIEWING`'s verb
     # story 01 of the-code-knows-entry-and-exit: the step-to-state table, its
     # reader, the vocabulary section that printed it, and the ledger report's
     # `reopens` column, which counted `reviewing -> building` by name
-    ('pm.model', 'transition_target'),
+    ('pm.vocabulary', 'transition_target'),
     ('pm.cli', 'PUBLISHED_STEPS_NOTE'),
     ('pm.cli', '_published_steps'),
     ('pm.report', 'REOPENS_COLUMN'),
@@ -484,7 +484,7 @@ RETIRED = ('also_done', 'review_slug_fallback', 'milestone_states',
 # disposition (`pm ready-for tag` asks it), which shares its spelling with the
 # bug seed's first state and has nothing to do with a grain's status.
 SEED_ASSIGNMENTS = {
-    'pm.model': frozenset({'LIFECYCLE', '_LIFECYCLE_CATEGORIES',
+    'pm.vocabulary': frozenset({'LIFECYCLE', '_LIFECYCLE_CATEGORIES',
                            'DEFAULT_FLOWS', 'DONE_CATEGORY'}),
     'pm.verdict': frozenset({'OPEN'}),
     # The `rung.enter` payload's key. `ready` is a FIELD NAME there — "was the
@@ -495,7 +495,7 @@ SEED_ASSIGNMENTS = {
     'pm.ledger': frozenset({'READY_FIELD'}),
 }
 
-# The seed's exported words (`model.LIFECYCLE` / `BUILDING` / `REVIEWING`)
+# The seed's exported words (`vocabulary.LIFECYCLE` / `BUILDING` / `REVIEWING`)
 # and who may still read them, by module and function. Each is a declared
 # exception with its decision beside it; a reader added anywhere else fails.
 SEED_WORD_READERS = {
@@ -515,7 +515,8 @@ def _census_modules() -> list[tuple[str, Path]]:
     modules (V4 of the feature review): a seed word added to `core/config.py`
     or `repo/init.py` would have been reported as nothing at all. `dotted` is
     the name `SEED_ASSIGNMENTS` keys on — relative to `repo/` for the modules
-    that live there (`pm.model`), to the package otherwise (`core.config`).
+    that live there (`pm.vocabulary`), to the package otherwise
+    (`core.config`).
     """
     out = []
     for path in sorted(PKG.rglob('*.py')):
@@ -571,7 +572,7 @@ def test_every_symbol_the_census_deleted_is_gone():
         module = importlib.import_module(f'agentic_sdlc.repo.{dotted}')
         assert not hasattr(module, symbol), f'{dotted}.{symbol} survives'
     for key in RETIRED:
-        assert key in model.RETIRED_KEYS, f'[pm] {key} is not refused by name'
+        assert key in vocabulary.RETIRED_KEYS, f'[pm] {key} is not refused by name'
 
 
 # --- the same census, three more vocabularies (0.6.0) --------------------------
@@ -598,9 +599,10 @@ FIELD_READERS = ('field_of', 'field_in', 'set_field', 'field')
 # The calls that take a MAPPING key, beside a dict literal and a subscript.
 KEY_READERS = ('get', 'setdefault', 'pop')
 
-GRAIN_WORDS = frozenset(model.FLOW_KINDS)
-FIELD_WORDS = frozenset({model.FIELD_ID, model.FIELD_KIND, model.FIELD_STATUS,
-                         model.FIELD_NAME, model.FIELD_OWNER})
+GRAIN_WORDS = frozenset(vocabulary.FLOW_KINDS)
+FIELD_WORDS = frozenset({vocabulary.FIELD_ID, vocabulary.FIELD_KIND,
+                         vocabulary.FIELD_STATUS, vocabulary.FIELD_NAME,
+                         vocabulary.FIELD_OWNER})
 ROW_WORDS = frozenset({ledger.TS_FIELD, ledger.KIND_FIELD, ledger.GRAIN_FIELD})
 
 
@@ -617,11 +619,11 @@ class Vocabulary(NamedTuple):
 
 
 VOCABULARIES = {
-    'state': Vocabulary(SEED_WORDS, ('pm.model', 'DEFAULT_FLOWS'), ANYWHERE,
+    'state': Vocabulary(SEED_WORDS, ('pm.vocabulary', 'DEFAULT_FLOWS'), ANYWHERE,
                         SEED_ASSIGNMENTS, fstrings=True),
     'grain kind': Vocabulary(
-        GRAIN_WORDS, ('pm.model', 'GRAIN_<KIND>'), ANYWHERE, {
-            'pm.model': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
+        GRAIN_WORDS, ('pm.vocabulary', 'GRAIN_<KIND>'), ANYWHERE, {
+            'pm.vocabulary': frozenset({'GRAIN_MILESTONE', 'GRAIN_FEATURE',
                                    'GRAIN_STORY', 'GRAIN_BUG'}),
             # A BELT's name, not a grain kind's: a belt is named for what it
             # closes. `conveyor/driver.py` is that vocabulary's home, and
@@ -630,7 +632,7 @@ VOCABULARIES = {
             'pm.arrive': frozenset({'STORY_BELT', 'FEATURE_BELT'}),
             # A MAKE target, which is a name in the consumer's Makefile.
             'conveyor.steps': frozenset({'DEFAULT_RUNNER_TARGETS'}),
-            # `verify` reads no PM tree and must not import `pm.model` to
+            # `verify` reads no PM tree and must not import `pm.vocabulary` to
             # spell the name of a make rung.
             'verify.rules': frozenset({'STORY', 'FEATURE', 'MILESTONE'}),
             # Printed COLUMN headers and payload keys — contract (rule 6), and
@@ -641,8 +643,8 @@ VOCABULARIES = {
                                     'BEFORE_WRITE_TITLE'}),
         }),
     'frontmatter field': Vocabulary(
-        FIELD_WORDS, ('pm.model', 'FIELD_<NAME>'), FIELD_ARGUMENT,
-        {'pm.model': frozenset({'FIELD_ID', 'FIELD_KIND', 'FIELD_STATUS',
+        FIELD_WORDS, ('pm.vocabulary', 'FIELD_<NAME>'), FIELD_ARGUMENT,
+        {'pm.vocabulary': frozenset({'FIELD_ID', 'FIELD_KIND', 'FIELD_STATUS',
                                 'FIELD_NAME', 'FIELD_OWNER'})}),
     'row field': Vocabulary(
         ROW_WORDS, ('pm.ledger', '<NAME>_FIELD'), MAPPING_KEY,
@@ -710,7 +712,8 @@ def _census_is_the_tree():
     `core/` / `repo/` edge must be in it, or the walk is scanning the wrong
     root and every assertion over it is over nothing."""
     names = {dotted for dotted, _ in _census_modules()}
-    assert {'pm.model', 'core.config', 'conveyor.driver'} <= names, sorted(names)
+    assert ({'pm.vocabulary', 'pm.inventory', 'core.config', 'conveyor.driver'}
+            <= names), sorted(names)
 
 
 def test_no_state_literal_survives_outside_the_seed():
@@ -727,11 +730,13 @@ def test_no_state_literal_survives_outside_the_seed():
 # seeing dict keys reports an empty offender list, which is what a clean tree
 # reports too.
 _A_BARE_KIND = "def f(cfg):\n    return holds(cfg, 'feature', [])\n"
-_A_NAMED_KIND = "def f(cfg):\n    return holds(cfg, model.GRAIN_FEATURE, [])\n"
+_A_NAMED_KIND = "def f(cfg):\n    return holds(cfg, vocabulary.GRAIN_FEATURE, [])\n"
 _A_KIND_IN_A_MESSAGE = "def f():\n    return f'a {x} feature'\n"
-_A_BARE_FIELD_ARGUMENT = "def f(p):\n    return model.field_of(p, 'status')\n"
+_A_BARE_FIELD_ARGUMENT = ("def f(p):\n"
+                          "    return frontmatter.field_of(p, 'status')\n")
 _A_NAMED_FIELD_ARGUMENT = ("def f(p):\n"
-                           "    return model.field_of(p, model.FIELD_STATUS)\n")
+                           "    return frontmatter.field_of("
+                           "p, vocabulary.FIELD_STATUS)\n")
 _A_FIELD_WORD_SOMEWHERE_ELSE = "def f():\n    return git_lines('status', '-s')\n"
 _A_BARE_ROW_GET = "def f(row):\n    return row.get('ts')\n"
 _A_BARE_ROW_KEY = "def f(gid):\n    return {'grain': gid}\n"
@@ -756,6 +761,16 @@ class NoVocabularyLiteralSurvivesOutsideItsHome(unittest.TestCase):
     census that cannot tell them apart forces a module to lie about what it
     means. `tests/` is out of scope — its economics are `check budget`'s.
     """
+
+    PROTECTS = (
+        'grain kinds, frontmatter fields and row fields are spelled at their '
+        'constant and nowhere else, so a second spelling is a NameError at '
+        'import',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): '
+        'lessons.FIELDS spelled the durable stamp `at` while every reader keyed '
+        '`ts`, so those rows sorted to the beginning of time and no test could '
+        'see it — neither spelling is wrong to a string',
+    )
 
     CORPUS = (
         (_A_BARE_KIND, True),
@@ -807,7 +822,7 @@ def test_the_belts_spell_no_state_word():
     `conveyor/` may carry a seed word as a string constant.
 
     This is the NEGATIVE half of the R4 case it replaced. The positive half
-    — that the site read `model.flow_of` and not `model.LIFECYCLE` /
+    — that the site read `vocabulary.flow_of` and not `vocabulary.LIFECYCLE` /
     `BUILDING` / `REVIEWING` — is
     `test_the_seeds_exported_words_have_exactly_the_named_readers` below,
     package-wide rather than per site (V9 of the feature review)."""
@@ -820,21 +835,21 @@ def test_the_belts_spell_no_state_word():
 
 
 def test_the_seeds_exported_words_have_exactly_the_named_readers():
-    """`model.LIFECYCLE` / `BUILDING` / `REVIEWING` are the seed's words under
+    """`vocabulary.LIFECYCLE` / `BUILDING` / `REVIEWING` are the seed's words under
     0.2.0's names. Whoever reads them is asking about a word, and each such
     reader is a declared exception above — never a silent one."""
     readers = set()
     for family in ('pm', 'checks', 'verify', 'conveyor'):
         for path in sorted((SRC / family).glob('*.py')):
             dotted = f'{family}.{path.stem}'
-            if dotted == 'pm.model':
+            if dotted in ('pm.vocabulary', 'pm.inventory'):
                 continue
             tree = ast.parse(path.read_text('utf-8'))
             where = _enclosing_names(tree)
             for node in ast.walk(tree):
                 if (isinstance(node, ast.Attribute)
                         and isinstance(node.value, ast.Name)
-                        and node.value.id == 'model'
+                        and node.value.id == 'vocabulary'
                         and node.attr in ('LIFECYCLE', 'BUILDING', 'REVIEWING')):
                     _, func = where.get(node.lineno, (None, None))
                     readers.add((dotted, func))

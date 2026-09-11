@@ -1,9 +1,9 @@
 """test_fixture_flows.py — the census: every fixture tree DECLARES its flow.
 
 WHY THIS IS A TEST AND NOT A ONE-TIME SWEEP
-`[pm.states.<kind>]` has no runtime fallback. `model.flow_of`
-(src/agentic_sdlc/repo/pm/model.py:718) exits 2 by name when a tree declared
-nothing, and the engine's questions route through `model.holds` — so a fixture
+`[pm.states.<kind>]` has no runtime fallback. `vocabulary.flow_of`
+(src/agentic_sdlc/repo/pm/vocabulary.py) exits 2 by name when a tree declared
+nothing, and the engine's questions route through `vocabulary.holds` — so a fixture
 that stops declaring does NOT fail with a message about fixtures. It fails as a
 `ConfigError` raised several frames below whatever verb the case was actually
 about, and the reader's first guess is that the verb regressed. The one thing
@@ -13,8 +13,8 @@ So the census is the assertion.
 Each row is a tree builder that some test module hands to a `pm` verb, a
 `check pm` / `check grain-shape` run, a conveyor step, or `verify`. The claim
 is the same for all of them and it is the strongest one available: standing in
-the tree the builder made, `model.load()` yields a flow for every kind in
-`model.FLOW_KINDS`, which is exactly the precondition `flow_of` checks.
+the tree the builder made, `vocabulary.load()` yields a flow for every kind in
+`vocabulary.FLOW_KINDS`, which is exactly the precondition `flow_of` checks.
 
 DELIBERATELY NOT IN THE CENSUS, and each absence is a decision:
 
@@ -23,7 +23,8 @@ DELIBERATELY NOT IN THE CENSUS, and each absence is a decision:
     delete the feature's own tests.
   * `tests/test_ci_workflows.py::_milestone` — its `pm/roadmap` is read by the
     `ci-semver-gate.yml` compare step, a bash script that greps `milestone.md`.
-    Nothing in that module loads `pm.model`, so a devkit.toml would be scenery.
+    Nothing in that module loads `pm.vocabulary`, so a devkit.toml would be
+    scenery.
   * `tests/test_init_verb.py` / `tests/test_fresh_project.py` — those trees are
     built BY `agentic-sdlc init`, which writes the seed section itself
     (`installables/project-devkit.toml` carries `render_seed()` verbatim, held
@@ -54,7 +55,7 @@ from support import REPO_ROOT  # noqa: E402,F401 — puts src/ on the path
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
-from agentic_sdlc.repo.pm import model  # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 
 # --- these tests share ONE mutable thing: this repo ----------------------------
 # Every case here spawns `make` against REPO_ROOT rather than a scratch tree,
@@ -162,7 +163,7 @@ def _standing_in(root: Path):
 
     Several builders already chdir; entering again is a no-op for those and is
     what makes the two that do not (`_tree`, `Repo`'s root before its own
-    `__enter__`) answerable. `model.load()` reads devkit.toml through
+    `__enter__`) answerable. `vocabulary.load()` reads devkit.toml through
     `core.project`'s `lru_cache`d pair, so a stale entry from the previous row
     would make this whole census answer about the wrong tree.
     """
@@ -187,15 +188,15 @@ def test_every_fixture_tree_declares_a_flow_for_every_grain_kind(name):
     read is worse than no seed because the failure moves.
     """
     with BUILDERS[name]() as root, _standing_in(root):
-        cfg = model.load()
-        assert sorted(cfg.flows) == sorted(model.FLOW_KINDS), (
+        cfg = vocabulary.load()
+        assert sorted(cfg.flows) == sorted(vocabulary.FLOW_KINDS), (
             f'{name} builds a tree declaring {sorted(cfg.flows)} — every `pm` '
             f'verb and every `check pm` run over it is refused by '
-            f'`model.flow_of` at exit 2, from wherever the engine asks its '
+            f'`vocabulary.flow_of` at exit 2, from wherever the engine asks its '
             f'first question. Build the config through '
             f'`tests/support/pm.py::with_flow`.')
-        for kind in model.FLOW_KINDS:
-            assert model.flow_of(cfg, kind).order, kind
+        for kind in vocabulary.FLOW_KINDS:
+            assert vocabulary.flow_of(cfg, kind).order, kind
 
 
 def test_the_census_is_not_empty_and_names_real_builders():
@@ -218,8 +219,8 @@ def test_the_flow_the_fixtures_declare_is_the_seed_itself():
     against (tests/test_pm_flow.py:559)."""
     from support import pm as pmfx
 
-    assert pmfx.FLOW_TOML == model.render_seed()
-    assert pmfx.with_flow('[pm]\nchecks = ["D1"]\n').endswith(model.render_seed())
+    assert pmfx.FLOW_TOML == vocabulary.render_seed()
+    assert pmfx.with_flow('[pm]\nchecks = ["D1"]\n').endswith(vocabulary.render_seed())
     # Idempotent: appending twice would be a TOML duplicate-table error, and a
     # fixture that already declares must come back untouched.
     once = pmfx.with_flow('')

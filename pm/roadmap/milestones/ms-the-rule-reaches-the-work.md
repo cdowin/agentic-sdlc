@@ -109,10 +109,12 @@ against the tree is not a record.**
 
 ## Constraints this milestone must respect
 
-**The hard-rule NUMBERS are a public API.** Roughly 600 citations across source, tests and hooks —
-`rule 4` alone appears 194 times. The list cannot be renumbered, reordered or merged; trimming happens
-INSIDE a rule and anything new appends. Any plan that reorganises them is a 600-site migration wearing
-a tidy-up's clothes.
+**The hard-rule NUMBERS are a public API. Do not quote this paragraph's number — run
+`agentic-sdlc cite`**, one row per rule, `--sites` for every site. It read 1,262 / `rule 4` 367 on
+2026-09-11. The one-liner this carried until 0.7.0 said 1,151: it cannot see a citation wrapped
+across a line break and its suffix list misses tracked files. The list cannot be renumbered,
+reordered or merged; trimming happens INSIDE a rule and anything new appends. **It read "roughly
+600 ... 194" for three milestones, hand-counted once — then 1,151, hand-counted again.**
 
 **Do not grow the always-loaded file to fix this.** `CLAUDE.md` is 163 lines against a documented 200
 target, and over-long files are followed LESS well. The answer is placement, not volume.

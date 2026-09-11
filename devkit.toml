@@ -187,7 +187,51 @@ budget = { unit = 20, integration = 130, test = 150 }
 # `semver-gate.yml`'s success path, an `assertIn(x, X)` tautology, and
 # `check doc`'s rule wired by one unguarded line. Each pins a defect that
 # HAPPENED in this milestone and was watched failing before it was fixed.
-cases = { unit = 1140, integration = 430 }
+#
+# RESTRUCTURED 2026-09-10, at 0.7.0, and this is that argument. The ceiling is
+# now on the SUITE — the `test` tier, which runs both halves and files one
+# census — and NOT per tier. Two measurements forced it:
+#
+#   1. A PER-TIER COUNT MEASURES TIER MEMBERSHIP, NOT GROWTH. 0.7.0 moved 62
+#      cases from `integration` to `unit` by deleting a dead `import
+#      subprocess` and one `git_tree as tree` alias. Nothing was written and
+#      nothing was deleted. The suite went 1,571 -> 1,586 collected, real
+#      growth of 15 — and the unit ceiling read +72 over while the integration
+#      one gained 56 of headroom. A gate that reddens hardest when the tier
+#      boundary is CORRECTED teaches people not to correct it.
+#
+#   2. THE CLOCK CANNOT REPLACE IT, which is why the count does not simply go.
+#      `unit` went 706 -> 1,212 cases, +72%, for 8.2s -> 9.6s, +17%: xdist
+#      absorbs the rest. A tier really can double in size inside its time
+#      budget, exactly as the note above said in 0.4.0. So: time per TIER,
+#      because that is what a human waits for and it differs per tier; count
+#      per SUITE, because that is what grows and it does not care which side
+#      of the mark a case sits on.
+#
+# `test` is the whole suite in one run (`$(PYTEST) $(PYTEST_N)`, no `-m`), so
+# its census is the number, and `GDK_MILESTONE_TIERS` runs it — a limit graded
+# from a measurement the gate does not take is the hole
+# `bg-an-uncounted-tier-passes-the-case-ceiling` records.
+#
+# RE-SET AT 0.7.0's CLOSE, 2026-09-11: 1,575 -> 1,627. The suite went 1,571
+# collected at `main` to 1,627 here, +56 over a milestone whose whole point was
+# moving code without changing behaviour — so every one of the 56 is a GATE, not
+# a behaviour case, and each is named in the story or bug close that added it.
+# The three that carry most of it:
+#
+#   primitive 12  NoNameIsBoundTwice           1 case + 14 replayed CORPUS rows
+#   primitive 13  EveryModuleSaysWhatItDoes    1 case + a 10-row CORPUS
+#   the section roster + the comparison        15, over `pm ledger report`
+#
+# Plus the by-id census derived rather than hand-kept (2), the aliased-owner
+# case (1), and the rest spread one and two at a time. Three primitives arrived
+# that 0.7.0's feature briefs did not price — the feature review's F7 is that
+# finding, and the budget paragraph under
+# `ft-the-module-says-what-it-does`'s `## Proof budget` carries the argument.
+#
+# 1,627 is the suite that exists today, with no headroom on purpose: growth is
+# meant to be argued, not absorbed. Re-set at each close, once, with a reason.
+cases = { test = 1627 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

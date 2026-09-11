@@ -20,7 +20,8 @@ from pathlib import Path
 
 from support.pm import cfg_for, run_cli, run_gate, tree, write, write_config
 
-from agentic_sdlc.repo.pm import cli, model
+from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo.pm import cli, inventory, vocabulary
 
 PLAN_REL = 'pm/roadmap/releases.md'
 
@@ -37,13 +38,13 @@ LEVELS = (
 
 
 def order_of(root: Path, rel: str) -> list[str]:
-    return model.list_field_of(root / rel, 'order')
+    return frontmatter.list_field_of(root / rel, 'order')
 
 
 def unbound(root: Path) -> None:
     """The fixture's feature and story, authored and bound to nothing."""
-    model.set_field(root / 'pm/roadmap/features/alpha.md', 'milestone', '')
-    model.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
+    frontmatter.set_field(root / 'pm/roadmap/features/alpha.md', 'milestone', '')
+    frontmatter.set_field(root / 'pm/roadmap/stories/s0.md', 'feature', '')
 
 
 class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
@@ -56,7 +57,7 @@ class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
                 self.assertEqual(order_of(root, prel), [child])
                 if field:
                     self.assertEqual(
-                        model.unquote(model.field_of(root / crel, field)),
+                        frontmatter.unquote(frontmatter.field_of(root / crel, field)),
                         parent)
 
     def test_the_same_add_twice_writes_nothing_the_second_time(self):
@@ -82,7 +83,7 @@ class AddBindsAndSequencesAtEveryLevel(unittest.TestCase):
                 self.assertEqual(order_of(root, prel), [])
                 if field:
                     self.assertEqual(
-                        model.unquote(model.field_of(root / crel, field)), '')
+                        frontmatter.unquote(frontmatter.field_of(root / crel, field)), '')
                 # ...and twice is a no-op that says so.
                 code, out = run_cli(root, 'remove', parent, child)
                 self.assertEqual(code, 0, out)
@@ -272,7 +273,7 @@ class ContainsDecidesWhatMayHoldWhat(unittest.TestCase):
                 outputs.append([run_cli(root, 'add', p, c)
                                 for p, _, c, _, _ in LEVELS])
         self.assertEqual(outputs[0], outputs[1])
-        self.assertEqual(model.DEFAULT_CONTAINS['milestone'],
+        self.assertEqual(vocabulary.DEFAULT_CONTAINS['milestone'],
                          ('feature', 'bug'))
 
 
@@ -305,7 +306,7 @@ class TheVerbRefusesOnlyFactsAboutItsInput(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertEqual(order_of(root, 'pm/roadmap/features/alpha.md'), [])
             self.assertEqual(
-                model.unquote(model.field_of(
+                frontmatter.unquote(frontmatter.field_of(
                     root / 'pm/roadmap/stories/s0.md', 'feature')), 'ft-b')
 
     def test_removing_a_child_bound_elsewhere_refuses(self):
@@ -349,7 +350,7 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
             text = (root / PLAN_REL).read_text(encoding='utf-8')
             self.assertTrue(text.startswith('---\n'))
             self.assertIn('# The release plan', text)
-            self.assertEqual(model.root_id(cfg_for(root)), 'roadmap')
+            self.assertEqual(inventory.root_id(cfg_for(root)), 'roadmap')
             self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
 
     def test_the_plan_answers_to_the_id_it_declares(self):
@@ -357,7 +358,7 @@ class TheRootIsAParentLikeAnyOther(unittest.TestCase):
             (root / PLAN_REL).write_text(
                 '---\nid: the-plan\nkind: roadmap\norder:\n---\n\nPlan.\n',
                 encoding='utf-8')
-            self.assertEqual(model.root_id(cfg_for(root)), 'the-plan')
+            self.assertEqual(inventory.root_id(cfg_for(root)), 'the-plan')
             self.assertEqual(run_cli(root, 'add', 'the-plan', '0.1')[0], 0)
             self.assertEqual(order_of(root, PLAN_REL), ['0.1'])
             # ...and `roadmap` is then no id at all, rather than a second name
@@ -384,7 +385,7 @@ class ThePlanIsRead(unittest.TestCase):
             write(root / 'pm/roadmap/milestones/b.md',
                   {'id': '"b"', 'kind': 'milestone', 'name': 'B',
                    'status': 'building'})
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'version', '0.1.0')
             run_cli(root, 'add', 'roadmap', '0.1')
             run_cli(root, 'add', 'roadmap', 'b')
@@ -421,7 +422,7 @@ class ThePlanIsRead(unittest.TestCase):
         """
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
-            model.set_field(root / 'pm/roadmap/milestones/0.1.md',
+            frontmatter.set_field(root / 'pm/roadmap/milestones/0.1.md',
                             'version', '0.1.0')
             self.assertEqual(run_cli(root, 'add', 'roadmap', '0.1')[0], 0)
             self.assertEqual(
@@ -467,7 +468,7 @@ class ThePlanIsRead(unittest.TestCase):
             code, out = run_cli(root, 'next')
             self.assertEqual(code, 0, out)
             self.assertIn('has shipped', out)
-            self.assertIsNone(model.current_milestone(cfg_for(root)))
+            self.assertIsNone(inventory.current_milestone(cfg_for(root)))
 
     def test_the_roadmap_verb_writes_nothing(self):
         with tree(story_statuses=('ready',)) as root:

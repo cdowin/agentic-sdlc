@@ -12,20 +12,20 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
 
 from agentic_sdlc import __version__
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import frontmatter, spawn, walk
 from agentic_sdlc.core.config import (ConfigError, config_section,
-                                      relpath_tuple, str_tuple)
+                                      pointer_escapes, relpath_tuple,
+                                      str_tuple)
 from agentic_sdlc.repo.conveyor import lessons
 from agentic_sdlc.repo.conveyor.driver import (Answer, Check, Context,
                                               OP_FEATURE, OP_STORY,
                                               grain_path)
-from agentic_sdlc.repo.pm import model, remote, verdict
+from agentic_sdlc.repo.pm import inventory, remote, verdict, vocabulary
 
 # --- the shipped defaults -----------------------------------------------------
 DEFAULT_RELEASE_STEPS = (
@@ -242,25 +242,19 @@ def _clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
     return flat if len(flat) <= limit else flat[:limit] + '…'
 
 
-def _read(path: Path) -> str:
-    """A file's text with its line endings INTACT."""
-    with open(path, encoding='utf-8', newline='') as handle:
-        return handle.read()
-
-
-def _pm_cfg(ctx: Context) -> 'model.PmConfig':
-    return replace(model.load(), root=ctx.root)
+def _pm_cfg(ctx: Context) -> 'vocabulary.PmConfig':
+    return replace(vocabulary.load(), root=ctx.root)
 
 
 def _git(ctx: Context, *args: str, strip: bool = True) -> tuple[int, str]:
     """`git` in the checkout; a missing git is an exit code. `strip=False`
     keeps porcelain columns whose leading space carries meaning."""
     try:
-        done = subprocess.run(('git',) + args, cwd=str(ctx.root),
-                              capture_output=True, text=True, timeout=GIT_TIMEOUT)
+        done = spawn.run(('git',) + args, cwd=str(ctx.root),
+                         capture_output=True, text=True, timeout=GIT_TIMEOUT)
     except FileNotFoundError:
         return NOT_ON_PATH, 'git is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, 'git timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -277,11 +271,11 @@ def _run(ctx: Context, argv: list[str]) -> tuple[int, str]:
     """Any command in the checkout, with `_make`'s failure vocabulary — a
     missing binary is an exit code, never a crash."""
     try:
-        done = subprocess.run(argv, cwd=str(ctx.root), capture_output=True,
-                              text=True, timeout=_timeout(ctx.operation))
+        done = spawn.run(argv, cwd=str(ctx.root), capture_output=True,
+                         text=True, timeout=_timeout(ctx.operation))
     except FileNotFoundError:
         return NOT_ON_PATH, f'{argv[0]} is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, f'{argv[0]} timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -300,12 +294,12 @@ def _read_text(path) -> str:
 def _make(ctx: Context, *args: str) -> tuple[int, str]:
     """`make` in the checkout. A missing make is an exit code, never a crash."""
     try:
-        done = subprocess.run(('make',) + args, cwd=str(ctx.root),
-                              capture_output=True, text=True,
-                              timeout=_timeout(ctx.operation))
+        done = spawn.run(('make',) + args, cwd=str(ctx.root),
+                         capture_output=True, text=True,
+                         timeout=_timeout(ctx.operation))
     except FileNotFoundError:
         return NOT_ON_PATH, 'make is not on PATH'
-    except subprocess.TimeoutExpired:
+    except spawn.TimeoutExpired:
         return TIMED_OUT, 'make timed out'
     except OSError as err:
         return CANNOT_RUN, str(err)
@@ -324,10 +318,10 @@ def _own_cli(ctx: Context, *argv: str) -> tuple[int, str, tuple[str, ...]]:
     env['PYTHONPATH'] = f'{parent}{os.pathsep}{existing}' if existing else parent
     command = (sys.executable, '-m', 'agentic_sdlc.cli') + argv
     try:
-        done = subprocess.run(command, cwd=str(ctx.root), capture_output=True,
-                              text=True, env=env,
-                              timeout=_timeout(ctx.operation))
-    except subprocess.TimeoutExpired:
+        done = spawn.run(command, cwd=str(ctx.root), capture_output=True,
+                         text=True, env=env,
+                         timeout=_timeout(ctx.operation))
+    except spawn.TimeoutExpired:
         return TIMED_OUT, (f'`agentic-sdlc {" ".join(argv)}` did not finish inside '
                      f'{_timeout(ctx.operation)}s'), argv
     except OSError as err:
@@ -650,10 +644,10 @@ def run_command(ctx: Context, step: str, command: str) -> Answer:
     """Run `command` in the checkout; exit 0 is true and nothing else is, with
     the output bounded into the detail."""
     try:
-        done = subprocess.run(command, cwd=str(ctx.root), shell=True,
-                              capture_output=True, text=True,
-                              timeout=_timeout(ctx.operation))
-    except subprocess.TimeoutExpired:
+        done = spawn.run(command, cwd=str(ctx.root), shell=True,
+                         capture_output=True, text=True,
+                         timeout=_timeout(ctx.operation))
+    except spawn.TimeoutExpired:
         return Answer.no(
             f'`{_clip(command, COMMAND_LIMIT)}` did not finish inside '
             f'{_timeout(ctx.operation)}s')
@@ -699,7 +693,7 @@ def subject_grain(ctx: Context) -> str:
         cfg = _pm_cfg(ctx)
     except Exception:  # noqa: BLE001 - a config this cannot read decides nothing
         return ctx.version
-    return model.milestone_of_version(cfg, ctx.version) or ctx.version
+    return inventory.milestone_of_version(cfg, ctx.version) or ctx.version
 
 
 def ready_for(ctx: Context, target: str) -> Answer:
@@ -770,19 +764,19 @@ def check_tree_clean(ctx: Context) -> Answer:
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, subject_grain(ctx))
-    if path is None:
+    milestone = inventory.grain(cfg, subject_grain(ctx), vocabulary.GRAIN_MILESTONE)
+    if milestone is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')
-    declared = model.field_of(path, 'branch')
+    declared = milestone.field('branch')
     if not declared:
         return Answer.unverifiable(
-            f'{cfg.rel(path)} carries no `branch:` stamp — D9 exists so a '
-            f'fresh session never has to guess at `git branch -a`, and this '
-            f'check will not assume the current branch is the right one')
+            f'{cfg.rel(milestone.path)} carries no `branch:` stamp — D9 exists '
+            f'so a fresh session never has to guess at `git branch -a`, and '
+            f'this check will not assume the current branch is the right one')
     here = _branch(ctx)
     if here != declared:
-        return Answer.no(f'HEAD is {here!r}; {cfg.rel(path)} declares '
+        return Answer.no(f'HEAD is {here!r}; {cfg.rel(milestone.path)} declares '
                          f'branch: {declared!r}')
     # REPORTED, never refused: refusing would change a shipped exit code for a
     # condition that has always been tolerated (rule 6).
@@ -832,7 +826,7 @@ def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     from agentic_sdlc.repo.pm import changelog as clog
     cfg = _pm_cfg(ctx)
     mid = subject_grain(ctx)
-    if mid not in model.grain_index(cfg):
+    if mid not in inventory.grain_index(cfg):
         return Answer.unverifiable(
             f'no grain resolves from {mid!r} to read `{clog.FIELD}:` from')
     entries = clog.collect(cfg, mid)
@@ -861,7 +855,7 @@ def _version_in(ctx: Context, rel: str, pattern: str) -> tuple[str | None, str]:
     if not path.is_file():
         return None, f'{rel} is not in this checkout'
     compiled = re.compile(pattern)
-    for line in _read(path).split('\n'):
+    for line in frontmatter.read_raw(path).split('\n'):
         match = compiled.match(line.strip())
         if match:
             return match.group(1), ''
@@ -890,7 +884,7 @@ def check_version_sync(ctx: Context) -> Answer:
 
 
 def check_features_done(ctx: Context) -> Answer:
-    return ready_for(ctx, model.GRAIN_MILESTONE)
+    return ready_for(ctx, vocabulary.GRAIN_MILESTONE)
 
 
 def check_findings_resolved(ctx: Context) -> Answer:
@@ -920,7 +914,7 @@ def check_pin_bumped(ctx: Context) -> Answer:
             f'`DEVKIT_VERSION := {want}` above `include {FRAMEWORK_MAKEFILE}`, '
             f'or point [{ctx.operation}] pin_file at the file that carries it')
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{rel} could not be read as text')
     for number, line in enumerate(text.split('\n'), start=1):
@@ -1056,7 +1050,7 @@ def _config_readers() -> tuple[tuple[str, str, object], ...]:
     return (
         ('checks', '[checks] all', _read_checks),
         ('gates', '[gates] extra', gates_extra.targets),
-        ('pm', '[pm]', model.load),
+        ('pm', '[pm]', vocabulary.load),
         ('release', '[release] steps / commands',
          lambda: _read_operation('release')),
         ('adopt', '[adopt] steps / commands',
@@ -1217,8 +1211,8 @@ def check_telemetry_live(ctx: Context) -> Answer:
     command = _configured(ctx, 'telemetry-live')
     if command:
         return run_command(ctx, 'telemetry-live', command)
-    from agentic_sdlc.repo.pm import model as pm_model
-    absent = [name for name in pm_model.LEDGER_COURIERS
+    from agentic_sdlc.repo.pm import vocabulary
+    absent = [name for name in vocabulary.LEDGER_COURIERS
               if not (ctx.root / HOOKS_DIR / name).is_file()]
     if absent:
         return Answer.unverifiable(
@@ -1236,7 +1230,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
         return Answer.unverifiable(
             f'{registered.unread}, so whether this tree\'s couriers are '
             f'registered cannot be read — not a finding, and not a pass either')
-    unwired = [name for name in pm_model.LEDGER_COURIERS
+    unwired = [name for name in vocabulary.LEDGER_COURIERS
                if name not in registered.couriers]
     # The vehicle, in THIS tree: `vocabulary` is a read that needs make to
     # reach the CLI *and* the CLI to have a flow to answer with, which is
@@ -1244,7 +1238,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
     code, out = _run(ctx, ['make', '-s', 'pm', 'ARGS=vocabulary'])
     if code == NOT_ON_PATH:
         return Answer.unverifiable('make is not on PATH')
-    reached = code == 0 and any(kind in out for kind in pm_model.FLOW_KINDS)
+    reached = code == 0 and any(kind in out for kind in vocabulary.FLOW_KINDS)
     if not reached:
         return Answer.no(
             f'no ledger setup for this tree, no telemetry — `make -s pm '
@@ -1268,7 +1262,7 @@ def check_telemetry_live(ctx: Context) -> Answer:
             f'answers, nothing in this checkout registers '
             f'{", ".join(unwired)}, and no courier row has ever landed. '
             f'`install-hooks {install.SETTINGS_FLAG}` writes '
-            f'{pm_model.AGENT_SETTINGS} when nothing is in the way, and prints '
+            f'{vocabulary.AGENT_SETTINGS} when nothing is in the way, and prints '
             f'the block for whatever settings file your harness actually reads '
             f'when something is; a session rooted outside this tree also needs '
             f'`GDK_LEDGER_ROOT={ctx.root}`. Nothing here is mandatory — a tree '
@@ -1363,7 +1357,7 @@ def check_story_exists(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
     try:
         path = _grain_file(ctx)
-    except model.AmbiguousStory as err:
+    except inventory.AmbiguousStory as err:
         return Answer.no(str(err))
     if path is None:
         return Answer.no(f'no story resolves from {ctx.version!r} under '
@@ -1402,14 +1396,14 @@ def check_evidence_written(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
     try:
         path = _grain_file(ctx)
-    except model.AmbiguousStory as err:
+    except inventory.AmbiguousStory as err:
         return Answer.unverifiable(str(err))
     if path is None:
         return Answer.unverifiable(
             f'no story document for {ctx.version} — nothing to read evidence '
             f'from')
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return Answer.unverifiable(f'{cfg.rel(path)} could not be read as text')
     lines = [m.group('body').strip()
@@ -1441,7 +1435,7 @@ def check_evidence_written(ctx: Context) -> Answer:
 # --- the feature checks -------------------------------------------------------
 def check_stories_done(ctx: Context) -> Answer:
     """`pm ready-for feature <fid>`, never re-implemented."""
-    return ready_for(ctx, model.GRAIN_FEATURE)
+    return ready_for(ctx, vocabulary.GRAIN_FEATURE)
 
 
 def check_feature_verified(ctx: Context) -> Answer:
@@ -1456,20 +1450,20 @@ def check_feature_verified(ctx: Context) -> Answer:
 
 def _record_of(ctx: Context) -> tuple[Path | None, str]:
     """(the feature's review record, '' or why there is none), through
-    `model.review_record_for`; an absolute pointer is refused (rule 8)."""
+    `inventory.review_record_for`; an absolute pointer is refused (rule 8)."""
     cfg = _pm_cfg(ctx)
-    pointer = model.review_record_for(cfg, ctx.version)
+    pointer = inventory.review_record_for(cfg, ctx.version)
     if not pointer:
         return None, (f'{ctx.version} points at no review record — '
                       f'`reviewed:` is blank; run the feature review and '
                       f'`pm set {ctx.version} reviewed <path>`')
-    # `model.pointer_escapes`, not a local spelling of it: this hand-rolled
+    # `pointer_escapes`, not a local spelling of it: this hand-rolled
     # `/` + `~` pair accepted `../outside.md` and `file:x.md`, which the shared
     # predicate refuses. F1's class, in a second verb.
-    if model.pointer_escapes(pointer):
+    if pointer_escapes(pointer):
         return None, (f'reviewed: {pointer!r} is not repo-relative — nothing '
                       f'outside this checkout is read (hard rule 8)')
-    path = model.record_path(cfg, pointer)
+    path = inventory.record_path(cfg, pointer)
     if not path.is_file():
         return None, f'reviewed: names no file ({pointer})'
     size = path.stat().st_size
@@ -1484,7 +1478,7 @@ def _passes(ctx: Context, path: Path) -> tuple[list, str]:
     `verdict.parse`'s rulings inherited whole."""
     cfg = _pm_cfg(ctx)
     try:
-        text = _read(path)
+        text = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return [], f'{cfg.rel(path)} could not be read as text'
     try:

@@ -271,8 +271,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         return
     slowest = sorted(calls, key=lambda r: r.duration, reverse=True)[:SLOWEST]
     try:
-        from agentic_sdlc.repo.pm import ledger, model
-        cfg = model.load()
+        from agentic_sdlc.repo.pm import ledger, vocabulary
+        cfg = vocabulary.load()
         # THE TREE's ledger, and both sides of this merge were reaching for
         # the same thing: 0.3.0's review C2 asked that these land WHERE THE
         # GATE ROWS LAND, because a slowest-tier line and the gate row it sits

@@ -3,6 +3,8 @@
 One compact JSON object per line beside `decisions.md` (D6); `append_row`
 never rewrites a byte already there, so `merge=union` joins branches. A
 timestamp is full UTC ISO-8601 at second resolution, `Z`-suffixed (D8).
+Both halves of every row are here: the `*_row` that mints it and, at the foot
+of the file, the cells it reads back as (`ROW_CELLS`).
 """
 from __future__ import annotations
 
@@ -115,7 +117,7 @@ EVENT_KEYS = {KIND_ENTER: ENTER_KEYS, KIND_VERDICT: VERDICT_KEYS,
               KIND_LEAVE: LEAVE_KEYS}
 
 # What the row says when nobody answered. It cannot collide with a declared
-# answer, because `model._arrive_node_defect` refuses one that does not open
+# answer, because `vocabulary._arrive_node_defect` refuses one that does not open
 # with `--`. A bare move still writes, and is never invisible.
 NO_DISPOSITION = 'none'
 
@@ -405,10 +407,10 @@ def ledger_for(cfg, milestone_id: str) -> Path:
     own directory). One function, because a reader that guessed would find the
     rows in one layout and silently none in the other.
     """
-    from agentic_sdlc.repo.pm import model
-    if model.is_pooled(cfg):
+    from agentic_sdlc.repo.pm import inventory
+    if inventory.is_pooled(cfg):
         return ledgers_dir(cfg) / f'{milestone_id}.jsonl'
-    mdir = model.milestone_dir(cfg, milestone_id)
+    mdir = inventory.milestone_dir(cfg, milestone_id)
     return ledger_path(mdir) if mdir is not None else grainless_path(cfg.roadmap)
 
 
@@ -419,8 +421,8 @@ def ledger_of_grain(cfg, gid: str) -> Path | None:
     answer to "where does this row go": the lookup 0.4.0 retired asked which
     milestone was `in_progress` and lost every row a planning tree wrote.
     """
-    from agentic_sdlc.repo.pm import model
-    mid = model.milestone_of(cfg, gid) if gid else ''
+    from agentic_sdlc.repo.pm import inventory
+    mid = inventory.milestone_of(cfg, gid) if gid else ''
     return ledger_for(cfg, mid) if mid else None
 
 
@@ -442,9 +444,9 @@ def ledger_paths(cfg) -> list[Path]:
     """BOTH homes (0.4.0/D3), deduplicated: the tree's own ledger and one per
     milestone — the walk every reader of "every row" takes, and here because
     `conveyor/lessons.py` and `checks/pm.py` were two more spellings of it."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import inventory
     found = [grainless_path(cfg.roadmap)]
-    found += [ledger_for(cfg, g.gid) for g in model.milestones(cfg)]
+    found += [ledger_for(cfg, g.gid) for g in inventory.milestones(cfg)]
     return list(dict.fromkeys(found))
 
 
@@ -692,17 +694,18 @@ def usage_row(kind: str, **fields: object) -> dict:
 
 # --- where a grain ENDS (D8) --------------------------------------------------
 # Finished is the `done` category of the grain's own kind, asked of
-# `model.category_of` — the question the drift rules ask, so `show`, `report`
-# and the gate agree on where a grain ended; the kind WORDS live in `model`.
+# `vocabulary.category_of` — the question the drift rules ask, so `show`, `report`
+# and the gate agree on where a grain ended; the kind WORDS live in
+# `vocabulary`.
 
 
 def ends_grain(cfg, grain_kind: str, to_state) -> bool:
     """Does a status row into `to_state` finish a grain of this kind? A `to`
     that is not a string finishes nothing."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     if not isinstance(to_state, str):
         return False
-    return model.category_of(cfg, grain_kind, to_state) == model.DONE_CATEGORY
+    return vocabulary.category_of(cfg, grain_kind, to_state) == vocabulary.DONE_CATEGORY
 
 
 def total_seconds(cfg, grain_kind: str, status: list) -> int | None:
@@ -788,3 +791,97 @@ def read_rows(path: Path) -> list[Row]:
                               f'{type(data).__name__}, not a row')
         rows.append(Row(lineno, data, line))
     return rows
+
+
+# --- one row, read back as its cells ------------------------------------------
+# The other half of every `*_row` above: each function here reads the keys the
+# minter fifty lines up wrote, and `pm ledger show` prints what it returns. They
+# moved here from `pm/cli.py` at st-the-pm-cli-helpers-find-a-home for one
+# reason — a payload whose MINTER and whose READER live in two modules is the
+# `at`/`ts` defect this file's own header records, where `lessons.FIELDS`
+# spelled a stamp one way and every reader keyed it another. `READY`/`NOT_READY`
+# were already here while the only function that prints them was there.
+#
+# The VERB's own formatting is not here: `cmd_ledger_show` owns the timestamp,
+# the kind column's width and the order the cells are appended in.
+
+
+def _lesson_cells(row: dict) -> str:
+    """The rule, the text, and ALWAYS the source, so the reader goes to the
+    record rather than trusting this line. `lesson show` filters them."""
+    return (f'  {row.get("rule", "")}  {row.get("text", "")}  '
+            f'(source: {row.get("source", "")})')
+
+
+def _enter_cells(row: dict) -> str:
+    """The rung asked, the answer `pm ready-for` gave, and what blocked it."""
+    cells = (f'  {row.get("rung", "")}  '
+             + (READY if row.get(READY_FIELD)
+                else NOT_READY))
+    blockers = row.get('blockers')
+    named = [str(one.get('check') or one.get('why', ''))
+             for one in (blockers if isinstance(blockers, list) else [])
+             if isinstance(one, dict)]
+    return cells + (f'  blocked: {", ".join(named)}' if named else '')
+
+
+def _verdict_cells(row: dict) -> str:
+    """The rung, the check, the verdict word, the belt's own detail and what
+    it ran — without them a refused run and a passed one read alike here."""
+    cells = (f'  {row.get("rung", "")}  {row.get("check", "")}  '
+             f'{row.get("verdict", "")}')
+    if row.get('detail'):
+        cells += f' — {row["detail"]}'
+    return cells + (f'  (ran: {row["ran"]})' if row.get('ran') else '')
+
+
+def _leave_cells(row: dict) -> str:
+    """The arrival the one write recorded, then the belt named NEXT."""
+    cells = _arrival_cells(row)
+    if not row.get('next_rung'):
+        return cells
+    cells += f'  next: {row["next_rung"]}'
+    checks = row.get('next_checks')
+    if isinstance(checks, list) and checks:
+        cells += f' ({", ".join(str(one) for one in checks)})'
+    return cells
+
+
+# Every kind whose payload this verb renders, and the column the kind sits in,
+# off the kinds themselves — `{kind:<8}` predated `check.verdict` (13).
+ROW_CELLS = {KIND_LESSON: _lesson_cells,
+             KIND_ENTER: _enter_cells,
+             KIND_VERDICT: _verdict_cells,
+             KIND_LEAVE: _leave_cells}
+
+
+def _arrival_cells(row: dict) -> str:
+    """The state reached and the answer given, `none` and its value included."""
+    cells = f'  {row.get("state", "")}  {row.get("answer", "")}'
+    return cells + (f' {row["value"]}' if row.get('value') else '')
+
+
+def _disposition_cells(row: dict) -> str:
+    """The arrival, plus every check a belt answered instead of asking
+    (0.5.0/D6). Read defensively: a hand-written row must not make a grain
+    unprintable."""
+    cells = _arrival_cells(row)
+    entries = row.get('skipped')
+    if not isinstance(entries, list) or not entries:
+        return cells
+    return cells + '  skipped: ' + ', '.join(
+        f'{one.get("check")} — "{one.get("why")}"' if isinstance(one, dict)
+        else str(one) for one in entries)
+
+
+def _gap(earlier, later) -> int | None:
+    """Whole seconds between two rows' stamps, or None when either will not
+    parse — a fabricated interval is worse than a missing one.
+    """
+    if earlier is None:
+        return None
+    start = parse_ts(earlier.data.get(TS_FIELD))
+    end = parse_ts(later.data.get(TS_FIELD))
+    if start is None or end is None:
+        return None
+    return int((end - start).total_seconds())

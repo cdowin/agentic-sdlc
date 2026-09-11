@@ -6,11 +6,12 @@ checkout starts is not.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 import tomllib
 from functools import lru_cache
 from pathlib import Path
+
+from agentic_sdlc.core import spawn
 
 CONFIG_NAME = 'devkit.toml'
 
@@ -49,9 +50,9 @@ def load_config() -> dict:
 def git_lines(*args: str) -> list[str]:
     """Run git in the repo root; return non-empty stdout lines ([] on error)."""
     try:
-        out = subprocess.run(
+        out = spawn.run(
             ['git', *args], cwd=repo_root(),
             capture_output=True, text=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (spawn.CalledProcessError, FileNotFoundError):
         return []
     return [ln for ln in out.stdout.splitlines() if ln.strip()]

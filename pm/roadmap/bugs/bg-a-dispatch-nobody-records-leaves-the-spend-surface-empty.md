@@ -71,8 +71,8 @@ capability*):
 
 ## Out of scope
 
-Making the tool export anything, spawn anything, or fire a hook. Hard rule 2, and D1 (`emit`, never
-execute). The package tells you the command; the operator runs it.
+Making the tool export anything, spawn anything, or fire a hook. Hard rule 2, and 0.5.0/D1 (the
+tool emits). The package tells you the command; the operator runs it.
 
 Fixing the harness's project-root behaviour. Not this package's, and U4 already names it.
 
@@ -89,7 +89,7 @@ All three, and none of them a new capability.
     hand on return
 
 **`dispatch --grain` renders both commands.** `_recording()` in `dispatch.py`, emitted only with
-`--grain`, and it renders — the operator runs (D1, and hard rule 2):
+`--grain`, and it renders — the operator runs (0.5.0/D1, and hard rule 2):
 
     RECORDING THIS DISPATCH — rendered here, run by you:
       export GDK_LEDGER_GRAIN=<id>

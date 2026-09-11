@@ -33,12 +33,16 @@ import ast
 import re
 import tomllib
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 
 # The derivation that puts the `shell` mark on a spawning module. Imported
 # rather than re-implemented: primitive 5 below holds `repo/emit.py` to the
 # SAME no-subprocess question the tier definition is built on, and two
-# spellings of one question is how they drift apart.
+# spellings of one question is how they drift apart. Since primitive 11 that
+# question is necessary and NOT sufficient — one module in `src/` imports
+# `subprocess`, so it answers False everywhere else whatever the file does —
+# and primitive 5 asks it beside the reach to the seam, never instead of it.
 from conftest import module_spawns
 from support import REPO_ROOT
 
@@ -94,6 +98,190 @@ DEFAULT_OPEN_MODE = 'r'
 # other module is too.
 APPEND_ONLY_MODULE = 'repo/pm/ledger.py'
 APPEND_MODES = ('a', 'ab')
+# --- primitive 11: one spawn --------------------------------------------------
+# The third of the family above, and the one hard rule 2 had no home for.
+# `apply.py` owns the mutation and `walk.py` owns the enumeration; sixteen call
+# sites across nine modules each imported `subprocess` for themselves, so "this
+# package boots nothing" was a claim about nine files and a reviewer's memory.
+#
+# The NUMBER is assignment order, like primitive 9's: 11 beside 1 and 2 is a
+# label, not a reading order.
+SPAWN_SEAM = 'core/spawn.py'
+# The library that owns process start-up, and the constructors that reach it.
+# Spelled the way `tests/conftest.py` derives the `shell` mark —
+# `subprocess.<attr>` — so the tier definition, primitive 8 below and this
+# allowlist police one chokepoint. Declared here and read in both places, for
+# the reason OS_SPAWNERS is.
+#
+# `SPAWNERS` is also what makes the owner an owner: the companion case asserts
+# the seam still makes one of these calls, so the allowlist cannot be satisfied
+# by a module that stopped spawning — and asserts it makes it ATTRIBUTE-style
+# off the module, because `tests/conftest.py` enforces the unit tier by
+# rebinding `subprocess.Popen`, and a `from subprocess import Popen` here would
+# hold its own reference and unarm that guard for the whole suite.
+SPAWN_MODULE = 'subprocess'
+SPAWNERS = ('run', 'Popen', 'call', 'check_output', 'check_call')
+# The `os.<name>` spellings that start a process WITHOUT importing
+# `subprocess`, and therefore without the `shell` derivation, the runtime tier
+# guard or the allowlist above seeing anything at all. Declared here because
+# primitive 11 bans them across `src/` and primitive 5 bans them on the emit
+# path: ONE roster, two readers, so neither can be widened behind the other.
+OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
+               'execl', 'execle', 'execlp', 'execlpe', 'spawnv', 'spawnve',
+               'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'posix_spawn',
+               'posix_spawnp', 'fork', 'forkpty', 'startfile')
+# The name every caller imports the owner under, and the dotted module behind
+# it. A module reaching EITHER is reaching a process, which is what primitive 5
+# has to ask now that `import subprocess` answers False everywhere but one file.
+SPAWN_OWNER = 'spawn'
+SPAWN_DOTTED = 'agentic_sdlc.core.spawn'
+# --- primitive 9: one frontmatter ---------------------------------------------
+# The third of the family above, and it sits here rather than at the end of the
+# file because it is the same shape: ONE module, an exact allowlist, an empty
+# offender list. The NUMBER is assignment order — the banners below were
+# numbered as they were added and 6 is already used twice — so 9 beside 1 and 2
+# is a label, not a reading order.
+#
+# `repo/pm/model.py` held 385 lines of frontmatter I/O in the middle of the PM
+# invariants (the file is `vocabulary.py` + `inventory.py` now): the fence scan, the per-process document cache, the field readers
+# and the three byte-exact writers. Nothing said they belonged together, so a
+# caller that wanted the bytes back reached past them and opened the file —
+# `conveyor/steps._read` was a second `read_raw`, character for character.
+#
+# Rule 3 is what a second reader breaks: `newline=''` disables universal-newline
+# translation both ways, `_split` is `str.split('\n')` and NOT `splitlines()`
+# (which also breaks on U+2028, U+2029, form feed and lone CR), and `_eol`
+# carries the CR half of a CRLF. Every one of those is invisible until a CRLF
+# grain round-trips through a writer that skipped one.
+FRONTMATTER_MODULE = 'core/frontmatter.py'
+# The name every caller imports the owner under, so `frontmatter.read_raw` is
+# reaching the owner and a module-level `read_raw` is a second one.
+FRONTMATTER_OWNER = 'frontmatter'
+# The mechanics that must have exactly one home. A module can only spell one of
+# these by BINDING it — `def`, `class`, an assignment or an import — so binding
+# is the whole question, and a re-export (`from ...frontmatter import read_raw`)
+# is a binding like any other. Class-body `def`s are NOT bindings here:
+# `report.Source` declares `read_raw` as one of a fourteen-read source seam and
+# `DiskSource` delegates it to the owner, which is the shape this rule wants.
+FRONTMATTER_INTERNALS = ('_split', '_fence_bounds', '_eol', 'read_raw',
+                         'write_raw', 'parse_document', '_remember',
+                         '_DOCUMENTS')
+# The other half, because a hand-rolled reader need not reuse a name. A READ
+# `open()` carrying `newline=` is the byte-exact read and cannot be anything
+# else; the write side is primitive 2's, so `apply.py`'s `'w'` and the ledger's
+# `'a'` need no exemption here and this roster stays empty.
+OPEN_NEWLINE_KEYWORD = 'newline'
+# --- primitive 10: the engine asks by ID, not by path -------------------------
+# Primitive 9 put frontmatter I/O in one module. This one is about who may
+# ADDRESS it: 102 call sites outside the grain layer handed `field_of` a `Path`
+# to ask what a grain SAYS, which is "a grain is a file on disk" hard-coded 102
+# times. `inventory.grain(cfg, gid)` resolves an id to a `Grain` and
+# `Grain.field` asks it; a module that knows an id goes through those and names no file.
+#
+# What a second backend would cost is the argument: at 102 `Path` call sites it
+# is not expensive, it is impossible — and the reachability is worth having
+# WITHOUT one, because the reads now say which question they are asking.
+GRAIN_LAYER_MODULE = 'repo/pm/inventory.py'
+# The name every caller imports the grain layer under, so `inventory.doc_grain`
+# is reaching it and a bare `doc_grain(` is the layer's own spelling.
+GRAIN_LAYER_OWNER = 'inventory'
+# The storage reads that take a PATH and answer *what does this document say*.
+# `field_in` is absent on purpose: its first argument is LINES, so it cannot
+# hand storage a path.
+STORAGE_FIELD_READS = ('field_of', 'list_field_of', 'document',
+                       'sequence_defect')
+# The rest of what the census below finds in the storage module, each with the
+# reason it may still be handed a path. `read_raw` asks *what are this file's
+# bytes*, which is a question about a FILE that a template, a version file and
+# a shared doc all legitimately ask; the three setters are WRITES, and who may
+# write by path is primitive 2's question rather than this one's.
+STORAGE_BY_PATH_OK = {
+    'read_raw': "a FILE's bytes — not a question about what a grain says",
+    'set_field': 'the write side — primitive 2 owns who may write',
+    'set_fields': 'the write side — primitive 2 owns who may write',
+    'set_list_field': 'the write side — primitive 2 owns who may write',
+}
+# The ONE file-to-grain adapter, graded here too — otherwise every
+# `frontmatter.field_of(p, k)` could become `inventory.doc_grain(p).field(k)`,
+# the gate would go green and nothing would have changed. A module that really
+# holds a file is a ROSTER entry with a reason, not a `doc_grain` call.
+GRAIN_ADAPTER = 'doc_grain'
+# ...AND THE ADAPTER'S SIBLINGS, which is M1 of `ft-the-module-says-what-it-
+# does`'s review: grading `doc_grain` alone left `read_grain` — `doc_grain`
+# plus a `None` filter, three lines below it in the same file — answering the
+# identical question ungraded, so the substitution the banner above forbids
+# worked one name over and eight live sites were doing it. The tuple is not
+# maintained by hand: `test_every_by_path_read_an_owner_exposes_is_named`
+# derives the census from the layer's own source and fails on a name that is in
+# neither this tuple nor the excusal below.
+GRAIN_LAYER_PATH_READS = (GRAIN_ADAPTER, 'read_grain', 'empty_section')
+# The grain layer's own file-questions, the `read_raw` case one layer up: a
+# SHARED DOC declares no `id:` at all, so there is nothing to ask it by and
+# `templates` asking a doc it just minted for its header is not addressable any
+# other way. The two predicates answer *is this file a grain document* about a
+# path a walk just produced, which is the same question one step earlier.
+GRAIN_LAYER_BY_PATH_OK = {
+    'header_of': "a shared doc's first line — a shared doc declares no id",
+    '_is_grain_doc': 'does this FILE open a frontmatter fence',
+    '_is_shared_doc': 'is this FILE a grain\'s shared doc, by name and fence',
+}
+# The dotted module behind each owner name. The classifier matches the RECEIVER
+# (`frontmatter.field_of`, `inventory.doc_grain`), so an import bound under any
+# other name is invisible to it — F2 of the same review. These are what
+# `_renamed_owner_sites` holds the import side to, so the convention is a test
+# rather than a habit.
+FRONTMATTER_DOTTED = 'agentic_sdlc.core.frontmatter'
+GRAIN_LAYER_DOTTED = 'agentic_sdlc.repo.pm.inventory'
+# Modules that may still address a storage read BY PATH, each with the reason
+# it holds a file rather than an id. SHRINKS ONLY — `ROSTER_OPENED_AT` below
+# fails the build on a fourth entry, because the convenient fourth entry is
+# this gate's whole failure mode. `core/frontmatter.py` is not here: it IS the
+# storage module, which primitive 9 already pins to one file.
+PATH_ADDRESSED_ROSTER = {
+    # The grain layer itself: `doc_grain` is the file-to-grain adapter, the
+    # pool walks hand back documents, and `Grain.field` is the one read every
+    # other module goes through. If a second backend ever arrives, this is the
+    # module that learns about it.
+    GRAIN_LAYER_MODULE: 'the grain layer — it owns the seam',
+    # `report.Source`'s two implementations. `GitSource` reads git BLOBS at a
+    # rev: the handle it passes has no `stat`, is not a file, and is in no
+    # index, so an id-addressed read routed through `grain_index` would
+    # silently answer about the working tree instead. `pm ledger report --from
+    # <rev>` is that read, and it only fails in the `shell` tier.
+    'repo/pm/report.py': 'the rev-addressed source seam — a blob is not a file',
+    # `_repair_verb` resolves the grain BESIDE a shared doc by taking the
+    # slot suffix off its filename. There is no id to ask with: the shared doc
+    # declares none, and which grain it sits beside is a fact about the two
+    # names. The rest of the module measures file BODIES.
+    'repo/checks/grain_shape.py': 'the grain beside a shared doc, found by name',
+}
+# The opening size, pinned so the roster cannot grow. Criterion 3 of
+# `st-the-engine-asks-by-id-not-by-path`: an entry added to make this green is
+# the defect, so adding one breaks the build and has to be argued for here.
+ROSTER_OPENED_AT = 3
+# THE CENSUS THE TWO TUPLES ABOVE ARE CHECKED AGAINST, per owner module:
+# (module, the reads at the bottom of it, the graded names, the excused ones).
+# A hand-kept list of names is exactly how this gate shipped grading five of
+# eight — so the names are DERIVED from the owner's own source and the tuples
+# above only say what was DECIDED about each. `read_raw`/`document` are where
+# every question about a document bottoms out in the storage module; the four
+# storage reads are where every question about a document bottoms out in the
+# grain layer, which is one layer up and asks nothing else.
+DOCUMENT_READ_CENSUS = (
+    (FRONTMATTER_MODULE, {'read_raw': 0, 'document': 0},
+     STORAGE_FIELD_READS, STORAGE_BY_PATH_OK),
+    (GRAIN_LAYER_MODULE, {name: 0 for name in STORAGE_FIELD_READS},
+     GRAIN_LAYER_PATH_READS, GRAIN_LAYER_BY_PATH_OK),
+)
+# `unquote` is idempotent on every value whose stripped form is not itself
+# quote-wrapped, and NOT a no-op on the rest: `unquote('""x""')` is `'x'` where
+# one strip gives `'"x"'`. Every reader below unquotes as it parses, so an
+# `unquote` around one of them strips TWICE — and `pm get` never did, so two
+# verbs disagreed about the same field. 68 such sites were deleted; this is
+# what stops the 69th.
+UNQUOTE = 'unquote'
+ALREADY_UNQUOTED = ('field_of', 'list_field_of', 'field_in', 'field',
+                    'list_field')
 
 
 def _sources() -> list[tuple[str, Path]]:
@@ -229,6 +417,250 @@ def _mutation_sites(rel: str, tree: ast.Module) -> list[str]:
     return out
 
 
+def _module_level_bindings(tree: ast.Module):
+    """(name, lineno) for every name this module binds at MODULE level.
+
+    Module level only, and that is the narrowing the source seam asks for: a
+    `def read_raw` inside a `class` body is a method on `report.Source`, which
+    declares fourteen reads and delegates them, while one at column 0 is a
+    second module-level function of that name.
+
+    An `import` yields BOTH halves — the name imported and the name it was
+    bound under. `from ...frontmatter import write_raw as put` binds `put`, so
+    a reader that only looked at the binding waved the re-export through, and
+    the corpus said so before this file was trusted.
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            yield node.name, node.lineno
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    yield target.id, node.lineno
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            yield node.target.id, node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                yield alias.name, node.lineno
+                if alias.asname:
+                    yield alias.asname, node.lineno
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                yield (alias.asname or alias.name).split('.')[0], node.lineno
+
+
+def _is_raw_frontmatter_read(node: ast.Call) -> bool:
+    """True for a READ `open(...)` that disables newline translation.
+
+    The mode decides, through `_open_mode` rather than a second reading of it:
+    a WRITE with `newline=` is `core/apply.py`'s and the ledger's, and both are
+    primitive 2's business. A read that asks for the bytes as they are on disk
+    has exactly one home.
+    """
+    if not _is_an_open_call(node):
+        return False
+    if _is_write_open(node):
+        return False
+    return any(kw.arg == OPEN_NEWLINE_KEYWORD for kw in node.keywords)
+
+
+def _frontmatter_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every second spelling of the frontmatter mechanics in one module."""
+    out = []
+    for name, lineno in _module_level_bindings(tree):
+        if name in FRONTMATTER_INTERNALS:
+            out.append(f'{rel}:{lineno}: binds {name} at module level')
+    for node in _calls(tree):
+        if _is_raw_frontmatter_read(node):
+            out.append(f'{rel}:{node.lineno}: open(..., newline=…) in read mode')
+    return out
+
+
+def _called_name(node: ast.Call) -> tuple[str, str]:
+    """(receiver, attribute) of this call — ('', name) for a bare one.
+
+    Both spellings, because the owner of a name calls it bare and everybody
+    else calls it through the module: `doc_grain(path)` inside the grain layer
+    and `inventory.doc_grain(path)` outside it are the same call.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        receiver = func.value.id if isinstance(func.value, ast.Name) else ''
+        return receiver, func.attr
+    if isinstance(func, ast.Name):
+        return '', func.id
+    return '', ''
+
+
+def _spawn_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every way this module could start a process without the seam.
+
+    Three routes, because `import subprocess` alone is not the whole question:
+    the import in any spelling, an attribute off the `subprocess` name (which is
+    what a `sys.modules` lookup or a rebind would leave behind), and the
+    `os.<name>` spawners, which import nothing and so are invisible to every
+    reader built on that import.
+
+    `ast.walk` and not `tree.body`: a deferred `import subprocess` inside a
+    function is still an import, and "we only do it lazily" is exactly how a
+    second spawner would arrive.
+    """
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.extend(f'{rel}:{node.lineno}: import {alias.name}'
+                       for alias in node.names
+                       if alias.name.split('.')[0] == SPAWN_MODULE)
+        elif (isinstance(node, ast.ImportFrom)
+                and (node.module or '').split('.')[0] == SPAWN_MODULE):
+            out.extend(f'{rel}:{node.lineno}: from {node.module} '
+                       f'import {alias.name}' for alias in node.names)
+        elif (isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == SPAWN_MODULE):
+            out.append(f'{rel}:{node.lineno}: {SPAWN_MODULE}.{node.attr}')
+    out.extend(f'{rel}:{node.lineno}: os.{node.func.attr}()'
+               for node in _calls(tree)
+               if isinstance(node.func, ast.Attribute)
+               and isinstance(node.func.value, ast.Name)
+               and node.func.value.id == 'os'
+               and node.func.attr in OS_SPAWNERS)
+    return sorted(set(out))
+
+
+def _seam_reach_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every way this module reaches `core/spawn.py` — the import, or a call.
+
+    The question primitive 5 has to ask once the seam exists. "Does this module
+    import `subprocess`" was the right question while nine modules did; with
+    exactly one owner it answers False for every other file in the package, and
+    an emit path calling `spawn.run(...)` forty times passes it.
+    """
+    out: list[str] = []
+    bound: set[str] = set()
+    for name, source, lineno in _import_bindings(rel, tree):
+        if source == SPAWN_DOTTED or source.startswith(SPAWN_DOTTED + '.'):
+            bound.add(name)
+            out.append(f'{rel}:{lineno}: imports {source}')
+    out.extend(f'{rel}:{node.lineno}: '
+               f'{".".join(part for part in _called_name(node) if part)}()'
+               for node in _calls(tree)
+               if (isinstance(node.func, ast.Attribute)
+                   and isinstance(node.func.value, ast.Name)
+                   and node.func.value.id in bound | {SPAWN_OWNER})
+               or (isinstance(node.func, ast.Name) and node.func.id in bound))
+    return sorted(set(out))
+
+
+def _path_addressed_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every read in one module that ASKS A PATH what a grain says.
+
+    Decided by the NAME of the function called, not by guessing which argument
+    is path-shaped: every name here takes the document as a parameter of the
+    CALLER's, so reaching one at all IS handing storage a path — whether it
+    arrives first (`field_of(p, k)`) or second (`read_grain(cfg, p, kind)`). A
+    `Grain.field(key)` call carries no path to hand over and is invisible here.
+    """
+    out = []
+    for node in _calls(tree):
+        receiver, name = _called_name(node)
+        if name in STORAGE_FIELD_READS and receiver in ('', FRONTMATTER_OWNER):
+            out.append(f'{rel}:{node.lineno}: {name}(<path>, …) — ask '
+                       f'`grain(cfg, gid).{name.replace("_of", "")}` instead')
+        elif name in GRAIN_LAYER_PATH_READS and receiver in ('', GRAIN_LAYER_OWNER):
+            out.append(f'{rel}:{node.lineno}: {name}(<path>, …) — the grain '
+                       f'layer read that turns a FILE into what a document '
+                       f'says, and only a module that holds a file may call it')
+    return out
+
+
+def _renamed_owner_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every import that binds an owner, or a graded read out of one, under a
+    name the classifier above cannot see.
+
+    `_path_addressed_sites` matches the RECEIVER — `frontmatter.field_of`,
+    `inventory.doc_grain` — so `from ...core import frontmatter as fm` and then
+    `fm.field_of(p, k)` reads as somebody else's function and the gate is
+    blind. The bare `from ...frontmatter import field_of` form is already
+    caught at the CALL, because the reader accepts an empty receiver; the two
+    spellings that are not are the renamed module and the renamed function, and
+    both are bindings, so both are visible right here.
+    """
+    out = []
+    for name, source, lineno in _import_bindings(rel, tree):
+        for dotted, owner, graded in (
+                (FRONTMATTER_DOTTED, FRONTMATTER_OWNER, STORAGE_FIELD_READS),
+                (GRAIN_LAYER_DOTTED, GRAIN_LAYER_OWNER, GRAIN_LAYER_PATH_READS)):
+            read = (source[len(dotted) + 1:]
+                    if source.startswith(dotted + '.') else '')
+            if source == dotted and name != owner:
+                out.append(f'{rel}:{lineno}: binds {dotted} as {name!r} — the '
+                           f'gate reads the receiver, so every {owner}.<read> '
+                           f'call in this module is invisible to it')
+            elif read in graded and name != read:
+                out.append(f'{rel}:{lineno}: binds {dotted}.{read} as '
+                           f'{name!r} — a graded read under another name is '
+                           f'the same blindness one size down')
+    return out
+
+
+def _document_addressed(tree: ast.Module, roots: dict[str, int]) -> set[str]:
+    """Every module-level function in one owner that hands a document read one
+    of its OWN parameters — the census `DOCUMENT_READ_CENSUS` grades.
+
+    A fixpoint, because the question arrives second-hand: `read_grain(cfg,
+    path, kind)` never names `frontmatter.document`, it calls `doc_grain(path,
+    kind)`, which does. `roots` says which ARGUMENT of each bottom read is the
+    document, and a caller inherits the position it passed its own parameter
+    in, so `read_grain`'s is 1 where `doc_grain`'s is 0.
+
+    Two limits, stated rather than implied: a document arriving by KEYWORD and
+    a read declared inside a `class` body are both invisible to this reader.
+    Neither exists in either owner, and `Grain.field(key)` is a method holding
+    `self.path`, which is the shape this whole primitive is FOR.
+    """
+    funcs = {node.name: node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    arrives: dict[str, set[int]] = {name: {pos} for name, pos in roots.items()}
+    grown = True
+    while grown:
+        grown = False
+        for name, node in funcs.items():
+            params = [arg.arg for arg in node.args.args]
+            for call in _calls(node):
+                _, called = _called_name(call)
+                for pos in tuple(arrives.get(called, ())):
+                    if pos >= len(call.args):
+                        continue
+                    passed = call.args[pos]
+                    if not isinstance(passed, ast.Name) or passed.id not in params:
+                        continue
+                    here = arrives.setdefault(name, set())
+                    if params.index(passed.id) not in here:
+                        here.add(params.index(passed.id))
+                        grown = True
+    # What THIS module exposes: the grain layer's roots are the storage
+    # module's four reads, and they are graded where they are defined.
+    return set(arrives) & set(funcs)
+
+
+def _double_strip_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every `unquote(...)` whose argument is a reader that already unquoted."""
+    out = []
+    for node in _calls(tree):
+        _, name = _called_name(node)
+        if name != UNQUOTE or not node.args:
+            continue
+        inner = node.args[0]
+        if not isinstance(inner, ast.Call):
+            continue
+        _, read = _called_name(inner)
+        if read in ALREADY_UNQUOTED:
+            out.append(f'{rel}:{node.lineno}: {UNQUOTE}({read}(…)) — {read} '
+                       f'unquotes as it parses, so this strips twice')
+    return out
+
+
 class TheCensusIsTheRealTree(unittest.TestCase):
     """Before either allowlist means anything, it has to have scanned the tree.
 
@@ -249,6 +681,15 @@ class TheCensusIsTheRealTree(unittest.TestCase):
 
 class OneWalk(unittest.TestCase):
     """PRIMITIVE 1 — filesystem enumeration lives in exactly one module."""
+
+    PROTECTS = (
+        'every filesystem enumeration under src/ goes through core/walk.py, so '
+        'no census can reach a number without carrying what it dropped',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'second rglob returns a shorter list, and nothing that RUNS can tell a '
+        'narrowed census from a small tree. Six of them narrowed in silence '
+        'before this existed',
+    )
 
     CORPUS = (
         ("for path in root.rglob('*.py'):\n    pass", True),
@@ -293,6 +734,15 @@ class OneWalk(unittest.TestCase):
 class OneApply(unittest.TestCase):
     """PRIMITIVE 2 — filesystem mutation lives in exactly one module."""
 
+    PROTECTS = (
+        'every filesystem mutation under src/ goes through core/apply.py, which '
+        'decides the whole plan before it writes any of it',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'writer that decides as it goes lands half a plan when step three '
+        'refuses, which the scaffolder, install-agents and `pm collapse` each '
+        'did, and each left a tree neither before nor after',
+    )
+
     CORPUS = (
         ('target.write_text(payload)', True),
         ('target.write_bytes(payload)', True),
@@ -330,6 +780,422 @@ class OneApply(unittest.TestCase):
     def test_the_apply_module_does_write(self):
         sites = _mutation_sites(APPLY_MODULE, _tree(SRC / APPLY_MODULE))
         self.assertGreaterEqual(len(sites), 4, sites)
+
+
+class OneSpawn(unittest.TestCase):
+    """PRIMITIVE 11 — starting a process lives in exactly one module.
+
+    The allowlist is EXACTLY `SPAWN_SEAM`, with no exemption roster: every
+    one of the sixteen call sites takes its argv, its cwd and its timeout from
+    the caller, so none of them needed anything the seam does not pass through.
+    """
+
+    PROTECTS = (
+        'every process this package starts comes through core/spawn.py, so '
+        'hard rule 2 — pure text, boots nothing, safe anywhere in parallel — '
+        'is a question with ONE file to ask rather than nine',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'spawn added anywhere else changes no result any behaviour test can '
+        'see. It is a gate that stops being pure text, a unit test that starts '
+        'running `make`, or a hook that hangs on the network, and all three '
+        'report green until somebody times them',
+    )
+
+    CORPUS = (
+        # The import, in every spelling — including the deferred one inside a
+        # function, which is how "we only do it lazily" arrives.
+        ('import subprocess', True),
+        ('import subprocess as sp', True),
+        ('from subprocess import run', True),
+        ('def go():\n    import subprocess\n    return subprocess', True),
+        # The attribute off the name, with no import in this snippet at all:
+        # what a `sys.modules` lookup or a rebind leaves behind.
+        ('done = subprocess.Popen(argv)', True),
+        # The `os` spellings, which import nothing and so are invisible to
+        # every reader built on the import.
+        ('os.system(command)', True),
+        ('os.execvp(argv[0], argv)', True),
+        ('pid = os.fork()', True),
+        # Reaching the owner is the point of the owner.
+        ('from agentic_sdlc.core import spawn', False),
+        ('done = spawn.run(argv, cwd=root, capture_output=True)', False),
+        ('try:\n    go()\nexcept spawn.TimeoutExpired:\n    pass', False),
+        # An `os` call that starts nothing, and prose.
+        ("root = os.environ.get('PWD')", False),
+        ("HELP = 'never subprocess.run, never os.system'", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_spawn_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_only_the_spawn_module_starts_a_process(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel == SPAWN_SEAM:
+                continue
+            offenders.extend(_spawn_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'a process started outside ' + SPAWN_SEAM + '. Hard rule 2 is '
+            'what lets any verb run from a git hook and from CI without a '
+            'sandbox, and it is only checkable while there is one file to '
+            'check. Route it through `core.spawn`, which passes argv, cwd and '
+            'timeout straight through and adds nothing:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_spawn_module_does_spawn(self):
+        """The allowlist must not be vacuously satisfiable by a module that
+        stopped spawning — then every offender would move somewhere else and
+        the test would still pass."""
+        sites = _spawn_sites(SPAWN_SEAM, _tree(SRC / SPAWN_SEAM))
+        self.assertGreaterEqual(len(sites), 4, sites)
+        self.assertIn(SPAWN_SEAM, {rel for rel, _ in _sources()},
+                      f'{SPAWN_SEAM} is not in the census — the allowlist '
+                      f'above is asserting emptiness over a module that moved')
+
+    def test_the_seam_reaches_subprocess_by_attribute(self):
+        """The trap this seam is one line away from, and it unarms the SUITE.
+
+        `tests/conftest.py` enforces the unit tier by rebinding
+        `subprocess.Popen` as a MODULE ATTRIBUTE, on the argument that it is
+        the class every caller constructs. A `from subprocess import Popen`
+        here would hold its own reference, the rebinding would never reach it,
+        and the runtime guard would stop firing for every test in the suite
+        with no symptom but `make unit` getting slower.
+        """
+        tree = _tree(SRC / SPAWN_SEAM)
+        plain = [alias.name for node in ast.walk(tree)
+                 if isinstance(node, ast.Import) for alias in node.names
+                 if alias.name == SPAWN_MODULE and alias.asname is None]
+        self.assertEqual(
+            [SPAWN_MODULE], plain,
+            f'{SPAWN_SEAM} does not `import {SPAWN_MODULE}` plainly. The '
+            f'module attribute is the only reference tests/conftest.py can '
+            f'rebind')
+        renamed = [f'from {node.module} import {alias.name}'
+                   for node in ast.walk(tree)
+                   if isinstance(node, ast.ImportFrom)
+                   and (node.module or '').split('.')[0] == SPAWN_MODULE
+                   for alias in node.names]
+        self.assertEqual(
+            [], renamed,
+            f'{SPAWN_SEAM} binds a name out of {SPAWN_MODULE} directly. '
+            f'That reference is the real object forever, so the unit tier '
+            f'stops being enforced and nothing says so: ' + ', '.join(renamed))
+        started = [node.func.attr for node in _calls(tree)
+                   if isinstance(node.func, ast.Attribute)
+                   and isinstance(node.func.value, ast.Name)
+                   and node.func.value.id == SPAWN_MODULE
+                   and node.func.attr in SPAWNERS]
+        self.assertTrue(
+            started,
+            f'{SPAWN_SEAM} makes no `{SPAWN_MODULE}.<starter>` call, so it '
+            f'is not the owner and the allowlist is policing an empty room')
+
+
+class OneStorage(unittest.TestCase):
+    """PRIMITIVE 9 — frontmatter I/O lives in exactly one module.
+
+    The allowlist is EXACTLY `FRONTMATTER_MODULE` and there is no exemption
+    roster: the two implementations of `report.Source` reach the owner rather
+    than the file, and the write side's `newline=` belongs to primitive 2. An
+    empty roster is why there is no stale-entry case here — there is no entry
+    to go stale.
+    """
+
+    PROTECTS = (
+        'frontmatter I/O has exactly one implementation, so the byte-for-byte '
+        'preservation rule 3 promises has one place to be true',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'second parser carries a second set of preservation rules, and the line '
+        'ending or the blank line it drops reads as a clean single-line write '
+        'from outside',
+    )
+
+    CORPUS = (
+        # A second module-level spelling of the mechanics, by any binding.
+        ("def read_raw(path):\n    return path.read_text()", True),
+        ("def _split(text):\n    return text.splitlines()", True),
+        ('def _fence_bounds(lines):\n    return None', True),
+        ('_DOCUMENTS = {}', True),
+        # A re-export is a binding like any other — this is the exact line
+        # a re-exported `field_of` would have survived behind.
+        ('from agentic_sdlc.core.frontmatter import read_raw', True),
+        ('from agentic_sdlc.core.frontmatter import write_raw as put', True),
+        # The reader that reuses no name at all.
+        ("with open(path, encoding='utf-8', newline='') as fh:\n    pass", True),
+        ("text = p.open('r', newline='').read()", True),
+        # Reaching the owner is the point of the owner.
+        ('text = frontmatter.read_raw(path)', False),
+        ('from agentic_sdlc.core import frontmatter', False),
+        # A method on the declared source seam, delegating to the owner.
+        ('class DiskSource(Source):\n'
+         '    def read_raw(self, path):\n'
+         '        return frontmatter.read_raw(path)', False),
+        # The write side, and a plain read: primitive 2's and nobody's.
+        ("p.open('w', newline='')", False),
+        ("text = p.read_text(encoding='utf-8')", False),
+        ("HELP = 'read_raw and write_raw and _split'", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_frontmatter_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_only_the_storage_module_parses_frontmatter(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel == FRONTMATTER_MODULE:
+                continue
+            offenders.extend(_frontmatter_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'frontmatter I/O outside ' + FRONTMATTER_MODULE + '. A second '
+            'reader gets `newline=` or `splitlines()` wrong and a CRLF grain '
+            'comes back LF; a second writer holds a parse the first one has '
+            'already invalidated, which is a gate answering off bytes that '
+            'moved on. Route it through `core.frontmatter`, which reads each '
+            'document once and rewrites the line it was asked for:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_storage_module_does_read_and_write(self):
+        """The allowlist must not be vacuously satisfiable by a module that
+        stopped storing — then every offender would move somewhere else and the
+        test would still pass. Both halves, because reading is where rule 3 is
+        lost and writing is where rule 4 is."""
+        tree = _tree(SRC / FRONTMATTER_MODULE)
+        bound = {name for name, _ in _module_level_bindings(tree)}
+        self.assertEqual(
+            (), tuple(n for n in FRONTMATTER_INTERNALS if n not in bound),
+            f'{FRONTMATTER_MODULE} no longer holds every internal the '
+            f'allowlist names, so the allowlist is checking a name nothing '
+            f'implements')
+        reads = [n for n in _calls(tree) if _is_raw_frontmatter_read(n)]
+        self.assertGreaterEqual(len(reads), 1, 'the owner makes no raw read')
+        writes = [n for n in _calls(tree)
+                  if isinstance(n.func, ast.Attribute)
+                  and isinstance(n.func.value, ast.Name)
+                  and n.func.value.id == 'apply']
+        self.assertGreaterEqual(len(writes), 1,
+                                'the owner reaches no writer, so nothing here '
+                                'is a write at all')
+
+
+class TheEngineAsksByIdNotByPath(unittest.TestCase):
+    """PRIMITIVE 10 — a module that knows an id never names the file.
+
+    `inventory.grain(cfg, gid)` is the id-addressed handle and `Grain.field(key)`
+    is the read; `PATH_ADDRESSED_ROSTER` is the closed set of modules that
+    legitimately hold a FILE instead, each with its reason.
+
+    Halves, because this roster is the one that rots:
+      * no module off the roster addresses a storage read by path,
+      * every entry ON it still matches at least one site — an entry nothing
+        matches is a hole waiting for a file to move into it,
+      * the roster has not GROWN, because the convenient fourth entry is how
+        this gate goes green while nothing improved,
+      * every by-path read the two owners EXPOSE is either graded or excused by
+        name — the half that was missing, and the one that let the substitution
+        the banner forbids work one name over, and
+      * neither owner is bound under a name the classifier cannot see.
+    """
+
+    PROTECTS = (
+        'a module that knows a grain id never names its file: the storage '
+        'reads that take a document are reachable from the grain layer, the '
+        'rev-addressed source seam and one filename resolver, and nowhere '
+        'else — and no reader strips a value a reader already stripped',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'reads this moves are `check pm`/`pm validate`/`ready-for`, and a '
+        'path-addressed one answers about whatever file the caller derived '
+        'rather than about the grain it meant to ask — `_decision_log` joined '
+        '`milestone.md` onto a pool and read the empty string for four '
+        'releases. The double strip is the same sin one size down: `pm get` '
+        'single-stripped and `pm list` double-stripped, so two verbs printed '
+        'different answers for one `name:` and neither said so',
+    )
+
+    CORPUS = (
+        # Asking a PATH what a grain says, in every spelling.
+        ("status = frontmatter.field_of(grain.path, 'status')", True),
+        ("order = frontmatter.list_field_of(parent.path, 'order')", True),
+        ('fields = frontmatter.document(grain.path).fields', True),
+        ("defect = frontmatter.sequence_defect(parent.path, 'order')", True),
+        # The adapter, graded too: it is the one way to turn a path into a
+        # grain, so it cannot be the way round this rule.
+        ('beside = inventory.doc_grain(path)', True),
+        ('beside = doc_grain(path)', True),
+        # ...and its siblings, which answer the same question and were the
+        # substitution that still worked (M1). The document arrives SECOND in
+        # the first of them, which is why the reader grades the name.
+        ("grain = inventory.read_grain(cfg, path, 'story')", True),
+        ("why = inventory.empty_section(grain.path, 'Close')", True),
+        ("why = empty_section(path, 'Ship')", True),
+        # The owner under another name, in both spellings — the module and the
+        # read — because the classifier matches the receiver (F2).
+        ('from agentic_sdlc.core import frontmatter as fm', True),
+        ('from agentic_sdlc.repo.pm import inventory as inv', True),
+        ('from agentic_sdlc.core.frontmatter import field_of as grab', True),
+        ('import agentic_sdlc.repo.pm.inventory as inv', True),
+        # The owner under ITS name is how every module reaches it.
+        ('from agentic_sdlc.core import frontmatter', False),
+        ('from agentic_sdlc.repo.pm import inventory, vocabulary', False),
+        ('from agentic_sdlc.core.frontmatter import unquote', False),
+        # The bare re-export is not caught HERE — it is caught at the call,
+        # where the reader accepts an empty receiver (the row below it).
+        ('from agentic_sdlc.core.frontmatter import field_of', False),
+        ("status = field_of(p, 'status')", True),
+        # Asking the GRAIN. No path is handed to anything.
+        ("why = grain.section_defect('Close')", False),
+        ("status = grain.field('status')", False),
+        ("order = parent.list_field('order')", False),
+        ("found = inventory.grain(cfg, gid, 'story').field('status')", False),
+        # A question about a FILE's bytes, not about what a grain says.
+        ('text = frontmatter.read_raw(version_file)', False),
+        # LINES, already read — there is no path in the call to hand over.
+        ("kind = frontmatter.field_in(lines, 'kind')", False),
+        # Prose is not a call.
+        ("HELP = 'field_of and list_field_of and doc_grain'", False),
+        # The double strip, and the two spellings that are not one.
+        ("gid = frontmatter.unquote(frontmatter.field_of(path, 'id'))", True),
+        ("gid = frontmatter.unquote(src.field_of(path, 'id'))", True),
+        ("gid = frontmatter.unquote(grain.field('id'))", True),
+        ("kind = frontmatter.unquote(frontmatter.field_in(lines, 'kind'))", True),
+        # A value off the COMMAND LINE, which nothing has stripped yet.
+        ('gid = frontmatter.unquote(value)', False),
+        ("gid = frontmatter.unquote(args[1].strip())", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        tree = ast.parse(planted)
+        return bool(_path_addressed_sites(SCRATCH_MODULE, tree)
+                    or _double_strip_sites(SCRATCH_MODULE, tree)
+                    or _renamed_owner_sites(SCRATCH_MODULE, tree))
+
+    def test_no_module_off_the_roster_asks_a_path(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel in PATH_ADDRESSED_ROSTER or rel == FRONTMATTER_MODULE:
+                continue
+            offenders.extend(_path_addressed_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'a storage read addressed by PATH outside the roster. A module '
+            'that knows an id asks `inventory.grain(cfg, gid).field(key)`; one '
+            'that really holds a file joins ' + ', '.join(
+                sorted(PATH_ADDRESSED_ROSTER)) + ' with its reason written '
+            'beside it, and that roster may only SHRINK:\n  '
+            + '\n  '.join(offenders))
+
+    def test_every_roster_entry_still_matches_a_site(self):
+        """An entry nothing matches is a hole waiting for a file to move into
+        it — the same reasoning `CONFIG_IMPORT_ALLOWLIST` prunes for."""
+        census = {rel: path for rel, path in _sources()}
+        stale = sorted(set(PATH_ADDRESSED_ROSTER) - set(census))
+        self.assertEqual([], stale,
+                         'rostered module(s) that no longer exist. Prune:\n  '
+                         + '\n  '.join(stale))
+        idle = sorted(rel for rel in PATH_ADDRESSED_ROSTER
+                      if not _path_addressed_sites(rel, _tree(census[rel])))
+        self.assertEqual(
+            [], idle,
+            'rostered module(s) that address nothing by path any more — the '
+            'exemption has outlived what it was granted for. Delete the '
+            'line:\n  ' + '\n  '.join(idle))
+
+    def test_every_by_path_read_an_owner_exposes_is_named(self):
+        """The half M1 found missing: the graded tuple was kept BY HAND beside
+        a layer that kept growing, so `read_grain` — `doc_grain` plus a `None`
+        filter, three lines below it — answered the same question ungraded and
+        eight live sites used it.
+
+        Derived, and asserted in BOTH directions, which is also this case's
+        floor: a reader that went blind returns the roots alone, a moved owner
+        returns nothing at all, and neither equals the tuples above.
+        """
+        for rel, roots, graded, excused in DOCUMENT_READ_CENSUS:
+            with self.subTest(module=rel):
+                found = _document_addressed(_tree(SRC / rel), roots)
+                named = set(graded) | set(excused)
+                self.assertEqual(
+                    [], sorted(found - named),
+                    f'{rel} hands a document read one of its own parameters '
+                    f'under (a) name(s) this gate has never heard of, so a '
+                    f'caller can ask by path through it and nothing says so — '
+                    f'M1 exactly. Grade it beside {graded[0]!r}, or excuse it '
+                    f'with the reason it answers a question about a FILE:\n  '
+                    + '\n  '.join(sorted(found - named)))
+                self.assertEqual(
+                    [], sorted(named - found),
+                    f'{rel} no longer exposes (a) name(s) this gate grades or '
+                    f'excuses, so the classifier is policing a name nothing '
+                    f'implements and a real one may have moved in behind '
+                    f'it:\n  ' + '\n  '.join(sorted(named - found)))
+
+    def test_no_module_binds_an_owner_under_another_name(self):
+        """F2: both seams pinned the import name by convention. `from
+        ...core import frontmatter as fm` then `fm.field_of(p, k)` passes every
+        case above, because the classifier matches the receiver."""
+        offenders: list[str] = []
+        for rel, path in _sources():
+            offenders.extend(_renamed_owner_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            f'an owner bound under a name the by-path classifier cannot see. '
+            f'Import {FRONTMATTER_DOTTED} as {FRONTMATTER_OWNER!r} and '
+            f'{GRAIN_LAYER_DOTTED} as {GRAIN_LAYER_OWNER!r}, which is what '
+            f'every module in this package already does:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_roster_has_not_grown(self):
+        self.assertLessEqual(
+            len(PATH_ADDRESSED_ROSTER), ROSTER_OPENED_AT,
+            f'the roster opened at {ROSTER_OPENED_AT} modules and may only '
+            f'shrink; it now names {sorted(PATH_ADDRESSED_ROSTER)}. A '
+            f'convenience entry is the defect this case exists to stop — if '
+            f'the module really holds a FILE, say so here and lower '
+            f'ROSTER_OPENED_AT by deleting one that does not.')
+
+    def test_nothing_strips_a_value_that_is_already_unquoted(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            offenders.extend(_double_strip_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'an `unquote` around a reader that already unquoted. The second '
+            'strip is not a no-op: a value whose unquoted form is itself '
+            'quote-wrapped loses another pair, and `pm get` never did that, so '
+            'two verbs answered differently about one field:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_grain_layer_holds_the_seam_the_roster_assumes(self):
+        """The other side of the roster, in BOTH directions, because one case
+        covers one claim: the id-addressed read has to exist (or the offender
+        list above is empty because nobody can read a field at all), and the
+        grain layer has to still be the module holding the path reads (or every
+        offender moved somewhere else and these cases pass over nothing).
+        """
+        import inspect
+        from agentic_sdlc.repo.pm import inventory
+        for name, args in (('grain', ('cfg', 'gid', 'kind')),
+                           ('doc_grain', ('path', 'kind')),
+                           ('story_grain', ('cfg', 'sid'))):
+            fn = getattr(inventory, name, None)
+            self.assertTrue(callable(fn), f'{GRAIN_LAYER_OWNER}.{name} is gone')
+            params = inspect.signature(fn).parameters
+            for arg in args:
+                self.assertIn(arg, params, f'{GRAIN_LAYER_OWNER}.{name}({arg})')
+        for name in ('field', 'list_field', 'declares', 'sequence_defect',
+                     'section_defect'):
+            self.assertTrue(
+                callable(getattr(inventory.Grain, name, None)),
+                f'Grain.{name} is gone — every caller that stopped naming a '
+                f'file reads through it')
+        sites = _path_addressed_sites(GRAIN_LAYER_MODULE,
+                                      _tree(SRC / GRAIN_LAYER_MODULE))
+        self.assertGreaterEqual(len(sites), 8, sites)
 
 
 # Every spelling of `open` the classifier has to get right, as
@@ -395,6 +1261,18 @@ class TheOpenModeIsReadFromTheRightArgument(unittest.TestCase):
     rule 4 calls the cardinal sin.
     """
 
+    PROTECTS = (
+        'the mutation classifier reads an open() mode off the right argument, '
+        'so the one-writer boundary standing on it is graded rather than '
+        'assumed',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): this '
+        'IS the miss that shipped, every p.open(w) under src/ classified as a '
+        'read. Its scratch-file plant and its non-empty open census are '
+        'unduplicated; its OPEN_SPELLINGS loop is now a second scoreboard for '
+        'test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch, which replays '
+        'the same table through the same classifier',
+    )
+
     # Already (planted, must it be caught) — the table this feature generalised.
     CORPUS = OPEN_SPELLINGS
 
@@ -450,6 +1328,14 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
     entry that would also excuse an overwrite, a `mkdir`, or a `write_text`.
     """
 
+    PROTECTS = (
+        'append outside ledger.append_row is a finding, and the exception it '
+        'earns is one file in one mode rather than an allowlist entry',
+        'load-bearing — sin 2 (a write that looks legitimate and is not): a '
+        'read-modify-write of the ledger drops rows when two appenders collide, '
+        'and the file it leaves behind is well-formed and short',
+    )
+
     # Graded AS the ledger, so every case asks what the exception admits.
     # Append is what it was granted for; an overwrite there rewrites the bytes
     # `merge=union` relies on nobody rewriting, which is the defect D1 exists
@@ -479,7 +1365,7 @@ class TheLedgerAppendIsTheOneException(unittest.TestCase):
         return bool(_sites_for(planted, APPEND_ONLY_MODULE))
 
     def test_append_anywhere_else_is_a_finding(self):
-        for rel in (SCRATCH_MODULE, 'cli.py', 'repo/pm/model.py'):
+        for rel in (SCRATCH_MODULE, 'cli.py', 'repo/pm/inventory.py'):
             for source in ("p.open('a')", "open(p, 'a')", "p.open('ab')"):
                 with self.subTest(rel=rel, source=source):
                     self.assertNotEqual([], _sites_for(source, rel))
@@ -531,17 +1417,15 @@ class TheResolversCollapsed(unittest.TestCase):
                    'milestone_walk', 'milestone_dirs', 'AmbiguousStory')
 
     def test_the_path_shaped_resolvers_are_gone(self):
-        model = SRC / 'repo' / 'pm' / 'model.py'
-        source = model.read_text(encoding='utf-8')
+        source = (SRC / GRAIN_LAYER_MODULE).read_text(encoding='utf-8')
         for name in self.GONE:
             self.assertNotIn(f'def {name}(', source,
-                             f'{name} is back in model.py. An id names no '
-                             f'location in 0.4.0, so nothing derives one from '
-                             f'a path.')
+                             f'{name} is back in {GRAIN_LAYER_MODULE}. An id '
+                             f'names no location in 0.4.0, so nothing derives '
+                             f'one from a path.')
 
     def test_the_nested_reader_is_exactly_this_roster(self):
-        model = SRC / 'repo' / 'pm' / 'model.py'
-        source = model.read_text(encoding='utf-8')
+        source = (SRC / GRAIN_LAYER_MODULE).read_text(encoding='utf-8')
         for name in self.NESTED_ONLY:
             opener = f'class {name}(' if name[0].isupper() else f'def {name}('
             self.assertIn(opener, source,
@@ -550,11 +1434,11 @@ class TheResolversCollapsed(unittest.TestCase):
                           f'goes together and D3 gets closed.')
 
     def test_the_three_general_resolvers_take_a_kind(self):
-        from agentic_sdlc.repo.pm import model as pm_model
+        from agentic_sdlc.repo.pm import inventory
         import inspect
         for name, arg in (('grain_file', 'kind'), ('children', 'kind'),
                           ('pool_walk', 'kind')):
-            fn = getattr(pm_model, name)
+            fn = getattr(inventory, name)
             self.assertIn(arg, inspect.signature(fn).parameters, name)
 
 
@@ -616,6 +1500,14 @@ class WalkHasNoLength(unittest.TestCase):
     which renders the number and the disclosures as ONE string.
     """
 
+    PROTECTS = (
+        'no caller can reach a census number without the narrowings that '
+        'produced it: Walk.__len__ raises, and len(x.kept) is a build break too',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS) '
+        'expressed as a TypeError one layer below the gates, which is the '
+        'cheapest place it can be expressed at all',
+    )
+
     CORPUS = (
         ('total = len(found.kept)', True),
         ('total = len(found.skipped)', True),
@@ -660,7 +1552,11 @@ CONFIG_OWNER = 'core/config.py'
 CONFIG_IMPORT_ALLOWLIST = frozenset((
     CONFIG_OWNER,                 # the guard module itself
     'cli.py',
-    'repo/pm/model.py',
+    # `[pm]` and `[repo_hygiene] mainline`, through `flag`/`number`/`relpath`/
+    # `str_tuple_table`/`table`/`text`. The DECLARES half of the old `model.py`:
+    # the CONTAINS half (`repo/pm/inventory.py`) reads no config at all, which
+    # is why the split left one entry here and not two.
+    'repo/pm/vocabulary.py',
     'repo/checks/doc.py',
     'repo/checks/grain_shape.py',
     'repo/checks/repo_hygiene.py',
@@ -750,12 +1646,10 @@ EXECUTORS = ('eval', 'exec', 'compile', '__import__', 'import_module',
 # imported module with no import statement for the allowlist to see. Banned by
 # name, because "impossible to route around" has to be literal.
 MODULE_MAP_OWNER, MODULE_MAP_ATTR = 'sys', 'modules'
-# The `os.<name>` spellings that start a process WITHOUT importing `subprocess`
-# — invisible to the `shell` derivation, because none of them imports it.
-OS_SPAWNERS = ('system', 'popen', 'execv', 'execve', 'execvp', 'execvpe',
-               'execl', 'execle', 'execlp', 'execlpe', 'spawnv', 'spawnve',
-               'spawnl', 'spawnle', 'spawnlp', 'spawnlpe', 'posix_spawn',
-               'posix_spawnp', 'fork', 'forkpty', 'startfile')
+# `OS_SPAWNERS` — the spellings that start a process without importing
+# `subprocess`, and so invisible to the `shell` derivation — is declared with
+# primitive 11 above and read here too. One roster, because two copies of a ban
+# list are two things to widen and one of them is always the quiet one.
 # What the emit path must still BE, so this class cannot pass over a file that
 # was emptied or moved: it appends to a sink and it reads its own section.
 EMIT_MUST_CALL = ('append_to', 'config_section')
@@ -770,6 +1664,27 @@ EMIT_EXECUTION_SPELLINGS = (
     ("getattr(mod, sink)()", True),
     ("os.system(cmd)", True),
     ("print(line, file=sys.stderr)", False),
+)
+# (source, does it reach a process) — the OTHER half, and the reason this one
+# exists. The question here was `module_spawns(emit.py)`: *does this module's
+# source import `subprocess`*. That was the whole question while nine modules
+# did; with primitive 11 above there is exactly ONE importer in the package, so
+# it answers False for every other file and the case would pass over an emit
+# path calling `spawn.run(...)` forty times. A gate that cannot fail is rule
+# 4's first sin, so the question is re-pointed: reaching the SEAM is reaching a
+# process. The first three rows are the planted emit paths that prove the new
+# form catches what the old one did; the import spelling is graded too, because
+# an emit path that only imports the seam is one line from calling it.
+EMIT_SPAWN_SPELLINGS = (
+    ('done = spawn.run(argv, cwd=root)', True),
+    ('from agentic_sdlc.core import spawn', True),
+    ('from agentic_sdlc.core.spawn import run', True),
+    # The old question, still asked: a direct import is still a spawn.
+    ('import subprocess', True),
+    ('done = subprocess.run(argv)', True),
+    # What the emit path really does, and prose about what it must not.
+    ('ledger.append_to(sink, row)', False),
+    ("HELP = 'never spawn.run, never subprocess'", False),
 )
 
 
@@ -860,6 +1775,14 @@ def _unguarded_collection_sites(rel: str, tree: ast.Module) -> list[str]:
 class ConfigGoesThroughTheGuards(unittest.TestCase):
     """PRIMITIVE 3 — every config VALUE crosses `core/config.py` on its way in."""
 
+    PROTECTS = (
+        'every config VALUE crosses core/config.py on its way in, so no gate '
+        'builds its population out of a raw lookup',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'bare string is iterable, so tuple(cfg.get(...)) yields characters and '
+        'the gate configured from it scans nothing while reporting a clean run',
+    )
+
     # Graded as a module that is NOT on the allowlist, which is what every
     # module written after this one is.
     CORPUS = (
@@ -946,6 +1869,15 @@ class NoImportIsDead(unittest.TestCase):
     keeps them unquoted) or in `__all__` (the `__init__.py` re-export form).
     """
 
+    PROTECTS = (
+        'an import nobody reads is deleted, so the import block of a module is '
+        'a true list of what it depends on',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'dead import changes no behaviour by construction, so no behaviour test '
+        'can ever see one. Eight dead load_config imports survived an '
+        'extraction and left the claim that those modules read config',
+    )
+
     CORPUS = (
         ('import os', True),
         ('from agentic_sdlc.core.config import str_tuple', True),
@@ -980,6 +1912,148 @@ class NoImportIsDead(unittest.TestCase):
             'change:\n  ' + '\n  '.join(offenders))
 
 
+# --- primitive 12: a module binds each name once -------------------------------
+# Primitive 4a asks whether every name in the table is READ. This asks whether
+# the table has one entry per name — the other way the table can lie.
+def _bound_names(tree: ast.Module):
+    """(name, lineno) for every name this module binds at MODULE LEVEL, spelled
+    the way PYTHON binds it.
+
+    NOT `_module_level_bindings` above, and the difference is the whole reader:
+    that one yields BOTH halves of an import, because primitive 9 asks *is this
+    mechanic spelled here at all* and `from ...frontmatter import read_raw as
+    put` has to answer for `read_raw`. The question here is which name the
+    module's namespace ends up HOLDING, which is one per alias — so the
+    re-export yields `put` alone, and two imports reaching one name through two
+    spellings do not read as a collision Python never makes.
+
+    Column 0 only, for the same reason: a `def` in a class body is a method, and
+    a rebinding under `if TYPE_CHECKING:` or in a `try:` fallback is a BRANCH,
+    where exactly one of the two runs. `AugAssign` is absent because `X += …`
+    needs the name to already exist, so it mutates one binding rather than
+    making a second.
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            yield node.name, node.lineno
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                # `A, B = 'a', 'b'` binds two; a subscript or an attribute
+                # target binds no module-level name at all. `A, *REST = …`
+                # binds `REST` too — unwrapped, because a reader blind to one
+                # shape is a narrowing rather than a simpler rule.
+                leaves = (target.elts
+                          if isinstance(target, (ast.Tuple, ast.List))
+                          else [target])
+                for leaf in leaves:
+                    if isinstance(leaf, ast.Starred):
+                        leaf = leaf.value
+                    if isinstance(leaf, ast.Name):
+                        yield leaf.id, node.lineno
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target,
+                                                            ast.Name):
+            yield node.target.id, node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != '*':
+                    yield alias.asname or alias.name, node.lineno
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.asname or alias.name.split('.')[0], node.lineno
+
+
+def _double_bound_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every module-level name bound more than once, with every line that binds
+    it and which one wins."""
+    seen: dict[str, list[int]] = {}
+    for name, lineno in _bound_names(tree):
+        seen.setdefault(name, []).append(lineno)
+    return [f'{rel}: {name} bound at '
+            + ', '.join(str(n) for n in lines)
+            + f' — only line {lines[-1]} is reachable'
+            for name, lines in seen.items() if len(lines) > 1]
+
+
+class NoNameIsBoundTwice(unittest.TestCase):
+    """PRIMITIVE 12 — one module-level name, one binding.
+
+    `pm/cli.py` defined `_slugify` at line 549 and again at 1720, byte-identical
+    bodies and differently worded docstrings, with the only call site below both
+    (`bg-a-helper-is-defined-twice-and-nothing-could-see-it`). The first was
+    dead from the line it was written on, and a 1,236-case suite could not see
+    it because nothing asks this question and Python does not warn.
+
+    Rule 11 from the source side: a capability nobody can find is a capability
+    you do not have — here it existed TWICE, in one file, and the second author
+    could not see the first.
+    """
+
+    PROTECTS = (
+        'a module binds each of its top-level names exactly once, so the '
+        'definition a reader finds is the definition that runs',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'second binding makes the first CORRECT, not wrong — every call reaches '
+        'the right answer from the wrong line — so no behaviour test can ever '
+        'observe one. The suite ran 1,236 green cases over a dead `_slugify`',
+    )
+
+    CORPUS = (
+        # The shipped defect's shape: two `def`s, one name.
+        ('def slug(t):\n    return t\n\n\ndef slug(t):\n    return t', True),
+        ('NAME = 1\nNAME = 2', True),
+        # A `def` and a `class` collide exactly as two `def`s do.
+        ('def Row(x):\n    return x\n\n\nclass Row:\n    pass', True),
+        ('from a import b\nfrom c import b', True),
+        # Both bind `os`; harmless at run, and one of the two is still dead.
+        ('import os.path\nimport os', True),
+        ('A, B = 1, 2\nB = 3', True),
+        ('A, *REST = 1, 2, 3\nREST = []', True),
+        # A BRANCH is not a second binding: one of the two runs.
+        ('from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n'
+         '    from a import Said\nSaid = 1', False),
+        ('try:\n    import tomllib\nexcept ImportError:\n'
+         '    import tomli as tomllib', False),
+        # A METHOD sharing a module function's name. Column 0 is the question.
+        ('def field(key):\n    return key\n\n\nclass Grain:\n'
+         '    def field(self, key):\n        return key', False),
+        ('A, B = 1, 2\nC = 3', False),
+        # The import asymmetry that `_module_level_bindings` would fail on:
+        # this binds `put` and `read_raw`, which is one each.
+        ('from a import read_raw as put\nfrom c import read_raw', False),
+        ('X = 1\nX += 1', False),
+        # Prose naming it twice is not a binding.
+        ("def slug(t):\n    return t\n\n\nHELP = 'slug, and slug again'",
+         False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        return bool(_double_bound_sites(SCRATCH_MODULE, ast.parse(planted)))
+
+    def test_no_module_binds_a_top_level_name_twice(self):
+        offenders: list[str] = []
+        bound = 0
+        for rel, path in _sources():
+            tree = _tree(path)
+            bound += sum(1 for _ in _bound_names(tree))
+            offenders.extend(_double_bound_sites(rel, tree))
+        # The zero-census floor, in the spirit of `MIN_SOURCES`: this case
+        # asserts an EMPTY offender list, and a reader that stopped reading
+        # hands back one too.
+        self.assertGreaterEqual(
+            bound, 500,
+            f'{bound} module-level binding(s) across {len(_sources())} module(s) '
+            f'— the name census collapsed, so this case is asserting emptiness '
+            f'over nothing')
+        self.assertEqual(
+            [], offenders,
+            'a module-level name bound twice. Python binds both and the LAST '
+            'one wins, so the earlier definition is unreachable from the line '
+            'it was written on and nothing that runs can tell you. Delete the '
+            'dead one:\n  ' + '\n  '.join(offenders))
+
+
 # A module in the bottom layer, for grading a planted import as `core/` sees it.
 CORE_SCRATCH = 'core/scratch_not_a_layer.py'
 
@@ -998,10 +2072,19 @@ class LayersPointDownward(unittest.TestCase):
     import is the architecture running backwards, however locally
     convenient."""
 
+    PROTECTS = (
+        'core/ -> repo/ -> cli.py, downward only, so core never learns what a '
+        'grain family is',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): an '
+        'upward import runs perfectly until it cycles, so the architecture is '
+        'invisible to anything that executes and visible only to a reader of '
+        'the imports',
+    )
+
     CORPUS = (
         ('from agentic_sdlc.repo import emit', True),
         ('import agentic_sdlc.cli', True),
-        ('from agentic_sdlc.repo.pm import model', True),
+        ('from agentic_sdlc.repo.pm import inventory', True),
         # Relative, and resolved against the module's own package — spelling
         # the target without its prefix dodges nothing.
         ('from ..repo import emit', True),
@@ -1010,9 +2093,56 @@ class LayersPointDownward(unittest.TestCase):
         ('import tomllib', False),
     )
 
+    # The two halves `repo/pm/model.py` split into, in import order. Siblings
+    # at one altitude, so `LAYER_RULES` above cannot see a cycle between them:
+    # both spell `agentic_sdlc.repo.pm`, which is neither layer reaching up.
+    SIBLING_HALVES = (f'{PACKAGE}.repo.pm.vocabulary',
+                      f'{PACKAGE}.repo.pm.inventory')
+
     @staticmethod
     def catches(planted: str) -> bool:
         return bool(_upward_imports(CORE_SCRATCH, ast.parse(planted)))
+
+    def test_each_sibling_half_imports_with_the_other_absent(self):
+        """The DECLARES half does not know the CONTAINS half exists.
+
+        Executed rather than read, because the defect it catches is the one a
+        reader of the imports waves through: `inventory` needs 28 names from
+        `vocabulary`, and the tempting way to resolve a reference running the
+        other way is an import inside a function, which no import-block reader
+        sees. So each half is imported with the whole package purged from
+        `sys.modules`: `vocabulary` alone must leave `inventory` UNIMPORTED —
+        nothing in it reaches forward, at module level or from inside a call —
+        and `inventory` alone must pull `vocabulary` in, which is the one
+        direction being real rather than deferred.
+
+        Probed both ways. A planted `import inventory` in `vocabulary.py` reds
+        it as a circular ImportError; deleting `inventory.py`'s module-level
+        import reds it too, as the NameError the 28 module-level uses raise.
+        """
+        import importlib
+        import sys
+        declares, contains = self.SIBLING_HALVES
+        for dotted, wanted, absent in ((declares, (), contains),
+                                       (contains, (declares,), '')):
+            saved = {name: module for name, module in sys.modules.items()
+                     if name.split('.')[0] == PACKAGE}
+            for name in saved:
+                del sys.modules[name]
+            try:
+                importlib.import_module(dotted)
+                for name in wanted:
+                    self.assertIn(name, sys.modules,
+                                  f'{dotted} does not import {name} at module '
+                                  f'level — a deferred import is how a cycle '
+                                  f'hides from a reader of the import block')
+                if absent:
+                    self.assertNotIn(
+                        absent, sys.modules,
+                        f'{dotted} reached {absent}: what a project DECLARES '
+                        f'cannot depend on what a tree CONTAINS')
+            finally:
+                sys.modules.update(saved)
 
     def test_no_layer_imports_upward(self):
         sources = _sources()
@@ -1091,22 +2221,63 @@ class TheToolEmitsAndNeverExecutes(unittest.TestCase):
     that would break it is one line long and reads as a convenience.
     """
 
-    CORPUS = EMIT_EXECUTION_SPELLINGS
+    PROTECTS = (
+        'the emit path opens a sink, appends and closes: it spawns nothing, '
+        'imports nothing named in config, and resolves no config string to a '
+        'callable',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): rule '
+        '2 is what lets a caller run any verb from a git hook, and the moment '
+        'one verb spawns, no caller can tell which ones are safe. Its '
+        'EMIT_EXECUTION_SPELLINGS loop is a second scoreboard for '
+        'test_guard_corpus.py::EveryGuardDeclaresWhatItMustCatch; the offender '
+        'list over the shipped module in the same case is not',
+    )
+
+    CORPUS = EMIT_EXECUTION_SPELLINGS + EMIT_SPAWN_SPELLINGS
 
     @staticmethod
     def catches(planted: str) -> bool:
-        return bool(_execution_sites(EMIT_MODULE, ast.parse(planted)))
+        tree = ast.parse(planted)
+        return bool(_execution_sites(EMIT_MODULE, tree)
+                    or _spawn_sites(EMIT_MODULE, tree)
+                    or _seam_reach_sites(EMIT_MODULE, tree))
 
     def test_the_emit_path_never_spawns_a_process(self):
-        """The same question `tests/conftest.py` derives the `shell` mark
-        from, asked of a SHIPPED module — plus the `os` spellings that
-        derivation cannot see, because none of them imports `subprocess`."""
-        self.assertFalse(
-            module_spawns(SRC / EMIT_MODULE),
-            f'{EMIT_MODULE} reaches `subprocess`. An event is WRITTEN here, '
+        """Three questions, because one of them stopped being able to fail.
+
+        `module_spawns` is the question `tests/conftest.py` derives the `shell`
+        mark from, and it is still asked so the two spellings cannot drift —
+        but since primitive 11 it is NECESSARY AND NOT SUFFICIENT: one module
+        in `src/` imports `subprocess`, so it answers False for every other
+        file whatever that file does. The seam reach is what it has become, and
+        the `os` spellings are what neither of them can see.
+        """
+        for source, reaches in EMIT_SPAWN_SPELLINGS:
+            with self.subTest(source=source):
+                planted = ast.parse(source)
+                sites = (_spawn_sites(EMIT_MODULE, planted)
+                         + _seam_reach_sites(EMIT_MODULE, planted))
+                self.assertEqual(
+                    reaches, bool(sites),
+                    f'{source!r} classified as '
+                    f'{"harmless" if reaches else "a reach to a process"} — '
+                    f'the offender list below is only worth what this can '
+                    f'still see')
+        tree = _tree(SRC / EMIT_MODULE)
+        offenders = (_spawn_sites(EMIT_MODULE, tree)
+                     + _seam_reach_sites(EMIT_MODULE, tree))
+        self.assertEqual(
+            [], offenders,
+            f'{EMIT_MODULE} reaches a process. An event is WRITTEN here, '
             f'never run (0.5.0/D1): the moment one verb spawns a '
             f'consumer-named command, no caller can tell which verbs are safe '
-            f'to run from a git hook, and hard rule 2 is gone for all of them.')
+            f'to run from a git hook, and hard rule 2 is gone for all of '
+            f'them:\n  ' + '\n  '.join(offenders))
+        self.assertFalse(
+            module_spawns(SRC / EMIT_MODULE),
+            f'{EMIT_MODULE} imports `subprocess` — which is now the seam\'s '
+            f'alone, and would make the emit path the second module in the '
+            f'package that can start one.')
 
     def test_the_emit_path_resolves_no_string_to_a_callable(self):
         for source, is_execution in EMIT_EXECUTION_SPELLINGS:
@@ -1316,6 +2487,16 @@ class EveryEventFieldIsDerived(unittest.TestCase):
     thinks. The same shape as the breadcrumb's guard: assert the TRACE, not the
     sentence, because a hardcoded next-step passes every substring check."""
 
+    PROTECTS = (
+        'a minted payload carries what the tree said and never what the tool '
+        'decided, asserted against the TRACE rather than against the sentence',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): this '
+        'is the 0.5.0 incident itself. The reader walked ast.Return in a '
+        'function whose only return is a bare name, so a planted field was '
+        'invisible while the guard reported 4-of-4 and the count went to the '
+        'orchestrator as proof',
+    )
+
     # The table above says WHICH words a minter wrote; the corpus asks the one
     # question a blind reader fails — did it see anything at all.
     CORPUS = tuple((source, bool(expected))
@@ -1404,6 +2585,14 @@ def module_level_config_reads(path: Path) -> list[str]:
 
 class ConfigIsReadPerRunNeverAtImport(unittest.TestCase):
     """PRIMITIVE 6b — nothing binds a config value while it is being imported."""
+
+    PROTECTS = (
+        'no module binds a config value while it is being imported, so the '
+        'exit-2 contract is true every run rather than the first one',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'value bound at import belongs to whichever repo imported the module '
+        'first, and a malformed section in any later one silently stops raising',
+    )
 
     CORPUS = (
         ("SCOPE = config_section('doc')", True),
@@ -1500,6 +2689,15 @@ class NoCodePathParsesAVersion(unittest.TestCase):
     ABSENCE, and an absence has no call site to assert against.
     """
 
+    PROTECTS = (
+        'order is a declared list, and no module turns a version string into '
+        'something ordered or numeric',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS), and '
+        'the guard argues it itself: the behaviour protected is an ABSENCE and '
+        'an absence has no call site to assert against. A comparator creeping '
+        'back sorts 0.90.3.2 wrong rather than raising',
+    )
+
     CORPUS = (
         ('import packaging', True),
         ('from distutils.version import LooseVersion', True),
@@ -1540,7 +2738,7 @@ class NoCodePathParsesAVersion(unittest.TestCase):
         the narrowing honest.
         """
         surface = {
-            'repo/pm/model.py': ('releases_file', 'declared_order',
+            'repo/pm/inventory.py': ('releases_file', 'declared_order',
                                  'milestone_version', 'version_claims',
                                  'milestone_of_version', 'entry_is_shipped',
                                  'entry_is_dangling', 'current_release',
@@ -1671,6 +2869,15 @@ class TheDocstringAndTheDescriptionNameOneProject(unittest.TestCase):
     what the package IS from inside a `.py` file. Nothing was pointed at it.
     """
 
+    PROTECTS = (
+        'the package describes itself with the same sentence in pyproject.toml '
+        'and in its own top-level docstring',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS) on the '
+        'read side: the sentence was wrong for four releases because check doc '
+        'grades markdown, and a docstring is a claim about what this package IS '
+        'made from inside a .py file that nothing was pointed at',
+    )
+
     # This reader takes TWO strings, so a planted case is the pair. The gate
     # replaying it hands `catches` whatever the guard put here and reads
     # nothing into it.
@@ -1753,11 +2960,10 @@ TESTS_DIR = REPO_ROOT / 'tests'
 # writing) and well over zero.
 MIN_TEST_MODULES = 30
 MIN_GIT_SPAWNS = 20
-# The one module a spawn crosses, and the constructors that reach it. Spelled
-# the way `tests/conftest.py` derives the `shell` mark — `subprocess.<attr>` —
-# so the tier definition and this boundary police one chokepoint.
-SPAWN_MODULE = 'subprocess'
-SPAWNERS = ('run', 'Popen', 'call', 'check_output', 'check_call')
+# `SPAWN_MODULE` and `SPAWNERS` — the one module a spawn crosses and the
+# constructors that reach it — are declared with primitive 11 above and read
+# here too, since primitive 11 is the rule that a spawn crosses that module and
+# this one is the rule about where it may point.
 GIT = 'git'
 # What `tests/support` calls a path inside this checkout. A `cwd=` naming any of
 # them is the host repository: git discovers upward, so `tests/fixtures` is this
@@ -2007,6 +3213,16 @@ class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
     checkout, or it is a finding by `file:line`.
     """
 
+    PROTECTS = (
+        'every git spawn in this suite names a directory that is not this '
+        'checkout',
+        'load-bearing — sin 2 (a write that looks legitimate and is not), '
+        'turned on the suite rather than on the tool: a test that commits into '
+        'this checkout leaves a tree that looks like work somebody did. The '
+        'assertion is syntactic and total by file:line rather than the hope '
+        'that no test corrupts the repo',
+    )
+
     # `[[]]` is one git call with nothing against it — a CLEAN case that is
     # not an empty result, which is why "caught" is the guard's own word here
     # rather than the truthiness of what its reader returned.
@@ -2057,3 +3273,217 @@ class NoTestSpawnsGitAgainstThisCheckout(unittest.TestCase):
             len({rel for rel, _ in spawns}), 5,
             f'{len({rel for rel, _ in spawns})} module(s) spawn `git` — the '
             f'integration tier collapsed, or the census stopped seeing it')
+
+
+# --- primitive 13: every module opens with one sentence, and no two the same ---
+# `ft-the-module-says-what-it-does`. Four stories split this package's biggest
+# modules and the fifth graded the result; this is the gate under it, and the
+# reason it is a gate rather than a review note is what the grading found: SIX of
+# the 47 docstrings here opened with a FRAGMENT wrapped onto the second line
+# (`report.py — … a milestone's raw rows, added up, or`), which reads as a
+# sentence in a diff and is not one in `help()`, and nothing could say so.
+#
+# WHAT IT HOLDS, AND WHAT IT DOES NOT. It holds that every shipped module opens
+# with a terminated sentence, and that no two modules open with the SAME one
+# after their own name prefix is stripped. Whether a sentence is TRUE of its
+# module is judgement, graded in the audit at
+# `st-every-module-opens-with-one-true-sentence`'s close, and a test asserting it
+# would be a second scoreboard with no ground truth to read. So this is the
+# cheap half — and it is the half that fails the day someone copy-pastes a
+# header, which is the defect that was sitting in the tree when it was written:
+# `conveyor/__init__.py` and `conveyor/driver.py` shipped ONE claim in two
+# spellings, close enough that an exact comparison passed over both.
+TERMINAL = ('.', '?', '!')
+HEADING_MARK = '#'
+# In the spirit of `MIN_SOURCES`: `"""walk.py"""` is a label and `"""The one
+# place this package enumerates a filesystem."""` is a sentence. Nothing shipped
+# here is under six words, so this is a floor and not a style rule — 0.6.0's
+# ruling against size gates stands, and a LENGTH rule on a docstring is out of
+# scope for the story that added this.
+MIN_SENTENCE_WORDS = 4
+# The house prefix — `driver.py — `, `check budget — `, `templates/ — `, `pm — `.
+# STRIPPED before the collision comparison, because two modules saying the same
+# thing after their own names is exactly the finding, and keeping the prefix
+# would let a pasted header hide behind the filename it was pasted into. At most
+# two bare tokens, so `What a project DECLARES — the categories…` keeps its whole
+# sentence: that em dash is prose, not a name.
+SENTENCE_PREFIX = re.compile(r'^[\w./-]+(?: [\w./-]+)? — ')
+# The floor under the census of SENTENCES rather than of files. `_sources()`
+# already refuses an empty tree; this refuses a READER that stopped returning
+# sentences, which is the other way an empty offender list is produced. Well
+# under the 47 really there and well over zero.
+MIN_SENTENCES = 20
+# The three zero-length package markers, exempt BY NAME with the reason written
+# down: `core/`, `repo/` and `repo/checks/` declare nothing and re-export
+# nothing, so `help(agentic_sdlc.core)` has no subject and a sentence there would
+# be prose about an empty file. `repo/pm/__init__.py` and `repo/verify/__init__.py`
+# are NOT here, because they say what their package is and earn their line.
+#
+# THE ROSTER FAILS IN THREE DIRECTIONS, all three of them build failures, which
+# is the property `tests/test_guard_corpus.py`'s `UNCOVERED` has: a module with
+# no docstring that is not named here is a finding; an entry whose file has
+# GAINED CONTENT is a module now and owes a sentence (graded by
+# `_docstring_findings`, probed in `CORPUS`); and an entry naming nothing in the
+# census has moved or been renamed, so the line goes. An entry matching nothing
+# is as much a finding as a file missing from the list.
+EMPTY_PACKAGES = frozenset((
+    'core/__init__.py',
+    'repo/__init__.py',
+    'repo/checks/__init__.py',
+))
+
+
+def _opening_sentence(source: str) -> str | None:
+    """The first line of a module's docstring, or None when there is none.
+
+    By AST and never by import, for `_package_docstring`'s reason one primitive
+    up: the docstring is a literal in the source, so reading it this way boots
+    nothing (rule 2) and returns exactly the line `help()` opens with.
+    """
+    doc = ast.get_docstring(ast.parse(source), clean=False)
+    if doc is None or not doc.strip():
+        return None
+    return doc.strip().splitlines()[0].strip()
+
+
+def _sentence_defect(source: str) -> str:
+    """Why this module's opening line is not a sentence, or '' when it is."""
+    first = _opening_sentence(source)
+    if first is None:
+        return 'no module docstring — `help()` prints nothing about it'
+    if first.startswith(HEADING_MARK):
+        return f'opens with a heading rather than a sentence: {first!r}'
+    if not first.endswith(TERMINAL):
+        return (f'the first line is a FRAGMENT — it does not end in one of '
+                f'{TERMINAL}, so the sentence wraps and `help()` opens on half '
+                f'of it: {first!r}')
+    if len(first.split()) < MIN_SENTENCE_WORDS:
+        return f'the first line is a label rather than a sentence: {first!r}'
+    return ''
+
+
+def _collation(sentence: str) -> str:
+    """One opening sentence, as the collision comparison sees it."""
+    return ' '.join(SENTENCE_PREFIX.sub('', sentence).split()).casefold()
+
+
+def _docstring_findings(census: Iterable[tuple[str, str]]) -> list[str]:
+    """Every module in `census` that does not open with its OWN sentence.
+
+    `census` is (module-relative posix path, source) pairs: the real tree for the
+    case below, a planted one for `CORPUS`. Both halves of the question live in
+    this one reader so that one corpus covers both — a module with no sentence,
+    and two modules with the same sentence. A collision is a relation BETWEEN two
+    modules, and a classifier handed one file at a time could never see one.
+    """
+    out: list[str] = []
+    by_sentence: dict[str, list[str]] = {}
+    for rel, source in census:
+        if rel in EMPTY_PACKAGES:
+            if source.strip():
+                out.append(
+                    f'{rel}: named on EMPTY_PACKAGES and not empty any more — '
+                    f'it holds code now, so it is a module and owes a sentence, '
+                    f'and the exemption line goes in the same change')
+            continue
+        defect = _sentence_defect(source)
+        if defect:
+            out.append(f'{rel}: {defect}')
+            continue
+        sentence = _opening_sentence(source)
+        assert sentence is not None  # `_sentence_defect` already said so
+        by_sentence.setdefault(_collation(sentence), []).append(rel)
+    out.extend(f'{" and ".join(sorted(rels))}: both open with the same sentence '
+               f'— two modules cannot each be the one place something happens'
+               for rels in by_sentence.values() if len(rels) > 1)
+    return sorted(out)
+
+
+class EveryModuleSaysWhatItDoes(unittest.TestCase):
+    """PRIMITIVE 13 — one module, one opening sentence, and no two the same.
+
+    The first line of a module docstring is what `help()` opens with and what a
+    reader opening the file lands on, and it was the one prose surface in `src/`
+    with nothing pointed at it: `check doc` grades markdown, primitive 7 grades
+    the PACKAGE docstring against `pyproject.toml`, and between them 49 modules
+    could say anything, or nothing, or the same thing twice.
+    """
+
+    PROTECTS = (
+        'every shipped module opens with a terminated sentence, no two modules '
+        'open with the same one, and the three empty package markers are exempt '
+        'by name in a roster that fails in both directions',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'docstring is prose inside a .py file, so no behaviour test can see one '
+        'go missing or go stale, and a pasted header leaves two modules each '
+        'claiming to be the one place something happens. Six modules opened on a '
+        'fragment and `conveyor/__init__.py` and `conveyor/driver.py` shipped one '
+        'claim in two spellings when this was written',
+    )
+
+    # The planted input is a whole CENSUS — ((rel, source), …) — because half of
+    # what this guard grades is a relation between two modules. One corpus, both
+    # halves, and the exemption's content direction probed in it rather than
+    # asserted twice.
+    CORPUS = (
+        ((('a.py', ''),), True),
+        ((('a.py', '"""# The walker"""\n'),), True),
+        ((('a.py', '"""walk.py"""\n'),), True),
+        # The real defect at HEAD: a sentence wrapped onto line two, which reads
+        # as a sentence in the diff and is a fragment in `help()`.
+        ((('a.py', '"""the four belt-entry conditions, each answering with an\n'
+                   'exit code.\n"""\n'),), True),
+        # Two modules, one sentence: the pasted header.
+        ((('a.py', '"""The one place this package enumerates a filesystem."""\n'),
+          ('b.py', '"""The one place this package enumerates a filesystem."""\n')),
+         True),
+        # The same collision behind the house prefix, which is why the prefix is
+        # stripped BEFORE the comparison and not after.
+        ((('a.py', '"""a.py — the belts: every check, then one write."""\n'),
+          ('b.py', '"""b.py — the belts: every check, then one write."""\n')),
+         True),
+        # The exemption's own direction: a named marker that gained content.
+        ((('core/__init__.py', 'X = 1\n'),), True),
+        ((('a.py', '"""The one place this package enumerates a filesystem."""\n'),),
+         False),
+        ((('a.py', '"""a.py — the engine all four belts run on."""\n'),
+          ('b.py', '"""b.py — the four check lists that engine runs."""\n')), False),
+        # An empty marker that IS named, which is what all three really are.
+        ((('core/__init__.py', ''),), False),
+    )
+
+    @staticmethod
+    def catches(planted: tuple[tuple[str, str], ...]) -> bool:
+        return bool(_docstring_findings(planted))
+
+    def test_every_module_opens_with_one_sentence_and_no_two_the_same(self):
+        """Three questions of one census read, for `test_guard_corpus.py`'s
+        reason: the suite has no case headroom under `[tests] cases`, and a
+        second and third walk of 50 modules to assert the roster's other
+        direction would buy nothing the named messages below do not already say.
+        """
+        census = [(rel, path.read_text(encoding='utf-8'))
+                  for rel, path in _sources()]
+        findings = _docstring_findings(census)
+        self.assertEqual(
+            [], findings,
+            'a module that does not open with its own sentence. The first line '
+            'is what `help()` prints and what a reader lands on, so it says what '
+            'this module IS in one sentence — terminated, on one line — and no '
+            'other module says the same thing:\n  ' + '\n  '.join(findings))
+        sentences = [rel for rel, source in census
+                     if rel not in EMPTY_PACKAGES
+                     and _opening_sentence(source) is not None]
+        self.assertGreaterEqual(
+            len(sentences), MIN_SENTENCES,
+            f'{len(sentences)} opening sentence(s) read across '
+            f'{len(census)} module(s) — expected at least {MIN_SENTENCES}. The '
+            f'assertion above is an EMPTY offender list, and a reader that '
+            f'stopped returning sentences produces one too.')
+        dangling = sorted(EMPTY_PACKAGES - {rel for rel, _ in census})
+        self.assertEqual(
+            [], dangling,
+            'EMPTY_PACKAGES names a module that is not in the census — it moved '
+            'or was renamed, and an entry nothing matches is a hole waiting for '
+            'a module to move into it. Delete the line:\n  '
+            + '\n  '.join(dangling))

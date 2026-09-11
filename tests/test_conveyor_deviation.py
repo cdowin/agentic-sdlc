@@ -36,8 +36,9 @@ from support.pm import with_flow  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc.core.project import load_config, repo_root  # noqa: E402
+from agentic_sdlc.core import frontmatter  # noqa: E402
 from agentic_sdlc.repo.conveyor import driver  # noqa: E402
-from agentic_sdlc.repo.pm import ledger, model  # noqa: E402
+from agentic_sdlc.repo.pm import ledger, vocabulary  # noqa: E402
 
 VERSION = '9.9.9'
 MDIR = f'pm/roadmap/{VERSION}-scratch'
@@ -122,7 +123,7 @@ def dispositions(root: Path) -> list[dict]:
 
 
 def status(root: Path) -> str:
-    return model.field_of(root / MFILE, 'status')
+    return frontmatter.field_of(root / MFILE, 'status')
 
 
 # --- criterion 3 --------------------------------------------------------------
@@ -131,7 +132,7 @@ def test_force_writes_the_status_and_one_row_naming_the_false_checks():
     invisible deviation this row exists to end — or one that writes more
     than the two rows a run may leave."""
     with tree() as root:
-        want = driver.done_state(model.load(), 'milestone')
+        want = driver.done_state(vocabulary.load(), 'milestone')
         code, out = run('--force', steps=(TRUE.name, FALSE.name, CANNOT.name))
         assert code == 0, out
         assert status(root) == want
@@ -218,7 +219,7 @@ def test_a_ledger_that_is_a_directory_warns_and_the_forced_write_still_lands():
         (root / LEDGER).mkdir()
         code, out = run('--force')
         assert code == 0, out
-        assert status(root) == driver.done_state(model.load(), 'milestone')
+        assert status(root) == driver.done_state(vocabulary.load(), 'milestone')
         assert 'WARNING' in out and 'deviation row' in out, out
 
 
@@ -234,7 +235,7 @@ def test_a_declared_skip_is_never_asked_and_rides_the_arrivals_one_row():
     """
     ASKED.clear()
     with tree(config=SKIPPABLE) as root:
-        want = driver.done_state(model.load(), 'milestone')
+        want = driver.done_state(vocabulary.load(), 'milestone')
         code, out = run(driver.SKIP_FLAG, EXPENSIVE.name, WHY,
                         steps=(TRUE.name, EXPENSIVE.name))
         assert code == 0, out
@@ -273,7 +274,7 @@ def test_the_belt_hands_the_arrivals_report_on_as_LINES():
     """
     # From the SEED the fixture's flow is rendered from, not from this
     # repo's config: the declaration is written before the tree is entered.
-    want = model.DEFAULT_FLOWS['milestone']['done'][0]
+    want = vocabulary.DEFAULT_FLOWS['milestone']['done'][0]
     with tree(config=(f'[pm.arrive.milestone.{want}]\nask     = "{ASK}"\n'
                       'answers = ['
                       + ', '.join(f'"{a}"' for a in ANSWERS) + ']\n')) as root:
@@ -358,7 +359,7 @@ def test_a_skip_and_a_force_in_one_run_leave_two_records_that_do_not_bleed():
     """
     ASKED.clear()
     with tree(config=SKIPPABLE) as root:
-        want = driver.done_state(model.load(), 'milestone')
+        want = driver.done_state(vocabulary.load(), 'milestone')
         code, out = run('--force', driver.SKIP_FLAG, EXPENSIVE.name, WHY,
                         steps=(TRUE.name, EXPENSIVE.name, FALSE.name))
         assert code == 0, out

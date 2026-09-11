@@ -154,7 +154,7 @@ The seeded harness (`tests/test_fuzz_inputs.py`, in `make fuzz`) is the floor be
 
 ### The matrix belongs to the GRAMMAR, not to each surface
 
-Amended 2026-09-05: a dozen surfaces share three grammars (`model.segment_is_literal`,
+Amended 2026-09-05: a dozen surfaces share three grammars (`inventory.segment_is_literal`,
 `version_defect`, `subject_defect`), so **enumerate the matrix once, where the grammar lives; a
 surface that REUSES a grammar proves that it reuses it** with one case. Inventing one is a finding.
 

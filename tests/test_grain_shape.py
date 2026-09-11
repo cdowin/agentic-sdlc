@@ -17,7 +17,7 @@ from support import pm as pmfx                                  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import cli as devkit_cli                      # noqa: E402
 from agentic_sdlc.repo.checks import grain_shape                # noqa: E402
-from agentic_sdlc.repo.pm import model as pm_model              # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 
 STORY = 'pm/roadmap/stories/s0.md'
 FEATURE = 'pm/roadmap/features/alpha.md'
@@ -59,7 +59,7 @@ def config(root: Path, text: str) -> None:
     """`text` as the tree's devkit.toml, with the flow declaration APPENDED.
 
     Through `pmfx.write_config` rather than a bare `write_text`: `check
-    grain-shape` walks the tree through `pm.model`, so a case overriding
+    grain-shape` walks the tree through `pm.inventory`, so a case overriding
     `[grain_shape]` must not also un-declare `[pm.states.*]` — see
     tests/support/pm.py `with_flow`.
     """
@@ -114,17 +114,26 @@ def test_a_cap_named_for_one_kind_does_not_uncap_the_others():
 # --- the two ways a census lies ----------------------------------------------
 def test_the_slot_names_have_one_source():
     """0.2.0/bugs/the-slot-names-are-spelled-in-six-places. `_kind_of` reads
-    a grain's kind from `model.STORIES_DIR` / `model.BUGS_DIR`; a second
-    spelling anywhere in the pm tracker or the gates is a kind read from a
-    literal in one module and a constant in another. This walks every string
+    a grain's kind from `vocabulary.STORIES_DIR` / `vocabulary.BUGS_DIR`; a
+    second spelling anywhere in the pm tracker or the gates is a kind read from
+    a literal in one module and a constant in another. This walks every string
     constant in those modules (the census `tests/test_pm_flow.py` runs for
     state words, pointed at slot words) and names the survivor by file and
     line. No existing case could fail for this: every one reads a tree the
     literals and the constants still agree about."""
     import ast
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     src = Path(grain_shape.__file__).resolve().parents[1]
-    slots = (model.STORIES_DIR, model.BUGS_DIR)
+    slots = (vocabulary.STORIES_DIR, vocabulary.BUGS_DIR)
+    # The modules that DECLARE these words, skipped because a census over a
+    # declaration reports the declaration. Two of them, not one, since
+    # `model.py` split: `vocabulary` holds the nested slot directories
+    # (`STORIES_DIR`/`BUGS_DIR`) and `inventory` the pool directories
+    # (`POOL_NAME`) — two facts that share a spelling. Both are asserted
+    # PRESENT below, so a rename cannot turn an exemption into a file nothing
+    # matches while the census quietly stops skipping anything.
+    owners = ('vocabulary.py', 'inventory.py')
+    skipped = set()
 
     def spells_a_slot(value: str) -> bool:
         # A path piece: the word itself, or a segment ending in `/<slot>/` or
@@ -137,7 +146,8 @@ def test_the_slot_names_have_one_source():
     survivors = []
     for family in ('pm', 'checks'):
         for path in sorted((src / family).glob('*.py')):
-            if path.name == 'model.py':
+            if path.name in owners:
+                skipped.add(path.name)
                 continue
             tree = ast.parse(path.read_text('utf-8'))
             # A payload KEY (`{'stories': rows}`, `section['bugs']`) is the
@@ -166,6 +176,7 @@ def test_the_slot_names_have_one_source():
                         and isinstance(body[0].value, ast.Constant)
                         and isinstance(body[0].value.value, str)):
                     prose.add(f'{path.name}:{body[0].value.lineno}')
+    assert skipped == set(owners), sorted(skipped)
     survivors = [s for s in survivors if s.split(' ', 1)[0] not in prose]
     assert survivors == [], '\n'.join(survivors)
     assert grain_shape._kind_of(Path('0.1/features/f/stories/s.md')) == grain_shape.STORY
@@ -569,7 +580,7 @@ def test_a_doc_opening_with_a_RETIRED_header_still_passes():
     If this case fails, a consumer's tree goes red on upgrade day AND `pm new`
     starts growing two headers on the same file.
     """
-    retired = sorted(pm_model.RETIRED_SLOT_HEADERS)
+    retired = sorted(vocabulary.RETIRED_SLOT_HEADERS)
     assert retired, 'a retired wording must stay recognised once one exists'
     for header in retired:
         with pmfx.tree() as root:
@@ -587,8 +598,8 @@ def test_the_writer_and_the_gate_read_ONE_known_header_set():
     """
     writer = (REPO_ROOT / 'src/agentic_sdlc/repo/pm/templates/__init__.py'
               ).read_text(encoding='utf-8')
-    assert 'model.KNOWN_SLOT_HEADERS' in writer, writer
+    assert 'vocabulary.KNOWN_SLOT_HEADERS' in writer, writer
     text = MODULE.read_text(encoding='utf-8')
-    assert 'model.KNOWN_SLOT_HEADERS' in text, text
-    assert 'frozenset(model.SLOT_HEADER' not in text, (
+    assert 'vocabulary.KNOWN_SLOT_HEADERS' in text, text
+    assert 'frozenset(vocabulary.SLOT_HEADER' not in text, (
         'the gate rebuilt the set locally instead of reading the one source')

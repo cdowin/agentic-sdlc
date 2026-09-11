@@ -8,6 +8,7 @@ order:
   - "ms-0.4.0"
   - "ms-a-move-is-an-event"
   - "ms-the-rule-reaches-the-work"
+  - "ms-nothing-is-hand-rolled"
 ---
 
 # The release plan

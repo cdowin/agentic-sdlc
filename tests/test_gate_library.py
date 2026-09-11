@@ -5,15 +5,8 @@ package's own `Makefile` included. It is not Python, so the contract is proven
 the way the hook corpus is: the script carries a `--self-test`, and this file
 drives it through a subprocess and holds it to its published shape.
 
-IT WAS `test_runners_installable.py` UNTIL 0.2.0, and the rename is the point
-rather than tidying. `install-runners` became `install-gates` when the twelve
-engine runners left (decision D2), and the two files that verb still writes are
-`gdk_gate.sh` — this file — and `Makefile.devkit`, which is
-`tests/test_makefile_include.py`. A module named for a deleted verb, holding
-the whole proof of a library that is not a runner and never was, is a signpost
-to nowhere: the next reader looks here for runner coverage, finds a gate
-library, and cannot tell whether the runners are covered somewhere else or not
-at all.
+The verb that writes it is `install-gates`, and the other file it writes is
+`Makefile.devkit` — `tests/test_makefile_include.py`.
 
 Three things this file adds on top of firing the corpus:
 
@@ -24,14 +17,11 @@ Three things this file adds on top of firing the corpus:
     library into a scratch cwd and running a fake gate through
     gate_log -> gate_capture -> gate_verdict. That line shape is grepped by
     consumer Makefiles, so it is contract (CLAUDE.md rule 6), not cosmetics.
-  - it holds the library to being LANGUAGE-NEUTRAL. 0.2.0 split this file in
-    two: everything that acted on a Godot artifact — the `user://` HOME
-    sandbox, the `project.godot` restore, the compile-sweep transcript readers
-    and the import-cache rebuild — left with `godot-devkit`, and what stayed is
-    the framework that reads an exit code, a stream and the clock. Decision D2:
-    an installable belongs to the kit whose ARTIFACT it acts on, not the kit
-    whose STRUCTURE it borrows. A toolchain name creeping back in is that split
-    un-doing itself one helper at a time.
+  - it holds the library to being LANGUAGE-NEUTRAL: what stayed after the
+    0.2.0 split is the framework that reads an exit code, a stream and the
+    clock (decision D2 — an installable belongs to the kit whose ARTIFACT it
+    acts on). A toolchain name creeping back in is that split un-doing itself
+    one helper at a time.
 """
 from __future__ import annotations
 

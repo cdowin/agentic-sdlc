@@ -680,7 +680,7 @@ def ledger_repo(tmp_path: Path, name: str = 'repo',
     root = corpus_repo(tmp_path, name)
     # The tree DECLARES its flow. Both couriers reach `pm ledger record` through
     # the Makefile above, and `[pm.states.*]` has no runtime fallback
-    # (model.py:718 `flow_of`) — so a tree without it would fail the hook for a
+    # (`vocabulary.flow_of`) — so a tree without it would fail the hook for a
     # config reason and read here as a courier that wrote no row, which is the
     # one failure this module must never mistake for another.
     (root / 'devkit.toml').write_text(FLOW_TOML, encoding='utf-8')

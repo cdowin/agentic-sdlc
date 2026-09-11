@@ -33,14 +33,13 @@ config. A target's own exit 2 is reported as 1, with its code beside it.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from agentic_sdlc.core import makefile
+from agentic_sdlc.core import makefile, spawn
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.repo.pm import ledger
@@ -184,8 +183,8 @@ def _run(command: str, root: Path) -> int:
     """One rung's target through a shell in the repo root — `rules.py`
     already refused every spelling that is not `make <target>`."""
     print(f'  $ {command}', flush=True)
-    return subprocess.run(command, shell=True, cwd=str(root),
-                          check=False).returncode
+    return spawn.run(command, shell=True, cwd=str(root),
+                     check=False).returncode
 
 
 def _run_rung(ladder: Ladder, root: Path, name: str,
@@ -280,8 +279,8 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     import json
 
     try:
-        from agentic_sdlc.repo.pm import ledger, model
-        cfg = model.load()
+        from agentic_sdlc.repo.pm import ledger, vocabulary
+        cfg = vocabulary.load()
         # The TREE's ledger, not a milestone's: a `gate` row names no grain, so
         # 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` and one file holds every
         # cost this repo has ever measured. That also survives `pm retire`,

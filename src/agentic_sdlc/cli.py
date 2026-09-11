@@ -27,6 +27,7 @@ Belts (checks, then one status write or a clean error; `--force` writes anyway o
 Rendering (writes to stdout, runs nothing — paste it or pipe it):
     agentic-sdlc dispatch [--grain <id>] [--role <name>]   # the contract preamble
     agentic-sdlc changelog <milestone-id>   # the grains' `changelog:` lines, in `order:`
+    agentic-sdlc cite [--sites]     # how many times each `rule <n>` is cited, and where
 
 Lessons (an append-only row bound to a grain and a rule; recorded, never inferred):
     agentic-sdlc lesson record --grain <id> --rule <id> --source <path> "<text>"
@@ -53,6 +54,9 @@ HELP_FLAGS = ('-h', '--help')
 LESSON_VERB = 'lesson'
 CHANGELOG_VERB = 'changelog'
 DISPATCH_VERB = 'dispatch'
+# A read over the whole tree's text rather than over the PM tree, so it is no
+# more a `pm` subcommand than `changelog` is a `pm` one.
+CITE_VERB = 'cite'
 
 # {gate: in the default `check all`?}; tests/test_gate_roster.py holds every key to a module.
 # The OFF gates would redden a consumer that has no PM tree, no hooks or no budget declared.
@@ -94,8 +98,8 @@ def _also_wrong(roster: tuple[str, ...]) -> str:
     said: list[str] = []
     if 'pm' in roster:
         try:
-            from agentic_sdlc.repo.pm import model
-            said.extend(model.all_config_defects())
+            from agentic_sdlc.repo.pm import vocabulary
+            said.extend(vocabulary.all_config_defects())
         except Exception:  # noqa: BLE001 - never mask the roster error
             pass
     if not said:
@@ -231,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == DISPATCH_VERB:
         from agentic_sdlc.repo import dispatch
         return dispatch.main(rest)
+    if cmd == CITE_VERB:
+        from agentic_sdlc.repo import cite
+        return cite.main(rest)
     if cmd == CHANGELOG_VERB:
         from agentic_sdlc.repo.pm import changelog
         return changelog.main(rest)

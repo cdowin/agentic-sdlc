@@ -21,10 +21,9 @@ import json
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
-from agentic_sdlc.core import walk
+from agentic_sdlc.core import spawn, walk
 from agentic_sdlc.core.project import repo_root
 from agentic_sdlc.core.walk import Kind, SkipReason, Walk
 
@@ -148,16 +147,16 @@ def _not_a_file(path: Path) -> str:
 
 
 def _hooks_path(root: Path) -> str:
-    done = subprocess.run(['git', 'config', '--get', 'core.hooksPath'],
-                          cwd=root, capture_output=True, text=True)
+    done = spawn.run(['git', 'config', '--get', 'core.hooksPath'],
+                     cwd=root, capture_output=True, text=True)
     return done.stdout.strip() if done.returncode == 0 else ''
 
 
 def _runs(path: Path, root: Path) -> str:
     """'' when the hook started and answered; the finding text when it did not."""
     if path.name.startswith(CC_PREFIX):
-        done = subprocess.run(['bash', str(path)], input=UNREADABLE_PAYLOAD,
-                              text=True, capture_output=True, cwd=root)
+        done = spawn.run(['bash', str(path)], input=UNREADABLE_PAYLOAD,
+                         text=True, capture_output=True, cwd=root)
         if done.returncode != FAIL_OPEN:
             said = (done.stderr or done.stdout).strip().splitlines()
             return (f'exited {done.returncode} on a payload it cannot read, '
@@ -165,8 +164,8 @@ def _runs(path: Path, root: Path) -> str:
                     f'{FAIL_OPEN} — it is installed and it stops nothing'
                     + (f': {said[-1]}' if said else ''))
         return ''
-    done = subprocess.run(['bash', '-n', str(path)], capture_output=True,
-                          text=True, cwd=root)
+    done = spawn.run(['bash', '-n', str(path)], capture_output=True,
+                     text=True, cwd=root)
     if done.returncode != 0:
         return f'does not parse: {done.stderr.strip().splitlines()[-1]}'
     return ''
@@ -185,8 +184,8 @@ def _self_test(path: Path, root: Path) -> str:
 
     `input=''` keeps a hook that reads stdin from blocking on a terminal.
     """
-    done = subprocess.run(['bash', str(path), SELF_TEST_FLAG], input='',
-                          text=True, capture_output=True, cwd=root)
+    done = spawn.run(['bash', str(path), SELF_TEST_FLAG], input='',
+                     text=True, capture_output=True, cwd=root)
     said = (done.stderr or done.stdout).strip().splitlines()
     tail = f': {said[-1]}' if said else ''
     if done.returncode != 0:

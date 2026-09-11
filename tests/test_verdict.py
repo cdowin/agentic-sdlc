@@ -38,9 +38,8 @@ from support import REPO_ROOT  # noqa: E402,F401  (puts src/ on the path)
 from agentic_sdlc.repo import install  # noqa: E402
 from agentic_sdlc.repo.pm import verdict  # noqa: E402
 
-# Every definition that instructs the block — all installables; the repo-local
-# `code-reviewer.md` that used to sit beside them restated `reviewer.md` and
-# left in 0.2.0.
+# Every definition that instructs the block — all installables, no repo-local
+# copy (one restating `reviewer.md` left in 0.2.0).
 INSTALLED_REVIEWERS = ('reviewer.md', 'simplifier.md',
                        'milestone-reviewer.md', 'verification-reviewer.md')
 ALL_DEFINITIONS = INSTALLED_REVIEWERS

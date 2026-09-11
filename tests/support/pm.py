@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from agentic_sdlc.repo.checks import pm as pm_check
-from agentic_sdlc.repo.pm import cli, model
+from agentic_sdlc.repo.pm import cli, vocabulary
 
 
 def _case_sensitive_tmp() -> bool:
@@ -70,20 +70,21 @@ def write(path: Path, front: dict[str, str], body: str = 'x') -> None:
 
 
 # --- the flow a fixture tree DECLARES -----------------------------------------
-# `[pm.states.<kind>]` has NO runtime fallback behind it: `model.flow_of`
-# (src/agentic_sdlc/repo/pm/model.py:718) exits 2 BY NAME when a tree declared
-# nothing, and phase 7 routes every engine question through `model.holds`. From
+# `[pm.states.<kind>]` has NO runtime fallback behind it: `vocabulary.flow_of`
+# (src/agentic_sdlc/repo/pm/vocabulary.py) exits 2 BY NAME when a tree declared
+# nothing, and phase 7 routes every engine question through `vocabulary.holds`.
+# From
 # that commit on, a fixture that never declared is a tree no `pm` verb and no
 # `check pm` run can read — so every tree builder in this suite declares now,
 # ahead of the routing change, and that change reviews as a behaviour change
 # rather than as four hundred fixture edits.
 #
-# DERIVED FROM `render_seed()` (model.py:218), never hand-copied. A table typed
-# out here would be a second spelling of `DEFAULT_FLOWS` (model.py:209), and the
+# DERIVED FROM `vocabulary.render_seed()`, never hand-copied. A table typed out
+# here would be a second spelling of `vocabulary.DEFAULT_FLOWS`, and the
 # copy nobody runs is the one that goes stale — which is exactly why
 # `installables/project-devkit.toml` is held to `render_seed()` VERBATIM by
 # tests/test_pm_flow.py:559 rather than being allowed its own copy.
-FLOW_TOML = model.render_seed()
+FLOW_TOML = vocabulary.render_seed()
 
 
 def with_flow(config: str = '') -> str:
@@ -112,18 +113,18 @@ def declaring(config: str = '', **kinds: dict) -> str:
 
     The seed for every kind not named, so a case about the story vocabulary
     declares the story flow and inherits the rest. `kinds` values are
-    `{category: (state, ...)}` — the same shape `model.DEFAULT_FLOWS` holds —
-    and `model.render_seed` is the one renderer, so a case cannot hand-type a
+    `{category: (state, ...)}` — the same shape `vocabulary.DEFAULT_FLOWS` holds —
+    and `vocabulary.render_seed` is the one renderer, so a case cannot hand-type a
     table the reader would not read.
     """
-    flows = {**model.DEFAULT_FLOWS, **{k: dict(v) for k, v in kinds.items()}}
+    flows = {**vocabulary.DEFAULT_FLOWS, **{k: dict(v) for k, v in kinds.items()}}
     if config and not config.endswith('\n'):
         config += '\n'
-    return config + model.render_seed(flows)
+    return config + vocabulary.render_seed(flows)
 
 
-def loaded(root: Path) -> model.PmConfig:
-    """`model.load()` for a tree, caches cleared — the config the verbs read.
+def loaded(root: Path) -> vocabulary.PmConfig:
+    """`vocabulary.load()` for a tree, caches cleared — the config the verbs read.
 
     `cfg_for` builds a BARE `PmConfig(root=…)` with no flow, which is right
     for `validate` (it asks no category) and wrong for anything that does.
@@ -134,7 +135,7 @@ def loaded(root: Path) -> model.PmConfig:
     previous = Path.cwd()
     os.chdir(root)
     try:
-        return model.load()
+        return vocabulary.load()
     finally:
         os.chdir(previous)
 
@@ -295,8 +296,8 @@ def ledger_rows(root: Path, rel: str = LEDGER_REL) -> list[dict]:
     return [json.loads(line) for line in ledger_lines(root, rel) if line.strip()]
 
 
-def cfg_for(root: Path) -> model.PmConfig:
-    """The config a `tree()` READS — flow included — for a direct model call."""
+def cfg_for(root: Path) -> vocabulary.PmConfig:
+    """The config a `tree()` READS — flow included — for a direct engine call."""
     return loaded(root)
 
 

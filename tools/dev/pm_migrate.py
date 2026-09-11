@@ -65,9 +65,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agentic_sdlc.core import apply, walk
+from agentic_sdlc.core import apply, frontmatter, walk
 from agentic_sdlc.core.walk import Kind
-from agentic_sdlc.repo.pm import model, validate
+from agentic_sdlc.repo.pm import inventory, validate, vocabulary
 
 # The fields that can name another grain, and every one is rewritten when an id
 # changes. `pm move` rewrote three of them and skipped the refs pointing AT the
@@ -89,12 +89,12 @@ UNVERIFIABLE = 'UNVERIFIABLE'
 UNKNOWN = 'unknown'
 
 # Everything from an unquoted `#` on is a trailing comment, which is prose and
-# never a ref — `model._without_trailing_comment` reads a value the same way.
+# never a ref — `frontmatter._without_trailing_comment` reads a value the same way.
 COMMENT = '#'
 
 # The characters that END an id token on the value side of a frontmatter line:
 # YAML's own separators, plus the comment mark. An id holds none of them —
-# `model._ID_FORBIDDEN` refuses `[]:` outright and `validate._refs` refuses an
+# `inventory._ID_FORBIDDEN` refuses `[]:` outright and `validate._refs` refuses an
 # entry carrying a comma, a quote or a space — so a maximal run between them IS
 # one whole token, and matching one needs no quote around it.
 _TOKEN = re.compile(r'[^\s,\[\]{}"\'#]+')
@@ -128,7 +128,7 @@ def mint(kind: str, gid: str) -> str:
     """`<prefix>-<slug>` from a grain's current last id segment.
 
     The SLUG is this script's business (an old id carries a parent and an
-    ordinal, both migration INPUT); the PREFIX is `model.mint_id`, which
+    ordinal, both migration INPUT); the PREFIX is `inventory.mint_id`, which
     `pm new` also calls, so the two minting paths are now one.
 
     Never a number. A counter needs an allocator and a git repo has none:
@@ -137,7 +137,7 @@ def mint(kind: str, gid: str) -> str:
     a grain conflict on one line. Both fail hardest in the workflow this
     package is built for (0.4.0/D4).
     """
-    return model.mint_id(kind, _without_ordinal(gid.rsplit('/', 1)[-1]))
+    return inventory.mint_id(kind, _without_ordinal(gid.rsplit('/', 1)[-1]))
 
 
 # `NN-slug`. Held HERE, not imported: `story_ordinal_prefix` and `phase:` are
@@ -170,11 +170,11 @@ def _ordinal_of(path: Path) -> tuple[int, str]:
     return (int(match.group('n')), path.stem)
 
 
-def plan(cfg: model.PmConfig) -> Planned:
+def plan(cfg: vocabulary.PmConfig) -> Planned:
     """Read the nested tree and stage everything. Writes nothing."""
     out = Planned()
-    nested = list(model.milestone_dirs(cfg))
-    if not nested and model.grain_index(cfg):
+    nested = list(inventory.milestone_dirs(cfg))
+    if not nested and inventory.grain_index(cfg):
         out.already = True
         return out
     minted: dict[tuple[str, str], list[str]] = {}
@@ -184,37 +184,37 @@ def plan(cfg: model.PmConfig) -> Planned:
         new_id = mint(kind, old_id)
         minted.setdefault((kind, new_id), []).append(old_id)
         fields = {'id': new_id, 'kind': kind}
-        bind = model.BINDS_TO.get(kind)
+        bind = vocabulary.BINDS_TO.get(kind)
         if bind:
             fields[bind[1]] = binding
         out.moves.append(Move(old_path=path,
-                              new_path=model.pool_dir(cfg, kind) / f'{new_id}.md',
+                              new_path=inventory.pool_dir(cfg, kind) / f'{new_id}.md',
                               old_id=old_id, new_id=new_id, kind=kind,
                               fields=fields))
         return new_id
 
     for mdir in nested:
-        mfile = mdir / model.MILESTONE_DOC
-        mid = model.unquote(model.field_of(mfile, 'id')) or mdir.name
+        mfile = mdir / vocabulary.MILESTONE_DOC
+        mid = frontmatter.unquote(frontmatter.field_of(mfile, 'id')) or mdir.name
         ms_id = take('milestone', mfile, mid, '')
         feature_ids: list[tuple[tuple, str]] = []
-        for ffile in model._nested_feature_files(mdir):
-            fid = model.unquote(model.field_of(ffile, 'id'))
+        for ffile in inventory._nested_feature_files(mdir):
+            fid = frontmatter.unquote(frontmatter.field_of(ffile, 'id'))
             ft_id = take('feature', ffile, fid or ffile.parent.name, ms_id)
             # `phase:` grouped features within a milestone; it flattens into
             # the milestone's order in phase reading order and stops being a
             # field the tool interprets.
-            phase = _phase_key(model.field_of(ffile, 'phase'))
+            phase = _phase_key(frontmatter.field_of(ffile, 'phase'))
             feature_ids.append(((phase, ft_id), ft_id))
             story_ids: list[tuple[tuple, str]] = []
-            for sfile in model._nested_story_files(ffile):
-                sid = model.unquote(model.field_of(sfile, 'id'))
+            for sfile in inventory._nested_story_files(ffile):
+                sid = frontmatter.unquote(frontmatter.field_of(sfile, 'id'))
                 st_id = take('story', sfile, sid or sfile.stem, ft_id)
                 story_ids.append((_ordinal_of(sfile), st_id))
             if story_ids:
                 out.orders[ffile] = [i for _, i in sorted(story_ids)]
-        for bfile in model._nested_bug_files(mdir):
-            bid = model.unquote(model.field_of(bfile, 'id'))
+        for bfile in inventory._nested_bug_files(mdir):
+            bid = frontmatter.unquote(frontmatter.field_of(bfile, 'id'))
             take('bug', bfile, bid or bfile.stem, ms_id)
         if feature_ids:
             out.orders[mfile] = [i for _, i in sorted(feature_ids)]
@@ -267,8 +267,8 @@ def _rewritten(text: str, renames: dict[str, str]) -> str:
     `- a` lines, all four are the same scan, and `0.1/alpha` is not a ref
     inside `0.1/alphabet` by construction rather than by punctuation.
     """
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
@@ -282,7 +282,7 @@ def _rewritten(text: str, renames: dict[str, str]) -> str:
     return '\n'.join(lines)
 
 
-def _census(cfg: model.PmConfig) -> dict | None:
+def _census(cfg: vocabulary.PmConfig) -> dict | None:
     """`pm validate`'s ref census over the tree as it stands, or None when it
     could not be read — never a guess, and never a raise: a measurement that
     failed must not take the migration down with it."""
@@ -325,7 +325,7 @@ def _census_lines(before: dict | None, after: dict | None) -> list[str]:
     return lines
 
 
-def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
+def run(cfg: vocabulary.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     """(exit code, the lines to print). Writes in ONE pass or not at all."""
     staged = plan(cfg)
     if staged.already:
@@ -348,7 +348,7 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
                     parts = old.split('/')
                     hint = mint('story', old)
                     if len(parts) > 1:
-                        hint = f'{model.KIND_PREFIX["story"]}-{parts[-2]}-{parts[-1]}'
+                        hint = f'{inventory.KIND_PREFIX["story"]}-{parts[-2]}-{parts[-1]}'
                     out.append(f'    suggest: {hint}   (for {old})')
         out.append('  resolve each with `agentic-sdlc pm rename <old> <new>` '
                    'and re-run; --suggest prints parent-qualified candidates '
@@ -359,7 +359,7 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     # Captured BEFORE anything moves: once a milestone.md is out of its
     # directory the directory is no longer a milestone directory, so a second
     # `milestone_dirs()` afterwards returns nothing and the husks stay forever.
-    husks = list(model.milestone_dirs(cfg))
+    husks = list(inventory.milestone_dirs(cfg))
     # Read BEFORE anything moves, for the same reason: this is the tree the
     # refs were written against, and after the move there is no reading it.
     before = _census(cfg)
@@ -367,7 +367,7 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     lines = []
     for move in staged.moves:
         try:
-            text = model.read_raw(move.old_path)
+            text = frontmatter.read_raw(move.old_path)
         except (OSError, UnicodeDecodeError) as err:
             return 1, [f'[pm] REFUSED — {cfg.rel(move.old_path)} could not be '
                        f'read ({err.__class__.__name__}); nothing was written']
@@ -411,7 +411,7 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
     # claimed exactly that while 52 of them were not, and the claim is what a
     # reader trusted instead of counting; the census below is the count.
     return 0, ([f'[pm] migrated {len(staged.moves)} grain(s) into '
-                f'{len(model.FLOW_KINDS)} pool(s); '
+                f'{len(vocabulary.FLOW_KINDS)} pool(s); '
                 f'{len(renames)} id(s) changed, and the ref census below says '
                 f'whether the refs came with them. Git is the undo.']
                + _census_lines(before, _census(cfg)) + tail)
@@ -420,26 +420,26 @@ def run(cfg: model.PmConfig, suggest: bool = False) -> tuple[int, list[str]]:
 def _with_fields(text: str, fields: dict[str, str]) -> str:
     """`set_fields`' logic over a string, because the migration stages every
     write in memory and commits them in one pass."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
     for key, value in fields.items():
         for i in range(open_i + 1, close_i):
             if lines[i].startswith(f'{key}:'):
-                lines[i] = f'{key}: {value}{model._eol(lines[i])}'
+                lines[i] = f'{key}: {value}{frontmatter._eol(lines[i])}'
                 break
         else:
-            lines.insert(close_i, f'{key}: {value}{model._eol(lines[close_i])}')
+            lines.insert(close_i, f'{key}: {value}{frontmatter._eol(lines[close_i])}')
             close_i += 1
     return '\n'.join(lines)
 
 
 def _with_order(text: str, ids: list[str]) -> str:
     """The parent's `order` block, built from the nesting being deleted."""
-    lines = model._split(text)
-    bounds = model._fence_bounds(lines)
+    lines = frontmatter._split(text)
+    bounds = frontmatter._fence_bounds(lines)
     if bounds is None:
         return text
     _open_i, close_i = bounds
@@ -456,7 +456,7 @@ if __name__ == '__main__':
         print(f'usage: python3 tools/dev/pm_migrate.py [--suggest] — not '
               f'{" ".join(unknown)!r}', file=sys.stderr)
         raise SystemExit(2)
-    code, lines = run(model.load(), suggest='--suggest' in args)
+    code, lines = run(vocabulary.load(), suggest='--suggest' in args)
     for line in lines:
         print(line)
     raise SystemExit(code)

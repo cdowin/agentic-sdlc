@@ -63,7 +63,7 @@ SUPPORT = TESTS / 'support'
 # 19 at 0.6.0: `test_pm_remote.py` joined, and it is the DELIBERATE shape — the
 # reader under it spawns nothing (that is its contract), while the cases spawn
 # git to build a real tree with real refs.
-MARKED_MODULES = 19
+MARKED_MODULES = 18
 UNMARKED_MODULES = (
     'test_apply.py',
     'test_boundaries.py',
@@ -72,6 +72,14 @@ UNMARKED_MODULES = (
     # writing itself. Rows and numbers in a tmp_path, no repo, no make.
     'test_check_budget.py',
     'test_check_doc.py',
+    # 0.7.0: split from `test_ci_workflows.py`, which asked two questions and
+    # paid the higher tier for both. The parse half reads the workflow YAML
+    # with the indentation reader and spawns nothing; the six cases that run
+    # the semver-gate's `run:` body under bash are `test_ci_compare_step.py`
+    # and stay marked. It reached `subprocess` twice — once for the compare
+    # half, once as a function-local import used ZERO times, which is the
+    # dead-import shape the header above already records at 419 cases.
+    'test_ci_workflows.py',
     'test_cli_surface.py',
     'test_config_seed.py',
     'test_consumer_independence.py',
@@ -99,6 +107,10 @@ UNMARKED_MODULES = (
     'test_pm_order.py',
     'test_pm_ready_for.py',
     'test_pm_rename.py',
+    # 0.7.0: was `git_tree as tree` on one import line, which bought all 38
+    # cases a `git init` the module never used — it asks git no question, and
+    # `repo_root` walks up for a `.git` directory rather than shelling out.
+    'test_pm_scaffold.py',
     'test_pm_verbs.py',
     'test_prose_census.py',
     'test_replay_migration.py',
@@ -107,6 +119,14 @@ UNMARKED_MODULES = (
     # state or out of it — proven by CALL, so the rung that runs on every edit
     # exercises the one piece that can report a verdict nobody measured.
     'test_verify_cache.py',
+    # 0.7.0: `Repo` there builds with a `.git` MARKER rather than `git init` —
+    # `repo_root` walks up for the directory and no longer shells out — after
+    # which 14 of its 28 cases spawn nothing. The three classes that DO are
+    # `test_verify_spawns.py`: the tree-state cache, and the two that run real
+    # make targets through the verb. conftest's RUNTIME guard named all three
+    # by nodeid when the split first tried to demote them, which is the
+    # derivation checked from the other side.
+    'test_verify_main.py',
     'test_verify_rules.py',
     'test_wheel_payload.py',
 )
@@ -184,6 +204,17 @@ def _census() -> tuple[list[str], list[str]]:
 class Census(unittest.TestCase):
     """What the derivation says about this repo, right now."""
 
+    PROTECTS = (
+        'the derived shell mark over THIS repo is the census it was last '
+        'decided to be, and the support package the derivation reads was '
+        'actually found',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): a '
+        'module that changes sides stops running on three interpreters, or '
+        'starts spawning inside the unit tier, and the tier reports green '
+        'either way. A moved support package empties the spawn set and unmarks '
+        'the whole suite in silence',
+    )
+
     def test_the_module_census_is_what_the_matrix_will_skip(self):
         marked, unmarked = _census()
         self.assertEqual(tuple(unmarked), UNMARKED_MODULES,
@@ -234,6 +265,15 @@ class NoUnreadSpawnSpelling(unittest.TestCase):
     callers unmarked too. A module that already carries the mark cannot hide a
     spawn: it is skipped on three interpreters either way.
     """
+
+    PROTECTS = (
+        'no unmarked module and no support helper starts a process by a '
+        'spelling tests/conftest.py does not read',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'derivation is the only thing deciding the tier, so a hole in it is '
+        'silent by construction — the module simply stops being skipped and '
+        'nothing reports a mark that was never applied',
+    )
 
     def test_no_unmarked_module_spawns_by_a_spelling_the_derivation_skips(self):
         unmarked = [p for p in _modules() if not conftest.module_spawns(p)]
@@ -394,6 +434,45 @@ class TheGuardBehindTheDerivation(unittest.TestCase):
             self.assertIn('tried to spawn a process', out)
             self.assertIn('test_reaches_a_spawn_indirectly', out)
             self.assertIn('module_spawns', out)
+
+    # The same reach, through `core/spawn.py`. Since 0.7.0 exactly one module
+    # in `src/` imports `subprocess`, so a caller's source names no spawn
+    # spelling at all — which puts EVERY library path this package has on the
+    # far side of the static mark, where only this guard can see it. It sees it
+    # because the seam does `import subprocess` and calls `subprocess.run`
+    # ATTRIBUTE-style: `run` looks the class up as a module global, so the
+    # rebinding above reaches it. A seam written `from subprocess import Popen`
+    # would hold its own reference, and this case is what goes red if one ever
+    # is — with the whole suite's tier enforcement gone and nothing else to say
+    # so.
+    SEAM_IMPORT = (
+        'import sys\n'
+        'sys.path.insert(0, {src!r})\n'
+        'from agentic_sdlc.core import spawn\n'
+        '\n\n'
+        'def test_reaches_a_process_through_the_seam():\n'
+        '    spawn.run(["true"])\n'
+    )
+
+    def test_a_spawn_through_the_seam_fails_by_nodeid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ScratchSuite.build(root)
+            (root / 'test_seam.py').write_text(
+                self.SEAM_IMPORT.format(src=str(REPO_ROOT / 'src')),
+                encoding='utf-8')
+            self.assertFalse(
+                conftest.module_spawns(root / 'test_seam.py'),
+                'the derivation marked the module, so this proves nothing '
+                'about the runtime guard')
+            code, out = ScratchSuite.run(root, '-m', 'not shell', 'test_seam.py')
+            self.assertEqual(code, 1, out)
+            self.assertIn('tried to spawn a process', out)
+            self.assertIn('test_reaches_a_process_through_the_seam', out)
+            self.assertIn('module_spawns', out)
+            # The argv the seam passed, so the refusal is this call and not
+            # some other process the scratch run happened to start.
+            self.assertIn("['true']", out)
 
     def test_the_same_spawn_is_allowed_once_the_module_is_marked(self):
         # The guard enforces the TIER, not a ban: a module the derivation marks

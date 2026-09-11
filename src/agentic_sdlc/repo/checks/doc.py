@@ -40,6 +40,16 @@ PATH_CANDIDATE = re.compile(r'^[A-Za-z0-9_./-]+\.(gd|tscn|tres|py|sh|md)$')
 PLACEHOLDER_CHARS = ('<', '>', '*', '$')
 URL_PREFIXES = ('http://', 'https://', 'mailto:')
 # Review records are create-resolve-delete by design.
+# A DECISION citation. D-numbers restart per milestone, so a bare `D<n>` is
+# unambiguous only inside the decisions file that owns it; the tree's
+# convention for everywhere else is `<version>/D<n>`. This rule resolves the
+# QUALIFIED form and deliberately says nothing about the bare one: `check pm`'s
+# own rule ids are D1..D12 in a FLAT namespace, so the two spellings are
+# indistinguishable by shape — 32 of the 33 bare `D<n>` in `[doc] scope` are
+# gate rule ids, where bare is correct. See 0.7.0/D1.
+DECISION_CITATION = re.compile(r'\b([0-9]+\.[0-9]+\.[0-9]+)/D([0-9]+)\b')
+DECISION_HEADING = re.compile(r'^##\s+D([0-9]+)\b')
+DECISIONS_SUFFIX = '-decisions.md'
 DEFAULT_EPHEMERAL = ('docs/reviews/',)
 def ephemeral_dirs() -> tuple[str, ...]:
     return str_tuple(config_section('doc'), 'doc', 'ephemeral',
@@ -56,6 +66,20 @@ def scope_files() -> list[Path]:
             if literal.is_file():
                 files.append(literal)
     return files
+
+
+def grain_documents() -> list[Path]:
+    """Every markdown document in the PM tree.
+
+    NOT `[doc] scope`, and only the decision-citation rule reads it: a `D<n>`
+    is a claim about the tree wherever it is written, and the grain is where
+    the defect that filed this rule was found. The path, link and `make` rules
+    stay on the configured scope, which is the surface they were written for.
+    """
+    cfg = pm_config()
+    if cfg is None:
+        return []
+    return sorted(walk.matching(cfg.roadmap, '**/*.md', Kind.FILE).kept)
 
 
 def real_make_targets() -> set[str]:
@@ -153,9 +177,9 @@ _STATUS_FORM = re.compile(
 def declared_states() -> dict[str, tuple[str, ...]]:
     """{kind: every state the project declared}, or {} when the tree has no
     flow — then this rule reports nothing rather than inventing a vocabulary."""
-    from agentic_sdlc.repo.pm import model
+    from agentic_sdlc.repo.pm import vocabulary
     try:
-        cfg = model.load()
+        cfg = vocabulary.load()
     except SystemExit:
         return {}
     return {kind: flow.order for kind, flow in cfg.flows.items()}
@@ -190,6 +214,74 @@ def check_invocations(doc: Path, lines: list[tuple[int, str]],
     return findings
 
 
+def pm_config():
+    """The project's PM config, or None when the tree declares no flow."""
+    from agentic_sdlc.repo.pm import vocabulary
+    try:
+        return vocabulary.load()
+    except SystemExit:
+        return None
+
+
+def decision_index() -> dict[str, tuple[str, set[str]]]:
+    """{version: (milestone id, every D-number its decisions file records)}.
+
+    Keyed on the VERSION, because that is what a citation spells. A milestone
+    declaring no `version:` is unreachable by citation and is skipped rather
+    than guessed at; `shared_doc` answers where the file lives, so a nested
+    tree and a pooled one are read the same way.
+    """
+    index: dict[str, tuple[str, set[str]]] = {}
+    cfg = pm_config()
+    if cfg is None:
+        return index
+    from agentic_sdlc.repo.pm import inventory, vocabulary
+    for grain in inventory.milestones(cfg):
+        version = grain.field('version').strip()
+        decisions = inventory.shared_doc(cfg, grain, vocabulary.DECISION_FILE_NAME)
+        if not version or not decisions.is_file():
+            continue
+        kept, _ = non_fenced_lines(
+            decisions.read_text(encoding='utf-8', errors='replace'))
+        index[version] = (grain.gid, {
+            match.group(1) for _, line in kept
+            if (match := DECISION_HEADING.match(line))})
+    return index
+
+
+def check_decision_citations(doc: Path, lines: list[tuple[int, str]],
+                             index: dict[str, tuple[str, set[str]]]) -> list[str]:
+    """A `<version>/D<n>` naming a ruling the tree does not record.
+
+    The citation is a claim about the tree exactly as `make <target>` is, and
+    nothing read it until 0.7.0 — which is how a grain shipped a `D1` pointing
+    at a real decision that said something else.
+    """
+    findings: list[str] = []
+    if not index:
+        return findings
+    for lineno, line in lines:
+        if is_allowed(line):
+            continue
+        for match in DECISION_CITATION.finditer(line):
+            version, number = match.group(1), match.group(2)
+            known = index.get(version)
+            if known is None:
+                findings.append(
+                    f'{rel(doc)}:{lineno}  `{match.group(0)}` names a version '
+                    f'with no decisions file. Recorded: '
+                    f'{" ".join(sorted(index))}')
+                continue
+            milestone_id, numbers = known
+            if number not in numbers:
+                records = (f'D{" D".join(sorted(numbers, key=int))}'
+                           if numbers else 'nothing')
+                findings.append(
+                    f'{rel(doc)}:{lineno}  `{match.group(0)}` names a decision '
+                    f'{milestone_id} does not record — it records {records}')
+    return findings
+
+
 def skill_entries() -> tuple[list[Path], list[Path]]:
     """(everything listed under `.claude/skills/`, the flat `.md` files in it)."""
     listed = list(walk.children(REPO_ROOT / SKILL_DIR).kept)
@@ -199,6 +291,8 @@ def skill_entries() -> tuple[list[Path], list[Path]]:
 def run() -> int:
     real_targets = real_make_targets()
     states = declared_states()
+    decisions = decision_index()
+    cited = 0
     findings: list[str] = []
     defects: list[str] = []
     skipped = 0
@@ -217,6 +311,15 @@ def run() -> int:
         findings.extend(check_make_targets(doc, lines, real_targets))
         findings.extend(check_backtick_paths(doc, lines))
         findings.extend(check_invocations(doc, lines, states))
+        findings.extend(check_decision_citations(doc, lines, decisions))
+        cited += sum(len(DECISION_CITATION.findall(line)) for _, line in lines)
+
+    grains = grain_documents()
+    for grain in grains:
+        lines, _ = non_fenced_lines(
+            grain.read_text(encoding='utf-8', errors='replace'))
+        findings.extend(check_decision_citations(grain, lines, decisions))
+        cited += sum(len(DECISION_CITATION.findall(line)) for _, line in lines)
 
     listed, flat = skill_entries()
     for skill in flat:
@@ -231,7 +334,9 @@ def run() -> int:
                 f'{len(findings)} unresolved claim(s)' if findings else '',
                 f'{len(defects)} malformed doc(s)' if defects else '') if part)
         print(f'[check:doc] FAIL — {counts}, across {len(docs)} doc(s), '
-              f'{skipped} fenced line(s) skipped, {len(listed)} {SKILL_DIR}/ entr(ies)')
+              f'{skipped} fenced line(s) skipped, {len(listed)} {SKILL_DIR}/ entr(ies), '
+              f'{cited} decision citation(s) over {len(grains)} grain(s) '
+              f'and {len(decisions)} decisions file(s)')
         for finding in sorted(defects) + sorted(findings):
             print(f'  {finding}')
         print(f'\nA genuine exception (a deliberate retired-thing citation) gets a trailing '
@@ -242,7 +347,9 @@ def run() -> int:
         print('[check:doc] FAIL — scanned 0 docs; check [doc] scope')
         return 1
     print(f'[check:doc] PASS — {len(docs)} doc(s), {skipped} fenced line(s) '
-          f'skipped, {len(listed)} {SKILL_DIR}/ entr(ies), 0 unresolved claims')
+          f'skipped, {len(listed)} {SKILL_DIR}/ entr(ies), '
+          f'{cited} decision citation(s) over {len(grains)} grain(s) and '
+          f'{len(decisions)} decisions file(s), 0 unresolved claims')
     return 0
 
 

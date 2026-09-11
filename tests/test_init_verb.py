@@ -13,18 +13,15 @@ can get wrong:
   * `--force` respects the ownership split: it overwrites the installed files
     and does not touch devkit.toml / Makefile / CLAUDE.md / the PM tree;
   * THERE IS ONE REFUSAL, and it is decided BEFORE the first byte: a directory
-    that is not a git repo is left as it was found. There were two through
-    0.1.0 — the second declined a root holding no engine project file, and it
-    left with the engine half in 0.2.0. A removal that is merely absent from a
-    suite is a removal nothing holds, so the case that used to prove that
-    refusal now proves it is GONE: an engine-less repo is INITIALIZED, whole.
+    that is not a git repo is left as it was found. The second refusal 0.1.0
+    carried is held as its INVERSE rather than deleted — see
+    `test_a_git_repo_with_no_engine_project_file_is_initialized_whole`.
 
 The fixture keeps a `project.godot` and an icon because a fresh repo with two
 files of its own is the realistic shape, not because `init` reads either one —
-`test_a_git_repo_with_no_engine_project_file_is_initialized_whole` is the case
-that says so. Nothing here boots anything. `init` runs OUT OF PROCESS, because
-it resolves the repo root and the config through module-level caches that a
-same-process run would leave pointing at a deleted temp directory.
+the case named above says so. Nothing here boots anything. `init` runs OUT OF
+PROCESS, because it resolves the repo root and the config through module-level
+caches that a same-process run would leave pointing at a deleted temp directory.
 """
 from __future__ import annotations
 
@@ -46,7 +43,7 @@ from support import REPO_ROOT  # noqa: E402
 sys.path.insert(0, str(REPO_ROOT / 'src'))
 from agentic_sdlc import __version__  # noqa: E402
 from agentic_sdlc.repo import dispatch, init, install  # noqa: E402
-from agentic_sdlc.repo.pm import model  # noqa: E402
+from agentic_sdlc.repo.pm import vocabulary  # noqa: E402
 from agentic_sdlc.repo.verify import rules as verify_rules  # noqa: E402
 
 PROJECT_GODOT = ('config_version=5\n\n[application]\n\n'
@@ -57,19 +54,11 @@ ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>\n'
 # against the verbs' own tables below so it cannot become a second list that
 # quietly disagrees with what ships.
 #
-# IT SHRANK FROM 49 TO 34 IN 0.2.0, and the fifteen that left are named here
-# rather than simply deleted, because a roster that only ever gets shorter is
-# how a census stops being one. Decision D2 — an installable belongs to the kit
-# whose ARTIFACT it acts on: the twelve engine runners under
-# `tools/dev/runners/` (`parse.sh`, `lint.sh`, `unit.sh`, `integration.sh`,
-# `scenario.sh`, `warnings.sh`, `capture.sh`, `import_cache.sh`,
-# `hermetic_run_scan.sh`, `compile_sweep.gd` + its `.uid`), the engine-boot
-# guard hook `cc-godot-sandbox.sh`, and `tools/dev/checks/doctor.sh` all went
-# to the language kit; `.github/workflows/uid-guard.yml` guarded an engine
-# artifact and went with them; and `gdk_runners.sh` became `gdk_gate.sh` when
-# the verb that writes it became `install-gates`. Nothing on this list is
-# optional, and `test_the_roster_above_is_what_the_verbs_actually_carry` is
-# what stops the number moving again without a line moving here.
+# IT SHRANK FROM 49 TO 34 IN 0.2.0 under decision D2 — an installable belongs to
+# the kit whose ARTIFACT it acts on — and the number is recorded here because a
+# roster that only ever gets shorter is how a census stops being one. Nothing on
+# this list is optional, and `test_the_roster_above_is_what_the_verbs_actually_carry`
+# is what stops the number moving again without a line moving here.
 WRITES = (
     'devkit.toml',
     '.claude/rules/pm-execution.md',
@@ -225,13 +214,10 @@ def test_the_makefile_pins_this_version_and_includes_the_standard_set():
     assert init.VERSION_PLACEHOLDER not in body, 'the pin was never substituted'
 
 
-# Every [section] the seed devkit.toml offers. It was SEVENTEEN through 0.1.0;
-# the eleven engine-gate sections (`uid`, `tres`, `props`, `defaults`,
-# `autoloads`, `refs`, `orphans`, `rng`, `tres_comment`, `unit_disk`,
-# `test_shape`) left with the gates that read them in 0.2.0. Asserted as an
-# EQUALITY rather than as a floor, which is the direction that got stronger: a
-# section ADDED to the template without a line here now fails too, where the
-# old `in` loop would have let one arrive unmentioned.
+# Every [section] the seed devkit.toml offers, asserted as an EQUALITY rather
+# than as a floor, which is the direction that got stronger: a section ADDED to
+# the template without a line here now fails too, where the old `in` loop would
+# have let one arrive unmentioned.
 CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygiene',
                    'pm', 'emit', 'verify', 'dispatch')
 
@@ -241,7 +227,7 @@ CONFIG_SECTIONS = ('checks', 'gates', 'doc', 'shell', 'grain_shape', 'repo_hygie
 # rather than as prose: the byte-identical guarantee is GATES-ONLY, and these
 # are what it is not about.
 DECLARATIONS = {
-    '[pm.states.*]': lambda: model.missing_flow_defect({}),
+    '[pm.states.*]': lambda: vocabulary.missing_flow_defect({}),
     '[verify]': lambda: _refusal(verify_rules.read, {}),
     # 0.6.0: the preamble a dispatched agent gets. Its `contracts` are the
     # project's own authored files and the tool cannot invent them (rule 8),
@@ -254,7 +240,7 @@ def _refusal(reader, section) -> str:
     """Why this reader refuses an absent section, or '' if it does not."""
     try:
         reader(section)
-    except model.ConfigError as err:
+    except vocabulary.ConfigError as err:
         return str(err)
     return ''
 
@@ -283,7 +269,7 @@ def test_the_config_template_carries_every_section_the_gates_read():
         f'template drift: {sorted(set(offered) ^ set(CONFIG_SECTIONS))}')
     live = [ln for ln in body.splitlines()
             if ln.strip() and not ln.lstrip().startswith('#')]
-    seeded = [ln for ln in model.render_seed().splitlines() if ln.strip()]
+    seeded = [ln for ln in vocabulary.render_seed().splitlines() if ln.strip()]
     assert live == seeded, (
         f'the template declares something outside the flow: '
         f'{[ln for ln in live if ln not in seeded]}')
@@ -316,18 +302,10 @@ def test_the_gitignore_entries_are_their_writers_own_defaults():
     `.gate-reports/` alone while three other paths this package's own files
     write were left tracked, and `.agentic-sdlc/` is the one that bit: the
     conveyor's run state dirtied the tree the conveyor's own `tree-clean` step
-    measures. Measured on a stock `init` tree, run 2 of `release`:
-
-        [release] CORRECTED — the run state said 'tree-clean' was done; the
-        tree says: 1 modified path(s): .agentic-sdlc/
-
-    It went the other way in 0.2.0 too: `.headless-userdata/`,
-    `.scenario-reports/` and `.capture-reports/` were written only by the
-    engine runners and left with them (decision D2). The floor this census
-    stands on is that it is not EMPTY — an `IGNORED` that emptied out would
-    have every consumer committing its run artifacts while this test passed
-    over nothing, so emptiness is a failure here before the equality below is
-    even asked.
+    measures. The floor this census stands on is that it is not EMPTY — an
+    `IGNORED` that emptied out would have every consumer committing its run
+    artifacts while this test passed over nothing, so emptiness is a failure
+    here before the equality below is even asked.
     """
     assert init.IGNORED, 'init.IGNORED is empty — this test would prove nothing'
     assert set(init.IGNORED) == set(IGNORE_OWNERS)
@@ -402,9 +380,8 @@ def test_a_second_run_does_not_duplicate_the_gitignore_entries():
 
 
 # --- --diff -------------------------------------------------------------------
-# The devkit-owned file the ownership cases below drift, in place of
-# `tools/dev/checks/doctor.sh`, which left with the engine half in 0.2.0. A
-# hook, so the refusal case can still name the verb that owns it.
+# The devkit-owned file the ownership cases below drift. A hook, so the refusal
+# case can still name the verb that owns it.
 DEVKIT_OWNED = 'tools/hooks/cc-stop-gate.sh'
 
 
@@ -452,7 +429,7 @@ def test_a_differing_project_owned_file_is_reported_not_refused():
     assert done.returncode == 0, done.stdout + done.stderr
     assert kept[1:] == [mine] * 2, 'a project-owned file was overwritten'
     assert kept[0].startswith(mine), 'devkit.toml lost the project\'s bytes'
-    assert model.render_seed() in kept[0], kept[0]
+    assert vocabulary.render_seed() in kept[0], kept[0]
     assert done.stdout.count('is yours — left alone') == 3, done.stdout
     assert 'appended the flow to devkit.toml' in done.stdout, done.stdout
 
@@ -482,7 +459,7 @@ def test_init_appends_the_flow_to_a_config_it_did_not_write_byte_preserving():
         appended = first[len(theirs):].decode()
         assert '\n' not in appended.replace('\r\n', ''), (
             'the appended block does not use the file\'s CRLF')
-        assert appended.replace('\r\n', '\n').endswith(model.render_seed())
+        assert appended.replace('\r\n', '\n').endswith(vocabulary.render_seed())
         again = devkit(root, 'init')
         assert again.returncode == 0, again.stdout + again.stderr
         assert path.read_bytes() == first, 'a second run rewrote devkit.toml'

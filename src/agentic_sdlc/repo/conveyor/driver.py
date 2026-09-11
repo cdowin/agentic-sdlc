@@ -1,9 +1,9 @@
-"""driver.py — the conveyor: every check, then at most one write (D12).
+"""driver.py — the engine all four belts run on, and the verb that starts one.
 
 `close story <id>`, `close feature <id>`, `release <version>` and
-`adopt <version>` are one machine over four check lists. Every check prints
-one line — `ok: <check> — <detail>`, `error: <check>: <what is false>` or
-`unverifiable: <check>: <why>` (counts as false) — then: all true → the
+`adopt <version>` are one machine over four check lists (D12). Every check
+prints one line — `ok: <check> — <detail>`, `error: <check>: <what is false>`
+or `unverifiable: <check>: <why>` (counts as false) — then: all true → the
 grain's status is set to the first state of `[pm.states.<kind>] done`, exit 0;
 any false → no status written, exit 1; `--force` → the write anyway and a
 ledger `deviation` row naming the false checks. `adopt` is checks only. Exit 2
@@ -30,7 +30,7 @@ from typing import Callable, Mapping, Sequence
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.conveyor import lessons
-from agentic_sdlc.repo.pm import ledger, model, verdict
+from agentic_sdlc.repo.pm import inventory, ledger, verdict, vocabulary
 
 # `story` and `feature` are subcommands of `close`, since `agentic-sdlc story`
 # would be a second spelling of `pm story`.
@@ -44,8 +44,8 @@ OPERATIONS = ('release', 'adopt', *CLOSE_OPERATIONS)
 VERBS = ('release', 'adopt', CLOSE_VERB)
 
 # The grain kind each operation writes; '' for the one that writes nothing.
-WRITES = {'release': model.GRAIN_MILESTONE, OP_STORY: model.GRAIN_STORY,
-          OP_FEATURE: model.GRAIN_FEATURE, 'adopt': ''}
+WRITES = {'release': vocabulary.GRAIN_MILESTONE, OP_STORY: vocabulary.GRAIN_STORY,
+          OP_FEATURE: vocabulary.GRAIN_FEATURE, 'adopt': ''}
 
 # Segment count, noun and shape of each operation's subject.
 SUBJECT = {
@@ -56,7 +56,7 @@ SUBJECT = {
     OP_FEATURE: (2, 'feature id', '<feature-id>'),
 }
 
-# A milestone id is one path segment; `model.segment_is_literal` owns the
+# A milestone id is one path segment; `inventory.segment_is_literal` owns the
 # grammar.
 MAX_VERSION = 128
 MAX_SUBJECT = MAX_VERSION * len(SUBJECT[OP_STORY][2].split('/'))
@@ -229,10 +229,10 @@ def plan_defect(registry: Mapping[str, Check], names: Sequence[str]) -> str:
     return ''
 
 
-def done_state(cfg: 'model.PmConfig', kind: str) -> str:
+def done_state(cfg: 'vocabulary.PmConfig', kind: str) -> str:
     """The first state of `[pm.states.<kind>] done` — what a belt writes,
-    never a literal; `model.flow_of` refuses an undeclared flow at exit 2."""
-    return model.flow_of(cfg, kind).by_category[model.DONE_CATEGORY][0]
+    never a literal; `vocabulary.flow_of` refuses an undeclared flow at exit 2."""
+    return vocabulary.flow_of(cfg, kind).by_category[vocabulary.DONE_CATEGORY][0]
 
 
 # --- the middle tap: one check resolved ---------------------------------------
@@ -600,7 +600,7 @@ def version_defect(value: str) -> str:
                 f'is {MAX_VERSION})')
     if any(ch.isspace() for ch in value):
         return f'{_quote(value)} carries whitespace, which no milestone id has'
-    if not model.segment_is_literal(value):
+    if not inventory.segment_is_literal(value):
         return (f'{_quote(value)} is not a milestone id — globs, path '
                 f'separators, schemes, absolute paths and the "." / ".." '
                 f'segments are all refused')
@@ -620,7 +620,7 @@ def subject_defect(operation: str, value: str) -> str:
     if len(value) > MAX_SUBJECT:
         return (f'the {noun} is too long ({len(value)} characters; the limit '
                 f'is {MAX_SUBJECT})')
-    defect = model.id_defect(value)
+    defect = inventory.id_defect(value)
     return f'{_quote(value)} is not a {noun}: {defect}' if defect else ''
 
 
@@ -629,11 +629,11 @@ def _wrong_kind(cfg, operation: str, subject: str) -> str:
     The half of the old segment count that was real — `close story` given a
     FEATURE id answers the wrong question about a real file — asked off
     `kind:`, so it holds for any id shape."""
-    want = {OP_STORY: model.GRAIN_STORY,
-            OP_FEATURE: model.GRAIN_FEATURE}.get(operation)
+    want = {OP_STORY: vocabulary.GRAIN_STORY,
+            OP_FEATURE: vocabulary.GRAIN_FEATURE}.get(operation)
     if want is None:
         return ''
-    found = model.kind_of(cfg, subject)
+    found = inventory.kind_of(cfg, subject)
     if not found or found == want:
         return ''
     return (f'{_quote(subject)} is a {found}, not a {want} — '
@@ -641,20 +641,20 @@ def _wrong_kind(cfg, operation: str, subject: str) -> str:
 
 
 def grain_path(cfg, operation: str, subject: str) -> Path | None:
-    """The file a close operation's subject names, or None, through `model`'s
-    own resolvers."""
+    """The file a close operation's subject names, or None, through
+    `inventory`'s own resolvers."""
     if operation == OP_STORY:
-        return model.story_file(cfg, subject)
-    return model.feature_file(cfg, subject)
+        return inventory.story_file(cfg, subject)
+    return inventory.feature_file(cfg, subject)
 
 
-def _config(root: Path | None) -> 'model.PmConfig':
+def _config(root: Path | None) -> 'vocabulary.PmConfig':
     """The pm config, optionally re-rooted at a scratch tree."""
-    cfg = model.load()
+    cfg = vocabulary.load()
     return cfg if root is None else replace(cfg, root=Path(root))
 
 
-def _writer(cfg: 'model.PmConfig', kind: str) -> Writer:
+def _writer(cfg: 'vocabulary.PmConfig', kind: str) -> Writer:
     """The one write, `pm <kind> <state> <id>` in process, so the CLI mints
     the `status` row and `check pm` reads what it wrote. The answered checks
     ride along: the write IS the arrival that records them, so a close that
@@ -724,8 +724,8 @@ def _milestone_id(cfg, operation: str, subject: str) -> str:
     if operation in ('release', 'adopt'):
         # A VERSION; the milestone is whichever one CLAIMS it. `release` takes
         # the version a human says out loud, and the plan lists ids.
-        return model.milestone_of_version(cfg, subject) or subject
-    return model.milestone_of(cfg, subject) or subject
+        return inventory.milestone_of_version(cfg, subject) or subject
+    return inventory.milestone_of(cfg, subject) or subject
 
 
 def _subject_grain(ctx: Context) -> str:
@@ -738,17 +738,17 @@ def _subject_grain(ctx: Context) -> str:
         return ctx.version
 
 
-def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
+def _after(cfg: 'vocabulary.PmConfig', operation: str, subject: str) -> list[str]:
     """The `next:` lines from `steps.AFTER` with the tree's words filled in;
     a missing `branch:` renders as the placeholder."""
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
     mid = _milestone_id(cfg, operation, subject)
-    path = model.milestone_file(cfg, mid)
-    branch = (model.field_of(path, 'branch') if path is not None else '') \
+    milestone = inventory.grain(cfg, mid, vocabulary.GRAIN_MILESTONE)
+    branch = (milestone.field('branch') if milestone is not None else '') \
         or '<branch>'
     try:
-        mainline = model.mainline_branch()
+        mainline = vocabulary.mainline_branch()
         commands = step_defs.commands_for(operation)
     except ConfigError:
         mainline, commands = '<mainline>', {}
@@ -868,15 +868,15 @@ def main(argv: Sequence[str], *, root: Path | None = None,
     if operation == 'release':
         # The plan already knows which version is current, so the human does
         # not retype it — and shipping OUT of order is what a belt should stop.
-        current = model.current_release(cfg)
+        current = inventory.current_release(cfg)
         if not subject:
             if current is None:
                 return _refuse(
                     f'{spoken} needs a version, and the plan cannot supply one: '
-                    f'{cfg.rel(model.releases_file(cfg))} declares no `order` '
+                    f'{cfg.rel(inventory.releases_file(cfg))} declares no `order` '
                     f'(or every entry in it has shipped). Name the version, or '
                     f'schedule the milestone that carries it: `agentic-sdlc pm '
-                    f'add {model.ROOT_ID} <milestone-id>`')
+                    f'add {vocabulary.ROOT_ID} <milestone-id>`')
             subject = current
             defect = subject_defect(operation, subject)
             if defect:
@@ -885,22 +885,22 @@ def main(argv: Sequence[str], *, root: Path | None = None,
                     f'release, and {defect}')
             print(f'[{operation}] the plan names {subject} as the current '
                   f'release — '
-                  f'{cfg.rel(model.releases_file(cfg))}, [pm] version_at = '
+                  f'{cfg.rel(inventory.releases_file(cfg))}, [pm] version_at = '
                   f'{cfg.version_at!r}')
         elif current is not None and subject != current:
             return _refuse(
                 f'{spoken} {subject}: the current release is {current!r} — '
                 f'shipping out of the order declared in '
-                f'{cfg.rel(model.releases_file(cfg))} is refused, and nothing '
+                f'{cfg.rel(inventory.releases_file(cfg))} is refused, and nothing '
                 f'was written. Re-sequence the plan with `agentic-sdlc pm add '
-                f'{model.ROOT_ID} <milestone-id> --before <id>` if {subject} '
+                f'{vocabulary.ROOT_ID} <milestone-id> --before <id>` if {subject} '
                 f'really goes first')
 
     mid = _milestone_id(cfg, operation, subject)
     # The GRAIN, not a directory: what a belt needs is the milestone's document
     # (whose status it writes) and the ledger its rows land in, and both are
     # addressed by id now.
-    mfile = model.milestone_file(cfg, mid)
+    mfile = inventory.milestone_file(cfg, mid)
     mledger = ledger.ledger_for(cfg, mid) if mfile is not None else None
     nowhere = f'no milestone {mid!r} in {cfg.rel(cfg.roadmap)}/'
     # A belt that WRITES needs the grain, and is refused BEFORE the first

@@ -17,7 +17,8 @@ from contextlib import redirect_stderr, redirect_stdout
 
 from support.pm import loaded, run_gate, tree, write
 
-from agentic_sdlc.repo.pm import changelog, model
+from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo.pm import changelog, inventory, vocabulary
 
 MILESTONE = '0.1'
 FEATURE = '0.1/alpha'
@@ -47,8 +48,8 @@ def render(root, *args) -> tuple[int, str, str]:
 
 
 def stamp(root, gid: str, text: str) -> None:
-    grain = model.grain_index(loaded(root))[gid]
-    assert model.set_field(grain.path, changelog.FIELD, text), gid
+    grain = inventory.grain_index(loaded(root))[gid]
+    assert frontmatter.set_field(grain.path, changelog.FIELD, text), gid
 
 
 class TheFieldIsTheRecord(unittest.TestCase):
@@ -62,12 +63,12 @@ class TheFieldIsTheRecord(unittest.TestCase):
                   {'id': 'bg-crash', 'kind': 'bug', 'milestone': '"0.1"',
                    'name': 'C', 'status': 'closed'})
             mfile = root / 'pm/roadmap/milestones/0.1.md'
-            model.set_list_field(mfile, model.ORDER_KEY,
+            frontmatter.set_list_field(mfile, vocabulary.ORDER_KEY,
                                  ['bg-crash', FEATURE])
             walked = [e.gid for e in changelog.collect(loaded(root), MILESTONE)]
             self.assertEqual(walked, [MILESTONE, 'bg-crash', FEATURE, STORY])
             # And the declared order is honoured, not the kind or the id.
-            model.set_list_field(mfile, model.ORDER_KEY,
+            frontmatter.set_list_field(mfile, vocabulary.ORDER_KEY,
                                  [FEATURE, 'bg-crash'])
             walked = [e.gid for e in changelog.collect(loaded(root), MILESTONE)]
             self.assertEqual(walked, [MILESTONE, FEATURE, STORY, 'bg-crash'])

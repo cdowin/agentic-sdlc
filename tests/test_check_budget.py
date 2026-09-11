@@ -322,3 +322,36 @@ def test_one_gate_row_is_enough_to_leave_the_zero_census(tmp_path):
         code, out = check()
         assert code == 0, out
         assert 'UNMEASURED' in out
+
+
+def test_a_declared_case_limit_with_no_count_is_a_FINDING(tmp_path):
+    """The asymmetry this gate got wrong for four milestones.
+
+    UNMEASURED is not a finding for a CLOCK, and the reason is written in the
+    docstring: a tier nobody ran has not got slower. That argument does not
+    carry to a COUNT. A case count is a fact about the SOURCE, so a tier nobody
+    ran can have grown past its ceiling while the gate said nothing — which is
+    exactly what happened here: 0.6.0 shipped with the integration tier two
+    cases over a 430 ceiling, no `gate` row for it, and `make milestone` green
+    the whole way (`bg-an-uncounted-tier-passes-the-case-ceiling`).
+
+    Both halves are asserted, because either alone is the wrong gate: the time
+    budget still passes unmeasured, and the case limit no longer does.
+    """
+    config = ('[tests]\nbudget = { unit = 10, integration = 60 }\n'
+              'cases = { unit = 1250, integration = 800 }\n')
+    with tree(tmp_path, [gate_row('unit', 1_000, census=1_100)], config):
+        code, out = check()
+    assert code == 1, out
+    assert 'UNCOUNTED   integration' in out, out
+    assert 'a fact about the source' in out, out
+    # The summary names it as its own kind of finding, not as an overage.
+    summary = out.splitlines()[-1]
+    assert summary.startswith('[check:budget] FAIL — '), out
+    assert 'declared case limit and no count: integration' in summary, out
+    # The CLOCK half is untouched: integration has no row here either, and it
+    # is still merely unmeasured rather than a second finding.
+    assert 'UNMEASURED  integration' in out, out
+    # And the contract a consumer READS says so, per the sibling case above.
+    doc = budget.__doc__ or ''
+    assert 'does not carry to the COUNT' in doc, doc

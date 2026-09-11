@@ -1,5 +1,4 @@
-"""templates/ — the grain and doc templates, and where a project overrides
-them.
+"""templates/ — the grain and doc templates, and where a project overrides them.
 
 The package holds both the loader and the `.md` files, addressed through
 `importlib.resources`. `{name}` placeholders are filled by `render`. A file
@@ -11,12 +10,12 @@ import os
 from importlib import resources
 from pathlib import Path
 
-from agentic_sdlc.core import apply
-from agentic_sdlc.repo.pm import model
+from agentic_sdlc.core import apply, frontmatter
+from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # grain -> template filename; shared docs are addressed by slot name, so there
 # is no table to sync.
-GRAINS = model.FLOW_KINDS
+GRAINS = vocabulary.FLOW_KINDS
 DOCS = ('handoff', 'decisions')
 
 
@@ -32,14 +31,14 @@ def _packaged(name: str) -> str | None:
         return None
 
 
-def load(cfg: model.PmConfig, name: str) -> str:
+def load(cfg: vocabulary.PmConfig, name: str) -> str:
     """The template text for `name`, project override winning."""
     if cfg.template_dir:
         tdir = cfg.root / cfg.template_dir
         # Exact name from a listing: `Path.is_file()` is case-insensitive on
         # macOS and not on Linux.
-        if model.dir_entries(tdir).get(f'{name}.md') == 'file':
-            return model.read_raw(tdir / f'{name}.md')
+        if inventory.dir_entries(tdir).get(f'{name}.md') == 'file':
+            return frontmatter.read_raw(tdir / f'{name}.md')
     text = _packaged(name)
     if text is None:
         raise MissingTemplate(
@@ -76,11 +75,11 @@ def _header_wanted(path: Path, slot: str) -> str:
     """The instruction line this doc is missing, or '' when it has one — so a
     wording change can never stack two headers.
     """
-    want = model.SLOT_HEADER.get(slot)
+    want = vocabulary.SLOT_HEADER.get(slot)
     if want is None:
         return ''
-    got = model.header_of(path)
-    return '' if got == want or got in model.KNOWN_SLOT_HEADERS else want
+    got = inventory.header_of(path)
+    return '' if got == want or got in vocabulary.KNOWN_SLOT_HEADERS else want
 
 
 def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None:
@@ -91,11 +90,11 @@ def _fill_header(path: Path, slot: str, actions: list[tuple[str, Path]]) -> None
     if not want:
         return
     try:
-        body = model.read_raw(path)
+        body = frontmatter.read_raw(path)
     except (OSError, UnicodeDecodeError):
         return
     eol = '\r\n' if '\r\n' in body else '\n'
-    model.write_raw(path, f'{want}{eol}{eol}{body}')
+    frontmatter.write_raw(path, f'{want}{eol}{eol}{body}')
     actions.append(('restored the header line of', path))
 
 
@@ -108,17 +107,17 @@ def slot_paths(kind: str, doc: Path) -> dict[str, Path]:
     one function deciding where each one lives, so the scaffolder below never
     joins a name onto a directory itself.
     """
-    file_slots = (model.MILESTONE_FILE_SLOTS if kind == model.GRAIN_MILESTONE
-                  else model.FEATURE_FILE_SLOTS)
-    optional = (model.MILESTONE_OPTIONAL_SLOTS if kind == model.GRAIN_MILESTONE
-                else model.FEATURE_OPTIONAL_SLOTS)
+    file_slots = (vocabulary.MILESTONE_FILE_SLOTS if kind == vocabulary.GRAIN_MILESTONE
+                  else vocabulary.FEATURE_FILE_SLOTS)
+    optional = (vocabulary.MILESTONE_OPTIONAL_SLOTS if kind == vocabulary.GRAIN_MILESTONE
+                else vocabulary.FEATURE_OPTIONAL_SLOTS)
     out = {slot: doc for slot in file_slots}
     for slot in optional:
         out[slot] = doc.with_name(f'{doc.stem}-{slot}')
     return out
 
 
-def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
+def scaffold(cfg: vocabulary.PmConfig, kind: str, doc: Path,
              values: dict[str, str]) -> list[tuple[str, Path]]:
     """Fill one grain's slots. Idempotent and never clobbers: an existing slot
     is left byte-identical, and no shared doc is minted — those appear on
@@ -126,8 +125,8 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     report (0.4.0/D6).
     """
     slots = slot_paths(kind, doc)
-    file_slots = (model.MILESTONE_FILE_SLOTS if kind == model.GRAIN_MILESTONE
-                  else model.FEATURE_FILE_SLOTS)
+    file_slots = (vocabulary.MILESTONE_FILE_SLOTS if kind == vocabulary.GRAIN_MILESTONE
+                  else vocabulary.FEATURE_FILE_SLOTS)
     actions: list[tuple[str, Path]] = []
     # The pool is the first byte written, so an unwritable roadmap is a
     # refusal that can truthfully say nothing was written.
@@ -144,9 +143,9 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     # past: on a case-insensitive filesystem `0.1-decisions.md` and
     # `0.1-DECISIONS.md` are the same bytes, and on a sensitive one they are a
     # twin nobody reads.
-    entries = model.dir_entries(doc.parent)
+    entries = inventory.dir_entries(doc.parent)
     for slot, path in slots.items():
-        variants = model.case_variants(entries, path.name)
+        variants = inventory.case_variants(entries, path.name)
         if variants:
             raise ScaffoldRefused(
                 f'{cfg.rel(doc.parent)}/ holds {", ".join(variants)} where '
@@ -175,7 +174,7 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     for slot in file_slots:
         if slots[slot].is_file():
             continue
-        name = model.SLOT_TEMPLATE[slot]
+        name = vocabulary.SLOT_TEMPLATE[slot]
         try:
             bodies[slot] = render(load(cfg, name), values)
         except (OSError, UnicodeDecodeError) as err:
@@ -213,7 +212,7 @@ def scaffold(cfg: model.PmConfig, kind: str, doc: Path,
     return actions
 
 
-def install(cfg: model.PmConfig, force: bool = False) -> tuple[list[Path],
+def install(cfg: vocabulary.PmConfig, force: bool = False) -> tuple[list[Path],
                                                               list[tuple[str, str]]]:
     """Copy the packaged templates into `template_dir`; returns (written, case
     variants). A case variant is reported and never written past, `--force`
@@ -226,13 +225,13 @@ def install(cfg: model.PmConfig, force: bool = False) -> tuple[list[Path],
     out: list[Path] = []
     variants: list[tuple[str, str]] = []
     target_dir = cfg.root / cfg.template_dir
-    entries = model.dir_entries(target_dir)
+    entries = inventory.dir_entries(target_dir)
     for name in (*GRAINS, *DOCS):
         text = _packaged(name)
         if text is None:
             continue
         slot = f'{name}.md'
-        others = model.case_variants(entries, slot)
+        others = inventory.case_variants(entries, slot)
         if others:
             variants.extend((other, slot) for other in others)
             continue

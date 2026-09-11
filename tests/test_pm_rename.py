@@ -23,7 +23,9 @@ from pathlib import Path
 
 from support.pm import bug, cfg_for, damage, run_cli, tree, write
 
-from agentic_sdlc.repo.pm import model, rename, templates, validate
+from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo.pm import (inventory, rename, templates, validate,
+                                  vocabulary)
 
 TARGET = '0.1/alpha'
 RENAMED = 'ft-alpha'
@@ -54,7 +56,7 @@ def referencing(root: Path) -> None:
           {'id': '0.1/alphabet', 'kind': 'feature', 'milestone': '"0.1"',
            'name': 'Alphabet', 'status': 'planning'})
     bug(root, 'crash', caused_by=TARGET)
-    model.set_list_field(pools / 'milestones' / '0.1.md', 'order',
+    frontmatter.set_list_field(pools / 'milestones' / '0.1.md', 'order',
                          [TARGET, '0.1/alphabet'])
 
 
@@ -95,7 +97,7 @@ class TheSweepIsOnePass(unittest.TestCase):
             code, out = run_cli(root, 'rename', 'roadmap', 'the-plan')
             self.assertEqual(code, 0, out)
             self.assertEqual(
-                model.field_of(root / 'pm/roadmap/releases.md', 'id'),
+                frontmatter.field_of(root / 'pm/roadmap/releases.md', 'id'),
                 'the-plan')
             self.assertEqual(run_cli(root, 'add', 'the-plan', '0.1')[0], 0)
 
@@ -114,28 +116,28 @@ class TheSweepIsOnePass(unittest.TestCase):
             for rel, (key, want) in moved.items():
                 with self.subTest(rel=rel):
                     self.assertEqual(
-                        model.field_of(root / POOLS / rel, key), want)
+                        frontmatter.field_of(root / POOLS / rel, key), want)
                     self.assertIn(rel, out)
             beta = root / POOLS / 'features/beta.md'
-            self.assertEqual(model.field_of(beta, 'depends_on'),
+            self.assertEqual(frontmatter.field_of(beta, 'depends_on'),
                              f'["{RENAMED}", "0.1/alphabet"]')
-            self.assertEqual(model.field_of(beta, 'consumed_by'),
+            self.assertEqual(frontmatter.field_of(beta, 'consumed_by'),
                              f'["{RENAMED}"]')
             self.assertEqual(
-                model.list_field_of(root / POOLS / 'milestones/0.1.md',
-                                    model.ORDER_KEY),
+                frontmatter.list_field_of(root / POOLS / 'milestones/0.1.md',
+                                    vocabulary.ORDER_KEY),
                 [RENAMED, '0.1/alphabet'])
             # The near-misses, and the whole tree still resolving: a missed
             # binding leaves a story bound to an id nothing holds.
             self.assertEqual(
-                model.field_of(root / POOLS / 'stories/s0.md', 'id'),
+                frontmatter.field_of(root / POOLS / 'stories/s0.md', 'id'),
                 f'{TARGET}/s0')
             self.assertEqual(
-                model.field_of(root / POOLS / 'features/alpha.md', 'reviewed'),
+                frontmatter.field_of(root / POOLS / 'features/alpha.md', 'reviewed'),
                 'docs/reviews/alpha.md')
             cfg = cfg_for(root)
             self.assertEqual([g.gid for g in
-                              model.children(cfg, 'story', RENAMED)],
+                              inventory.children(cfg, 'story', RENAMED)],
                              [f'{TARGET}/s0'])
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
@@ -170,11 +172,11 @@ class ANestedTreeIsSweptToo(unittest.TestCase):
             code, out = run_cli(root, 'rename', TARGET, RENAMED)
             self.assertEqual(code, 0, out)
             self.assertNotIn('in 0 file(s)', out)
-            self.assertEqual(model.field_of(story, 'feature'), RENAMED)
-            self.assertEqual(model.field_of(story, 'depends_on'),
+            self.assertEqual(frontmatter.field_of(story, 'feature'), RENAMED)
+            self.assertEqual(frontmatter.field_of(story, 'depends_on'),
                              f'["{RENAMED}"]')
             self.assertEqual(
-                model.field_of(root / POOLS
+                frontmatter.field_of(root / POOLS
                                / '0.1-demo/features/alpha/feature.md', 'id'),
                 RENAMED)
 
@@ -208,16 +210,16 @@ class TheNewIdIsRefusedNeverResolved(unittest.TestCase):
 
     def test_the_id_grammar_is_the_shared_matrix_and_answers_before_a_read(self):
         with tree() as root:
-            original, model.read_raw = model.read_raw, self._no_reads()
+            original, frontmatter.read_raw = frontmatter.read_raw, self._no_reads()
             try:
                 for gid in self.BAD_IDS:
                     with self.subTest(gid=gid[:20]):
                         code, out = run_cli(root, 'rename', TARGET, gid)
                         self.assertEqual(code, 2, out)
                         # The SHARED matrix, not a second one spelled here.
-                        self.assertIn(model.id_defect(gid), out)
+                        self.assertIn(inventory.id_defect(gid), out)
             finally:
-                model.read_raw = original
+                frontmatter.read_raw = original
 
     def _no_reads(self):
         def explode(path, *rest):
@@ -278,9 +280,9 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
         with tree() as root:
             cfg = cfg_for(root)
             keys = set()
-            for kind in model.FLOW_KINDS:
-                lines = model._split(templates.load(cfg, kind))
-                bounds = model._fence_bounds(lines)
+            for kind in vocabulary.FLOW_KINDS:
+                lines = frontmatter._split(templates.load(cfg, kind))
+                bounds = frontmatter._fence_bounds(lines)
                 self.assertIsNotNone(bounds, kind)
                 keys |= {line.split(':', 1)[0]
                          for line in lines[bounds[0] + 1:bounds[1]]
@@ -289,7 +291,7 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
         self.assertEqual(keys - self.NOT_REFS - set(rename.REF_FIELDS), set())
 
     def test_every_id_a_reader_resolves_is_swept(self):
-        declared = ({model.ORDER_KEY, validate.CAUSED_BY}
+        declared = ({vocabulary.ORDER_KEY, validate.CAUSED_BY}
                     | set(validate.REF_KEYS)
-                    | {field for _, field in model.BINDS_TO.values()})
+                    | {field for _, field in vocabulary.BINDS_TO.values()})
         self.assertEqual(declared - set(rename.REF_FIELDS), set())

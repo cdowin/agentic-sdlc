@@ -9,9 +9,9 @@ devkit.toml: [repo_hygiene] mainline = "origin/main"
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 
+from agentic_sdlc.core import spawn
 from agentic_sdlc.core.project import git_lines, repo_root
 from agentic_sdlc.core.config import config_section, pattern, text
 
@@ -32,8 +32,8 @@ def run() -> int:
     warn = 0
 
     print('[check:repo-hygiene] refreshing remote refs (git fetch --prune)…')
-    fetch = subprocess.run(['git', 'fetch', '--prune', 'origin', '--quiet'],
-                           cwd=repo_root(), capture_output=True)
+    fetch = spawn.run(['git', 'fetch', '--prune', 'origin', '--quiet'],
+                      cwd=repo_root(), capture_output=True)
     if fetch.returncode != 0:
         print('  WARN: git fetch failed — the merged-remote-branch check may be stale')
 

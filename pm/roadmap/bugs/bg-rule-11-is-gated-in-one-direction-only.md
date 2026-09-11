@@ -3,7 +3,7 @@ id: bg-rule-11-is-gated-in-one-direction-only
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: a citation is checked for resolving and a capability is never checked for being cited — 13 of 48 verbs
-status: fixed
+status: closed
 caused_by:
 changelog: `tests/test_cli_surface.py` now asserts the direction rule 11 was missing: every verb and sub-verb the routers declare is cited in a surface an operator reads, with a named exemption roster whose stale entries fail too. `.claude/rules/pm-execution.md` gains `agentic-sdlc dispatch --grain <id>`, the serial-attribution path, and the per-kind status verbs.
 ---

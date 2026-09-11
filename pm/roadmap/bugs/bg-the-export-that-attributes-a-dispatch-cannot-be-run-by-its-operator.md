@@ -3,7 +3,7 @@ id: bg-the-export-that-attributes-a-dispatch-cannot-be-run-by-its-operator
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: dispatch --grain leads with an export an agent operator cannot deliver, and never names the serial path that needs none
-status: fixed
+status: closed
 caused_by:
 changelog: The auto-loaded execution rule now names `agentic-sdlc dispatch --grain <id>`, the serial path that attributes a dispatch with no export at all, and the `pm ledger record --grain` form for an orchestrator that cannot export into the courier's environment.
 ---

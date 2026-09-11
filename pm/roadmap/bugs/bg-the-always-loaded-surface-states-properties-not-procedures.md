@@ -3,7 +3,7 @@ id: bg-the-always-loaded-surface-states-properties-not-procedures
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: CLAUDE.md is 1.8 negatives per positive and 6 of 11 rules open with a prohibition; a constraint fires only from inside the mistake
-status: fixed
+status: closed
 caused_by:
 changelog: Rule 11 in the always-loaded CLAUDE.md now states its read side as a MOVE with a trigger — before writing a script to measure the tree, ask it, naming the four verbs that answer — beside the property it already asserted.
 ---

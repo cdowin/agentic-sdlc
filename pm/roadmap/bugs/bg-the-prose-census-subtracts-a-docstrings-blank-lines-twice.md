@@ -3,7 +3,7 @@ id: bg-the-prose-census-subtracts-a-docstrings-blank-lines-twice
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: a blank line inside a docstring is counted as prose AND as blank, so code is understated on both roots
-status: fixed
+status: closed
 caused_by:
 changelog: The prose census counts a partition over line numbers, so a blank line inside a docstring is no longer subtracted as both prose and blank. Code was understated and every ratio overstated on both roots; the ceilings are unchanged and the arguments quoting them are re-derived.
 ---

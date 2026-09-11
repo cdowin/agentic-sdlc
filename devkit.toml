@@ -213,9 +213,25 @@ budget = { unit = 20, integration = 130, test = 150 }
 # from a measurement the gate does not take is the hole
 # `bg-an-uncounted-tier-passes-the-case-ceiling` records.
 #
-# 1,575 is the suite that exists today, with no headroom on purpose: growth is
+# RE-SET AT 0.7.0's CLOSE, 2026-09-11: 1,575 -> 1,627. The suite went 1,571
+# collected at `main` to 1,627 here, +56 over a milestone whose whole point was
+# moving code without changing behaviour — so every one of the 56 is a GATE, not
+# a behaviour case, and each is named in the story or bug close that added it.
+# The three that carry most of it:
+#
+#   primitive 12  NoNameIsBoundTwice           1 case + 14 replayed CORPUS rows
+#   primitive 13  EveryModuleSaysWhatItDoes    1 case + a 10-row CORPUS
+#   the section roster + the comparison        15, over `pm ledger report`
+#
+# Plus the by-id census derived rather than hand-kept (2), the aliased-owner
+# case (1), and the rest spread one and two at a time. Three primitives arrived
+# that 0.7.0's feature briefs did not price — the feature review's F7 is that
+# finding, and the budget paragraph under
+# `ft-the-module-says-what-it-does`'s `## Proof budget` carries the argument.
+#
+# 1,627 is the suite that exists today, with no headroom on purpose: growth is
 # meant to be argued, not absorbed. Re-set at each close, once, with a reason.
-cases = { test = 1575 }
+cases = { test = 1627 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

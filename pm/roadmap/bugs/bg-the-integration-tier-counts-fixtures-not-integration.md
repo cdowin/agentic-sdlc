@@ -3,7 +3,7 @@ id: bg-the-integration-tier-counts-fixtures-not-integration
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: 125 of 436 integration cases spawn nothing or only a fixture git
-status: fixed
+status: closed
 caused_by:
 changelog: The integration tier drops 436 -> 360 cases with nothing deleted and no assertion changed: a dead function-local `import subprocess`, a `git_tree as tree` alias and a `git init` that only needed a `.git` marker were each holding whole modules in a tier they never spawned in.
 ---

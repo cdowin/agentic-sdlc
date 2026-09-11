@@ -3,7 +3,7 @@ id: bg-an-uncounted-tier-passes-the-case-ceiling
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: check budget exits 0 on a tier it has no case count for, and make milestone never measures one
-status: fixed
+status: closed
 caused_by:
 changelog: `check budget` now exits 1 on a tier that declares a `[tests] cases` limit and has no census to grade it against — a case count is a fact about the source, so an unmeasured one can drift; a declared `budget` (time) with no run stays merely unmeasured.
 ---

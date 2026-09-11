@@ -3,7 +3,7 @@ id: bg-a-gate-compares-a-rendered-clock
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: a gate compares a rendered clock across two CLI calls and flakes at the second boundary
-status: fixed
+status: closed
 caused_by:
 changelog: none
 ---

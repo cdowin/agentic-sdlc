@@ -3,7 +3,7 @@ id: bg-the-telemetry-verb-cannot-compare-two-milestones
 kind: bug
 milestone: ms-nothing-is-hand-rolled
 name: ledger report takes one grain, and every telemetry question asked of it is comparative
-status: fixed
+status: closed
 caused_by:
 changelog: `pm ledger report` takes more than one milestone id and compares them: every block gets one row per milestone and a `delta` row (`last - first`), marked `*` where the census under it moved, and `--json` becomes one joined document instead of a nested report per milestone.
 ---

@@ -3,7 +3,7 @@ id: bg-a-helper-is-defined-twice-and-nothing-could-see-it
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: pm/cli.py defines _slugify twice and the first has never been reachable
-status: fixed
+status: closed
 caused_by:
 changelog: none
 ---

@@ -3,7 +3,7 @@ id: bg-a-decision-citation-resolves-to-the-wrong-milestone
 kind: bug
 milestone: "ms-nothing-is-hand-rolled"
 name: a decision citation resolves to the wrong milestone
-status: fixed
+status: closed
 caused_by: ft-a-surface-reaches-its-reader-or-it-is-decoration
 changelog: `check doc` resolves a qualified `<version>/D<n>` decision citation against the decisions file that owns it, in `[doc] scope` and in every grain — a citation naming a ruling the milestone does not record is a finding that names what it does record. The BARE form is deliberately not read: `check pm`'s own rule ids share the D<n> namespace (0.7.0/D1).
 ---

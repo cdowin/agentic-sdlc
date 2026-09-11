@@ -6,7 +6,6 @@ import re
 
 # CommonMark: at most three leading spaces (four is indented code, not a fence).
 FENCE = re.compile(r'^[ ]{0,3}(`{3,}|~{3,})(.*)$')
-CODE_SPAN = re.compile(r'`([^`]+)`')
 
 
 def fence_at(raw: str) -> tuple[str, str] | None:
@@ -66,6 +65,16 @@ def non_fenced_lines(text: str) -> tuple[list[tuple[int, str]], int]:
 _HEADING = re.compile(r'^[ ]{0,3}#{1,6}(?:[ \t]|$)')
 _LIST_ITEM = re.compile(r'^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]|$)')
 _TABLE_ROW = re.compile(r'^[ \t]*\|')
+_QUOTE_MARKER = re.compile(r'^ {0,3}> ?')  # one blockquote level
+
+
+def _unquote(line: str) -> tuple[int, str]:
+    """(quote depth, the line inside its `>` markers), which are not text."""
+    depth = 0
+    while match := _QUOTE_MARKER.match(line):
+        line = line[match.end():]
+        depth += 1
+    return depth, line
 
 
 class Paragraph:
@@ -74,17 +83,19 @@ class Paragraph:
     A code span may cross a line break inside one and never crosses the break
     between two, because CommonMark pairs backticks within a paragraph: a line
     at a time, a span wrapped across a line never forms, and every backtick
-    after it on the next line pairs with the wrong partner.
+    after it on the next line pairs with the wrong partner. `text` is read
+    inside the quote markers; `lines` and `at` keep the line as written.
     """
 
     def __init__(self, lines: list[tuple[int, str]]):
         self.lines = tuple(lines)
-        self.text = '\n'.join(line for _, line in self.lines)
+        contents = [_unquote(line)[1] for _, line in self.lines]
+        self.text = '\n'.join(contents)
         self._starts: list[int] = []
         offset = 0
-        for _, line in self.lines:
+        for content in contents:
             self._starts.append(offset)
-            offset += len(line) + 1
+            offset += len(content) + 1
 
     def at(self, offset: int) -> tuple[int, str]:
         """(1-indexed lineno, line) of the line holding `offset` in `text`."""
@@ -105,22 +116,23 @@ def paragraphs(lines: list[tuple[int, str]]) -> list[Paragraph]:
     """`non_fenced_lines`' pairs, grouped: broken at a blank line, a gap in line
     numbers (which is where a fence was dropped, so a join never crosses one),
     a fence line still present (an UNTERMINATED one, which masks nothing), a
-    heading, a list-item start and a table row."""
+    heading, a list-item start, a table row and a change of quote depth (a
+    lazy continuation too), each read inside the quote: `>` alone is blank."""
     runs: list[list[tuple[int, str]]] = []
     run: list[tuple[int, str]] = []
-    previous = None
+    previous, depth_before, content_before = None, 0, ''
     for lineno, line in lines:
-        raw = line.rstrip('\r')
-        if not raw.strip():
+        depth, content = _unquote(line.rstrip('\r'))
+        if not content.strip():
             run, previous = [], None
             continue
-        if (not run or lineno != previous + 1
-                or _breaks_after(run[-1][1].rstrip('\r'))
-                or _breaks_before(raw)):
+        if (not run or lineno != previous + 1 or depth != depth_before
+                or _breaks_after(content_before)
+                or _breaks_before(content)):
             run = []
             runs.append(run)
         run.append((lineno, line))
-        previous = lineno
+        previous, depth_before, content_before = lineno, depth, content
     return [Paragraph(run) for run in runs]
 
 
@@ -170,8 +182,3 @@ def span_text(raw: str) -> str:
     while parts and not parts[-1]:
         parts.pop()
     return ' '.join(p for p in parts if p)
-
-
-def code_spans(line: str) -> list[str]:
-    """The backticked spans on a line, which is where a document quotes a command."""
-    return CODE_SPAN.findall(line)

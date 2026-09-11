@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-suite-is-measured-like-the-source
 milestone: "ms-nothing-is-hand-rolled"
 name: the tests ceiling is declared and argued
-status: planning
+status: done
 owner:
 depends_on: []
 changelog: `tests/` gets its own declared prose ceiling — `TESTS_CEILING = 0.55`, the measured ratio after the cut rounded up to the next twentieth — with a dated per-module argument and the reason `src/`'s third does not transfer: 0.6.0/D7 moves 223 printed-`--help` docstring lines into `src/`'s code and `tests/` gets none of that.
@@ -208,3 +208,9 @@ NOT VERIFIED: that the 53% of prose I did not read line by line is free of rot. 
 mechanically — every backticked path checked for existence, every sentence over 45 characters checked
 for a repeat elsewhere, narrative density measured per module — and the unread remainder is 8-26%
 narrative by that measure. A second pass is a second story.
+
+done: f7a8114, b89a80c — `TESTS_CEILING = 0.55`, derived by rounding the measured post-cut ratio up
+to the next twentieth, with the per-module cut table and the reason `src/`'s third does not transfer.
+`b89a80c` then corrected the census that produced the measurement
+(`bg-the-prose-census-subtracts-a-docstrings-blank-lines-twice`) and re-derived every number this
+block quotes; the ceiling itself did not move, because 0.5106 rounds to 0.55 too.

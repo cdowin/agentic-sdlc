@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-module-says-what-it-does
 milestone: "ms-nothing-is-hand-rolled"
 name: the engine asks by id, not by path
-status: planning
+status: done
 owner:
 depends_on: []
 changelog: A frontmatter scalar is unquoted ONCE rather than twice — `pm get` and `pm list` disagreed about the same line and neither said so, and only the single strip makes `pm set` then `pm get` a round trip — and `pm decide` mints a decisions log carrying the grain's name, which every log minted since 0.4.0 has been missing.
@@ -208,3 +208,9 @@ raising the ceiling is a decision with a written argument beside the others in `
 finding: `changelog:` is still empty here. The sentence the close owes: *"a frontmatter scalar is
 unquoted once rather than twice, and `pm decide` mints a decisions log carrying the grain's name"* —
 both are output shapes a consumer may grep, so **minor** at least (rule 6).
+
+done: 302ef1f — `model.grain(cfg, gid, kind)` and a `Grain` that answers; `frontmatter.field_of` 128
+-> 16 in `src/`, and 0 of the 102 sites outside `model.py` survive off a three-module roster the
+guard holds in both directions. AST residual 669 lines, read line by line; twelve read verbs' output
+byte-identical to HEAD over 234 grains. Two behaviour changes, both defects: the double strip (`pm
+get` and `pm list` disagreed about one line) and `pm decide`'s empty `{name}`, missing since 0.4.0.

@@ -4,7 +4,7 @@ kind: story
 feature: ft-the-suite-is-measured-like-the-source
 milestone: "ms-nothing-is-hand-rolled"
 name: a source-shaped guard names what it protects
-status: planning
+status: done
 owner:
 depends_on: []
 changelog: none

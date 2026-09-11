@@ -587,39 +587,11 @@ class TestTheCensusOnAScratchTree:
 
 # The rosters below are the shipping paths and the near-miss spellings a
 # migration-document exemption used to be attacked with. NOTHING READS THEM —
-# the exemption left with the document, and the three names under this line are
-# unreferenced (reported at st-the-tests-ceiling-is-declared-and-argued; this
-# story removes English, not code).
-
-# Where a rule-8 leak would reach a consumer. Not an arbitrary list: `src/` is
-# the wheel, `installables/` is copied verbatim into consumer repos,
-# `.github/workflows/` and `tools/hooks/` are installed and then RUN there.
-SHIPPING_PATHS = (
-    'src/agentic_sdlc/cli.py',
-    'src/agentic_sdlc/repo/installables/gdk_runners.sh',
-    'src/agentic_sdlc/repo/installables/ci-verify.yml',
-    'tools/hooks/pre-push',
-    '.github/workflows/verify.yml',
-    'Makefile',
-    'devkit.toml',
-    'CLAUDE.md',
-    'tests/support/__init__.py',
-)
-
-# Spellings one character or one directory away from the exempt path. The
-# exemption is an `==` on a relative posix path; each of these proves it is not
-# quietly a prefix, a basename, a glob or a case-fold.
-NEAR_MISSES = ('HANDOFF.md.bak', 'HANDOFF.markdown', 'docs/HANDOFF.md',
-               'HANDOFF', 'MY-HANDOFF.md')
-
-
-def _plant(root: Path, rel: str) -> Path:
-    """Write the banned name into `root/rel`, making its parents."""
-    target = root / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(f'{PLANT}\n', encoding='utf-8')
-    return target
-
+# The migration-document exemption and the three constants that proved it —
+# SHIPPING_PATHS, NEAR_MISSES and _plant — left at 0.7.0 with the cases that
+# read them. Reported as unreferenced by
+# st-the-tests-ceiling-is-declared-and-argued, which was scoped to English;
+# deleted here by bg-the-prose-census-... since dead code is not prose.
 
 # --- the other kit's artifacts ------------------------------------------------
 

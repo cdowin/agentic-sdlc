@@ -818,7 +818,7 @@ class BugNamesItsCause(unittest.TestCase):
         # <id>` is consumed as a PAIR, so what is left is the milestone, the
         # slug and the name: the id never becomes a word of the name (#24).
         with tree() as root:
-            positional = 'pm new bug <milestone> <slug>'
+            positional = "make pm ARGS='new bug <milestone> <slug>"
             for argv, phrase in (
                     (('new', 'bug', '0.1', 'x', '--caused-by', ''),
                      'needs a feature id'),
@@ -888,7 +888,7 @@ class NewRefusesUnsafeSlugs(unittest.TestCase):
                         self.assertEqual(code, 2, out)
                         self.assertIn('nothing was written', out)
                         if ' '.join(words).split()[0].startswith('-'):
-                            self.assertIn(f'pm new {kind} ', out)
+                            self.assertIn(f"make pm ARGS='new {kind} ", out)
                             self.assertIn(cli.NAME_ARG, out)
             # The FILL path — an id already in the tree — holds the same bar.
             code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha',

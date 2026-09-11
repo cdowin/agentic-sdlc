@@ -1128,9 +1128,11 @@ def _backfill_retire(cfg: vocabulary.PmConfig, mid: str,
         said = (f'{mid!r} is a {held.kind or "grain"} in this tree'
                 if exact else f'{mid!r} is a near miss of {held.gid!r}, a '
                 f'{held.kind or "grain"} in this tree')
+        normal = vehicle.command('pm', 'retire', held.gid,
+                                 vehicle.Slot('[<summary...>]'))
         advice = (f'Retire it the normal way, which reads its version and name '
-                  f'off the document: `{PROG} retire {held.gid} '
-                  f'[<summary...>]`' if held.kind == vocabulary.GRAIN_MILESTONE
+                  f'off the document: `{normal}`'
+                  if held.kind == vocabulary.GRAIN_MILESTONE
                   else f'It is not a milestone, and retire takes only a '
                   f'milestone')
         raise Usage(
@@ -1750,14 +1752,18 @@ def cmd_set(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         # and a verb for a kind nobody declared would be a worse hint than a
         # generic one.
         kind = _grain_kind(cfg, gid) or vocabulary.GRAIN_STORY
-        raise Usage(f'status is a move, not a field: run `{PROG} {kind} '
-                    f'{value} {gid}` — the {kind} verb checks {value!r} '
+        raise Usage(f'status is a move, not a field: run '
+                    f'`{vehicle.command("pm", kind, value, gid)}` — the '
+                    f'{kind} verb checks {value!r} '
                     f'against [pm.states.{kind}] and stamps the ledger; '
                     f'`set` would do neither')
     if key == vocabulary.ORDER_KEY:
-        raise Usage(f'{key} is a sequence, not a field: run `{PROG} add '
-                    f'<parent-id> <child-id> [--position N | --before <id> | '
-                    f'--after <id>]` (or `{PROG} remove`) — `{key}` is a BLOCK '
+        pair = (vehicle.Slot('<parent-id>'), vehicle.Slot('<child-id>'))
+        raise Usage(f'{key} is a sequence, not a field: run '
+                    f'`{vehicle.command("pm", "add", *pair)}` (at '
+                    f'`--position N`, `--before <id>` or `--after <id>` inside '
+                    f'the quotes), or `{vehicle.command("pm", "remove", *pair)}`'
+                    f' — `{key}` is a BLOCK '
                     f'list, and the scalar `set` writes is a form `pm add` '
                     f'refuses and every reader of the sequence sees as empty')
     if '\n' in value or '\r' in value:
@@ -2100,9 +2106,14 @@ def _name_words(kind: str, words: list[str]) -> str:
         # The form's USAGE line, less its parenthetical: ONE text.
         synopsis = (verb_help('new', [kind]).splitlines()[0].strip()
                     .split(' (', 1)[0].rstrip())
+        # The synopsis is USAGE's own text: its `<…>` and `[…]` words are
+        # placeholders, and bare.
+        form = vehicle.command('pm', *(
+            vehicle.Slot(word) if set(word) & set('<[]') else word
+            for word in synopsis.split()))
         raise Usage(f'{name.split()[0]!r} looks like a flag — `pm new {kind}` '
                     f'takes the name positionally, as its last words: '
-                    f'`{PROG} {synopsis}` — nothing was written')
+                    f'`{form}` — nothing was written')
     return name
 
 
@@ -3511,7 +3522,7 @@ def _help_for(verb: str, rest: Sequence[str]) -> str:
     own = _own_help().get(verb, '')
     return (f'usage: {PROG}\n\n{entry}\n'
             + (f'\n{own}\n' if own else '')
-            + f'\n`{PROG} --help` prints every verb.')
+            + f'\n`{vehicle.command("pm", "--help")}` prints every verb.')
 
 
 def main(argv: list[str], *, skipped: Skipped = ()) -> int:

@@ -17,6 +17,7 @@ an opinion and does not ship.
 """
 from __future__ import annotations
 
+import re
 import shlex
 import sys
 from dataclasses import dataclass
@@ -47,6 +48,10 @@ ABOVE = {vocabulary.GRAIN_STORY: FEATURE_BELT, vocabulary.GRAIN_FEATURE: RELEASE
 RECORD_FIELD = 'reviewed'
 
 PREFIX = '[pm]'
+
+# The only `<…>` a rendered command leaves bare (`vehicle.Slot`): a name, so a
+# `<x; touch p #>` typed where a value goes is quoted and never run.
+PLACEHOLDER = re.compile(r'<[\w .-]+>')
 
 
 def _say(line: str) -> None:
@@ -130,7 +135,8 @@ def fork_lines(cfg: vocabulary.PmConfig, node: vocabulary.Arrival | None, gid: s
 
 def answer_argv(answer: str) -> list[str]:
     """A declared answer (`--why "<reason>"`) as argv: a word the project
-    QUOTED is free text and stays quoted, a bare `<x>` stays a placeholder."""
+    QUOTED is free text and stays quoted, a bare `<x>` of name characters stays
+    a placeholder, and any other `<…>` is a value and is quoted like one."""
     try:
         words = shlex.split(answer, posix=False)
     except ValueError:
@@ -139,7 +145,7 @@ def answer_argv(answer: str) -> list[str]:
     for word in words:
         if word[:1] in ('"', "'"):
             out.extend(shlex.split(word))
-        elif word.startswith('<') and word.endswith('>'):
+        elif PLACEHOLDER.fullmatch(word):
             out.append(vehicle.Slot(word))
         else:
             out.append(word)
@@ -166,8 +172,9 @@ class Next:
 
     @property
     def action(self) -> str:
-        """The command a caller can copy, with the belt's own argument shape."""
-        return vehicle.command(*self.verb.split(), _subject_arg(self.subject))
+        """The command a caller can copy, with the belt's own argument shape —
+        `subject` is `driver.SUBJECT`'s placeholder, never a value."""
+        return vehicle.command(*self.verb.split(), vehicle.Slot(self.subject))
 
 
 def derive_next(cfg: vocabulary.PmConfig, kind: str, to: str) -> Next | None:
@@ -407,28 +414,23 @@ def crossing(cfg: vocabulary.PmConfig, kind: str, gid: str) -> str:
         return ''
     from agentic_sdlc.repo.conveyor import driver
     verb = belt if belt == RELEASE_BELT else f'{driver.CLOSE_VERB} {belt}'
-    subject = _subject_of(cfg, belt, grain.binding)
-    move = vehicle.command(*verb.split(), _subject_arg(subject))
+    move = vehicle.command(*verb.split(), _subject_of(cfg, belt, grain.binding))
     return (f'ready: `{move}` — this write made '
             f'{grain.binding} READY (every {kind} is in {vocabulary.DONE_CATEGORY}: '
             f'{held.counted} of {held.counted})')
 
 
-def _subject_arg(subject: str) -> str:
-    """`driver.SUBJECT`'s placeholder stays bare; a real subject is quoted."""
-    if subject.startswith('<') and subject.endswith('>'):
-        return vehicle.Slot(subject)
-    return subject
-
-
 def _subject_of(cfg: vocabulary.PmConfig, belt: str, parent_id: str) -> str:
     """The argument that belt takes for this parent — its id, or the VERSION
-    the parent declares when the belt's own `SUBJECT` says it takes one."""
+    the parent declares when the belt's own `SUBJECT` says it takes one. Only
+    the belt's own placeholder, standing in for a version nobody declared, is
+    a `Slot`: a tree value is quoted whatever its shape (M1 of the 0.8.0
+    vehicle review — a `version:` of `<x; touch p #>` ran out of `ready:`)."""
     from agentic_sdlc.repo.conveyor import driver
     noun = driver.SUBJECT.get(belt, (0, '', ''))
     if noun[1] != 'version':
         return parent_id
-    return inventory.milestone_version(cfg, parent_id) or noun[2]
+    return inventory.milestone_version(cfg, parent_id) or vehicle.Slot(noun[2])
 
 
 # --- the emitted row ----------------------------------------------------------

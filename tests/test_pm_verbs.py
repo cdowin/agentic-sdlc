@@ -42,6 +42,7 @@ from support.pm import (
 )
 
 from agentic_sdlc.core import frontmatter
+from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, skills,
                                   vocabulary)
 
@@ -717,6 +718,27 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                                     r'— this write made 0\.1 READY \(every '
                                     r'feature is in done: 1 of 1\)$')
 
+        # Only the belt's OWN placeholder is bare. A `version:` off the tree, or
+        # a declared answer, shaped `<…>` is a value and is quoted: rendered
+        # bare, the review's input ran `touch PWNED4` out of a pasted `ready:`
+        # line and make exited 0 (M1 of the 0.8.0 vehicle review).
+        hostile = '<x; touch PWNED4 #>'
+        with tree(story_statuses=('done',)) as root:
+            self.assertEqual(run_cli(root, 'set', '0.1', 'version', hostile)[0],
+                             0)
+            code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
+                                '--review-record', 'docs/reviews/alpha.md')
+            self.assertEqual(code, 0, out)
+            crossed = self._stderr(out, 'READY')
+            self.assertEqual(len(crossed), 1, out)
+            self.assertEqual(vehicle.argv_of(crossed[0].split('`')[1]),
+                             ['release', hostile], crossed[0])
+        # `shlex` reads `;` as a word character, so the round trip cannot see
+        # a one-word answer: the type can — a `Slot` is rendered bare.
+        said = arrive.answer_argv('--by <x;touch${IFS}PWNED4;#> agent <type>')
+        self.assertEqual([type(w).__name__ for w in said],
+                         ['str', 'str', 'str', 'Slot'], said)
+
     # --- the emitted row --------------------------------------------------
     def test_the_printed_line_and_the_emitted_row_read_ONE_derivation(self):
         """Two code paths computing "what comes next" is the drift V2 and
@@ -1281,7 +1303,8 @@ class FieldMutation(unittest.TestCase):
                 with self.subTest(gid=gid, word=word):
                     code, out = run_cli(root, 'set', gid, 'status', word)
                     self.assertEqual(code, 2, out)
-                    self.assertIn(f'pm {verb} {word} {gid}', out)
+                    self.assertIn(
+                        vehicle.command('pm', verb, word, gid), out)
                     self.assertIn('stamps the ledger', out)
             self.assertEqual(sf.read_bytes(), before)
             self.assertEqual(ledger_lines(root), rows)   # refused: no row
@@ -1939,7 +1962,7 @@ class Retire(unittest.TestCase):
     BACKFILL_REFUSED = (
         # (why, argv after `retire`, a phrase the refusal must carry)
         ('id in the tree', ('0.1', '--version', '0.1.0', '--name', 'D'),
-         'pm retire 0.1 [<summary...>]'),
+         "make pm ARGS='retire 0.1 [<summary...>]'"),
         # A near miss of an in-tree id names the id it missed (M3); the test
         # mints `ms-foo` and `ft-bar` for these.
         *((f'near miss {v!r}', (v, '--version', '1', '--name', 'D'),

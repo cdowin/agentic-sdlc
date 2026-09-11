@@ -40,6 +40,7 @@ import os
 import shlex
 import sys
 import tempfile
+import tokenize
 import unittest
 import re
 from pathlib import Path
@@ -2492,7 +2493,17 @@ def test_no_installable_names_a_retired_thing_except_as_a_migration_note():
 #   so it is a finding by file and line unless it sits in one of the OUT
 #   classes named in `PROGRAM_OUT`, each of which NAMES the CLI rather than
 #   telling anyone to run it (the story's M3 amendment).
+#
+# A Python module is read as the string VALUES it holds, off the AST, never as
+# source lines (M2 of the feature review): a line reader saw neither
+# ``f'run `{PROG} story done {gid}`'`` nor a citation split across two source
+# lines, so five rendered "run `agentic-sdlc pm …`" hints graded PASS.
+# Implicit concatenation comes back joined, and a replacement field naming a
+# module constant that starts with the program is that constant's text.
 SHIPPED = REPO_ROOT / 'src' / 'agentic_sdlc'
+# Where the planted corpus lands: a shipped brief, and a shipped module.
+BRIEF_HOST = 'pm-operator.md'
+PY_HOST = 'repo/pm/cli.py'
 ROLE_VERBS_OPEN = '<!-- BEGIN role-verbs -->'
 ROLE_VERBS_CLOSE = '<!-- END role-verbs -->'
 # One shell word: quoted runs and bare runs, no whitespace between them. A
@@ -2535,7 +2546,66 @@ PROGRAM_OUT = {
     ('repo/pm/cli.py', 'PROG'): 'usage: the prefix of pm\'s usage and errors',
     ('repo/pm/vocabulary.py', 'RETIRED_SLOT_HEADERS'):
         'retired: a wording recognised in an old document, never written',
+    ('repo/vehicle.py', 'pinned'):
+        'pinned: the uvx form, which runs with only uv on PATH — the one '
+        'spelling of it, and what `vehicle.pinned` call sites render',
 }
+
+
+def _module_constants(tree: ast.Module) -> dict[str, str]:
+    """{name: text} for every module-level name bound to a string literal."""
+    found = {}
+    for node in tree.body:
+        targets = (node.targets if isinstance(node, ast.Assign)
+                   else [node.target] if isinstance(node, ast.AnnAssign)
+                   else [])
+        value = getattr(node, 'value', None)
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            found.update((t.id, value.value) for t in targets
+                         if isinstance(t, ast.Name))
+    return found
+
+
+def _field(node: ast.FormattedValue, constants: dict[str, str]) -> str:
+    """One replacement field as the census reads it: a constant naming the
+    program is its text, a name stays `{name}`, anything else is `{…}`."""
+    text = (constants.get(node.value.id, '')
+            if isinstance(node.value, ast.Name) else '')
+    if text.startswith(vehicle.PROGRAM):
+        return text
+    if isinstance(node.value, (ast.Name, ast.Attribute)):
+        return '{' + ast.unparse(node.value) + '}'
+    return '{…}'
+
+
+def _string_lines(source: str) -> list[tuple[int, str]]:
+    """(line number, text) for each line of each string VALUE in a module, and
+    each comment, in line order. A value's own lines are numbered from where it
+    opens; a value joined from pieces on several source lines, at its first."""
+    lines = [(tok.start[0], tok.string) for tok in
+             tokenize.generate_tokens(io.StringIO(source).readline)
+             if tok.type == tokenize.COMMENT]
+    tree = ast.parse(source)
+    constants = _module_constants(tree)
+    pieces = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            pieces.update(id(part) for part in node.values)
+        elif isinstance(node, ast.FormattedValue) and node.format_spec:
+            pieces.add(id(node.format_spec))
+    for node in ast.walk(tree):
+        if id(node) in pieces:
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            text = node.value
+        elif isinstance(node, ast.JoinedStr):
+            text = ''.join(part.value if isinstance(part, ast.Constant)
+                           else _field(part, constants) for part in node.values)
+        else:
+            continue
+        lines.extend((min(node.lineno + i, node.end_lineno), line)
+                     for i, line in enumerate(text.splitlines()))
+    return sorted(lines, key=lambda row: row[0])
 
 
 class Census(NamedTuple):
@@ -2693,7 +2763,8 @@ def citation_census(root: Path) -> Census:
         text = path.read_text(encoding='utf-8', errors='replace')
         is_python = path.suffix == '.py'
         spans = _python_out(text, rel) if is_python else []
-        for number, line in enumerate(text.splitlines(), 1):
+        for number, line in (_string_lines(text) if is_python
+                             else enumerate(text.splitlines(), 1)):
             where = f'{root.name}/{rel}:{number}'
             for match in VEHICLE_LINE.finditer(line):
                 cited = match.group(0).rstrip('.:')
@@ -2765,6 +2836,15 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
         ('<!-- GENERATED by agentic-sdlc — `agentic-sdlc install-agents`. -->',
          False),
         ('the agentic-sdlc PM tree, and `make pm ARGS=…` its shape', False),
+        # The two shapes a line reader could not see (M2 of the feature
+        # review), planted in the module that shipped both — a (host, line)
+        # pair: the program spelled `{PROG}`, and a citation split across two
+        # source lines. The third names the CLI and is not an instruction.
+        ((PY_HOST, "HINT = f'status is a move: run `{PROG} story done {gid}`'"),
+         True),
+        ((PY_HOST, "HINT = (f'run `agentic-sdlc '\n        "
+                   "f'close story {gid}`')"), True),
+        ((PY_HOST, "HINT = f'{PROG}: unknown command {cmd!r}'"), False),
     )
     # What each caught plant is named as, beside its file and line.
     SAID = {
@@ -2775,6 +2855,8 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
         CORPUS[3][0]: 'routes no `lessons`',
         CORPUS[4][0]: 'routes no `pm ready-for sprint`',
         CORPUS[5][0]: 'does not come apart',
+        CORPUS[11][0]: 'cites `agentic-sdlc pm story done {gid}',
+        CORPUS[12][0]: 'cites `agentic-sdlc close story {gid}',
     }
     # The vehicle lines at the time of writing. A census that shrank below it is
     # a sweep undone or a reader that stopped reading; raise it, never lower it
@@ -2782,15 +2864,22 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
     VEHICLE_FLOOR = 105
 
     @staticmethod
-    def planted(line: str) -> tuple[int, list[str]]:
+    def host_of(plant: str | tuple[str, str]) -> tuple[str, str]:
+        """(host, line): a bare line is planted in `pm-operator.md`."""
+        return plant if isinstance(plant, tuple) else (BRIEF_HOST, plant)
+
+    @classmethod
+    def planted(cls, plant: str | tuple[str, str]) -> tuple[int, list[str]]:
         """(the line number the plant lands on, the census's findings) for a
-        scratch copy of `pm-operator.md` with `line` appended."""
-        brief = install.body_of('pm-operator.md')
+        scratch copy of its host — a shipped brief, or a shipped module by its
+        path under the package — with the line appended."""
+        host, line = cls.host_of(plant)
+        brief = ((SHIPPED / host).read_text(encoding='utf-8')
+                 if host.endswith('.py') else install.body_of(host))
         with tempfile.TemporaryDirectory() as tmp:
             corpus = Path(tmp) / 'corpus'
-            corpus.mkdir()
-            (corpus / 'pm-operator.md').write_text(f'{brief}{line}\n',
-                                                   encoding='utf-8')
+            (corpus / host).parent.mkdir(parents=True)
+            (corpus / host).write_text(f'{brief}{line}\n', encoding='utf-8')
             return len(brief.splitlines()) + 1, citation_census(corpus).findings
 
     @classmethod
@@ -2811,20 +2900,20 @@ class EveryShippedCitationResolvesThroughTheStockWiring(unittest.TestCase):
             + '\n'.join(f'    {row}' for row in census.findings)))
 
     def test_each_plant_is_named_by_file_and_line_and_nothing_else_is(self):
-        self.assertEqual([], self.planted('')[1],
-                         'the clean copy is not clean, so no plant is '
-                         'attributable to itself')
-        for line, caught in self.CORPUS:
-            with self.subTest(line):
-                number, found = self.planted(line)
+        for host in {self.host_of(plant)[0] for plant, _ in self.CORPUS}:
+            self.assertEqual([], self.planted((host, ''))[1],
+                             f'the clean copy of {host} is not clean, so no '
+                             f'plant is attributable to itself')
+        for plant, caught in self.CORPUS:
+            with self.subTest(plant):
+                number, found = self.planted(plant)
                 if not caught:
                     self.assertEqual([], found)
                     continue
                 self.assertEqual(1, len(found), found)
-                self.assertTrue(
-                    found[0].startswith(f'corpus/pm-operator.md:{number} '),
-                    found)
-                self.assertIn(self.SAID[line], found[0])
+                self.assertTrue(found[0].startswith(
+                    f'corpus/{self.host_of(plant)[0]}:{number} '), found)
+                self.assertIn(self.SAID[plant], found[0])
 
     def test_a_census_of_no_files_reads_nothing_and_says_so(self):
         """The floor under the shipped case: pointed at an empty tree the

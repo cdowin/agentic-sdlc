@@ -4,8 +4,8 @@ kind: story
 feature: ft-the-suite-is-measured-like-the-source
 milestone: "ms-nothing-is-hand-rolled"
 name: every census this milestone argues from is a command
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

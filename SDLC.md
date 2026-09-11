@@ -87,8 +87,9 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 **Builders:**
 
-- in a SHARED worktree, never commit: they write, verify their slice, and report. In their OWN
-  worktree, they commit once, by explicit pathspec, and report the branch and hash;
+- never commit: they write, verify their slice, and report, and the orchestrator commits by
+  pathspec. (Only under the parallel opt-in, in their OWN worktree, do they commit once, by explicit
+  pathspec, and report the branch and hash.);
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
   HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
@@ -111,15 +112,27 @@ still goes open → complete → reviewed → closed, and the belt runs the mome
                                              deferred:<bug> / rejected:<why>), close feature <id>,
                                              close its GitHub issues — then the next feature
 
-Built for 0.8.0 because it did not hold: after 1h8m of parallel build, 15 stories had committed code
-and 0 were `done`, and four reviews had run with no feature in `reviewing`. **Parallel builders in one
-worktree starve the story belt**: its `committed` check is false while ANY builder has files in
-flight. So when more than one builder runs at once, each gets its own worktree and commits there, and
-the orchestrator merges each branch forward (a merge, never a rebase). Reviewers run in detached
-worktrees and hand back a record, which the orchestrator commits on arrival. The main tree stays
-clean and the belts can always run. (0.8.0 `ft-every-printed-command-runs-in-a-stock-consumer` D3.)
+**SERIAL IS THE DEFAULT: one builder at a time, directly on the milestone branch.** The whole git
+surface is `git add <paths>`, `git commit -m … -- <paths>` and `git push`, plus the release's one
+merge. There are no worktrees, no side branches and no other merges. A review runs when nothing else
+does, so it reads the branch as it stands and its record is committed on arrival.
+
+Why, measured on 0.8.0: parallel builders in one tree starved the story belt (its `committed` check is
+false while ANY builder has files in flight; 15 stories built, 0 `done`, after 1h8m). Moving them into
+worktrees traded that for merges, worktrees born off the wrong base, a harness that rewrote
+`core.hooksPath`, and an orchestrator `git bisect` in a linked worktree that flipped the repo to
+`core.bare = true`. Agents ran about 2.5× in parallel, and the wall clock was dominated by review,
+rework and coordination anyway. **Parallelism is an explicit opt-in** for large features on disjoint
+files, and then each builder gets its own worktree and commits there, and the orchestrator merges
+forward (0.8.0 vehicle D3).
+
+**The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
+`checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
+reading the test and the code at HEAD, never by rewinding the tree.
+
 **A fix dispatch after a review lands the MAJOR-and-worse findings only**, per §0: a MINOR is recorded,
-not held for.
+not held for. Pure-text edits (a README row, a brief's sentence, a description) the orchestrator
+makes itself rather than dispatching.
 
 **The orchestrator:**
 

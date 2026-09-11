@@ -65,3 +65,27 @@ reports 2 to its caller. There is no portable way to pass 1 through, and a trick
 4 alone is a new portability surface.
 
 Orchestrator decision under Chris's standing "go with the recommendations" for 0.8.0.
+
+## D3 — 2026-09-11 — the vehicle builder works in an isolated worktree and commits there
+
+Chris asked whether the belts were being worked, and they were not. The story belt's `committed`
+check reads "nothing uncommitted outside pm/roadmap/", and with 2 to 5 builders in one shared tree
+there was never a clean moment to run it. After 44 minutes, 15 stories had committed code and none
+was `done`, and 4 feature reviews were running off-belt. The belt was right; the flow was starving it.
+
+**This feature's builders each work in their own git worktree on their own branch, and commit there.**
+The orchestrator merges each branch forward into the milestone branch (a merge, never a rebase:
+forward only), then runs the story belt in the main tree, which has stayed clean. SDLC.md's "builders
+never commit" exists BECAUSE N builders share one index (§2). In an isolated worktree that reason does
+not apply, and the commit is the unit the orchestrator verifies. The kit already ships this shape as
+`tools/dev/agent-worktree.sh`.
+
+**Rejected: `close story --force` over the dirty tree.** The deviation row would be honest, but every
+close would be a deviation, which trains the reflex the belt exists to break. **Rejected: batch every
+close at the end.** That is the 0.3.0 failure mode §0 was written against.
+
+What the milestone review should weigh, for SDLC.md itself: shared-tree parallelism and a
+`committed`-gated story belt do not compose. One of the two should change in the kit's documented
+flow. Filed as a finding for the milestone review, not decided here.
+
+Orchestrator decision under Chris's standing "go with the recommendations" for 0.8.0.

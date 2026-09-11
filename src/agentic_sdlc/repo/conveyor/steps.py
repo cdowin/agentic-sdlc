@@ -538,7 +538,7 @@ def validate_config(operation: str, names: tuple[str, ...],
     if 'runner-targets-resolve' in names:
         _runner_targets_of(operation)
     if 'installables-current' in names:
-        _ours_of(operation)
+        ours_of(operation)
 
 
 def _timeout(operation: str) -> int:
@@ -571,7 +571,7 @@ def _pin_file_of(operation: str) -> str:
     return raw
 
 
-def _ours_of(operation: str) -> tuple[str, ...]:
+def ours_of(operation: str) -> tuple[str, ...]:
     """The installed files this project has taken over — `[<op>] ours`.
 
     Read through `relpath_tuple`, the SAME path grammar every other path key
@@ -579,6 +579,10 @@ def _ours_of(operation: str) -> tuple[str, ...]:
     a traversal, a URL or an absolute path is exit 2 — a claim this machine
     cannot read is a reading failure (rule 9), never a silent claim.
     `installables-current` does not grade a claimed file; it names it.
+
+    PUBLIC, and the ONE reader of a claim: the `install-*` verbs leave a
+    claimed file alone through this same function, so the belt and the
+    installer cannot disagree about what a claim is.
     """
     claims = relpath_tuple(_section(operation), operation, 'ours', DEFAULT_OURS)
     # `relpath_tuple` guards what LEAVES the checkout; these two stay inside
@@ -795,26 +799,6 @@ def _published(root: Path, branch: str) -> str:
     return f', {seen} remote — `{remote.push_command(branch)}`' 
 
 
-def _unreleased_span(text: str) -> tuple[int, int, list[str]] | str:
-    """(start, end, body-lines) of the one `## Unreleased` section, or why
-    not; two headings is a refusal."""
-    lines = text.split('\n')
-    at = [i for i, line in enumerate(lines)
-          if line.strip().lower().startswith('## unreleased')]
-    if not at:
-        return 'there is no `## Unreleased` heading'
-    if len(at) > 1:
-        return (f'there are {len(at)} `## Unreleased` headings (lines '
-                f'{", ".join(str(i + 1) for i in at)}) — ambiguous')
-    start = at[0]
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        if lines[i].startswith('## '):
-            end = i
-            break
-    return start, end, lines[start + 1:end]
-
-
 def check_changelog_unreleased_nonempty(ctx: Context) -> Answer:
     """Every grain closing here answered the changelog question — a sentence,
     or `none` (0.6.0).
@@ -941,7 +925,7 @@ def _installable_drift(ctx: Context) -> list[tuple[str, str, str]]:
 
     from agentic_sdlc.repo.pm import skills
 
-    claimed = frozenset(_ours_of(ctx.operation))
+    claimed = frozenset(ours_of(ctx.operation))
     out: list[tuple[str, str, str]] = []
     # All SIX installers (CLAUDE.md's self-hosting list), not the five that
     # happen to share a module: the two guidance files drifted invisibly here,
@@ -995,7 +979,7 @@ def _claim_clause(operation: str,
     """
     claimed = [rel for _, rel, verdict in drift if verdict == CLAIMED]
     planned = {rel for _, rel, _ in drift}
-    unplanned = [rel for rel in _ours_of(operation) if rel not in planned]
+    unplanned = [rel for rel in ours_of(operation) if rel not in planned]
     clause = ''
     if claimed:
         clause += (f'; {len(claimed)} claimed by [{operation}] ours and not '
@@ -1611,7 +1595,9 @@ STEP_DOC: dict[str, str] = {
     'on-milestone-branch':
         'HEAD is the branch the milestone document stamps in `branch:` (D9).',
     'changelog-unreleased-nonempty':
-        'the changelog\'s `## Unreleased` section holds at least one bullet.',
+        'every grain in the milestone, the milestone included, that is in the '
+        '`done` category answers its `changelog:` field with a sentence or '
+        '`none` — the field is read on each grain, and no file is.',
     'features-done':
         '`pm ready-for milestone <milestone>` exits 0 — every feature is in '
         'the `done` category and no open bug names the milestone.',

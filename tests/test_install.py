@@ -118,14 +118,30 @@ def dispositions(out: str, command: str) -> dict[str, list[str]]:
     """That summary, keyed by destination — the run's PROSE (the next-step
     paragraph, the retirement report) dropped, because it is not a file's line.
 
-    A header line is `[install] <rel> …` or `[install] wrote <rel>`, anchored:
-    two shapes, so a destination can be counted rather than searched for.
+    A header line is `[install] <rel> …` or `[install] wrote <rel>[ …]`,
+    anchored: two shapes, so a destination can be counted rather than searched
+    for. (`wrote <rel> — kept its project-config header …` is the second
+    shape: a write, and it still opens with the word a summary greps.)
     """
     lines = headers(out)
     return {rel: [line for line in lines
                   if line.startswith(f'{install.REPORT_PREFIX} {rel} ')
-                  or line == f'{install.REPORT_PREFIX} wrote {rel}']
+                  or line == f'{install.REPORT_PREFIX} wrote {rel}'
+                  or line.startswith(f'{install.REPORT_PREFIX} wrote {rel} ')]
             for rel in DESTINATIONS[command]}
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under `root` and its bytes — what "nothing was written" is
+    asserted against, rather than the one file a refusal happened to name."""
+    return {str(path.relative_to(root)): path.read_bytes()
+            for path in sorted(root.rglob('*')) if path.is_file()}
+
+
+def claims(*rels: str) -> str:
+    """A devkit.toml whose `[adopt] ours` claims `rels`."""
+    return ('[adopt]\nours = [' + ', '.join(json.dumps(rel) for rel in rels)
+            + ']\n')
 
 
 WORKFLOW = '.github/workflows/verify.yml'
@@ -401,12 +417,143 @@ def test_diff_prints_a_unified_diff_and_writes_nothing(command):
         assert (root / first).read_text(encoding='utf-8') == mine
         for rel in DESTINATIONS[command][1:]:
             assert not (root / rel).exists(), rel
+        # A claim is not a blindfold (#20): the claimed file is still diffed,
+        # and its ONE header line says a run leaves it alone.
+        (root / 'devkit.toml').write_text(claims(first), encoding='utf-8')
+        load_config.cache_clear()
+        code, out = run(command, '--diff')
+        assert code == 0, out
+        assert '-my own version, deliberately' in out, out
+        assert dispositions(out, command)[first] == [
+            f'{install.REPORT_PREFIX} {install.BODY_DIFFERS.format(rel=first)}'
+            f'{install.CLAIMED_MARK}'], out
+        one_each(out, command)
+        assert (root / first).read_text(encoding='utf-8') == mine
 
 
 def test_an_unknown_flag_is_a_usage_error():
     with repo():
         code, _ = refuse('install-ci', '--yolo')
         assert code == 2
+
+
+# --- what --force does not take: a claim, unless it is named ------------------
+# #20 items 1 and 3, #29. `[adopt] ours` told the adopt belt which installed
+# files a project had rewritten, and the installer never read it: one
+# consumer's `install-agents --force` made 824 insertions and 1,344 deletions
+# across 11 claimed briefs, and taking the ONE new agent was a `git show
+# v0.7.0:…/pm-operator.md >` by hand.
+CLAIMED = AGENTS[2]           # a roster brief the project rewrote, present
+CLAIMED_ABSENT = AGENTS[4]    # a claim naming a file the project deleted
+DRIFTED = AGENTS[3]           # stale and unclaimed: --force takes it
+MINE = 'my own architect, deliberately\n'
+
+
+def test_force_leaves_a_claimed_file_alone_and_a_named_path_takes_it():
+    """The installer and the belt read ONE claim list, and a claimed path is
+    left alone — named per file, and counted — whatever the flags; naming the
+    path is how it is taken. A second `--force` over the result writes
+    nothing (rule 3)."""
+    command = 'install-agents'
+    at = install.REPORT_PREFIX
+    with repo({'devkit.toml': claims(CLAIMED, CLAIMED_ABSENT),
+               CLAIMED: MINE, DRIFTED: 'stale\n'}) as root:
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert (root / CLAIMED).read_text(encoding='utf-8') == MINE
+        assert not (root / CLAIMED_ABSENT).exists(), (
+            'a claimed path was written because nothing stood in the way')
+        assert (root / DRIFTED).read_text(encoding='utf-8') == (
+            install.body_of('po.md'))
+        for rel in (CLAIMED, CLAIMED_ABSENT):
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.CLAIMED_SKIP.format(rel=rel,
+                                                       command=command)], out
+        one_each(out, command)
+        assert [line for line in headers(out)
+                if line.startswith(f'{at} {command} left ')] == [
+            f'{at} ' + install.CLAIMED_CENSUS.format(
+                command=command, count=2, total=len(AGENTS),
+                paths=f'{CLAIMED}, {CLAIMED_ABSENT}')], out
+        # Idempotent: the second --force writes nothing and says the same.
+        before = snapshot(root)
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert '] wrote ' not in out, out
+        assert snapshot(root) == before
+        # --diff narrows to a named path, and a named path is not claimed.
+        code, out = run(command, '--diff', CLAIMED)
+        assert code == 0, out
+        assert dispositions(out, command)[CLAIMED] == [
+            f'{at} ' + install.BODY_DIFFERS.format(rel=CLAIMED)], out
+        assert sum(len(v) for v in dispositions(out, command).values()) == 1
+        # Naming it takes it — that one file and nothing else.
+        (root / DRIFTED).write_text('stale again\n', encoding='utf-8')
+        code, out = run(command, '--force', CLAIMED)
+        assert code == 0, out
+        assert (root / CLAIMED).read_text(encoding='utf-8') == (
+            install.body_of('architect.md'))
+        assert (root / DRIFTED).read_text(encoding='utf-8') == 'stale again\n'
+        assert not (root / CLAIMED_ABSENT).exists()
+        assert [line for line in headers(out) if CLAIMED in line] == [
+            f'{at} wrote {CLAIMED}'], out
+        assert f'{command} left ' not in out, out
+
+
+# Every input the verb's grammar rejects, each at exit 2 with the tree
+# byte-identical afterwards. A PATH has one grammar here — membership in the
+# verb's own plan, spelled exactly — so traversal, absolute, backslash, glob,
+# scheme, drive, home, dot and empty segments, whitespace, a directory, the
+# SOURCE name, another verb's destination and an over-long string all miss it.
+REFUSED_PATHS = ('', ' ', '.', './', '..', '../' + AGENTS[0], '/' + AGENTS[0],
+                 './' + AGENTS[0], AGENTS[0] + '/', ' ' + AGENTS[0],
+                 AGENTS[0] + ' ', AGENTS[0] + '\n', AGENTS[0].replace('/', '\\'),
+                 '.claude/agents/*.md', '.claude/agents', '.claude//agents/po.md',
+                 '.claude/./agents/po.md', 'file://' + AGENTS[0], 'C:' + AGENTS[0],
+                 '~/' + AGENTS[0], 'architect.md', WORKFLOW,
+                 '.claude/agents/' + 'x' * 5000 + '.md')
+# `--since` is typed input, so it is matched WHOLE: a pin that will not parse
+# widens the span, a flag that will not parse is a usage error.
+REFUSED_SINCE = ('', ' ', 'v', '0.4', 'latest', '../0.4.0', ' 0.4.0', '0.4.0 ',
+                 '0.4.0\n', 'v0.4.0.1', '0.4.0-rc1', 'vv0.4.0', '/0.4.0',
+                 'V0.4.0', '0.4.x', '9' * 200 + '.0.0', '--force')
+# `.` is refused by `conveyor.steps.ours_of` ALONE (`relpath_tuple` lets it
+# through), so its exit 2 here proves the installer asks the belt's reader.
+REFUSED_CLAIMS = ('ours = ["."]', 'ours = ".claude/agents/po.md"', 'ours = []',
+                  'ours = ["../elsewhere.md"]', 'ours = ["/etc/passwd"]')
+
+
+def test_every_input_this_verb_refuses_is_exit_2_and_writes_nothing():
+    """SDLC §5's refusal matrix for the three inputs this story added or
+    extended: a named path, `--since`, and the claim list. Each is refused
+    before the first byte, with a valid path and --force beside it — the
+    case that would write if the refusal came late."""
+    command = 'install-agents'
+    with repo({CLAIMED: MINE, DRIFTED: 'stale\n'}) as root:
+        before = snapshot(root)
+        cases = ([(('--force', AGENTS[0], bad), repr(install.shown(bad)))
+                  for bad in REFUSED_PATHS]
+                 + [(('--force', '--since', bad), '--since')
+                    for bad in REFUSED_SINCE]
+                 + [(('--force', f'--since={bad}'), '--since')
+                    for bad in REFUSED_SINCE]
+                 + [(('--force', '--since'), '--since needs a version'),
+                    (('--force', '--since', '0.4.0', '--since', '0.5.0'),
+                     '--since was given twice')])
+        for argv, said in cases:
+            code, out, err = streams(command, *argv)
+            assert (code, out) == (2, ''), (argv, code, out, err)
+            assert said in err, (argv, err)
+            assert snapshot(root) == before, f'{argv!r} wrote to the tree'
+        for toml in REFUSED_CLAIMS:
+            (root / 'devkit.toml').write_text(f'[adopt]\n{toml}\n',
+                                              encoding='utf-8')
+            load_config.cache_clear()
+            before = snapshot(root)
+            code, out, err = streams(command, '--force')
+            assert (code, out) == (2, ''), (toml, code, out, err)
+            assert '[adopt] ours' in err, err
+            assert snapshot(root) == before, f'{toml!r} wrote to the tree'
 
 
 # --- what a verb STOPPED shipping ---------------------------------------------
@@ -577,6 +724,53 @@ def test_a_run_and_a_diff_both_carry_the_report_and_init_does_not(monkeypatch):
         with contextlib.redirect_stdout(buffer):
             install.main('install-gates', ['--force'], next_step=False)
         assert 'no longer shipped' not in buffer.getvalue(), buffer.getvalue()
+
+
+def test_a_floor_not_older_than_the_ceiling_says_it_compared_nothing():
+    """#21 #28, rule 4's first sin: a census that could not fail in the order
+    the belt demands. The adopt belt bumps the pin FIRST, and through
+    Makefile.devkit the version running IS the pin, so the floor equalled the
+    ceiling on the one run this report exists for, and it printed "withdrawn
+    nothing" over a span it never scanned — while the 0.6.0 changelog-writer
+    row was exactly what it should have named.
+
+    The floor is never re-derived (not from `HEAD:Makefile`, not from git):
+    the line names what it read and where, and `--since` is the operator
+    naming it (rule 9)."""
+    for floor in ('0.8.0', 'v0.8.0', 'v9.9.9'):
+        lines = install.retirement_report('install-agents', floor,
+                                          current='0.8.0')
+        assert not any('withdrawn no' in line for line in lines), lines
+        assert lines[-1] == install.NOT_COMPARED.format(
+            command='install-agents', at='v0.8.0',
+            floor=floor if floor.startswith('v') else f'v{floor}',
+            source=install.PIN_SOURCE), lines
+        assert '--since' in lines[-1] and 'compared nothing' in lines[-1]
+    # A row AT the ceiling is still read — and the line still says the span
+    # before it was not.
+    lines = install.retirement_report('install-agents', f'v{THIS}', rows=FIXTURE)
+    assert GONE_FILE in lines[0] and f'in v{THIS}' in lines[0], lines
+    assert lines[-1].startswith('install-agents compared nothing'), lines
+    # `--since` over the REAL table, run from 0.8.0: the row it existed for.
+    lines = install.retirement_report('install-agents', 'v0.4.0',
+                                      current='0.8.0',
+                                      source=install.SINCE_SOURCE)
+    assert lines == [install.WITHDRAWN_FILES.format(
+        what='.claude/agents/changelog-writer.md',
+        span='between v0.4.0 and v0.8.0')], lines
+    # Through the verb, pin already bumped: the line names the pin and where
+    # it was read, and --since replaces it.
+    with repo({'Makefile': f'DEVKIT_VERSION := v{THIS}\n'}):
+        code, out = run('install-agents', '--diff')
+        assert code == 0, out
+        assert 'has withdrawn no' not in out, out
+        assert (f'the floor, v{THIS} (the DEVKIT_VERSION in Makefile)'
+                in out), out
+        code, out = run('install-agents', '--diff', '--since', 'v0.5.0')
+        assert code == 0, out
+        assert 'compared nothing' not in out, out
+        assert f'changelog-writer.md — withdrawn between v0.5.0 and v{THIS}' in (
+            out), out
 
 
 # --- the report and the disk are one thing ------------------------------------
@@ -1279,7 +1473,7 @@ def test_a_new_hook_lands_on_a_consumer_whose_headers_are_edited():
         assert out.count(install.HEADER_ONLY_NOTE) == len(
             HEADER_EDITED_HOOKS), out
         assert 'byte-current' in out, out
-        assert '--force would replace the header too' in out, out
+        assert '--force keeps each header, so it would write nothing' in out, out
         for rel in HEADER_EDITED_HOOKS:
             (root / rel).write_text(
                 install.body_of(Path(rel).name), encoding='utf-8')
@@ -1327,20 +1521,69 @@ def test_diff_names_a_header_only_difference_before_the_hunks():
             assert not (root / rel).exists(), rel
 
 
-def test_force_replaces_a_header_only_collision_whole_header_included():
-    """The decision, pinned. The installer does NOT merge the block: a
-    preserved consumer header carried onto a newer body is an older contract
-    under a newer one, and this corpus reads its header under `set -u` behind
-    a fail-open trap."""
+def stale_body(text: str) -> str:
+    """`text` with a line an older version shipped, OUTSIDE its block: after
+    the first line (before the block) and at the end (after it)."""
+    first, rest = text.split('\n', 1)
+    return f'{first}\n# a line an older version shipped\n{rest}# and another\n'
+
+
+def test_force_keeps_an_edited_header_and_takes_the_stale_body():
+    """Feature D1 (#20 item 2), which REVERSES what this case pinned through
+    0.7.0. `--diff` and `installables-current` already called the block the
+    project's; the installer was the one reader that disagreed, and one
+    consumer's PUSH_GATE, GATE_STATIC and WARM_DIRS were reset to stock on
+    two successive bumps. Bytes are carried, nothing is computed.
+
+    The expected text is built by `header_edited` over the PACKAGED body — the
+    test's own marker search, not the production span finder — so the case
+    can fail on the splice rather than agree with it."""
+    command = 'install-hooks'
+    at = install.REPORT_PREFIX
+    # The installed side lost its opening marker: no block to carry, so the
+    # file is replaced whole, exactly as before.
+    headerless = 'tools/dev/agent-worktree.sh'
+    assert headerless in CONFIG_HEADED and headerless not in HEADER_EDITED_HOOKS
     with repo() as root:
         mine = a_consumer_mid_adoption(root)
-        code, out = run('install-hooks', '--force')
+        for rel, text in mine.items():
+            (root / rel).write_text(stale_body(text), encoding='utf-8')
+        target = root / headerless
+        target.write_text(stale_body(''.join(
+            line for line in target.read_text(encoding='utf-8').splitlines(
+                keepends=True) if 'project config (yours to edit' not in line)),
+            encoding='utf-8')
+        code, out = run(command, '--force')
         assert code == 0, out
         for rel in mine:
-            assert (root / rel).read_text(encoding='utf-8') == (
+            assert (root / rel).read_text(encoding='utf-8') == header_edited(
                 install.body_of(Path(rel).name)), rel
-            assert 'MY_PROJECT_SAYS' not in (
-                root / rel).read_text(encoding='utf-8'), rel
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.WROTE_KEPT_HEADER.format(rel=rel)], out
+        assert target.read_text(encoding='utf-8') == install.body_of(
+            Path(headerless).name)
+        assert dispositions(out, command)[headerless] == [f'{at} wrote {headerless}']
+        one_each(out, command)
+        # Idempotent: the second --force finds nothing outside any header to
+        # take, writes nothing, and says why for each kept header.
+        before = snapshot(root)
+        code, out = run(command, '--force')
+        assert code == 0, out
+        assert '] wrote ' not in out, out
+        assert snapshot(root) == before
+        for rel in mine:
+            assert dispositions(out, command)[rel] == [
+                f'{at} ' + install.HEADER_KEPT.format(rel=rel)], out
+    # Both grammars, at the function: a markdown block rides the same way, and
+    # a side whose block is unterminated (it runs to EOF, so carrying it would
+    # carry the OLD body) or absent carries nothing.
+    edited = header_edited(MD_STOCK)
+    assert install.carry_config_block(stale_body(edited), MD_STOCK) == edited
+    assert install.carry_config_block(STOCK, 'no block here\n') is None
+    assert install.carry_config_block('no block here\n', STOCK) is None
+    open_ended = swap(STOCK, f'{SHELL_CLOSE}\n', '')
+    assert install.carry_config_block(open_ended, STOCK) is None
+    assert install.carry_config_block(STOCK, open_ended) is None
 
 
 def test_a_defect_refuses_the_whole_command_and_writes_no_addition():

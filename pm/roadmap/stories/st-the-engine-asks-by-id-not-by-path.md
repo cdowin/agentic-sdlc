@@ -209,8 +209,6 @@ finding: `changelog:` is still empty here. The sentence the close owes: *"a fron
 unquoted once rather than twice, and `pm decide` mints a decisions log carrying the grain's name"* —
 both are output shapes a consumer may grep, so **minor** at least (rule 6).
 
-done: 302ef1f — `model.grain(cfg, gid, kind)` and a `Grain` that answers; `frontmatter.field_of` 128
--> 16 in `src/`, and 0 of the 102 sites outside `model.py` survive off a three-module roster the
-guard holds in both directions. AST residual 669 lines, read line by line; twelve read verbs' output
-byte-identical to HEAD over 234 grains. Two behaviour changes, both defects: the double strip (`pm
-get` and `pm list` disagreed about one line) and `pm decide`'s empty `{name}`, missing since 0.4.0.
+done: 302ef1f — `frontmatter.field_of` 128 -> 16 in `src/`; none of the 102 sites outside `model.py`
+survives off a three-module roster the guard holds both ways. Residual 669 lines, read; twelve read
+verbs byte-identical over 234 grains. Two behaviour changes, both defects fixed.

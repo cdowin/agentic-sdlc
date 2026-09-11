@@ -1434,9 +1434,19 @@ class EveryVerbAnswersItsOwnHelp(unittest.TestCase):
     `pm add --help` was `unknown flag '--help'`: the router only read help as
     `argv[0]`. Over the ROUTER'S OWN TABLE, so a verb added tomorrow is asked
     the day it lands, and an exit code rather than prose — a verb whose USAGE
-    entry is missing fails here by name."""
+    entry is missing fails here by name.
 
-    def test_every_routed_verb_answers_help_anywhere_at_exit_0_and_writes_nothing(self):
+    Not a row in `test_cli_surface.help_surfaces()`: the claim here is *a help
+    flag never WRITES*, which needs a tree to write into and a snapshot of it,
+    and that census is cached precisely so it is never built inside a fixture.
+    """
+
+    def test_a_help_flag_anywhere_never_writes_and_is_success_only_as_the_first_argument(self):
+        # The review of 0.8.0, M4: read ANYWHERE at exit 0, a help flag turned
+        # `decide <id> drop the -h alias` from a write into a success that
+        # wrote nothing. Past the verb's first argument (or its sub-form's) it
+        # still never writes, but it is exit 2 and says so.
+        roster = len(cli.USAGE.splitlines())
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('done',)) as root:
             def snapshot():
@@ -1446,21 +1456,55 @@ class EveryVerbAnswersItsOwnHelp(unittest.TestCase):
             for verb in cli.commands():
                 entry = cli.verb_help(verb)
                 self.assertTrue(entry, f'USAGE has no entry for {verb!r}')
-                # `retire 0.1 --help` is the one that would bite: a flag read
-                # past a real argument must still never reach the write.
-                for argv in ((verb, '--help'), (verb, '-h'),
-                             (verb, '0.1', '--help')):
+                for argv in ((verb, '--help'), (verb, '-h')):
                     with self.subTest(argv=argv):
                         code, out = run_cli(root, *argv, stdout_only=True)
                         self.assertEqual(code, 0, out)
                         self.assertIn(entry.splitlines()[0], out)
                         self.assertNotIn('ERROR', out)
+                        # The verb's block, never the roster (N11).
+                        self.assertLess(len(out.splitlines()), roster)
+                # `retire 0.1 --help` is the one that would bite: a flag read
+                # past a real argument must still never reach the write.
+                argv = (verb, '0.1', '--help')
+                with self.subTest(argv=argv):
+                    code, out = run_cli(root, *argv, stdout_only=True)
+                    self.assertEqual((code, out), (2, ''))
+                    code, out = run_cli(root, *argv)
+                    self.assertIn(entry.splitlines()[0], out)
+                    self.assertIn('read as a help flag, nothing was written; '
+                                  'quote the words to use it as text', out)
+                    self.assertLess(len(out.splitlines()), roster)
+            # The record's two argvs, each a WRITE before the help flag was
+            # read anywhere.
+            for argv in (('decide', '0.1/alpha', 'drop', 'the', '-h', 'alias'),
+                         ('new', 'feature', '0.1', 'hflag', 'make', '--help',
+                          'answer')):
+                with self.subTest(argv=argv):
+                    self.assertEqual(run_cli(root, *argv)[0], 2)
             self.assertEqual(snapshot(), before)
-            # A sub-form narrows to its own entry, and never to nothing.
+            # A sub-form is the verb's own first word: it narrows to its own
+            # entry at exit 0, and never to nothing.
             code, out = run_cli(root, 'new', 'bug', '--help', stdout_only=True)
             self.assertEqual(code, 0, out)
             self.assertIn('new bug <milestone>', out)
             self.assertNotIn('new story', out)
+            code, out = run_cli(root, 'ledger', 'report', '--help',
+                                stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn('ledger report', out)
+            self.assertNotIn('ledger record', out)
+        # N14: the arity refusal and `pm help <verb>` answer with the verb's
+        # block too, never the whole roster.
+        with tree() as root:
+            code, out = run_cli(root, 'set')
+            self.assertEqual(code, 2, out)
+            self.assertIn(cli.verb_help('set').splitlines()[0], out)
+            self.assertLess(len(out.splitlines()), roster)
+            code, out = run_cli(root, 'help', 'set', stdout_only=True)
+            self.assertEqual(code, 0, out)
+            self.assertIn(cli.verb_help('set').splitlines()[0], out)
+            self.assertLess(len(out.splitlines()), roster)
 
 
 class StoryResolution(unittest.TestCase):
@@ -1859,13 +1903,30 @@ class Retire(unittest.TestCase):
 
     # #31's backfill form: the inputs it refuses at exit 2, BEFORE a byte is
     # written. Its facts are the caller's and nothing can check them, so the
-    # grammar is the whole defence (SDLC.md §5).
-    MALFORMED = ('', ' ', '.', '..', 'a/b', 'a b', ' x', 'x ', '*', '0.?',
-                 '/abs', 'a\\b', 'https://x', 'x' * 129, 'a\nb')
+    # grammar is the whole defence. The id and version grammars are REUSED, so
+    # one malformed value each proves the reuse (SDLC.md §5).
     BACKFILL_REFUSED = (
         # (why, argv after `retire`, a phrase the refusal must carry)
         ('id in the tree', ('0.1', '--version', '0.1.0', '--name', 'D'),
          'pm retire 0.1 [<summary...>]'),
+        # A near miss of an in-tree id names the id it missed (M3); the test
+        # mints `ms-foo` and `ft-bar` for these.
+        *((f'near miss {v!r}', (v, '--version', '1', '--name', 'D'),
+           "'ms-foo'")
+          for v in ('MS-FOO', 'Ms-Foo', 'foo', 'ms-foo.md', 'ms-foo\u200b')),
+        # An in-tree id of another kind is not told to use a command that
+        # refuses it (N9).
+        ('a feature id', ('ft-bar', '--version', '1', '--name', 'D'),
+         'not a milestone'),
+        # A flag-shaped value or word is a flag, never data (M1): a dry run
+        # asked for is never a permanent row, on either path (Q17).
+        ('flag as --version', ('gone', '--version', '--dry-run', '--name', 'X'),
+         'looks like a flag'),
+        ('flag as --name', ('gone', '--version', '1', '--name', '--dry-run'),
+         'looks like a flag'),
+        ('typo in the backfill', ('gone', '--version', '2', '--name', 'Y',
+                                  '--dryrun'), 'looks like a flag'),
+        ('typo on the normal path', ('0.1', '--dryrun'), 'looks like a flag'),
         ('no --name', ('gone', '--version', '0.1.0'), '--name'),
         ('no --version', ('gone', '--name', 'D'), '--version'),
         ('empty --name', ('gone', '--version', '1', '--name', '  '), '--name'),
@@ -1875,14 +1936,17 @@ class Retire(unittest.TestCase):
          'given twice'),
         ('multi-line name', ('gone', '--version', '1', '--name', 'a\nb'),
          'one line'),
-        *((f'version {v!r}', ('gone', '--version', v, '--name', 'D'), '')
-          for v in MALFORMED if v.strip()),
-        *((f'id {v!r}', (v, '--version', '1', '--name', 'D'), '')
-          for v in MALFORMED if v.strip()),
+        ('version a b', ('gone', '--version', 'a b', '--name', 'D'), ''),
+        ('id a/b', ('a/b', '--version', '1', '--name', 'D'), ''),
+        # The ID grammar, not the version's: a colon no id may hold (N8).
+        ('id a:b', ('a:b', '--version', '1', '--name', 'D'), ''),
     )
 
     def test_every_refusal_leaves_the_tree_standing(self):
         with tree() as root:
+            for argv in (('milestone', 'foo', 'Foo'),
+                         ('feature', '0.1', 'bar', 'Bar')):
+                self.assertEqual(run_cli(root, 'new', *argv)[0], 0)
             code, out = run_cli(root, 'retire', '9.9')
             self.assertEqual(code, 2, out)
             self.assertIn('is not a milestone', out)

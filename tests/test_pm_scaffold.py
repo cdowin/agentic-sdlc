@@ -728,12 +728,21 @@ class BugNamesItsCause(unittest.TestCase):
             self.assertEqual(frontmatter.field_of(named, 'name'),
                              'the seed is zero')
             self.assertEqual(frontmatter.field_of(named, 'caused_by'), '0.1/alpha')
-            # A multi-line name would inject frontmatter: refused, unwritten.
+            # A multi-line name would inject frontmatter: refused, unwritten,
+            # at exit 2 like the backfill's `--name` (N10).
             code, out = run_cli(root, 'new', 'bug', '0.1', 'forged',
                                 'x\nstatus: fixed')
-            self.assertEqual(code, 1, out)
+            self.assertEqual(code, 2, out)
             self.assertIn('nothing was written', out)
             self.assertFalse((root / self.BUGS / 'bg-forged.md').exists())
+            # Whitespace collapses, as the backfill's name does (N7): a blank
+            # name is no name, and a tab never reaches a `pm list` column.
+            for slug, words, want in (('blank', ('   ',), ''),
+                                      ('tabbed', ('a\tb ', ' c'), 'a b c')):
+                self.assertEqual(run_cli(root, 'new', 'bug', '0.1', slug,
+                                         *words)[0], 0)
+                self.assertEqual(frontmatter.field_of(
+                    root / self.BUGS / f'bg-{slug}.md', 'name'), want)
             self.assertEqual(run_cli(root, 'validate')[0], 0)
             self.assertEqual(run_gate(root)[0], 0)
             # The sizing trap: a project template with NO `{name}` slot and
@@ -750,6 +759,18 @@ class BugNamesItsCause(unittest.TestCase):
             self.assertEqual(frontmatter_lines(root / self.BUGS / 'bg-slotless.md'), [
                 'id: bg-slotless', 'kind: bug', 'milestone: "0.1"',
                 'status: open', 'name: Nameless template'])
+            # A template WITH the slot and no name given: the slot renders
+            # empty, which is what the `next:` line says, never `{name}` (M6).
+            (tdir / 'bug.md').write_text(
+                '---\nid: {id}\nkind: {kind}\nmilestone: "{milestone}"\n'
+                'name: {name}\nstatus: open\n---\n\n# {name}\n',
+                encoding='utf-8')
+            code, out = run_cli(root, 'new', 'bug', '0.1', 'slotq0')
+            self.assertEqual(code, 0, out)
+            self.assertIn('`name:` is empty', out)
+            slotted = root / self.BUGS / 'bg-slotq0.md'
+            self.assertNotIn('{name}', slotted.read_text(encoding='utf-8'))
+            self.assertEqual(frontmatter.field_of(slotted, 'name'), '')
 
     # --- the refusal matrix ---------------------------------------------------
     # Every one of these exits 2 naming the value, and NONE of them writes: the
@@ -795,13 +816,23 @@ class BugNamesItsCause(unittest.TestCase):
         # <id>` is consumed as a PAIR, so what is left is the milestone, the
         # slug and the name: the id never becomes a word of the name (#24).
         with tree() as root:
-            for argv in (('new', 'bug', '0.1', 'x', '--caused-by', ''),
-                         ('new', 'bug', '0.1', 'x', '--caused-by='),
-                         ('new', 'bug', '0.1', '--caused-by')):
+            positional = 'pm new bug <milestone> <slug>'
+            for argv, phrase in (
+                    (('new', 'bug', '0.1', 'x', '--caused-by', ''),
+                     'needs a feature id'),
+                    (('new', 'bug', '0.1', 'x', '--caused-by='),
+                     'needs a feature id'),
+                    (('new', 'bug', '0.1', '--caused-by'), 'needs a feature id'),
+                    # M2: #24's own spelling. There is no `--name`; a flag in
+                    # the name is refused naming the positional form, never
+                    # stamped as `name: --name The Title`.
+                    (('new', 'bug', '0.1', 'x', '--name', 'The Title'),
+                     positional),
+                    (('new', 'bug', '0.1', 'x', '--name=The Title'), positional)):
                 with self.subTest(argv=argv):
                     code, out = run_cli(root, *argv)
                     self.assertEqual(code, 2, out)
-                    self.assertIn('needs a feature id', out)
+                    self.assertIn(phrase, out)
                     self.assertEqual(self._bug_dir(root), [])
             code, out = run_cli(root, 'new', 'bug', '0.1', 'x', 'y',
                                 '--caused-by', '0.1/alpha')
@@ -824,6 +855,54 @@ class NewRefusesUnsafeSlugs(unittest.TestCase):
             self.assertEqual(
                 run_cli(root, 'new', 'milestone', '../../oops', 'Name')[0], 1)
             self.assertEqual(sorted(p.name for p in root.iterdir()), before)
+
+    # The NAME, every create's last input (`bg-a-scaffold-name-injects-
+    # frontmatter`): a CR or LF writes a second frontmatter line — a grain
+    # born reading `done` — and a flag-shaped first word is a flag no create
+    # takes. One guard for all four kinds, exit 2, nothing written.
+    NAME_REFUSED = (
+        ('LF', ('Title\nstatus: done',)),
+        ('CR', ('Title\rstatus: done',)),
+        ('CRLF in a later word', ('Title', 'x\r\nstatus: done')),
+        ('--name', ('--name', 'The Title')),
+        ('--name=', ('--name=The Title',)),
+        ('short flag', ('-x', 'Title')),
+        ('bare dash', ('-',)),
+        ('flag behind whitespace', ('  --name Title',)),
+    )
+    CREATES = (('milestone', ('inj',)), ('feature', ('0.1', 'inj')),
+               ('story', ('0.1/alpha', 'inj')), ('bug', ('0.1', 'inj')))
+
+    def test_a_name_is_one_line_and_never_a_flag_on_every_create(self):
+        with tree() as root:
+            def snapshot():
+                return sorted((p.relative_to(root), p.read_bytes())
+                              for p in root.rglob('*') if p.is_file())
+            before = snapshot()
+            for kind, head in self.CREATES:
+                for label, words in self.NAME_REFUSED:
+                    with self.subTest(kind=kind, case=label):
+                        code, out = run_cli(root, 'new', kind, *head, *words)
+                        self.assertEqual(code, 2, out)
+                        self.assertIn('nothing was written', out)
+                        if ' '.join(words).split()[0].startswith('-'):
+                            self.assertIn(f'pm new {kind} ', out)
+                            self.assertIn(cli.NAME_ARG, out)
+            # The FILL path — an id already in the tree — holds the same bar.
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'alpha',
+                                'x\nstatus: done')
+            self.assertEqual(code, 2, out)
+            self.assertEqual(snapshot(), before)
+            # Adversarial, against "one line": U+2028 is a line break to
+            # `str.splitlines`, and it collapses to a space like any other
+            # whitespace, so it never becomes a line either.
+            code, out = run_cli(root, 'new', 'feature', '0.1', 'sep',
+                                'Title\u2028status: done')
+            self.assertEqual(code, 0, out)
+            feature = root / 'pm/roadmap/features/ft-sep.md'
+            self.assertEqual(frontmatter.field_of(feature, 'name'),
+                             'Title status: done')
+            self.assertNotEqual(frontmatter.field_of(feature, 'status'), 'done')
 
 
 class Templates(unittest.TestCase):

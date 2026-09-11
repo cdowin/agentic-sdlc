@@ -477,6 +477,9 @@ class ThePlanIsRead(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn('lost is on no plan', out)
             self.assertNotIn('pm add roadmap lost', out)
+            # The id is held to the ID grammar, whose limit is 200 (N8).
+            self.assertEqual(run_cli(root, 'retire', 'x' * 150, '--version',
+                                     '0.2.0', '--name', 'L', '--dry-run')[0], 0)
 
     def test_next_is_the_first_unshipped_entry(self):
         with tree(story_statuses=('ready',)) as root:

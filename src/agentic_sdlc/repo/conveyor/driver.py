@@ -447,8 +447,9 @@ HELP_PARTS = {
         'after': 'and, after a write, `next:` lines saying what is yours to '
                  'do. Nothing else\nis written, moved, bumped, retitled, '
                  'pushed or tagged.',
-        'exits': '0 written, 1 a check is false and nothing was written, 2 '
-                 'the\ninput was refused or the declaration could not be read.',
+        'exits': '0 written (or nothing to write), 1 a check is false and '
+                 'nothing was\nwritten, 2 the input was refused or the '
+                 'declaration could not be read.',
     },
     False: {
         'run': 'Run every check in the {state} list and print each one. It '

@@ -80,6 +80,9 @@ idempotent: re-run one on an existing grain and it fills the missing slots witho
 touching an existing byte. It does NOT mint a shared doc — `decisions.md` appears
 when `pm decide` records the first one, `handoff.md` and `review.md` when somebody
 writes one. An empty one in every grain is sprawl the tool made.
+The name is the LAST words of every create, `bug` included (`pm new bug <milestone>
+<slug> <name...>`); there is no `--name`, and a name led by `-` or holding a newline is
+refused at exit 2 with nothing written.
 
 **Read the id `pm new` printed before you cite it.** Through v0.4.0 it takes the parent
 positionally and bakes it INTO the id — `pm new feature <mid> <slug>` gives
@@ -211,6 +214,8 @@ typed — the three facts nothing else in the tree has a copy of. `pm roadmap` p
 that entry as `retired` with all three: the shipped half of the ROADMAP.md retired in
 0.3.0. Schedule a milestone with `pm add <plan-id> <milestone-id>` before retiring it
 or `pm roadmap` has no row to print it on; `pm retire` says which of the two you are
-in. And anything load-bearing that a live
+in. A milestone pruned before that row existed gets one BACKFILLED: `pm retire <id>
+--version <ver> --name <name> [<why>]`, marked `backfilled: true`, and refused for an
+id a grain still claims or a near miss of one. And anything load-bearing that a live
 document links gets PROMOTED out of the tree first rather than left to rot behind a
 dangling link.

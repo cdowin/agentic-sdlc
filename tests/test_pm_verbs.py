@@ -27,6 +27,7 @@ from pathlib import Path
 from support.pm import (
     CASE_SENSITIVE_TMP,
     STORY_REL,
+    bug as support_bug,
     cfg_for,
     declaring,
     ledger_lines,
@@ -687,6 +688,32 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
             self.assertIn(f'agentic-sdlc {driver.CLOSE_VERB} feature '
                           f'0.1/alpha', crossed[0])
             self.assertIn('2 of 2', crossed[0])
+
+        # One grain up, the line is the PARENT's own entry edge and never a
+        # narrower reading of same-kind siblings: an open bug nested in the
+        # milestone keeps `pm ready-for milestone` at NOT READY, and a READY
+        # printed over it is rule 4's first sin in a breadcrumb (S12,
+        # bg-the-ready-breadcrumb-says-ready-where-the-edge-does-not).
+        for bug_status, ready in (('open', False), ('closed', True)):
+            with self.subTest(bug=bug_status), \
+                    tree(story_statuses=('done',)) as root:
+                support_bug(root, status=bug_status)
+                code, out = run_cli(root, 'feature', 'done', '0.1/alpha',
+                                    '--review-record', 'docs/reviews/alpha.md')
+                self.assertEqual(code, 0, out)
+                edge, said = run_cli(root, 'ready-for', 'milestone', '0.1')
+                self.assertEqual(edge, 0 if ready else 1, said)
+                crossed = self._stderr(out, 'READY')
+                self.assertEqual(len(crossed), int(ready),
+                                 f'`pm ready-for milestone 0.1` exited {edge} '
+                                 f'and the arrival printed:\n{out}')
+                if ready:
+                    # The line's shape is contract (rule 6): unchanged by
+                    # which predicate decides whether it prints.
+                    self.assertRegex(
+                        crossed[0], r'^\[pm\] ready: `agentic-sdlc release \S+` '
+                                    r'— this write made 0\.1 READY \(every '
+                                    r'feature is in done: 1 of 1\)$')
 
     # --- the emitted row --------------------------------------------------
     def test_the_printed_line_and_the_emitted_row_read_ONE_derivation(self):

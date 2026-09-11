@@ -3912,3 +3912,4 @@
 {"ts":"2026-09-11T03:39:11Z","kind":"test","tier":"unit","nodeid":"tests/test_fuzz_markdown.py::test_fence_scanner_matches_a_spec_literal_reference","duration_ms":770,"rank":5}
 {"ts":"2026-09-11T03:39:11Z","kind":"gate","gate":"unit","verdict":"PASS","duration_ms":9909,"census":1236}
 {"ts":"2026-09-11T03:39:11Z","kind":"verify","rung":"story","gate":"unit","verdict":"PASS","exit_code":0,"duration_ms":10014,"state":"54ed8835eb624c9ac2c8e18a5383d0593bb009a2642062c6e373e03e8ca36239","graded":"558439a79cbdbade879955796999c5a6a364a192b22b8ba11123020d95e6bce3","census":1236}
+{"ts":"2026-09-11T03:39:22Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":2956}

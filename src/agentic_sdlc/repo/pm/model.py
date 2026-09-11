@@ -1133,6 +1133,32 @@ class Grain:
     status: str = ''
     binding: str = ''
 
+    # --- THE READ ADDRESSED BY IDENTITY ---------------------------------------
+    # `grain(cfg, gid)` resolves an id to one of these and `.field(key)` asks
+    # what it SAYS — so a caller that knows an id never names a file, and the
+    # day a grain is not a file on disk this method is the only thing that has
+    # to learn it. 102 callers handed `field_of` a `Path` before this existed;
+    # `tests/test_boundaries.py::TheEngineAsksByIdNotByPath` holds the roster
+    # of the ones that legitimately still hold a file.
+    def field(self, key: str) -> str:
+        """What this grain says under `key`, or ''."""
+        return frontmatter.field_of(self.path, key)
+
+    def list_field(self, key: str) -> list[str]:
+        """The block list this grain declares under `key`, or []."""
+        return frontmatter.list_field_of(self.path, key)
+
+    def declares(self, key: str) -> bool:
+        """Does this grain carry `key:` at ALL — presence, not value, for the
+        fields whose mere existence is the finding (`RETIRED_FIELDS`). Raises
+        what the read raises, as the parse does: a grain nobody can read is not
+        an absence (rule 4)."""
+        return key in frontmatter.document(self.path).fields
+
+    def sequence_defect(self, key: str) -> str:
+        """Why this grain's block list under `key` cannot be rewritten, or ''."""
+        return frontmatter.sequence_defect(self.path, key)
+
 
 def pool_dir(cfg: PmConfig, kind: str) -> Path:
     """Where documents of one kind live. Configured, or `<roadmap>/<kind>s`,
@@ -1236,6 +1262,27 @@ def pool_skipped(cfg: PmConfig, kind: str) -> int:
     return sum(pool_scan(cfg, kind).counts().values())
 
 
+def doc_grain(path: Path, kind: str = '') -> Grain:
+    """One document as a `Grain`, whatever it declares — `read_grain`'s TOTAL
+    sibling, for a walk that must not drop the document it just found.
+
+    `gid` is '' when the document declares no `id:` or cannot be read, which is
+    exactly what a reader of the field got; `read_grain` answers None there
+    instead, and `check pm` counts those SKIPPED rather than dropping them
+    (`ft-identity-lives-in-frontmatter`). The two answers are different
+    questions and both have callers, so both are spelled.
+    """
+    try:
+        doc = frontmatter.document(path)
+    except (OSError, UnicodeDecodeError):
+        return Grain(gid='', kind=kind, path=path)
+    declared = doc.field(FIELD_KIND) or kind
+    field = BINDS_TO.get(declared, ('', ''))[1]
+    return Grain(gid=doc.field(FIELD_ID), kind=declared, path=path,
+                 status=doc.field(FIELD_STATUS),
+                 binding=doc.field(field) if field else '')
+
+
 def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     """One document as a `Grain`, or None when it declares no id.
 
@@ -1244,18 +1291,8 @@ def read_grain(cfg: PmConfig, path: Path, kind: str) -> Grain | None:
     is convention the tool does not interpret. A document that cannot be read
     declares no id.
     """
-    try:
-        doc = frontmatter.document(path)
-    except (OSError, UnicodeDecodeError):
-        return None
-    gid = frontmatter.unquote(doc.field(FIELD_ID))
-    if not gid:
-        return None
-    declared = frontmatter.unquote(doc.field(FIELD_KIND)) or kind
-    field = BINDS_TO.get(declared, ('', ''))[1]
-    return Grain(gid=gid, kind=declared, path=path,
-                 status=doc.field(FIELD_STATUS),
-                 binding=frontmatter.unquote(doc.field(field)) if field else '')
+    found = doc_grain(path, kind)
+    return found if found.gid else None
 
 
 def is_pooled(cfg: PmConfig) -> bool:
@@ -1305,7 +1342,7 @@ def _nested_index(cfg: PmConfig) -> dict[str, Grain]:
     out: dict[str, Grain] = {}
 
     def take(path: Path, kind: str, binding: str) -> str:
-        gid = frontmatter.unquote(frontmatter.field_of(path, FIELD_ID))
+        gid = frontmatter.field_of(path, FIELD_ID)
         if not gid:
             return ''
         out.setdefault(gid, Grain(gid=gid, kind=kind, path=path,
@@ -1390,17 +1427,31 @@ def kind_of(cfg: PmConfig, gid: str) -> str:
     return found.kind if found is not None else ''
 
 
-def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
-    """The document for an id, or None; `kind` narrows when a caller knows it.
-    The six resolvers this replaces each joined an id onto a directory — this
-    reads `id:` and matches, so no user input reaches a path.
+def grain(cfg: PmConfig, gid: str, kind: str = '') -> Grain | None:
+    """THE ID-ADDRESSED HANDLE: the grain an id names, or None; `kind` narrows
+    when a caller knows it.
+
+    `grain(cfg, gid).field(key)` is how a module that knows an id asks what
+    that grain SAYS, and it is the whole of what such a module needs — the six
+    resolvers this replaced each joined an id onto a directory, and every
+    caller then had a `Path` and asked storage directly. This reads `id:` and
+    matches, so no user input reaches a path and no caller names a file.
     """
     if id_defect(gid):
         return None
-    grain = grain_index(cfg).get(gid)
-    if grain is None or (kind and grain.kind != kind):
+    found = grain_index(cfg).get(gid)
+    if found is None or (kind and found.kind != kind):
         return None
-    return grain.path
+    return found
+
+
+def grain_file(cfg: PmConfig, gid: str, kind: str = '') -> Path | None:
+    """The DOCUMENT for an id, or None — for the callers that need the file
+    itself (a shared doc beside it, a path in a message). A caller that wants
+    a FIELD asks `grain(cfg, gid).field(key)` instead.
+    """
+    found = grain(cfg, gid, kind)
+    return None if found is None else found.path
 
 
 def children(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
@@ -1459,7 +1510,7 @@ def undeclared_kinds(cfg: PmConfig) -> list[tuple[Path, str]]:
     out = []
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            declared = frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND))
+            declared = frontmatter.field_of(path, FIELD_KIND)
             if declared and declared not in FLOW_KINDS:
                 out.append((path, declared))
     return out
@@ -1497,6 +1548,17 @@ def feature_dir(cfg: PmConfig, fid: str) -> Path | None:
 def feature_file(cfg: PmConfig, fid: str) -> Path | None:
     """The feature's document, in either layout."""
     return grain_file(cfg, fid, GRAIN_FEATURE)
+
+
+def story_grain(cfg: PmConfig, sid: str) -> Grain | None:
+    """The story an id names, in either layout — `grain(cfg, sid, 'story')` on a
+    pooled tree, and `story_file`'s own slug resolution on a nested one, where
+    the index cannot answer because a nested story's id is its path.
+    """
+    if is_pooled(cfg):
+        return grain(cfg, sid, GRAIN_STORY)
+    path = story_file(cfg, sid)
+    return None if path is None else doc_grain(path, GRAIN_STORY)
 
 
 def story_file(cfg: PmConfig, sid: str) -> Path | None:
@@ -1568,16 +1630,15 @@ def milestones(cfg: PmConfig) -> list[Grain]:
                    if g.kind == GRAIN_MILESTONE), key=lambda g: g.gid)
 
 
-def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
-    """The documents of one kind bound to one parent, in the parent's declared
+def _children_grains(cfg: PmConfig, kind: str, parent_id: str) -> list[Grain]:
+    """The grains of one kind bound to one parent, in the parent's declared
     `order` where it has one and by id after that. **Sequence is the parent's
     list and membership is the child's field** — the two questions the nested
     layout answered with one directory.
     """
-    found = {g.gid: g.path for g in children(cfg, kind, parent_id)}
+    found = {g.gid: g for g in children(cfg, kind, parent_id)}
     parent = grain_index(cfg).get(parent_id)
-    declared = (frontmatter.list_field_of(parent.path, ORDER_KEY)
-                if parent is not None else [])
+    declared = parent.list_field(ORDER_KEY) if parent is not None else []
     out = [found.pop(gid) for gid in declared if gid in found]
     return out + [found[gid] for gid in sorted(found)]
 
@@ -1586,28 +1647,57 @@ def _children_paths(cfg: PmConfig, kind: str, parent_id: str) -> list[Path]:
 # damaged document has no key and would silently leave the census, and the slot
 # walk sees it either way (rule 4). A POOLED tree has no slot, so a document
 # with no id is reported by `check pm` on its own line instead.
-def feature_files(cfg: PmConfig, mid: str) -> list[Path]:
+# The GRAIN walk and the PATH walk of the same children. The grains are what a
+# caller reads fields from; the paths are what `report.Source` declares, since
+# a rev-addressed source hands back handles that are not files at all. The path
+# list is DERIVED from the grain list, so the two cannot answer differently
+# about what is in the tree.
+#
+# `doc_grain`, not `read_grain`: a child document declaring no `id:` is in the
+# parent's slot and is COUNTED, and `read_grain` would have dropped it — the
+# census loss `check pm` reports as SKIPPED instead (rule 4).
+def feature_grains(cfg: PmConfig, mid: str) -> list[Grain]:
     """The features bound to one milestone, in its declared order."""
     if not is_pooled(cfg):
         mdir = milestone_dir(cfg, mid)
-        return _nested_feature_files(mdir) if mdir is not None else []
-    return _children_paths(cfg, GRAIN_FEATURE, mid)
+        return [doc_grain(p, GRAIN_FEATURE)
+                for p in (_nested_feature_files(mdir) if mdir is not None
+                          else [])]
+    return _children_grains(cfg, GRAIN_FEATURE, mid)
 
 
-def story_files(cfg: PmConfig, fid: str) -> list[Path]:
+def story_grains(cfg: PmConfig, fid: str) -> list[Grain]:
     """The stories bound to one feature, in its declared order."""
     if not is_pooled(cfg):
         ffile = feature_file(cfg, fid)
-        return _nested_story_files(ffile) if ffile is not None else []
-    return _children_paths(cfg, GRAIN_STORY, fid)
+        return [doc_grain(p, GRAIN_STORY)
+                for p in (_nested_story_files(ffile) if ffile is not None
+                          else [])]
+    return _children_grains(cfg, GRAIN_STORY, fid)
 
 
-def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
+def bug_grains(cfg: PmConfig, mid: str) -> list[Grain]:
     """The bugs bound to one milestone, in its declared order."""
     if not is_pooled(cfg):
         mdir = milestone_dir(cfg, mid)
-        return _nested_bug_files(mdir) if mdir is not None else []
-    return _children_paths(cfg, GRAIN_BUG, mid)
+        return [doc_grain(p, GRAIN_BUG)
+                for p in (_nested_bug_files(mdir) if mdir is not None else [])]
+    return _children_grains(cfg, GRAIN_BUG, mid)
+
+
+def feature_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The feature DOCUMENTS bound to one milestone, in its declared order."""
+    return [g.path for g in feature_grains(cfg, mid)]
+
+
+def story_files(cfg: PmConfig, fid: str) -> list[Path]:
+    """The story DOCUMENTS bound to one feature, in its declared order."""
+    return [g.path for g in story_grains(cfg, fid)]
+
+
+def bug_files(cfg: PmConfig, mid: str) -> list[Path]:
+    """The bug DOCUMENTS bound to one milestone, in its declared order."""
+    return [g.path for g in bug_grains(cfg, mid)]
 
 
 def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
@@ -1618,7 +1708,7 @@ def duplicate_ids(cfg: PmConfig) -> list[tuple[str, list[Path]]]:
     seen: dict[str, list[Path]] = {}
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            gid = frontmatter.unquote(frontmatter.field_of(path, FIELD_ID))
+            gid = frontmatter.field_of(path, FIELD_ID)
             if gid:
                 seen.setdefault(gid, []).append(path)
     return [(gid, paths) for gid, paths in sorted(seen.items())
@@ -1636,16 +1726,19 @@ def unbound_grains(cfg: PmConfig) -> dict[str, list[str]]:
         bind = BINDS_TO.get(grain.kind)
         if bind is None:
             continue
-        if not frontmatter.unquote(frontmatter.field_of(grain.path, bind[1])):
+        if not frontmatter.field_of(grain.path, bind[1]):
             out.setdefault(grain.kind, []).append(gid)
     return out
 
 
-def stray_documents(cfg: PmConfig) -> list[Path]:
+def stray_documents(cfg: PmConfig) -> list[Grain]:
     """Grain documents under the roadmap that sit in no pool: every pooled
     reader walks the pools, so a document outside all four is read by NOTHING
     while `check grain-shape`, which walks the roadmap whole, counts it. Shared
     docs and the plan are expected outside a pool.
+
+    As GRAINS, because the one caller reports what each one DECLARES and a
+    stray is only a stray because it declares an `id:` nothing indexes.
     """
     if not is_pooled(cfg):
         return []
@@ -1657,9 +1750,9 @@ def stray_documents(cfg: PmConfig) -> list[Path]:
             continue
         if any(pool == path.parent or pool in path.parents for pool in pools):
             continue
-        if _is_grain_doc(path) and frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)):
+        if _is_grain_doc(path) and frontmatter.field_of(path, FIELD_ID):
             out.append(path)
-    return sorted(out)
+    return [doc_grain(path) for path in sorted(out)]
 
 
 def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
@@ -1670,7 +1763,7 @@ def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
     out: list[tuple[Path, str]] = []
     for kind in FLOW_KINDS:
         for path in pool_walk(cfg, kind):
-            if not frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)):
+            if not frontmatter.field_of(path, FIELD_ID):
                 out.append((path, 'declares no `id:`, so nothing can key on '
                                   'it'))
                 continue
@@ -1678,7 +1771,7 @@ def unkeyed_documents(cfg: PmConfig) -> list[tuple[Path, str]]:
                 out.append((path, 'declares no `status:` — it is in the tree '
                                   'and no question about it can be answered'))
                 continue
-            declared = frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND))
+            declared = frontmatter.field_of(path, FIELD_KIND)
             if declared and declared not in FLOW_KINDS:
                 out.append((path, f'declares kind {declared!r}, which this '
                                   f'project does not have '
@@ -1725,8 +1818,22 @@ def known_milestones(cfg: PmConfig) -> list[tuple[Path, str]]:
     """
     if is_pooled(cfg):
         return [(g.path, g.gid) for g in milestones(cfg)]
-    return [(mdir, frontmatter.unquote(frontmatter.field_of(mdir / MILESTONE_DOC, FIELD_ID)))
+    return [(mdir, frontmatter.field_of(mdir / MILESTONE_DOC, FIELD_ID))
             for mdir in milestone_dirs(cfg)]
+
+
+def known_milestone_grains(cfg: PmConfig) -> list[tuple[Path, Grain]]:
+    """(`known_milestones`' handle, that milestone's GRAIN) — for the readers
+    that go on to ask the milestone what it SAYS.
+
+    The handle stays beside the grain because it is the nested tree's
+    DIRECTORY, which `shared_doc` and `ledger_for` need and a document cannot
+    replace; the grain is `milestone_doc(handle)` read once, so a milestone
+    declaring no `id:` is still in the list with an empty one — the id the
+    handle-and-id pairing returned for it.
+    """
+    return [(handle, doc_grain(milestone_doc(handle), GRAIN_MILESTONE))
+            for handle, _ in known_milestones(cfg)]
 
 
 BOM = '﻿'
@@ -1827,10 +1934,10 @@ def pointer_escapes(pointer: str) -> bool:
 def review_record_for(cfg: PmConfig, fid: str) -> str | None:
     """The feature's resolved review record, or None; the `reviewed:` pointer
     is the whole mechanism, with no filename fallback."""
-    ffile = feature_file(cfg, fid)
-    if ffile is None:
+    feature = grain(cfg, fid, GRAIN_FEATURE)
+    if feature is None:
         return None
-    pointer = frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed'))
+    pointer = feature.field('reviewed')
     if pointer and pointer != 'null':
         # Repo-relative, always (hard rule 8): an absolute pointer is a
         # record nobody reviewing this repo can read.
@@ -1851,8 +1958,8 @@ def in_progress_milestones(cfg: PmConfig) -> list[tuple[str, str, Path]]:
     for milestone in milestones(cfg):
         if category_of(cfg, GRAIN_MILESTONE, milestone.status) != IN_PROGRESS:
             continue
-        out.append((frontmatter.field_of(milestone.path, FIELD_ID),
-                    frontmatter.field_of(milestone.path, 'branch'), milestone.path))
+        out.append((milestone.field(FIELD_ID), milestone.field('branch'),
+                    milestone.path))
     return out
 
 
@@ -1897,8 +2004,8 @@ def root_grain(cfg: PmConfig) -> Grain | None:
     path = releases_file(cfg)
     if not path.is_file():
         return None
-    return Grain(gid=frontmatter.unquote(frontmatter.field_of(path, FIELD_ID)) or ROOT_ID,
-                 kind=frontmatter.unquote(frontmatter.field_of(path, FIELD_KIND)) or ROOT_KIND,
+    return Grain(gid=frontmatter.field_of(path, FIELD_ID) or ROOT_ID,
+                 kind=frontmatter.field_of(path, FIELD_KIND) or ROOT_KIND,
                  path=path)
 
 
@@ -1953,8 +2060,8 @@ def declared_order(cfg: PmConfig) -> list[str]:
 def milestone_version(cfg: PmConfig, mid: str) -> str:
     """The version a milestone declares it ships as, or '' — it is optional,
     and a milestone without one is BACKLOG, never a finding (R2)."""
-    mfile = milestone_file(cfg, mid)
-    return frontmatter.field_of(mfile, 'version').strip() if mfile is not None else ''
+    milestone = grain(cfg, mid, GRAIN_MILESTONE)
+    return milestone.field('version').strip() if milestone is not None else ''
 
 
 def version_claims(cfg: PmConfig) -> list[tuple[str, str]]:
@@ -1987,11 +2094,11 @@ def milestone_of_version(cfg: PmConfig, version: str) -> str | None:
 
 def entry_is_shipped(cfg: PmConfig, mid: str) -> bool:
     """Has the milestone this plan entry names finished?"""
-    mfile = milestone_file(cfg, mid)
-    if mfile is None:
+    milestone = grain(cfg, mid, GRAIN_MILESTONE)
+    if milestone is None:
         return False
-    return category_of(cfg, GRAIN_MILESTONE, frontmatter.field_of(mfile,
-                                                      FIELD_STATUS)) == DONE_CATEGORY
+    return category_of(cfg, GRAIN_MILESTONE,
+                       milestone.field(FIELD_STATUS)) == DONE_CATEGORY
 
 
 def entry_is_dangling(cfg: PmConfig, mid: str) -> bool:
@@ -2140,7 +2247,7 @@ def sequence_census(cfg: PmConfig, parent: Grain,
     grading MANY parents passes the index it already walked."""
     index = grain_index(cfg) if index is None else index
     held = {g.gid for g in contained(cfg, parent, index)}
-    declared = frontmatter.list_field_of(parent.path, ORDER_KEY)
+    declared = parent.list_field(ORDER_KEY)
     return Sequence(
         dangling=[gid for gid in declared
                   if gid not in held and gid in index],
@@ -2165,10 +2272,10 @@ def contained(cfg: PmConfig, parent: Grain,
 def drift_dangling_record(cfg: PmConfig, fid: str) -> str | None:
     """D1 — a `reviewed:` pointer naming a file that is not there. An absent
     pointer is not a finding; only a dangling one is."""
-    ffile = feature_file(cfg, fid)
-    if ffile is None:
+    feature = grain(cfg, fid, GRAIN_FEATURE)
+    if feature is None:
         return None
-    pointer = frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed'))
+    pointer = feature.field('reviewed')
     if not pointer or pointer == 'null':
         return None
     target = record_path(cfg, pointer)
@@ -2204,11 +2311,17 @@ def drift_ahead_of_parent(cfg: PmConfig, child: str, parent: str) -> bool:
 @dataclass
 class FeatureView:
     """One feature plus the tallies every reader needs; `done_n` counts the
-    `done` category through `holds`."""
+    `done` category through `holds`.
+
+    `stories` are GRAINS, not paths: every reader of this view then asks each
+    story what it SAYS rather than handing storage a file, and `doc_grain`
+    keeps a story declaring no `id:` in the list, so `total` counts the same
+    documents it always did.
+    """
     fid: str
     status: str
     path: Path
-    stories: list[Path] = field(default_factory=list)
+    stories: list[Grain] = field(default_factory=list)
     done_n: int = 0
 
     @property
@@ -2217,14 +2330,15 @@ class FeatureView:
 
 
 def read_feature(cfg: PmConfig, ffile: Path) -> FeatureView:
+    feature = doc_grain(ffile, GRAIN_FEATURE)
     view = FeatureView(
-        fid=frontmatter.unquote(frontmatter.field_of(ffile, FIELD_ID)),
-        status=frontmatter.field_of(ffile, FIELD_STATUS),
+        fid=feature.field(FIELD_ID),
+        status=feature.field(FIELD_STATUS),
         path=ffile,
-        stories=story_files(cfg, frontmatter.unquote(frontmatter.field_of(ffile, FIELD_ID))),
+        stories=story_grains(cfg, feature.field(FIELD_ID)),
     )
     finished = holds(cfg, GRAIN_STORY,
-                     ((s, frontmatter.field_of(s, FIELD_STATUS)) for s in view.stories),
+                     ((s.path, s.field(FIELD_STATUS)) for s in view.stories),
                      DONE_CATEGORY)
     view.done_n = finished.counted - len(finished.blockers)
     return view
@@ -2259,27 +2373,29 @@ def bug_status_findings(cfg: PmConfig) -> tuple[list[tuple[Path, str]], int]:
     out: list[tuple[Path, str]] = []
     scanned = 0
     # The POOL: a bug nobody has bound was counted and asked nothing.
-    for bfile in _every(cfg, GRAIN_BUG):
+    for bug in every_grain(cfg, GRAIN_BUG):
         scanned += 1
-        bstat = frontmatter.field_of(bfile, FIELD_STATUS)
+        bstat = bug.field(FIELD_STATUS)
         if category_of(cfg, GRAIN_BUG, bstat) is None:
             # The bug line's shape is grepped (rule 6), so it is kept verbatim.
-            out.append((bfile, f'bug status {bstat!r} is not in '
-                               f'({" ".join(flow_of(cfg, GRAIN_BUG).order)})'))
+            out.append((bug.path, f'bug status {bstat!r} is not in '
+                                  f'({" ".join(flow_of(cfg, GRAIN_BUG).order)})'))
     return out, scanned
 
 
-def _every(cfg: PmConfig, kind: str) -> list[Path]:
-    """Every document of one kind, bound or not."""
+def every_grain(cfg: PmConfig, kind: str) -> list[Grain]:
+    """Every grain of one kind in the tree, bound or not — through `doc_grain`,
+    so a document declaring no `id:` is still in the census with an empty one
+    rather than silently absent from it (rule 4)."""
     if is_pooled(cfg):
-        return pool_walk(cfg, kind)
+        return [doc_grain(path, kind) for path in pool_walk(cfg, kind)]
     if kind == GRAIN_BUG:
-        return [b for m in milestones(cfg) for b in bug_files(cfg, m.gid)]
+        return [b for m in milestones(cfg) for b in bug_grains(cfg, m.gid)]
     if kind == GRAIN_FEATURE:
-        return [f for m in milestones(cfg) for f in feature_files(cfg, m.gid)]
+        return [f for m in milestones(cfg) for f in feature_grains(cfg, m.gid)]
     return [s for m in milestones(cfg)
-            for f in feature_files(cfg, m.gid)
-            for s in story_files(cfg, frontmatter.unquote(frontmatter.field_of(f, FIELD_ID)))]
+            for f in feature_grains(cfg, m.gid)
+            for s in story_grains(cfg, f.field(FIELD_ID))]
 
 
 def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
@@ -2307,8 +2423,8 @@ def state_usage(cfg: PmConfig) -> dict[str, dict[str, int]]:
     for milestone in milestones(cfg):
         count(GRAIN_MILESTONE, milestone.status)
     for kind in (GRAIN_FEATURE, GRAIN_STORY, GRAIN_BUG):
-        for path in _every(cfg, kind):
-            count(kind, frontmatter.field_of(path, FIELD_STATUS))
+        for found in every_grain(cfg, kind):
+            count(kind, found.field(FIELD_STATUS))
     return used
 
 

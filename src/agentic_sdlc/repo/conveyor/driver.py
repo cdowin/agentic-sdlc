@@ -27,7 +27,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from agentic_sdlc.core import frontmatter
 from agentic_sdlc.core.config import ConfigError
 from agentic_sdlc.repo import emit
 from agentic_sdlc.repo.conveyor import lessons
@@ -745,8 +744,8 @@ def _after(cfg: 'model.PmConfig', operation: str, subject: str) -> list[str]:
     from agentic_sdlc.repo.conveyor import steps as step_defs
 
     mid = _milestone_id(cfg, operation, subject)
-    path = model.milestone_file(cfg, mid)
-    branch = (frontmatter.field_of(path, 'branch') if path is not None else '') \
+    milestone = model.grain(cfg, mid, model.GRAIN_MILESTONE)
+    branch = (milestone.field('branch') if milestone is not None else '') \
         or '<branch>'
     try:
         mainline = model.mainline_branch()

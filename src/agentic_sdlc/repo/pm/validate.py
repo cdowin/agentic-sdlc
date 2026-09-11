@@ -7,9 +7,6 @@ V7 every grain's binding names a grain of the right kind that is in the tree.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import model
 
 # PUBLIC: the one answer to "is this field list-shaped", so `pm set` writes the
@@ -60,9 +57,9 @@ def refs_in(key: str, raw: str) -> list[str]:
     return out
 
 
-def _safe_refs(path: Path, key: str, bad, rel: str) -> list[str]:
+def _safe_refs(grain, key: str, bad, rel: str) -> list[str]:
     try:
-        return refs_in(key, frontmatter.field_of(path, key))
+        return refs_in(key, grain.field(key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -84,9 +81,9 @@ def scalar_ref_in(key: str, raw: str) -> list[str]:
     return [raw]
 
 
-def _safe_scalar_ref(path: Path, key: str, bad, rel: str) -> list[str]:
+def _safe_scalar_ref(grain, key: str, bad, rel: str) -> list[str]:
     try:
-        return scalar_ref_in(key, frontmatter.field_of(path, key))
+        return scalar_ref_in(key, grain.field(key))
     except Unparseable as err:
         bad(f'{rel}: {err}')
         return []
@@ -135,7 +132,7 @@ def _feature_exists(cfg: model.PmConfig, ref: str) -> bool | None:
     return None if _unverifiable(index, ref) else False
 
 
-def _check_ref_ids(cfg: model.PmConfig, path, key: str, refs: list[str],
+def _check_ref_ids(cfg: model.PmConfig, grain, key: str, refs: list[str],
                    on: set[str], bad, census: dict, exists=_grain_exists) -> list[str]:
     """The census / UNVERIFIABLE / V4 block for one ref key's parsed ids.
     Returns the refs that resolved.
@@ -148,25 +145,26 @@ def _check_ref_ids(cfg: model.PmConfig, path, key: str, refs: list[str],
             census['unverifiable'] += 1
         elif not got:
             if 'V4' in on:
-                bad(f'{cfg.rel(path)}: {key} {ref!r} resolves to '
+                bad(f'{cfg.rel(grain.path)}: {key} {ref!r} resolves to '
                     f'nothing (its milestone IS in the tree)')
         else:
             resolved.append(ref)
     return resolved
 
 
-def _check_refs(cfg: model.PmConfig, path, key: str, on: set[str], bad,
+def _check_refs(cfg: model.PmConfig, grain, key: str, on: set[str], bad,
                 census: dict) -> list[str]:
     """`_check_ref_ids` over an inline-list ref key."""
-    return _check_ref_ids(cfg, path, key, _safe_refs(path, key, bad, cfg.rel(path)),
+    return _check_ref_ids(cfg, grain, key,
+                          _safe_refs(grain, key, bad, cfg.rel(grain.path)),
                           on, bad, census)
 
 
-def _check_caused_by(cfg: model.PmConfig, path, on: set[str], bad,
+def _check_caused_by(cfg: model.PmConfig, grain, on: set[str], bad,
                      census: dict) -> None:
     """`_check_ref_ids` over a bug's scalar `caused_by:`, resolved as a feature."""
-    _check_ref_ids(cfg, path, CAUSED_BY,
-                   _safe_scalar_ref(path, CAUSED_BY, bad, cfg.rel(path)),
+    _check_ref_ids(cfg, grain, CAUSED_BY,
+                   _safe_scalar_ref(grain, CAUSED_BY, bad, cfg.rel(grain.path)),
                    on, bad, census, exists=_feature_exists)
 
 
@@ -203,25 +201,25 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
     # grain (rule 4).
     for milestone in model.milestones(cfg):
         census['grains'] += 1
-        if 'V1' in on and (not frontmatter.field_of(milestone.path, model.FIELD_ID)
-                           or not frontmatter.field_of(milestone.path,
-                                                 model.FIELD_STATUS)):
+        if 'V1' in on and (not milestone.field(model.FIELD_ID)
+                           or not milestone.field(model.FIELD_STATUS)):
             bad(f'{cfg.rel(milestone.path)}: missing id: or status: in the '
                 f'frontmatter')
-        _check_refs(cfg, milestone.path, 'depends_on', on, bad, census)
+        _check_refs(cfg, milestone, 'depends_on', on, bad, census)
 
-    for ffile in model._every(cfg, model.GRAIN_FEATURE):
+    for feature in model.every_grain(cfg, model.GRAIN_FEATURE):
         census['grains'] += 1
-        expect = frontmatter.unquote(frontmatter.field_of(ffile, model.FIELD_ID))
-        if 'V1' in on and (not expect or not frontmatter.field_of(ffile,
-                                                            model.FIELD_STATUS)):
-            bad(f'{cfg.rel(ffile)}: missing id: or status: in the frontmatter')
+        expect = feature.field(model.FIELD_ID)
+        if 'V1' in on and (not expect
+                           or not feature.field(model.FIELD_STATUS)):
+            bad(f'{cfg.rel(feature.path)}: missing id: or status: in the '
+                f'frontmatter')
         # The UNQUOTED id, because that is what a ref carries: keying the node
         # on the raw `id:` meant a quoted one matched none of its own.
         if expect:
             graph[expect] = []
         for key in REF_KEYS:
-            resolved = _check_refs(cfg, ffile, key, on, bad, census)
+            resolved = _check_refs(cfg, feature, key, on, bad, census)
             if key == 'depends_on' and expect:
                 # Which kind a ref names is a question about the GRAIN;
                 # counting slashes left the graph empty on a flat tree.
@@ -229,17 +227,18 @@ def run(cfg: model.PmConfig, enabled: set[str] | None = None) -> tuple[list[str]
                                      if model.kind_of(cfg,
                                                       ref) == model.GRAIN_FEATURE)
 
-    for sfile in model._every(cfg, model.GRAIN_STORY):
+    for story in model.every_grain(cfg, model.GRAIN_STORY):
         census['grains'] += 1
-        if 'V1' in on and (not frontmatter.field_of(sfile, model.FIELD_ID)
-                           or not frontmatter.field_of(sfile, model.FIELD_STATUS)):
-            bad(f'{cfg.rel(sfile)}: missing id: or status: in the frontmatter')
-        _check_refs(cfg, sfile, 'depends_on', on, bad, census)
+        if 'V1' in on and (not story.field(model.FIELD_ID)
+                           or not story.field(model.FIELD_STATUS)):
+            bad(f'{cfg.rel(story.path)}: missing id: or status: in the '
+                f'frontmatter')
+        _check_refs(cfg, story, 'depends_on', on, bad, census)
 
     # Bugs are walked for `caused_by:` alone; `census['grains']` still counts
     # only milestones, features and stories.
-    for bfile in model._every(cfg, model.GRAIN_BUG):
-        _check_caused_by(cfg, bfile, on, bad, census)
+    for bug in model.every_grain(cfg, model.GRAIN_BUG):
+        _check_caused_by(cfg, bug, on, bad, census)
 
     if 'V7' in on:
         findings.extend(_unbound_findings(cfg))
@@ -264,7 +263,7 @@ def _unbound_findings(cfg: model.PmConfig) -> list[str]:
         if bind is None:
             continue
         want_kind, field = bind
-        ref = frontmatter.unquote(frontmatter.field_of(grain.path, field))
+        ref = grain.field(field)
         rel = cfg.rel(grain.path)
         if not ref:
             # NOT a finding: a grain nobody has bound yet is a plan in

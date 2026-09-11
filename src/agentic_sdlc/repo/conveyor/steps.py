@@ -764,19 +764,19 @@ def check_tree_clean(ctx: Context) -> Answer:
 
 def check_on_milestone_branch(ctx: Context) -> Answer:
     cfg = _pm_cfg(ctx)
-    path = model.milestone_file(cfg, subject_grain(ctx))
-    if path is None:
+    milestone = model.grain(cfg, subject_grain(ctx), model.GRAIN_MILESTONE)
+    if milestone is None:
         return Answer.unverifiable(
             f'no milestone document for {ctx.version} to read a branch: from')
-    declared = frontmatter.field_of(path, 'branch')
+    declared = milestone.field('branch')
     if not declared:
         return Answer.unverifiable(
-            f'{cfg.rel(path)} carries no `branch:` stamp — D9 exists so a '
-            f'fresh session never has to guess at `git branch -a`, and this '
-            f'check will not assume the current branch is the right one')
+            f'{cfg.rel(milestone.path)} carries no `branch:` stamp — D9 exists '
+            f'so a fresh session never has to guess at `git branch -a`, and '
+            f'this check will not assume the current branch is the right one')
     here = _branch(ctx)
     if here != declared:
-        return Answer.no(f'HEAD is {here!r}; {cfg.rel(path)} declares '
+        return Answer.no(f'HEAD is {here!r}; {cfg.rel(milestone.path)} declares '
                          f'branch: {declared!r}')
     # REPORTED, never refused: refusing would change a shipped exit code for a
     # condition that has always been tolerated (rule 6).

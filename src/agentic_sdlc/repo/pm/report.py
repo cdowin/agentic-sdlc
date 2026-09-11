@@ -512,7 +512,7 @@ class GitSource(Source):
         """The document in one pool DECLARING this id, at the rev — what
         `model.grain_index` answers on disk, for one id."""
         for path in self._grain_docs(model.pool_dir(cfg, kind)):
-            if frontmatter.unquote(self.field_of(path, model.FIELD_ID)) == gid:
+            if self.field_of(path, model.FIELD_ID) == gid:
                 return path
         return None
 
@@ -550,10 +550,9 @@ class GitSource(Source):
             return []
         found: dict[str, Path] = {}
         for path in self._grain_docs(model.pool_dir(cfg, kind)):
-            if frontmatter.unquote(self.field_of(path, field)) != parent_id:
+            if self.field_of(path, field) != parent_id:
                 continue
-            found[frontmatter.unquote(self.field_of(path,
-                                              model.FIELD_ID)) or path.stem] = path
+            found[self.field_of(path, model.FIELD_ID) or path.stem] = path
         parent = self._grain_at(cfg, parent_id)
         declared = (frontmatter.list_field_of(self._doc(parent), model.ORDER_KEY)
                     if parent is not None else [])
@@ -598,7 +597,7 @@ class GitSource(Source):
         ffile = self.feature_file(cfg, fid)
         if ffile is None:
             return None
-        pointer = frontmatter.unquote(self.field_of(ffile, 'reviewed'))
+        pointer = self.field_of(ffile, 'reviewed')
         # `pointer_escapes`, not `startswith('/')`: the local check accepted
         # `../outside.md` and `~/x.md` (0.6.0, F1's class).
         if pointer and pointer != 'null' and not model.pointer_escapes(pointer):
@@ -702,7 +701,7 @@ def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
     """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
     which the report joins on), its kind, its `size:`; a missing id falls back
     to the path's."""
-    gid = frontmatter.unquote(src.field_of(path, model.FIELD_ID)) or fallback
+    gid = src.field_of(path, model.FIELD_ID) or fallback
     return Grain(gid, kind, src.field_of(path, SIZE_FIELD))
 
 
@@ -1311,7 +1310,7 @@ def review_records(src: Source, cfg: model.PmConfig, mid: str,
     """(feature id, the path as the report prints it, the path) per record."""
     out: list[tuple[str, str, Path]] = []
     for ffile in src.feature_files(cfg, mid):
-        fid = (frontmatter.unquote(src.field_of(ffile, model.FIELD_ID))
+        fid = (src.field_of(ffile, model.FIELD_ID)
                or f'{mid}/{ffile.parent.name}')
         rel = src.review_record_for(cfg, fid)
         path = (cfg.root / rel) if rel else None
@@ -1537,7 +1536,7 @@ def escapes_data(src: Source, cfg: model.PmConfig, mid: str, mdir: Path,
         cause = src.field_of(bfile, CAUSED_BY_FIELD)
         if not cause:
             continue
-        gid = (frontmatter.unquote(src.field_of(bfile, model.FIELD_ID))
+        gid = (src.field_of(bfile, model.FIELD_ID)
                or f'{mid}/{BUGS_DIR}/{_bug_slug(mdir, bfile)}')
         ffile = src.feature_file(cfg, cause)
         fstatus = src.field_of(ffile,

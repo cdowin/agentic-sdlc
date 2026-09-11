@@ -130,6 +130,68 @@ FRONTMATTER_INTERNALS = ('_split', '_fence_bounds', '_eol', 'read_raw',
 # else; the write side is primitive 2's, so `apply.py`'s `'w'` and the ledger's
 # `'a'` need no exemption here and this roster stays empty.
 OPEN_NEWLINE_KEYWORD = 'newline'
+# --- primitive 10: the engine asks by ID, not by path -------------------------
+# Primitive 9 put frontmatter I/O in one module. This one is about who may
+# ADDRESS it: 102 call sites outside the grain layer handed `field_of` a `Path`
+# to ask what a grain SAYS, which is "a grain is a file on disk" hard-coded 102
+# times. `model.grain(cfg, gid)` resolves an id to a `Grain` and `Grain.field`
+# asks it; a module that knows an id goes through those and names no file.
+#
+# What a second backend would cost is the argument: at 102 `Path` call sites it
+# is not expensive, it is impossible — and the reachability is worth having
+# WITHOUT one, because the reads now say which question they are asking.
+GRAIN_LAYER_MODULE = 'repo/pm/model.py'
+# The name every caller imports the grain layer under, so `model.doc_grain` is
+# reaching it and a bare `doc_grain(` is the layer's own spelling.
+GRAIN_LAYER_OWNER = 'model'
+# The storage reads that take a PATH and answer *what does this document say*.
+# `field_in` is absent on purpose: its first argument is LINES, so it cannot
+# hand storage a path; `read_raw` is absent because *what are this file's
+# bytes* is a question about a FILE, which a template, a version file and a
+# shared doc all legitimately ask.
+STORAGE_FIELD_READS = ('field_of', 'list_field_of', 'document',
+                       'sequence_defect')
+# The ONE file-to-grain adapter, and it is graded here too — otherwise every
+# `frontmatter.field_of(p, k)` could become `model.doc_grain(p).field(k)`, the
+# gate would go green and nothing would have changed. A module that really
+# holds a file is a ROSTER entry with a reason, not a `doc_grain` call.
+GRAIN_ADAPTER = 'doc_grain'
+# Modules that may still address a storage read BY PATH, each with the reason
+# it holds a file rather than an id. SHRINKS ONLY — `ROSTER_OPENED_AT` below
+# fails the build on a fourth entry, because the convenient fourth entry is
+# this gate's whole failure mode. `core/frontmatter.py` is not here: it IS the
+# storage module, which primitive 9 already pins to one file.
+PATH_ADDRESSED_ROSTER = {
+    # The grain layer itself: `doc_grain` is the file-to-grain adapter, the
+    # pool walks hand back documents, and `Grain.field` is the one read every
+    # other module goes through. If a second backend ever arrives, this is the
+    # module that learns about it.
+    GRAIN_LAYER_MODULE: 'the grain layer — it owns the seam',
+    # `report.Source`'s two implementations. `GitSource` reads git BLOBS at a
+    # rev: the handle it passes has no `stat`, is not a file, and is in no
+    # index, so an id-addressed read routed through `grain_index` would
+    # silently answer about the working tree instead. `pm ledger report --from
+    # <rev>` is that read, and it only fails in the `shell` tier.
+    'repo/pm/report.py': 'the rev-addressed source seam — a blob is not a file',
+    # `_repair_verb` resolves the grain BESIDE a shared doc by taking the
+    # slot suffix off its filename. There is no id to ask with: the shared doc
+    # declares none, and which grain it sits beside is a fact about the two
+    # names. The rest of the module measures file BODIES.
+    'repo/checks/grain_shape.py': 'the grain beside a shared doc, found by name',
+}
+# The opening size, pinned so the roster cannot grow. Criterion 3 of
+# `st-the-engine-asks-by-id-not-by-path`: an entry added to make this green is
+# the defect, so adding one breaks the build and has to be argued for here.
+ROSTER_OPENED_AT = 3
+# `unquote` is idempotent on every value whose stripped form is not itself
+# quote-wrapped, and NOT a no-op on the rest: `unquote('""x""')` is `'x'` where
+# one strip gives `'"x"'`. Every reader below unquotes as it parses, so an
+# `unquote` around one of them strips TWICE — and `pm get` never did, so two
+# verbs disagreed about the same field. 68 such sites were deleted; this is
+# what stops the 69th.
+UNQUOTE = 'unquote'
+ALREADY_UNQUOTED = ('field_of', 'list_field_of', 'field_in', 'field',
+                    'list_field')
 
 
 def _sources() -> list[tuple[str, Path]]:
@@ -321,6 +383,60 @@ def _frontmatter_sites(rel: str, tree: ast.Module) -> list[str]:
     for node in _calls(tree):
         if _is_raw_frontmatter_read(node):
             out.append(f'{rel}:{node.lineno}: open(..., newline=…) in read mode')
+    return out
+
+
+def _called_name(node: ast.Call) -> tuple[str, str]:
+    """(receiver, attribute) of this call — ('', name) for a bare one.
+
+    Both spellings, because the owner of a name calls it bare and everybody
+    else calls it through the module: `doc_grain(path)` inside the grain layer
+    and `model.doc_grain(path)` outside it are the same call.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        receiver = func.value.id if isinstance(func.value, ast.Name) else ''
+        return receiver, func.attr
+    if isinstance(func, ast.Name):
+        return '', func.id
+    return '', ''
+
+
+def _path_addressed_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every read in one module that ASKS A PATH what a grain says.
+
+    Decided by the NAME of the function called, not by guessing which argument
+    is path-shaped: every name here takes the document first by signature, so
+    reaching one at all IS handing storage a path. A `Grain.field(key)` call
+    carries no path to hand over and is invisible to this reader.
+    """
+    out = []
+    for node in _calls(tree):
+        receiver, name = _called_name(node)
+        if name in STORAGE_FIELD_READS and receiver in ('', FRONTMATTER_OWNER):
+            out.append(f'{rel}:{node.lineno}: {name}(<path>, …) — ask '
+                       f'`grain(cfg, gid).{name.replace("_of", "")}` instead')
+        elif name == GRAIN_ADAPTER and receiver in ('', GRAIN_LAYER_OWNER):
+            out.append(f'{rel}:{node.lineno}: {GRAIN_ADAPTER}(<path>) — the '
+                       f'file-to-grain adapter, and only a module that holds a '
+                       f'FILE may call it')
+    return out
+
+
+def _double_strip_sites(rel: str, tree: ast.Module) -> list[str]:
+    """Every `unquote(...)` whose argument is a reader that already unquoted."""
+    out = []
+    for node in _calls(tree):
+        _, name = _called_name(node)
+        if name != UNQUOTE or not node.args:
+            continue
+        inner = node.args[0]
+        if not isinstance(inner, ast.Call):
+            continue
+        _, read = _called_name(inner)
+        if read in ALREADY_UNQUOTED:
+            out.append(f'{rel}:{node.lineno}: {UNQUOTE}({read}(…)) — {read} '
+                       f'unquotes as it parses, so this strips twice')
     return out
 
 
@@ -531,6 +647,151 @@ class OneStorage(unittest.TestCase):
         self.assertGreaterEqual(len(writes), 1,
                                 'the owner reaches no writer, so nothing here '
                                 'is a write at all')
+
+
+class TheEngineAsksByIdNotByPath(unittest.TestCase):
+    """PRIMITIVE 10 — a module that knows an id never names the file.
+
+    `model.grain(cfg, gid)` is the id-addressed handle and `Grain.field(key)`
+    is the read; `PATH_ADDRESSED_ROSTER` is the closed set of modules that
+    legitimately hold a FILE instead, each with its reason.
+
+    Three halves, because this roster is the one that rots:
+      * no module off the roster addresses a storage read by path,
+      * every entry ON it still matches at least one site — an entry nothing
+        matches is a hole waiting for a file to move into it, and
+      * the roster has not GROWN, because the convenient fourth entry is how
+        this gate goes green while nothing improved.
+    """
+
+    PROTECTS = (
+        'a module that knows a grain id never names its file: the storage '
+        'reads that take a document are reachable from the grain layer, the '
+        'rev-addressed source seam and one filename resolver, and nowhere '
+        'else — and no reader strips a value a reader already stripped',
+        'load-bearing — sin 1 (a gate that misses drift and prints PASS): the '
+        'reads this moves are `check pm`/`pm validate`/`ready-for`, and a '
+        'path-addressed one answers about whatever file the caller derived '
+        'rather than about the grain it meant to ask — `_decision_log` joined '
+        '`milestone.md` onto a pool and read the empty string for four '
+        'releases. The double strip is the same sin one size down: `pm get` '
+        'single-stripped and `pm list` double-stripped, so two verbs printed '
+        'different answers for one `name:` and neither said so',
+    )
+
+    CORPUS = (
+        # Asking a PATH what a grain says, in every spelling.
+        ("status = frontmatter.field_of(grain.path, 'status')", True),
+        ("order = frontmatter.list_field_of(parent.path, 'order')", True),
+        ('fields = frontmatter.document(grain.path).fields', True),
+        ("defect = frontmatter.sequence_defect(parent.path, 'order')", True),
+        # The adapter, graded too: it is the one way to turn a path into a
+        # grain, so it cannot be the way round this rule.
+        ('beside = model.doc_grain(path)', True),
+        ('beside = doc_grain(path)', True),
+        # Asking the GRAIN. No path is handed to anything.
+        ("status = grain.field('status')", False),
+        ("order = parent.list_field('order')", False),
+        ("found = model.grain(cfg, gid, 'story').field('status')", False),
+        # A question about a FILE's bytes, not about what a grain says.
+        ('text = frontmatter.read_raw(version_file)', False),
+        # LINES, already read — there is no path in the call to hand over.
+        ("kind = frontmatter.field_in(lines, 'kind')", False),
+        # Prose is not a call.
+        ("HELP = 'field_of and list_field_of and doc_grain'", False),
+        # The double strip, and the two spellings that are not one.
+        ("gid = frontmatter.unquote(frontmatter.field_of(path, 'id'))", True),
+        ("gid = frontmatter.unquote(src.field_of(path, 'id'))", True),
+        ("gid = frontmatter.unquote(grain.field('id'))", True),
+        ("kind = frontmatter.unquote(frontmatter.field_in(lines, 'kind'))", True),
+        # A value off the COMMAND LINE, which nothing has stripped yet.
+        ('gid = frontmatter.unquote(value)', False),
+        ("gid = frontmatter.unquote(args[1].strip())", False),
+    )
+
+    @staticmethod
+    def catches(planted: str) -> bool:
+        tree = ast.parse(planted)
+        return bool(_path_addressed_sites(SCRATCH_MODULE, tree)
+                    or _double_strip_sites(SCRATCH_MODULE, tree))
+
+    def test_no_module_off_the_roster_asks_a_path(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            if rel in PATH_ADDRESSED_ROSTER or rel == FRONTMATTER_MODULE:
+                continue
+            offenders.extend(_path_addressed_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'a storage read addressed by PATH outside the roster. A module '
+            'that knows an id asks `model.grain(cfg, gid).field(key)`; one '
+            'that really holds a file joins ' + ', '.join(
+                sorted(PATH_ADDRESSED_ROSTER)) + ' with its reason written '
+            'beside it, and that roster may only SHRINK:\n  '
+            + '\n  '.join(offenders))
+
+    def test_every_roster_entry_still_matches_a_site(self):
+        """An entry nothing matches is a hole waiting for a file to move into
+        it — the same reasoning `CONFIG_IMPORT_ALLOWLIST` prunes for."""
+        census = {rel: path for rel, path in _sources()}
+        stale = sorted(set(PATH_ADDRESSED_ROSTER) - set(census))
+        self.assertEqual([], stale,
+                         'rostered module(s) that no longer exist. Prune:\n  '
+                         + '\n  '.join(stale))
+        idle = sorted(rel for rel in PATH_ADDRESSED_ROSTER
+                      if not _path_addressed_sites(rel, _tree(census[rel])))
+        self.assertEqual(
+            [], idle,
+            'rostered module(s) that address nothing by path any more — the '
+            'exemption has outlived what it was granted for. Delete the '
+            'line:\n  ' + '\n  '.join(idle))
+
+    def test_the_roster_has_not_grown(self):
+        self.assertLessEqual(
+            len(PATH_ADDRESSED_ROSTER), ROSTER_OPENED_AT,
+            f'the roster opened at {ROSTER_OPENED_AT} modules and may only '
+            f'shrink; it now names {sorted(PATH_ADDRESSED_ROSTER)}. A '
+            f'convenience entry is the defect this case exists to stop — if '
+            f'the module really holds a FILE, say so here and lower '
+            f'ROSTER_OPENED_AT by deleting one that does not.')
+
+    def test_nothing_strips_a_value_that_is_already_unquoted(self):
+        offenders: list[str] = []
+        for rel, path in _sources():
+            offenders.extend(_double_strip_sites(rel, _tree(path)))
+        self.assertEqual(
+            [], offenders,
+            'an `unquote` around a reader that already unquoted. The second '
+            'strip is not a no-op: a value whose unquoted form is itself '
+            'quote-wrapped loses another pair, and `pm get` never did that, so '
+            'two verbs answered differently about one field:\n  '
+            + '\n  '.join(offenders))
+
+    def test_the_grain_layer_holds_the_seam_the_roster_assumes(self):
+        """The other side of the roster, in BOTH directions, because one case
+        covers one claim: the id-addressed read has to exist (or the offender
+        list above is empty because nobody can read a field at all), and the
+        grain layer has to still be the module holding the path reads (or every
+        offender moved somewhere else and these cases pass over nothing).
+        """
+        import inspect
+        from agentic_sdlc.repo.pm import model as pm_model
+        for name, args in (('grain', ('cfg', 'gid', 'kind')),
+                           ('doc_grain', ('path', 'kind')),
+                           ('story_grain', ('cfg', 'sid'))):
+            fn = getattr(pm_model, name, None)
+            self.assertTrue(callable(fn), f'model.{name} is gone')
+            params = inspect.signature(fn).parameters
+            for arg in args:
+                self.assertIn(arg, params, f'model.{name}({arg})')
+        for name in ('field', 'list_field', 'declares', 'sequence_defect'):
+            self.assertTrue(
+                callable(getattr(pm_model.Grain, name, None)),
+                f'Grain.{name} is gone — every caller that stopped naming a '
+                f'file reads through it')
+        sites = _path_addressed_sites(GRAIN_LAYER_MODULE,
+                                      _tree(SRC / GRAIN_LAYER_MODULE))
+        self.assertGreaterEqual(len(sites), 8, sites)
 
 
 # Every spelling of `open` the classifier has to get right, as

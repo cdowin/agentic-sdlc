@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import model
 
 FIELD = 'changelog'
@@ -37,8 +36,8 @@ class Entry:
         return bool(self.text.strip()) and not self.declined
 
 
-def _text(path) -> str:
-    return frontmatter.unquote(frontmatter.field_of(path, FIELD)).strip()
+def _text(grain) -> str:
+    return grain.field(FIELD).strip()
 
 
 # The tool's own mapping, inverted — NOT `[pm.contains]`, which a project may
@@ -62,9 +61,8 @@ def collect(cfg: model.PmConfig, gid: str,
     if grain is None or gid in seen:
         return []
     seen.add(gid)
-    out = [Entry(gid, grain.kind, frontmatter.field_of(grain.path,
-                                                 model.FIELD_STATUS),
-                 _text(grain.path))]
+    out = [Entry(gid, grain.kind, grain.field(model.FIELD_STATUS),
+                 _text(grain))]
     for child in _children(cfg, index, grain):
         out.extend(collect(cfg, child, seen))
     return out
@@ -78,7 +76,7 @@ def _children(cfg: model.PmConfig, index: dict, grain) -> list[str]:
         return []
     bound = {gid: g for gid, g in index.items()
              if g.kind in kinds and g.binding == grain.gid}
-    declared = frontmatter.list_field_of(grain.path, model.ORDER_KEY)
+    declared = grain.list_field(model.ORDER_KEY)
     out = [gid for gid in declared if gid in bound]
     placed = set(out)
     return out + sorted(gid for gid in bound if gid not in placed)

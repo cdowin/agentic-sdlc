@@ -31,9 +31,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.repo import emit
-from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo.pm import ledger, model, verdict
-from agentic_sdlc.repo.pm.cli import Usage, _grain_file, _ok
+from agentic_sdlc.repo.pm.cli import Usage, _grain_of, _ok
 
 # The closed set of questions; an unknown kind names all four. Three ARE grain
 # kinds, read from their one home; `tag` has no grain behind it.
@@ -160,35 +159,36 @@ def _answer(cfg: model.PmConfig, rung: str, grain: str, subject: str,
 
 
 # --- grain resolution ---------------------------------------------------------
-def _kind_of(path: Path) -> str:
+def _kind_of(grain: model.Grain) -> str:
     """The grain's own `kind:` since 0.4.0, with the filename as the fallback
     for a document that declares none — it used to come from the FILENAME,
     which is the path being schema.
     """
-    found = frontmatter.unquote(frontmatter.field_of(path, model.FIELD_KIND))
+    found = grain.field(model.FIELD_KIND)
     if not found:
         # A nested tree's documents declare no `kind:`; there the slot name IS
         # the kind — the derivation 0.4.0 deletes, surviving here alone.
         found = {model.MILESTONE_DOC: model.GRAIN_MILESTONE,
-                 model.FEATURE_DOC: model.GRAIN_FEATURE}.get(path.name, model.GRAIN_STORY)
+                 model.FEATURE_DOC: model.GRAIN_FEATURE}.get(grain.path.name,
+                                                             model.GRAIN_STORY)
     return found
 
 
 def _grain(cfg: model.PmConfig, kind: str, gid: str, want: str, noun: str,
-           asks: str) -> Path:
-    """The grain file `gid` names, of the right kind, or exit 2; a story id
-    handed to `ready-for feature` would get the wrong question answered.
+           asks: str) -> model.Grain:
+    """The grain `gid` names, of the right kind, or exit 2; a story id handed
+    to `ready-for feature` would get the wrong question answered.
 
     `_kind_of`'s kind, whose filename fallback reads anything that is not a
     milestone or feature document as a story — which is why the story rung asks
     the grain INDEX instead.
     """
-    path = _grain_file(cfg, gid)
-    found = _kind_of(path)
+    grain = _grain_of(cfg, gid)
+    found = _kind_of(grain)
     if found != want:
         raise Usage(f'{gid!r} is a {found}, not a {noun} — '
                     f'`ready-for {kind}` asks {asks}')
-    return path
+    return grain
 
 
 # --- the review-record payload ------------------------------------------------
@@ -409,19 +409,16 @@ def ready_for_story(cfg: model.PmConfig, sid: str) -> int:
 def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
     """Is every story under this feature in the `done` category? Exit 1 names
     each that is not, with the word the file holds; no stories is vacuous."""
-    ffile = _grain(cfg, FEATURE, fid, model.GRAIN_FEATURE, FEATURE,
-                   "about a feature's stories")
+    feature = _grain(cfg, FEATURE, fid, model.GRAIN_FEATURE, FEATURE,
+                     "about a feature's stories")
     # The stories BOUND to this feature, not the ones in a directory beneath
     # it: membership is the child's field.
-    kept = model.story_files(cfg, frontmatter.unquote(frontmatter.field_of(ffile,
-                                                               model.FIELD_ID))
-                             or fid)
+    kept = model.story_grains(cfg, feature.field(model.FIELD_ID) or fid)
     held = model.holds(
         cfg, model.GRAIN_STORY,
-        ((frontmatter.unquote(frontmatter.field_of(sfile,
-                                       model.FIELD_ID)) or cfg.rel(sfile),
-          frontmatter.field_of(sfile, model.FIELD_STATUS) or '(no status:)')
-         for sfile in kept),
+        ((story.field(model.FIELD_ID) or cfg.rel(story.path),
+          story.field(model.FIELD_STATUS) or '(no status:)')
+         for story in kept),
         DONE)
     check = _check_answered_by(FEATURE)
     blockers = [Blocker(check, name) for name in held.names]
@@ -438,16 +435,16 @@ def ready_for_feature(cfg: model.PmConfig, fid: str) -> int:
 
 
 # --- feature -> milestone -----------------------------------------------------
-def _features(cfg: model.PmConfig, mfile: Path) -> list[tuple[str, Path]]:
-    """(id, path) per feature BOUND TO this milestone, in its declared order.
+def _features(cfg: model.PmConfig,
+              milestone: model.Grain) -> list[tuple[str, model.Grain]]:
+    """(id, grain) per feature BOUND TO this milestone, in its declared order.
 
-    Takes the DOCUMENT, not a directory: a pooled tree has none, and membership
-    is the child's field.
+    Takes the GRAIN, not a directory: a pooled tree has none, and membership is
+    the child's field.
     """
-    mid = frontmatter.unquote(frontmatter.field_of(mfile, model.FIELD_ID))
-    return [(frontmatter.unquote(frontmatter.field_of(ff, model.FIELD_ID)) or cfg.rel(ff),
-             ff)
-            for ff in model.feature_files(cfg, mid)]
+    mid = milestone.field(model.FIELD_ID)
+    return [(ff.field(model.FIELD_ID) or cfg.rel(ff.path), ff)
+            for ff in model.feature_grains(cfg, mid)]
 
 
 def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
@@ -458,10 +455,9 @@ def _bugs_against(cfg: model.PmConfig, mid: str) -> tuple[list, int]:
     POOL is the second number, not a scan total — it separates
     zero-because-none-nested from zero-because-none-matched.
     """
-    against = [(frontmatter.unquote(frontmatter.field_of(bfile,
-                                             model.FIELD_ID)) or cfg.rel(bfile),
-                frontmatter.field_of(bfile, model.FIELD_STATUS) or '(no status:)')
-               for bfile in model.bug_files(cfg, mid)]
+    against = [(bug.field(model.FIELD_ID) or cfg.rel(bug.path),
+                bug.field(model.FIELD_STATUS) or '(no status:)')
+               for bug in model.bug_grains(cfg, mid)]
     return against, len(model.unbound(cfg, model.GRAIN_BUG))
 
 
@@ -469,9 +465,9 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
     promised to this milestone outside `done`. Zero features exits 1,
     deliberately opposite to the empty-story ruling."""
-    mfile = _grain(cfg, MILESTONE, mid, model.GRAIN_MILESTONE, MILESTONE,
-                   "about a milestone's features")
-    features = _features(cfg, mfile)
+    milestone = _grain(cfg, MILESTONE, mid, model.GRAIN_MILESTONE, MILESTONE,
+                       "about a milestone's features")
+    features = _features(cfg, milestone)
     subject = f'{MILESTONE} {mid}'
     check = _check_answered_by(MILESTONE)
     if not features:
@@ -485,16 +481,16 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
     # Asked of the feature flow, not the story flow.
     held = model.holds(
         cfg, model.GRAIN_FEATURE,
-        ((fid, frontmatter.field_of(ffile, model.FIELD_STATUS) or '(no status:)')
-         for fid, ffile in features),
+        ((fid, ff.field(model.FIELD_STATUS) or '(no status:)')
+         for fid, ff in features),
         DONE)
     unfinished = dict(held.blockers)
     blockers: list[Blocker] = []
-    for fid, ffile in features:
+    for fid, ff in features:
         if fid in unfinished:
             blockers.append(Blocker(check, f'{fid} is {unfinished[fid]}'))
             continue
-        _, defect = _record(cfg, frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed')))
+        _, defect = _record(cfg, ff.field('reviewed'))
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
     bugs, pooled = _bugs_against(cfg, mid)
@@ -513,24 +509,24 @@ def ready_for_milestone(cfg: model.PmConfig, mid: str) -> int:
 
 # --- milestone -> tag ---------------------------------------------------------
 def _pointers(cfg: model.PmConfig, mid: str,
-              mfile: Path) -> list[tuple[str, str]]:
+              milestone: model.Grain) -> list[tuple[str, str]]:
     """(owner, pointer) for every record this milestone points at: the
     features' plus the milestone's own, never a `review_dir` sweep."""
-    owned = [(fid, frontmatter.unquote(frontmatter.field_of(ffile, 'reviewed')))
-             for fid, ffile in _features(cfg, mfile)]
-    owned.append((mid, frontmatter.unquote(frontmatter.field_of(mfile, 'reviewed'))))
+    owned = [(fid, ff.field('reviewed'))
+             for fid, ff in _features(cfg, milestone)]
+    owned.append((mid, milestone.field('reviewed')))
     return owned
 
 
 def ready_for_tag(cfg: model.PmConfig, mid: str) -> int:
     """Is every finding in every record this milestone points at not `open`?
     An unparseable record is UNVERIFIABLE and blocks; no records blocks."""
-    mfile = _grain(cfg, TAG, mid, model.GRAIN_MILESTONE, MILESTONE,
-                   "about a milestone's review records")
+    milestone = _grain(cfg, TAG, mid, model.GRAIN_MILESTONE, MILESTONE,
+                       "about a milestone's review records")
     check = _check_answered_by(TAG)
     blockers: list[Blocker] = []
     records: dict[Path, Record] = {}
-    for owner, pointer in _pointers(cfg, mid, mfile):
+    for owner, pointer in _pointers(cfg, mid, milestone):
         if not pointer or pointer == 'null':
             # Whether the review happened is `ready-for milestone`'s question.
             continue

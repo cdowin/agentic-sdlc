@@ -104,7 +104,7 @@ def _kind_of(rel: Path, lines: list[str] | None = None) -> str:
     # a grain; the two shared docs open no frontmatter, so they cannot say
     # anything and fall through to the name.
     if lines is not None:
-        declared = frontmatter.unquote(frontmatter.field_in(lines, model.FIELD_KIND))
+        declared = frontmatter.field_in(lines, model.FIELD_KIND)
         if declared in _DECLARED:
             return _DECLARED[declared]
     slot = _slot_named(name, lines)
@@ -143,11 +143,10 @@ def _repair_verb(shared: Path) -> str:
     for slot in model.SLOT_HEADER:
         if not shared.name.endswith(f'-{slot}'):
             continue
-        grain = shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix)
-        kind = frontmatter.unquote(frontmatter.field_of(grain, model.FIELD_KIND))
-        gid = frontmatter.unquote(frontmatter.field_of(grain, model.FIELD_ID))
-        if kind and gid:
-            return f'`pm new {kind} {gid}`'
+        beside = model.doc_grain(
+            shared.with_name(shared.name[:-len(slot) - 1] + shared.suffix))
+        if beside.kind and beside.gid:
+            return f'`pm new {beside.kind} {beside.gid}`'
         break
     return '`pm new <kind> <id>` for the grain it sits beside'
 

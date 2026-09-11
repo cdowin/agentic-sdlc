@@ -90,9 +90,9 @@ class StatusMoves(unittest.TestCase):
         # that reads an END STATE is satisfied by it.
         #
         # The replacement targets `status: ready`, which is what `tree()`
-        # WRITES. It read `status: todo` until 0.6.0 and matched nothing, so
-        # the hand-edit this case is named for never happened and the PASS it
-        # asserted was over an untouched tree — the case proved half of itself.
+        # WRITES — a target string no fixture holds edits nothing, and the PASS
+        # is then asserted over an untouched tree (0.6.0,
+        # `bg-a-proof-row-names-a-case-that-proves-half`).
         with tree(milestone_status='done', feature_status='done',
                   story_statuses=('ready',)) as root:
             sf = root / STORY_REL
@@ -117,12 +117,10 @@ class StatusMoves(unittest.TestCase):
             self.assertIn('two places in this tree disagree', out)
 
     def test_a_move_breadcrumbs_the_belt_that_closes_it_and_its_checks(self):
-        """0.4.0/every-move-breadcrumbs-the-next-step. 0.3.0 built eleven
-        features in 64 minutes and spent 93 more reviewing them, because nine
-        reviews were batched to the end — and the tool said nothing at the
-        moment of each move. Prose in three documents had already failed once
-        to stop a builder running wide gates. What holds is what the tool SAYS
-        at the moment of the act.
+        """0.4.0/every-move-breadcrumbs-the-next-step, which holds the
+        measurement: prose in three documents had already failed to stop a
+        builder running wide gates, so what holds is what the tool SAYS at the
+        moment of the act.
         """
         from agentic_sdlc.repo.conveyor import steps
         with tree(feature_status='ready', story_statuses=('ready',)) as root:
@@ -169,11 +167,9 @@ class StatusMoves(unittest.TestCase):
             self.assertNotIn('next:', out)
 
     def test_a_feature_move_prints_what_it_wrote_and_nothing_else(self):
-        """Amended from the case that asserted the advisory (`not finished:
-        s0.md(...)`) on every move into `in_progress` — it could not fail once
-        the advisory was deleted, so it now proves the deletion: a write
-        prints the one line it wrote (story 03), and the stories left behind
-        are `check pm`'s WARN, asked of the tree."""
+        """A write prints the one line it wrote (story 03); the advisory about
+        the stories left behind is gone, and they are `check pm`'s WARN, asked
+        of the tree."""
         for to in ('reviewing', 'building'):
             with self.subTest(to=to), \
                     tree(feature_status='ready',
@@ -543,15 +539,11 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
         and every word of the fork traces to the declaration — so a hardcoded
         question or a hardcoded count fails a test rather than a review.
 
-        **Three of those numbers used to slip past it** (0.5.0/arrival N3, and
-        `bg-a-proof-row-names-a-case-that-proves-half`). The age was asserted
-        as `'oldest ' in census`, so `human_duration(99999)` hardcoded into
-        `Census.line` stayed green; the wip number as `str(cfg.wip) in census`,
-        so the whole clause could be deleted and the digit `1` was still
-        somewhere on the line; and the `reviewed record` clause only in its
-        ABSENT form, so deleting it from `Census.line` reddened nothing in
-        either tier. Each is pinned to its own derivation now, and the record
-        clause is asserted from BOTH sides on two trees.
+        **Three of those numbers slipped past it once** — the age, the wip
+        number and the `reviewed record` clause, each asserted in a form that
+        survived the clause being deleted (0.5.0/arrival N3,
+        `bg-a-proof-row-names-a-case-that-proves-half`). Each is pinned to its
+        own derivation now, and the record clause from BOTH sides on two trees.
         """
         config = self._declared(extra='[pm]\nwip = 1\n')
         # A REAL move, because the age is measured from a `status` row and a
@@ -1250,6 +1242,32 @@ class FieldMutation(unittest.TestCase):
             self.assertEqual(sf.read_bytes(), before)
             self.assertEqual(ledger_lines(root), rows)   # refused: no row
 
+    def test_a_quote_wrapped_value_is_stripped_ONCE_by_every_reader(self):
+        """The one behaviour `st-the-engine-asks-by-id-not-by-path` changed.
+
+        `unquote` strips ONE pair and is not a YAML parser, and 68 readers
+        stripped a second time off a value the parse had already stripped.
+        `pm get` never did — so `get` answered `'quoted'` where `list` answered
+        `quoted` for the same line, and neither said so. One strip everywhere is
+        also what makes `set` then `get` a round trip.
+        """
+        with tree(story_statuses=('ready',)) as root:
+            # The line becomes `name: "'quoted'"`. One strip is `'quoted'`;
+            # the second strip, now gone, took the inner pair as well.
+            self.assertEqual(
+                run_cli(root, 'set', '0.1/alpha/s0', 'name', '"\'quoted\'"')[0],
+                0)
+            self.assertEqual(
+                frontmatter.field_of(root / STORY_REL, 'name'), "'quoted'")
+            code, out = run_cli(root, 'get', '0.1/alpha/s0', 'name',
+                                stdout_only=True)
+            self.assertEqual((code, out.strip()), (0, "'quoted'"))
+            code, rows = run_cli(root, 'list', '--kind', 'story',
+                                 stdout_only=True)
+            self.assertEqual(code, 0)
+            self.assertIn("\t'quoted'", rows)
+            self.assertNotIn('\tquoted', rows)
+
     def test_set_moves_owner_in_both_directions(self):
         # `claim`/`release` were fourteen lines calling this with the key
         # hardcoded. One verb, and `owner` is not special among fields — the
@@ -1559,6 +1577,13 @@ class Decide(unittest.TestCase):
             self.assertTrue(body.startswith(model.SLOT_HEADER['decisions.md']))
             today = datetime.now(timezone.utc).date().isoformat()
             self.assertIn(f'## D1 — {today} — the sweep verb moves', body)
+            # The GRAIN's `name:`, asked of the grain
+            # (`st-the-engine-asks-by-id-not-by-path`). The template's `{name}`
+            # used to be filled by joining `milestone.md` onto the log's own
+            # parent — the grain's directory in a NESTED tree and the POOL in a
+            # pooled one, so every log minted since 0.4.0 got the empty string
+            # and read `# 0.1  — decisions`.
+            self.assertIn('# 0.1 Demo — decisions', body)
 
     def test_a_refused_decision_mints_nothing_and_touches_no_existing_log(self):
         # Refuses WHOLE: the mint and the append are one write, so a refusal

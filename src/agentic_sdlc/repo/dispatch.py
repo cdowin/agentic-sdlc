@@ -21,7 +21,6 @@ import sys
 
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared)
-from agentic_sdlc.core import frontmatter
 from agentic_sdlc.core.project import repo_root
 
 SECTION = 'dispatch'
@@ -154,7 +153,7 @@ def _grain(gid: str) -> list[str]:
     grain = model.grain_index(cfg).get(gid)
     if grain is None:
         raise ConfigError(f'--grain {gid!r} resolves to no grain in this tree')
-    status = frontmatter.field_of(grain.path, model.FIELD_STATUS)
+    status = grain.field(model.FIELD_STATUS)
     return [f'  id       {gid}',
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',

@@ -7,7 +7,7 @@ name: the work provider leaves the config module
 status: done
 owner: agent
 depends_on: []
-changelog: `pm config --seed` prints one changed comment line: the seed's own note about where its bytes come from now names `vocabulary.render_seed()`, because the module it used to name no longer exists.
+changelog: `pm config --seed` and two gate `--help` surfaces print the new module names: the seed's note about where its bytes come from now says `vocabulary.render_seed()`, and `check pm --help` and `check grain-shape --help` name `vocabulary.*` where they named `model.*` — three changed lines of consumer-visible text, because the module they all named no longer exists.
 ---
 
 # the work provider leaves the config module

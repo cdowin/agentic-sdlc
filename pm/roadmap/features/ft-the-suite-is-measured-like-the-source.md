@@ -7,7 +7,7 @@ status: done
 reviewed: docs/reviews/2026-09-11-0.7.0-the-suite-is-measured-like-the-source.md
 depends_on: []
 consumed_by: []
-changelog: `tests/` is now measured by the same prose census as `src/`, with its own declared ceiling (0.55) and a written per-module argument for that number, and every source-shaped guard under `tests/` declares `PROTECTS = (the property, the judgement)` — 35 guards judged, 28 against a gate that misses drift, 6 against a write that looks legitimate. Consumer-visible in the shipped CLI: `agentic-sdlc cite [--sites]`, the rule-citation census, and `check budget` now failing a tier that declares a case ceiling with no census to grade it against.
+changelog: `tests/` is now measured by the same prose census as `src/`, with its own declared ceiling (0.55) and a written per-module argument for that number, and every source-shaped guard under `tests/` declares `PROTECTS = (the property, the judgement)` — `tests/test_guard_corpus.py` is the census that answers how many and which. Consumer-visible in the shipped CLI: `agentic-sdlc cite [--sites]`, the rule-citation census, and `check budget` now failing a tier that declares a case ceiling with no census to grade it against.
 ---
 
 # the suite is measured like the source

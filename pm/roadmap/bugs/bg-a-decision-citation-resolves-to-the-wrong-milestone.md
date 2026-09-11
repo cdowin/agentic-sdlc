@@ -46,8 +46,10 @@ legal — that is where it is unambiguous.
 ## What landed, and what did not
 
 **Landed.** `check doc` builds a decision index — `{version: (milestone id, the
-D-numbers its decisions file records)}`, read through `model.shared_doc` so a
-pooled tree and a nested one are read the same way — and resolves every
+D-numbers its decisions file records)}`, read through the grain layer's own
+`shared_doc` so a pooled tree and a nested one are read the same way (it was
+`model.shared_doc` when this landed; `st-the-work-provider-leaves-the-config-module`
+retired that module and the call is `inventory.shared_doc` now) — and resolves every
 qualified `<version>/D<n>` in `[doc] scope` AND in every grain. A citation
 naming a version no milestone declares, or a decision its milestone does not
 record, is a finding that names what the milestone DOES record. 21 citations

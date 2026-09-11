@@ -6,7 +6,7 @@ status: building
 depends_on: ["ms-the-rule-reaches-the-work"]
 branch: milestone/0.7.0-nothing-is-hand-rolled
 version: 0.7.0
-changelog:
+changelog: **Two gates now fail a tree that passed at 0.6.0**, both deliberate and both a minor bump: `check budget` exits 1 on a tier that declares a `[tests] cases` limit with no census to grade it against, and `check doc` exits 1 on a `<version>/D<n>` citation naming a decision its milestone does not record. Three verbs are new or wider — `agentic-sdlc cite [--sites]`, `agentic-sdlc dispatch --grain <id>`, and `pm ledger report <a> <b>`, which takes more than one milestone and prints every block with one row each plus a delta — and `pm ledger report`'s `--help` now names all 22 blocks it prints where it named 3. Internally `repo/pm/model.py` is gone, split into `vocabulary.py`, `inventory.py` and `core/frontmatter.py`, so a traceback from the pinned tool names one of those.
 order:
   - "bg-a-decision-citation-resolves-to-the-wrong-milestone"
   - "bg-the-brief-undercounts-the-coupling-it-argues-from"
@@ -20,6 +20,7 @@ order:
   - "bg-rule-11-is-gated-in-one-direction-only"
   - "bg-the-always-loaded-surface-states-properties-not-procedures"
   - "bg-the-push-gate-dirties-the-tree-it-just-cleaned"
+reviewed: docs/reviews/2026-09-11-0.7.0-milestone-review.md
 ---
 
 # 0.7.0 — nothing is hand-rolled

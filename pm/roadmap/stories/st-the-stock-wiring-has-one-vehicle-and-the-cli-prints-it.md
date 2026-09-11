@@ -4,8 +4,8 @@ kind: story
 feature: ft-every-printed-command-runs-in-a-stock-consumer
 milestone: "ms-a-consumer-can-take-the-bump"
 name: the stock wiring reaches every verb, and every line the CLI renders names it
-status: planning
-owner:
+status: building
+owner: agent
 depends_on: []
 changelog:
 ---

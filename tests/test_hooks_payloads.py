@@ -182,7 +182,33 @@ def test_stop_gate_never_gates_the_trunk_session(tmp_path):
     orchestrator every turn."""
     root = corpus_repo(tmp_path)
     write_makefile(root, check_ok=False)
-    assert fire_stop(root).returncode == 0
+    done = fire_stop(root)
+    assert (done.returncode, done.stdout) == (0, '')
+
+
+CLOSE_LINE = ("1 story/ies ready for `close story` — st-x ('building'); next: "
+              "`make sdlc ARGS='close story <id>'`, one per story (CLOSE)")
+
+
+def test_stop_gate_names_a_ready_close_to_the_trunk_session(tmp_path):
+    """0.8.0 ended sessions with closes ready and nobody told. The trunk
+    session is still never GATED: `check pm`'s CLOSE lines are named to it
+    (stock `inform`, a systemMessage, exit 0), and `CLOSE_READY="block"`
+    holds its stop exactly once — the re-entry guard lets the next one go."""
+    root = corpus_repo(tmp_path)
+    (root / 'close.txt').write_text(
+        f'  WARN  not a close (U1)\n  WARN  {CLOSE_LINE}\n', encoding='utf-8')
+    (root / 'Makefile').write_text('sdlc:\n\t@cat close.txt\n', encoding='utf-8')
+    told = fire_stop(root)
+    assert told.returncode == 0, told.stderr
+    message = json.loads(told.stdout)['systemMessage']
+    assert CLOSE_LINE in message.splitlines() and 'U1' not in message, message
+    hook = root / STOP_GATE
+    hook.write_text(hook.read_text(encoding='utf-8').replace(
+        'CLOSE_READY="inform"\n', 'CLOSE_READY="block"\n', 1), encoding='utf-8')
+    held = fire_stop(root)
+    assert held.returncode == 2 and f'  {CLOSE_LINE}' in held.stderr, held
+    assert fire_stop(root, stop_hook_active=True).returncode == 0
 
 
 def test_stop_gate_blocks_an_agent_stop_while_the_gate_is_red(tmp_path):

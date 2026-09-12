@@ -14,6 +14,7 @@ order:
   - "bg-the-rename-verb-carries-a-second-frontmatter-grammar"
   - "bg-the-rename-write-path-never-invalidates-the-document-cache"
   - "bg-the-storage-layers-privates-are-reached-from-outside-it"
+reviewed: docs/reviews/2026-09-12-0.9.0-milestone-review.md
 ---
 
 # 0.9.0 — the tool agrees with itself

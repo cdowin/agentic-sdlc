@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-the-tool-agrees-with-itself"
 name: the version gates agree, and a dispatch counts once
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.9.0-the-gates-agree-and-a-dispatch-counts-once.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-the-version-file-is-claimed-when-a-milestone-starts"
   - "st-a-hand-record-joins-its-courier-twin"

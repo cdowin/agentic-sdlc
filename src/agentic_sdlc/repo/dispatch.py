@@ -160,7 +160,23 @@ def _grain(gid: str) -> list[str]:
     return [f'  id       {gid}',
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',
-            f'  brief    {cfg.rel(grain.path)}   <- READ THIS FIRST']
+            f'  brief    {cfg.rel(grain.path)}   <- READ THIS FIRST',
+            '', _stamp(gid, grain.field(ISSUE_FIELD))]
+
+
+ISSUE_FIELD = 'issue'
+
+
+def _stamp(gid: str, raw: str) -> str:
+    """The line `record --from-transcript` copies grain and issue back from.
+    `issue:` is split on commas and spaces, `[]`, quotes and `#` dropped."""
+    from agentic_sdlc.repo.pm import ledger
+    issues = [one.strip('\'"').lstrip('#') for one in
+              (raw or '').strip('[]').replace(',', ' ').split()]
+    defect = next(filter(None, map(ledger.issue_defect, issues)), '')
+    if defect:
+        raise ConfigError(f'{gid} declares {ISSUE_FIELD}: {raw!r} — {defect}')
+    return ledger.stamp_line(gid, issues)
 
 
 def _recording(gid: str, role: str) -> list[str]:

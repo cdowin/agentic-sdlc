@@ -17,10 +17,10 @@ MAKE_PM=(make -s pm)
 # GDK_LEDGER_GRAIN — the grain this session or dispatch is working on, exported
 # by whoever started it. NOT a payload field: no hook event carries a grain, and
 # the fact already exists at the moment of dispatch, so passing it is copying a
-# known value rather than deriving one (D2). Unset is normal — the verb then
-# resolves it from the tree, or omits the key. Never set it to a guess: a row
-# filed against the wrong grain is uncorrectable, and one filed against none is
-# visible in a bucket that already exists.
+# known value rather than deriving one (D2). Unset is normal — the verb copies
+# the prompt's GDK-STAMP line, else the one live story, else omits the key.
+# Never set it to a guess: a row filed against the wrong grain is uncorrectable,
+# and one filed against none is visible in a bucket that already exists.
 # GDK_LEDGER_ROOT — the TREE this row belongs to, when the session cwd is not
 # inside it. Unset falls back to that cwd; a value naming no tree is a note.
 # -----------------------------------------------------------------------------

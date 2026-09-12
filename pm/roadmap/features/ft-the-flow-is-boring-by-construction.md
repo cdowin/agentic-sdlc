@@ -29,7 +29,7 @@ orchestrator:
 
 The one guard it met, the pathless-commit guard, stopped it correctly. **Prose and memory did not
 bind the leader, and hooks did.** So this feature removes the leader's choices and guards the rest. It
-is proven by running 0.9.0 itself PARALLEL, by contract, under these guards, and reading its own
+is proven by running 0.10.0 itself PARALLEL, by contract, under these guards, and reading its own
 telemetry.
 
 ## The work: four stories
@@ -65,7 +65,7 @@ In a consumer with the corpus installed and armed: `git bisect run …`, `git st
 --hard` from an agent session are each blocked with a named reason; `add <path>` + `commit -m … --
 <path>` + `push origin <milestone-branch>` pass; an Agent dispatch with `isolation: "worktree"` is
 refused naming `agent-worktree.sh`; a leader-scope write to `src/` is refused. `dispatch --grain <id>
---mode parallel` renders the agent-owned worktree loop against the milestone's `branch:`. And 0.9.0
+--mode parallel` renders the agent-owned worktree loop against the milestone's `branch:`. And 0.10.0
 itself is built in parallel under these guards, and its telemetry is in its close.
 
 ## Proof budget

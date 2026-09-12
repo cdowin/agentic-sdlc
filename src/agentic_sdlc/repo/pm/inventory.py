@@ -814,7 +814,7 @@ def _opens_frontmatter(lines: Sequence[str]) -> bool:
         probe = line.lstrip(BOM)
         if not probe.strip():
             continue
-        return frontmatter._FENCE.match(probe.lstrip(' \t')) is not None
+        return frontmatter.is_fence(probe.lstrip(' \t'))
     return False
 
 
@@ -990,12 +990,12 @@ def plan_defect(cfg: PmConfig) -> str | None:
             # that is there behind three invisible bytes (review B5).
             return ('opens with a UTF-8 BOM before its `---`, so the '
                     'frontmatter block is not the first line — strip the BOM')
-        opens = bool(lines) and frontmatter._FENCE.match(lines[0]) is not None
+        opens = bool(lines) and frontmatter.is_fence(lines[0])
         return ('has an opening `---` with no closing one'
                 if opens else
                 'has no frontmatter block — the plan is a grain, and `order` '
                 'lives in its frontmatter')
-    open_i, close_i = frontmatter._fence_bounds(lines)
+    open_i, close_i = frontmatter.fence_bounds(lines)
     for i in range(open_i + 1, close_i):
         if not lines[i].startswith(f'{ORDER_KEY}:'):
             continue
@@ -1100,24 +1100,38 @@ def current_release(cfg: PmConfig) -> str | None:
     return (milestone_version(cfg, mid) or None) if mid is not None else None
 
 
+def entry_has_started(cfg: PmConfig, mid: str) -> bool:
+    """Is this entry's milestone in the `in_progress` or `done` CATEGORY?"""
+    milestone = grain(cfg, mid, GRAIN_MILESTONE)
+    if milestone is None:
+        return False
+    return category_of(cfg, GRAIN_MILESTONE, milestone.field(FIELD_STATUS)) in (
+        IN_PROGRESS, DONE_CATEGORY)
+
+
 def graded_release(cfg: PmConfig) -> tuple[str | None, str]:
     """(the version `[pm] version_file` must equal, or None; why not) — R5's
-    question, and R5's only.
+    question, and R5's only. Under `start`, the last entry that has STARTED:
+    the bump-at-start commit claims the file, and `current_milestone()` is a
+    `todo` entry the instant `release` writes `done` (#43).
     """
     order = declared_order(cfg)
     if not order:
         return None, 'the plan declares no `order`'
     if cfg.version_at == VERSION_AT_START:
-        mid = current_milestone(cfg)
-        if mid is None:
-            return None, ('every entry in `order` has shipped, or the next one '
-                          'names no milestone in the tree')
+        started = [mid for mid in order if entry_has_started(cfg, mid)]
+        if not started:
+            return None, ('no entry in `order` is in the in_progress or done '
+                          'category yet, so no milestone has started and '
+                          'claimed the version file')
+        mid = started[-1]
         version = milestone_version(cfg, mid)
         if not version:
             stamp = vehicle.command('pm', 'set', mid, 'version',
                                     vehicle.Slot('<x.y.z>'))
-            return None, (f'{mid} is the current entry in `order` and declares '
-                          f'no `version:` — `{stamp}` says which release it is')
+            return None, (f'{mid} is the last entry in `order` to have started '
+                          f'and declares no `version:` — `{stamp}` says which '
+                          f'release it is')
         return version, ''
     shipped = [mid for mid in order if entry_is_shipped(cfg, mid)]
     if not shipped:
@@ -1512,7 +1526,7 @@ _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 def section_lines(text: str, heading: str) -> list[str] | None:
     """The lines under `## <heading>`, up to the next heading; None when the
     heading is absent, which is a different sentence from "empty"."""
-    return section_lines_in(frontmatter._split(text), heading)
+    return section_lines_in(frontmatter.split_lines(text), heading)
 
 
 def section_lines_in(lines: Sequence[str], heading: str) -> list[str] | None:
@@ -1579,7 +1593,7 @@ def next_entry_id(text: str) -> str:
     prefix follows the last id-shaped heading, and numbering is per file by
     design.
     """
-    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter._split(text)) if m]
+    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter.split_lines(text)) if m]
     if not seen:
         return f'{DECISION_PREFIX}1'
     prefix = seen[-1].group(1)

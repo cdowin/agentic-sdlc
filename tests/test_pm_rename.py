@@ -142,6 +142,42 @@ class TheSweepIsOnePass(unittest.TestCase):
             self.assertEqual(run_cli(root, 'validate')[0], 0)
 
 
+class TheStorageLayerRewritesEveryShape(unittest.TestCase):
+    """`frontmatter.renamed_in` is the one rewrite this verb goes through, so
+    rename carries no key or list grammar of its own
+    (bg-the-rename-verb-carries-a-second-frontmatter-grammar).
+
+    The INLINE list is a stated input format, not a leftover — the templates
+    ship `depends_on: []` and `pm set` writes it — so it is rewritten in
+    place, token by token. A block list is rewritten over exactly the lines
+    `list_field_of` reads: `consumed_by` below opens on a column-0 `- a`, the
+    reader reads it as no list, and the rewrite leaves the `  - a` after it
+    alone where the old private grammar rewrote it."""
+
+    BEFORE = ('---', 'id: a', "feature: 'a'   # quoted, commented",
+              """depends_on: [ "a" ,'a-x',a ]  # tail""",
+              'order:  # plan', '  - a   # note', '', '  # between',
+              '  - "z"', "  -   'a'", 'consumed_by:', '- a', '  - a',
+              'changelog: a', '---', '', 'body names a')
+    AFTER = ('---', 'id: b', "feature: 'b'   # quoted, commented",
+             """depends_on: [ "b" ,'a-x',b ]  # tail""",
+             'order:  # plan', '  - b   # note', '', '  # between',
+             '  - "z"', "  -   'b'", 'consumed_by:', '- a', '  - a',
+             'changelog: a', '---', '', 'body names a')
+    KEYS = ('id', 'feature', 'depends_on', 'order', 'consumed_by')
+
+    def test_every_shape_moves_in_either_line_ending_and_nothing_else(self):
+        for eol in ('\n', '\r\n'):
+            with self.subTest(crlf=eol == '\r\n'):
+                self.assertEqual(
+                    frontmatter.renamed_in(eol.join(self.BEFORE), self.KEYS,
+                                           {'a': 'b'}),
+                    (eol.join(self.AFTER),
+                     ('id', 'feature', 'depends_on', 'order')))
+        self.assertIsNone(frontmatter.renamed_in('id: a\n', self.KEYS,
+                                                 {'a': 'b'}))
+
+
 def as_nested(root: Path) -> None:
     """The same grains in the PRE-0.4.0 layout — no pool holds a document, so
     every resolver falls back to reading the path as schema."""
@@ -281,8 +317,8 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
             cfg = cfg_for(root)
             keys = set()
             for kind in vocabulary.FLOW_KINDS:
-                lines = frontmatter._split(templates.load(cfg, kind))
-                bounds = frontmatter._fence_bounds(lines)
+                lines = frontmatter.split_lines(templates.load(cfg, kind))
+                bounds = frontmatter.fence_bounds(lines)
                 self.assertIsNotNone(bounds, kind)
                 keys |= {line.split(':', 1)[0]
                          for line in lines[bounds[0] + 1:bounds[1]]

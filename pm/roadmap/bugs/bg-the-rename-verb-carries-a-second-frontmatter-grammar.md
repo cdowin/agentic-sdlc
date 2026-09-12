@@ -1,9 +1,9 @@
 ---
 id: bg-the-rename-verb-carries-a-second-frontmatter-grammar
 kind: bug
-milestone:
+milestone: ms-the-tool-agrees-with-itself
 name: pm rename parses frontmatter with its own key grammar and its own inline-list reader
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -61,3 +61,7 @@ that belongs in the storage layer's docstring as a stated input format.
 The other nine reaches into `frontmatter`'s privates —
 `bg-the-storage-layers-privates-are-reached-from-outside-it`. Those are reaches; this one is a
 second implementation.
+
+## Close
+
+Fixed in 1a55d18 (2026-09-12), by ft-frontmatter-has-one-grammar-and-one-way-in.

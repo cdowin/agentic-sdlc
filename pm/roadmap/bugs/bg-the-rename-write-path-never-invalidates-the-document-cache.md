@@ -1,9 +1,9 @@
 ---
 id: bg-the-rename-write-path-never-invalidates-the-document-cache
 kind: bug
-milestone:
+milestone: ms-the-tool-agrees-with-itself
 name: a document rewritten through apply.Plan stays in the parse cache, and a same-length rename defeats the stamp
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -64,3 +64,7 @@ bytes. It fails today.
 
 The cache itself. It exists because reading 700 documents four times cost the inner loop real
 seconds, and the fix is invalidation, never removal.
+
+## Close
+
+Fixed in 1a55d18 (2026-09-12), by ft-frontmatter-has-one-grammar-and-one-way-in.

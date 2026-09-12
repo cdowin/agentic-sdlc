@@ -127,6 +127,7 @@ grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
 -- rows naming no grain (1)
 dispatches  in  out  cache_create  cache_read  tokens_total  tool_calls  duration_s
          1   5    -             -           -             -           2           -
+   0 courier/hand pair(s) joined by agent_id — one dispatch each, on the hand row's grain with the courier row's measured spend
 
 [ledger:report] 0.1 — 38500 out / 39 tool calls / 812 s across 3 dispatch row(s)"""
 
@@ -152,6 +153,8 @@ SPEND_KEYS = ('milestone', 'section', 'grains',
               # tree's shared ledger is read by every milestone's
               # report, so this is the ordinary case, not an error.
               'stated_elsewhere', 'legacy',
+              # #39: hand rows folded into their courier twin by agent_id.
+              'joined',
               'totals')
 SECTION_KEYS = ('yield', 'rework', 'escapes', 'overhead', 'gates')
 
@@ -421,6 +424,7 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
                          'tool_calls': 2, 'duration_s': None},
         'legacy': {'rows': 0, 'unattributed': 0},
         'stated_elsewhere': 0,
+        'joined': 0,
         # Everything the seeded fixture touches is closed, so nothing is in
         # flight — and an EMPTY list rather than an absent key, because "none
         # in flight" is an answer and a missing key is not. It is only an
@@ -746,9 +750,11 @@ def test_a_current_shape_ledger_discloses_no_boundary():
             'declaration does not place in in_progress, so counted in no '
             'column above: 1 dispatch row(s)' in out)
     # The feature named itself through its own category key, so nothing was
-    # dropped there; and this is not the old-shape boundary.
+    # dropped there; and this is not the old-shape boundary. A feature with
+    # no story placed is no candidate (#39): the row names no grain.
     feature = next(e for e in data['grains'] if e['grain'] == FEATURE)
-    assert feature['dispatches'] == 1 and feature['frozen_only'] is None
+    assert feature['dispatches'] == 0 and feature['frozen_only'] is None
+    assert data['unattributed']['dispatches'] == 1
     assert data['legacy'] == {'rows': 0, 'unattributed': 0}
 
 

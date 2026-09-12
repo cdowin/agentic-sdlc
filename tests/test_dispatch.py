@@ -172,6 +172,12 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
         # `agentic-sdlc` (#36).
         self.assertIn(f"make pm ARGS='ledger record --grain {STORY} "
                       f"--agent-type developer'", out)
+        # #39: the id is what joins the hand row to its courier twin, so the
+        # preamble and the rule that auto-loads both ask for it.
+        flag = '--agent-id <the id the Agent tool returned>'
+        self.assertIn(f'what the agent reported: {flag} --tokens-total N', out)
+        guidance = Path(dispatch.__file__).parent / 'pm/guidance/pm-execution.md'
+        self.assertIn(flag, guidance.read_text(encoding='utf-8'))
 
     def test_the_record_line_it_prints_is_one_the_verb_ACCEPTS(self):
         """A printed command that errors is worse than none, so the line is

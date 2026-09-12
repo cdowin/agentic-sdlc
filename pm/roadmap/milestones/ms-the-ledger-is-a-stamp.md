@@ -3,9 +3,9 @@ id: "ms-the-ledger-is-a-stamp"
 kind: milestone
 name: the ledger is a stamp
 status: planning
-depends_on: ["ms-a-consumer-can-take-the-bump"]
-branch: milestone/0.9.0-the-ledger-is-a-stamp
-version: 0.9.0
+depends_on: ["ms-the-tool-agrees-with-itself"]
+branch: milestone/0.10.0-the-ledger-is-a-stamp
+version: 0.10.0
 changelog:
 order:
   - "ft-the-flow-is-boring-by-construction"
@@ -13,11 +13,12 @@ order:
   - "ft-work-is-stamped-with-its-issue-and-agent"
   - "ft-a-concurrent-dispatch-attributes-itself"
   - "ft-the-report-is-the-stamp-table"
+  - "ft-a-dispatch-row-carries-its-outcome"
   - "bg-an-unknown-agent-type-is-recorded-as-a-dispatch"
   - "bg-two-gate-runs-share-one-log-and-inflate-its-census"
 ---
 
-# 0.9.0 — the ledger is a stamp
+# 0.10.0 — the ledger is a stamp
 
 > ## Northstar, in Chris's words: **"The ledger is supposed to be granular, per milestone. It should
 > be simple telemetry that someone can stamp. start times, stop times, issue_ids being worked, token
@@ -41,8 +42,16 @@ could not answer, for two reasons found that session:
 The scout's audit, `docs/reviews/2026-09-11-ledger-telemetry-audit.md`, is the evidence this
 milestone is decomposed from.
 
+**Re-versioned 0.9.0 → 0.10.0 on 2026-09-11.** `ms-the-tool-agrees-with-itself` took 0.9.0 as a lean
+bug-and-debt release. It ships #39's "one dispatch is one row" half (`st-a-hand-record-joins-its-courier-twin`)
+and amends 0.4.0 D8's snapshot placement (`st-a-snapshot-places-a-row-only-on-a-story`). Read both closes
+before the scout. **Added at the re-version:** `ft-a-dispatch-row-carries-its-outcome` (#41, dispatch outcome and spend by
+role) is bound here. It adds report blocks, so weigh it against this milestone's own "simple" risk
+below. #40 (`ft-the-session-says-what-it-can-do-before-the-first-dispatch`, 0.11.0) overlaps
+`ft-the-flow-is-boring-by-construction`.
+
 **Planning only.** Features and stories are written from the audit, and none is dispatched before
-0.8.0 ships.
+0.9.0 ships.
 
 ## Ship criterion
 
@@ -54,6 +63,8 @@ Four features, one per work unit (the audit's six candidates, consolidated), plu
     ft-a-concurrent-dispatch-attributes-itself     D-B: the dispatch carries its stamp; one row each
     ft-the-report-is-the-stamp-table               "simple": the report IS the stamp table
                                                    (+ bg-two-gate-runs-share-one-log-and-inflate-its-census)
+    ft-a-dispatch-row-carries-its-outcome          #41, added at the re-version: outcome stamped on a
+                                                   dispatch; spend by role
 
 **Ship criterion.** Someone can stamp START and STOP on a unit of work, with its grain, the external
 issue id(s) it serves, its agent and its tokens, with one verb each and nothing inferred. Every row a
@@ -62,7 +73,7 @@ Concurrent dispatches attribute themselves without an environment variable nobod
 dispatch counts once. `pm ledger report <milestone>` is the stamp table. What the ledger cannot place,
 it counts on a named line; it never prints a shared number as one milestone's.
 
-**Decomposition into stories happens when 0.8.0 has shipped**, by the same flow: a scout against the
+**Decomposition into stories happens when 0.9.0 has shipped**, by the same flow: a scout against the
 code at that point, then stories.
 
 ## Risks

@@ -124,6 +124,11 @@ NO_GRAIN_TITLE = 'rows naming no grain'
 ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
                   'milestone\'s work, read out of the tree\'s shared ledger; '
                   'not unattributed')
+AGENT_ID_KEY = 'agent_id'
+MEASURED_KEY = 'messages'
+JOINED_KEY = 'joined'
+JOINED_NOTE = ('courier/hand pair(s) joined by agent_id — one dispatch each, on '
+               'the hand row\'s grain with the courier row\'s measured spend')
 
 # The payload key naming which milestone the report is OF — a key, not a kind.
 MILESTONE_KEY = 'milestone'
@@ -697,6 +702,44 @@ def _add(acc: dict, row: dict) -> None:
         acc[key] = _plus(acc[key], row.get(key))
 
 
+def _agent_of(row: dict) -> str:
+    agent = row.get(AGENT_ID_KEY)
+    if row.get(ledger.KIND_FIELD) != ledger.KIND_DISPATCH or not isinstance(agent, str):
+        return ''
+    return agent
+
+
+def _folded(courier: dict, hand: dict) -> dict:
+    """The hand row's grain on the courier row's numbers; the hand's where it has none."""
+    data = dict(courier)
+    if hand.get(ledger.GRAIN_FIELD):
+        data[ledger.GRAIN_FIELD] = hand[ledger.GRAIN_FIELD]
+    spend = ('usage', TOTAL_KEY) if not courier.get('usage') else ()
+    for key in (*spend, *COUNT_KEYS, 'agent_type'):
+        if key in hand and courier.get(key) in (None, '', {}):
+            data[key] = hand[key]
+    return data
+
+
+def join_twins(rows: list) -> tuple[list, int]:
+    """(rows, pairs joined): each hand dispatch row folded into the ONE courier
+    row a transcript measured under its `agent_id` (#39), since rows are never
+    rewritten (D7). No id, or not exactly one courier, joins nothing."""
+    couriers: dict[str, list[int]] = {}
+    for i, row in enumerate(rows):
+        if _agent_of(row.data) and MEASURED_KEY in row.data:
+            couriers.setdefault(_agent_of(row.data), []).append(i)
+    out, folded = list(rows), set()
+    for i, row in enumerate(rows):
+        twins = couriers.get(_agent_of(row.data), [])
+        if MEASURED_KEY in row.data or len(twins) != 1:
+            continue
+        out[twins[0]] = out[twins[0]]._replace(
+            data=_folded(out[twins[0]].data, row.data))
+        folded.add(i)
+    return [row for i, row in enumerate(out) if i not in folded], len(folded)
+
+
 # --- the tree -----------------------------------------------------------------
 def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
     """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
@@ -748,9 +791,9 @@ def named_grains(row: dict, kinds: dict[str, str],
     by it and by nothing else**: falling through billed a row naming a
     since-renamed story to whichever OTHER story was live.
 
-    **A snapshot places a row only when it is UNAMBIGUOUS** (0.4.0/D8): `pm
-    ledger record` omits the `grain` key rather than pick one, so a reader
-    billing BOTH un-did the decision on the way out.
+    **A snapshot places a row only when it names exactly ONE story** (0.4.0/D8,
+    its finest-kind clause superseded in 0.9.0): a feature is that story's
+    roll-up, never a candidate, since bugs and milestone work are in no snapshot.
 
     Category keys when present; frozen keys only for an old-shape row.
     """
@@ -759,21 +802,11 @@ def named_grains(row: dict, kinds: dict[str, str],
         return {stated} | {fid for fid, stories in owned.items()
                            if stated in stories} if stated in kinds else set()
     buckets_by_kind = LEGACY_BUCKETS if is_legacy(row) else CATEGORY_BUCKETS
-    named = _named_through(row, buckets_by_kind, kinds, owned)
-    return set() if _snapshot_is_ambiguous(named, kinds) else named
-
-
-def _snapshot_is_ambiguous(named: set[str], kinds: dict[str, str]) -> bool:
-    """Does this snapshot name more than one candidate at its finest kind?
-
-    Stories first: a snapshot naming two of them named no one thing, whatever
-    else is in it. A single story plus the feature that owns it is ONE
-    candidate — the feature is a roll-up `_named_through` added.
-    """
-    stories = {gid for gid in named if kinds.get(gid) == KIND_STORY}
-    if stories:
-        return len(stories) > 1
-    return len({gid for gid in named if kinds.get(gid) == KIND_FEATURE}) > 1
+    stories = {gid for gid in _named_through(row, buckets_by_kind, kinds, owned)
+               if kinds.get(gid) == KIND_STORY}
+    if len(stories) != 1:
+        return set()
+    return stories | {fid for fid, sids in owned.items() if sids & stories}
 
 
 def stated_elsewhere(row: dict, kinds: dict[str, str]) -> bool:
@@ -1280,6 +1313,7 @@ def spend_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
         out.append(f'   {legacy["unattributed"]} of these {LEGACY_NOTE}')
     if data.get('stated_elsewhere'):
         out.append(f'   {data["stated_elsewhere"]} further row(s) {ELSEWHERE_NOTE}')
+    out.append(f'   {data.get(JOINED_KEY, 0)} {JOINED_NOTE}')
     out.append('')
     out.append(f'{HEADING_PREFIX} {data[MILESTONE_KEY]} — '
                f'{_cell(totals["usage"]["output"])} out / '
@@ -1836,8 +1870,8 @@ def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
     present only when there was one (a `"rev": null` is a question nobody put).
     """
     src = DiskSource() if src is None else src
-    rows = in_time_order(rows)
-    out: dict = {MILESTONE_KEY: mid}
+    rows, joined = join_twins(in_time_order(rows))
+    out: dict = {MILESTONE_KEY: mid, JOINED_KEY: joined}
     if src.rev:
         out['rev'] = src.rev
     for section in SECTIONS:

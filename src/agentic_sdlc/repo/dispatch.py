@@ -174,6 +174,7 @@ def _recording(gid: str, role: str) -> list[str]:
     return ['', 'RECORDING THIS DISPATCH — rendered here, run by you:',
             f'  export {LEDGER_GRAIN_ENV}={shlex.quote(gid)}',
             '  # on return, add inside the quotes what the agent reported: '
+            '--agent-id <the id the Agent tool returned> '
             '--tokens-total N --duration-s N --tool-calls N',
             f'  {record}']
 

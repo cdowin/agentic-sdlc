@@ -120,7 +120,7 @@ builder in its own worktree. **Parallel builders never share one tree**, because
 `committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
 after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
 the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
-`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.9.0 runs PARALLEL,
+`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.10.0 runs PARALLEL,
 by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
 mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
 harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
@@ -155,16 +155,18 @@ makes itself rather than dispatching.
 
 ## 3. The model mix
 
-Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY.**
+Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY, and
+nothing runs above `high`** (2026-09-12: a builder that re-writes code is cheaper than one that
+ruminates; the extra effort bought length, not correctness).
 
 | role | model | effort | why |
 |---|---|---|---|
 | `architect` | opus | high | every dispatch inherits its framing |
-| `po` | opus | high | writes the briefs N agents execute verbatim — a wrong brief is N wrong builds |
-| `developer` / `verification-builder` | opus | high | the job is judgment under a possibly-WRONG premise |
-| `reviewer` / `verification-reviewer` | opus | **xhigh** | the gate, and it runs last; a miss here ships |
-| `milestone-reviewer` | opus | high | pressure-tests the spec everything downstream builds from |
-| `simplifier` | fable | high | *"should this exist"* has no ground truth — the most abstract pass |
+| `po` | opus | medium | writes the briefs N agents execute verbatim — a wrong brief is N wrong builds |
+| `developer` / `verification-builder` | opus | medium | the job is judgment under a possibly-WRONG premise |
+| `reviewer` / `verification-reviewer` | opus | high | the gate, and it runs last; a miss here ships |
+| `milestone-reviewer` | opus | medium | pressure-tests the spec everything downstream builds from |
+| `simplifier` | fable | medium | *"should this exist"* has no ground truth — the most abstract pass |
 | `test-writer` | sonnet | medium | audit-shaped work against a known diff |
 | `tech-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
 

@@ -3,7 +3,7 @@ id: ft-a-concurrent-dispatch-attributes-itself
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: a concurrent dispatch attributes itself, once
-status: building
+status: reviewing
 reviewed:
 depends_on: ["ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []

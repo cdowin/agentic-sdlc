@@ -3,11 +3,11 @@ id: ft-a-dispatch-row-carries-its-outcome
 kind: feature
 milestone: ms-the-ledger-is-a-stamp
 name: a dispatch row carries its outcome, and spend rolls up by role
-status: building
+status: reviewing
 reviewed:
 depends_on: ["ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []
-changelog:
+changelog: `pm ledger record --outcome landed|superseded|stopped:<reason>` stamps what became of a dispatch; each unit prints its outcome, `by agent` gives each agent's tokens and share, and a `superseded spend` line totals the tokens and names the grains of rows for grains the milestone no longer holds (#41).
 ---
 
 # a dispatch row carries its outcome, and spend rolls up by role

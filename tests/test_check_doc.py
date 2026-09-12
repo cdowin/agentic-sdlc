@@ -493,13 +493,13 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
         #26's own consumer: the INSTALLED `pm-execution.md`, read by the
         paragraph reader, in a tree whose feature ladder omits `reviewing`.
 
-        Its one `doc-scan:allow` still suppresses exactly what it did: strip
-        the marker and the only new finding, across all three span rules, is
-        `pm story reviewing <id>` on the marked line."""
+        It needs no `doc-scan:allow` since 0.11.0: the lean rule stopped
+        naming `pm story reviewing <id>` at all, so an allow marker there now
+        would be suppressing something nobody can see."""
         body = skills.guidance_body('pm-execution.md')
         marked = [n for n, line in enumerate(body.split('\n'), 1)
                   if doc.ALLOW_MARKER in line]
-        self.assertEqual(len(marked), 1, marked)
+        self.assertEqual(marked, [])
         with tree(flow=NO_FEATURE_REVIEW) as root:
             path = root / 'pm-execution.md'
             states = doc.declared_states()
@@ -512,10 +512,5 @@ class ACodeSpanIsReadAcrossItsParagraph(unittest.TestCase):
                              + doc.check_backtick_paths(path, lines))
 
             as_shipped = findings(body)
-            unmarked = findings(body.replace(doc.ALLOW_MARKER, ''))
         self.assertEqual(
             [f for f in as_shipped if 'does not declare' in f], [])
-        suppressed = [f for f in unmarked if f not in as_shipped]
-        self.assertEqual(len(suppressed), 1, suppressed)
-        self.assertTrue(suppressed[0].startswith(
-            f'DOC.md:{marked[0]}  `pm story reviewing <id>`'), suppressed)

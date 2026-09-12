@@ -23,8 +23,8 @@ one developer per feature lane took 513–1424 s. Eight lanes built six stories 
    renders the worktree loop, ending at a committed branch that you merge.
 3. **Lanes on disjoint files run concurrently, each in its own worktree off an explicit base.**
    The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, where `<base>` is
-   the milestone branch (or the next one's, step 4), and commits on its branch. When it reports, merge it from the checkout that holds the milestone branch, then
-   drop the worktree:
+   the milestone branch (or the next one's, step 4), and commits on its branch. When it
+   reports, merge it from the checkout holding the milestone branch, then drop the worktree:
    `git -C <root> merge --no-ff --no-edit <branch>` and
    `bash tools/dev/agent-worktree.sh done <slug>`.
    `*.jsonl merge=union` keeps the ledgers conflict-free.
@@ -44,8 +44,9 @@ one developer per feature lane took 513–1424 s. Eight lanes built six stories 
    commit range. It writes each feature's review record and the milestone record in one
    pass. Land the MAJOR-and-worse findings, then run `make sdlc ARGS='close feature <id>'`
    for each feature and `make sdlc ARGS='release <version>'`. Nothing runs above `high`.
-9. **Measure every dispatch** when it returns, against the previous milestone:
-   `make pm ARGS='ledger record --grain <id> --agent-id <agent-id> --tokens-total N --tool-calls N --duration-s N'`,
+9. **Measure every dispatch** when it returns, against the previous milestone. The
+   dispatch's `GDK-STAMP` line attributes it; record what the agent reported:
+   `make pm ARGS='ledger record --grain <id> --agent-id <agent-id> --outcome <word> --tokens-total N --tool-calls N --duration-s N'`,
    then `make pm ARGS='ledger report <previous-milestone-id> <milestone-id>'`.
 
 ## Dispatch brief template

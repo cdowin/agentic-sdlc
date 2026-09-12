@@ -125,17 +125,17 @@ def wiring(root: Path) -> tuple[str, str]:
 def attribution(stories: list[str] | None, why: str = '') -> tuple[str, str]:
     """(value, meaning) for the couriers' fallback over `stories` in progress;
     None is a tree that could not be asked, and `why` says so."""
-    grain = 'GDK_LEDGER_GRAIN'
+    stamp = 'GDK-STAMP'
     if stories is None:
         return UNKNOWN, why
     if len(stories) == 1:
         return '1', (f'{stories[0]} is the one story in progress, so a ledger '
                      f'row with no --grain is filed against it — right for '
                      f'its own work, wrong for any other dispatch; '
-                     f'`{CHANNEL}` renders the {grain} export that overrides '
-                     f'it')
+                     f'`{CHANNEL}` renders the {stamp} line that attributes a '
+                     f'dispatch instead')
     lost = ('a ledger row with no --grain names none and lands in `rows '
-            f'naming no grain` — `{CHANNEL}` renders the {grain} export each '
+            f'naming no grain` — `{CHANNEL}` renders the {stamp} line each '
             f'dispatch needs')
     if not stories:
         return '0', f'no story is in progress, so {lost}'

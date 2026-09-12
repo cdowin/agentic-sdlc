@@ -7,9 +7,9 @@ writes anyway on the record (D12). Consumers pin `DEVKIT_VERSION` in a Makefile 
 `uvx`; every change here lands in their commit gates — **treat the CLI as a published API.**
 Public repo, MIT.
 
-**The README carries the why; this file is the enforceable form.** Read [`README.md`](README.md)
-once. The northstar, in Chris's words: *a simple local Jira — it creates the work, moves it,
-expresses what the states and the flow are, and infers nothing. It just echoes state back.*
+**The README carries the why; this file is the enforceable form.** The northstar, in Chris's
+words: *a simple local Jira — it creates the work, moves it, expresses what the states and the
+flow are, and infers nothing. It just echoes state back.*
 
 ## Hard rules
 
@@ -79,10 +79,9 @@ is trimmed inside itself, never renumbered or reordered; a new rule takes the ne
     constraint only fires once you are already inside the mistake.** Before you write a script to
     measure this tree, or paste a prompt, ASK IT: `pm ledger report` (units, spend by agent,
     time per state; `--tree` for gate cost), `pm list` (any grain, as lines), `check <gate>`, `agentic-sdlc dispatch
-    --grain <id>` (the contract a subagent needs). 0.7.0's own orchestrator hand-rolled three of
-    those in one session having read this rule, which is why
-    `TestACapabilityIsCitedWhereItsOperatorStands` now holds the other direction: every verb the
-    routers declare is cited in a surface an operator reads.
+    --grain <id>` (the contract a subagent needs). `TestACapabilityIsCitedWhereItsOperatorStands`
+    holds the other direction: every verb the routers declare is cited in a surface an operator
+    reads.
 
     **Read verbs emit LINES; composition is the shell's job.** The rule's read side, and the
     reason it has one: a read verb that omits a field people filter on does not just inconvenience

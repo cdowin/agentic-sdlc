@@ -37,6 +37,12 @@ GUIDANCE_PLAN = (
     # types. It ROUTES to `pm new handoff` and the template rather than
     # restating either (0.4.0/D6).
     ('handoff.md', '.claude/skills/handoff/SKILL.md'),
+    # How much planning happens, and when a builder stops (#42). A skill
+    # reaches only the session that invokes it (#15), so the binding sentence
+    # is ALSO in each role brief; these carry the whole rule, plus a
+    # `## Project config` block the install keeps.
+    ('writing-plans.md', '.claude/skills/writing-plans/SKILL.md'),
+    ('executing-plans.md', '.claude/skills/executing-plans/SKILL.md'),
 )
 GUIDANCE_VERB = 'pm install-skills'
 
@@ -376,7 +382,9 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     actions: list[tuple[str, Path, str]] = []
     collisions: list[str] = []
     defects: list[str] = []
+    lacks: dict[str, str] = {}
     for target, rel, body in entries:
+        kept = False
         if rel in claimed:
             actions.append(('claimed', target, body))
             continue
@@ -391,15 +399,25 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             if unreadable:
                 defects.append(f'{cfg.rel(target)} {unreadable}')
                 continue
+            # Feature D1, as `install.main` carries it: a skill's `## Project
+            # config` block is the project's (#42), and a stale generated file
+            # is rewritten on the PLAIN run here — so the block rides into the
+            # new body on every write, never only under --force.
+            carried = (install.carry_config_block(existing, body)
+                       if existing is not None else None)
+            if carried is not None and carried != body:
+                lacks[rel] = install.kept_lacks(existing, body)
+                body, kept = carried, True
             if existing == body:
-                actions.append(('current', target, body))
+                actions.append(('header-kept' if kept else 'current',
+                                target, body))
                 continue
             # A file we did not generate, or one somebody edited, is theirs.
             if (existing is None
                     or GUIDANCE_HEADER not in existing) and not force:
                 collisions.append(cfg.rel(target))
                 continue
-        actions.append(('write', target, body))
+        actions.append(('kept' if kept else 'write', target, body))
     if collisions:
         head, tail = install.collision_refusal(collisions)
         raise Refused(f'{head}\n{tail}')
@@ -412,7 +430,7 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     # One plan: destinations decided above, `core.apply` reports which landed.
     writes = apply.Plan()
     for kind, target, body in actions:
-        if kind == 'write':
+        if kind in ('write', 'kept'):
             writes.overwrite(target, body, newline=None, label=cfg.rel(target))
     result = writes.apply(decide=False)
     written = [step.label for step in result.landed]
@@ -431,8 +449,11 @@ def cmd_install_skills(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             install._say(install.IS_CURRENT.format(rel=rel))
         elif kind == 'claimed':
             install._say(install.claimed_skip(rel, GUIDANCE_VERB))
+        elif kind == 'header-kept':
+            install._say(install.HEADER_KEPT.format(rel=rel) + lacks[rel])
         elif rel in landed:
-            install._say(f'wrote {rel}')
+            install._say(install.WROTE_KEPT_HEADER.format(rel=rel) + lacks[rel]
+                         if kind == 'kept' else f'wrote {rel}')
         else:
             install._say(install.NOT_REACHED.format(rel=rel))
     install.claim_census(GUIDANCE_VERB, entries, claimed)

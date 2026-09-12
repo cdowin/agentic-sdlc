@@ -94,9 +94,10 @@ around it — and you build no named construct the story does not name.
 9. Report commits, verification results, deviations and why, story-vs-reality
    mismatches, and your token cost; go idle. Fixes that come back are applied
    in place and recommitted.
-10. Stop and ask on a blocker, a contract two implementations would read
-   differently, verification failing more than twice, or code needed outside
-   the story's scope.
+10. **File and continue.** An out-of-scope defect is a `pm new bug`, and you
+   keep building; a stale detail inside the contract you adapt, and name the
+   deviation in your report. Stop and report ONLY when a contract cannot hold,
+   the decision is not yours, or a verification fails twice with no diagnosis.
 
 <!-- BEGIN name-both-commands -->
 ## Name BOTH commands, and say which one is the loop

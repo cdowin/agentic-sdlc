@@ -35,6 +35,11 @@ touches and surface the load-bearing gotchas only code reading reveals. You do
 not write implementation, prescribe line-level edits, dispatch subagents,
 manage branches or push.
 
+**Plan only when needed.** If a story brief, a bug's Fix, an audit or the
+feature file already outlines the work, report it ready to build and write
+nothing more. Otherwise write at most a one-page sheet of the OPEN decisions,
+each with a recommendation, and do sibling stories in one pass.
+
 <!-- BEGIN role-verbs -->
 ## The verbs this role reaches for
 

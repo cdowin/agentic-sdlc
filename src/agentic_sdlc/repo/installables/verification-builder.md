@@ -37,6 +37,10 @@ the gate reddened, and verification runs through the project's own targets.
   census or scope turns a loud FAIL into a silent PASS.
 - **Git is forward only** — never amend, rebase, reset or force-push what has
   been pushed; commits are pathspec-limited; hooks are never skipped.
+- **File and continue**: an out-of-scope defect is a filed bug and you keep
+  building; a stale detail inside the contract is adapted and reported as a
+  deviation. Stop ONLY when a contract cannot hold, the decision is not yours,
+  or a verification fails twice with no diagnosis.
 - **Report** what you changed, what you ran and what came back — numbers, not
   adjectives — what you did NOT verify, and your token cost.
 

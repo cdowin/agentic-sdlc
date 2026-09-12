@@ -3,7 +3,7 @@ id: ft-the-gates-agree-and-a-dispatch-counts-once
 kind: feature
 milestone: "ms-the-tool-agrees-with-itself"
 name: the version gates agree, and a dispatch counts once
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.9.0-the-gates-agree-and-a-dispatch-counts-once.md
 depends_on: []
 consumed_by: []

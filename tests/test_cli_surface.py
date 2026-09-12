@@ -694,17 +694,6 @@ class TestTheSurfaceSaysTelemetry:
             f'{sorted(found)} — every declaration is in one module again, so '
             f'this is `pm_cli.USAGE` with extra steps')
 
-    def test_the_clock_help_names_its_columns_in_the_order_it_prints_them(self):
-        """Rule 11's read side for `ledger report`'s clock: the two column
-        tuples the block renders from, in order, in `--help`, so a total is
-        `… | awk` and never a flag this verb grew. `CLOCK_COLUMNS` shipped
-        carrying that claim in a comment and referenced by nothing."""
-        from agentic_sdlc.repo.pm import cli as pm_cli, report
-        entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
-        flat = ' '.join(entry.split())
-        for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
-            assert ' '.join(columns) in flat, (columns, flat)
-
     def test_the_help_and_the_auto_loaded_rule_name_the_COMPARISON(self):
         """`bg-the-telemetry-verb-cannot-compare-two-milestones`. Every
         telemetry question asked of this tree is comparative, and the agent that

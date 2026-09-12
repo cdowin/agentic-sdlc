@@ -56,6 +56,12 @@ FIELD_KIND = 'kind'
 FIELD_STATUS = 'status'
 FIELD_NAME = 'name'
 FIELD_OWNER = 'owner'
+# A milestone's dispatch mode: one builder at a time on its `branch:`, or one
+# worktree per builder merging back into it. Empty or absent is serial.
+FIELD_MODE = 'mode'
+MODE_SERIAL = 'serial'
+MODE_PARALLEL = 'parallel'
+MODES = (MODE_SERIAL, MODE_PARALLEL)
 
 # The ROOT is a container like any other: `releases.md` declares `id:`/`kind:`
 # and holds an `order` of milestone ids. Not a FLOW kind — nothing moves it, so

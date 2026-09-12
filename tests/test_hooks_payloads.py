@@ -710,6 +710,57 @@ def test_worktree_done_keeps_an_unmerged_branch_and_deletes_a_merged_one(
     assert git(root, 'branch', '-d', 'feat/keeper').returncode == 0
 
 
+def test_worktree_done_carries_ledger_rows_and_retires_a_lane_in_the_mainline(
+        tmp_path):
+    """#48. After a release no milestone is in progress: a lane cut from
+    `milestone/x` that landed through `origin/main` is merged, and `done`
+    deletes its branch although neither `milestone/x` nor the main checkout's
+    HEAD holds it. Gate rows dirtying the lane's ledger — tracked or
+    gitignored — are APPENDED to the main checkout's copy, after its own; a
+    row CHANGED rather than appended is work, and refuses with nothing
+    carried."""
+    root = corpus_repo(tmp_path)
+    ledger, local = 'pm/roadmap/ledger.jsonl', 'pm/roadmap/ledger.local.jsonl'
+    (root / 'pm/roadmap').mkdir(parents=True)
+    (root / ledger).write_text('{"row": "head"}\n', encoding='utf-8')
+    (root / '.gitignore').write_text(local + '\n', encoding='utf-8')
+    assert git(root, 'add', ledger, '.gitignore').returncode == 0
+    assert git(root, 'commit', '-q', '-m', 'ledger', '--', ledger,
+               '.gitignore').returncode == 0
+    plant_origin_head(root)
+    assert git(root, 'branch', 'milestone/x').returncode == 0
+    path = Path(worktree(root, 'new', '--no-warm', 'lane',
+                         'milestone/x').stdout.strip())
+    (path / 'landed.gd').write_text('# done\n', encoding='utf-8')
+    assert git(path, 'add', 'landed.gd').returncode == 0
+    assert git(path, 'commit', '-q', '-m', 'feat: landed',
+               '--', 'landed.gd').returncode == 0
+    assert git(root, 'update-ref', 'refs/remotes/origin/main',
+               'feat/lane').returncode == 0
+    with open(root / ledger, 'a', encoding='utf-8') as main_rows:
+        main_rows.write('{"row": "main"}\n')
+
+    (path / ledger).write_text('{"row": "edited"}\n', encoding='utf-8')
+    refused = worktree(root, 'done', 'lane')
+    assert refused.returncode == 1 and f' M {ledger}' in refused.stderr, refused
+    assert path.is_dir() and 'edited' not in (root / ledger).read_text(
+        encoding='utf-8')
+
+    (path / ledger).write_text('{"row": "head"}\n{"gate": "unit"}\n',
+                               encoding='utf-8')
+    (path / local).write_text('{"gate": "check"}\n', encoding='utf-8')
+    done = worktree(root, 'done', 'lane')
+    assert done.returncode == 0, done.stderr
+    assert 'deleted merged branch feat/lane' in done.stderr, done.stderr
+    assert not path.exists()
+    assert git(root, 'show-ref', '--verify', '--quiet',
+               'refs/heads/feat/lane').returncode != 0
+    assert (root / ledger).read_text(encoding='utf-8') == (
+        '{"row": "head"}\n{"row": "main"}\n{"gate": "unit"}\n')
+    assert (root / local).is_file(), done.stderr
+    assert (root / local).read_text(encoding='utf-8') == '{"gate": "check"}\n'
+
+
 def _pm_tree(root: Path, status: str, flow: str = FLOW_TOML,
              branch: str = 'feat/integration') -> None:
     """A PM tree the worktree script can ASK about: one milestone at `status`

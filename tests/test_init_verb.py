@@ -81,6 +81,7 @@ WRITES = (
     'tools/hooks/cc-agent-isolation.sh',
     'tools/hooks/cc-ledger-subagent.sh',
     'tools/hooks/cc-ledger-session.sh',
+    'tools/hooks/cc-session-preflight.sh',
     'tools/hooks/pre-push',
     'tools/hooks/prepare-commit-msg',
     'tools/dev/agent-worktree.sh',

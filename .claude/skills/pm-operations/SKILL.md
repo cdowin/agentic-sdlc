@@ -21,7 +21,9 @@ without breaking a single reference to it.
 tree already has them.** Every status flip, decision and `--force` files a row;
 a `Stop`/`SubagentStop` hook sums each session's transcript into one; and every
 gate run files what it cost — as does every `retire`, so a shipped release keeps its
-version, name and summary after its documents are gone. All of them in `ledger.jsonl`.
+version, name and summary after its documents are gone. All of them in `ledger.jsonl` —
+except what a run on this machine cost (`gate`, `test`, `verify` rows), which lands in the
+gitignored `ledger.local.jsonl` so a commit's own hook leaves the tree clean.
 
     pm ledger show <grain-id>       that grain's rows oldest first, with the
                                     seconds between status changes
@@ -41,9 +43,11 @@ gives the same numbers to a script; `--from <rev>` reads a milestone that has
 already been retired, out of git.
 
 **Two homes, and this is the only surprising part.** A row naming a grain lives
-in that grain's milestone ledger. A row naming none — a gate run, a slow-test
-row, a session nobody could attribute — lives in the tree's own
-`<roadmap>/ledger.jsonl`, and both read verbs read both.
+in that grain's milestone ledger. A row naming none — a retire, a session nobody
+could attribute — lives in the tree's own `<roadmap>/ledger.jsonl`, and both read
+verbs read both. What a run on this machine cost — a gate, a slow test, a verify
+verdict — lands beside it in the gitignored `<roadmap>/ledger.local.jsonl` (`pm init`
+adds the ignore line), and every reader of those rows reads both files.
 
 **A number a row cannot hold does not belong in the tree.** The narrative goes
 in a review record or a decision; `pm ledger report` renders the arithmetic.
@@ -62,6 +66,7 @@ pm/roadmap/
   bugs/<slug>.md                 milestone: <milestone-id>   ← its parent (which one: `bugs bind:`)
   ledgers/<milestone-id>.jsonl   that milestone's rows
   ledger.jsonl                   rows naming no grain
+  ledger.local.jsonl             gate/test/verify cost — gitignored, this machine's
 ```
 
 **One flat pool per kind — the tables of the database.** A grain's identity is its

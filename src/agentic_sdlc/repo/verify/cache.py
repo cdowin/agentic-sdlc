@@ -241,7 +241,12 @@ def _is_ledger():
         return lambda path: False
 
     def is_ledger(path: Path) -> bool:
-        if path.name == ledger.LEDGER_FILE_NAME and _under(path, roadmap):
+        # The local ledger is gitignored and never listed — unless a tree
+        # has not taken the ignore line yet (#48), when its rows, all of them
+        # a run's own, must still not move the state.
+        if path.name in (ledger.LEDGER_FILE_NAME,
+                         ledger.LOCAL_LEDGER_FILE_NAME) \
+                and _under(path, roadmap):
             return True
         return path.suffix == LEDGER_SUFFIX and _under(path, pool)
 
@@ -258,27 +263,48 @@ def _under(path: Path, parent: Path) -> bool:
 
 # --- the record ---------------------------------------------------------------
 def ledger_file(root: Path) -> Path | None:
-    """The ledger a verdict row lands in — the TREE's, the file `verify --plan`
-    and `check budget` read. None means no record and no reuse."""
+    """The ledger a verdict row lands in — the tree's gitignored LOCAL one,
+    where the gate rows it quotes land too (#48). None means no record and no
+    reuse."""
+    roadmap = _roadmap()
+    return None if roadmap is None else ledger.local_path(roadmap)
+
+
+def _roadmap() -> Path | None:
     try:
         from agentic_sdlc.repo.pm import vocabulary
-        return ledger.grainless_path(vocabulary.load().roadmap)
+        return vocabulary.load().roadmap
     except Exception:  # noqa: BLE001 - every failure means the same: no record
         return None
+
+
+def _telemetry_text(root: Path) -> str | None:
+    """Every file a verdict or a graded row can be in, as ONE text, oldest
+    history first — the tracked grainless ledger, then the local one — which
+    is what `check budget` reads. '' when neither is there; None when there is
+    no PM config, or one of them is there and cannot be read."""
+    roadmap = _roadmap()
+    if roadmap is None:
+        return None
+    parts = []
+    for one in ledger.telemetry_paths(roadmap):
+        if not one.is_file():
+            continue
+        try:
+            parts.append(one.read_text(encoding='utf-8'))
+        except (OSError, UnicodeDecodeError):
+            return None
+    return '\n'.join(parts)
 
 
 def recorded(root: Path, gate: str, state: str) -> tuple[Verdict | None,
                                                          Graded | None]:
     """(the LAST verdict recorded for this make target over this exact tree
-    state, the rows `check budget` grades AS THEY ARE NOW) — one pass, one
-    file. Keyed on the TARGET, because what ran is what was proven; `None`
-    either side means *run the target*."""
-    path = ledger_file(root)
-    if path is None or not state:
-        return None, None
-    try:
-        raw = path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
+    state, the rows `check budget` grades AS THEY ARE NOW) — one pass over
+    the tree's telemetry. Keyed on the TARGET, because what ran is what was
+    proven; `None` either side means *run the target*."""
+    raw = _telemetry_text(root) if state else None
+    if raw is None:
         return None, None
     found: Verdict | None = None
     for line in raw.splitlines():
@@ -305,11 +331,12 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
         return (f'{path.parent} is not there, so this verdict is not recorded '
                 f'— `verify` does not create a PM tree, and the next run pays '
                 f'for the same answer again')
-    graded = _graded_in(path)
-    if graded is None:
-        return (f'{path} could not be read, so what `check budget` would grade '
-                f'over this tree is unknown — and a row that cannot say that '
-                f'is a row nothing may reuse')
+    raw = _telemetry_text(root)
+    if raw is None:
+        return (f'the ledgers beside {path} could not be read, so what `check '
+                f'budget` would grade over this tree is unknown — and a row '
+                f'that cannot say that is a row nothing may reuse')
+    graded = graded_of(raw)
     try:
         ledger.append_to(path, ledger.verify_row(
             rung=rung, gate=gate, verdict=verdict, state=state.digest,
@@ -318,17 +345,6 @@ def record(root: Path, rung: str, gate: str, state: State, verdict: str,
     except (OSError, ValueError) as err:
         return f'the verdict could not be recorded in {path} ({err})'
     return ''
-
-
-def _graded_in(path: Path) -> Graded | None:
-    """`graded_of` for a FILE: the empty answer for one not there yet, None for
-    one that is and cannot be read."""
-    if not path.is_file():
-        return graded_of('')
-    try:
-        return graded_of(path.read_text(encoding='utf-8'))
-    except (OSError, UnicodeDecodeError):
-        return None
 
 
 def graded_of(raw: str) -> Graded:

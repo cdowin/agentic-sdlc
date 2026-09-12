@@ -274,7 +274,7 @@ def _record(root: Path, name: str, target: str, state: cache.State, code: int,
 
 # --- the ledger, and the ratio ------------------------------------------------
 def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
-    """(target -> its most recent `gate` row, the ledger path as a string).
+    """(target -> its most recent `gate` row, the ledger paths as a string).
     Anything unreadable yields no costs and the plan says `unknown`, because
     an invented cost gets quoted."""
     import json
@@ -282,13 +282,16 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
     try:
         from agentic_sdlc.repo.pm import ledger, vocabulary
         cfg = vocabulary.load()
-        # The TREE's ledger, not a milestone's: a `gate` row names no grain, so
-        # 0.4.0/D3 files it at `<roadmap>/ledger.jsonl` and one file holds every
-        # cost this repo has ever measured. That also survives `pm retire`,
-        # which used to take a milestone's gate history away with its directory
-        # and leave the next milestone printing `unknown` for a week.
-        path = ledger.grainless_path(cfg.roadmap)
-        raw = path.read_text(encoding='utf-8')
+        # The TREE's ledgers, not a milestone's: a `gate` row names no grain,
+        # so 0.4.0/D3 filed it at `<roadmap>/ledger.jsonl`, and #48 files every
+        # new one in the gitignored `ledger.local.jsonl` beside it. Read in
+        # that order, so the LAST row per target is the newest. That also
+        # survives `pm retire`, which used to take a milestone's gate history
+        # away with its directory and leave the next milestone printing
+        # `unknown` for a week.
+        paths = ledger.telemetry_paths(cfg.roadmap)
+        raw = ''.join(path.read_text(encoding='utf-8') + '\n'
+                      for path in paths if path.is_file())
     except Exception:  # noqa: BLE001 - every failure means the same: unknown
         return {}, ''
     costs: dict[str, Cost] = {}
@@ -311,7 +314,7 @@ def gate_costs(root: Path) -> tuple[dict[str, Cost], str]:
         costs[name] = Cost(duration_ms=duration,
                            census=census if isinstance(census, int) else None,
                            verdict=str(row.get('verdict', '?')))
-    return costs, str(path)
+    return costs, ' and '.join(str(path) for path in paths)
 
 
 def _cost_of(command: str, costs: dict[str, Cost]) -> Cost | None:

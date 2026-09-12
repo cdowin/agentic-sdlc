@@ -279,10 +279,18 @@ class TheRatioIsMeasuredOrUnknown(unittest.TestCase):
         # The counterpart to the case above: without this, an implementation
         # that answered `unknown` unconditionally would pass every other
         # assertion in this class.
+        # TWO files (#48): the tracked ledger's committed history, and the
+        # gitignored local one every new gate row lands in — read after it, so
+        # the local row is the newest for `milestone` and the tracked one's
+        # `story` row is still read.
         tree = dict(self.TREE)
         tree['pm/roadmap/ledger.jsonl'] = self._with_ledger(
             {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'story',
              'verdict': 'PASS', 'duration_ms': 900, 'census': 5},
+            {'ts': '2026-09-05T09:00:00Z', 'kind': 'gate', 'gate': 'milestone',
+             'verdict': 'FAIL', 'duration_ms': 1, 'census': 1},
+        )
+        tree['pm/roadmap/ledger.local.jsonl'] = self._with_ledger(
             {'ts': '2026-09-05T10:01:00Z', 'kind': 'gate', 'gate': 'milestone',
              'verdict': 'PASS', 'duration_ms': 154_000, 'census': 182},
         )

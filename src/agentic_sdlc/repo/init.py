@@ -198,7 +198,16 @@ def _stand_up_pm_tree(cfg) -> int:
     _say(skills.install_flow(cfg))
     for made in skills.stand_up_tree(cfg):
         _say(f'created {made}')
-    return skills.cmd_install_skills(cfg, [])
+    # The gates this verb installs file rows into the local ledger, and the
+    # hook it arms runs them on every commit: unignored, that commit leaves
+    # its own tree dirty (#48).
+    code = 0
+    try:
+        _say(skills.install_local_ignore(cfg))
+    except skills.Refused as err:
+        print(f'agentic-sdlc init: {err}', file=sys.stderr)
+        code = 1
+    return max(code, skills.cmd_install_skills(cfg, []))
 
 
 def _pm_config():
@@ -220,6 +229,12 @@ def _diff(root: Path) -> int:
     print(f'[install] {GITIGNORE} '
           + (f'is missing {" ".join(missing)}' if missing
              else 'already ignores the run artifacts'))
+    local = skills.local_ignore_line(_pm_config().roadmap_dir)
+    text, _ = (install.read_destination(root / GITIGNORE)
+               if (root / GITIGNORE).is_file() else ('', ''))
+    print(f'[install] {GITIGNORE} '
+          + ('already ignores' if skills.ignores_local(text or '', local)
+             else 'is missing') + f' {local}')
     install.print_diff(SEED_CLAUDE[1], root / SEED_CLAUDE[1],
                        seed_body(SEED_CLAUDE[0]))
     return 0

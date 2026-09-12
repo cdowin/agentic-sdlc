@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: the guard lets the leader keep house
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []
 changelog: The git guard allows routine upkeep — `pull --ff-only`, `merge --ff-only <remote>/<branch>`, `branch -d`, `switch`/`switch -c`, `symbolic-ref <ref>`, `stash list` — and `agent-worktree.sh done` deletes a lane branch merged into the mainline and carries a lane's uncommitted `pm/roadmap/*.jsonl` rows to the main checkout (new header key `CARRY_ROWS`).
@@ -39,8 +39,8 @@ appended to the same path in the main checkout, and the lane's file is reset fro
 refuses any OTHER uncommitted file. That is issue #48's worktree half. `ft-a-commit-leaves-the-tree-clean`
 removes the cause.
 
-Re-install into this repo (`install-hooks --force`) so the self-hosted guard carries it. The header
-keeps `switch`.
+Re-install into this repo (`install-hooks --force`) so the self-hosted guard carries it. The header does
+not carry `switch` (decision D1: stock allows the safe forms).
 
 ## Ship criterion
 

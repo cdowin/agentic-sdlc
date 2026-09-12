@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a commit leaves the tree clean
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []
 changelog: Gate, test and verify rows land in the gitignored `<roadmap>/ledger.local.jsonl` (and `pm ledger record --gate` says so), so a commit whose hook runs the gates leaves the tree clean; re-run `pm init` to add the `.gitignore` line (#48).

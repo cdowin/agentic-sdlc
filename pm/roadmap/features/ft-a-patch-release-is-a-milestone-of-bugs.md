@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a patch release is a milestone of bugs
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []
 changelog: `ready-for milestone` and `release` accept a bug-only milestone (no features, at least one bound bug, all done) without `--force`, and `release`'s last `next:` line syncs the mainline.

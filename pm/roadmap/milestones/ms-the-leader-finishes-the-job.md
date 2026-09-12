@@ -7,12 +7,13 @@ depends_on: []
 branch: milestone/0.12.0-the-leader-finishes-the-job
 mode: parallel
 version: 0.12.0
-changelog:
+changelog: none
 order:
   - "ft-a-patch-release-is-a-milestone-of-bugs"
   - "ft-the-guard-lets-the-leader-keep-house"
   - "ft-a-bare-host-is-named-at-session-start"
   - "ft-a-commit-leaves-the-tree-clean"
+reviewed: docs/reviews/2026-09-12-0.12.0-milestone-review.md
 ---
 
 # 0.12.0 — the leader finishes the job

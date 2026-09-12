@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a bare host is named at session start
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []
 changelog: `preflight` gains a fifth row, `repository`: `bare` (and that `git config core.bare false` restores it) when the checkout's shared git config has `core.bare = true` under a working tree, else `ok` or `unknown`.

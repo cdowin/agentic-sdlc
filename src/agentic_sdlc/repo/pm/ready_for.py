@@ -10,7 +10,7 @@
 
 Exit 0 ready · 1 not ready, naming each blocker · 2 usage or config.
 Nothing is written. A feature with no stories is vacuously ready; a
-milestone with no features, or no records, is not. UNVERIFIABLE is never a
+milestone with no features and no bugs, or no records, is not. UNVERIFIABLE is never a
 pass.
 
 **The story rung's condition is DECLARED, never spelled here** — the derivation
@@ -470,8 +470,9 @@ def _bugs_against(cfg: vocabulary.PmConfig, mid: str) -> tuple[list, int]:
 
 def ready_for_milestone(cfg: vocabulary.PmConfig, mid: str) -> int:
     """Every feature in `done` with a resolving, non-empty record, and no bug
-    promised to this milestone outside `done`. Zero features exits 1,
-    deliberately opposite to the empty-story ruling."""
+    promised to this milestone outside `done`. Zero features AND zero bugs
+    exits 1, deliberately opposite to the empty-story ruling; zero features
+    with bugs bound is a bug-only milestone, graded on its bugs alone."""
     return _answer(cfg, MILESTONE, mid, *_milestone_verdict(cfg, mid))
 
 
@@ -483,7 +484,8 @@ def _milestone_verdict(cfg: vocabulary.PmConfig,
     features = _features(cfg, milestone)
     subject = f'{MILESTONE} {mid}'
     check = _check_answered_by(MILESTONE)
-    if not features:
+    bugs, pooled = _bugs_against(cfg, mid)
+    if not features and not bugs:
         # Worded to share no phrase with the feature belt's empty-set line;
         # the two rulings are opposite.
         return (subject,
@@ -506,12 +508,14 @@ def _milestone_verdict(cfg: vocabulary.PmConfig,
         _, defect = _record(cfg, ff.field('reviewed'))
         if defect is not None:
             blockers.append(Blocker(check, f'{fid} is {DONE}, {defect}'))
-    bugs, pooled = _bugs_against(cfg, mid)
     open_bugs = vocabulary.holds(cfg, vocabulary.GRAIN_BUG, bugs, DONE).blockers
     for bid, status in open_bugs:
         blockers.append(Blocker(check, f'{bid} is {status} — a bug nested in '
                                        f'{mid}'))
-    census = (f'{len(features)} feature(s), {len(bugs)} bug(s) nested in {mid}'
+    # A patch release: no features, and the bugs bound to it ARE the census.
+    shape = '' if features else ' — a bug-only milestone,'
+    census = (f'{len(features)} feature(s), {len(bugs)} bug(s){shape} '
+              f'nested in {mid}'
               # Rule 11: so "none here" is not read as "none at all".
               + (f', {pooled} bug(s) attached to no milestone' if pooled
                  else ''))

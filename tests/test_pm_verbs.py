@@ -2266,6 +2266,13 @@ class ThePlanIsADeclaredOrder(unittest.TestCase):
             version, why = inventory.graded_release(loaded(root))
             self.assertIsNone(version)
             self.assertIn('no entry in `order` has shipped yet', why)
+            # #43: under `start` a `todo` milestone never claims the file, so
+            # an all-`planning` plan has no answer rather than its first entry.
+            self._milestone(root, 'a', '0.1.0', 'planning')
+            write_config(root, '[pm]\nversion_at = "start"\n')
+            version, why = inventory.graded_release(loaded(root))
+            self.assertIsNone(version)
+            self.assertIn('no entry in `order` is in the in_progress or done', why)
 
     def test_an_entry_naming_no_milestone_is_skipped_and_reported(self):
         """The ambiguity the tree cannot resolve, carried by the GATE.

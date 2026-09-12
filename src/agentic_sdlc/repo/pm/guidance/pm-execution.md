@@ -224,8 +224,11 @@ a list of ids and nothing else — never a rendered roster.
   a fact rather than deriving one. **If you cannot export into the courier's
   environment** — an orchestrator whose shell state does not persist between
   tool calls cannot — record it when the agent returns instead:
-  `pm ledger record --grain <id> --tokens-total N --tool-calls N --duration-s N`,
-  off the numbers the dispatch reports back. Unset is normal: the verb then uses the one
+  `pm ledger record --grain <id> --agent-id <the id the Agent tool returned>
+  --tokens-total N --tool-calls N --duration-s N`, off the numbers the dispatch
+  reports back. The `--agent-id` joins it to the courier's row for the same
+  agent, so `pm ledger report` counts ONE dispatch, not two, and names how many
+  pairs it joined. Unset is normal: the verb then uses the one
   story in progress, and omits the key when there is none or several — never a
   guess.
 - `pm ledger report [<grain-id>]` — the same rows added up per grain:

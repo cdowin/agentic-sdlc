@@ -342,7 +342,12 @@ way. `pm config --seed` shows the whole declaration with an example.
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
                 --tokens-total N] [--tool-calls N] [--duration-s N] [--event E]
                                           (hand entry for a dispatch no hook
-                                           saw; a number not given is a key the
+                                           saw, or one it filed naming no
+                                           grain: --agent-id <id> joins the two
+                                           and `ledger report` counts ONE
+                                           dispatch, on this row's grain with
+                                           the courier's measured numbers; a
+                                           number not given is a key the
                                            row does not carry, never a zero.
                                            --tokens-total is what a subagent
                                            completion actually reports — ONE

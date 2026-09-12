@@ -42,7 +42,7 @@ from support.pm import (
     write_config,
 )
 
-from agentic_sdlc.core import frontmatter
+from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo.checks import pm as pm_check
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
@@ -157,6 +157,14 @@ class OneReadPerDocument(unittest.TestCase):
             self.assertTrue(frontmatter.set_field(p, 'status', 'done'))
             self.assertEqual(frontmatter.field_of(p, 'status'), 'done')
             self.assertEqual(frontmatter.list_field_of(p, 'order'), [])
+            # Through a PLAN, as `pm rename` writes: no `write_raw` to forget
+            # it, and a same-length rewrite with the mtime put back leaves the
+            # stamp unmoved (bg-the-rename-write-path-never-invalidates-...).
+            held = p.stat()
+            apply.Plan().overwrite(p, frontmatter.read_raw(p).replace(
+                'done', 'gone')).apply()
+            os.utime(p, ns=(held.st_atime_ns, held.st_mtime_ns))
+            self.assertEqual(frontmatter.field_of(p, 'status'), 'gone')
             p.unlink()
             self.assertEqual(frontmatter.field_of(p, 'status'), '')
 
@@ -1389,7 +1397,8 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
               {'id': f'"{mid}"', 'kind': 'milestone', 'name': mid,
                'status': status, 'version': f'"{version}"'})
 
-    def _tree(self, version: str, config: str = '[pm]\nchecks = ["R5"]\n'):
+    def _tree(self, version: str, config: str = '[pm]\nchecks = ["R5"]\n',
+              a: str = 'done', b: str = 'building'):
         ctx = tree(milestone_status='building', story_statuses=('ready',))
         root = ctx.__enter__()
         (root / 'pyproject.toml').write_text(
@@ -1397,8 +1406,8 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         # The plan sequences the MILESTONES; each one's `version:` says which
         # release it is, and R5 grades the version FILE against that.
         self._planned(root, 'a', 'b')
-        self._claims(root, 'a', '0.0.9', 'done')
-        self._claims(root, 'b', '0.1.0', 'building')
+        self._claims(root, 'a', '0.0.9', a)
+        self._claims(root, 'b', '0.1.0', b)
         write_config(root, config)
         return ctx, root
 
@@ -1409,19 +1418,38 @@ class R5GradesTheCurrentRelease(unittest.TestCase):
         finally:
             ctx.__exit__(None, None, None)
 
-    def test_the_current_release_is_graded_and_a_mismatch_names_both(self):
-        # `start`: current is 0.1.0, the first entry not yet shipped.
-        for version, expected in (('0.1.0', 0), ('9.9.9', 1)):
-            with self.subTest(version=version):
-                ctx, root = self._tree(version)
+    def test_under_start_the_file_belongs_to_the_last_milestone_that_started(self):
+        """#43, walked: `building` -> `release` writes `done` -> next `building`.
+
+        Under `start` the file is claimed by the bump-at-start commit, so it
+        belongs to the last entry in the `in_progress` or `done` category. It
+        was graded against the first entry not yet done, which the instant
+        `release` wrote `done` was a `planning` milestone whose version the
+        semver gate refuses until the close has merged: no value satisfied both.
+        """
+        # (a, b, the file says, exit, what the plan says, who claims it)
+        for a, b, version, expected, graded, claimant in (
+                ('building', 'planning', '0.0.9', 0, '', ''),   # unchanged
+                ('building', 'planning', '0.1.0', 1, '0.0.9', 'a'),
+                ('done', 'planning', '0.0.9', 0, '', ''),       # release wrote done
+                ('done', 'planning', '0.1.0', 1, '0.0.9', 'a'),  # b has not started
+                ('done', 'building', '0.1.0', 0, '', ''),       # b's bump-at-start
+                ('done', 'building', '0.0.9', 1, '0.1.0', 'b'),
+                ('done', 'building', '9.9.9', 1, '0.1.0', 'b')):
+            with self.subTest(a=a, b=b, version=version):
+                ctx, root = self._tree(version, a=a, b=b)
                 try:
                     code, out = run_gate(root)
                     self.assertEqual(code, expected, out)
                     if expected:
+                        # The DRIFT line: what the file says, what the plan
+                        # says, the milestone claiming it, and why that one.
                         self.assertIn('(R5)', out)
-                        self.assertIn("'9.9.9'", out)   # what the file says
-                        self.assertIn("'0.1.0'", out)   # what the plan says
-                        self.assertIn("'b'", out)       # the milestone claiming it
+                        self.assertIn(f"version {version!r}", out)
+                        self.assertIn(f"does not match {graded!r}", out)
+                        self.assertIn(f"the milestone {claimant!r} claims it", out)
+                        self.assertIn('which is the last started entry', out)
+                        self.assertNotIn('first unshipped', out)
                     else:
                         self.assertNotIn('(R5)', out)
                 finally:

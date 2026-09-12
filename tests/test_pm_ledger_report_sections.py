@@ -30,7 +30,7 @@ import json
 import pytest
 from support.pm import (bug, declaring, decision_line, dispatch_line,
                         put_ledger, run_cli, section_of, session_line, snapshot,
-                        status_line, write, write_config)
+                        snapshot_legacy, status_line, write, write_config)
 from support.pm import tree as _seed_tree
 
 from agentic_sdlc.repo.pm import vocabulary
@@ -501,22 +501,45 @@ def test_an_ambiguous_snapshot_places_nothing_and_stays_in_the_bucket():
     assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was_s0, out
 
 
-def test_one_story_and_its_feature_is_ONE_candidate_not_two():
-    """The rule's edge, and getting it wrong would empty the whole table: a
-    snapshot naming a story AND the feature that owns it names one thing, and
-    the feature is a roll-up `_named_through` added. Ambiguity is judged at
-    the finest kind the snapshot names."""
+@pytest.mark.parametrize('taken, placed', [
+    # One story and the feature that owns it are ONE candidate: getting that
+    # wrong would empty the whole table.
+    (snapshot(stories_wip=[A_S1], features_building=[ALPHA]), A_S1),
+    # A feature beside it that does not own it is billed nothing.
+    (snapshot(stories_wip=[A_S1], features_building=[BETA]), A_S1),
+    # #39: one feature and no story places NOTHING. It was placed on that
+    # feature by elimination, and one such row was a PO for a story in another
+    # feature — bugs and milestone work are in no snapshot at all. Old-shape
+    # rows follow the same rule.
+    (snapshot(features_building=[ALPHA]), ''),
+    (snapshot_legacy(features_building=[ALPHA]), ''),
+], ids=['story-and-owner', 'story-and-stranger', 'feature-only',
+        'feature-only-legacy'])
+def test_a_snapshot_places_a_row_only_on_exactly_one_story(taken, placed):
+    """A feature is the roll-up of its placed story, never a candidate in its
+    own right (supersedes 0.4.0/D8's finest-kind clause)."""
+    before = seeded_report()
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
         seeded(root)
         put_ledger(root,
                    dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
-                                 tree=snapshot(stories_wip=[A_S1],
-                                               features_building=[ALPHA])),
+                                 tree=taken),
                    rel='pm/roadmap/ledger.jsonl')
         code, out = report(root, '0.1')
     assert code == 0, out
-    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
-    assert '-- rows naming no grain (0)' in out, out
+
+    def feature_row(text: str, fid: str) -> list[str]:
+        return row_of(text, 'spend per grain', 'feature (4)', fid)
+
+    assert feature_row(out, BETA) == feature_row(before, BETA), out
+    if placed:
+        assert '9' in row_of(out, 'spend per grain', 'story (3)', placed), out
+        assert feature_row(out, ALPHA) != feature_row(before, ALPHA), out
+        assert '-- rows naming no grain (0)' in out, out
+    else:
+        assert feature_row(out, ALPHA) == feature_row(before, ALPHA), out
+        stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
+        assert stray and '9' in stray[0], out
 
 
 def test_a_stated_grain_this_milestone_cannot_place_never_falls_through():
@@ -576,6 +599,51 @@ def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
     # the same report over a tree with no root ledger.
     assert row_of(out, 'spend per grain', 'story (3)', A_S0) == before
     assert 'check' in section_of(out, 'gate cost'), out
+
+
+# --- #39: a hand record naming its courier twin's agent_id is ONE dispatch ----
+COURIER = 'agent-7f'
+
+
+@pytest.mark.parametrize('hand_id, joined, s1, stray, delta', [
+    # The pair: the hand row's grain, the courier's MEASURED numbers — its 9
+    # tool calls and 70 out, never the hand's 8 or its reported 500 on top.
+    (COURIER, 1, ['1', '-', '70', '-', '-', '-', '9', '60'], 0, ['-2', '-32']),
+    # An id no courier row carries joins nothing and is counted as today.
+    ('agent-other', 0, ['1', '-', '-', '-', '-', '500', '8', '-'], 1,
+     ['-3', '-40']),
+])
+def test_a_hand_record_joins_its_courier_twin_by_agent_id(hand_id, joined, s1,
+                                                          stray, delta):
+    """The courier files a grainless row when no one story is building, and
+    the documented remedy, `pm ledger record --grain`, appended a SECOND: the
+    report summed both. Joined on `agent_id` and nothing else — never on
+    matching numbers, which is a guess from coincidence (rule 9)."""
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        second_milestone(root)
+        put_ledger(root,
+                   dispatch_line('2026-09-03T12:00:00Z', agent_id=COURIER,
+                                 messages=4, tool_calls=9, duration_s=60,
+                                 usage={'output': 70}),
+                   rel='pm/roadmap/ledger.jsonl')
+        code, said = run_cli(root, 'ledger', 'record', '--grain', A_S1,
+                             '--agent-id', hand_id, '--tool-calls', '8',
+                             '--tokens-total', '500')
+        assert code == 0, said
+        code, out = report(root, '0.1')
+        assert code == 0, out
+        code, compared = report(root, '0.1', SECOND)
+        assert code == 0, compared
+    assert row_of(out, 'spend per grain', 'story (3)', A_S1)[1:9] == s1, out
+    assert f'-- rows naming no grain ({stray})' in out, out
+    # Counted, and a zero is printed as a zero (rule 11).
+    assert f'   {joined} courier/hand pair(s) joined by agent_id' in out, out
+    # The comparison builds each milestone the same way, so its delta row
+    # carries no double count: dispatch_rows and tool_calls, last - first.
+    cells = row_of(compared, 'milestone comparison', 'spend per grain (2)',
+                   'delta')
+    assert [cells[1].rstrip('*'), cells[10].rstrip('*')] == delta, compared
 
 
 def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted():
@@ -1260,11 +1328,16 @@ class TestTwoMilestonesSideBySide:
             seeded(root)
             second_milestone(root)
             # A grainless dispatch in the TREE's ledger whose snapshot names the
-            # SECOND milestone's feature: unattributed under 0.1, billed to
-            # omega under 0.2. This is the row the shipped note lied about.
+            # SECOND milestone's one story: unattributed under 0.1, billed to
+            # it under 0.2. This is the row the shipped note lied about. A
+            # STORY, because a feature alone places nothing (#39).
+            write(root / 'pm/roadmap/stories/omega-s0.md',
+                  {'id': '0.2/omega/s0', 'kind': 'story',
+                   'feature': '0.2/omega', 'milestone': f'"{SECOND}"',
+                   'name': 's0', 'status': 'building'})
             (root / 'pm/roadmap/ledger.jsonl').write_text(
                 dispatch_line('2026-09-05T10:00:00Z', tool_calls=11,
-                              tree=snapshot(features_building=['0.2/omega'])) + '\n',
+                              tree=snapshot(stories_wip=['0.2/omega/s0'])) + '\n',
                 encoding='utf-8')
             code, out = compare(root, '--json')
         assert code == 0, out

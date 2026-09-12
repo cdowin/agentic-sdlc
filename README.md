@@ -255,8 +255,8 @@ checks = ["D1", "D2", "D4", "D5", "D6",       # the stock roster, DEFAULT_CHECKS
 version_file    = "pyproject.toml"            # R5 and `version-sync`: where the version lives
 version_pattern = '^version = "(.*)"$'
 version_at      = "start"                     # R5: which entry in `order` the version file
-                                              # must match — "start" (the first not yet shipped,
-                                              # bump-at-START) or "ship" (the last that has)
+                                              # must match — "start" (the last in_progress or
+                                              # done, bump-at-START) or "ship" (the last done)
 
 [emit]                                        # where the conveyor's events are WRITTEN. Nothing
 sink  = "ledger"                              # here is RUN: "ledger" (routed by the event's
@@ -348,8 +348,9 @@ with no argument takes the current version from the plan, and refuses one that i
 naming both.
 
 `R5` (opt-in) grades `[pm] version_file` against the current entry; `[pm] version_at` picks which
-one — `"start"`, the first not yet shipped, or `"ship"`, the last that has, for a project that
-bumps in the release commit.
+one — `"start"`, the last entry that has STARTED (`in_progress` or `done`; a `todo` milestone never
+claims the file), or `"ship"`, the last that has shipped, for a project that bumps in the release
+commit.
 
 ## Wiring
 

@@ -1422,7 +1422,7 @@ def _release_findings(cfg: vocabulary.PmConfig, enabled: set[str], report, warn)
     named = ' or '.join(repr(v) for v in accepted)
     report(f'{cfg.version_file} version {version!r} does not match '
            f'{named} ({claims}), which is the '
-           f'{"first unshipped" if cfg.version_at == vocabulary.VERSION_AT_START else "last shipped"} '
+           f'{"last started" if cfg.version_at == vocabulary.VERSION_AT_START else "last shipped"} '
            f'entry in {cfg.rel(inventory.releases_file(cfg))} under [pm] '
            f'version_at = {cfg.version_at!r} (R5)')
 

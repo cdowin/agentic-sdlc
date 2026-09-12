@@ -22,7 +22,7 @@ from pathlib import Path
 from support.pm import tree
 
 from agentic_sdlc import cli
-from agentic_sdlc.core.project import load_config
+from agentic_sdlc.core.project import load_config, repo_root
 from agentic_sdlc.repo import preflight
 from agentic_sdlc.repo.checks import hooks
 
@@ -106,7 +106,7 @@ class ThePreflightReadsWhatTheSessionStandsIn(unittest.TestCase):
                 self.assertEqual(got, preflight.WIRED, meaning)
                 self.assertIn('all 2', meaning)
 
-    def test_the_verb_prints_four_rows_in_its_columns_and_counts_the_tree(self):
+    def test_the_verb_prints_five_rows_in_its_columns_and_counts_the_tree(self):
         """Through the router, over a real PM tree: the rows are the columns
         `--help` names, the attribution count is the couriers' fallback's own
         snapshot, and an argument is exit 2 (rule 6)."""
@@ -127,7 +127,7 @@ class ThePreflightReadsWhatTheSessionStandsIn(unittest.TestCase):
                 self.assertEqual(
                     [row[0] for row in rows],
                     ['subagent-resume', 'hooks', 'attribution',
-                     'subagent-channel'])
+                     'subagent-channel', 'repository'])
                 self.assertEqual({len(row) for row in rows},
                                  {len(preflight.COLUMNS)})
                 self.assertEqual(rows[2][1], count)
@@ -144,6 +144,50 @@ class ThePreflightReadsWhatTheSessionStandsIn(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(cli.main([preflight.VERB, '--grain']), 2)
         self.assertIn('--grain', err.getvalue())
+
+    def test_a_bare_host_is_named_off_the_common_config_as_text(self):
+        """A host flipped to `core.bare = true` said nothing until a git
+        command failed hours later. The config is read as TEXT — through a
+        linked worktree's `.git` file -> gitdir -> commondir too — and one git
+        cannot read is `unknown`, never `ok`."""
+        bare = '[core]\n\trepositoryformatversion = 0\n\tbare = true\n'
+        cases = (
+            # (label, .git/config text or None for no .git, via a worktree)
+            ('ok', '[core]\n\tbare = false\n', False, 'ok'),
+            ('bare', bare, False, preflight.BARE),
+            ('bare, as a bare key', '[Core]\n\tbare\n', False, preflight.BARE),
+            ('bare via a linked worktree', bare, True, preflight.BARE),
+            ('ok via a linked worktree', '[core]\n', True, 'ok'),
+            ('unreadable: no .git', None, False, preflight.UNKNOWN),
+        )
+        for label, config, linked, value in cases:
+            with self.subTest(repository=label), \
+                    tempfile.TemporaryDirectory() as tmp:
+                main = Path(tmp) / 'main'
+                main.mkdir()
+                if config is not None:
+                    _write(main, '.git/config', config)
+                root = main
+                if linked:
+                    gitdir = main / '.git' / 'worktrees' / 'wt'
+                    _write(gitdir, 'commondir', '../..\n')
+                    root = Path(tmp) / 'wt'
+                    _write(root, '.git', f'gitdir: {gitdir}\n')
+                got, meaning = preflight.repository(root)
+                self.assertEqual(got, value, meaning)
+                if got == preflight.BARE:
+                    self.assertTrue(meaning.startswith(preflight.BARE_FIX),
+                                    meaning)
+        # Ship criterion: through the router, the fifth row at exit 0.
+        with self.subTest(repository='through the verb'), tree() as root:
+            _write(root, '.git/config', bare)
+            repo_root.cache_clear()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(cli.main([preflight.VERB]), 0)
+            last = out.getvalue().splitlines()[-1].split('\t')
+            self.assertEqual(last[:2], ['repository', preflight.BARE])
+            self.assertTrue(last[2].startswith('git config core.bare false'))
 
 
 if __name__ == '__main__':

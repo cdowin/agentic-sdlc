@@ -3,7 +3,7 @@ id: ft-the-kit-says-one-loop
 kind: feature
 milestone: "ms-a-session-starts-knowing-what-it-can-do"
 name: the kit says one loop
-status: planning
+status: reviewing
 reviewed:
 depends_on: ["ft-use-the-sdlc-get-to-work"]
 consumed_by: []

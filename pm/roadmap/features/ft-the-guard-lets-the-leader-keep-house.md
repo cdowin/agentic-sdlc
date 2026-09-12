@@ -3,7 +3,7 @@ id: ft-the-guard-lets-the-leader-keep-house
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: the guard lets the leader keep house
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []

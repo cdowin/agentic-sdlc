@@ -271,8 +271,9 @@ budget = { unit = 20, integration = 130, test = 150 }
 # RE-SET at the close of 0.12.0: 1,712 -> 1,714 (+3 functions this host, one
 # per lane: the commit-leaves-the-tree-clean proof in test_init_verb (#48), the
 # `done` ledger-carry case, and preflight's repository row; the belt and guard
-# lanes amended existing cases and corpora).
-cases = { test = 1714 }
+# lanes amended existing cases and corpora), +1 for the review's m7 (`check pm`
+# names an un-ignored local ledger): 1,715.
+cases = { test = 1715 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

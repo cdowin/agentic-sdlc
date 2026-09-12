@@ -3,7 +3,7 @@ id: ft-a-commit-leaves-the-tree-clean
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a commit leaves the tree clean
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.12.0-features.md
 depends_on: []
 consumed_by: []

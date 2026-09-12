@@ -178,7 +178,7 @@ def _header_line(lines: list[str]) -> str:
 
 def _body_lines(lines: list[str]) -> int:
     """Body length in lines; a damaged frontmatter block makes the whole file the body."""
-    bounds = frontmatter._fence_bounds(lines)
+    bounds = frontmatter.fence_bounds(lines)
     body = list(lines) if bounds is None else lines[bounds[1] + 1:]
     while body and not body[-1].strip():
         body.pop()
@@ -189,7 +189,7 @@ def _read(path: Path, lines_of: dict[Path, list[str] | None]) -> list[str] | Non
     """The file's lines, read once into `lines_of`; None when it cannot be opened."""
     if path not in lines_of:
         try:
-            lines_of[path] = frontmatter._split(frontmatter.read_raw(path))
+            lines_of[path] = frontmatter.split_lines(frontmatter.read_raw(path))
         except (OSError, UnicodeDecodeError):
             lines_of[path] = None
     return lines_of[path]

@@ -267,8 +267,8 @@ def _rewritten(text: str, renames: dict[str, str]) -> str:
     `- a` lines, all four are the same scan, and `0.1/alpha` is not a ref
     inside `0.1/alphabet` by construction rather than by punctuation.
     """
-    lines = frontmatter._split(text)
-    bounds = frontmatter._fence_bounds(lines)
+    lines = frontmatter.split_lines(text)
+    bounds = frontmatter.fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
@@ -420,8 +420,8 @@ def run(cfg: vocabulary.PmConfig, suggest: bool = False) -> tuple[int, list[str]
 def _with_fields(text: str, fields: dict[str, str]) -> str:
     """`set_fields`' logic over a string, because the migration stages every
     write in memory and commits them in one pass."""
-    lines = frontmatter._split(text)
-    bounds = frontmatter._fence_bounds(lines)
+    lines = frontmatter.split_lines(text)
+    bounds = frontmatter.fence_bounds(lines)
     if bounds is None:
         return text
     open_i, close_i = bounds
@@ -438,8 +438,8 @@ def _with_fields(text: str, fields: dict[str, str]) -> str:
 
 def _with_order(text: str, ids: list[str]) -> str:
     """The parent's `order` block, built from the nesting being deleted."""
-    lines = frontmatter._split(text)
-    bounds = frontmatter._fence_bounds(lines)
+    lines = frontmatter.split_lines(text)
+    bounds = frontmatter.fence_bounds(lines)
     if bounds is None:
         return text
     _open_i, close_i = bounds

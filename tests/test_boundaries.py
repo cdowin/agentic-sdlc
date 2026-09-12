@@ -149,7 +149,7 @@ SPAWN_DOTTED = 'agentic_sdlc.core.spawn'
 # `conveyor/steps._read` was a second `read_raw`, character for character.
 #
 # Rule 3 is what a second reader breaks: `newline=''` disables universal-newline
-# translation both ways, `_split` is `str.split('\n')` and NOT `splitlines()`
+# translation both ways, `split_lines` is `str.split('\n')`, NOT `splitlines()`
 # (which also breaks on U+2028, U+2029, form feed and lone CR), and `_eol`
 # carries the CR half of a CRLF. Every one of those is invisible until a CRLF
 # grain round-trips through a writer that skipped one.
@@ -163,9 +163,17 @@ FRONTMATTER_OWNER = 'frontmatter'
 # is a binding like any other. Class-body `def`s are NOT bindings here:
 # `report.Source` declares `read_raw` as one of a fourteen-read source seam and
 # `DiskSource` delegates it to the owner, which is the shape this rule wants.
-FRONTMATTER_INTERNALS = ('_split', '_fence_bounds', '_eol', 'read_raw',
+FRONTMATTER_INTERNALS = ('split_lines', 'fence_bounds', '_eol', 'read_raw',
                          'write_raw', 'parse_document', '_remember',
                          '_DOCUMENTS')
+# Binding is not REACHING. Every `_`-name the owner binds is its own business,
+# so `frontmatter._FENCE` from outside — an attribute, a `getattr`, an import —
+# is a finding even though it goes through the owner: nothing stops the owner
+# reshaping a private name, and the reacher learns at runtime. A question an
+# outside module needs answered gets a public name on the owner instead.
+# The floor under the reach census: a classifier that saw no `frontmatter.x`
+# at all would pass every module (rule 4).
+MIN_FRONTMATTER_REACHES = 20
 # The other half, because a hand-rolled reader need not reuse a name. A READ
 # `open()` carrying `newline=` is the byte-exact read and cannot be anything
 # else; the write side is primitive 2's, so `apply.py`'s `'w'` and the ledger's
@@ -464,12 +472,40 @@ def _is_raw_frontmatter_read(node: ast.Call) -> bool:
     return any(kw.arg == OPEN_NEWLINE_KEYWORD for kw in node.keywords)
 
 
+def _is_private(name: str) -> bool:
+    return name.startswith('_') and not name.endswith('__')
+
+
+def _frontmatter_reaches(tree: ast.Module):
+    """(lineno, name) for every `frontmatter.<name>` in one module, in the
+    three spellings: attribute, `getattr(frontmatter, '<name>')`, and an import
+    from the owner's module."""
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id == FRONTMATTER_OWNER):
+            yield node.lineno, node.attr
+        elif (isinstance(node, ast.Call) and _called_name(node) == ('', 'getattr')
+              and len(node.args) >= 2 and isinstance(node.args[0], ast.Name)
+              and node.args[0].id == FRONTMATTER_OWNER
+              and isinstance(node.args[1], ast.Constant)
+              and isinstance(node.args[1].value, str)):
+            yield node.lineno, node.args[1].value
+        elif (isinstance(node, ast.ImportFrom)
+              and (node.module or '').split('.')[-1] == FRONTMATTER_OWNER):
+            for alias in node.names:
+                yield node.lineno, alias.name
+
+
 def _frontmatter_sites(rel: str, tree: ast.Module) -> list[str]:
-    """Every second spelling of the frontmatter mechanics in one module."""
+    """Every second spelling of the frontmatter mechanics in one module, and
+    every reach into its private names."""
     out = []
     for name, lineno in _module_level_bindings(tree):
         if name in FRONTMATTER_INTERNALS:
             out.append(f'{rel}:{lineno}: binds {name} at module level')
+    for lineno, name in _frontmatter_reaches(tree):
+        if _is_private(name):
+            out.append(f'{rel}:{lineno}: reaches {FRONTMATTER_OWNER}.{name}')
     for node in _calls(tree):
         if _is_raw_frontmatter_read(node):
             out.append(f'{rel}:{node.lineno}: open(..., newline=…) in read mode')
@@ -895,7 +931,8 @@ class OneSpawn(unittest.TestCase):
 
 
 class OneStorage(unittest.TestCase):
-    """PRIMITIVE 9 — frontmatter I/O lives in exactly one module.
+    """PRIMITIVE 9 — frontmatter I/O lives in exactly one module, and its
+    private names are reached from nowhere else.
 
     The allowlist is EXACTLY `FRONTMATTER_MODULE` and there is no exemption
     roster: the two implementations of `report.Source` reach the owner rather
@@ -916,8 +953,8 @@ class OneStorage(unittest.TestCase):
     CORPUS = (
         # A second module-level spelling of the mechanics, by any binding.
         ("def read_raw(path):\n    return path.read_text()", True),
-        ("def _split(text):\n    return text.splitlines()", True),
-        ('def _fence_bounds(lines):\n    return None', True),
+        ("def split_lines(text):\n    return text.splitlines()", True),
+        ('def fence_bounds(lines):\n    return None', True),
         ('_DOCUMENTS = {}', True),
         # A re-export is a binding like any other — this is the exact line
         # a re-exported `field_of` would have survived behind.
@@ -937,6 +974,15 @@ class OneStorage(unittest.TestCase):
         ("p.open('w', newline='')", False),
         ("text = p.read_text(encoding='utf-8')", False),
         ("HELP = 'read_raw and write_raw and _split'", False),
+        # Reaching a PRIVATE name, through the owner, in every spelling.
+        ('lines = frontmatter._split(text)', True),
+        ('opens = frontmatter._FENCE.match(line) is not None', True),
+        ("fence = getattr(frontmatter, '_FENCE')", True),
+        ('from agentic_sdlc.core.frontmatter import _LIST_ITEM', True),
+        # The public answer to the same question, and a dunder.
+        ('bounds = frontmatter.fence_bounds(lines)', False),
+        ('opens = frontmatter.is_fence(line)', False),
+        ('name = frontmatter.__name__', False),
     )
 
     @staticmethod
@@ -945,10 +991,17 @@ class OneStorage(unittest.TestCase):
 
     def test_only_the_storage_module_parses_frontmatter(self):
         offenders: list[str] = []
+        reaches = 0
         for rel, path in _sources():
             if rel == FRONTMATTER_MODULE:
                 continue
-            offenders.extend(_frontmatter_sites(rel, _tree(path)))
+            tree = _tree(path)
+            offenders.extend(_frontmatter_sites(rel, tree))
+            reaches += sum(1 for _ in _frontmatter_reaches(tree))
+        self.assertGreaterEqual(
+            reaches, MIN_FRONTMATTER_REACHES,
+            f'{reaches} `{FRONTMATTER_OWNER}.<name>` reach(es) seen outside '
+            f'{FRONTMATTER_MODULE}, so the reach census read nothing')
         self.assertEqual(
             [], offenders,
             'frontmatter I/O outside ' + FRONTMATTER_MODULE + '. A second '
@@ -956,7 +1009,8 @@ class OneStorage(unittest.TestCase):
             'comes back LF; a second writer holds a parse the first one has '
             'already invalidated, which is a gate answering off bytes that '
             'moved on. Route it through `core.frontmatter`, which reads each '
-            'document once and rewrites the line it was asked for:\n  '
+            'document once and rewrites the line it was asked for; a private '
+            'name it holds gets a public one there, never a reach:\n  '
             + '\n  '.join(offenders))
 
     def test_the_storage_module_does_read_and_write(self):

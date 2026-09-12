@@ -814,7 +814,7 @@ def _opens_frontmatter(lines: Sequence[str]) -> bool:
         probe = line.lstrip(BOM)
         if not probe.strip():
             continue
-        return frontmatter._FENCE.match(probe.lstrip(' \t')) is not None
+        return frontmatter.is_fence(probe.lstrip(' \t'))
     return False
 
 
@@ -990,12 +990,12 @@ def plan_defect(cfg: PmConfig) -> str | None:
             # that is there behind three invisible bytes (review B5).
             return ('opens with a UTF-8 BOM before its `---`, so the '
                     'frontmatter block is not the first line — strip the BOM')
-        opens = bool(lines) and frontmatter._FENCE.match(lines[0]) is not None
+        opens = bool(lines) and frontmatter.is_fence(lines[0])
         return ('has an opening `---` with no closing one'
                 if opens else
                 'has no frontmatter block — the plan is a grain, and `order` '
                 'lives in its frontmatter')
-    open_i, close_i = frontmatter._fence_bounds(lines)
+    open_i, close_i = frontmatter.fence_bounds(lines)
     for i in range(open_i + 1, close_i):
         if not lines[i].startswith(f'{ORDER_KEY}:'):
             continue
@@ -1526,7 +1526,7 @@ _HEADING = re.compile(r'^(#{1,2})[ \t]+(.*?)[ \t]*$')
 def section_lines(text: str, heading: str) -> list[str] | None:
     """The lines under `## <heading>`, up to the next heading; None when the
     heading is absent, which is a different sentence from "empty"."""
-    return section_lines_in(frontmatter._split(text), heading)
+    return section_lines_in(frontmatter.split_lines(text), heading)
 
 
 def section_lines_in(lines: Sequence[str], heading: str) -> list[str] | None:
@@ -1593,7 +1593,7 @@ def next_entry_id(text: str) -> str:
     prefix follows the last id-shaped heading, and numbering is per file by
     design.
     """
-    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter._split(text)) if m]
+    seen = [m for m in (_ENTRY_ORDINAL.match(line) for line in frontmatter.split_lines(text)) if m]
     if not seen:
         return f'{DECISION_PREFIX}1'
     prefix = seen[-1].group(1)

@@ -3,8 +3,9 @@
 # name its own paths (`-- <paths>`), because in a shared tree it commits the
 # whole index and a pushed branch is forward-only. Waved through: a pathspec
 # already present (`--`, a bare path, `--pathspec-from-file`), `--amend`,
-# `--dry-run`, `--help`, `--interactive`/`--patch`, and a merge/rebase/
-# cherry-pick/revert in progress. Stdin: the PreToolUse JSON (tool_name,
+# `--dry-run`, `--help`, `--interactive`/`--patch`, a merge/rebase/
+# cherry-pick/revert in progress, and a `-C` leaving every checkout of this
+# repository (a scratch probe's). Stdin: the PreToolUse JSON (tool_name,
 # tool_input.command, cwd). Exit 0 = allow, 2 = block; failures exit 0.
 set -eu
 trap 'exit 0' ERR
@@ -111,6 +112,44 @@ operation_in_progress() {
 	return 1
 }
 
+# outside_repo <-C dir>: every checkout of the session's repository, read as
+# text rather than asked of git; an opaque or unresolvable dir is inside.
+outside_repo() {
+	local session_cwd
+	session_cwd="$(hook_json_field "$INPUT" cwd)"
+	[ -n "$session_cwd" ] || session_cwd="$PWD"
+	python3 -c '
+import os, sys
+
+def read(path):
+	with open(path, encoding="utf-8") as handle:
+		return handle.read().strip()
+
+cwd, target = sys.argv[1], sys.argv[2]
+if "$" in target or "__NBSTR__" in target:
+	sys.exit(1)
+top = os.path.realpath(cwd)
+while not os.path.exists(os.path.join(top, ".git")):
+	if os.path.dirname(top) == top:
+		sys.exit(1)
+	top = os.path.dirname(top)
+roots, common = {top}, os.path.join(top, ".git")
+if os.path.isfile(common):
+	common = os.path.join(top, read(common).partition("gitdir:")[2].strip())
+	if os.path.isfile(os.path.join(common, "commondir")):
+		common = os.path.join(common, read(os.path.join(common, "commondir")))
+common = os.path.realpath(common)
+if os.path.basename(common) == ".git":
+	roots.add(os.path.dirname(common))
+linked = os.path.join(common, "worktrees")
+for name in os.listdir(linked) if os.path.isdir(linked) else ():
+	if os.path.isfile(os.path.join(linked, name, "gitdir")):
+		roots.add(os.path.dirname(os.path.realpath(read(os.path.join(linked, name, "gitdir")))))
+target = os.path.realpath(os.path.join(cwd, os.path.expanduser(target)))
+sys.exit(1 if any(target == r or target.startswith(r.rstrip(os.sep) + os.sep) for r in roots) else 0)
+' "$session_cwd" "$1" 2>/dev/null
+}
+
 sweeping=""
 sweeps_all=0
 # shellcheck disable=SC2020  # the tr below maps a char SET to newline — exactly the intent
@@ -131,10 +170,17 @@ while IFS= read -r segment; do
 	esac
 	idx=$((idx + 1))
 
-	# --- git's own options, before the subcommand ---
+	# --- git's own options, before the subcommand; each `-C` is relative to the last ---
+	cdir=""
 	while [ "$idx" -lt "${#toks[@]}" ]; do
 		case "${toks[$idx]}" in
-			-C|-c|--git-dir|--work-tree|--namespace|--exec-path) idx=$((idx + 2)) ;;
+			-C)
+				case "${toks[$((idx + 1))]:-}" in
+					/*) cdir="${toks[$((idx + 1))]}" ;;
+					*) cdir="${cdir:+$cdir/}${toks[$((idx + 1))]:-}" ;;
+				esac
+				idx=$((idx + 2)) ;;
+			-c|--git-dir|--work-tree|--namespace|--exec-path) idx=$((idx + 2)) ;;
 			-*) idx=$((idx + 1)) ;;
 			*) break ;;
 		esac
@@ -170,6 +216,7 @@ while IFS= read -r segment; do
 	done
 
 	if [ "$verdict" = "sweep" ]; then
+		if [ -n "$cdir" ] && outside_repo "$cdir"; then continue; fi
 		sweeping="$segment"
 		sweeps_all="$all"
 		break

@@ -7,7 +7,9 @@
 # `--amend` (cc-commit-pathspec.sh judges its paths); `push` bar a force or a
 # PROTECTED_BRANCHES destination; `merge` of a MERGE_BRANCHES branch; `config`
 # reads; `branch` and `tag` bar delete/move/force; `worktree list|prune`;
-# `remote` bar rewiring. Blocked, each with its reason and the boring
+# `remote` bar rewiring; `archive`; `init` only with a target outside this
+# repository; and any git whose `-C` leaves every checkout of this repository
+# (a scratch probe's). Blocked, each with its reason and the boring
 # alternative: bisect, stash, reset, checkout, switch, restore, clean, rebase,
 # pull, and any subcommand named nowhere here. Only the command the agent TYPES
 # is read: git run inside a script or a make target — tools/dev/agent-worktree.sh's
@@ -86,6 +88,11 @@ self_test() {
 		skip && /^# ---+$/ { skip = 0; done = 1; next }
 		!skip { print }' "$0" >"$stock"
 	{ echo 'ALLOW_SUBCOMMANDS="stash"'; cat "$stock"; } >"$widened"
+	# The table replays from a linked worktree `wt` of a repository `repo`: the bug's own seat.
+	mkdir -p "$tmp/repo/.git/worktrees/wt" "$tmp/repo/sub" "$tmp/wt"
+	printf 'gitdir: %s\n' "$tmp/repo/.git/worktrees/wt" >"$tmp/wt/.git"
+	printf '%s\n' "$tmp/wt/.git" >"$tmp/repo/.git/worktrees/wt/gitdir"
+	printf '../..\n' >"$tmp/repo/.git/worktrees/wt/commondir"
 
 	# <want exit> <command>, one per line; the replay prints `<blocked> <allowed>`.
 	cat >"$tmp/corpus" <<'CORPUS'
@@ -130,6 +137,13 @@ self_test() {
 2 echo $(git stash)
 2 if git stash; then :; fi
 2 timeout 60 git bisect run make unit
+2 git init
+2 git init -q 2>/dev/null; git add -A
+2 cd /tmp/x && git init -q
+2 git -C sub init -q
+2 git init -q ../repo/sub
+2 git -C ../repo init
+2 git -C ../repo stash
 # Allowed: the flow itself, the reads, the kit's own tools, and git named as data.
 0 git add src/x.py tests/test_x.py
 0 git commit -m "feat: x" -- src/x.py
@@ -171,12 +185,17 @@ self_test() {
 0 git -C /repo merge --no-ff --no-edit feat/l-guards
 0 git -C /repo/.claude/worktrees/x add src/x.py
 0 git -C /repo/.claude/worktrees/x commit -m "feat: x" -- src/x.py
+0 git -C /tmp/x init -q
+0 git init -q /tmp/x
+0 git -C /tmp/x commit -qm base
+0 git -C /tmp/x reset --hard
+0 mkdir -p /tmp/s && git archive HEAD | tar -x -C /tmp/s && git -C /tmp/s init -q && git -C /tmp/s add -A && git -C /tmp/s -c user.name=probe -c user.email=probe@local commit -qm base
 0 make check
 0 make pm ARGS='story building st-x'
 0 echo git stash
 0 grep -n "git reset --hard" SDLC.md
 CORPUS
-	counts="$(bash "$stock" --self-test-replay <"$tmp/corpus")" || rc=1
+	counts="$(cd "$tmp/wt" && bash "$stock" --self-test-replay <"$tmp/corpus")" || rc=1
 	case "$counts" in
 		*[0-9]" "[0-9]*) blocked="${counts% *}"; allowed="${counts#* }" ;;
 		*) rc=1 ;;
@@ -218,7 +237,7 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 # argv: ALLOW_SUBCOMMANDS PROTECTED_BRANCHES MERGE_BRANCHES [--corpus]
 # shellcheck disable=SC2016  # the python source stays literal
 ANALYZER='
-import fnmatch, json, re, sys
+import fnmatch, json, os, re, sys
 
 ALLOW = set(sys.argv[1].split())
 PROTECTED = set(sys.argv[2].split())
@@ -270,6 +289,8 @@ REMOTE = ("rewires where this repository fetches from and pushes to",
           "that is the operator\x27s; `git remote -v` lists")
 MERGE_NOTHING = ("names no branch, so it merges whatever the upstream config says",
                  "name it — `git merge <milestone-branch>`")
+INIT = ("with no target outside this repository it re-initialises a checkout of it, and in a linked worktree that writes `core.bare = true` into the config every checkout shares",
+        "build a scratch repository by explicit path, in one command — `git -C <scratch> init -q && git -C <scratch> add -A`")
 
 
 def tokens(text):
@@ -362,12 +383,58 @@ def git_call(words):
             break
     if i >= n or words[i].rsplit("/", 1)[-1] != "git":
         return None
-    i += 1
+    i, cdirs = i + 1, []
     while i < n and words[i].startswith("-"):
+        if words[i] == "-C" and i + 1 < n:
+            cdirs.append(words[i + 1])
         i += 2 if words[i] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env") else 1
     if i >= n:
         return None
-    return words[i], words[i + 1:]
+    return words[i], words[i + 1:], cdirs
+
+
+def toplevel(path):
+    while True:
+        dotgit = os.path.join(path, ".git")
+        if os.path.exists(dotgit):
+            return path, dotgit
+        if os.path.dirname(path) == path:
+            return None, None
+        path = os.path.dirname(path)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().strip()
+
+
+def checkouts(cwd):
+    """Every checkout of the repository `cwd` is in, read as text: git is never spawned."""
+    top, common = toplevel(os.path.realpath(cwd))
+    if top is None:
+        return []
+    found = {top}
+    if os.path.isfile(common):
+        common = os.path.join(top, read(common).partition("gitdir:")[2].strip())
+        if os.path.isfile(os.path.join(common, "commondir")):
+            common = os.path.join(common, read(os.path.join(common, "commondir")))
+    common = os.path.realpath(common)
+    if os.path.basename(common) == ".git":
+        found.add(os.path.dirname(common))
+    linked = os.path.join(common, "worktrees")
+    for name in os.listdir(linked) if os.path.isdir(linked) else ():
+        if os.path.isfile(os.path.join(linked, name, "gitdir")):
+            found.add(os.path.dirname(os.path.realpath(read(os.path.join(linked, name, "gitdir")))))
+    return sorted(found)
+
+
+def outside(cwd, parts):
+    """True when `-C`/target `parts` resolve outside every checkout of cwd\x27s repository."""
+    if not parts or any(unknowable(p) for p in parts):
+        return False
+    roots = checkouts(cwd)
+    target = os.path.realpath(os.path.join(cwd, *[os.path.expanduser(p) for p in parts]))
+    return bool(roots) and not any(target == r or target.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
 
 
 def split_args(args, long_values=(), short_values=""):
@@ -472,8 +539,22 @@ JUDGES = {"commit": commit, "push": push, "merge": merge, "config": config,
           "branch": branch, "tag": tag, "worktree": worktree, "remote": remote}
 
 
-def judge(sub, args):
-    if unknowable(sub) or sub in ALLOW or "--help" in args:
+def init(args, cdirs, cwd):
+    _, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    parts = cdirs + pos[:1]
+    if not parts:
+        return INIT
+    if any(unknowable(p) for p in parts) or outside(cwd, parts) or not checkouts(cwd):
+        return None
+    return INIT
+
+
+def judge(sub, args, cdirs, cwd):
+    if unknowable(sub) or sub in ALLOW or sub == "archive" or "--help" in args:
+        return None
+    if sub == "init":
+        return init(args, cdirs, cwd)
+    if outside(cwd, cdirs):
         return None
     if sub in JUDGES:
         return JUDGES[sub](args)
@@ -482,11 +563,11 @@ def judge(sub, args):
     return ("`git " + sub + "` is not on this project\x27s git allowlist", "the flow is " + FLOW)
 
 
-def verdict(command):
+def verdict(command, cwd):
     try:
         for words in segments(command):
             found = git_call(words)
-            said = judge(*found) if found else None
+            said = judge(*found, cwd) if found else None
             if said:
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",
@@ -507,9 +588,10 @@ def payload():
         event = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
         tool_input = event.get("tool_input") if event.get("tool_name") == "Bash" else None
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else os.getcwd()
     except Exception:
         return ""
-    return verdict(command) if isinstance(command, str) else ""
+    return verdict(command, cwd) if isinstance(command, str) else ""
 
 
 def corpus():
@@ -518,7 +600,7 @@ def corpus():
         want, _, command = row.strip().partition(" ")
         if not want or want.startswith("#"):
             continue
-        got = "2" if verdict(command) else "0"
+        got = "2" if verdict(command, os.getcwd()) else "0"
         if got == want:
             counts[got] += 1
         else:

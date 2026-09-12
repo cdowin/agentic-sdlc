@@ -84,17 +84,20 @@ ALLOWED = (
     'git commit --amend',                  # exempt: another rule's territory
     'git commit --dry-run',                # exempt: writes nothing
     'git status',                          # not a commit at all
+    # pre-fix: false-BLOCKED — a scratch probe's repo is not this repository
+    'git -C /tmp/x -c user.name=probe commit -qm base',
 )
 BLOCKED = (
     'git commit -m "fix: x"',
     'git commit -am "sweep"',
     'git commit --all -m "sweep"',
+    'git -C sub commit -m "sweep"',        # `-C` inside this repository
 )
 
 
 def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
         hooks_repo):
-    """Twelve rows, one case, both directions: a hook that blocks everything
+    """Fourteen rows, one case, both directions: a hook that blocks everything
     and a hook that is disarmed are equally broken, and only the pair tells
     them apart. A row that answers wrongly names itself."""
     wrong = ([f'BLOCKED: {c}' for c in ALLOWED

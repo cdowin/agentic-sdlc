@@ -4,7 +4,7 @@ kind: feature
 milestone: ms-the-ledger-is-a-stamp
 name: a dispatch row carries its outcome, and spend rolls up by role
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: ["ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []
 changelog: `pm ledger record --outcome landed|superseded|stopped:<reason>` stamps what became of a dispatch; each unit prints its outcome, `by agent` gives each agent's tokens and share, and a `superseded spend` line totals the tokens and names the grains of rows for grains the milestone no longer holds (#41).
@@ -36,7 +36,12 @@ may mean trimming as much as adding*. Two new blocks go into a report that alrea
 
 ## Ship criterion
 
-<!-- Written when 0.10.0 is decomposed. -->
+`pm ledger record --outcome landed|superseded|stopped:<reason>` (and `stamp stop --outcome`) writes
+the outcome someone STAMPED, and nothing infers one (rule 9). A later dispatch on the same grain does
+not mark an earlier one stopped. `pm ledger report <milestone>` prints each unit's `outcome`, a
+`by agent` table with each agent's tokens and `share`, and one `superseded spend` line totalling the
+tokens and naming the grains of rows for grains the milestone no longer holds. A hand record joined
+to its courier twin keeps its outcome. (Written at review, 2026-09-12: 0.10.0 W4.)
 
 ## Proof budget
 

@@ -6,7 +6,7 @@ status: building
 depends_on: ["ms-the-ledger-is-a-stamp"]
 branch: milestone/0.11.0-a-session-starts-knowing-what-it-can-do
 version: 0.11.0
-changelog:
+changelog: none
 order:
   - "ft-the-session-says-what-it-can-do-before-the-first-dispatch"
   - "ft-the-kit-ships-its-planning-skills"

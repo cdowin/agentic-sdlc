@@ -4,10 +4,10 @@ kind: feature
 milestone: "ms-a-session-starts-knowing-what-it-can-do"
 name: the kit says one loop
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.11.0-the-kit-says-one-loop.md
 depends_on: ["ft-use-the-sdlc-get-to-work"]
 consumed_by: []
-changelog:
+changelog: Every shipped surface describes one loop — the `run-the-sdlc` skill: agent briefs, the auto-loaded `pm-execution.md` (17.2KB → 9.4KB), SDLC and README no longer prescribe per-story builders, per-feature reviewers, planning passes over planned work, "read these files first", effort above `high`, builder-side merges, or `GDK_LEDGER_GRAIN` as how a dispatch is attributed; `dispatch` renders no export when it renders a stamp, and a serial builder commits its own files by pathspec.
 ---
 
 # the kit says one loop

@@ -25,6 +25,10 @@ NIT; one you cannot demonstrate by running something is a QUESTION.
 ## Checklist
 
 - Build the case, run it, paste what came back — for every finding.
+- A scratch repo is ONE command with explicit paths — `mkdir -p S && git
+  archive HEAD | tar -x -C S && git -C S init -q && git -C S add -A && git -C S
+  -c user.name=probe -c user.email=probe@local commit -qm base` — never `cd S;`
+  then git: a failed `cd` runs `git init` in your worktree and flips the host bare.
 - Re-derive any supplied baseline number; one that does not reproduce is its
   own finding, never quietly accommodated.
 - Attack the seam of a consolidation: exercise every caller of the survivor.

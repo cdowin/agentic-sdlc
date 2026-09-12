@@ -84,7 +84,11 @@ that finding comes first, ahead of how well the rest is built.
    parameterized, a new case that does not say which existing one it could
    not amend, and a test that spawns to check a pure function.
 6. The change passes the per-change gate, and every fix in the range shipped
-   a test that failed before it.
+   a test that failed before it. A scratch repo for a probe is ONE command with
+   explicit paths — `mkdir -p S && git archive HEAD | tar -x -C S && git -C S
+   init -q && git -C S add -A && git -C S -c user.name=probe -c
+   user.email=probe@local commit -qm base` — never `cd S;` then git: a failed
+   `cd` runs `git init` in your worktree and flips the host bare.
 7. The project's standards and anti-patterns (config above); docs now behind
    the code are DELTAs for the tech-writer, never blockers.
 8. Out-of-scope-by-design is a SUGGESTION; an unclear commit is a WARNING,

@@ -29,6 +29,10 @@ shows the input changed before the gate reddened.
   "never", "cannot" and "only" claims. No refusal matrix, no input surface.
 - **Print BEFORE and AFTER** when you introduce a defect to prove a gate
   catches it; a probe that changed nothing proves nothing.
+- **A scratch repo is ONE command with explicit paths** — `mkdir -p S && git
+  archive HEAD | tar -x -C S && git -C S init -q && git -C S add -A && git -C S
+  -c user.name=probe -c user.email=probe@local commit -qm base` — never `cd S;`
+  then git: a failed `cd` runs `git init` in your worktree and flips the host bare.
 - **Never hand-roll verification**: the narrow rung after a change, never a
   wide gate — the orchestrator runs that at the close. If the check you need
   is not a target, add the target, then run it.

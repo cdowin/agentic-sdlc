@@ -49,7 +49,7 @@ from agentic_sdlc.repo.checks import hooks                      # noqa: E402
 HOOKS_DIR = hooks.HOOKS_DIR
 A_CC_HOOK = 'cc-commit-pathspec.sh'
 A_GIT_HOOK = 'pre-push'
-# Six `cc-*.sh` and two git hooks — asked of the plan, never restated, so the
+# The `cc-*.sh` and the git hooks — asked of the plan, never restated, so the
 # next hook to ship does not need this file edited.
 SHIPPED = [rel for _, rel in install.PLANS['install-hooks']
            if rel.startswith(f'{HOOKS_DIR}/')]
@@ -410,54 +410,61 @@ def test_mentioning_the_flag_is_not_the_same_as_shipping_a_corpus():
 
 
 # --- K3: what the replay count is a count OF ---------------------------------
-# `2 replay their own --self-test corpus` is true and reads as coverage of the
-# guards. In the shape this kit ships it is coverage of the two ledger couriers,
-# which judge nothing; the three hooks that say no carry no corpus at all. D2
-# accepted that cost, so the gate reports it rather than refusing it — and the
-# thing being tested is that the line cannot be read as more than it is.
+# `N replay their own --self-test corpus` is true and reads as coverage of the
+# guards. Until the git allowlist and the agent-isolation guard shipped, it was
+# coverage of the two ledger couriers, which judge nothing, while every hook
+# that said no carried no corpus at all. D2 accepted that cost, so the gate
+# reports the split rather than refusing it — and the thing being tested is
+# that the line cannot be read as more than it is.
 def blocking_hooks(root: Path) -> list[Path]:
     return sorted(p for p in (root / HOOKS_DIR).iterdir()
                   if p.is_file() and hooks.BLOCKS_DECL.search(
                       p.read_text(encoding='utf-8', errors='replace')))
 
 
+# The two guards whose whole point is saying no, and which ship the corpus
+# that proves each no (ft-the-flow-is-boring-by-construction).
+CORPUS_GUARDS = {'cc-git-allowlist.sh', 'cc-agent-isolation.sh'}
+
+
 def test_the_verdict_names_how_many_BLOCKING_hooks_the_replay_covers():
-    """The stock corpus, measured: every carrier is a courier and no blocker is
-    covered. The line has to say so in words — a reader who stops at `2 replay`
-    has been told the guards are exercised, and they are not."""
+    """The stock corpus, measured: the git allowlist and the agent-isolation
+    guard can block AND replay their own corpus, so the split is a number and
+    not NONE — and it counts exactly the blockers that carry one."""
     with hooked_repo(arm=True) as root:
         blockers = blocking_hooks(root)
-        carriers = corpus_hooks(root)
+        covered = set(blockers) & set(corpus_hooks(root))
         code, out = gate()
     assert code == 0, out
-    assert blockers, 'the installed corpus ships no hook that can block'
-    assert not set(blockers) & set(carriers), (
-        'a blocking hook now ships a corpus — good; this test and the K3 note '
-        'in hooks.py both describe the shape where none did')
+    assert CORPUS_GUARDS <= {p.name for p in covered}, (
+        f'a guard that blocks replays no corpus: '
+        f'{sorted(CORPUS_GUARDS - {p.name for p in covered})}')
+    assert f'{len(covered)} of {len(blockers)} that can BLOCK' in out, out
+
+
+def test_blockers_that_carry_no_corpus_read_NONE_in_words():
+    """The other direction, so the census cannot print a constant: strip the
+    corpus from every blocker that carries one and the line says NONE, in
+    words — a reader who stops at `N replay` has been told the guards are
+    exercised, and they are not."""
+    with hooked_repo(arm=True) as root:
+        for guard in set(blocking_hooks(root)) & set(corpus_hooks(root)):
+            edit_hook(guard, hooks.SELF_TEST_FLAG, '--no-corpus-here')
+        blockers = blocking_hooks(root)
+        code, out = gate()
     assert f'NONE of the {len(blockers)} that can BLOCK' in out, out
     assert f'exit {hooks.BLOCK_EXIT}' in out, out
 
 
-def test_a_blocking_hook_that_ships_a_corpus_is_counted_as_one():
-    """The other direction, so the census cannot report NONE forever: give a
-    blocker the courier's corpus and the split must move. Without this, a
-    hardcoded `NONE` would pass every case above."""
-    with hooked_repo(arm=True) as root:
-        blocker = blocking_hooks(root)[0]
-        carrier = corpus_hooks(root)[0]
-        blocker.write_text(carrier.read_text(encoding='utf-8')
-                           + f'\nexit {hooks.BLOCK_EXIT}\n', encoding='utf-8')
-        blockers = blocking_hooks(root)
-        code, out = gate()
-    assert f'1 of {len(blockers)} that can BLOCK' in out, out
-
-
 def test_the_blocking_probe_reads_shape_not_prose():
     """The couriers document `exit 2` in their headers and never take it. A
-    probe that matched the digits anywhere would count all seven hooks as
-    blockers and print a ratio that is coverage of nothing."""
+    probe that matched the digits anywhere would count them as blockers and
+    print a ratio that is coverage of nothing."""
     with hooked_repo(arm=True) as root:
-        for carrier in corpus_hooks(root):
+        couriers = [p for p in corpus_hooks(root)
+                    if p.name.startswith('cc-ledger-')]
+        assert couriers, 'no ledger courier ships a corpus — census of zero'
+        for carrier in couriers:
             body = carrier.read_text(encoding='utf-8')
             assert 'exit 2' in body, carrier.name
             assert not hooks.BLOCKS_DECL.search(body), (

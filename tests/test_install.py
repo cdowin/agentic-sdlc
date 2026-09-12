@@ -180,6 +180,8 @@ ROSTER = AGENTS[2:]
 HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          'tools/hooks/cc-stop-gate.sh',
          'tools/hooks/cc-write-confine.sh',
+         'tools/hooks/cc-git-allowlist.sh',
+         'tools/hooks/cc-agent-isolation.sh',
          # The two ledger couriers (0.22.0). They guard nothing; they carry a
          # stop event's transcript path to `pm ledger record` and exit 0.
          'tools/hooks/cc-ledger-subagent.sh',
@@ -994,6 +996,7 @@ def test_the_hooks_carry_no_project_name_and_source_no_library():
 
 
 CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
+                 'tools/hooks/cc-git-allowlist.sh',
                  'tools/hooks/cc-ledger-subagent.sh',
                  'tools/hooks/cc-ledger-session.sh',
                  'tools/hooks/pre-push',

@@ -73,6 +73,8 @@ WRITES = (
     'tools/hooks/cc-commit-pathspec.sh',
     'tools/hooks/cc-stop-gate.sh',
     'tools/hooks/cc-write-confine.sh',
+    'tools/hooks/cc-git-allowlist.sh',
+    'tools/hooks/cc-agent-isolation.sh',
     'tools/hooks/cc-ledger-subagent.sh',
     'tools/hooks/cc-ledger-session.sh',
     'tools/hooks/pre-push',

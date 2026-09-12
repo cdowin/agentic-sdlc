@@ -3,7 +3,7 @@ id: ft-the-kit-ships-its-planning-skills
 kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the kit ships its planning and execution skills
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []

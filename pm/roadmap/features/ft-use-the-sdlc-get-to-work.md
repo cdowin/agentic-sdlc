@@ -3,7 +3,7 @@ id: ft-use-the-sdlc-get-to-work
 kind: feature
 milestone: "ms-a-session-starts-knowing-what-it-can-do"
 name: use the sdlc, get to work
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []

@@ -3,7 +3,7 @@ id: ft-the-session-says-what-it-can-do-before-the-first-dispatch
 kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the session says what it can do before the first dispatch
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []

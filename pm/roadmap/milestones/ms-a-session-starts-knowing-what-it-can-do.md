@@ -10,6 +10,7 @@ changelog:
 order:
   - "ft-the-session-says-what-it-can-do-before-the-first-dispatch"
   - "ft-the-kit-ships-its-planning-skills"
+  - "ft-use-the-sdlc-get-to-work"
 ---
 
 # 0.11.0 — a session starts knowing what it can do

@@ -208,7 +208,7 @@
 #   have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work" }
 #
 #   [pm.arrive.story.building]
-#   have    = { "tools/hooks/cc-ledger-subagent.sh" = "this dispatch's spend, when GDK_LEDGER_GRAIN=<id> is exported before it" }
+#   have    = { "tools/hooks/cc-ledger-subagent.sh" = "this dispatch's spend, attributed by the GDK-STAMP line `dispatch --grain <id>` renders" }
 #
 #   [pm.arrive.feature.reviewing]
 #   ask     = "what happens to it?"

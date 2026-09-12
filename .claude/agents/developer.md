@@ -47,7 +47,6 @@ build no named construct the grain does not name.
 ## The verbs this role reaches for
 
 - `make pm ARGS='ready-for story <id>'` — may I start?
-- `make pm ARGS='story building <id>'` — the claim, on the record
 - `make pm ARGS=vocabulary` — which states may I write on this tree?
 - `make sdlc ARGS='verify --story'` — the rung after every edit
 <!-- END role-verbs -->
@@ -55,7 +54,7 @@ build no named construct the grain does not name.
 ## Checklist
 
 1. Read the grain(s) in the brief and every file they name; the brief is
-   decided, so write no plan. Claim each story you start through the pm CLI.
+   decided, so write no plan. The PM tree is the orchestrator's; do not touch it.
 2. Re-read each file before editing; stay in scope — no added features, no
    surrounding refactors.
 3. **If you add a WRITER, enumerate that surface's existing READERS first.**
@@ -84,9 +83,9 @@ build no named construct the grain does not name.
 <!-- BEGIN name-both-commands -->
 ## Name BOTH commands, and say which one is the loop
 
-A dispatch names the NARROW command and the WIDE one, each with its measured
-cost: the narrow one is the inner loop, run after every edit; the wide one
-runs once, at the close. An agent given one command loops on it. Where the
+A dispatch names the NARROW command, with its measured cost: the inner loop,
+run after every edit. The wide one is the orchestrator's, run once at the
+close; a builder never runs it. Where the
 repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

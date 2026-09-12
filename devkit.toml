@@ -308,7 +308,7 @@ cases = { test = 1706 }
 [pm.arrive.feature.building]
 ask     = "what is building this?"
 answers = ["--by me", "--by agent <type>"]
-have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain", "tools/hooks/cc-ledger-subagent.sh" = "records this dispatch's spend when GDK_LEDGER_GRAIN=<id> is exported before the spawn; `pm ledger record --grain <id>` files it by hand on return" }
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain", "tools/hooks/cc-ledger-subagent.sh" = "records this dispatch's spend, attributed by the GDK-STAMP line `dispatch --grain <id>` renders; `pm ledger record --grain <id> --agent-id <id> --outcome <word>` files it by hand on return" }
 
 [pm.arrive.feature.reviewing]
 ask     = "what happens to it?"
@@ -321,7 +321,7 @@ answers = ["--why \"<reason>\""]
 [pm.arrive.story.building]
 ask     = "what is building this?"
 answers = ["--by me", "--by agent <type>"]
-have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain", "tools/hooks/cc-ledger-subagent.sh" = "records this dispatch's spend when GDK_LEDGER_GRAIN=<id> is exported before the spawn; `pm ledger record --grain <id>` files it by hand on return" }
+have    = { "tools/dev/agent-worktree.sh" = "isolation for parallel work on this grain", "tools/hooks/cc-ledger-subagent.sh" = "records this dispatch's spend, attributed by the GDK-STAMP line `dispatch --grain <id>` renders; `pm ledger record --grain <id> --agent-id <id> --outcome <word>` files it by hand on return" }
 
 [pm.arrive.story.obe]
 ask     = "why is this abandoned?"

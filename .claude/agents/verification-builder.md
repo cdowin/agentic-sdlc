@@ -47,9 +47,9 @@ shows the input changed before the gate reddened.
 <!-- BEGIN name-both-commands -->
 ## Name BOTH commands, and say which one is the loop
 
-A dispatch names the NARROW command and the WIDE one, each with its measured
-cost: the narrow one is the inner loop, run after every edit; the wide one
-runs once, at the close. An agent given one command loops on it. Where the
+A dispatch names the NARROW command, with its measured cost: the inner loop,
+run after every edit. The wide one is the orchestrator's, run once at the
+close; a builder never runs it. Where the
 repo declares `[verify]`, `make sdlc ARGS='verify --plan'` prints each rung with
 the cost it last took and runs nothing — ask it rather than guess.
 <!-- END name-both-commands -->

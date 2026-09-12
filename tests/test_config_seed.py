@@ -392,7 +392,6 @@ def test_the_seeds_declarations_are_the_keys_with_nothing_behind_them():
 
 # --- criterion 4: the arrival a dispatch starts at names the courier ----------
 # The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
-LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
 
 
 def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
@@ -403,6 +402,7 @@ def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
     wired. The SEED's example and this repo's own declaration are one change,
     never two — a consumer reads the seed to find out what a version can do.
     """
+    from agentic_sdlc.repo.pm import ledger
     live = tomllib.loads((REPO_ROOT / 'devkit.toml').read_text(encoding='utf-8'))
     for kind in (vocabulary.GRAIN_FEATURE, vocabulary.GRAIN_STORY):
         node = live['pm'][vocabulary.ARRIVE_KEY][kind]['building']
@@ -417,12 +417,12 @@ def test_the_arrival_that_starts_a_dispatch_names_the_ledger_courier():
                 f'[pm.arrive.{kind}.building] have names {path}, which is not '
                 f'in this checkout — the line would read "DECLARED and not '
                 f'installed" forever')
-            assert LEDGER_GRAIN_ENV in why, (
+            # 0.11.0: the dispatch's own stamp line attributes it, not an env.
+            assert ledger.STAMP_PREFIX in why, (
                 f'[pm.arrive.{kind}.building] have.{path} does not name '
-                f'{LEDGER_GRAIN_ENV}: the courier reads it from its own '
-                f'environment and no hook event carries it, so a line naming '
-                f'the script without the variable names half the capability')
-    assert LEDGER_GRAIN_ENV in SEED, (
-        f'the seed\'s [pm.arrive.…] example does not name {LEDGER_GRAIN_ENV} '
+                f'{ledger.STAMP_PREFIX}: a line naming the courier without how '
+                f'a dispatch is attributed names half the capability')
+    assert ledger.STAMP_PREFIX in SEED, (
+        f'the seed\'s [pm.arrive.…] example does not name {ledger.STAMP_PREFIX} '
         f'while this repo\'s own declaration does — a consumer reads the seed '
         f'to find out what a version can do')

@@ -5,15 +5,19 @@
 # other verb is a chance to move HEAD, sweep a peer's edits or rewrite what was
 # pushed. Allowed: ALLOW_SUBCOMMANDS below with any arguments; `commit` bar
 # `--amend` (cc-commit-pathspec.sh judges its paths); `push` bar a force or a
-# PROTECTED_BRANCHES destination; `merge` of a MERGE_BRANCHES branch; `config`
-# reads; `branch` and `tag` bar delete/move/force; `worktree list|prune`;
-# `remote` bar rewiring; `archive` bar `-o`/`--remote`; and a scratch probe's
-# git: `init`, or any verb, whose every `-C` and init target is an ABSOLUTE path
-# outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
-# and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
-# `--git-dir`, `--work-tree` or `--namespace`. Blocked, each with its reason and the boring
-# alternative: bisect, stash, reset, checkout, switch, restore, clean, rebase,
-# pull, and any subcommand named nowhere here. Only the command the agent TYPES
+# PROTECTED_BRANCHES destination; `merge` of a MERGE_BRANCHES branch, or
+# `--ff-only` of a remote-tracking ref; `pull --ff-only [<remote> [<branch>]]`;
+# `config` reads; `branch` bar force-delete/move/force (`-d` is the safe
+# delete); `tag` bar delete/move/force; `switch <branch>` and
+# `switch -c <new> [<start>]`; `symbolic-ref <ref>` (a read); `stash list`;
+# `worktree list|prune`; `remote` bar rewiring; `archive` bar `-o`/`--remote`;
+# and a scratch probe's git: `init`, or any verb, whose every `-C` and init
+# target is an ABSOLUTE path outside every checkout of this repository (the
+# hook's own, CLAUDE_PROJECT_DIR's and cwd's) — never in a command that runs
+# `ln` or sets a GIT_* location, `--git-dir`, `--work-tree` or `--namespace`.
+# Blocked, each with its reason and the boring alternative: bisect, stash,
+# reset, checkout, restore, clean, rebase, a pull or switch that could lose
+# work, and any subcommand named nowhere here. Only the command the agent TYPES
 # is read: git run inside a script or a make target — tools/dev/agent-worktree.sh's
 # own `worktree add` — is never seen. `bash cc-git-allowlist.sh --self-test`
 # replays the command corpus. Stdin: the PreToolUse JSON (tool_name,
@@ -87,6 +91,8 @@ self_test() {
 	printf 'gitdir: %s\n' "$tmp/repo/.git/worktrees/wt" >"$tmp/wt/.git"
 	printf '%s\n' "$tmp/wt/.git" >"$tmp/repo/.git/worktrees/wt/gitdir"
 	printf '../..\n' >"$tmp/repo/.git/worktrees/wt/commondir"
+	# The one remote it declares: `origin/<branch>` is remote-tracking, `upstream/<branch>` is not.
+	printf '[remote "origin"]\n\turl = /nowhere\n' >"$tmp/repo/.git/config"
 	stock="$tmp/repo/stock.sh"
 	widened="$tmp/repo/widened.sh"
 	# The opening marker is split so this line is never mistaken for it.
@@ -107,11 +113,30 @@ self_test() {
 2 git reset HEAD~1
 2 git checkout -- .
 2 git checkout milestone/0.9.0
-2 git switch -c feat/x
+2 git switch -f main
+2 git switch --discard-changes main
+2 git switch -C feat/x
+2 git switch --detach HEAD~1
+2 git switch --orphan scratch
+2 git switch -m main
 2 git restore src/x.py
 2 git clean -fdx
 2 git rebase milestone/0.9.0
 2 git pull
+2 git pull origin main
+2 git pull --rebase
+2 git pull --no-ff origin main
+2 git pull --ff-only --rebase
+2 git pull --ff-only -r origin main
+2 git pull --ff-only --autostash
+2 git pull --ff-only origin main:main
+2 git stash pop
+2 git stash drop
+2 git stash clear
+2 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+2 git symbolic-ref HEAD refs/heads/feat/x
+2 git symbolic-ref -d HEAD
+2 git symbolic-ref --delete refs/remotes/origin/HEAD
 2 git worktree add ../elsewhere -b feat/x
 2 git worktree remove .claude/worktrees/x
 2 git commit --amend --no-edit
@@ -125,9 +150,19 @@ self_test() {
 2 git config core.bare true
 2 git config --unset core.hooksPath
 2 git branch -D feat/x
+2 git branch -d -f feat/x
+2 git branch --delete --force feat/x
+2 git branch -m feat/x feat/y
+2 git branch -M feat/y
+2 git branch -f feat/x HEAD
+2 git branch -dr origin/feat/x
 2 git tag -f v1.0.0
 2 git merge main
 2 git merge
+2 git merge origin/main
+2 git merge --ff-only main
+2 git merge --ff-only --no-ff origin/main
+2 git merge --ff-only upstream/main
 2 git cherry-pick 1a2b3c4
 2 git remote set-url origin https://example.invalid/x.git
 2 git -C .claude/worktrees/x stash
@@ -157,6 +192,10 @@ self_test() {
 2 git init -q ~/scratch
 2 git -C /tmp -C src reset --hard
 2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
+2 ln -s /r /tmp/l && git -C /tmp/l switch -f main
+2 git -C /tmp --git-dir=/r/.git branch -D feat/x
+2 GIT_DIR=/r/.git git -C /tmp/x symbolic-ref HEAD refs/heads/x
+2 git -C ../repo pull
 2 git archive -o /r/.git/config HEAD
 2 git archive --output=x.tar HEAD
 2 git archive --remote=origin HEAD
@@ -184,8 +223,33 @@ self_test() {
 0 git branch -a
 0 git branch --show-current
 0 git branch milestone/0.10.0
+0 git branch
+0 git branch -r
+0 git branch --list 'feat/*'
+0 git branch --merged
+0 git branch --no-merged main
+0 git branch -d feat/x
+0 git branch -d feat/x feat/y
+0 git branch --delete feat/x
+0 git switch main
+0 git switch -
+0 git switch -c feat/x
+0 git switch -c feat/x milestone/0.9.0
+0 git switch --create feat/x --no-track origin/main
+0 git switch main && git pull --ff-only
+0 git pull --ff-only
+0 git pull --ff-only origin
+0 git pull --ff-only origin main
+0 git merge --ff-only origin/main
+0 git merge --ff-only refs/remotes/origin/main
+0 git symbolic-ref refs/remotes/origin/HEAD
+0 git symbolic-ref --short -q refs/remotes/origin/HEAD
+0 git symbolic-ref HEAD
+0 git stash list
+0 git stash list --date=relative
 0 git tag v0.9.0 && git push origin refs/tags/v0.9.0
 0 git tag -l
+0 git worktree list
 0 git worktree list --porcelain
 0 git worktree prune
 0 git fetch --prune
@@ -278,30 +342,32 @@ NAMED = {
     "bisect": ("walks HEAD of the checkout through history under every agent in it, and a `bisect run` left mid-way in a linked worktree has flipped a repository to `core.bare = true`",
                "read history without checking it out — `git log --oneline <range>`, `git show <rev>:<path>`; to watch a test fail at HEAD, copy the file to a scratch path"),
     "stash": ("`refs/stash` is shared by every worktree, and a stash sweeps every uncommitted edit out of the tree — a peer\x27s included",
-              "to watch a test fail at HEAD, copy the file to a scratch path; the pathspec form is still a stash"),
+              "to watch a test fail at HEAD, copy the file to a scratch path; the pathspec form is still a stash; `git stash list` reads"),
     "reset": ("moves HEAD or rewrites the index and tree under every agent in this checkout, and a pushed branch is forward-only",
               "fix forward with a new commit that names its paths — `git commit -m \"…\" -- <path>`; a stray staged file is harmless when every commit names its paths"),
     "checkout": ("rewrites the working tree: a path form discards uncommitted edits, a peer\x27s included, and a branch form switches the branch under every agent in this checkout",
                  "read a committed file with `git show HEAD:<path>`; another branch is a tree of your own — `" + TOOL + " new <slug>`"),
-    "switch": ("switches the branch under every agent sharing this checkout",
-               "another branch is a tree of your own — `" + TOOL + " new <slug>`"),
-    "restore": ("discards uncommitted edits, a peer\x27s included, or unstages what a peer staged",
+    "restore":("discards uncommitted edits, a peer\x27s included, or unstages what a peer staged",
                 "read a committed file with `git show HEAD:<path>`; to watch a test fail at HEAD, copy the file to a scratch path"),
     "clean": ("deletes untracked files, a peer\x27s new files included",
               "`rm` the one path you created"),
     "rebase": ("rewrites history, and nothing pushed is rebased",
                "take upstream work with a merge — `git merge <milestone-branch>`"),
-    "pull": ("fetches and then merges or rebases whatever the upstream config says, in one step you did not choose",
-             "`git fetch`, then `git merge <milestone-branch>`"),
 }
+PULL = ("fetches and then merges or rebases whatever the upstream config says, in one step you did not choose",
+        "`git pull --ff-only [<remote> [<branch>]]` — a fast-forward cannot lose work; or `git fetch`, then `git merge --ff-only <remote>/<branch>`")
+SWITCH = ("discards or overwrites work in this checkout, force-resets a branch, or leaves HEAD somewhere no branch names",
+          "`git switch <branch>`, or `git switch -c <new> [<start>]` — git refuses over conflicting edits; a branch to work on beside a peer is a tree of your own — `" + TOOL + " new <slug>`")
+SYMREF = ("writes or deletes a symbolic ref — `HEAD` of a checkout, or a remote\x27s HEAD every worktree reads",
+          "read it with one ref argument — `git symbolic-ref --short <ref>`; a remote\x27s HEAD is reset with `git remote set-head <remote> --auto`")
 AMEND = ("rewrites the commit HEAD names, and a pushed branch is forward-only",
          "a new commit that names its paths — `git commit -m \"…\" -- <path>`")
 FORCE = ("rewrites the remote branch — nothing pushed is amended, rebased, reset or force-pushed",
          "push a new commit on top; a rejected push is `git fetch` and `git merge <branch>`, then push again")
 CONFIG = ("writes configuration that every worktree of this repository shares — a stray `core.bare = true` is one such write",
           "`git -c <key>=<value> <command>` scopes a setting to one command; a standing change is the operator\x27s")
-BRANCH = ("deletes, renames or force-moves a branch, and agent branches are made and retired by the worktree tool",
-          "`" + TOOL + " done <slug>` retires one and keeps unmerged work; `git branch -a` lists")
+BRANCH = ("force-deletes, renames or force-moves a branch, or deletes a remote-tracking one, and agent branches are made and retired by the worktree tool",
+          "`git branch -d <branch>` deletes a merged one and refuses unmerged work; `" + TOOL + " done <slug>` retires an agent\x27s; `git branch -a` lists")
 TAG = ("moves or deletes a tag, and a published tag is never force-moved",
        "tag a new version; `git tag -l` lists")
 WORKTREE_ADD = ("an ad-hoc worktree bases wherever it is told and carries no scope marker, so no guard knows an agent works there",
@@ -439,17 +505,32 @@ def read(path):
         return handle.read().strip()
 
 
-def checkouts(cwd):
-    """Every checkout of the repository `cwd` is in, read as text: git is never spawned."""
+def common_dir(cwd):
+    """The checkout `cwd` is in and the git directory every checkout of it shares, or Nones."""
     top, common = toplevel(os.path.realpath(cwd))
     if top is None:
-        return []
-    found = {top}
+        return None, None
     if os.path.isfile(common):
         common = os.path.join(top, read(common).partition("gitdir:")[2].strip())
         if os.path.isfile(os.path.join(common, "commondir")):
             common = os.path.join(common, read(os.path.join(common, "commondir")))
-    common = os.path.realpath(common)
+    return top, os.path.realpath(common)
+
+
+def remotes(where):
+    """The remotes the repository at `where` declares, read from its shared config as text."""
+    _, common = common_dir(where)
+    if common is None or not os.path.isfile(os.path.join(common, "config")):
+        return set()
+    return set(re.findall(r"(?m)^\s*\[remote\s+\"([^\"]+)\"\s*\]", read(os.path.join(common, "config"))))
+
+
+def checkouts(cwd):
+    """Every checkout of the repository `cwd` is in, read as text: git is never spawned."""
+    top, common = common_dir(cwd)
+    if top is None:
+        return []
+    found = {top}
     if os.path.basename(common) == ".git":
         found.add(os.path.dirname(common))
     linked = os.path.join(common, "worktrees")
@@ -527,18 +608,38 @@ def push(args):
     return None
 
 
-def merge(args):
+def tracking(name, where):
+    """True when `name` spells a remote-tracking ref of a remote the repository at `where` declares."""
+    if name.startswith("refs/remotes/"):
+        return name.count("/") >= 3
+    remote, slash, rest = name.partition("/")
+    return bool(slash and rest) and remote in remotes(where)
+
+
+def merge(args, where):
     opts, pos, _ = split_args(args, ("--message", "--file", "--strategy", "--strategy-option", "--into-name"), "mFsX")
     if opts & {"--abort", "--continue", "--quit"}:
         return None
     if not pos:
         return MERGE_NOTHING
+    # A fast-forward cannot lose work, and a later `--ff` or `--no-ff` would override it.
+    ff_only = "--ff-only" in opts and not opts & {"--ff", "--no-ff", "--squash"}
     for name in pos:
         bare = name[len("refs/heads/"):] if name.startswith("refs/heads/") else name
         if unknowable(bare) or any(fnmatch.fnmatchcase(bare, glob) for glob in MERGEABLE):
             continue
+        if ff_only and tracking(name, where):
+            continue
         return ("`" + name + "` is not a branch this flow merges (MERGE_BRANCHES: " + " ".join(MERGEABLE) + ")",
-                "merge the milestone branch or your own agent branch; anything else is the operator\x27s")
+                "merge the milestone branch or your own agent branch; a remote-tracking ref fast-forwards — `git merge --ff-only <remote>/<branch>`; anything else is the operator\x27s")
+    return None
+
+
+def pull(args):
+    opts, pos, letters = split_args(args, ("--strategy", "--strategy-option", "--depth", "--deepen", "--shallow-since", "--shallow-exclude", "--upload-pack", "--negotiation-tip", "--server-option"), "sXo")
+    if "--ff-only" not in opts or opts & {"--rebase", "--ff", "--no-ff", "--squash", "--autostash"} \
+            or "r" in letters or len(pos) > 2 or any(":" in p or p.startswith("+") for p in pos):
+        return PULL
     return None
 
 
@@ -556,7 +657,11 @@ def config(args):
 
 def branch(args):
     opts, _, letters = split_args(args, ("--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--set-upstream-to"), "u")
-    return BRANCH if opts & {"--delete", "--move", "--force"} or letters & set("dDmMCf") else None
+    if opts & {"--move", "--force"} or letters & set("DmMCf"):
+        return BRANCH
+    # `-d` is the safe delete: git refuses a branch whose work is merged nowhere.
+    deleting = "--delete" in opts or "d" in letters
+    return BRANCH if deleting and (opts & {"--remotes", "--all"} or letters & set("ra")) else None
 
 
 def tag(args):
@@ -576,8 +681,32 @@ def remote(args):
     return REMOTE if verb in ("add", "rename", "rm", "remove", "set-url", "set-branches") else None
 
 
-JUDGES = {"commit": commit, "push": push, "merge": merge, "config": config,
-          "branch": branch, "tag": tag, "worktree": worktree, "remote": remote}
+SWITCH_LONG = {"--create", "--quiet", "--track", "--no-track", "--guess", "--no-guess", "--progress", "--no-progress"}
+
+
+def switch(args):
+    # Only what never discards: a branch, or `-c <new> [<start>]`; any other option is refused.
+    opts, pos, letters = split_args(args, ("--create",), "c")
+    creating = "--create" in opts or "c" in letters
+    if {o for o in opts if o.startswith("--")} - SWITCH_LONG or letters - set("cqt") \
+            or len(pos) > 1 or (not creating and len(pos) != 1):
+        return SWITCH
+    return None
+
+
+def symbolic_ref(args):
+    # One ref argument reads; a second writes it, and `-d` deletes it.
+    opts, pos, letters = split_args(args, (), "m")
+    return SYMREF if len(pos) != 1 or "--delete" in opts or letters & set("dm") else None
+
+
+def stash(args):
+    return None if args[:1] == ["list"] else NAMED["stash"]
+
+
+JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
+          "branch": branch, "tag": tag, "worktree": worktree, "remote": remote,
+          "switch": switch, "symbolic-ref": symbolic_ref, "stash": stash}
 
 
 def init(args, cdirs, roots):
@@ -590,7 +719,7 @@ def archive(args):
     return ARCHIVE if opts & {"--output", "--remote"} or "o" in letters else None
 
 
-def judge(sub, args, cdirs, roots):
+def judge(sub, args, cdirs, roots, cwd):
     if unknowable(sub) or sub in ALLOW or "--help" in args:
         return None
     if sub == "init":
@@ -599,6 +728,8 @@ def judge(sub, args, cdirs, roots):
         return None
     if sub == "archive":
         return archive(args)
+    if sub == "merge":
+        return merge(args, os.path.join(cwd, *cdirs))
     if sub in JUDGES:
         return JUDGES[sub](args)
     if sub in NAMED:
@@ -612,7 +743,7 @@ def verdict(command, cwd):
         roots = repo_roots(cwd, segs)
         for words in segs:
             found = git_call(words)
-            said = judge(*found, roots) if found else None
+            said = judge(*found, roots, cwd) if found else None
             if said:
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",

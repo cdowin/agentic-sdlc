@@ -2,7 +2,7 @@
 id: "ms-the-ledger-is-a-stamp"
 kind: milestone
 name: the ledger is a stamp
-status: building
+status: done
 depends_on: ["ms-the-tool-agrees-with-itself"]
 branch: milestone/0.10.0-the-ledger-is-a-stamp
 version: 0.10.0

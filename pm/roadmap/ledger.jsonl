@@ -5468,3 +5468,13 @@
 {"ts":"2026-09-12T13:01:27Z","kind":"test","tier":"test","nodeid":"tests/test_fresh_project.py::test_check_shell_names_the_UNTRACKED_case_not_the_roots_key","duration_ms":8217,"rank":5,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
 {"ts":"2026-09-12T13:01:27Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":66863,"census":1701,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
 {"ts":"2026-09-12T13:01:27Z","kind":"verify","rung":"feature","gate":"test","verdict":"PASS","exit_code":0,"duration_ms":66974,"state":"a688432e0142ea301cd85d0a24b3d165276a234c816e16c2b4e95a06c6c9925e","graded":"d839d978cfabbb34a6007d941cdc84077725f1ef00e18a7ded8a87fc82473526","census":1701,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:01:42Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3670,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":20395,"rank":1,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":9922,"rank":2,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":8666,"rank":3,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_value_is_parsed_in_front_of_the_bound","duration_ms":7663,"rank":4,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_broken_recorder_never_changes_the_gates_verdict[does-not-exist]@the-real-repo","duration_ms":7134,"rank":5,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:02:48Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":66343,"census":1701,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:04:15Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":87090,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:04:16Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":152,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}
+{"ts":"2026-09-12T13:04:16Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":157746,"branch":"milestone/0.10.0-the-ledger-is-a-stamp"}

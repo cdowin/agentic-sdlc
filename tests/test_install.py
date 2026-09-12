@@ -186,6 +186,8 @@ HOOKS = ('tools/hooks/cc-commit-pathspec.sh',
          # stop event's transcript path to `pm ledger record` and exit 0.
          'tools/hooks/cc-ledger-subagent.sh',
          'tools/hooks/cc-ledger-session.sh',
+         # The session preflight (0.11.0): prints `preflight` at SessionStart.
+         'tools/hooks/cc-session-preflight.sh',
          'tools/hooks/pre-push',
          'tools/hooks/prepare-commit-msg',
          'tools/dev/agent-worktree.sh',
@@ -999,6 +1001,7 @@ CONFIG_HEADED = ('tools/hooks/cc-stop-gate.sh',
                  'tools/hooks/cc-git-allowlist.sh',
                  'tools/hooks/cc-ledger-subagent.sh',
                  'tools/hooks/cc-ledger-session.sh',
+                 'tools/hooks/cc-session-preflight.sh',
                  'tools/hooks/pre-push',
                  'tools/hooks/prepare-commit-msg',
                  'tools/dev/agent-worktree.sh')

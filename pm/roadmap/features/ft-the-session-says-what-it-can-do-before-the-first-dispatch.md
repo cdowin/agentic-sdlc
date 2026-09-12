@@ -3,11 +3,11 @@ id: ft-the-session-says-what-it-can-do-before-the-first-dispatch
 kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the session says what it can do before the first dispatch
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: New read verb `agentic-sdlc preflight` says what a session can do before the first dispatch (subagent resume, hook wiring, ledger attribution, the dispatch channel), and `install-hooks` ships `cc-session-preflight.sh`, a SessionStart hook that prints it into the session — land its new settings entry (#40).
 ---
 
 # the session says what it can do before the first dispatch
@@ -37,11 +37,19 @@ a one-line capability summary.
 
 ## Ship criterion
 
-<!-- Written when 0.11.0 is decomposed. -->
+At SessionStart, before any dispatch, a session in a tree whose `install-hooks` corpus is current and
+registered receives four rows from `preflight`: `subagent-resume` (denied/allowed/unknown — read from
+`.claude/settings*.json` permissions, never a process's argv, rule 2), `hooks` (wired/not wired,
+missing ones named, through `check hooks`' own reader), `attribution` (0/1/N stories in progress and
+what the courier's fallback does with it), and `subagent-channel`. Each row is read as text, `unknown`
+where a fact is not readable, exit 0; a usage or config error exits 2. Decided at dispatch
+(2026-09-12): a launch flag such as `--disallowedTools` is not readable as text, so it is `unknown`,
+never a guess.
 
 ## Proof budget
 
-  cases:
-  tier:
-  lands in:
-  what already covers this: `check hooks` covers the wiring half.
+  cases: 3 new, plus 5 amended and the hook's 6-row `--self-test` corpus
+  tier: unit (`tests/test_preflight.py`), integration (the `HEADERED` row, `check hooks` replay)
+  lands in: tests/test_preflight.py, cc-session-preflight.sh --self-test
+  what already covers this: `check hooks` covers the wiring half (preflight calls its reader);
+    test_install's self-hosting cases cover the SessionStart registration.

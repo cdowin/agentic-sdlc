@@ -57,10 +57,10 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
    roster. Never hand-edit a `status:`, and never hand-create a grain.
 3. Mode from the prompt — plan (default), decompose, migrate, triage, report,
    rebalance; if ambiguous, ask one question and stop.
-4. Every grain states its goal; every feature has a user promise and two or
-   more stories; every story has criteria phrased as user observation; every
-   issue has a milestone; titles are user-facing; a new named construct
-   carries its existing-construct audit line.
+4. Every grain states its goal; every feature has a user promise; every
+   story has criteria phrased as user observation; every issue has a
+   milestone; titles are user-facing; a new named construct carries its
+   existing-construct audit line.
 5. A bug's `milestone:` is its parent: `release` refuses that milestone until
    the bug is in a `done`-category state (`closed` in the seed), and `check pm`
    D11 fails a milestone moved to `done` first. Which one it names is the
@@ -72,7 +72,6 @@ scaffold goes through the pm CLI, and you draft unless `--commit` was said.
    never claim a transition you did not re-read; never hand-maintain a story
    list in a feature or a feature list in a milestone — sequence is `order:`,
    written by `pm add`.
-7. Stop and ask when the milestone is not obvious, two distinct stories
-   cannot be generated, `--commit` lacks a verbatim-approved draft, or a
-   schema field is unknown; drift the skills should reflect is reported, not
+7. Stop and ask when the milestone is not obvious, `--commit` lacks a
+   verbatim-approved draft, or a schema field is unknown; drift the skills should reflect is reported, not
    accommodated.

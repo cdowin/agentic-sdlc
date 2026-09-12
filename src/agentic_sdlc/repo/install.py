@@ -73,6 +73,8 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         # The two ledger couriers guard nothing but carry the same header and arming.
         ('cc-ledger-subagent.sh', 'tools/hooks/cc-ledger-subagent.sh'),
         ('cc-ledger-session.sh', 'tools/hooks/cc-ledger-session.sh'),
+        # Prints `preflight` into the session at start; guards nothing either.
+        ('cc-session-preflight.sh', 'tools/hooks/cc-session-preflight.sh'),
         ('pre-push', 'tools/hooks/pre-push'),
         ('prepare-commit-msg', 'tools/hooks/prepare-commit-msg'),
         ('agent-worktree.sh', 'tools/dev/agent-worktree.sh'),
@@ -120,7 +122,9 @@ install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
                 plus the two ledger couriers
                 (cc-ledger-subagent on SubagentStop, cc-ledger-session on
                 Stop, each handing the stop event's transcript path to
-                `pm ledger record` and exiting 0 whatever it says), the git
+                `pm ledger record` and exiting 0 whatever it says), the
+                session preflight (cc-session-preflight on SessionStart,
+                printing `preflight`'s rows into the session), the git
                 hooks (pre-push, prepare-commit-msg),
                 tools/dev/agent-worktree.sh and tools/setup-hooks.sh, which
                 arms them. Each carries a small `project config` header — yours
@@ -241,11 +245,10 @@ _NEXT_STEP = {
                      'Last, the ledger couriers read GDK_LEDGER_GRAIN from '
                      'THEIR OWN ENVIRONMENT and pass it as `--grain`, which is '
                      'what puts a session\'s tokens on a story\'s line rather '
-                     'than in the tree ledger. Nothing exports it for '
-                     'you: whoever starts a session or dispatches an agent '
-                     'exports the grain it was told to work on. Unset is '
-                     'normal and passes no flag — the verb then resolves the '
-                     'grain from the tree, or omits the key.',
+                     'than in the tree ledger. Nothing exports it for you, and a dispatch needs none of it: '
+                     'its `GDK-STAMP` line attributes it, and `pm ledger '
+                     'record --agent-id … --outcome …` records it on return. '
+                     'Unset is normal and passes no flag.',
     'install-agents': 'the verification pair carries the review and build '
                       'contract; the rest are the base roster. Each roster '
                       'file opens with a `Project config` section — edit the '
@@ -254,8 +257,8 @@ _NEXT_STEP = {
                       '--force keeps it; the rest of the file is the kit\'s. '
                       '`model:` in '
                       'the frontmatter is doing proven work; `effort:` is '
-                      'carried unverified. The SDLC these agents run is '
-                      'SDLC.md at the agentic-sdlc repo root.',
+                      'carried unverified. The loop they run is the '
+                      '`run-the-sdlc` skill (`pm install-skills`).',
     'install-ci': 'verify.yml runs `make milestone` — confirm that target '
                   'exists and is your full gate, and add whatever toolchain '
                   'your gate needs and the runner lacks. semver-gate.yml and '
@@ -311,6 +314,8 @@ _WIRING: tuple[tuple[str, str | None, str, bool], ...] = (
     ('Stop', None, 'tools/hooks/cc-stop-gate.sh', False),
     ('Stop', None, 'tools/hooks/cc-ledger-session.sh', True),
     ('SubagentStop', None, 'tools/hooks/cc-ledger-subagent.sh', True),
+    # Not async: its stdout IS the report, and the session reads it at start.
+    ('SessionStart', None, 'tools/hooks/cc-session-preflight.sh', False),
 )
 
 # The one destination this package OFFERS to write and never merges into.

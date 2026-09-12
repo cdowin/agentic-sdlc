@@ -3,11 +3,11 @@ id: ft-the-kit-ships-its-planning-skills
 kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the kit ships its planning and execution skills
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `pm install-skills` also installs `writing-plans` (plan only when needed) and `executing-plans` (file and continue), each with a project-config block the install keeps, and the architect, po, developer, verification-builder, reviewer and milestone-reviewer briefs say the same rule in their own terms (#42).
 ---
 
 # the kit ships its planning and execution skills
@@ -44,7 +44,10 @@ state?".
 
 ## Ship criterion
 
-<!-- Written when 0.11.0 is decomposed. -->
+After `pm install-skills`, `writing-plans` and `executing-plans` are installed, each with a
+`## Project config` block that a plain re-run keeps. The architect, po, developer,
+verification-builder, reviewer and milestone-reviewer briefs each carry the rule in their own terms,
+and `tests/test_install.py` proves them byte-current. (Written at review, 2026-09-12: 0.11.0 F6.)
 
 ## Proof budget
 

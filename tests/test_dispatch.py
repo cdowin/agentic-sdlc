@@ -176,17 +176,19 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
 class TheDispatchCanBeRECORDED(unittest.TestCase):
     """Measured in this milestone: six agents dispatched, zero dispatch rows.
 
-    `GDK_LEDGER_GRAIN` is the one `GDK_LEDGER_*` value no hook payload carries,
-    so nothing exports it and nobody reached for `pm ledger record` once. This
-    verb stands at the moment a dispatch begins, so it is where both lines are
-    NAMED (rule 11). It renders them; the operator runs them (D1).
+    Nobody reached for `pm ledger record` once. This verb stands at the moment
+    a dispatch begins, so it is where the stamp and the record line are NAMED
+    (rule 11). It renders them; the operator runs the record (D1).
     """
 
-    def test_the_export_and_the_record_line_arrive_with_the_grain(self):
+    def test_the_stamp_and_the_record_line_arrive_with_the_grain(self):
         with grain_tree():
             code, out, err = run('--grain', STORY, '--role', 'developer')
         self.assertEqual(code, 0, err)
-        self.assertIn(f'export GDK_LEDGER_GRAIN={STORY}', out)
+        # Review R4: the stamp attributes the dispatch, so an export beside it
+        # taught a second mechanism that does the same job.
+        self.assertIn(f'\nGDK-STAMP grain={STORY}\n', out)
+        self.assertNotIn('GDK_LEDGER_GRAIN', out)
         # Through the stock wiring: nothing on a consumer's PATH is named
         # `agentic-sdlc` (#36).
         self.assertIn(f"make pm ARGS='ledger record --grain {STORY} "
@@ -270,8 +272,8 @@ class TheModeIsTheMilestones(unittest.TestCase):
             code, out, err = run('--grain', STORY)
         self.assertEqual(code, 0, err)
         self.assertNotIn(LOOP, out)
-        self.assertIn('serial: commit nothing — report your diff; the '
-                      'orchestrator commits by pathspec', out)
+        self.assertIn('-- <paths> — serial: on the milestone branch, your '
+                      'files only', out)
 
     def test_a_parallel_milestone_renders_the_loop_on_its_branch(self):
         with grain_tree() as root:
@@ -290,16 +292,12 @@ class TheModeIsTheMilestones(unittest.TestCase):
         slug = '0.1-alpha-s0'    # the id, spelled as agent-worktree takes it
         for line in (f'cd {main} && bash tools/dev/agent-worktree.sh new '
                      f'{slug} milestone/0.1',
-                     f'git -C {main} branch --show-current    must print '
-                     f'milestone/0.1',
-                     f'git -C {main} merge --no-ff --no-edit <your-branch>',
-                     f'cd {main} && bash tools/dev/agent-worktree.sh done '
-                     f'{slug}',
-                     f'report the merge hash: git -C {main} rev-parse HEAD',
+                     'report your branch and commit hash(es); do not merge',
                      'commit only by pathspec: git add <paths>; git commit '
                      '-m "…" -- <paths>'):
             self.assertIn(line, out)
-        self.assertNotIn('serial: commit nothing', out)
+        self.assertNotIn('merge --no-ff', out)
+        self.assertNotIn('serial: on the milestone branch', out)
         # `--mode` overrides the declaration, and serial is today's text.
         self.assertNotIn(LOOP, serial)
 

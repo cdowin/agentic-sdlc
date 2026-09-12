@@ -34,8 +34,6 @@ from agentic_sdlc.repo import vehicle
 SECTION = 'dispatch'
 PROJECT_KEY = 'project'
 CONTRACTS_KEY = 'contracts'
-# The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
-LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
 # What the harness loads into every agent at spawn: named as loaded, not listed.
 AUTOLOADED = ('CLAUDE.md', '.claude/CLAUDE.md')
 # The worktree tool's installed name, the one `install-hooks` writes.
@@ -47,21 +45,21 @@ _NOT_SLUG = re.compile(r'[^A-Za-z0-9._-]')
 USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel]
 
   --grain <id>   name the grain in the preamble, with its status and document
-                 path, so the agent's first read is the brief and not a guess —
-                 and render the GDK_LEDGER_GRAIN export this dispatch's rows
-                 need, beside the `pm ledger record` line for its return
+                 path, and render its GDK-STAMP line, which attributes this
+                 dispatch's ledger rows, beside the `pm ledger record` line
+                 for its return
   --role <name>  name the role the brief is for; the header, and --agent-type
                  on the record line
   --mode <m>     serial or parallel, overriding the `mode:` the grain's
                  milestone declares (absent or empty is serial). Parallel
                  renders the loop the AGENT owns: agent-worktree.sh new on the
-                 milestone's `branch:`, build, commit by pathspec, merge back,
-                 agent-worktree.sh done, report the merge hash. It needs a
+                 milestone's `branch:`, build, commit by pathspec, report the
+                 branch and hash; the orchestrator merges. It needs a
                  --grain whose milestone declares a `branch:`, or exit 2.
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
-pipe it. It spawns nothing, reads no network and writes no file — the two
-commands under RECORDING are rendered for the operator to run (D1).
+pipe it. It spawns nothing, reads no network and writes no file — the command
+under RECORDING is rendered for the operator to run (D1).
 
 WHAT IS RENDERED is read from `devkit.toml` — the ladder from [verify], both
 lists `make check` runs from [checks] all (or the stock roster) and [gates]
@@ -230,9 +228,8 @@ def _rules(mode: Mode) -> list[str]:
     from agentic_sdlc.repo.verify import rules
     story, milestone = _rung(rules.STORY), _rung(rules.MILESTONE)
     commit = ('commit only by pathspec: git add <paths>; git commit -m "…" '
-              '-- <paths>' if mode.parallel else
-              'serial: commit nothing — report your diff; the orchestrator '
-              'commits by pathspec')
+              '-- <paths>' + ('' if mode.parallel else
+                              ' — serial: on the milestone branch, your files only'))
     out = ['', 'THE GRAIN FILE IS THE BRIEF: build it; do not write a plan.',
            '', 'GIT AND SCOPE — the gates and hooks hold you to these:',
            '  never a repo-wide git command: no stash, reset, checkout -- ., '
@@ -255,8 +252,8 @@ def _rules(mode: Mode) -> list[str]:
 def _loop(gid: str, mode: Mode) -> list[str]:
     """The loop a parallel builder owns, end to end, against the milestone's
     `branch:` — every command spelled, so nothing is improvised per dispatch.
-    `new` and `done` run from the main checkout, which is where the script
-    finds its worktrees; the merge lands in the checkout holding `branch:`."""
+    The builder stops at a committed branch; merging stays with the one holding
+    integration (0.11.0: N builders merging into one checkout race each other)."""
     from agentic_sdlc.repo import install
     tool = dict(install.PLANS['install-hooks'])[WORKTREE_TOOL]
     root = shlex.quote(str(repo_root()))
@@ -264,17 +261,15 @@ def _loop(gid: str, mode: Mode) -> list[str]:
     branch = shlex.quote(mode.branch)
     why = (f'milestone {mode.milestone} declares `mode: parallel`'
            if mode.declared else '`--mode parallel`')
-    return ['', f'THE LOOP — {why}. You own it, end to end:',
+    return ['', f'THE LOOP — {why}. You own your branch; the orchestrator '
+            f'merges it:',
             f'  1. cd {root} && bash {tool} new {slug} {branch}',
             '     it prints your worktree\'s path (work ONLY there) and names '
             'your branch',
             '  2. build; verify with the story rung; commit there by pathspec',
-            f'  3. git -C {root} branch --show-current    must print {branch}; '
-            f'anything else: stop and report',
-            f'  4. git -C {root} merge --no-ff --no-edit <your-branch>',
-            f'  5. cd {root} && bash {tool} done {slug}    refuses on '
-            f'uncommitted or unmerged work',
-            f'  6. report the merge hash: git -C {root} rev-parse HEAD']
+            '  3. report your branch and commit hash(es); do not merge, do not '
+            f'run `{tool} done` — the orchestrator merges into {branch} and '
+            'tears the worktree down']
 
 
 def _vocabulary() -> list[str]:
@@ -302,7 +297,7 @@ def _grain(gid: str) -> list[str]:
     return [f'  id       {gid}',
             f'  kind     {grain.kind}',
             f'  status   {status or "(none)"}',
-            f'  brief    {cfg.rel(grain.path)}   <- READ THIS FIRST',
+            f'  brief    {cfg.rel(grain.path)}',
             '', _stamp(gid, grain.field(ISSUE_FIELD))]
 
 
@@ -322,18 +317,18 @@ def _stamp(gid: str, raw: str) -> str:
 
 
 def _recording(gid: str, role: str) -> list[str]:
-    """The export the couriers need and the row for the return, RENDERED —
-    only ever with a grain, because a `pm ledger record` naming none refuses
-    and a printed command that errors is worse than one nobody printed."""
+    """The row for the return, RENDERED — only ever with a grain, because a
+    `pm ledger record` naming none refuses and a printed command that errors
+    is worse than one nobody printed. No `GDK_LEDGER_GRAIN` export: the
+    GDK-STAMP line above already attributes the dispatch (review R4)."""
     argv = ['pm', 'ledger', 'record', '--grain', gid]
     if role:
         argv += ['--agent-type', role]
     record = vehicle.command(*argv)
     return ['', 'RECORDING THIS DISPATCH — rendered here, run by you:',
-            f'  export {LEDGER_GRAIN_ENV}={shlex.quote(gid)}',
             '  # on return, add inside the quotes what the agent reported: '
             '--agent-id <the id the Agent tool returned> '
-            '--tokens-total N --duration-s N --tool-calls N',
+            '--tokens-total N --duration-s N --tool-calls N --outcome landed|superseded|stopped:<why>',
             f'  {record}']
 
 

@@ -743,11 +743,12 @@ def test_a_rendered_line_pasted_verbatim_runs_with_nothing_on_path(tmp_path):
                                          '--role', 'developer'))
         assert rendered.returncode == 0, rendered.stdout + rendered.stderr
         lines = [ln.strip() for ln in rendered.stdout.splitlines()]
-        export = next(ln for ln in lines if ln.startswith('export '))
+        # 0.11.0: a rendered stamp line attributes the dispatch; no export.
+        assert not [ln for ln in lines if ln.startswith('export ')], lines
         record = next(ln for ln in lines
                       if 'ledger record' in ln and not ln.startswith('#'))
         assert record.startswith('make pm '), record
-        done = paste(f'{export}\n{record}')
+        done = paste(record)
         assert done.returncode == 0, done.stdout + done.stderr
         assert 'ledger dispatch row appended' in done.stdout + done.stderr
         rows = [r for r in ledger_rows(root) if r.get('kind') == 'dispatch']

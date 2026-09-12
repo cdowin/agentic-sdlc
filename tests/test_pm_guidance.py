@@ -14,6 +14,7 @@ from pathlib import Path
 
 from support.pm import put_ledger, run_cli, status_line, tree, write
 
+from agentic_sdlc.repo import install
 from agentic_sdlc.repo.pm import cli, skills, vocabulary
 
 class Guidance(unittest.TestCase):
@@ -34,17 +35,70 @@ class Guidance(unittest.TestCase):
             self.assertIn(helper, source,
                           f'{helper} is no longer the single home')
 
+    # Named, not read off `GUIDANCE_PLAN`: a skill dropped from the plan must
+    # fail HERE by its name, which a loop over the plan itself never could.
+    SKILLS = ('pm-operations', 'handoff', 'writing-plans', 'executing-plans',
+              'run-the-sdlc')
+    # #42: the two rules that decide how much planning happens and when a
+    # builder stops — each file is its rule, and short, or it is a plan too.
+    PLANNING = {'writing-plans': 'plan only when needed',
+                'executing-plans': 'file and continue'}
+
     def test_install_writes_a_rule_and_a_skill(self):
         with tree() as root:
             code, out = run_cli(root, 'install-skills')
             self.assertEqual(code, 0, out)
             rule = root / '.claude/rules/pm-execution.md'
-            skill = root / '.claude/skills/pm-operations/SKILL.md'
             self.assertTrue(rule.is_file())
-            self.assertTrue(skill.is_file())
             # The rule must AUTO-LOAD: without a paths: header it only applies
             # when someone thinks to ask for it, which defeats the purpose.
             self.assertIn('paths:', rule.read_text().split('---')[1])
+            for name in self.SKILLS:
+                skill = root / f'.claude/skills/{name}/SKILL.md'
+                self.assertTrue(skill.is_file(), f'{name} was not installed')
+                head = skill.read_text(encoding='utf-8').split('---')[1]
+                self.assertIn(f'name: {name}\n', head)
+                self.assertIn('description:', head)
+            # ...and the rule that auto-loads names the two planning skills
+            # where an operator stands (rule 11).
+            for name, said in self.PLANNING.items():
+                self.assertIn(f'`{name}`', rule.read_text(encoding='utf-8'))
+                text = (root / f'.claude/skills/{name}/SKILL.md').read_text(
+                    encoding='utf-8')
+                description = text.split('---')[1].lower()
+                self.assertIn(said, description)
+                self.assertIn('use ', description, 'it must say WHEN')
+                self.assertLessEqual(len(text.splitlines()), 40, name)
+                self.assertIsNotNone(install.config_block_span(text),
+                                     f'{name} has no project-config block')
+
+    def test_use_the_sdlc_finds_the_loop_and_its_commands(self):
+        """"use the sdlc, get to work" must land on a skill whose body runs
+        the loop, and the architect brief must not re-plan planned work."""
+        with tree() as root:
+            code, out = run_cli(root, 'install-skills')
+            self.assertEqual(code, 0, out)
+            rule = (root / '.claude/rules/pm-execution.md').read_text(
+                encoding='utf-8')
+            self.assertIn('`run-the-sdlc`', rule)
+            text = (root / '.claude/skills/run-the-sdlc/SKILL.md').read_text(
+                encoding='utf-8')
+            description = text.split('---')[1].lower()
+            for said in ('use the sdlc', 'get to work', 'work the milestone',
+                         'build the next milestone'):
+                self.assertIn(said, description)
+            for command in ('agent-worktree.sh new <slug> <base>',
+                            'merge --no-ff --no-edit',
+                            "ARGS='dispatch --grain <id>'",
+                            "ARGS='close story <id>'",
+                            "ARGS='close feature <id>'",
+                            "ARGS='release <version>'",
+                            'ledger record --grain <id> --agent-id'):
+                self.assertIn(command, text)
+            self.assertLessEqual(len(text.splitlines()), 90)
+        architect = install.body_of('architect.md')
+        self.assertIn('`run-the-sdlc`', architect)
+        self.assertNotIn('dispatch a po', architect.lower())
 
     def test_the_handoff_skill_is_findable_by_the_words_people_type(self):
         """A skill is selected by its DESCRIPTION, and this one exists because
@@ -242,6 +296,31 @@ class Guidance(unittest.TestCase):
             rule.write_text(rule.read_text().replace('agentic-sdlc v', 'agentic-sdlc v0.0.1 v'),
                             encoding='utf-8')
             self.assertEqual(run_cli(root, 'install-skills')[0], 0)
+
+    def test_a_stale_skill_is_updated_around_the_projects_own_block(self):
+        """#42: a planning skill ships a `## Project config` block for the
+        consumer, and the stale-update above rewrote the WHOLE file — the
+        plain run silently took the project's block with it. It is carried
+        now, as `install.main` carries a brief's, and named when it is."""
+        with tree() as root:
+            self.assertEqual(run_cli(root, 'install-skills')[0], 0)
+            skill = root / '.claude/skills/writing-plans/SKILL.md'
+            lines = skill.read_text(encoding='utf-8').splitlines(keepends=True)
+            start, end = install.config_block_span(''.join(lines))
+            lines[start:end] = ['sheet lives in:  docs/decisions/\n']
+            mine = ''.join(lines)
+            skill.write_text(mine.replace('agentic-sdlc v', 'agentic-sdlc v0.0.1 v'),
+                             encoding='utf-8')
+            code, out = run_cli(root, 'install-skills')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(skill.read_text(encoding='utf-8'), mine)
+            self.assertIn('kept its project-config header', out)
+            for argv in ((), ('--force',)):
+                code, out = run_cli(root, 'install-skills', *argv)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(skill.read_text(encoding='utf-8'), mine)
+                self.assertIn('differs ONLY inside its project-config header',
+                              out)
 
     def test_init_stands_up_a_usable_tree_from_nothing(self):
         # THE ONE FIXTURE HERE THAT STARTS FLOW-LESS ON PURPOSE. `flow_of`'s

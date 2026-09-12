@@ -4,7 +4,7 @@ The loop this repo runs, as a contract; the decisions logs under `pm/roadmap/` h
 agent roster that executes it in consumer repos is installed by `agentic-sdlc install-agents` from
 `src/agentic_sdlc/repo/installables/`; this repo self-hosts its own pair (`tests/test_install.py`).
 
-## 0. The three levels — read this first
+## 0. The three levels
 
 | grain | you are | it ends when | what runs at the end |
 |---|---|---|---|
@@ -14,14 +14,12 @@ agent roster that executes it in consumer repos is installed by `agentic-sdlc in
 
 ### The review is part of the CLOSE, and the close is a stopwatch
 
-**Dispatch a feature's review the moment `pm ready-for feature <fid>` goes READY** — not at the
-end of the milestone. The belt already enforces the ordering (`close feature` refuses without a
-record); what it cannot enforce is WHEN you ask for one, and batching them is the failure mode.
-Measured on 0.3.0: eleven features built in 64 minutes, then 93 minutes of review-and-land, because
-nine reviews that could have overlapped the build ran after it. **Every grain is on a stopwatch
-from its first status write to its last**, and a feature held open waiting for a batched review is
-a feature whose clock is running for no reason. Just-in-time, one at a time, closed as fast as it
-can honestly close.
+**One reviewer per MILESTONE, dispatched the moment its last feature lane merges**, writes every
+feature's record and the milestone's cross-cutting record in one pass (0.9.0–0.11.0: one pass of
+~10 minutes where 0.8.0 ran five of 16–26 minutes each, then a sixth). The belt still refuses a
+feature close without a record, so the records land before the closes and the release, with
+nothing batched after them. **Every grain is on a stopwatch from its first status write to its
+last**: close a grain as fast as it can honestly close.
 
 **ONE review pass per grain.** A second pass is an emergency ripcord — for a feature whose review
 turned up something that changes the shape of the work — not a routine. Two passes over one
@@ -40,12 +38,12 @@ observation, which is the one you most want written down. **Bugs will come up af
 is fine; file them.** A milestone that ships with three known MINORs and a bug record beats one
 that ships a week later with none.
 
-### The intent, in four sentences
+### The intent, in three sentences
 
 1. **Rip through stories:** done when the work is done and its unit slice is green.
-2. **`reviewing` at story grain is a hand-off, not a terminus.**
-3. **A feature flips to `reviewing` when every story under it is `done`;** one review, whole.
-4. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
+2. **A feature flips to `reviewing` when every story under it is `done`;** the milestone's one
+   review pass writes its record.
+3. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
 
 Each level asks a question the level below cannot, and a belt never runs a belt above it (the 170x).
 
@@ -80,55 +78,56 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 ## 2. The dispatch loop
 
-- **Scout once, not per-agent:** one audit pass writes a findings doc under `docs/reviews/`.
-- **PM scaffold before build:** a real PM tree (`agentic-sdlc pm new …`); decisions via `pm decide`.
-- **Phased parallel dispatch on DISJOINT file sets;** overlapping work is serialized, and the
-  prompt names the files the builder may touch and must stay out of.
+The `run-the-sdlc` skill is this loop with its commands; this section is the contract it runs.
+
+- **No planning pass over planned work.** A feature, story or bug with a Fix that outlines the work
+  IS the brief: no po, scout or spec review first. An unplanned feature gets its open questions
+  DECIDED by the orchestrator, inline, in the dispatch; decisions with a rejected alternative go
+  through `pm decide`.
+- **One developer per feature, or per lane of features that share files,** in one context: write,
+  then refine. Reviewers polish.
+- **A worktree per lane, off an explicit base.** Lanes on disjoint files run concurrently, each in
+  the kit's own `tools/dev/agent-worktree.sh new <slug> <base>`, never a harness's worktree option
+  (Claude Code's `isolation: "worktree"` bases on the default branch, not the milestone's). The
+  builder commits on its branch; the orchestrator merges it into the milestone branch when it
+  reports (`git -C <root> merge --no-ff --no-edit <branch>`, then `agent-worktree.sh done <slug>`),
+  and `*.jsonl merge=union` keeps the ledgers conflict-free. Builders never share one tree: the story
+  belt's `committed` check is false while ANY builder has files in flight.
+- **Milestones stack.** The next milestone's branch is cut early from the current tip; its lanes
+  that collide with nothing in flight start at once, and the earlier milestone merges forward when
+  it lands.
+- **Two builders splitting one area get one written CONTRACT in both prompts**, such as a row
+  schema, and build against it concurrently.
+- **The brief is short:** the grain path(s), what is decided, the files other lanes own, `make unit`
+  only, commit on your branch, and a ≤15-line report with the changelog sentence, NEEDS YOU and NOT
+  verified. It never says read SDLC.md, write a plan, or run a wide gate.
 
 **Builders:**
 
-- in the serial default, never commit: they write, verify their slice, and report, and the
-  orchestrator commits by pathspec. Under the parallel opt-in, they own their worktree end to end:
-  `agent-worktree.sh new`, commit by pathspec, merge into the milestone branch, `agent-worktree.sh
-  done`, and report the merge hash;
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
-  `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
-  HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
-- never touch `pm/roadmap/`; never edit shared docs — README wording is returned as **PROPOSED**
-  text; a grain's `changelog:` is written with `pm set`, not by hand;
+  `git reset`, `git clean`); **to watch a test fail at HEAD, copy the file to a scratch path** —
+  the pathspec stash form is still a stash;
+- never touch `pm/roadmap/` or a file another lane owns; a grain's `changelog:` is written with
+  `pm set`, not by hand;
 - ship, with every fix, a test that **failed at HEAD**;
-- run **scoped** verification only, never the full gate — and *scoped* means a
-  TIER TARGET, never a bare `pytest <file>`: selecting a module by path collects
-  every tier in it, including the cases that spawn real processes, which is how
-  one builder's "quick check" saturates the machine every other builder shares.
-  A builder that believes it needs a wide gate reports and stops.
+- run **scoped** verification only, never the full gate — and *scoped* means a TIER TARGET, never a
+  bare `pytest <file>`: selecting a module by path collects every tier in it, including the cases
+  that spawn real processes. A builder that believes it needs a wide gate reports and stops.
 
-**The orchestrator runs the belts as the NEXT ACTION, never as a batch.** Parallel or not, each grain
-still goes open → complete → reviewed → closed, and the belt runs the moment its input exists:
+**The orchestrator decides builder questions itself** unless they face outward, and asks for the
+release acts (push, PR, merge, tag, issues) ONCE, up front. **It runs the belts as the NEXT ACTION,
+never as a batch:**
 
-    a slice is verified and committed     →  close story <id>, same turn
-    a feature's last story is done        →  pm feature reviewing <id>, then dispatch its review
-    a review record lands                 →  commit it, same turn
+    a lane reports                        →  merge it, record its cost, close story <id> per slice
+    every feature is built                →  ONE reviewer, effort `high`, over the milestone's
+                                             range: every feature record + the milestone record
     its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
-                                             deferred:<bug> / rejected:<why>), close feature <id>,
-                                             close its GitHub issues — then the next feature
+                                             deferred:<bug> / rejected:<why>), close feature <id>
+                                             for each, close their GitHub issues, release
 
-**Two modes, one contract, and the milestone document declares which.** SERIAL: one builder at a
-time, directly on the milestone branch; the git surface is `git add <paths>`, `git commit -m … --
-<paths>` and `git push`, plus the release's one merge. PARALLEL: for features on disjoint files, each
-builder in its own worktree. **Parallel builders never share one tree**, because the story belt's
-`committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
-after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
-the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
-`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.10.0 runs PARALLEL,
-by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
-mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
-harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
-branch, not the milestone's). The AGENT owns the whole loop: `agent-worktree.sh new <slug>` (based
-on the in-progress milestone's declared `branch:`, with the Stop gate's scope marker written), build,
-verify, commit by pathspec, merge its branch into the milestone branch, `agent-worktree.sh done
-<slug>` (which refuses to drop uncommitted or unmerged work). **The orchestrator never enters a
-worktree.** It verifies the merged result on the branch and runs the belts.
+**Measure every dispatch** — duration, tool calls, tokens — in the ledger, against the previous
+milestone: `pm ledger record --grain <id> --agent-id <id> …` when it returns, `pm ledger report
+<previous> <this>` to compare. Nothing runs above effort `high`.
 
 **The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
 `checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
@@ -140,11 +139,10 @@ makes itself rather than dispatching.
 
 **The orchestrator:**
 
-- verifies each reported slice against the actual tree, never the narration;
+- verifies each reported lane against the actual tree, never the narration;
 - runs the one authoritative full gate (`make milestone`) itself;
-- commits per feature by **explicit pathspec**;
 - moves every status through the pm CLI — `check pm` is the drift gate;
-- applies proposed shared-doc wording, appends decisions, opens the close;
+- appends decisions and runs each belt as its input lands;
 - **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the
   feature's `Issues:` line, it pushes the branch first so the hash resolves on GitHub. Then it posts
   a comment naming the feature id, the commit hash(es) that fixed the issue and the version it ships
@@ -157,20 +155,21 @@ makes itself rather than dispatching.
 
 Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY, and
 nothing runs above `high`** (2026-09-12: a builder that re-writes code is cheaper than one that
-ruminates; the extra effort bought length, not correctness).
+ruminates; the extra effort bought length, not correctness). **The loop dispatches `developer` and
+`reviewer`.** The rest are optional tools an orchestrator reaches for, never a mandatory pass.
 
 | role | model | effort | why |
 |---|---|---|---|
 | `architect` | opus | high | every dispatch inherits its framing |
-| `po` | opus | medium | writes the briefs N agents execute verbatim — a wrong brief is N wrong builds |
+| `po` | opus | medium | optional: briefs work no grain outlines yet — a wrong brief is N wrong builds |
 | `developer` / `verification-builder` | opus | medium | the job is judgment under a possibly-WRONG premise |
 | `reviewer` / `verification-reviewer` | opus | high | the gate, and it runs last; a miss here ships |
-| `milestone-reviewer` | opus | medium | pressure-tests the spec everything downstream builds from |
+| `milestone-reviewer` | opus | medium | optional: pressure-tests a spec nobody has outlined, never planned work |
 | `simplifier` | fable | medium | *"should this exist"* has no ground truth — the most abstract pass |
 | `test-writer` | sonnet | medium | audit-shaped work against a known diff |
 | `tech-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
 
-**`model:` is overridable per-dispatch, downward;** the closing reviewer always runs strong.
+**`model:` is overridable per-dispatch, downward.**
 
 > **`effort:` as a frontmatter key is UNVERIFIED**, because an unsupported key is silently ignored.
 > To verify: put an invalid value on a throwaway agent and dispatch it; an error means it is real.
@@ -229,8 +228,8 @@ Prefer, in order: amend an existing case → a `parametrize` row → a new funct
 
 What stays here is the judgement the machine cannot make and the rule that orders it:
 
-1. **Cross-cutting review** — a fresh strong reviewer over the milestone's whole commit range,
-   RUN, never diff-read; `findings-resolved` reads its ARTIFACT through `pm ready-for tag`.
+1. **Cross-cutting review** — the milestone's one reviewer over its whole commit range, RUN,
+   never diff-read; `findings-resolved` reads its ARTIFACT through `pm ready-for tag`.
 2. **Land every finding** it raised, or defer each one explicitly and in writing.
 3. **When a gate and a judgement both bear on one decision, the judgement runs first and the gate
    answers for its result;** Chris: *"The make milestone with the full test suite is the LAST thing."*

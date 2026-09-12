@@ -115,7 +115,7 @@ UNMARKED_MODULES = (
     # `repo_root` walks up for a `.git` directory rather than shelling out.
     'test_pm_scaffold.py',
     'test_pm_verbs.py',
-    'test_prose_census.py',
+    'test_preflight.py', 'test_prose_census.py',
     'test_replay_migration.py',
     # 0.8.0: the vehicle's round trip is `shlex` twice; the process half is
     # one case in `test_makefile_include.py`.

@@ -61,12 +61,13 @@ _INVOCATION = re.compile(r'^\s*agentic-sdlc ([a-z][a-z0-9-]*)', re.M)
 
 
 # Rule 11's read side, package-wide. The floor is what the tree holds today:
-# `pm cli` (6), `lesson show` (1) and `cite`'s two row shapes (2). It is a
+# `pm cli` (6), `lesson show` (1), `cite`'s two row shapes (2) and
+# `preflight` (1). It is a
 # FLOOR, so a verb that stops naming its columns reddens wherever it lives —
 # and it RISES with each new read verb, or the next one could drop both its
 # declarations and still clear a number the verbs before it already met.
 NAMES_COLUMNS = 'columns IN ORDER:'
-READ_VERBS_NAMING_COLUMNS = 9
+READ_VERBS_NAMING_COLUMNS = 10
 
 
 def _package_sources() -> list[tuple[str, str]]:
@@ -659,6 +660,12 @@ class TestTheSurfaceSaysTelemetry:
         # only caller was one session is worse than the `python3 -` that
         # produced it.
         'cite',
+        # 0.11.0/ft-the-session-says-what-it-can-do-before-the-first-dispatch:
+        # a read of the harness settings and the tree, run from a SessionStart
+        # hook. It moves no grain and gates nothing, so it is neither a `pm`
+        # subcommand nor a `check`; it reports `unknown` where `check` would
+        # have to fail.
+        'preflight',
     }
 
     def test_this_feature_added_no_verb(self):

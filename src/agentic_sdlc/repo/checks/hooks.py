@@ -72,22 +72,31 @@ def _commands(node: object) -> list[str]:
     return found
 
 
+def settings_document(path: Path) -> tuple[dict, str]:
+    """(one settings file's top-level table, why it was unread).
+
+    Absent, or a document that is not a table, is `({}, '')`. `preflight`
+    reads `permissions` through this, so both readers fail the same way.
+    """
+    if not path.is_file():
+        return {}, ''
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError) as err:
+        return {}, err.__class__.__name__
+    except ValueError as err:
+        return {}, f'it is not JSON: {err}'
+    return (data if isinstance(data, dict) else {}), ''
+
+
 def settings_commands(path: Path) -> tuple[tuple[str, ...], str]:
     """(the hook commands this one settings file registers, why it was unread).
 
     Absent is `((), '')` and never a defect: a tree that registers nothing has
     opted out (0.4.0/D5). `check pm`'s courier rules read through this too.
     """
-    if not path.is_file():
-        return (), ''
-    try:
-        data = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, UnicodeDecodeError) as err:
-        return (), err.__class__.__name__
-    except ValueError as err:
-        return (), f'it is not JSON: {err}'
-    return tuple(_commands(data.get('hooks') if isinstance(data, dict)
-                           else None)), ''
+    data, why = settings_document(path)
+    return tuple(_commands(data.get('hooks'))), why
 
 
 def _registered(root: Path, names: list[str]) -> tuple[set[str], str, str]:
@@ -135,6 +144,18 @@ def _entries(directory: Path) -> Walk:
         lambda path: not path.name.startswith('_')
         and not path.name.endswith('.local'),
         SkipReason.EXCLUDED_PATH)
+
+
+def cc_registration(root: Path) -> tuple[list[str], set[str], str, str]:
+    """(the `cc-*` hook files on disk, which of them a settings file
+    registers, where, why unread) — read as text, nothing started.
+
+    The wiring half of `run()`, for `preflight`, which runs from a SessionStart
+    hook and so may not start every hook the way this gate does.
+    """
+    names = [path.name for path in _entries(root / HOOKS_DIR)
+             if path.is_file() and path.name.startswith(CC_PREFIX)]
+    return (names, *_registered(root, names))
 
 
 def _not_a_file(path: Path) -> str:

@@ -24,7 +24,8 @@ Write it down, commit, move on. The tree is a record, not a deliverable.
 
 **How much to plan, and when a builder stops, are two skills installed beside
 this rule: `writing-plans` (plan only when needed) and `executing-plans` (file
-and continue). Invoke them before you plan or stop.**
+and continue). Invoke them before you plan or stop.** Told "use the sdlc, get to
+work"? `run-the-sdlc` is the orchestrator's loop, with its commands.
 
 ## And a story is build → unit → done, repeated
 

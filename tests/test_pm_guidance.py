@@ -37,7 +37,8 @@ class Guidance(unittest.TestCase):
 
     # Named, not read off `GUIDANCE_PLAN`: a skill dropped from the plan must
     # fail HERE by its name, which a loop over the plan itself never could.
-    SKILLS = ('pm-operations', 'handoff', 'writing-plans', 'executing-plans')
+    SKILLS = ('pm-operations', 'handoff', 'writing-plans', 'executing-plans',
+              'run-the-sdlc')
     # #42: the two rules that decide how much planning happens and when a
     # builder stops — each file is its rule, and short, or it is a plan too.
     PLANNING = {'writing-plans': 'plan only when needed',
@@ -70,6 +71,34 @@ class Guidance(unittest.TestCase):
                 self.assertLessEqual(len(text.splitlines()), 40, name)
                 self.assertIsNotNone(install.config_block_span(text),
                                      f'{name} has no project-config block')
+
+    def test_use_the_sdlc_finds_the_loop_and_its_commands(self):
+        """"use the sdlc, get to work" must land on a skill whose body runs
+        the loop, and the architect brief must not re-plan planned work."""
+        with tree() as root:
+            code, out = run_cli(root, 'install-skills')
+            self.assertEqual(code, 0, out)
+            rule = (root / '.claude/rules/pm-execution.md').read_text(
+                encoding='utf-8')
+            self.assertIn('`run-the-sdlc`', rule)
+            text = (root / '.claude/skills/run-the-sdlc/SKILL.md').read_text(
+                encoding='utf-8')
+            description = text.split('---')[1].lower()
+            for said in ('use the sdlc', 'get to work', 'work the milestone',
+                         'build the next milestone'):
+                self.assertIn(said, description)
+            for command in ('agent-worktree.sh new <slug> <base>',
+                            'merge --no-ff --no-edit',
+                            "ARGS='dispatch --grain <id>'",
+                            "ARGS='close story <id>'",
+                            "ARGS='close feature <id>'",
+                            "ARGS='release <version>'",
+                            'ledger record --grain <id> --agent-id'):
+                self.assertIn(command, text)
+            self.assertLessEqual(len(text.splitlines()), 90)
+        architect = install.body_of('architect.md')
+        self.assertIn('`run-the-sdlc`', architect)
+        self.assertNotIn('dispatch a po', architect.lower())
 
     def test_the_handoff_skill_is_findable_by_the_words_people_type(self):
         """A skill is selected by its DESCRIPTION, and this one exists because

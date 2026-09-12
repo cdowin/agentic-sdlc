@@ -80,55 +80,56 @@ emits nothing**, and turning that on is a milestone-scope call about the self-ho
 
 ## 2. The dispatch loop
 
-- **Scout once, not per-agent:** one audit pass writes a findings doc under `docs/reviews/`.
-- **PM scaffold before build:** a real PM tree (`agentic-sdlc pm new …`); decisions via `pm decide`.
-- **Phased parallel dispatch on DISJOINT file sets;** overlapping work is serialized, and the
-  prompt names the files the builder may touch and must stay out of.
+The `run-the-sdlc` skill is this loop with its commands; this section is the contract it runs.
+
+- **No planning pass over planned work.** A feature, story or bug with a Fix that outlines the work
+  IS the brief: no po, scout or spec review first. An unplanned feature gets its open questions
+  DECIDED by the orchestrator, inline, in the dispatch; decisions with a rejected alternative go
+  through `pm decide`.
+- **One developer per feature, or per lane of features that share files,** in one context: write,
+  then refine. Reviewers polish.
+- **A worktree per lane, off an explicit base.** Lanes on disjoint files run concurrently, each in
+  the kit's own `tools/dev/agent-worktree.sh new <slug> <base>`, never a harness's worktree option
+  (Claude Code's `isolation: "worktree"` bases on the default branch, not the milestone's). The
+  builder commits on its branch; the orchestrator merges it into the milestone branch when it
+  reports (`git -C <root> merge --no-ff --no-edit <branch>`, then `agent-worktree.sh done <slug>`),
+  and `*.jsonl merge=union` keeps the ledgers conflict-free. Builders never share one tree: the story
+  belt's `committed` check is false while ANY builder has files in flight.
+- **Milestones stack.** The next milestone's branch is cut early from the current tip; its lanes
+  that collide with nothing in flight start at once, and the earlier milestone merges forward when
+  it lands.
+- **Two builders splitting one area get one written CONTRACT in both prompts**, such as a row
+  schema, and build against it concurrently.
+- **The brief is short:** the grain path(s), what is decided, the files other lanes own, `make unit`
+  only, commit on your branch, and a ≤15-line report with the changelog sentence, NEEDS YOU and NOT
+  verified. It never says read SDLC.md, write a plan, or run a wide gate.
 
 **Builders:**
 
-- in the serial default, never commit: they write, verify their slice, and report, and the
-  orchestrator commits by pathspec. Under the parallel opt-in, they own their worktree end to end:
-  `agent-worktree.sh new`, commit by pathspec, merge into the milestone branch, `agent-worktree.sh
-  done`, and report the merge hash;
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
-  `git reset`, `git clean`), because N builders share one worktree; **to watch a test fail at
-  HEAD, copy the file to a scratch path** — the pathspec stash form is still a stash;
+  `git reset`, `git clean`); **to watch a test fail at HEAD, copy the file to a scratch path** —
+  the pathspec stash form is still a stash;
 - never touch `pm/roadmap/`; never edit shared docs — README wording is returned as **PROPOSED**
   text; a grain's `changelog:` is written with `pm set`, not by hand;
 - ship, with every fix, a test that **failed at HEAD**;
-- run **scoped** verification only, never the full gate — and *scoped* means a
-  TIER TARGET, never a bare `pytest <file>`: selecting a module by path collects
-  every tier in it, including the cases that spawn real processes, which is how
-  one builder's "quick check" saturates the machine every other builder shares.
-  A builder that believes it needs a wide gate reports and stops.
+- run **scoped** verification only, never the full gate — and *scoped* means a TIER TARGET, never a
+  bare `pytest <file>`: selecting a module by path collects every tier in it, including the cases
+  that spawn real processes. A builder that believes it needs a wide gate reports and stops.
 
-**The orchestrator runs the belts as the NEXT ACTION, never as a batch.** Parallel or not, each grain
-still goes open → complete → reviewed → closed, and the belt runs the moment its input exists:
+**The orchestrator decides builder questions itself** unless they face outward, and asks for the
+release acts (push, PR, merge, tag, issues) ONCE, up front. **It runs the belts as the NEXT ACTION,
+never as a batch:**
 
-    a slice is verified and committed     →  close story <id>, same turn
-    a feature's last story is done        →  pm feature reviewing <id>, then dispatch its review
-    a review record lands                 →  commit it, same turn
+    a lane reports                        →  merge it, record its cost, close story <id> per slice
+    every feature is built                →  ONE reviewer, effort `high`, over the milestone's
+                                             range: every feature record + the milestone record
     its BLOCKER/CRITICAL/MAJOR are fixed  →  every other finding gets a disposition (landed /
-                                             deferred:<bug> / rejected:<why>), close feature <id>,
-                                             close its GitHub issues — then the next feature
+                                             deferred:<bug> / rejected:<why>), close feature <id>
+                                             for each, close their GitHub issues, release
 
-**Two modes, one contract, and the milestone document declares which.** SERIAL: one builder at a
-time, directly on the milestone branch; the git surface is `git add <paths>`, `git commit -m … --
-<paths>` and `git push`, plus the release's one merge. PARALLEL: for features on disjoint files, each
-builder in its own worktree. **Parallel builders never share one tree**, because the story belt's
-`committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
-after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
-the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
-`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.10.0 runs PARALLEL,
-by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
-mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
-harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default
-branch, not the milestone's). The AGENT owns the whole loop: `agent-worktree.sh new <slug>` (based
-on the in-progress milestone's declared `branch:`, with the Stop gate's scope marker written), build,
-verify, commit by pathspec, merge its branch into the milestone branch, `agent-worktree.sh done
-<slug>` (which refuses to drop uncommitted or unmerged work). **The orchestrator never enters a
-worktree.** It verifies the merged result on the branch and runs the belts.
+**Measure every dispatch** — duration, tool calls, tokens — in the ledger, against the previous
+milestone: `pm ledger record --grain <id> --agent-id <id> …` when it returns, `pm ledger report
+<previous> <this>` to compare. Nothing runs above effort `high`.
 
 **The orchestrator is bound by the builders' git rules too.** No `bisect`, `stash`, `reset`,
 `checkout -- .`, `restore`, `clean`, `rebase`, or ad-hoc `worktree add`. A red test is diagnosed by
@@ -140,9 +141,8 @@ makes itself rather than dispatching.
 
 **The orchestrator:**
 
-- verifies each reported slice against the actual tree, never the narration;
+- verifies each reported lane against the actual tree, never the narration;
 - runs the one authoritative full gate (`make milestone`) itself;
-- commits per feature by **explicit pathspec**;
 - moves every status through the pm CLI — `check pm` is the drift gate;
 - applies proposed shared-doc wording, appends decisions, opens the close;
 - **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the

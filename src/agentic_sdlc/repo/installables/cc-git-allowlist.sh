@@ -15,7 +15,9 @@
 # target is an ABSOLUTE path outside every checkout of this repository (the
 # hook's own, CLAUDE_PROJECT_DIR's and cwd's) — never in a command that runs
 # `ln` or sets a GIT_* location, `--git-dir`, `--work-tree` or `--namespace`.
-# Blocked, each with its reason and the boring alternative: bisect, stash,
+# Every judged verb takes its long options spelled EXACTLY (git expands an
+# abbreviation, so `--forc` is `--force`); a short bundle is judged letter by
+# letter. Blocked, each with its reason and the boring alternative: bisect, stash,
 # reset, checkout, restore, clean, rebase, a pull or switch that could lose
 # work, and any subcommand named nowhere here. Only the command the agent TYPES
 # is read: git run inside a script or a make target — tools/dev/agent-worktree.sh's
@@ -156,6 +158,31 @@ self_test() {
 2 git branch -M feat/y
 2 git branch -f feat/x HEAD
 2 git branch -dr origin/feat/x
+# A long option is judged spelled exactly — git expands any unambiguous abbreviation — and a short bundle letter by letter.
+2 git branch -d --forc feat/x
+2 git branch --del --forc feat/x
+2 git branch -dD feat/x
+2 git branch -df feat/x
+2 git symbolic-ref --del refs/remotes/origin/HEAD
+2 git symbolic-ref -qd HEAD
+2 git switch --discard main
+2 git pull --ff-only --reb
+2 git pull --ff-only --refmap=+refs/heads/*:refs/heads/*
+2 git merge --ff-only --autostash origin/main
+2 git merge --autostash feat/x
+2 git merge --no-ff --autost feat/x
+2 git stash list --onel
+2 git worktree prune --exp=now
+2 git archive --out=x.tar HEAD
+2 git archive --rem=origin HEAD
+2 git init -q --sep=/r/.git /tmp/x
+2 git init -q /tmp/x --separate-git-dir=/r/.git
+2 git config --unse core.hooksPath
+2 git tag --forc v1.0.0
+2 git tag --del v1.0.0
+2 git commit --am --no-edit
+2 git push --force-w origin milestone/0.9.0
+2 git push --forc
 2 git tag -f v1.0.0
 2 git merge main
 2 git merge
@@ -231,6 +258,19 @@ self_test() {
 0 git branch -d feat/x
 0 git branch -d feat/x feat/y
 0 git branch --delete feat/x
+0 git branch --list --merged main
+0 git symbolic-ref --quiet --short refs/remotes/origin/HEAD
+0 git pull --ff-only --prune origin main
+0 git merge --ff-only --no-autostash origin/main
+0 git merge --no-ff --no-edit --message "merge feat/x" feat/x
+0 git stash list --oneline
+0 git worktree prune --expire now
+0 git archive --format=tar --prefix=x/ HEAD
+0 git init -q --initial-branch=main /tmp/x
+0 git config --get-regexp remote
+0 git tag --list 'v*'
+0 git commit --signoff -m "feat: x" -- src/x.py
+0 git push --set-upstream origin milestone/0.9.0
 0 git switch main
 0 git switch -
 0 git switch -c feat/x
@@ -380,6 +420,8 @@ MERGE_NOTHING = ("names no branch, so it merges whatever the upstream config say
                  "name it — `git merge <milestone-branch>`")
 INIT = ("with no target outside this repository it re-initialises a checkout of it, and in a linked worktree that writes `core.bare = true` into the config every checkout shares",
         "build a scratch repository by absolute path, in one command — `git -C /abs/scratch init -q && git -C /abs/scratch add -A`")
+AUTOSTASH = ("stashes every uncommitted edit in the tree, a peer\x27s included, and replays them after",
+             "merge without it — git refuses a merge that would overwrite an uncommitted edit, and that edit is someone\x27s")
 ARCHIVE = ("writes the archive to a path, or reads another repository",
            "stream it — `git archive HEAD | tar -x -C /abs/scratch`")
 
@@ -588,13 +630,93 @@ def unknowable(word):
     return "$" in word or OPAQUE in word
 
 
+# Every verb judged on its options, and its long options spelled EXACTLY: git expands
+# any unambiguous abbreviation (`--forc` is `--force`, `--del` is `--delete`), so a
+# spelling in neither set is refused rather than guessed at. Each entry is (the options
+# that pass, the options its judge refuses by name); `--autostash` is in no pass set,
+# because an autostash sweeps every uncommitted edit, a peer\x27s included.
+LONG = {
+    "commit": ({"--all", "--patch", "--reuse-message", "--reedit-message", "--fixup", "--squash", "--reset-author",
+                "--short", "--branch", "--porcelain", "--long", "--null", "--file", "--author", "--date", "--message",
+                "--template", "--signoff", "--no-signoff", "--trailer", "--verify", "--no-verify", "--allow-empty",
+                "--allow-empty-message", "--cleanup", "--edit", "--no-edit", "--no-post-rewrite", "--include",
+                "--only", "--pathspec-from-file", "--pathspec-file-nul", "--untracked-files", "--verbose", "--quiet",
+                "--dry-run", "--status", "--no-status", "--gpg-sign", "--no-gpg-sign"},
+               {"--amend"}),
+    "push": ({"--all", "--branches", "--prune", "--dry-run", "--porcelain", "--delete", "--tags", "--follow-tags",
+              "--no-follow-tags", "--signed", "--no-signed", "--atomic", "--no-atomic", "--push-option",
+              "--receive-pack", "--exec", "--repo", "--set-upstream", "--thin", "--no-thin", "--quiet", "--verbose",
+              "--progress", "--no-progress", "--recurse-submodules", "--no-recurse-submodules", "--verify",
+              "--no-verify", "--ipv4", "--ipv6", "--no-force-with-lease", "--force-if-includes",
+              "--no-force-if-includes"},
+             {"--force", "--force-with-lease", "--mirror"}),
+    "merge": ({"--ff-only", "--ff", "--no-ff", "--squash", "--no-squash", "--abort", "--continue", "--quit",
+               "--message", "--file", "--strategy", "--strategy-option", "--into-name", "--edit", "--no-edit",
+               "--quiet", "--verbose", "--stat", "--no-stat", "--summary", "--no-summary", "--log", "--no-log",
+               "--signoff", "--no-signoff", "--commit", "--no-commit", "--verify", "--no-verify", "--progress",
+               "--no-progress", "--allow-unrelated-histories", "--cleanup", "--rerere-autoupdate",
+               "--no-rerere-autoupdate", "--no-autostash", "--gpg-sign", "--no-gpg-sign"},
+              {"--autostash"}),
+    "pull": ({"--ff-only", "--no-rebase", "--quiet", "--verbose", "--prune", "--tags", "--no-tags", "--stat",
+              "--no-stat", "--progress", "--no-progress", "--no-autostash", "--edit", "--no-edit"},
+             {"--rebase", "--ff", "--no-ff", "--squash", "--autostash"}),
+    "config": ({"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "--list",
+                "--show-origin", "--show-scope", "--name-only", "--null", "--type", "--bool", "--int",
+                "--bool-or-int", "--path", "--expiry-date", "--default", "--global", "--system", "--local",
+                "--worktree", "--file", "--blob", "--includes", "--no-includes", "--fixed-value", "--all",
+                "--regexp", "--url", "--value", "--comment"},
+               {"--add", "--unset", "--unset-all", "--replace-all", "--rename-section", "--remove-section", "--edit"}),
+    "branch": ({"--list", "--all", "--remotes", "--show-current", "--verbose", "--quiet", "--abbrev", "--no-abbrev",
+                "--column", "--no-column", "--sort", "--merged", "--no-merged", "--contains", "--no-contains",
+                "--points-at", "--format", "--color", "--no-color", "--ignore-case", "--omit-empty", "--track",
+                "--no-track", "--recurse-submodules", "--create-reflog", "--set-upstream-to", "--unset-upstream",
+                "--edit-description", "--copy", "--delete"},
+               {"--force", "--move"}),
+    "tag": ({"--list", "--sort", "--format", "--contains", "--no-contains", "--merged", "--no-merged",
+             "--points-at", "--column", "--no-column", "--ignore-case", "--omit-empty", "--color", "--annotate",
+             "--sign", "--no-sign", "--local-user", "--message", "--file", "--edit", "--no-edit", "--cleanup",
+             "--create-reflog", "--trailer", "--verify"},
+            {"--delete", "--force"}),
+    "worktree": ({"--porcelain", "--verbose", "--expire", "--dry-run"}, set()),
+    "switch": ({"--create", "--quiet", "--track", "--no-track", "--guess", "--no-guess", "--progress",
+                "--no-progress"},
+               {"--discard-changes", "--force", "--force-create", "--orphan", "--merge", "--detach", "--conflict",
+                "--ignore-other-worktrees", "--recurse-submodules", "--no-recurse-submodules",
+                "--overwrite-ignore", "--no-overwrite-ignore"}),
+    "symbolic-ref": ({"--quiet", "--short", "--no-short", "--recurse", "--no-recurse"}, {"--delete"}),
+    "stash": ({"--date", "--oneline", "--format", "--pretty", "--abbrev-commit", "--no-abbrev-commit",
+               "--relative-date", "--stat", "--patch", "--max-count", "--decorate", "--no-decorate", "--color",
+               "--no-color"},
+              set()),
+    # `--separate-git-dir` is in neither: it points a new checkout at a git directory anywhere.
+    "init": ({"--template", "--object-format", "--ref-format", "--initial-branch", "--bare", "--quiet", "--shared"},
+             set()),
+    "archive": ({"--format", "--prefix", "--list", "--verbose", "--worktree-attributes", "--add-file",
+                 "--add-virtual-file", "--mtime", "--exec"},
+                {"--output", "--remote"}),
+}
+
+
+def inexact(sub, opts):
+    """The refusal for a long option on neither of `sub`\x27s lists, or None."""
+    passes, judged = LONG[sub]
+    odd = sorted(o for o in opts if o.startswith("--") and o not in passes and o not in judged)
+    if not odd:
+        return None
+    return ("`" + odd[0] + "` is not an option this guard knows for `git " + sub + "`, spelled exactly — git expands an abbreviation (`--forc` is `--force`), so only an exact spelling can be judged",
+            "spell the option in full; `git " + sub + "` passes with " + " ".join(sorted(passes)))
+
+
 def commit(args):
     opts, _, _ = split_args(args, ("--message", "--file", "--reuse-message", "--reedit-message", "--author", "--date", "--template", "--cleanup", "--trailer", "--fixup", "--squash", "--pathspec-from-file"), "mFCct")
-    return AMEND if "--amend" in opts else None
+    return inexact("commit", opts) or (AMEND if "--amend" in opts else None)
 
 
 def push(args):
     opts, pos, letters = split_args(args, ("--repo", "--push-option", "--receive-pack", "--exec"), "o")
+    said = inexact("push", opts)
+    if said:
+        return said
     refspecs = pos[1:]
     if opts & {"--force", "--force-with-lease", "--mirror"} or "f" in letters or any(r.startswith("+") for r in refspecs):
         return FORCE
@@ -618,6 +740,11 @@ def tracking(name, where):
 
 def merge(args, where):
     opts, pos, _ = split_args(args, ("--message", "--file", "--strategy", "--strategy-option", "--into-name"), "mFsX")
+    said = inexact("merge", opts)
+    if said:
+        return said
+    if "--autostash" in opts:
+        return AUTOSTASH
     if opts & {"--abort", "--continue", "--quit"}:
         return None
     if not pos:
@@ -637,6 +764,9 @@ def merge(args, where):
 
 def pull(args):
     opts, pos, letters = split_args(args, ("--strategy", "--strategy-option", "--depth", "--deepen", "--shallow-since", "--shallow-exclude", "--upload-pack", "--negotiation-tip", "--server-option"), "sXo")
+    said = inexact("pull", opts)
+    if said:
+        return said
     if "--ff-only" not in opts or opts & {"--rebase", "--ff", "--no-ff", "--squash", "--autostash"} \
             or "r" in letters or len(pos) > 2 or any(":" in p or p.startswith("+") for p in pos):
         return PULL
@@ -645,6 +775,9 @@ def pull(args):
 
 def config(args):
     opts, pos, letters = split_args(args, ("--file", "--blob", "--type", "--default", "--comment", "--value"), "f")
+    said = inexact("config", opts)
+    if said:
+        return said
     verb = pos[0] if pos else ""
     if opts & {"--add", "--unset", "--unset-all", "--replace-all", "--rename-section", "--remove-section", "--edit"} \
             or "e" in letters or verb in ("set", "unset", "rename-section", "remove-section", "edit"):
@@ -657,6 +790,9 @@ def config(args):
 
 def branch(args):
     opts, _, letters = split_args(args, ("--contains", "--no-contains", "--merged", "--no-merged", "--points-at", "--sort", "--format", "--set-upstream-to"), "u")
+    said = inexact("branch", opts)
+    if said:
+        return said
     if opts & {"--move", "--force"} or letters & set("DmMCf"):
         return BRANCH
     # `-d` is the safe delete: git refuses a branch whose work is merged nowhere.
@@ -666,13 +802,13 @@ def branch(args):
 
 def tag(args):
     opts, _, letters = split_args(args, ("--message", "--file", "--local-user", "--cleanup", "--sort", "--format", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"), "mFu")
-    return TAG if opts & {"--delete", "--force"} or letters & set("df") else None
+    return inexact("tag", opts) or (TAG if opts & {"--delete", "--force"} or letters & set("df") else None)
 
 
 def worktree(args):
     verb = next((a for a in args if not a.startswith("-")), "")
     if verb in ("", "list", "prune"):
-        return None
+        return inexact("worktree", split_args(args, ("--expire",))[0])
     return WORKTREE_ADD if verb == "add" else WORKTREE_OTHER
 
 
@@ -681,14 +817,14 @@ def remote(args):
     return REMOTE if verb in ("add", "rename", "rm", "remove", "set-url", "set-branches") else None
 
 
-SWITCH_LONG = {"--create", "--quiet", "--track", "--no-track", "--guess", "--no-guess", "--progress", "--no-progress"}
-
-
 def switch(args):
     # Only what never discards: a branch, or `-c <new> [<start>]`; any other option is refused.
     opts, pos, letters = split_args(args, ("--create",), "c")
+    said = inexact("switch", opts)
+    if said:
+        return said
     creating = "--create" in opts or "c" in letters
-    if {o for o in opts if o.startswith("--")} - SWITCH_LONG or letters - set("cqt") \
+    if {o for o in opts if o.startswith("--")} - LONG["switch"][0] or letters - set("cqt") \
             or len(pos) > 1 or (not creating and len(pos) != 1):
         return SWITCH
     return None
@@ -697,11 +833,13 @@ def switch(args):
 def symbolic_ref(args):
     # One ref argument reads; a second writes it, and `-d` deletes it.
     opts, pos, letters = split_args(args, (), "m")
-    return SYMREF if len(pos) != 1 or "--delete" in opts or letters & set("dm") else None
+    return inexact("symbolic-ref", opts) or (SYMREF if len(pos) != 1 or "--delete" in opts or letters & set("dm") else None)
 
 
 def stash(args):
-    return None if args[:1] == ["list"] else NAMED["stash"]
+    if args[:1] != ["list"]:
+        return NAMED["stash"]
+    return inexact("stash", split_args(args[1:], ("--date", "--format", "--pretty", "--max-count", "--color"))[0])
 
 
 JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
@@ -710,13 +848,16 @@ JUDGES = {"commit": commit, "push": push, "config": config, "pull": pull,
 
 
 def init(args, cdirs, roots):
-    _, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    opts, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
+    said = inexact("init", opts)
+    if said:
+        return said
     return None if outside(cdirs + pos[:1], roots) else INIT
 
 
 def archive(args):
     opts, _, letters = split_args(args, ("--output", "--remote", "--format", "--prefix", "--exec", "--add-file"), "o")
-    return ARCHIVE if opts & {"--output", "--remote"} or "o" in letters else None
+    return inexact("archive", opts) or (ARCHIVE if opts & {"--output", "--remote"} or "o" in letters else None)
 
 
 def judge(sub, args, cdirs, roots, cwd):

@@ -72,6 +72,9 @@ WARN (a line, never the exit code; both grains and both categories named):
          review-recorded and findings-landed accept (`close feature`). `pm
          status` marks the same features inline
   R2  the BACKLOG census — milestones on no plan that declare no `version:`
+  LOCAL  `<roadmap>/ledger.local.jsonl` exists and no `.gitignore` line covers
+         it, so every gated commit leaves it untracked — `pm init` adds the
+         line. Never gated by `[pm] checks`
 INTEGRITY (each FAILs, naming the path; `pm validate` asks the same questions):
   V1  frontmatter is well-formed — every document declares an `id:` and a
       `status:`, and no two documents claim one id
@@ -216,6 +219,7 @@ def _run() -> int:
     _recording_findings(cfg, enabled, warn)
     _hook_recording_findings(cfg, enabled, warn)
     _emit_sink_findings(cfg, enabled, warn)
+    _local_ledger_unignored(cfg, warn)
     _release_findings(cfg, enabled, report, warn)
 
     # --- V1-V7: structural + referential integrity ------------------------
@@ -854,6 +858,68 @@ def _tree_has_a_row(cfg: vocabulary.PmConfig) -> tuple[bool, list[str]]:
         except (OSError, UnicodeDecodeError):
             unreadable.append(cfg.rel(path))
     return found, unreadable
+
+
+def _local_ledger_unignored(cfg: vocabulary.PmConfig, warn) -> None:
+    """LOCAL — the gitignored ledger exists and nothing ignores it (#48, 0.12.0
+    review m7). A consumer who bumps without re-running `pm init` gets an
+    untracked file after every gated commit, and nothing said so. Reads each
+    `.gitignore` from the root down to the file's directory as TEXT — rule 2,
+    no `git check-ignore` — last matching line wins, `!` included."""
+    from agentic_sdlc.repo.pm import ledger
+    path = ledger.local_path(cfg.roadmap)
+    if not path.is_file():
+        return
+    try:
+        rel = path.relative_to(cfg.root)
+    except ValueError:
+        return
+    ignored = False
+    for depth in range(len(rel.parts)):
+        base = cfg.root.joinpath(*rel.parts[:depth])
+        below = '/'.join(rel.parts[depth:])
+        try:
+            text = (base / '.gitignore').read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            negated = line.startswith('!')
+            if _ignore_matches(line.lstrip('!'), below):
+                ignored = not negated
+    if not ignored:
+        warn(f'{cfg.rel(path)} exists and no .gitignore line covers it, so '
+             f'every commit whose hook runs the gates leaves it untracked — '
+             f're-run `pm init` (`{vehicle.command("pm", "init")}`), which '
+             f'adds the line and changes nothing already there')
+
+
+def _ignore_matches(pattern: str, rel: str) -> bool:
+    """Does one `.gitignore` pattern cover `rel` (a path below that file)?
+    The gitignore shapes that matter here: anchored or not by a slash, a
+    trailing `/` for a directory, and `*`/`**` globs."""
+    import fnmatch
+    parts = rel.split('/')
+    anchored = '/' in pattern.rstrip('/')
+    pattern = pattern.lstrip('/')
+    directory = pattern.endswith('/')
+    pattern = pattern.rstrip('/')
+    # Every ancestor directory is a candidate as well as the file itself: an
+    # ignored directory takes everything under it.
+    candidates = ['/'.join(parts[:n]) for n in range(1, len(parts))]
+    if not directory:
+        candidates.append(rel)
+    for one in candidates:
+        if anchored:
+            if fnmatch.fnmatchcase(one, pattern) or (
+                    pattern.startswith('**/')
+                    and fnmatch.fnmatchcase(one, pattern[3:])):
+                return True
+        elif fnmatch.fnmatchcase(one.rsplit('/', 1)[-1], pattern):
+            return True
+    return False
 
 
 def _recording_findings(cfg: vocabulary.PmConfig, enabled: set[str], warn) -> None:

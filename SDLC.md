@@ -237,4 +237,4 @@ What stays here is the judgement the machine cannot make and the rule that order
    number you chose is written everywhere, and the bump itself is the release commit, yours.
 
 Everything else is a check in the generated document, or a `next:` line that `release` prints
-(retitle, push, PR, merge, tag, artifact proof).
+(release notes, push, PR, merge, tag, artifact proof, mainline sync).

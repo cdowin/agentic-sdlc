@@ -336,8 +336,10 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            that resolves to nothing is refused
                                            rather than dropped. A row naming no
                                            grain lands in the tree's own
-                                           <roadmap>/ledger.jsonl, with every
-                                           gate and test row, and is the tree's
+                                           <roadmap>/ledger.jsonl — gate, test
+                                           and verify rows land in the
+                                           gitignored ledger.local.jsonl beside
+                                           it — and is the tree's
                                            unless it carries a milestone's
                                            branch (`ledger report --tree`))
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
@@ -2674,7 +2676,10 @@ def _record_gate(cfg: vocabulary.PmConfig, flags: dict[str, str]) -> int:
         print(f'[pm] no gate row filed — there is no PM tree at '
               f'{cfg.rel(cfg.roadmap)}', file=sys.stderr)
         return 0
-    target = _row_ledger(cfg, None)
+    # The gitignored local ledger, never a tracked one: the pre-commit hook
+    # runs the gates, and a gate row in a tracked file is a commit that leaves
+    # its own tree dirty (#48).
+    target = ledger.local_path(cfg.roadmap)
     try:
         ledger.append_to(target, ledger.gate_row(gate, verdict, duration,
                                                  census))
@@ -3011,8 +3016,8 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if as_json:
         print(json.dumps(data, ensure_ascii=False))
         return 0
-    root = ledger.grainless_path(cfg.roadmap)
-    if not src.is_file(path) and not src.is_file(root):
+    if not any(src.is_file(one)
+               for one in (path, *ledger.telemetry_paths(cfg.roadmap))):
         print(f'{report.HEADING_PREFIX} {report.heading_id(data)} — '
               f'{report.NO_LEDGER}')
         return 0
@@ -3027,12 +3032,20 @@ def _report_rows(cfg: vocabulary.PmConfig, src: report.Source,
     """(the milestone's ledger rows, the tree's). Two files, one report: the
     milestone owns every row of the first it can place and the rows of the
     second stamped with its branch — `report.owns` decides, never the file."""
-    root = ledger.grainless_path(cfg.roadmap)
     try:
         own = src.ledger_rows(path)
-        return own, (src.ledger_rows(root) if root != path else [])
+        return own, _root_rows(cfg, src, skip=path)
     except ledger.LedgerError as err:
         raise Usage(f'{err}') from err
+
+
+def _root_rows(cfg: vocabulary.PmConfig, src: report.Source,
+               skip: Path | None = None) -> list:
+    """The tree's rows: its grainless ledger AND the gitignored local one the
+    gate, test and verify rows land in (#48). At a rev the local file is no
+    blob, so `src` answers no rows for it — it was never committed."""
+    return [row for one in ledger.telemetry_paths(cfg.roadmap) if one != skip
+            for row in src.ledger_rows(one)]
 
 
 def _twins(cfg: vocabulary.PmConfig, src: report.Source) -> dict | None:
@@ -3057,7 +3070,7 @@ def _tree_document(cfg: vocabulary.PmConfig) -> dict:
         mid = found.field(vocabulary.FIELD_ID) or found.path.stem
         claims.append(report.claim_of(src, cfg, mid, found.path)[0])
     try:
-        root_rows = src.ledger_rows(ledger.grainless_path(cfg.roadmap))
+        root_rows = _root_rows(cfg, src)
     except ledger.LedgerError as err:
         raise Usage(f'{err}') from err
     return report.tree_data(root_rows, claims, _twins(cfg, src))

@@ -14,6 +14,7 @@ order:
   - "ms-the-ledger-is-a-stamp"
   - "ms-a-session-starts-knowing-what-it-can-do"
   - "ms-the-host-stays-a-checkout"
+  - "ms-the-leader-finishes-the-job"
 ---
 
 # The release plan

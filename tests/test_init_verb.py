@@ -385,8 +385,42 @@ def test_a_second_run_does_not_duplicate_the_gitignore_entries():
         assert devkit(root, 'init').returncode == 0
         body = (root / '.gitignore').read_text(encoding='utf-8')
     assert body.startswith('*.tmp\n'), 'the project\'s own entries were lost'
-    for entry in init.IGNORED:
+    for entry in (*init.IGNORED, LOCAL_LEDGER):
         assert body.count(entry) == 1, f'{entry} appears twice:\n{body}'
+
+
+# #48: the gitignored ledger every gate run appends to, as `init` writes it.
+LOCAL_LEDGER = 'pm/roadmap/ledger.local.jsonl'
+
+
+def test_a_commit_through_a_gate_running_hook_leaves_the_tree_clean():
+    """#48's ship criterion, end to end. A consumer's pre-commit hook runs
+    `make check`, and every gate files a cost row — into a TRACKED ledger
+    until this, so the tree was dirty again the moment the commit landed and
+    the lane merge refused. The gate row must still be FILED, or a clean tree
+    proves only that nothing ran."""
+    with fresh_project() as root:
+        assert devkit(root, 'init').returncode == 0
+        hook = root / 'tools/hooks/pre-commit'
+        hook.write_text('#!/bin/sh\nexec make check\n', encoding='utf-8')
+        hook.chmod(0o755)
+        env = {**os.environ, 'PYTHONPATH': str(REPO_ROOT / 'src'),
+               'DEVKIT': f'{sys.executable} -m agentic_sdlc.cli',
+               'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@t',
+               'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@t'}
+
+        def git(*argv: str) -> subprocess.CompletedProcess:
+            return subprocess.run(['git', *argv], cwd=root, env=env,
+                                  capture_output=True, text=True)
+
+        assert git('add', '-A').returncode == 0
+        done = git('commit', '-q', '-m', 'adopt')
+        assert done.returncode == 0, done.stdout + done.stderr
+        status = git('status', '--porcelain', '--untracked-files=all').stdout
+        local = root / LOCAL_LEDGER
+        rows = local.read_text(encoding='utf-8') if local.is_file() else ''
+    assert status == '', f'the commit left its own tree dirty:\n{status}'
+    assert '"kind":"gate"' in rows, 'the hook filed no gate row'
 
 
 # --- --diff -------------------------------------------------------------------
@@ -419,6 +453,7 @@ def test_diff_names_a_missing_gitignore_entry():
         done = devkit(root, 'init', '--diff')
     assert done.returncode == 0, done.stdout + done.stderr
     assert '.gitignore is missing .gate-reports/' in done.stdout, done.stdout
+    assert f'.gitignore is missing {LOCAL_LEDGER}' in done.stdout, done.stdout
 
 
 # --- ownership ----------------------------------------------------------------

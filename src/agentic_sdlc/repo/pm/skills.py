@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.repo import install, vehicle
-from agentic_sdlc.repo.pm import inventory, templates, vocabulary
+from agentic_sdlc.repo.pm import inventory, ledger, templates, vocabulary
 from agentic_sdlc.repo.pm.cli import USAGE, Refused, Usage, _ok
 
 # The first two moves on a fresh tree, as `pm init` and `init` both print
@@ -166,6 +166,58 @@ def install_merge_attribute(cfg: vocabulary.PmConfig) -> str:
     return f'{said} {GITATTRIBUTES}: {line}{note}'
 
 
+GITIGNORE = '.gitignore'
+LOCAL_IGNORE_HEADER = ('# agentic-sdlc: what a run on THIS machine cost (gate, '
+                       'test, verify rows) — never committed, so a commit\'s '
+                       'own hook leaves the tree clean')
+
+
+def local_ignore_line(roadmap_dir: str) -> str:
+    """`pm/roadmap/ledger.local.jsonl`, spelled in one place: the gitignored
+    ledger `gate`/`test`/`verify` rows land in (#48). A slash inside anchors it
+    to the root, so no other file of that name anywhere is swept up."""
+    return f'{roadmap_dir}/{ledger.LOCAL_LEDGER_FILE_NAME}'
+
+
+def ignores_local(text: str, line: str) -> bool:
+    """Does this `.gitignore` text already carry the entry — with or without
+    the leading `/` that anchors it the same way."""
+    return any(raw.strip().lstrip('/') == line for raw in text.splitlines())
+
+
+def install_local_ignore(cfg: vocabulary.PmConfig) -> str:
+    """Make `<roadmap>/ledger.local.jsonl` ignored; returns what happened.
+    Beside the merge attribute because the pair is ONE fact about the ledgers
+    — the tracked ones union, the local one is never tracked. Appends, since
+    the file holds project opinions; idempotent, and a line naming the entry
+    with or without a leading `/` already says it."""
+    target = cfg.root / GITIGNORE
+    line = local_ignore_line(cfg.roadmap_dir)
+    defect = install.destination_defect(target)
+    if defect:
+        raise Refused(f'{GITIGNORE} {defect} — the local ledger was not '
+                      f'ignored; add `{line}` yourself once the path is '
+                      f'writable, or every gate run dirties the tree')
+    existing = ''
+    if target.is_file():
+        text, unreadable = install.read_destination(target)
+        if unreadable:
+            raise Refused(f'{GITIGNORE} {unreadable} — the local ledger was '
+                          f'not ignored')
+        existing = text or ''
+    if ignores_local(existing, line):
+        return f'{GITIGNORE} already ignores `{line}`'
+    head = '' if not existing or existing.endswith('\n') else '\n'
+    gap = '\n' if existing else ''
+    body = existing + head + gap + LOCAL_IGNORE_HEADER + '\n' + line + '\n'
+    result = apply.Plan().overwrite(target, body, newline=None,
+                                    label=GITIGNORE).apply(decide=False)
+    if result.failed is not None:
+        raise Refused(f'{GITIGNORE} could not be written ({result.error}) — '
+                      f'add `{line}` yourself')
+    return f'{"appended to" if existing else "wrote"} {GITIGNORE}: {line}'
+
+
 CONFIG_FILE = 'devkit.toml'
 # Above the appended block, so a reader knows which verb put it there.
 FLOW_HEADER = ('# --- the flow — appended by `agentic-sdlc pm init` ----------'
@@ -297,6 +349,7 @@ def cmd_init(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if not made:
         _ok(f'{cfg.roadmap_dir}/ already exists — leaving it alone')
     _ok(install_merge_attribute(cfg))
+    _ok(install_local_ignore(cfg))
     cmd_install_skills(cfg, [])
     print_ladder()
 

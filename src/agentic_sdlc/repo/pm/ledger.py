@@ -333,6 +333,17 @@ KIND_TEST = 'test'
 
 KIND_DEVIATION = 'deviation'
 
+# --- machine-local telemetry (#48) --------------------------------------------
+# What a RUN on this machine cost — `gate`, `test`, `verify` — is not something
+# anybody decided, and a tracked file that every gate appends to is a commit that
+# leaves its own tree dirty: the pre-commit hook runs the gates, the gates file
+# rows, and the lane merge refuses. So those three kinds live in a GITIGNORED
+# sibling of the grainless ledger, and every reader of them reads both files —
+# the tracked one first, because the rows already committed there are the
+# older history and stay where they are (append-only).
+LOCAL_LEDGER_FILE_NAME = 'ledger.local.jsonl'
+LOCAL_KINDS = frozenset({KIND_GATE, KIND_TEST, KIND_VERIFY})
+
 # Closed; `'skipped'` stays because rows carrying it are already in consumer
 # ledgers.
 OUTCOMES = ('not-true', 'unverifiable', 'skipped', 'forced')
@@ -568,8 +579,22 @@ def grainless_dir(roadmap_dir: Path) -> Path:
 
 def grainless_path(roadmap_dir: Path) -> Path:
     """The grainless ledger itself — `grainless_dir` joined by `ledger_path`.
-    What `check budget`, `verify --plan` and `pm ledger report|show` read."""
+    What `pm ledger report|show` read; a reader of `LOCAL_KINDS` reads
+    `telemetry_paths`, which begins with this file."""
     return ledger_path(grainless_dir(roadmap_dir))
+
+
+def local_path(roadmap_dir: Path) -> Path:
+    """Where a row of `LOCAL_KINDS` is WRITTEN: the gitignored file beside the
+    grainless ledger (#48). The only place this name is joined."""
+    return grainless_dir(roadmap_dir) / LOCAL_LEDGER_FILE_NAME
+
+
+def telemetry_paths(roadmap_dir: Path) -> list[Path]:
+    """Every file a `gate`/`test`/`verify` row can be in, oldest history
+    first: the tracked grainless ledger, which kept them before #48, then the
+    local one every new row lands in. A reader of those kinds reads THIS."""
+    return [grainless_path(roadmap_dir), local_path(roadmap_dir)]
 
 
 def ledger_paths(cfg) -> list[Path]:

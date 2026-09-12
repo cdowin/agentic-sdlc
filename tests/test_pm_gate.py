@@ -1138,8 +1138,9 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root)
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
-            self.assertIn('last hook-written row: never in the 3h these '
-                          'ledgers have been recording', out)
+            # `3h`, or `3h 1s` when a loaded run crosses a second (0.12.0).
+            self.assertRegex(out, r'last hook-written row: never in the 3h'
+                                  r'( \d+s)? these ledgers have been recording')
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.
@@ -1283,6 +1284,42 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root, checks='["D1"]')
             self.assertEqual(code, 0, out)
             self.assertNotIn('(U4)', out)
+
+
+class LocalLedgerTheIgnoreDoesNotCover(unittest.TestCase):
+    """0.12.0 review m7: a consumer who bumps without re-running `pm init` has
+    gate rows landing in `ledger.local.jsonl` and no line ignoring it, so every
+    gated commit leaves an untracked file — and nothing said so."""
+
+    NEEDLE = 'pm/roadmap/ledger.local.jsonl exists and no .gitignore line'
+
+    def test_an_unignored_local_ledger_is_a_WARN_naming_pm_init(self):
+        for label, ignore, rows, warned in (
+                ('no .gitignore at all', None, True, True),
+                ('the exact line pm init writes', 'pm/roadmap/ledger.local.jsonl\n',
+                 True, False),
+                ('a glob that matches', '*.local.jsonl\n', True, False),
+                ('an ignored parent directory', '/pm/roadmap/\n', True, False),
+                ('a later `!` takes it back', '*.jsonl\n!ledger.local.jsonl\n',
+                 True, True),
+                ('a line for another file', 'pm/roadmap/ledger.jsonl\n', True,
+                 True),
+                # Nothing filed yet, nothing to leave untracked.
+                ('no local ledger', None, False, False)):
+            with self.subTest(case=label), tree() as root:
+                if ignore is not None:
+                    (root / '.gitignore').write_text(ignore, encoding='utf-8')
+                if rows:
+                    put_ledger(root, '{"kind":"gate"}',
+                               rel='pm/roadmap/ledger.local.jsonl')
+                code, out = run_gate(root)
+                self.assertEqual(code, 0, out)
+                if warned:
+                    line = next(l for l in out.splitlines() if self.NEEDLE in l)
+                    self.assertTrue(line.lstrip().startswith('WARN'), line)
+                    self.assertIn('pm init', line)
+                else:
+                    self.assertNotIn(self.NEEDLE, out)
 
 
 class U3ADeclaredSinkThatIsSilentIsAFinding(unittest.TestCase):

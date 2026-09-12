@@ -83,16 +83,25 @@ def _budgets() -> dict[str, int]:
 
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """Every row of the current release's ledger, or the defect that stopped the read."""
+    """The rows a ceiling is graded against: THIS machine's, from the local
+    ledger new `gate`/`test` rows land in (#48). A ceiling is about the machine
+    that ran the tier, and a tracked row is another machine's history, so the
+    tracked ledger is read only by a tree that has no local rows yet (one from
+    before #48). Otherwise CI graded a laptop's frozen row as its own tier."""
     cfg = vocabulary.load()
-    path = ledger.grainless_path(cfg.roadmap)
-    if not path.is_file():
-        return [], ''
-    try:
-        rows = ledger.read_rows(path)
-    except ledger.LedgerError as err:
-        return [], f'{cfg.rel(path)} could not be read: {err}'
-    return [(cfg.rel(path), row) for row in rows], ''
+    for paths in ([ledger.local_path(cfg.roadmap)], ledger.telemetry_paths(cfg.roadmap)):
+        found: list[tuple[str, ledger.Row]] = []
+        for path in paths:
+            if not path.is_file():
+                continue
+            try:
+                rows = ledger.read_rows(path)
+            except ledger.LedgerError as err:
+                return [], f'{cfg.rel(path)} could not be read: {err}'
+            found += [(cfg.rel(path), row) for row in rows]
+        if found:
+            return found, ''
+    return [], ''
 
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,

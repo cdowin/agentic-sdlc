@@ -45,7 +45,7 @@ loop, with its commands.
 | 1 | `tree-clean` | — *(reads the tree)* | `git status --porcelain` names no path outside the roadmap directory — the same reading `committed` makes on the story belt. What is modified INSIDE it is neither read nor counted, because the belt writes there by design: the status it lands, `gate`'s cost rows, every `[emit]` event. |
 | 2 | `on-milestone-branch` | — *(reads the tree)* | HEAD is the branch the milestone document stamps in `branch:` (D9). |
 | 3 | `changelog-unreleased-nonempty` | — *(reads the tree)* | the milestone itself, whatever its state, and every grain in it that is in the `done` category answer the `changelog:` field with a sentence or `none`. The milestone is graded before `release` writes its `done`, and the field is read on each grain — no file is. |
-| 4 | `features-done` | `make pm ARGS='ready-for milestone <id>'` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and its `reviewed:` names a review record that is there and not empty, and every bug whose `milestone:` names the milestone is in the `done` category. |
+| 4 | `features-done` | `make pm ARGS='ready-for milestone <id>'` *(shipped)* | `pm ready-for milestone <milestone>` exits 0 — every feature is in the `done` category and its `reviewed:` names a review record that is there and not empty, and every bug whose `milestone:` names the milestone is in the `done` category. A milestone with no features passes only as a bug-only milestone: at least one bug bound to it, every one `done`. |
 | 5 | `findings-resolved` | `make pm ARGS='ready-for tag <id>'` *(shipped)* | `pm ready-for tag <milestone>` exits 0 — no finding in any record the milestone's grains point at is `open`. |
 | 6 | `version-sync` | — *(reads the tree)* | every configured version site names the release version; read, never bumped. |
 | 7 | `gate` | `make milestone` | the configured gate command exits 0. |
@@ -63,6 +63,7 @@ loop, with its commands.
 - tag the merge commit and push the TAG ref only: `git tag v<version> && git push origin refs/tags/v<version>` — a published tag is never force-moved
 - prove the published artifact reports <version> from a cold cache: `uvx --from git+https://github.com/cdowin/agentic-sdlc@v<version> agentic-sdlc --version`
 - open the next milestone, so the next release's notes have somewhere to go from the first commit
+- sync the local mainline to the tagged merge: `git switch <mainline> && git pull --ff-only`
 
 ## `adopt` — the checks
 

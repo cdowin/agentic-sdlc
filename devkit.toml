@@ -267,7 +267,14 @@ budget = { unit = 20, integration = 130, test = 150 }
 # RE-SET at the close of 0.11.1: 1,708 -> 1,712 (+4 in CI, +3 on this host). The
 # review's false-ALLOW commands, each a refused row in test_hooks_payloads that
 # 0.11.1's first cut let through (M1-M3, m4).
-cases = { test = 1712 }
+#
+# RE-SET at the close of 0.12.0: 1,712 -> 1,714 (+3 functions this host, one
+# per lane: the commit-leaves-the-tree-clean proof in test_init_verb (#48), the
+# `done` ledger-carry case, and preflight's repository row; the belt and guard
+# lanes amended existing cases and corpora), +1 for the review's m7 (`check pm`
+# names an un-ignored local ledger): 1,715, +1 for CI's own finding on PR #50
+# (a tracked row is another machine's and is not graded): 1,716.
+cases = { test = 1716 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

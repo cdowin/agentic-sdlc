@@ -8,7 +8,7 @@ and every stopped builder was re-dispatched cold (issue #40).
 
 So this reports each assumption as one row BEFORE anything is dispatched —
 run from a SessionStart hook, whose stdout is what the session reads. It reads
-two settings files and the PM tree as text and starts nothing (a process tree
+two settings files, the PM tree and the git config as text and starts nothing (a process tree
 and a launch flag are not text, so they stay `unknown` rather than a guess),
 and it gates nothing: the value is the fact, the meaning is what the kit's
 flow does with it, and the caller decides.
@@ -29,6 +29,12 @@ COLUMNS = ('capability', 'value', 'meaning')
 UNKNOWN = 'unknown'
 WIRED, NOT_WIRED = 'wired', 'not wired'
 
+# A host flipped to `core.bare = true` said nothing until a git command failed.
+GIT_DIR, GITDIR_KEY = '.git', 'gitdir:'
+GIT_TRUE = ('true', 'yes', 'on', '1')
+BARE = 'bare'
+BARE_FIX = 'git config core.bare false'
+
 # The tool whose absence cost a milestone, and the two rule lists that name it.
 RESUME_TOOL = 'SendMessage'
 DENY, ALLOW = 'deny', 'allow'
@@ -40,7 +46,7 @@ REDISPATCH = (f'a stopped builder is re-dispatched with `{CHANNEL}`, so keep '
 USAGE = f"""usage: agentic-sdlc {VERB}
 
 What this session can do, said BEFORE the first dispatch: one tab-separated
-row per capability on STDOUT, always these four in this order, columns IN ORDER:
+row per capability on STDOUT, always these five in this order, columns IN ORDER:
     {'  '.join(COLUMNS)}
 
   subagent-resume   denied | allowed | {UNKNOWN} — `{RESUME_TOOL}` in
@@ -59,6 +65,13 @@ row per capability on STDOUT, always these four in this order, columns IN ORDER:
                     tree or no [pm.states.*].
   subagent-channel  dispatch — the rendered `dispatch --grain <id>` preamble
                     is the only channel to a subagent.
+  repository        ok | {BARE} | {UNKNOWN} — `core.bare` in the config every
+                    checkout of this repository shares ({GIT_DIR}/config, or
+                    a linked worktree's {GIT_DIR} file -> gitdir -> commondir),
+                    read as text. {BARE} is `core.bare = true` under a working
+                    tree, which fails every git command in it; the meaning
+                    starts `{BARE_FIX}`. {UNKNOWN} when that config cannot be
+                    read.
 
 It reports and never gates, reads text, runs nothing and writes nothing, so a
 SessionStart hook can run it: `install-hooks` ships cc-session-preflight.sh,
@@ -122,6 +135,71 @@ def wiring(root: Path) -> tuple[str, str]:
                    f'`{vehicle.command("check", "hooks")}` starts each one')
 
 
+def _text(path: Path) -> str | None:
+    """A git file's text, or None when it cannot be read."""
+    try:
+        return path.read_text(encoding='utf-8').strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _common_dir(root: Path) -> tuple[Path | None, str]:
+    """(the dir holding the config every checkout of `root`'s repository
+    shares, '') — or (None, why). A linked worktree's `.git` is a FILE naming
+    its gitdir, whose `commondir` names where the config lives. The reader the
+    test suite's host ratchet proved, kept separate so the ratchet does not
+    share the code it guards."""
+    dot = root / GIT_DIR
+    if dot.is_dir():
+        return dot, ''
+    if not dot.exists():
+        return None, f'there is no {GIT_DIR} at {root}'
+    pointed = _text(dot)
+    if pointed is None:
+        return None, f'{GIT_DIR} at {root} could not be read'
+    if not pointed.startswith(GITDIR_KEY):
+        return None, f'{GIT_DIR} at {root} names no {GITDIR_KEY}'
+    gitdir = (root / pointed[len(GITDIR_KEY):].strip()).resolve()
+    if not gitdir.is_dir():
+        return None, f'{GIT_DIR} at {root} names {gitdir}, which is not there'
+    common = _text(gitdir / 'commondir')
+    return (gitdir / common).resolve() if common else gitdir, ''
+
+
+def _core_bare(config: str) -> bool:
+    """Whether the LAST `bare` under `[core]` is true, as git reads a boolean:
+    a bare key is true, and so are yes/on/1."""
+    section, bare = '', False
+    for raw in config.splitlines():
+        line = raw.strip()
+        if line.startswith('['):
+            header, _, line = line[1:].partition(']')
+            section = (header.split() or [''])[0].lower()
+            line = line.strip()
+        key, sep, value = line.partition('=')
+        if section == 'core' and key.strip().lower() == 'bare':
+            value = value.split('#', 1)[0].split(';', 1)[0].strip().lower()
+            bare = not sep or value in GIT_TRUE
+    return bare
+
+
+def repository(root: Path) -> tuple[str, str]:
+    """(value, meaning) for the checkout's own repository: `bare` when its
+    common config says `core.bare = true` while `root` HAS a working tree,
+    which fails every git command run in it."""
+    common, why = _common_dir(root)
+    config = common / 'config' if common else None
+    text = _text(config) if config else None
+    if text is None:
+        why = why or f'{config} could not be read'
+        return UNKNOWN, f'{why}, so core.bare was not read'
+    if _core_bare(text):
+        return BARE, (f'{BARE_FIX} restores it — {config} says core.bare = '
+                      f'true, and {root} is a working tree, so every git '
+                      f'command run in it fails')
+    return 'ok', f'{config} does not set core.bare = true'
+
+
 def attribution(stories: list[str] | None, why: str = '') -> tuple[str, str]:
     """(value, meaning) for the couriers' fallback over `stories` in progress;
     None is a tree that could not be asked, and `why` says so."""
@@ -165,7 +243,8 @@ def rows(root: Path, stories: list[str] | None,
             ('subagent-channel', 'dispatch',
              f'the rendered `{CHANNEL}` preamble is the only channel to a '
              f'subagent — nothing repo-specific reaches one at spawn '
-             f'(devkit issue #15)')]
+             f'(devkit issue #15)'),
+            ('repository', *repository(root))]
 
 
 def main(argv: list[str]) -> int:

@@ -3,11 +3,11 @@ id: ft-use-the-sdlc-get-to-work
 kind: feature
 milestone: "ms-a-session-starts-knowing-what-it-can-do"
 name: use the sdlc, get to work
-status: planning
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `pm install-skills` installs `run-the-sdlc`, which "use the sdlc, get to work" finds: the orchestrator loop (one developer per feature lane, a worktree per lane, stacked milestones, one reviewer per milestone) with its commands and a dispatch brief template; the architect brief runs that loop, and `dispatch --mode parallel` ends at a committed branch the orchestrator merges.
 ---
 
 # use the sdlc, get to work

@@ -2,7 +2,7 @@
 id: "ms-a-session-starts-knowing-what-it-can-do"
 kind: milestone
 name: a session starts knowing what it can do
-status: planning
+status: building
 depends_on: ["ms-the-ledger-is-a-stamp"]
 branch: milestone/0.11.0-a-session-starts-knowing-what-it-can-do
 version: 0.11.0

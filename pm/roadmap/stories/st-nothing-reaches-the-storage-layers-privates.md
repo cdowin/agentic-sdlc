@@ -4,10 +4,11 @@ kind: story
 feature: ft-frontmatter-has-one-grammar-and-one-way-in
 milestone: "ms-the-tool-agrees-with-itself"
 name: nothing outside core/frontmatter reaches its private names, and the gate says so
-status: planning
+status: done
 owner:
 depends_on: ["st-rename-rewrites-through-the-storage-layer"]
-changelog:
+changelog: none
+done: 1a55d18 — test_boundaries fails any reach into a frontmatter private
 ---
 
 # nothing outside core/frontmatter reaches its private names, and the gate says so

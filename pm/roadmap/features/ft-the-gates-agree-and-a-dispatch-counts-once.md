@@ -3,7 +3,7 @@ id: ft-the-gates-agree-and-a-dispatch-counts-once
 kind: feature
 milestone: "ms-the-tool-agrees-with-itself"
 name: the version gates agree, and a dispatch counts once
-status: planning
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []

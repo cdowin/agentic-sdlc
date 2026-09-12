@@ -4,10 +4,11 @@ kind: story
 feature: ft-frontmatter-has-one-grammar-and-one-way-in
 milestone: "ms-the-tool-agrees-with-itself"
 name: a document rewritten through a plan leaves the parse cache
-status: planning
+status: done
 owner:
 depends_on: ["st-rename-rewrites-through-the-storage-layer"]
-changelog:
+changelog: none
+done: 1a55d18 — document() drops the cache when apply.mutations() moved
 ---
 
 # a document rewritten through a plan leaves the parse cache

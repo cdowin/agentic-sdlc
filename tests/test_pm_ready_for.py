@@ -438,14 +438,36 @@ class MilestoneBelt(unittest.TestCase):
             self.assertEqual(len(named(out)), 3, out)
 
     def test_a_milestone_with_zero_features_is_LOUD_and_not_vacuously_ready(self):
-        with tree() as root:
-            shutil.rmtree(root / 'pm/roadmap/features')
-            code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
-            self.assertEqual(code, 1, out)
-            self.assertIn('has no features', out)
-            # The two vacuity rulings are opposite; a transcript must not be
-            # able to confuse them.
-            self.assertNotIn(ready_for.VACUOUS, out)
+        """Zero features AND zero bugs is the empty census rule 4 fails. Zero
+        features with bugs bound is a PATCH release: ready when every bug is
+        `done`, blocked by name when one is not. A POOLED bug is not bound, so
+        it cannot turn an empty milestone into a bug-only one."""
+        rows = (
+            # (bugs as {slug: (status, milestone)}, exit, wanted, unwanted)
+            ({}, 1, ['has no features'], ['bug-only']),
+            ({'stray': ('closed', '')}, 1, ['has no features'], ['bug-only']),
+            ({'crash': ('closed', '"0.1"')}, 0,
+             ['0 feature(s), 1 bug(s) — a bug-only milestone', 'all done'],
+             ['has no features']),
+            ({'crash': ('closed', '"0.1"'), 'leak': ('open', '"0.1"')}, 1,
+             ['0.1/bugs/leak is open — a bug nested in 0.1',
+              '0 feature(s), 2 bug(s) — a bug-only milestone'],
+             ['has no features', '0.1/bugs/crash is']),
+        )
+        for bugs, exit_code, wanted, unwanted in rows:
+            with self.subTest(bugs=bugs), tree() as root:
+                shutil.rmtree(root / 'pm/roadmap/features')
+                for slug, (status, milestone) in bugs.items():
+                    bug(root, slug, status=status, milestone=milestone)
+                code, out = run_cli(root, 'ready-for', 'milestone', '0.1')
+                self.assertEqual(code, exit_code, out)
+                for text in wanted:
+                    self.assertIn(text, out)
+                for text in unwanted:
+                    self.assertNotIn(text, out)
+                # The two vacuity rulings are opposite; a transcript must not
+                # be able to confuse them.
+                self.assertNotIn(ready_for.VACUOUS, out)
 
     def test_a_blank_pointer_and_a_directory_pointer_read_differently(self):
         with tree(feature_status='done', with_record=False) as root:

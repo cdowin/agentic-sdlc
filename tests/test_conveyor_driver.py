@@ -273,6 +273,10 @@ def test_release_prints_the_callers_list_and_writes_nothing_but_the_status():
     joined = '\n'.join(nexts)
     assert 'v1.0.0' in joined and 'milestone/1.0.0' in joined, joined
     assert '{' not in joined, 'an after-list placeholder was left unfilled'
+    # The tag is cut on the mainline's merge commit, so the LAST act is
+    # bringing the local mainline up to it — fast-forward only, never a merge.
+    assert nexts[-1] == ('next: sync the local mainline to the tagged merge: '
+                         '`git switch main && git pull --ff-only`'), nexts[-1]
     # `retitle` was here until 0.6.0, and it is the reason this list is
     # spelled out: `CHANGELOG.md` retired, and the belt went on telling the
     # operator running that very release to retitle a section in the file it

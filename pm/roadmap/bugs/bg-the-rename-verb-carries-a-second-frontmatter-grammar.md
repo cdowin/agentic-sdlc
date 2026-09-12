@@ -1,7 +1,7 @@
 ---
 id: bg-the-rename-verb-carries-a-second-frontmatter-grammar
 kind: bug
-milestone:
+milestone: ms-the-tool-agrees-with-itself
 name: pm rename parses frontmatter with its own key grammar and its own inline-list reader
 status: open
 caused_by:

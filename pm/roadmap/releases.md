@@ -10,6 +10,7 @@ order:
   - "ms-the-rule-reaches-the-work"
   - "ms-nothing-is-hand-rolled"
   - "ms-a-consumer-can-take-the-bump"
+  - "ms-the-tool-agrees-with-itself"
   - "ms-the-ledger-is-a-stamp"
 ---
 

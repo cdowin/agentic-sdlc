@@ -13,7 +13,7 @@ changelog:
 # a concurrent dispatch attributes itself, once
 
 Defect D-B of the audit (units 3 and 4). It overlaps the pool feature `ft-the-record-is-harvested-not-pushed`,
-which stays in the pool: this is the part of it 0.9.0 needs.
+which stays in the pool: this is the part of it 0.10.0 needs.
 
 **Today concurrent work is unattributable, and hand records double-count it.** A courier names a
 grain from `GDK_LEDGER_GRAIN` in its own environment, else from "exactly one story in progress", else
@@ -30,7 +30,8 @@ pair.
    --from-transcript`, copies that line VERBATIM from that agent's own transcript. A transcript is
    per-agent, so concurrent dispatches attribute themselves. The line is a stamp copied, never searched
    for or guessed (rule 9).
-2. **One dispatch is one row.** A hand record joins its courier twin by `agent_id` (the flag exists,
+2. **One dispatch is one row.** *Ships in 0.9.0 as `st-a-hand-record-joins-its-courier-twin` (#39): read its
+   close, and build on its join rather than beside it.* A hand record joins its courier twin by `agent_id` (the flag exists,
    and none of the 18 rows used it) and annotates that row instead of adding a second dispatch. The
    report counts one dispatch per `agent_id`.
 

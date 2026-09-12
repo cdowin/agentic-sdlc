@@ -1,7 +1,7 @@
 ---
 id: bg-the-rename-write-path-never-invalidates-the-document-cache
 kind: bug
-milestone:
+milestone: ms-the-tool-agrees-with-itself
 name: a document rewritten through apply.Plan stays in the parse cache, and a same-length rename defeats the stamp
 status: open
 caused_by:

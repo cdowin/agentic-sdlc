@@ -120,7 +120,7 @@ builder in its own worktree. **Parallel builders never share one tree**, because
 `committed` check is false while ANY builder has files in flight (0.8.0: 15 stories built and 0 `done`
 after 1h8m). Which mode is faster is not yet known. 0.8.0's failures were the orchestrator breaking
 the contract (a harness worktree option, a `git bisect` in a linked worktree that flipped the repo to
-`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.9.0 runs PARALLEL,
+`core.bare = true`, briefs improvised per dispatch), not the contract failing. 0.10.0 runs PARALLEL,
 by contract and under guards, and its own telemetry answers the question. PARALLEL has exactly one
 mechanism, **the kit's own `tools/dev/agent-worktree.sh`**, never a
 harness's worktree option (Claude Code's `isolation: "worktree"` bases a worktree on the default

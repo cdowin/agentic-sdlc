@@ -1,7 +1,7 @@
 ---
 id: bg-the-storage-layers-privates-are-reached-from-outside-it
 kind: bug
-milestone:
+milestone: ms-the-tool-agrees-with-itself
 name: fourteen sites reach core/frontmatter's private names, and the gate only forbids re-binding them
 status: open
 caused_by: ft-the-module-says-what-it-does

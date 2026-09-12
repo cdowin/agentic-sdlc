@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "bash tools/hooks/cc-commit-pathspec.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash tools/hooks/cc-git-allowlist.sh"
           }
         ]
       },
@@ -16,6 +20,15 @@
           {
             "type": "command",
             "command": "bash tools/hooks/cc-write-confine.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash tools/hooks/cc-agent-isolation.sh"
           }
         ]
       }

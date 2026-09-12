@@ -68,6 +68,8 @@ PLANS: dict[str, tuple[tuple[str, str], ...]] = {
         ('cc-commit-pathspec.sh', 'tools/hooks/cc-commit-pathspec.sh'),
         ('cc-stop-gate.sh', 'tools/hooks/cc-stop-gate.sh'),
         ('cc-write-confine.sh', 'tools/hooks/cc-write-confine.sh'),
+        ('cc-git-allowlist.sh', 'tools/hooks/cc-git-allowlist.sh'),
+        ('cc-agent-isolation.sh', 'tools/hooks/cc-agent-isolation.sh'),
         # The two ledger couriers guard nothing but carry the same header and arming.
         ('cc-ledger-subagent.sh', 'tools/hooks/cc-ledger-subagent.sh'),
         ('cc-ledger-session.sh', 'tools/hooks/cc-ledger-session.sh'),
@@ -113,7 +115,8 @@ install-agents  the review/build contract plus the base agent roster, as
                 `Project config` section whose ```text block is yours to edit
                 after install; the rest of the file is the kit's.
 install-hooks   the agent-workflow guard corpus, under tools/: the Claude Code
-                hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine)
+                hooks (cc-commit-pathspec, cc-stop-gate, cc-write-confine,
+                cc-git-allowlist on Bash, cc-agent-isolation on Agent|Task)
                 plus the two ledger couriers
                 (cc-ledger-subagent on SubagentStop, cc-ledger-session on
                 Stop, each handing the stop event's transcript path to
@@ -301,8 +304,10 @@ _NEXT_STEP = {
 # are async because they parse a transcript; the guards must block in time.
 _WIRING: tuple[tuple[str, str | None, str, bool], ...] = (
     ('PreToolUse', 'Bash', 'tools/hooks/cc-commit-pathspec.sh', False),
+    ('PreToolUse', 'Bash', 'tools/hooks/cc-git-allowlist.sh', False),
     ('PreToolUse', 'Write|Edit|MultiEdit|NotebookEdit',
      'tools/hooks/cc-write-confine.sh', False),
+    ('PreToolUse', 'Agent|Task', 'tools/hooks/cc-agent-isolation.sh', False),
     ('Stop', None, 'tools/hooks/cc-stop-gate.sh', False),
     ('Stop', None, 'tools/hooks/cc-ledger-session.sh', True),
     ('SubagentStop', None, 'tools/hooks/cc-ledger-subagent.sh', True),

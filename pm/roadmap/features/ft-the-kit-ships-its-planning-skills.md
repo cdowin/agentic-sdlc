@@ -4,7 +4,7 @@ kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the kit ships its planning and execution skills
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []
 changelog: `pm install-skills` also installs `writing-plans` (plan only when needed) and `executing-plans` (file and continue), each with a project-config block the install keeps, and the architect, po, developer, verification-builder, reviewer and milestone-reviewer briefs say the same rule in their own terms (#42).

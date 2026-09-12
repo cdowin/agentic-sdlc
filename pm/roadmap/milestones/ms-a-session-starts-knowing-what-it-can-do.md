@@ -11,6 +11,7 @@ order:
   - "ft-the-session-says-what-it-can-do-before-the-first-dispatch"
   - "ft-the-kit-ships-its-planning-skills"
   - "ft-use-the-sdlc-get-to-work"
+reviewed: docs/reviews/2026-09-12-0.11.0-milestone-review.md
 ---
 
 # 0.11.0 — a session starts knowing what it can do

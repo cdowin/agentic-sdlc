@@ -4,7 +4,7 @@ kind: feature
 milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the session says what it can do before the first dispatch
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []
 changelog: New read verb `agentic-sdlc preflight` says what a session can do before the first dispatch (subagent resume, hook wiring, ledger attribution, the dispatch channel), and `install-hooks` ships `cc-session-preflight.sh`, a SessionStart hook that prints it into the session — land its new settings entry (#40).

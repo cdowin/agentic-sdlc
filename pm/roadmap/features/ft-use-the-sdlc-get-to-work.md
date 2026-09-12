@@ -4,7 +4,7 @@ kind: feature
 milestone: "ms-a-session-starts-knowing-what-it-can-do"
 name: use the sdlc, get to work
 status: reviewing
-reviewed:
+reviewed: docs/reviews/2026-09-12-0.11.0-features.md
 depends_on: []
 consumed_by: []
 changelog: `pm install-skills` installs `run-the-sdlc`, which "use the sdlc, get to work" finds: the orchestrator loop (one developer per feature lane, a worktree per lane, stacked milestones, one reviewer per milestone) with its commands and a dispatch brief template; the architect brief runs that loop, and `dispatch --mode parallel` ends at a committed branch the orchestrator merges.

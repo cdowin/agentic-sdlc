@@ -86,7 +86,9 @@ REPO_ROOT="$(git -C "$SESSION_CWD" rev-parse --show-toplevel 2>/dev/null || true
 # session is never gated; a ready close is NAMED at its stop, because a CLOSE
 # line nobody reads before the session ends is read a session late.
 if ! is_agent_context "$REPO_ROOT"; then
-	[ "${#CLOSE_ASK[@]}" -gt 0 ] && [ -f "${REPO_ROOT}/Makefile" ] || exit 0
+	if [ "${#CLOSE_ASK[@]}" -eq 0 ] || [ ! -f "${REPO_ROOT}/Makefile" ]; then
+		exit 0
+	fi
 	ready="$(cd "$REPO_ROOT" && "${CLOSE_ASK[@]}" 2>/dev/null \
 		| grep -E '\(CLOSE\)[[:space:]]*$' \
 		| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//' || true)"

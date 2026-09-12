@@ -3,7 +3,7 @@ id: ft-the-flow-is-boring-by-construction
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: the flow is boring by construction
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: []
 consumed_by: []

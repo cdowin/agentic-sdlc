@@ -3,7 +3,7 @@ id: ft-a-milestone-reports-only-its-own-rows
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: a milestone reports only its own rows
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: []
 consumed_by: []

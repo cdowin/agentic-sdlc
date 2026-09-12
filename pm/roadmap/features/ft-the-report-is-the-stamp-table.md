@@ -3,7 +3,7 @@ id: ft-the-report-is-the-stamp-table
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: the report is the stamp table
-status: reviewing
+status: done
 reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: ["ft-a-milestone-reports-only-its-own-rows", "ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []

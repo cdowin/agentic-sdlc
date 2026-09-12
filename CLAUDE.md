@@ -13,6 +13,9 @@ expresses what the states and the flow are, and infers nothing. It just echoes s
 
 ## Hard rules
 
+**The numbers are an API: source, tests and hooks cite them, so this list is append-only.** A rule
+is trimmed inside itself, never renumbered or reordered; a new rule takes the next number.
+
 1. **Stdlib only, forever.** No runtime dependencies; Python 3.11+ (`tomllib`). The reason is
    the HOOK CORPUS: `tools/hooks/` parses its payload with bare `python3 -c`, a consumer's system
    interpreter with no managed environment, so a transitive dependency there is a broken commit

@@ -14,14 +14,12 @@ agent roster that executes it in consumer repos is installed by `agentic-sdlc in
 
 ### The review is part of the CLOSE, and the close is a stopwatch
 
-**Dispatch a feature's review the moment `pm ready-for feature <fid>` goes READY** — not at the
-end of the milestone. The belt already enforces the ordering (`close feature` refuses without a
-record); what it cannot enforce is WHEN you ask for one, and batching them is the failure mode.
-Measured on 0.3.0: eleven features built in 64 minutes, then 93 minutes of review-and-land, because
-nine reviews that could have overlapped the build ran after it. **Every grain is on a stopwatch
-from its first status write to its last**, and a feature held open waiting for a batched review is
-a feature whose clock is running for no reason. Just-in-time, one at a time, closed as fast as it
-can honestly close.
+**One reviewer per MILESTONE, dispatched the moment its last feature lane merges**, writes every
+feature's record and the milestone's cross-cutting record in one pass (0.9.0–0.11.0: one pass of
+~10 minutes where 0.8.0 ran five of 16–26 minutes each, then a sixth). The belt still refuses a
+feature close without a record, so the records land before the closes and the release, with
+nothing batched after them. **Every grain is on a stopwatch from its first status write to its
+last**: close a grain as fast as it can honestly close.
 
 **ONE review pass per grain.** A second pass is an emergency ripcord — for a feature whose review
 turned up something that changes the shape of the work — not a routine. Two passes over one
@@ -44,7 +42,8 @@ that ships a week later with none.
 
 1. **Rip through stories:** done when the work is done and its unit slice is green.
 2. **`reviewing` at story grain is a hand-off, not a terminus.**
-3. **A feature flips to `reviewing` when every story under it is `done`;** one review, whole.
+3. **A feature flips to `reviewing` when every story under it is `done`;** the milestone's one
+   review pass writes its record.
 4. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
 
 Each level asks a question the level below cannot, and a belt never runs a belt above it (the 170x).

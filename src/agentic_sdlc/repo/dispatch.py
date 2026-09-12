@@ -255,8 +255,8 @@ def _rules(mode: Mode) -> list[str]:
 def _loop(gid: str, mode: Mode) -> list[str]:
     """The loop a parallel builder owns, end to end, against the milestone's
     `branch:` — every command spelled, so nothing is improvised per dispatch.
-    `new` and `done` run from the main checkout, which is where the script
-    finds its worktrees; the merge lands in the checkout holding `branch:`."""
+    The builder stops at a committed branch; merging stays with the one holding
+    integration (0.11.0: N builders merging into one checkout race each other)."""
     from agentic_sdlc.repo import install
     tool = dict(install.PLANS['install-hooks'])[WORKTREE_TOOL]
     root = shlex.quote(str(repo_root()))
@@ -264,17 +264,15 @@ def _loop(gid: str, mode: Mode) -> list[str]:
     branch = shlex.quote(mode.branch)
     why = (f'milestone {mode.milestone} declares `mode: parallel`'
            if mode.declared else '`--mode parallel`')
-    return ['', f'THE LOOP — {why}. You own it, end to end:',
+    return ['', f'THE LOOP — {why}. You own your branch; the orchestrator '
+            f'merges it:',
             f'  1. cd {root} && bash {tool} new {slug} {branch}',
             '     it prints your worktree\'s path (work ONLY there) and names '
             'your branch',
             '  2. build; verify with the story rung; commit there by pathspec',
-            f'  3. git -C {root} branch --show-current    must print {branch}; '
-            f'anything else: stop and report',
-            f'  4. git -C {root} merge --no-ff --no-edit <your-branch>',
-            f'  5. cd {root} && bash {tool} done {slug}    refuses on '
-            f'uncommitted or unmerged work',
-            f'  6. report the merge hash: git -C {root} rev-parse HEAD']
+            '  3. report your branch and commit hash(es); do not merge, do not '
+            f'run `{tool} done` — the orchestrator merges into {branch} and '
+            'tears the worktree down']
 
 
 def _vocabulary() -> list[str]:

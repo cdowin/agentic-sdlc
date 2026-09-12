@@ -20,7 +20,7 @@ one developer per feature lane took 513–1424 s. Eight lanes built six stories 
    goes in one context: write, then refine. Reviewers polish; they do not rebuild.
    `make sdlc ARGS='dispatch --grain <id>'` renders the project's contract; paste it under
    the brief when the builder needs the ladder or the vocabulary. Under `mode: parallel` it
-   also renders a loop in which the builder merges. Cut that part: here you merge.
+   renders the worktree loop, ending at a committed branch that you merge.
 3. **Lanes on disjoint files run concurrently, each in its own worktree off an explicit base.**
    The builder runs `bash tools/dev/agent-worktree.sh new <slug> <base>`, where `<base>` is
    the milestone branch (or the next one's, step 4), and commits on its branch. When it reports, merge it from the checkout that holds the milestone branch, then

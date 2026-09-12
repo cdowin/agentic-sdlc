@@ -290,15 +290,11 @@ class TheModeIsTheMilestones(unittest.TestCase):
         slug = '0.1-alpha-s0'    # the id, spelled as agent-worktree takes it
         for line in (f'cd {main} && bash tools/dev/agent-worktree.sh new '
                      f'{slug} milestone/0.1',
-                     f'git -C {main} branch --show-current    must print '
-                     f'milestone/0.1',
-                     f'git -C {main} merge --no-ff --no-edit <your-branch>',
-                     f'cd {main} && bash tools/dev/agent-worktree.sh done '
-                     f'{slug}',
-                     f'report the merge hash: git -C {main} rev-parse HEAD',
+                     'report your branch and commit hash(es); do not merge',
                      'commit only by pathspec: git add <paths>; git commit '
                      '-m "…" -- <paths>'):
             self.assertIn(line, out)
+        self.assertNotIn('merge --no-ff', out)
         self.assertNotIn('serial: commit nothing', out)
         # `--mode` overrides the declaration, and serial is today's text.
         self.assertNotIn(LOOP, serial)

@@ -5320,3 +5320,13 @@
 {"ts":"2026-09-12T12:25:00Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":115797}
 {"ts":"2026-09-12T12:25:00Z","kind":"gate","gate":"budget","verdict":"FAIL","duration_ms":128}
 {"ts":"2026-09-12T12:25:00Z","kind":"gate","gate":"milestone","verdict":"FAIL","duration_ms":195002}
+{"ts":"2026-09-12T12:25:32Z","kind":"gate","gate":"check","verdict":"PASS","duration_ms":3930}
+{"ts":"2026-09-12T12:26:31Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_verbose_streams_the_transcript_and_still_ends_with_the_verdict@the-real-repo","duration_ms":9333,"rank":1}
+{"ts":"2026-09-12T12:26:31Z","kind":"test","tier":"test","nodeid":"tests/test_gate_library.py::test_the_library_corpus_FAILS_when_the_recorder_is_read_through_a_pipe","duration_ms":9146,"rank":2}
+{"ts":"2026-09-12T12:26:31Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_ambient_verbose_does_not_turn_the_quiet_run_loud@the-real-repo","duration_ms":8689,"rank":3}
+{"ts":"2026-09-12T12:26:31Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_an_unset_recorder_spawns_nothing_at_all@the-real-repo","duration_ms":8549,"rank":4}
+{"ts":"2026-09-12T12:26:31Z","kind":"test","tier":"test","nodeid":"tests/test_makefile_gates.py::test_a_gate_prints_exactly_one_verdict_line_naming_its_log@the-real-repo","duration_ms":7528,"rank":5}
+{"ts":"2026-09-12T12:26:31Z","kind":"gate","gate":"test","verdict":"PASS","duration_ms":59132,"census":1702}
+{"ts":"2026-09-12T12:28:12Z","kind":"gate","gate":"matrix","verdict":"PASS","duration_ms":100310}
+{"ts":"2026-09-12T12:28:12Z","kind":"gate","gate":"budget","verdict":"PASS","duration_ms":123}
+{"ts":"2026-09-12T12:28:12Z","kind":"gate","gate":"milestone","verdict":"PASS","duration_ms":164038}

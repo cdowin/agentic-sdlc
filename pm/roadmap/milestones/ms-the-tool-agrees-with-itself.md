@@ -2,7 +2,7 @@
 id: "ms-the-tool-agrees-with-itself"
 kind: milestone
 name: the tool agrees with itself
-status: building
+status: done
 depends_on: ["ms-a-consumer-can-take-the-bump"]
 branch: milestone/0.9.0-the-tool-agrees-with-itself
 version: 0.9.0

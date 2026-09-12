@@ -89,9 +89,10 @@ if ! is_agent_context "$REPO_ROOT"; then
 	if [ "${#CLOSE_ASK[@]}" -eq 0 ] || [ ! -f "${REPO_ROOT}/Makefile" ]; then
 		exit 0
 	fi
-	ready="$(cd "$REPO_ROOT" && "${CLOSE_ASK[@]}" 2>/dev/null \
-		| grep -E '\(CLOSE\)[[:space:]]*$' \
-		| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//' || true)"
+	ready="$(cd "$REPO_ROOT" || exit 0
+		"${CLOSE_ASK[@]}" 2>/dev/null \
+			| grep -E '\(CLOSE\)[[:space:]]*$' \
+			| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//')" || ready=''
 	[ -n "$ready" ] || exit 0
 	if [ "$CLOSE_READY" = "block" ]; then
 		{

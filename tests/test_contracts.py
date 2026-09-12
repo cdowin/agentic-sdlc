@@ -85,7 +85,10 @@ class TheRowsRoundTrip(unittest.TestCase):
         ROUTING = {'ts', 'kind', 'grain', 'session_id', 'agent_id',
                    'agent_type', 'model', 'started_at', 'ended_at',
                    'messages', 'tools', 'tool_calls_before_first_write',
-                   'usage', 'tree'}
+                   'usage', 'tree',
+                   # ft-work-is-stamped / ft-a-dispatch-row-carries-its-outcome:
+                   # the report's reader for these lands with b-ledger-read.
+                   'issue', 'outcome'}
         rendered = set(report.SPEND_COLUMNS) | set(report.USAGE_LABELS.values())
         for key in ledger.ROW_KEYS:
             with self.subTest(key=key):

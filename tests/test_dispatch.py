@@ -12,6 +12,7 @@ Every case builds its tree (rule 8): asserting against this repo's own
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -212,6 +213,34 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
             code, said = run_cli(root, *argv[1:])
         self.assertEqual(code, 0, said)
         self.assertIn('ledger dispatch row appended', said)
+
+    def test_the_stamp_it_prints_is_what_the_transcript_row_copies_back(self):
+        """ft-a-concurrent-dispatch-attributes-itself: the preamble IS the
+        prompt, so the row names its grain and issue with no environment and
+        with two stories live — the case the one-story guess cannot answer."""
+        with grain_tree() as root:
+            self.assertEqual(run_cli(root, 'set', STORY, 'issue', '42')[0], 0)
+            write_doc = root / 'pm/roadmap/stories/s9.md'
+            write_doc.write_text(
+                '---\nid: 0.1/alpha/s9\nkind: story\nfeature: 0.1/alpha\n'
+                'milestone: "0.1"\nname: S9\nstatus: building\nowner:\n---\n',
+                encoding='utf-8')
+            code, out, err = run('--grain', STORY)
+            self.assertEqual(code, 0, err)
+            self.assertIn(f'\nGDK-STAMP grain={STORY} issue=42\n', out)
+            transcript = root / 't.jsonl'
+            transcript.write_text('\n'.join(json.dumps(r) for r in (
+                {'type': 'user', 'timestamp': '2026-09-03T10:00:00Z',
+                 'message': {'role': 'user', 'content': out}},
+                {'type': 'assistant', 'timestamp': '2026-09-03T10:01:00Z',
+                 'message': {'model': 'm', 'usage': {'input_tokens': 1}}},
+            )) + '\n', encoding='utf-8')
+            code, said = run_cli(root, 'ledger', 'record', '--from-transcript',
+                                 str(transcript), '--event', 'SubagentStop')
+            self.assertEqual(code, 0, said)
+            row = json.loads((root / 'pm/roadmap/ledgers/0.1.jsonl')
+                             .read_text(encoding='utf-8'))
+        self.assertEqual((row['grain'], row['issue']), (STORY, ['42']))
 
     def test_no_grain_renders_no_record_line_at_all(self):
         """`pm ledger record` with no `--grain` and no transcript REFUSES, and

@@ -341,6 +341,7 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `rows naming no grain`)
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
                 --tokens-total N] [--tool-calls N] [--duration-s N] [--event E]
+                [--outcome O]
                                           (hand entry for a dispatch no hook
                                            saw, or one it filed naming no
                                            grain: --agent-id <id> joins the two
@@ -363,7 +364,25 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            carrying both can disagree with
                                            itself. It is not evidence a courier
                                            ran: `check pm` U4 wants a
-                                           session_id too)
+                                           session_id too. --outcome landed |
+                                           superseded | stopped:<reason> is
+                                           what the caller says became of it,
+                                           on any record form but --gate. A
+                                           transcript whose prompt carries a
+                                           `GDK-STAMP grain=<id> [issue=<n>]...`
+                                           line — `dispatch --grain` renders
+                                           it — copies grain and issue from
+                                           it; --grain still wins)
+  ledger stamp start|stop <grain-id> [--issue <id>]... [--agent <type>]
+                [--tokens N] [--outcome landed|superseded|stopped:<reason>]
+                                          (stamp your own work: one `stamp` row
+                                           in the grain's milestone ledger.
+                                           --issue repeats; --agent is refused
+                                           off the roster (exit 2); --tokens
+                                           and --outcome go on `stop`. A stop
+                                           with no open start, or a start over
+                                           an open one, is REFUSED (exit 1)
+                                           and writes nothing)
   ledger record --gate <name> --verdict PASS|FAIL|HANG|SKIP --duration-ms <n>
                 [--census <n>]
                                           (what ONE gate run cost: the make
@@ -386,7 +405,12 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            `<state>  <answer> [<value>]` and
                                            then `skipped: <check> — "<why>"`
                                            for every check a belt answered
-                                           instead of asking; a `lesson` says
+                                           instead of asking; a `stamp` is ONE
+                                           unit on its start's line, columns
+                                           IN ORDER: start  stamp  stop
+                                           duration  issue  agent  tokens
+                                           outcome (`-` where absent); a
+                                           `lesson` says
                                            `<rule>  <text>  (source: <path>)`,
                                            and `agentic-sdlc lesson show
                                            --grain <id>` is the verb that
@@ -2387,12 +2411,13 @@ SPLIT_FLAGS = ('--tokens-in', '--tokens-out')
 # which is the second scoreboard this milestone kept finding — and it left
 # `tests/test_install.py`'s verb resolver blind to the family, so a definition
 # citing `pm ledger frobnicate` resolved silently (0.6.0 review S4).
-LEDGER_RECORD, LEDGER_SHOW, LEDGER_REPORT = 'record', 'show', 'report'
+LEDGER_RECORD, LEDGER_STAMP = 'record', 'stamp'
+LEDGER_SHOW, LEDGER_REPORT = 'show', 'report'
 
 
 def ledger_commands() -> tuple[str, ...]:
     """The sub-verbs `pm ledger` dispatches, in the order its help names them."""
-    return (LEDGER_RECORD, LEDGER_SHOW, LEDGER_REPORT)
+    return (LEDGER_RECORD, LEDGER_STAMP, LEDGER_SHOW, LEDGER_REPORT)
 
 
 TOTAL_FLAG = '--tokens-total'
@@ -2400,7 +2425,7 @@ LEDGER_FLAGS = ('--from-transcript', '--event', '--agent-id', '--agent-type',
                 '--session-id', '--grain', *SPLIT_FLAGS, TOTAL_FLAG,
                 '--tool-calls', '--duration-s', '--duration-ms',
                 '--gate', '--verdict',
-                '--census')
+                '--census', '--outcome')
 
 # The three record forms and the flags each accepts, as a table, so a flag on
 # the wrong form is refused rather than silently dropped.
@@ -2508,8 +2533,8 @@ def cmd_ledger(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if not args:
         raise Usage(USAGE)
     sub, rest = args[0], args[1:]
-    table = {LEDGER_RECORD: cmd_ledger_record, LEDGER_SHOW: cmd_ledger_show,
-             LEDGER_REPORT: cmd_ledger_report}
+    table = {LEDGER_RECORD: cmd_ledger_record, LEDGER_STAMP: cmd_ledger_stamp,
+             LEDGER_SHOW: cmd_ledger_show, LEDGER_REPORT: cmd_ledger_report}
     if sub in table:
         return table[sub](cfg, rest)
     raise Usage(f'unknown ledger subcommand {sub!r} '
@@ -2559,11 +2584,16 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
               else roster.agent_defect(cfg.root, flags['--agent-type']))
     if defect:
         raise Usage(f'--agent-type {defect}; no row was written')
+    outcome = flags.get('--outcome', '')
+    defect = '--outcome' in flags and ledger.outcome_defect(outcome)
+    if defect:
+        raise Usage(f'--outcome: {defect}; no row was written')
     fields: dict[str, object] = {
         'session_id': flags.get('--session-id', ''),
         'agent_id': flags.get('--agent-id', ''),
         # Only ever the flag: the transcript does not carry the agent type.
         'agent_type': flags.get('--agent-type', ''),
+        ledger.OUTCOME_FIELD: outcome,
         'tree': _tree_snapshot(cfg),
     }
     # Resolved BEFORE the row is built, because it is both the row's `grain`
@@ -2573,12 +2603,20 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if source:
         kind = _event_kind(_required(flags, '--event'))
         fields.update(_from_transcript(source, flags))
+        # The dispatch's own stamp line, copied off its transcript: it beats
+        # the one-story guess, and loses only to a caller's `--grain`.
+        stamped, issues = ledger.stamp_of(
+            ledger.records_of(Path(source).expanduser()))
+        if stamped and named is None:
+            grain, named = stamped, _resolved_grain(cfg, stamped)
         if named is not None:
             # The id the GRAIN declares, not the string the caller typed —
             # `_ledger_id` is what every other row is stamped with, so two rows
             # naming one grain cannot spell it two ways.
             fields[ledger.GRAIN_FIELD] = _ledger_id(named.path, grain)
-        else:
+            if issues and stamped == fields[ledger.GRAIN_FIELD]:
+                fields[ledger.ISSUE_FIELD] = issues
+        elif not stamped:
             # A resolved grain ROUTES the row as well as naming it — one rule
             # (D1), whichever way the grain arrived.
             named = _resolved_grain(cfg, _grain_from_tree(fields['tree']))
@@ -2595,6 +2633,59 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         raise Usage(f'{cfg.rel(target)} could not be appended '
                     f'to ({err}); no row was written') from err
     _ok(f'ledger {kind} row appended to {cfg.rel(target)}')
+    return 0
+
+
+STAMP_FLAGS = ('--issue', '--agent', '--tokens', '--outcome')
+STOP_ONLY_FLAGS = ('--tokens', '--outcome')
+
+
+def cmd_ledger_stamp(cfg: vocabulary.PmConfig, args: list[str]) -> int:
+    """`start|stop <grain>`: one stamp row in the grain's milestone ledger.
+    A stop needs an open start and a start refuses over one (exit 1)."""
+    pairs, rest = _take_flags(args, STAMP_FLAGS)
+    if len(rest) != 2 or rest[0] not in ledger.STAMP_EDGES:
+        raise Usage(f'ledger stamp {"|".join(ledger.STAMP_EDGES)} <grain-id> '
+                    f'[--issue <id>]... [--agent <type>] [--tokens N] '
+                    f'[--outcome landed|superseded|stopped:<reason>]')
+    edge, gid = rest
+    flags = dict(pairs)
+    issues = [value for flag, value in pairs if flag == '--issue']
+    stray = [f for f in STOP_ONLY_FLAGS if f in flags and edge != 'stop']
+    defect = ((stray and f'{" ".join(stray)} belongs to `stop`')
+              or next(filter(None, map(ledger.issue_defect, issues)), '')
+              or ('--agent' in flags and (roster.agent_defect(
+                  cfg.root, flags['--agent']) or (not flags['--agent']
+                                                 and '--agent is empty')))
+              or ('--outcome' in flags
+                  and ledger.outcome_defect(flags['--outcome'])))
+    if defect:
+        raise Usage(f'{defect}; no row was written')
+    tokens = (_count_flag('--tokens', flags['--tokens'])
+              if '--tokens' in flags else None)
+    found = _grain_of(cfg, gid)
+    target = _row_ledger(cfg, found)
+    lid = _ledger_id(found.path, gid)
+    try:
+        units = ledger.stamp_units(r for r in ledger.read_rows(target)
+                                   if r.data.get(ledger.GRAIN_FIELD) == lid)
+    except ledger.LedgerError as err:
+        raise Usage(f'{err}') from err
+    open_start = units[-1][0] if units and units[-1][1] is None else None
+    if edge == 'start' and open_start is not None:
+        raise Refused(f'{lid} already has an open start '
+                      f'({open_start.data.get(ledger.TS_FIELD)}) — stamp stop '
+                      f'first; no row was written')
+    if edge == 'stop' and open_start is None:
+        raise Refused(f'{lid} has no open start to stop; no row was written')
+    row = ledger.stamp_row(lid, edge, issues, flags.get('--agent', ''),
+                           tokens, flags.get('--outcome', ''))
+    try:
+        ledger.append_to(target, row)
+    except OSError as err:
+        raise Usage(f'{cfg.rel(target)} could not be appended to ({err}); '
+                    f'no row was written') from err
+    _ok(f'ledger stamp {edge} for {lid} appended to {cfg.rel(target)}')
     return 0
 
 
@@ -2747,8 +2838,9 @@ def _grain_from_tree(snap: dict) -> str:
         print(f'[pm] {len(live)} stories are in progress '
               f'({" ".join(live)}) — which one this row is about is not '
               f'something this verb may pick, so the row names none of them '
-              f'and lands in `rows naming no grain`. Pass --grain <id> from '
-              f'the dispatch (GDK_LEDGER_GRAIN) to attribute it',
+              f'and lands in `rows naming no grain`. Dispatch with `dispatch '
+              f'--grain <id>` (its {ledger.STAMP_PREFIX} line) or pass --grain '
+              f'(GDK_LEDGER_GRAIN) to attribute it',
               file=sys.stderr)
     return ''
 
@@ -2831,10 +2923,21 @@ def cmd_ledger_show(cfg: vocabulary.PmConfig, args: list[str]) -> int:
             print(row.line)
         return 0
     previous = None
+    # A stamp prints as ONE unit, on its start's line; a paired stop is
+    # consumed there, and a stop with no start prints `-` for it.
+    units = {id(stop if start is None else start): (start, stop)
+             for start, stop in ledger.stamp_units(rows)}
     for row in rows:
         kind = row.data.get(ledger.KIND_FIELD, '')
         line = f'{row.data.get(ledger.TS_FIELD, "")}  {kind:<{KIND_COLUMN}}'
-        if kind == ledger.KIND_STATUS:
+        if kind == ledger.KIND_STAMP:
+            if id(row) not in units:
+                continue
+            start, stop = units[id(row)]
+            if start is None:
+                line = f'-  {kind:<{KIND_COLUMN}}'
+            line += ledger.stamp_cells(start, stop)
+        elif kind == ledger.KIND_STATUS:
             line += f'  {row.data.get("from")} -> {row.data.get("to")}'
             gap = ledger._gap(previous, row)
             if previous is not None and gap is not None:

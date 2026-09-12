@@ -427,6 +427,10 @@ def test_the_archived_tree_is_not_the_live_tree():
     (dict(), ('--grain', STORY, '--tokens-total', '1234'),
      {'kind': 'dispatch', 'grain': STORY, 'tokens_total': 1234,
       'tree': STOCK_TREE}),
+    # What became of it, as the caller STATED it (#41); never derived.
+    (dict(), ('--grain', STORY, '--outcome', 'stopped:re-planned'),
+     {'kind': 'dispatch', 'grain': STORY, 'outcome': 'stopped:re-planned',
+      'tree': STOCK_TREE}),
     # The grain recorded is the FILE's own id, unquoted — the string every
     # status row spells, or the report joins nothing to it.
     (dict(), ('--grain', '0.1'),
@@ -925,6 +929,9 @@ RECORD_REFUSALS = [
     (('--grain', STORY, '--tokens-total', '5', '--from-transcript',
       str(SUBAGENT), '--event', 'Stop'), 'exclusive'),
     (('--grain', STORY, '--tokens-total=-1'), 'non-negative integer'),
+    (('--grain', STORY, '--outcome', 'finished'), 'an outcome is landed'),
+    (('--grain', STORY, '--outcome', 'stopped: '), 'not a reason'),
+    (GATE + ('--outcome', 'landed'), 'the gate form takes'),
 ]
 
 
@@ -1271,3 +1278,134 @@ def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
         assert code == 0, out
         assert only_row(root)['kind'] == 'gate'
         assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL], out
+
+
+# --- every row names its branch (ft-a-milestone-reports-only-its-own-rows) ----
+@pytest.mark.parametrize('head,worktree,expected', [
+    ('ref: refs/heads/milestone/0.1-x\n', False, 'milestone/0.1-x'),
+    # A worktree's `.git` is a FILE naming its own gitdir, with its own HEAD.
+    ('ref: refs/heads/feat/w\n', True, 'feat/w'),
+    # Detached: there is no branch, so there is no key — never the sha.
+    ('0123456789abcdef0123456789abcdef01234567\n', False, None),
+])
+def test_every_appended_row_names_the_checkouts_branch(tmp_path, head,
+                                                      worktree, expected):
+    gitdir = tmp_path / ('real-gitdir' if worktree else 'repo/.git')
+    gitdir.mkdir(parents=True)
+    (gitdir / 'HEAD').write_text(head, encoding='utf-8')
+    if worktree:
+        (tmp_path / 'repo').mkdir()
+        (tmp_path / 'repo/.git').write_text(f'gitdir: {gitdir}\n',
+                                            encoding='utf-8')
+    path = tmp_path / 'repo/pm/roadmap/ledgers/0.1.jsonl'
+    ledger.append_to(path, ledger.gate_row('check', 'PASS', 1, ts=TS))
+    row = json.loads(path.read_text(encoding='utf-8'))
+    assert row.get('branch') == expected, row
+
+
+# --- the dispatch's own stamp line (ft-a-concurrent-dispatch-attributes-itself)
+def stamped_transcript(root, user_content, name='stamped.jsonl') -> str:
+    """SUBAGENT's records behind one prompt record carrying `user_content`."""
+    path = root / name
+    prompt = {'type': 'user', 'timestamp': TS,
+              'message': {'role': 'user', 'content': user_content}}
+    path.write_text(json.dumps(prompt) + '\n'
+                    + SUBAGENT.read_text(encoding='utf-8'), encoding='utf-8')
+    return str(path)
+
+
+@pytest.mark.parametrize('content,extra,grain,issue', [
+    # The prompt names it: copied, beating the one-story guess.
+    ('brief\nGDK-STAMP grain=0.1/alpha/s9 issue=42 issue=PROJ-7\n', (),
+     '0.1/alpha/s9', ['42', 'PROJ-7']),
+    # A caller's --grain still wins, and a stamp for another grain lends it
+    # no issue.
+    ('GDK-STAMP grain=0.1/alpha/s9 issue=42', ('--grain', STORY), STORY, None),
+    # Only the prompt's own text is read: a tool's output is not a stamp, so
+    # the row falls to today's one-story rule.
+    ([{'type': 'tool_result', 'content': 'GDK-STAMP grain=0.1/alpha/s9'}],
+     (), STORY, None),
+    # A stamp naming nothing resolvable is unattributed, NOT re-guessed.
+    ('GDK-STAMP grain=0.1/alpha/gone', (), None, None),
+])
+def test_a_transcript_stamp_line_is_copied_never_guessed(content, extra,
+                                                          grain, issue):
+    with tree(story_statuses=('building',)) as root:
+        second_story(root, 'ready')  # the guess would say s0; stamps say s9
+        code, out = record(root, '--from-transcript',
+                           stamped_transcript(root, content),
+                           '--event', 'SubagentStop', *extra)
+        assert code == 0, out
+        row = only_row(root)
+    assert (row.get('grain'), row.get('issue')) == (grain, issue), row
+
+
+# --- `pm ledger stamp` (ft-work-is-stamped-with-its-issue-and-agent) ----------
+def stamp(root, *argv) -> tuple[int, str]:
+    return run_cli(root, 'ledger', 'stamp', *argv)
+
+
+def with_roster(root) -> None:
+    agents = root / roster.AGENTS_DIR
+    agents.mkdir(parents=True)
+    (agents / 'scout.md').write_text('# no frontmatter\n', encoding='utf-8')
+
+
+def test_a_stamped_unit_shows_as_one_line_with_every_column():
+    """The ship criterion: start, stop, duration, issue, agent, tokens and
+    outcome on ONE line, so `show | grep 42` finds the unit."""
+    with tree() as root:
+        with_roster(root)
+        put_ledger(root, ledger.dumps(ledger.stamp_row(
+            STORY, 'start', ['42'], 'developer', ts='2026-09-03T10:00:00Z')))
+        code, out = stamp(root, 'stop', STORY, '--tokens', '1200',
+                          '--outcome', 'landed')
+        assert code == 0, out
+        rows = ledger_rows(root)
+        assert [r['edge'] for r in rows] == ['start', 'stop']
+        assert rows[1]['tokens'] == 1200 and rows[1]['issue'] == []
+        code, out = run_cli(root, 'ledger', 'show', STORY)
+    assert code == 0, out
+    lines = [ln for ln in out.splitlines() if 'stamp' in ln]
+    assert len(lines) == 1, out
+    cells = lines[0].split()
+    assert cells[:2] == ['2026-09-03T10:00:00Z', 'stamp'], lines
+    assert cells[-4:] == ['42', 'developer', '1200', 'landed'], lines
+
+
+def test_the_stamp_verb_refuses_and_writes_nothing():
+    """SDLC §5. Pairing is a precondition (exit 1); a bad input is usage
+    (exit 2). Every refusal leaves every ledger's lines as they were."""
+    with tree() as root:
+        with_roster(root)
+        for argv, code_, needle in (
+                (('stop', STORY), 1, 'no open start'),
+                (('start', STORY, '--agent', 'wombat'), 2, 'scout'),
+                (('start', STORY, '--tokens', '5'), 2, 'belongs to `stop`'),
+                (('stop', STORY, '--outcome', 'done'), 2, 'an outcome is'),
+                (('start', STORY, '--issue', '#41'), 2, 'an issue id is'),
+                (('start', '0.1/alpha/nope'), 2, 'no grain resolves'),
+                (('begin', STORY), 2, 'start|stop'),
+                (('start',), 2, 'start|stop')):
+            before = all_ledger_lines(root)
+            code, out = stamp(root, *argv)
+            assert (code, all_ledger_lines(root)) == (code_, before), argv
+            assert needle in out, (argv, out)
+        assert stamp(root, 'start', STORY, '--issue', '42', '--issue', '43',
+                     '--agent', 'scout')[0] == 0
+        before = all_ledger_lines(root)
+        code, out = stamp(root, 'start', STORY)
+        assert (code, all_ledger_lines(root)) == (1, before), out
+        assert 'already has an open start' in out
+        assert ledger_rows(root)[0]['issue'] == ['42', '43']
+
+
+def test_an_issue_id_is_the_gate_target_grammar_reused():
+    """SDLC §5: the grammar's matrix lives with `[gates] extra`; this proves
+    the reuse, value for value."""
+    from agentic_sdlc.repo import gates_extra
+    for value in ('42', 'PROJ-7', 'a.b+c', '#41', '../x', 'a b', '', 'x=y',
+                  '-1', 'a/b', 'é', 'x' * 65, 'ok\n'):
+        assert (ledger.issue_defect(value) == '') == bool(
+            len(value) <= gates_extra.MAX_LENGTH
+            and gates_extra.TARGET.fullmatch(value)), value

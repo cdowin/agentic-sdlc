@@ -9,6 +9,7 @@ of the file, the cells it reads back as (`ROW_CELLS`).
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Iterator, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +41,7 @@ KIND_GATE = 'gate'
 TS_FIELD = 'ts'
 KIND_FIELD = 'kind'
 GRAIN_FIELD = 'grain'
+BRANCH_FIELD = 'branch'
 
 # Stated rather than inherited: `isoformat()` spells the offset `+00:00`, a
 # second spelling of one instant.
@@ -391,6 +393,126 @@ def deviation_row(grain_id: str, operation: str, step: str, reason: str,
             'reason': reason}
 
 
+# --- the stamp row ------------------------------------------------------------
+# What someone SAID about their own work: a start, a stop, the issues, the
+# agent, the tokens, the outcome. Paired per grain by `pm ledger stamp`.
+KIND_STAMP = 'stamp'
+STAMP_EDGES = ('start', 'stop')
+ISSUE_FIELD = 'issue'
+OUTCOME_FIELD = 'outcome'
+# `stopped:<reason>` carries a `reason_defect` reason; the other two are bare.
+WORK_OUTCOMES = ('landed', 'superseded')
+STOPPED = 'stopped:'
+
+# The line `dispatch --grain` renders into a prompt and `record
+# --from-transcript` copies back; each value is one whitespace-free token.
+STAMP_PREFIX = 'GDK-STAMP'
+STAMP_LINE = re.compile(
+    r'GDK-STAMP grain=(\S+)((?: issue=[A-Za-z0-9][A-Za-z0-9._+-]*)*)')
+
+
+def issue_defect(value: str) -> str:
+    """'' when `value` may be an issue id — `[gates] extra`'s target grammar,
+    reused — else why not."""
+    if (value and len(value) <= GATE_NAME_MAX
+            and GATE_NAME.fullmatch(value)):
+        return ''
+    return (f'an issue id is [A-Za-z0-9][A-Za-z0-9._+-]*, at most '
+            f'{GATE_NAME_MAX} characters, not {value!r}')
+
+
+def outcome_defect(value: str) -> str:
+    """'' when `value` is `landed`, `superseded` or `stopped:<reason>`."""
+    if value in WORK_OUTCOMES:
+        return ''
+    if value.startswith(STOPPED):
+        defect = reason_defect(value[len(STOPPED):])
+        return f'{STOPPED}<reason>: {defect}' if defect else ''
+    return (f'an outcome is {", ".join(WORK_OUTCOMES)} or {STOPPED}<reason>, '
+            f'not {value!r}')
+
+
+def stamp_row(grain_id: str, edge: str, issues: Sequence[str] = (),
+              agent: str = '', tokens: int | None = None, outcome: str = '',
+              ts: str = '') -> dict:
+    """One stamp edge. An absent agent, tokens or outcome is an absent key."""
+    if edge not in STAMP_EDGES:
+        raise ValueError(f'a {KIND_STAMP} edge is one of {STAMP_EDGES}, '
+                         f'not {edge!r}')
+    defect = next(filter(None, map(issue_defect, issues)), '') or (
+        outcome and outcome_defect(outcome))
+    if defect:
+        raise ValueError(f'refusing to mint a {KIND_STAMP} row: {defect}')
+    row = {TS_FIELD: ts or utc_now(), KIND_FIELD: KIND_STAMP,
+           GRAIN_FIELD: grain_id, 'edge': edge, ISSUE_FIELD: list(issues)}
+    for key, value in (('agent', agent), ('tokens', tokens),
+                       (OUTCOME_FIELD, outcome)):
+        if value not in (None, ''):
+            row[key] = value
+    return row
+
+
+def stamp_line(grain_id: str, issues: Sequence[str] = ()) -> str:
+    return ' '.join([f'{STAMP_PREFIX} grain={grain_id}',
+                     *(f'issue={one}' for one in issues)])
+
+
+def stamp_of(records: Iterable[tuple[int, dict]]) -> tuple[str, list[str]]:
+    """(grain, issues) off the FIRST stamp line a user record's own text
+    carries — the prompt — or ('', []). Tool results are not searched."""
+    for _, record in records:
+        message = record.get('message')
+        if record.get('type') != 'user' or not isinstance(message, dict):
+            continue
+        content = message.get('content')
+        texts = [content] if isinstance(content, str) else [
+            block.get('text') for block in (
+                content if isinstance(content, list) else ())
+            if isinstance(block, dict) and block.get('type') == 'text']
+        for text in filter(lambda t: isinstance(t, str), texts):
+            for line in text.splitlines():
+                found = STAMP_LINE.fullmatch(line.strip())
+                if found:
+                    return found[1], found[2].replace(' issue=', ' ').split()
+    return '', []
+
+
+def stamp_units(rows: Iterable[Row]) -> list[tuple[Row | None, Row | None]]:
+    """(start, stop) per unit, in row order; a start with no stop is open,
+    and a stop with no start (a merge can bring one) stands alone."""
+    units: list[list] = []
+    opened: dict[object, list] = {}
+    for row in rows:
+        if row.data.get(KIND_FIELD) != KIND_STAMP:
+            continue
+        grain, edge = row.data.get(GRAIN_FIELD), row.data.get('edge')
+        if edge == STAMP_EDGES[0]:
+            opened[grain] = [row, None]
+            units.append(opened[grain])
+        elif edge == STAMP_EDGES[1]:
+            unit = opened.pop(grain, None)
+            if unit is None:
+                units.append([None, row])
+            else:
+                unit[1] = row
+    return [(start, stop) for start, stop in units]
+
+
+def stamp_cells(start: Row | None, stop: Row | None) -> str:
+    """`stop  duration  issue  agent  tokens  outcome`, `-` for each absent."""
+    both = [r.data for r in (start, stop) if r is not None]
+    issues = list(dict.fromkeys(str(one) for data in both
+                                for one in (data.get(ISSUE_FIELD) or ())
+                                if isinstance(data.get(ISSUE_FIELD), list)))
+    pick = lambda key: next((str(d[key]) for d in reversed(both)  # noqa: E731
+                             if d.get(key) not in (None, '')), '-')
+    gap = _gap(start, stop) if start is not None and stop is not None else None
+    cells = (stop.data.get(TS_FIELD, '-') if stop else '-',
+             human_duration(gap), ','.join(issues) or '-', pick('agent'),
+             pick('tokens'), pick(OUTCOME_FIELD))
+    return ''.join(f'  {cell}' for cell in cells)
+
+
 def ledger_path(milestone_dir: Path) -> Path:
     """Where one milestone's ledger lives. The only place this name is joined."""
     return milestone_dir / LEDGER_FILE_NAME
@@ -462,7 +584,12 @@ def append_to(path: Path, row: dict) -> None:
     """Append one row to a ledger FILE, creating the file and the pool it sits
     in. `open('a')` rather than a `core.apply` overwrite, because
     read-modify-write drops rows under two appenders; a newline closes a torn
-    tail first. Raises `OSError`: the caller has already changed the tree."""
+    tail first. Raises `OSError`: the caller has already changed the tree.
+    Every row gains the checkout's `branch`, read as text; detached omits it."""
+    from agentic_sdlc.repo.pm import remote
+    branch = remote.branch_of(path.absolute())
+    if branch and BRANCH_FIELD not in row:
+        row = {**row, BRANCH_FIELD: branch}
     apply.raise_on_error(apply.make_dir(path.parent))
     line = dumps(row) + '\n'
     if _ends_mid_line(path):
@@ -528,11 +655,11 @@ SYNTHETIC_MODEL = '<synthetic>'
 TOTAL_KEY = 'tokens_total'
 
 # Every key a usage row may carry, in order.
-ROW_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, 'session_id', 'agent_id',
-            'agent_type',
+ROW_KEYS = (TS_FIELD, KIND_FIELD, GRAIN_FIELD, ISSUE_FIELD, 'session_id',
+            'agent_id', 'agent_type',
             'model', 'started_at', 'ended_at', 'duration_s', 'messages',
             'tool_calls', 'tools', 'tool_calls_before_first_write', 'usage',
-            TOTAL_KEY, 'tree')
+            TOTAL_KEY, OUTCOME_FIELD, 'tree')
 
 
 class TranscriptError(Exception):

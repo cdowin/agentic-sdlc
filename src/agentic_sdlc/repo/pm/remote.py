@@ -91,18 +91,31 @@ def has_a_remote(root: Path) -> bool:
     return bool(remote_names(root))
 
 
+def _branch(git: Path) -> str:
+    """HEAD's branch name, or '' when detached or unreadable."""
+    refname = _read(git / _HEAD).strip().removeprefix(_REF_PREFIX)
+    return refname[len(_HEADS):] if refname.startswith(_HEADS) else ''
+
+
+def branch_of(path: Path) -> str:
+    """The branch of the checkout holding `path` — the nearest `.git` above
+    it, a worktree's own HEAD included — or ''."""
+    for candidate in (path, *path.parents):
+        if (candidate / _GIT_DIR).exists():
+            git = _git_dir(candidate)
+            return _branch(git) if git is not None else ''
+    return ''
+
+
 def read(root: Path) -> Unpushed | None:
     """None when the question does not apply: no `.git`, no remote, detached."""
     git = _git_dir(root)
     if git is None or not remote_names(root):
         return None
-    head = _read(git / _HEAD).strip()
-    if not head.startswith(_REF_PREFIX):
+    branch = _branch(git)
+    if not branch:
         return None  # detached: there is no branch to be behind
-    refname = head[len(_REF_PREFIX):].strip()
-    if not refname.startswith(_HEADS):
-        return None
-    branch = refname[len(_HEADS):]
+    refname = _HEADS + branch
     packed = _packed(git)
     local = _sha(git, refname, packed)
     if not local:

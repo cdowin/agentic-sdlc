@@ -256,7 +256,12 @@ budget = { unit = 20, integration = 130, test = 150 }
 # that failed at HEAD: the R5 start-walk rows and the all-planning case (#43),
 # the courier-twin join and the story-only snapshot rows (#39), the storage
 # layer rewriting every list shape, and the boundary gate's reach corpus.
-cases = { test = 1702 }
+#
+# RE-SET at the close of 0.11.0: 1,702 -> 1,706 (+4). 0.10.0 closed at 1,700
+# (its report cut deleted 25 functions against the stamp and guard cases it
+# added). 0.11.0: `preflight`'s two readers cases, the SessionStart hook's row
+# in the headered census, and `run-the-sdlc` found by its trigger phrase.
+cases = { test = 1706 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

@@ -4,7 +4,7 @@ The loop this repo runs, as a contract; the decisions logs under `pm/roadmap/` h
 agent roster that executes it in consumer repos is installed by `agentic-sdlc install-agents` from
 `src/agentic_sdlc/repo/installables/`; this repo self-hosts its own pair (`tests/test_install.py`).
 
-## 0. The three levels — read this first
+## 0. The three levels
 
 | grain | you are | it ends when | what runs at the end |
 |---|---|---|---|
@@ -38,13 +38,12 @@ observation, which is the one you most want written down. **Bugs will come up af
 is fine; file them.** A milestone that ships with three known MINORs and a bug record beats one
 that ships a week later with none.
 
-### The intent, in four sentences
+### The intent, in three sentences
 
 1. **Rip through stories:** done when the work is done and its unit slice is green.
-2. **`reviewing` at story grain is a hand-off, not a terminus.**
-3. **A feature flips to `reviewing` when every story under it is `done`;** the milestone's one
+2. **A feature flips to `reviewing` when every story under it is `done`;** the milestone's one
    review pass writes its record.
-4. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
+3. **A milestone flips to `reviewing` when every feature is `done`;** cross-cutting review, one gate.
 
 Each level asks a question the level below cannot, and a belt never runs a belt above it (the 170x).
 
@@ -108,8 +107,8 @@ The `run-the-sdlc` skill is this loop with its commands; this section is the con
 - **never run a repo-wide git command** (`git stash`, `git checkout -- .`, `git restore`,
   `git reset`, `git clean`); **to watch a test fail at HEAD, copy the file to a scratch path** —
   the pathspec stash form is still a stash;
-- never touch `pm/roadmap/`; never edit shared docs — README wording is returned as **PROPOSED**
-  text; a grain's `changelog:` is written with `pm set`, not by hand;
+- never touch `pm/roadmap/` or a file another lane owns; a grain's `changelog:` is written with
+  `pm set`, not by hand;
 - ship, with every fix, a test that **failed at HEAD**;
 - run **scoped** verification only, never the full gate — and *scoped* means a TIER TARGET, never a
   bare `pytest <file>`: selecting a module by path collects every tier in it, including the cases
@@ -143,7 +142,7 @@ makes itself rather than dispatching.
 - verifies each reported lane against the actual tree, never the narration;
 - runs the one authoritative full gate (`make milestone`) itself;
 - moves every status through the pm CLI — `check pm` is the drift gate;
-- applies proposed shared-doc wording, appends decisions, opens the close;
+- appends decisions and runs each belt as its input lands;
 - **closes the GitHub issues a feature names, as part of accepting it.** For each issue on the
   feature's `Issues:` line, it pushes the branch first so the hash resolves on GitHub. Then it posts
   a comment naming the feature id, the commit hash(es) that fixed the issue and the version it ships
@@ -156,20 +155,21 @@ makes itself rather than dispatching.
 
 Every roster agent carries `model:` and `effort:`; **effort tracks judgment under UNCERTAINTY, and
 nothing runs above `high`** (2026-09-12: a builder that re-writes code is cheaper than one that
-ruminates; the extra effort bought length, not correctness).
+ruminates; the extra effort bought length, not correctness). **The loop dispatches `developer` and
+`reviewer`.** The rest are optional tools an orchestrator reaches for, never a mandatory pass.
 
 | role | model | effort | why |
 |---|---|---|---|
 | `architect` | opus | high | every dispatch inherits its framing |
-| `po` | opus | medium | writes the briefs N agents execute verbatim — a wrong brief is N wrong builds |
+| `po` | opus | medium | optional: briefs work no grain outlines yet — a wrong brief is N wrong builds |
 | `developer` / `verification-builder` | opus | medium | the job is judgment under a possibly-WRONG premise |
 | `reviewer` / `verification-reviewer` | opus | high | the gate, and it runs last; a miss here ships |
-| `milestone-reviewer` | opus | medium | pressure-tests the spec everything downstream builds from |
+| `milestone-reviewer` | opus | medium | optional: pressure-tests a spec nobody has outlined, never planned work |
 | `simplifier` | fable | medium | *"should this exist"* has no ground truth — the most abstract pass |
 | `test-writer` | sonnet | medium | audit-shaped work against a known diff |
 | `tech-writer` / `doc-hygiene` / `pm-operator` | sonnet | medium | prose sync + structured ops against a known diff |
 
-**`model:` is overridable per-dispatch, downward;** the closing reviewer always runs strong.
+**`model:` is overridable per-dispatch, downward.**
 
 > **`effort:` as a frontmatter key is UNVERIFIED**, because an unsupported key is silently ignored.
 > To verify: put an invalid value on a throwaway agent and dispatch it; an error means it is real.
@@ -228,8 +228,8 @@ Prefer, in order: amend an existing case → a `parametrize` row → a new funct
 
 What stays here is the judgement the machine cannot make and the rule that orders it:
 
-1. **Cross-cutting review** — a fresh strong reviewer over the milestone's whole commit range,
-   RUN, never diff-read; `findings-resolved` reads its ARTIFACT through `pm ready-for tag`.
+1. **Cross-cutting review** — the milestone's one reviewer over its whole commit range, RUN,
+   never diff-read; `findings-resolved` reads its ARTIFACT through `pm ready-for tag`.
 2. **Land every finding** it raised, or defer each one explicitly and in writing.
 3. **When a gate and a judgement both bear on one decision, the judgement runs first and the gate
    answers for its result;** Chris: *"The make milestone with the full test suite is the LAST thing."*

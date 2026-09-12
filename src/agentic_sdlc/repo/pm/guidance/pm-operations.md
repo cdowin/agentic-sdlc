@@ -85,13 +85,7 @@ The name is the LAST words of every create, `bug` included (`pm new bug <milesto
 <slug> <name...>`); there is no `--name`, and a name led by `-` or holding a newline is
 refused at exit 2 with nothing written.
 
-**Read the id `pm new` printed before you cite it.** Through v0.4.0 it takes the parent
-positionally and bakes it INTO the id — `pm new feature <mid> <slug>` gives
-`<mid>/<slug>`, `pm new bug` gives `<mid>/bugs/<slug>` — which contradicts the paragraph
-above on a tree whose ids are flat (`<kind-prefix>-<slug>`), and makes re-parenting such
-a grain a `pm rename` plus a ref sweep instead of one `pm set`. Open defect
-`bg-the-new-verbs-mint-a-compound-id` (issue #8); `pm rename <old> <new>` is the sweep
-that corrects an id you did not want.
+`pm rename <old> <new>` is the sweep that corrects an id you did not want.
 
 **decisions.md is the durable record.** Open a decision with
 `pm decide <grain-id> <title>`: it appends one `## <id> — <date> — <title>` heading,
@@ -144,8 +138,8 @@ auto-loaded `pm-execution` rule for why, and for what the verbs refuse.
 
 - **A feature earns its slot** by being a coherent, shippable piece — not a folder of
   loosely related edits. If you cannot state what it makes true, it is not a feature.
-- **Two stories minimum.** A one-story feature is usually mis-scoped: either it is a
-  story under a different feature, or it is hiding subtasks.
+- **A feature that outlines its work is built whole**, by one developer; stories are for
+  work that splits, not a mandatory layer.
 - **Stories are observations, not tasks.** "The save slot card shows the lineage name",
   not "implement SaveSlotCard.set_name()". For substrate with no user to observe, use
   the dev-facing equivalent.

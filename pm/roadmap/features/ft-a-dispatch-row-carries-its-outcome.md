@@ -1,7 +1,7 @@
 ---
 id: ft-a-dispatch-row-carries-its-outcome
 kind: feature
-milestone: 
+milestone: ms-the-ledger-is-a-stamp
 name: a dispatch row carries its outcome, and spend rolls up by role
 status: planning
 reviewed:
@@ -12,8 +12,9 @@ changelog:
 
 # a dispatch row carries its outcome, and spend rolls up by role
 
-Issue: #41. Pool, and the first candidate for 0.10.0 (`ms-the-ledger-is-a-stamp`) when that milestone
-is decomposed. Its data depends on #39, whose double-count half ships in 0.9.0.
+Issue: #41. Scheduled for 0.10.0 (`ms-the-ledger-is-a-stamp`): it is ledger work, it depends on that
+milestone's stamp feature, and it changes the report that milestone reshapes. Its data depends on #39,
+whose double-count half ships in 0.9.0.
 
 A consumer asked "where did this milestone's time go?" and had to hand-write a pass over the ledger
 to answer it. About 13% of agent time was code that landed; the rest was superseded plans, a deleted
@@ -35,7 +36,7 @@ may mean trimming as much as adding*. Two new blocks go into a report that alrea
 
 ## Ship criterion
 
-<!-- Written when it is scheduled. -->
+<!-- Written when 0.10.0 is decomposed. -->
 
 ## Proof budget
 

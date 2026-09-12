@@ -27,16 +27,16 @@ treats the hard-rule numbers as an API without ever saying so (#15).
 ## Where this came from
 
 The GitHub issues open on 2026-09-11. Five came from consumers at v0.7.0, and #15 was left open from
-0.6.0. The bugs and the debt are here. The feature requests went to the pool:
+0.6.0. The bugs and the debt are here. The feature requests went to later milestones:
 
     #43  R5 vs the semver gate under version_at = start   → st-the-version-file-is-claimed-when-a-milestone-starts
     #39  a hand record double-counts; a snapshot guesses  → st-a-hand-record-joins-its-courier-twin
                                                              st-a-snapshot-places-a-row-only-on-a-story
     #15  consequence 4: rule numbers are a public API     → bg-the-hard-rule-numbers-are-an-api-nobody-states
                                                              (the rest of #15 is pool ft-a-phase-declares-what-it-hands-an-agent)
-    #40  preflight                                        → pool ft-the-session-says-what-it-can-do-before-the-first-dispatch
-    #41  dispatch outcome, spend by role                  → pool ft-a-dispatch-row-carries-its-outcome
-    #42  ship writing-plans / executing-plans             → pool ft-the-kit-ships-its-planning-skills
+    #40  preflight                                        → 0.11.0 ft-the-session-says-what-it-can-do-before-the-first-dispatch
+    #41  dispatch outcome, spend by role                  → 0.10.0 ft-a-dispatch-row-carries-its-outcome
+    #42  ship writing-plans / executing-plans             → 0.11.0 ft-the-kit-ships-its-planning-skills
 
 The tech debt is the frontmatter cluster that `ft-the-module-says-what-it-does` (0.7.0) filed and
 did not fix. It is three bound bugs, which `ft-frontmatter-has-one-grammar-and-one-way-in` closes in
@@ -67,7 +67,7 @@ so they could run in parallel. But the guards that make parallel safe are
   forbids reaching its privates with an empty offender list, not only re-binding them.
 - `CLAUDE.md` says the hard-rule numbers are append-only.
 - #43, #39 and #15 are closed on GitHub citing their hashes. #40, #41 and #42 each carry a comment
-  naming the pool feature that holds them.
+  naming the feature and milestone that hold them (posted 2026-09-11, at planning).
 
 ## Risks
 

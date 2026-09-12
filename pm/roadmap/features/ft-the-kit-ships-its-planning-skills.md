@@ -1,7 +1,7 @@
 ---
 id: ft-the-kit-ships-its-planning-skills
 kind: feature
-milestone: 
+milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the kit ships its planning and execution skills
 status: planning
 reviewed:
@@ -12,7 +12,8 @@ changelog:
 
 # the kit ships its planning and execution skills
 
-Issue: #42. Pool: a feature request, a new installable, kept out of 0.9.0's bug-and-debt scope.
+Issue: #42. Scheduled for 0.11.0. It is a feature request and a new installable, so it was kept out of
+0.9.0's bug-and-debt scope.
 
 The kit ships the loop (`pm-execution.md`, `dispatch`, the agent briefs). It does not ship the two
 skills that decide how much planning happens and when a builder stops, and in one consumer those two
@@ -31,7 +32,7 @@ It also asks that the same two rules go into the shipped `architect`, `po` and `
 briefs: an architect "Phase 0: end state first", and a reviewer "lens zero: is there a simpler end
 state?".
 
-**Open questions for whoever schedules it:**
+**Open questions for the 0.11.0 scout:**
 
 - **Rule 8.** The evidence is one consumer's. Ship the two rules and none of their stack material.
   The project section of the skill is the consumer's.
@@ -43,7 +44,7 @@ state?".
 
 ## Ship criterion
 
-<!-- Written when it is scheduled. -->
+<!-- Written when 0.11.0 is decomposed. -->
 
 ## Proof budget
 

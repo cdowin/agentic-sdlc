@@ -13,6 +13,7 @@ order:
   - "ft-work-is-stamped-with-its-issue-and-agent"
   - "ft-a-concurrent-dispatch-attributes-itself"
   - "ft-the-report-is-the-stamp-table"
+  - "ft-a-dispatch-row-carries-its-outcome"
   - "bg-an-unknown-agent-type-is-recorded-as-a-dispatch"
   - "bg-two-gate-runs-share-one-log-and-inflate-its-census"
 ---
@@ -44,9 +45,10 @@ milestone is decomposed from.
 **Re-versioned 0.9.0 → 0.10.0 on 2026-09-11.** `ms-the-tool-agrees-with-itself` took 0.9.0 as a lean
 bug-and-debt release. It ships #39's "one dispatch is one row" half (`st-a-hand-record-joins-its-courier-twin`)
 and amends 0.4.0 D8's snapshot placement (`st-a-snapshot-places-a-row-only-on-a-story`). Read both closes
-before the scout. **Inbound for the decomposition:** pool `ft-a-dispatch-row-carries-its-outcome` (#41,
-dispatch outcome and spend by role) is this milestone's first candidate, and `ft-the-session-says-what-it-can-do-before-the-first-dispatch`
-(#40) overlaps `ft-the-flow-is-boring-by-construction`.
+before the scout. **Added at the re-version:** `ft-a-dispatch-row-carries-its-outcome` (#41, dispatch outcome and spend by
+role) is bound here. It adds report blocks, so weigh it against this milestone's own "simple" risk
+below. #40 (`ft-the-session-says-what-it-can-do-before-the-first-dispatch`, 0.11.0) overlaps
+`ft-the-flow-is-boring-by-construction`.
 
 **Planning only.** Features and stories are written from the audit, and none is dispatched before
 0.9.0 ships.
@@ -61,6 +63,8 @@ Four features, one per work unit (the audit's six candidates, consolidated), plu
     ft-a-concurrent-dispatch-attributes-itself     D-B: the dispatch carries its stamp; one row each
     ft-the-report-is-the-stamp-table               "simple": the report IS the stamp table
                                                    (+ bg-two-gate-runs-share-one-log-and-inflate-its-census)
+    ft-a-dispatch-row-carries-its-outcome          #41, added at the re-version: outcome stamped on a
+                                                   dispatch; spend by role
 
 **Ship criterion.** Someone can stamp START and STOP on a unit of work, with its grain, the external
 issue id(s) it serves, its agent and its tokens, with one verb each and nothing inferred. Every row a

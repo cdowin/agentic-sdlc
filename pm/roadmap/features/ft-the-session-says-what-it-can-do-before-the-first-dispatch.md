@@ -1,7 +1,7 @@
 ---
 id: ft-the-session-says-what-it-can-do-before-the-first-dispatch
 kind: feature
-milestone: 
+milestone: ms-a-session-starts-knowing-what-it-can-do
 name: the session says what it can do before the first dispatch
 status: planning
 reviewed:
@@ -12,7 +12,7 @@ changelog:
 
 # the session says what it can do before the first dispatch
 
-Issue: #40. Pool: a feature request, kept out of 0.9.0's bug-and-debt scope.
+Issue: #40. Scheduled for 0.11.0. It is a feature request, so it was kept out of 0.9.0's bug-and-debt scope.
 
 The kit's flow assumes harness capabilities it never checks. It assumes a stopped subagent can be
 resumed with `SendMessage`, that the courier will attribute a dispatch, and that the hooks are
@@ -26,7 +26,7 @@ is, will attribution work (stories in progress: 0, 1 or more), what `check hooks
 rendered `dispatch` preamble is the only channel to a subagent (#15). Optionally, `dispatch` carries
 a one-line capability summary.
 
-**Open questions for whoever schedules it:**
+**Open questions for the 0.11.0 scout:**
 
 - **Rule 2.** Walking the parent process chain and reading a process's argv is not "reading git,
   markdown and shell as text". Is that inside the rule, or the part left to the consumer?
@@ -37,7 +37,7 @@ a one-line capability summary.
 
 ## Ship criterion
 
-<!-- Written when it is scheduled. -->
+<!-- Written when 0.11.0 is decomposed. -->
 
 ## Proof budget
 

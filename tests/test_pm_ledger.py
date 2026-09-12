@@ -436,15 +436,28 @@ def test_pm_init_writes_the_merge_union_line_for_the_configured_roadmap_dir():
 
 
 def test_a_second_init_does_not_duplicate_the_line():
+    """And the ignore line beside it (#48): the local ledger every gate run
+    appends to is never tracked, so a commit's own hook leaves the tree clean
+    — written once, after the project's own entries, and never twice."""
+    from agentic_sdlc.repo.pm import skills
     with tree() as root:
+        (root / '.gitignore').write_text('*.tmp', encoding='utf-8')
         assert run_cli(root, 'init')[0] == 0
-        before = (root / '.gitattributes').read_bytes()
+        before = [(root / name).read_bytes()
+                  for name in ('.gitattributes', '.gitignore')]
         code, out = run_cli(root, 'init')
         assert code == 0, out
-        assert (root / '.gitattributes').read_bytes() == before
+        assert [(root / name).read_bytes()
+                for name in ('.gitattributes', '.gitignore')] == before
         assert 'already carries' in out
+        assert 'already ignores' in out
         body = (root / '.gitattributes').read_text(encoding='utf-8')
+        ignore = (root / '.gitignore').read_text(encoding='utf-8')
     assert body.count(skills_attribute_line()) == 1, body
+    line = skills.local_ignore_line('pm/roadmap')
+    assert line == f'pm/roadmap/{ledger.LOCAL_LEDGER_FILE_NAME}'
+    assert ignore.startswith('*.tmp\n'), "the project's own entry was lost"
+    assert ignore.splitlines().count(line) == 1, ignore
 
 
 # --- the gate row -------------------------------------------------------------

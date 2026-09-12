@@ -42,6 +42,7 @@ def tree(**kwargs):
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
 ROOT_LEDGER = 'pm/roadmap/ledger.jsonl'
+LOCAL_LEDGER = 'pm/roadmap/ledger.local.jsonl'
 OWN_LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
 
 
@@ -291,10 +292,14 @@ def gate_line(ts: str, gate: str, verdict: str = 'PASS',
                                           census=census, ts=ts))
 
 
-def gates_report(*lines: str, argv: tuple = ()) -> str:
-    """A tree whose root ledger is exactly the gate rows a case cares about."""
+def gates_report(*lines: str, argv: tuple = (), local: tuple = ()) -> str:
+    """A tree whose root ledgers are exactly the gate rows a case cares about:
+    `lines` in the tracked one, `local` in the gitignored one new gate rows
+    land in (#48)."""
     with tree(story_statuses=('done', 'ready')) as root:
         put_ledger(root, *lines, rel=ROOT_LEDGER)
+        if local:
+            put_ledger(root, *local, rel=LOCAL_LEDGER)
         code, out = report(root, '--tree', *argv)
     assert code == 0, out
     return out
@@ -325,8 +330,10 @@ BROKEN_GATE_ROWS = (
 def test_the_seeded_gate_rows_print_this_exact_table():
     """One row per gate, slowest-latest first, and a gate with ONE run still
     appears with no delta — a gate omitted for having too little data reads as
-    a gate that costs nothing."""
-    assert gates_report(*THREE_PARSE_ONE_LINT).rstrip('\n') == """\
+    a gate that costs nothing. Half the rows in each root ledger (#48): the
+    committed history and the local file are ONE table."""
+    assert gates_report(*THREE_PARSE_ONE_LINT[:2],
+                        local=THREE_PARSE_ONE_LINT[2:]).rstrip('\n') == """\
 [ledger:report] tree — gate cost — 4 gate row(s), 2 gate(s), 1 delta(s) \
 marked * for a census that moved or is absent, 0 row(s) this section could \
 not use

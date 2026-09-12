@@ -244,8 +244,8 @@ def _no_spawn_outside_the_shell_tier(request, monkeypatch):
 #
 # So the slowest few of every gated run land in the ledger as `test` rows.
 #
-# ONLY THE SLOWEST FEW. A row per test is ~1850 rows per run into a file that is
-# COMMITTED, and a ledger that doubles every afternoon is one somebody deletes.
+# ONLY THE SLOWEST FEW. A row per test is ~1850 rows per run into a file that
+# persists, and a ledger that doubles every afternoon is one somebody deletes.
 # The tail is where a suite's wall clock lives, so the tail is what earns
 # durable space.
 #
@@ -280,12 +280,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
         # beside must describe one run. 0.4.0/D3 then made that one file for
         # both — a `test` row names no grain, like a `gate` row — so the
         # agreement C2 asked for is now structural rather than a resolution
-        # copied into two places.
+        # copied into two places. #48 moved that file to the gitignored
+        # `ledger.local.jsonl`, and both still land in the same one.
         for rank, report in enumerate(slowest, start=1):
-            ledger.append_row(ledger.grainless_dir(cfg.roadmap),
-                              ledger.test_row(
-                                  tier, report.nodeid,
-                                  int(report.duration * 1000), rank))
+            ledger.append_to(ledger.local_path(cfg.roadmap),
+                             ledger.test_row(
+                                 tier, report.nodeid,
+                                 int(report.duration * 1000), rank))
     except Exception as err:  # noqa: BLE001 — telemetry never fails a suite
         # FAILING OPEN, deliberately. A suite that went red because it could
         # not write its own cost row would be telemetry outranking the thing it

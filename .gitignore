@@ -24,3 +24,6 @@ __pycache__/
 # any session rooted outside this checkout. tests/test_install.py grades both
 # halves: what is registered, and that nothing absolute is committed.
 .claude/settings.local.json
+
+# agentic-sdlc: what a run on THIS machine cost (gate, test, verify rows) — never committed, so a commit's own hook leaves the tree clean
+pm/roadmap/ledger.local.jsonl

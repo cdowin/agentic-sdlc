@@ -76,6 +76,9 @@ LEDGER_REL = 'pm/roadmap/ledgers/0.1.jsonl'
 # transcript row carries no grain yet and a `gate` row never will, so
 # this is where most of this module's rows arrive.
 ROOT_LEDGER_REL = 'pm/roadmap/ledger.jsonl'
+# #48: what a RUN cost — a `gate` row here — lands in the gitignored sibling,
+# so the commit hook that runs the gates leaves no tracked file dirty.
+LOCAL_LEDGER_REL = 'pm/roadmap/ledger.local.jsonl'
 
 # A stamp for the rows a case seeds by hand, and the stock gate-form argv.
 TS = '2026-09-03T10:00:00Z'
@@ -111,7 +114,9 @@ def all_ledger_lines(root) -> dict[str, list[str]]:
     path. A refusal that wrote into the other file would pass a single-path
     check.
     """
-    found = sorted(root.rglob('ledger.jsonl')) + sorted(root.rglob('ledgers/*.jsonl'))
+    found = (sorted(root.rglob(ledger.LEDGER_FILE_NAME))
+             + sorted(root.rglob(ledger.LOCAL_LEDGER_FILE_NAME))
+             + sorted(root.rglob('ledgers/*.jsonl')))
     return {str(path.relative_to(root)):
             path.read_text(encoding='utf-8').splitlines()
             for path in found}
@@ -779,7 +784,10 @@ def test_retire_takes_the_milestones_ledger_and_appends_to_the_trees():
     with tree(milestone_status='done', feature_status='done',
               story_statuses=('done',)) as root:
         put_ledger(root, status_line(TS, STORY, 'building', 'done'))
-        assert record(root, *GATE)[0] == 0
+        # A gate row from before #48, which stays where it was committed.
+        put_ledger(root, ledger.dumps(ledger.gate_row('check', 'PASS', 12,
+                                                      ts=TS)),
+                   rel=ROOT_LEDGER_REL)
         before = (root / ROOT_LEDGER_REL).read_bytes()
         code, out = run_cli(root, 'retire', '0.1', 'the first cut')
         assert code == 0, out
@@ -814,12 +822,13 @@ def test_a_ledger_that_cannot_be_appended_to_is_reported_not_swallowed():
     if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits
         pytest.skip('running as root: a read-only file is still writable')
     with tree() as root:
-        # The ROOT ledger, because that is where a gate row is addressed (D3);
-        # locking the milestone's would leave the write path untouched and the
-        # case would prove the opposite of what it says.
-        put_ledger(root, status_line(TS, STORY, 'ready', 'building'),
-                   rel=ROOT_LEDGER_REL)
-        path = root / ROOT_LEDGER_REL
+        # The LOCAL ledger, because that is where a gate row is addressed
+        # (#48); locking any other would leave the write path untouched and
+        # the case would prove the opposite of what it says.
+        put_ledger(root, ledger.dumps(ledger.gate_row('check', 'PASS', 12,
+                                                      ts=TS)),
+                   rel=LOCAL_LEDGER_REL)
+        path = root / LOCAL_LEDGER_REL
         before = path.read_bytes()
         path.chmod(0o444)
         try:
@@ -1266,7 +1275,12 @@ def test_such_a_row_does_not_become_this_grains_row():
     # said it could not know. Nothing asks.
     (dict(milestone_status='building'), False),
 ])
-def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
+def test_a_gate_row_asks_the_tree_nothing_and_lands_in_the_local_ledger(
+        kwargs, plan):
+    """Routed by KIND (#48): a gate row names no grain, so it once landed in
+    the tracked grainless ledger — and the pre-commit hook runs the gates, so
+    every commit left its own tree dirty. It lands in the gitignored local one,
+    and no tracked ledger gains a byte."""
     with tree(**kwargs) as root:
         write(root / 'pm/roadmap/milestones/0.2.md',
               {'id': '"0.2"', 'name': 'Next', 'status': kwargs['milestone_status'],
@@ -1280,7 +1294,8 @@ def test_a_gate_row_asks_the_tree_nothing_and_lands_at_the_root(kwargs, plan):
         code, out = record(root, *GATE)
         assert code == 0, out
         assert only_row(root)['kind'] == 'gate'
-        assert list(all_ledger_lines(root)) == [ROOT_LEDGER_REL], out
+        assert list(all_ledger_lines(root)) == [LOCAL_LEDGER_REL], out
+        assert LOCAL_LEDGER_REL in out, 'the verb did not say where it wrote'
 
 
 # --- every row names its branch (ft-a-milestone-reports-only-its-own-rows) ----

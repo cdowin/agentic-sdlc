@@ -63,6 +63,9 @@ SENTINELS = '*.ran\n'
 # git lists no empty directory, so it is not in the state either.
 ROADMAP = 'pm/roadmap'
 LEDGER = f'{ROADMAP}/ledger.jsonl'
+# #48: where a run's own verdict lands — gitignored in a consumer, and NOT here,
+# so the digest must drop its rows by kind rather than rely on the ignore.
+LOCAL_LEDGER = f'{ROADMAP}/ledger.local.jsonl'
 
 
 class Repo:
@@ -355,8 +358,9 @@ class VerifyRemembersItsLastGreen(unittest.TestCase):
         """
         with Repo(LADDER + STORY_RULE) as repo:
             self._first_run(repo)
+            self.assertTrue((repo.root / LOCAL_LEDGER).is_file(),
+                            'the first run records its verdict')
             path = repo.root / LEDGER
-            self.assertTrue(path.is_file(), 'the first run records its verdict')
             with path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(self.row(state='0' * 64)) + '\n')
             code, out = run('--story')

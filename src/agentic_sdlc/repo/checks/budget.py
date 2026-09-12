@@ -83,16 +83,20 @@ def _budgets() -> dict[str, int]:
 
 
 def _rows() -> tuple[list[tuple[str, ledger.Row]], str]:
-    """Every row of the current release's ledger, or the defect that stopped the read."""
+    """Every row of the tree's telemetry ledgers — the tracked grainless one
+    and the gitignored local one new `gate`/`test` rows land in (#48) — or the
+    defect that stopped the read."""
     cfg = vocabulary.load()
-    path = ledger.grainless_path(cfg.roadmap)
-    if not path.is_file():
-        return [], ''
-    try:
-        rows = ledger.read_rows(path)
-    except ledger.LedgerError as err:
-        return [], f'{cfg.rel(path)} could not be read: {err}'
-    return [(cfg.rel(path), row) for row in rows], ''
+    found: list[tuple[str, ledger.Row]] = []
+    for path in ledger.telemetry_paths(cfg.roadmap):
+        if not path.is_file():
+            continue
+        try:
+            rows = ledger.read_rows(path)
+        except ledger.LedgerError as err:
+            return [], f'{cfg.rel(path)} could not be read: {err}'
+        found += [(cfg.rel(path), row) for row in rows]
+    return found, ''
 
 
 def _by_name(rows: list[tuple[str, ledger.Row]], kind: str,

@@ -7,7 +7,8 @@ depends_on: []
 branch: milestone/0.11.1-the-host-stays-a-checkout
 mode:
 version: 0.11.1
-changelog:
+changelog: none
+reviewed: docs/reviews/2026-09-12-0.11.1-milestone-review.md
 ---
 
 # 0.11.1 — the host stays a checkout

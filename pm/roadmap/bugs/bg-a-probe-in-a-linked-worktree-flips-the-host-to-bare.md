@@ -3,9 +3,9 @@ id: bg-a-probe-in-a-linked-worktree-flips-the-host-to-bare
 kind: bug
 milestone: "ms-the-host-stays-a-checkout"
 name: a probe's git init in a linked worktree flips the host to bare
-status: open
+status: closed
 caused_by:
-changelog:
+changelog: The git allowlist refuses a `git init` with no target or one aimed inside any checkout of this repository — the probe that set `core.bare = true` on the main checkout — and allows git whose `-C` points outside it, so a reviewer's scratch probe still runs; the reviewer and builder briefs build scratch repos with explicit `-C` paths.
 ---
 
 # a probe's git init in a linked worktree flips the host to bare
@@ -46,3 +46,7 @@ wrong, because reviewers legitimately build scratch repositories.
    and never `cd S;` followed by git.
 **Not in this patch:** a `preflight` row naming a flipped `core.bare` would be a new output shape,
 which is a minor bump (rule 7). It belongs in the next minor.
+
+## Close
+
+Fixed in bb81f46, hardened in 821ad26 after review (2026-09-12): 12 corpus rows replayed from a fake linked worktree; a real `git worktree add` probe left `core.bare = false`.

@@ -298,7 +298,7 @@ _NEXT_STEP = {
                     f'`{vehicle.command("release", vehicle.Slot("<version>"))}` '
                     '— every check runs and prints, all true → the milestone '
                     'is written `done` and the `next:` lines say what is yours '
-                    '(retitle, push, PR, tag, prove), any false → nothing is '
+                    '(notes, push, PR, merge, tag, prove, sync), any false → nothing is '
                     'written and each false check is named; `--force` writes '
                     'anyway and the ledger row names them.',
 }

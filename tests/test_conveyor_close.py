@@ -175,6 +175,9 @@ def arrival(root: Path, grain: str, to: str) -> None:
 # on beside it. The belt's one write is a grain's status, and the milestone
 # ledger (`LEDGER`, the file a status row lands in) is graded byte for byte.
 GRAINLESS_LEDGER = 'pm/roadmap/ledger.jsonl'
+# 0.12.0: the same telemetry now lands in the untracked local ledger; it is
+# read the same way, so only a check's own run rows are allowed there too.
+LOCAL_LEDGER = 'pm/roadmap/ledger.local.jsonl'
 
 # By KIND, not by file. A whole-file exclusion also stopped these assertions
 # seeing a row naming NO grain written during a refusal, which is a real shape:
@@ -212,8 +215,9 @@ def snapshot(root: Path) -> dict[str, object]:
         str(p.relative_to(root)): p.read_bytes()
         for p in sorted(root.rglob('*'))
         if p.is_file() and '.git' not in p.parts
-        and p != root / GRAINLESS_LEDGER}
-    files[GRAINLESS_LEDGER] = _belt_rows(root / GRAINLESS_LEDGER)
+        and p not in (root / GRAINLESS_LEDGER, root / LOCAL_LEDGER)}
+    for rel in (GRAINLESS_LEDGER, LOCAL_LEDGER):
+        files[rel] = _belt_rows(root / rel)
     return files
 
 

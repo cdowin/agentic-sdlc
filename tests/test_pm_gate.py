@@ -1138,8 +1138,9 @@ class U4TheLastHookWrittenRowIsNamedBesideTheWiring(unittest.TestCase):
             code, out = self._gate(root)
             # A WARN, never the exit code: recording is a posture (0.4.0/D5).
             self.assertEqual(code, 0, out)
-            self.assertIn('last hook-written row: never in the 3h these '
-                          'ledgers have been recording', out)
+            # `3h`, or `3h 1s` when a loaded run crosses a second (0.12.0).
+            self.assertRegex(out, r'last hook-written row: never in the 3h'
+                                  r'( \d+s)? these ledgers have been recording')
             self.assertIn('(U4)', out)
             # The status row is NAMED, so the line says what the tree does
             # hold rather than only what it lacks.

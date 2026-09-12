@@ -167,7 +167,7 @@ markdown table of per-tool-call token deltas into this file — a second scorebo
 ledger already holds, in a repo whose own rule forbids it, while building the milestone about not
 keeping two copies of one fact.
 
-It is deleted. What replaced it: `pm ledger record --grain <id> --agent-type orchestrator
+It is deleted. What replaced it: `pm ledger record --grain <id> --agent-type architect
 --tool-calls N --duration-s N` at phase boundaries, and the `Stop` hook for session totals.
 
 **The generalisable part.** Reading a rule is not the same as the rule being *reachable at the

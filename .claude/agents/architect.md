@@ -42,6 +42,7 @@ make design decisions.
 ## The verbs this role reaches for
 
 - `make sdlc ARGS='dispatch --grain <id> --role <role>'` — what goes in the brief?
+  Pass its output verbatim; add only what the grain file cannot know.
 - `make pm ARGS='ready-for feature <id>'` — is the work below this finished?
 - `make sdlc ARGS='close story <id>'`, `make sdlc ARGS='close feature <id>'` — may
   this close, and the one write that says so

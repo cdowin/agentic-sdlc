@@ -47,6 +47,11 @@ VERDICT = re.compile(r'^\[CHECK\] .+ — full log: \.gate-reports/check\.log$')
 
 
 def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(['make', *args], cwd=REPO_ROOT, text=True,
+                          capture_output=True, env=make_env(**env_extra))
+
+
+def make_env(**env_extra: str) -> dict[str, str]:
     env = dict(os.environ)
     # Under `make test` the recipe's shell carries MAKELEVEL/MAKEFLAGS, and a
     # sub-make that inherits them announces itself ahead of the one verdict
@@ -63,8 +68,7 @@ def make(*args: str, **env_extra: str) -> subprocess.CompletedProcess:
     # defined make variable, so the include's `?=` keeps it.
     env['GDK_LEDGER_CMD'] = ''
     env.update(env_extra)
-    return subprocess.run(['make', *args], cwd=REPO_ROOT, text=True,
-                          capture_output=True, env=env)
+    return env
 
 
 def recipes(path: Path) -> dict[str, str]:
@@ -154,6 +158,65 @@ def test_a_failing_gate_shows_what_broke_and_exits_nonzero():
     verdict = [ln for ln in done.stdout.splitlines() if ln.startswith('[CHECK]')]
     assert len(verdict) == 1, done.stdout
     assert 'FAIL' in verdict[0], verdict[0]
+
+
+# --- two runs of one gate at once ---------------------------------------------
+# A stand-in DEVKIT whose `check all` prints a roster of five, held at two
+# barriers so the runs overlap deterministically: neither writes until both
+# have opened their slot, and neither exits until both have written. That is
+# the interleaving under which one shared `<gate>.log` counted 10 for each.
+ROSTER_NAMES = ('alpha', 'beta', 'gamma', 'delta', 'epsilon')
+ROSTER = len(ROSTER_NAMES)
+BARRIER_DEVKIT = f"""#!/usr/bin/env bash
+[ "$1" = gates-extra ] && exit 0
+barrier() {{
+    local name="$1"
+    touch "$GDK_TEST_BARRIER/$name.$$"
+    for _ in $(seq 1 300); do
+        set -- "$GDK_TEST_BARRIER/$name".*
+        [ "$#" -ge 2 ] && return 0
+        sleep 0.1
+    done
+    echo "the other run never reached the $name barrier" >&2
+    exit 3
+}}
+barrier started
+for gate in {' '.join(ROSTER_NAMES)}; do echo "[check:$gate] PASS"; done
+barrier written
+"""
+
+
+@pytest.mark.parametrize('goal, marker, whole_run', [
+    ('check', '[check:', ROSTER),
+    ('precommit', '[PRECOMMIT] ', 1),
+])
+def test_two_concurrent_runs_each_count_only_what_they_ran(tmp_path, goal,
+                                                           marker, whole_run):
+    """bg-two-gate-runs-share-one-log-and-inflate-its-census: two runs of
+    one gate in one checkout appended to one `<gate>.log`, and the census was
+    counted off the FILE — `[CHECK] 10 check(s) PASS` over a roster of five.
+    Each verdict counts its own run, the slot holds ONE whole run rather
+    than two interleaved, and no per-run transcript is left behind."""
+    devkit = tmp_path / 'devkit.sh'
+    devkit.write_text(BARRIER_DEVKIT, encoding='utf-8')
+    barrier, reports = tmp_path / 'barrier', tmp_path / 'reports'
+    barrier.mkdir()
+    env = make_env(GDK_TEST_BARRIER=str(barrier),
+                   GDK_GATE_REPORT_DIR=str(reports))
+    argv = ['make', goal, f'DEVKIT=bash {devkit}', 'PYTEST=true']
+    runs = [subprocess.Popen(argv, cwd=REPO_ROOT, text=True, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            for _ in range(2)]
+    outputs = [run.communicate(timeout=120) for run in runs]
+    for run, (out, err) in zip(runs, outputs):
+        assert run.returncode == 0, out + err
+        censuses = [ln for ln in out.splitlines() if ln.startswith('[CHECK] ')]
+        assert censuses == [f'[CHECK] {ROSTER} check(s) PASS — full log: '
+                            f'{reports / "check.log"}'], out
+    transcript = (reports / f'{goal}.log').read_text(encoding='utf-8')
+    assert transcript.count(marker) == whole_run, transcript
+    assert all(path.suffix == '.log' for path in reports.iterdir()), (
+        sorted(path.name for path in reports.iterdir()))
 
 
 # --- the cost row, on a REAL gate run through the real funnel -----------------

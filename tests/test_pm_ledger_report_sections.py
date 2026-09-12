@@ -1,40 +1,31 @@
-"""test_pm_ledger_report_sections.py — `pm ledger report`, sections 2-6.
+"""test_pm_ledger_report_sections.py — which rows a report reads, the tree's
+own report, the `--help` roster, and milestones side by side.
 
-Section 1 (spend per grain) is `test_pm_ledger_report.py`. The sections here
-read the same ledger plus two documents section 1 never opens — the review
-records and the bug frontmatter — and each keeps the same three rules:
+The one-milestone table is `test_pm_ledger_report.py`. What is pinned here:
 
-  * **it counts, and never judges.** Findings are counted per severity and per
-    `disposition_kind` — never per the SHAPE of the disposition's value, so
-    `landed <hash>` and `landed in-place` are one column, which is the whole
-    reason a reviewer who fixes in place and never commits (SDLC § 2) is not
-    counted as having landed nothing;
-  * **absent is not zero, and no data is not a table of zeros.** A story with
-    no status rows has no reopen count, not a count of 0; a rule that cannot
-    SEE a transition prints `-`, never `0`; a section with nothing in it prints
-    ONE line and still says what it counted;
-  * **the one refusal on content is a document that will not parse.** A review
-    record whose verdict block exists and cannot be read is exit 2, by record
-    and by line. A record with NO block is not that: it is a row saying so.
-
-ONE GOLDEN PER SECTION carries the per-cell claims. A case beyond the golden
-earns its place by reaching a state the fixture cannot hold — a legacy ledger
-spelling, a cause that resolves to nothing, a gate row this section cannot use
-— or by guarding a defect that shipped: the `Vocabulary` cases below are all
-four of the second kind.
+  * **ownership** (`ft-a-milestone-reports-only-its-own-rows`). A milestone
+    reads a row naming one of its grains, or a row naming no grain stamped
+    with its declared `branch:`; an old row carrying neither is placed by its
+    snapshot only when that names exactly one of its stories. Everything else
+    in the tree's ledger is the TREE's, reported once under `--tree`;
+  * **the tree's report** is the gate table: one row per gate, one run per
+    row, a delta whose census moved marked, and a row it cannot use NAMED;
+  * **the roster**: every block the verb prints is named in `--help` with its
+    columns in order, and `--help` names no block that stopped printing;
+  * **the comparison**: one golden, the `--json` shape, ORDER read and never
+    chosen, and the refusal matrix.
 """
 from __future__ import annotations
 
 import json
 
 import pytest
-from support.pm import (bug, declaring, decision_line, dispatch_line,
-                        put_ledger, run_cli, section_of, session_line, snapshot,
-                        snapshot_legacy, status_line, write, write_config)
+from support.pm import (decision_line, declaring, dispatch_line, put_ledger,
+                        run_cli, session_line, snapshot, snapshot_legacy,
+                        status_line, write)
 from support.pm import tree as _seed_tree
 
 from agentic_sdlc.repo.pm import vocabulary
-from agentic_sdlc.repo.pm import report as report_module
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
 # written under rather than being rewritten: tests/test_pm_ledger.py, beside the
@@ -50,108 +41,55 @@ def tree(**kwargs):
 
 ALPHA, BETA, GAMMA, DELTA = ('0.1/alpha', '0.1/beta', '0.1/gamma', '0.1/delta')
 A_S0, A_S1, B_S0 = '0.1/alpha/s0', '0.1/alpha/s1', '0.1/beta/s0'
-ALPHA_RECORD = 'docs/reviews/alpha.md'
-BETA_RECORD = 'pm/roadmap/features/beta-review.md'
-DELTA_RECORD = 'pm/roadmap/features/delta-review.md'
-
-YIELD, REWORK, ESCAPES, OVERHEAD, GATES = (
-    'yield per review pass', 'rework', 'escapes', 'overhead shape',
-    'gate cost')
-
-# A record as the installed agents write it: a fenced block, the header row,
-# one row per finding. Both `landed` forms are here on purpose — the column
-# counts `disposition_kind`, so a fix landed in place counts exactly like a
-# fix landed as a commit.
-ALPHA_BLOCK = """\
-The pass, in prose.
-
-```text
-verdict: SHIP-WITH-FIXES
-| id | severity | disposition |
-| A1 | MAJOR | landed 0badc0f |
-| A2 | MINOR | landed in-place |
-| A3 | NIT | rejected: a surface decision, not a local correction |
-| A4 | QUESTION | deferred: 0.1/beta |
-```
-"""
-BETA_BLOCK = """\
-```text
-verdict: HOLD
-| id | severity | disposition |
-| B1 | CRITICAL | deferred: 0.1/beta |
-| B2 | WARNING | deferred: 0.1/gamma |
-| B3 | MAJOR | open: the landing pass has not run |
-```
-"""
-# A real review, written before the block existed. A FACT about the pass.
-NO_BLOCK = 'LGTM. Ship it.\n'
-# A block that exists and cannot be read: `WOMBAT` is not in the closed set.
-BAD_BLOCK = """\
-```text
-verdict: SHIP
-| X1 | WOMBAT | rejected: no such severity |
-```
-"""
+ROOT_LEDGER = 'pm/roadmap/ledger.jsonl'
+OWN_LEDGER = 'pm/roadmap/ledgers/0.1.jsonl'
 
 
-def feature(root, fid: str, status: str, record: str = '',
-            stories: tuple = ()) -> None:
+def feature(root, fid: str, status: str, stories: tuple = ()) -> None:
     slug = fid.partition('/')[2]
     pools = root / 'pm/roadmap'
     write(pools / 'features' / f'{slug}.md',
           {'id': fid, 'kind': 'feature', 'milestone': '"0.1"',
            'name': slug, 'status': status, 'reviewed': ''})
-    if record:
-        # Beside the grain, under its own name: a pool is flat, so a bare
-        # `review.md` would be one file for every feature.
-        (pools / 'features' / f'{slug}-review.md').write_text(
-            record, encoding='utf-8')
     for name, sstatus in stories:
         write(pools / 'stories' / f'{slug}-{name}.md',
               {'id': f'{fid}/{name}', 'kind': 'story', 'feature': fid,
                'milestone': '"0.1"', 'name': name, 'status': sstatus})
 
 
-def seeded(root) -> None:
-    """Four features, three stories, three bugs, and one ledger.
+def stamp_line(ts: str, grain: str, edge: str, **fields: object) -> str:
+    """A `stamp` row as the 0.10.0 contract writes it, planted as JSON."""
+    return json.dumps({'ts': ts, 'kind': 'stamp', 'grain': grain,
+                       'edge': edge, **fields})
 
-    `alpha` points at its record through `reviewed:` and `beta`/`delta` are
-    read from the slot beside the feature document — the two ways a record is
-    found, both exercised, and both printed as the path that answered.
-    """
-    (root / ALPHA_RECORD).write_text(ALPHA_BLOCK, encoding='utf-8')
-    feature(root, BETA, 'building', BETA_BLOCK, (('s0', 'building'),))
+
+def seeded(root) -> None:
+    """Four features, three stories, and one ledger: two dispatches placed by
+    their snapshot, one on the story's own grain, an open stamp unit, and the
+    decision and session rows a unit never holds."""
+    feature(root, BETA, 'building', (('s0', 'building'),))
     feature(root, GAMMA, 'planning')
-    feature(root, DELTA, 'reviewing', NO_BLOCK)
-    bug(root, 'crash', 'open', caused_by=ALPHA)
-    bug(root, 'wobble', 'closed', caused_by=BETA)
-    bug(root, 'quiet', 'open')
+    feature(root, DELTA, 'reviewing')
     put_ledger(
         root,
         status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
         dispatch_line('2026-09-03T10:05:00Z', agent_type='developer',
-                      tool_calls=37, tool_calls_before_first_write=12,
+                      duration_s=300, tokens_total=3000,
                       tree=snapshot(stories_wip=[A_S0])),
         status_line('2026-09-03T10:10:00Z', A_S0, 'building', 'reviewing'),
         dispatch_line('2026-09-03T10:11:00Z', agent_type='reviewer',
-                      tool_calls_before_first_write=3,
+                      tokens_total=1000,
                       tree=snapshot(stories_review=[A_S0])),
-        # The reopen: `review` back to `wip`, one row, nothing inferred.
         status_line('2026-09-03T10:12:00Z', A_S0, 'reviewing', 'building'),
-        # No `tool_calls_before_first_write`: absent, so it is neither in the
-        # sum nor in the list.
-        dispatch_line('2026-09-03T10:13:00Z', agent_type='developer',
-                      tree=snapshot(stories_wip=[A_S0])),
+        dispatch_line('2026-09-03T10:13:00Z', grain=A_S0,
+                      agent_type='developer'),
         status_line('2026-09-03T10:20:00Z', A_S0, 'building', 'done'),
-        # A feature-grained decision with no status row of alpha's after it,
-        # and a milestone-grained one whose scope is every grain here.
         decision_line('2026-09-03T10:21:00Z', ALPHA, 'D1'),
         decision_line('2026-09-03T10:22:00Z', '0.1', 'D2'),
         status_line('2026-09-03T10:25:00Z', B_S0, 'ready', 'building'),
-        session_line('2026-09-03T11:00:00Z', session_id='sess-1',
-                     tool_calls=10, usage={'output': 1000}),
-        session_line('2026-09-03T11:05:00Z', session_id='sess-1',
-                     tool_calls=26, usage={'output': 2500}),
+        stamp_line('2026-09-03T10:26:00Z', B_S0, 'start', issue=['#7'],
+                   agent='developer'),
+        session_line('2026-09-03T11:00:00Z', session_id='sess-1'),
     )
 
 
@@ -159,14 +97,9 @@ def report(root, *argv) -> tuple[int, str]:
     return run_cli(root, 'ledger', 'report', *argv)
 
 
-def block_rows(out: str, title: str, block: str) -> list[list[str]]:
-    """The data rows of ONE block of ONE section, split into cells.
-
-    Scoped twice on purpose: `0.1/alpha/s0` heads a row in three different
-    sections, and a case that grepped the whole report for it would assert
-    against whichever section happened to print first.
-    """
-    lines = section_of(out, title).splitlines()
+def block_rows(out: str, block: str) -> list[list[str]]:
+    """The data rows of the one `-- <block>` table, split into cells."""
+    lines = out.splitlines()
     start = lines.index(f'-- {block}')
     rows = []
     for line in lines[start + 2:]:
@@ -176,8 +109,8 @@ def block_rows(out: str, title: str, block: str) -> list[list[str]]:
     return rows
 
 
-def row_of(out: str, title: str, block: str, first: str) -> list[str]:
-    rows = [r for r in block_rows(out, title, block) if r[0] == first]
+def row_of(out: str, block: str, first: str) -> list[str]:
+    rows = [r for r in block_rows(out, block) if r[0] == first]
     if len(rows) != 1:
         raise AssertionError(f'{len(rows)} rows start with {first!r} in '
                              f'{block!r} — the fixture is not what it claims')
@@ -192,579 +125,164 @@ def seeded_report(*argv) -> str:
     return out
 
 
-YIELD_TABLE = """\
-[ledger:report] 0.1 — yield per review pass — 3 record(s), 2 pass(es), 7 finding(s)
-
--- verdict (3)
-feature    record                               pass  verdict           findings  landed  rejected  deferred  open
-0.1/alpha  docs/reviews/alpha.md                   1  SHIP-WITH-FIXES          4       2         1         1     0
-0.1/beta   pm/roadmap/features/beta-review.md      1  HOLD                     3       0         0         2     1
-0.1/delta  pm/roadmap/features/delta-review.md     -  no verdict block         -       -         -         -     -
-
--- findings by severity (7)
-feature    pass  severity  findings
-0.1/alpha     1  MAJOR            1
-0.1/alpha     1  MINOR            1
-0.1/alpha     1  NIT              1
-0.1/alpha     1  QUESTION         1
-0.1/beta      1  CRITICAL         1
-0.1/beta      1  MAJOR            1
-0.1/beta      1  WARNING          1
-
--- deferred to (3)
-target     feature    pass  findings
-0.1/beta   0.1/alpha     1         1
-0.1/beta   0.1/beta      1         1
-0.1/gamma  0.1/beta      1         1"""
-
-REWORK_TABLE = """\
-[ledger:report] 0.1 — rework — 2 pass(es) with a verdict
-
--- verdict distribution (2)
-verdict          passes
-SHIP-WITH-FIXES       1
-HOLD                  1"""
-
-ESCAPES_TABLE = """\
-[ledger:report] 0.1 — escapes — 2 bug(s) naming a cause, 2 feature(s)
-
--- bugs naming a cause (2)
-caused_by  bug              status  feature_status
-0.1/alpha  0.1/bugs/crash   open    done
-0.1/beta   0.1/bugs/wobble  closed  building"""
-
-OVERHEAD_TABLE = """\
-[ledger:report] 0.1 — overhead shape — 3 dispatch row(s), 2 decision row(s), 2 session row(s)
-
--- story (3)
-story         dispatches  before_first_write  calls
-0.1/alpha/s0           3                  15  12,3
-0.1/alpha/s1           0                   -  -
-0.1/beta/s0            0                   -  -
-
--- decisions per grain (5)
-grain      decisions
-0.1                1
-0.1/alpha          1
-0.1/beta           0
-0.1/delta          0
-0.1/gamma          0
-
--- decision to next status row (2)
-grain      entry  ts                    next_status_s
-0.1/alpha  D1     2026-09-03T10:21:00Z              -
-0.1        D2     2026-09-03T10:22:00Z            180
-
--- session deltas (1)
-session_id  ts                     out  tool_calls
-sess-1      2026-09-03T11:05:00Z  1500          16"""
+SECOND = '0.2'
+SECOND_LEDGER = 'pm/roadmap/ledgers/0.2.jsonl'
 
 
-def test_the_seeded_ledger_prints_these_exact_tables():
-    """Rule 6: the shape is the API — and one golden per section carries every
-    per-cell claim these sections used to assert one case at a time. Both
-    `landed` forms in one column, `open` as its own column, a record with no
-    block listed and never counted as zero, a feature with no record absent
-    entirely, deferrals grouped by target, both record-discovery paths printed,
-    the reopen and the dispatches after it, a cause's status verbatim, the
-    before-first-write sum beside its own list, the decision gap inside its own
-    grain's scope, and the session delta per session."""
-    out = seeded_report()
-    for title, table in ((YIELD, YIELD_TABLE), (REWORK, REWORK_TABLE),
-                         (ESCAPES, ESCAPES_TABLE), (OVERHEAD, OVERHEAD_TABLE)):
-        assert section_of(out, title) == table
+def second_milestone(root) -> None:
+    """A second milestone with a ledger of its own — what a comparison needs
+    two of, and the smallest tree that produces one."""
+    write(root / 'pm/roadmap/milestones/0.2.md',
+          {'id': f'"{SECOND}"', 'kind': 'milestone', 'name': 'Next',
+           'status': 'planning'})
+    write(root / 'pm/roadmap/features/omega.md',
+          {'id': '0.2/omega', 'kind': 'feature', 'milestone': f'"{SECOND}"',
+           'name': 'Omega', 'status': 'building', 'reviewed': ''})
+    put_ledger(root,
+               status_line('2026-09-04T10:00:00Z', '0.2/omega',
+                           'planning', 'building'),
+               dispatch_line('2026-09-04T10:05:00Z', grain='0.2/omega',
+                             agent_type='developer', duration_s=60,
+                             tokens_total=700),
+               rel=SECOND_LEDGER)
 
 
 def test_the_report_never_writes():
     """A read verb that wrote is the write-side cardinal sin, and this is the
-    one place it is asserted against every byte in the tree."""
+    one place it is asserted against every byte in the tree — every form."""
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
         seeded(root)
         second_milestone(root)
         before = {p: p.read_bytes() for p in sorted(root.rglob('*'))
                   if p.is_file()}
-        assert report(root, '0.1')[0] == 0
-        assert report(root, '0.1', '--json')[0] == 0
-        # The COMPARED form too: it opens a second milestone's ledger and a
-        # second milestone's grain documents, and a read verb that grew a
-        # second reader is a read verb with a second chance to write.
-        assert report(root, '0.1', SECOND)[0] == 0
-        assert report(root, '0.1', SECOND, '--json')[0] == 0
+        for argv in (('0.1',), ('0.1', '--json'), ('0.1', SECOND),
+                     ('0.1', SECOND, '--json'), ('--tree',),
+                     ('--tree', '--json')):
+            assert report(root, *argv)[0] == 0, argv
         after = {p: p.read_bytes() for p in sorted(root.rglob('*'))
                  if p.is_file()}
     assert after == before
 
 
-# --- three passes over one record ---------------------------------------------
-# The record this package's own SDLC produces, end to end. The re-ordered
-# protocol runs three review passes over one feature record, each appending its
-# block. Before M2 the second block was `MalformedVerdict`, `parsed_records`
-# mapped that to `RecordError`, and `pm ledger report` exited 2 on a
-# well-formed record — which is why 0.24.0 carried a second review file whose
-# header said it existed to work around this. So the first assertion is the
-# exit code, and nothing is collapsed into one answer: `C1` was raised open in
-# pass 1 and landed in pass 2, and a merged view would lose the transition,
-# which is the only thing three passes are evidence of.
-
-THREE_PASSES = '''# alpha — reviewed three times
-
-```text
-verdict: RELEASE-WITH-FIXES
-| id | severity | disposition |
-| C1 | CRITICAL | open |
-| m1 | MINOR | deferred: 0.1/beta |
-```
-
-Prose between the passes, which is where the fixes went in.
-
-```text
-verdict: RELEASE-WITH-FIXES
-| id | severity | disposition |
-| C1 | CRITICAL | landed 3a42f19ad |
-```
-
-```text
-verdict: RELEASE-SAFE
-| id | severity | disposition |
-```
-'''
+# --- which rows a milestone owns ----------------------------------------------
+# One probe dispatch per case, and the question is the only one that matters:
+# which grain's unit is it, or is it no unit of this milestone's at all? Each
+# row guards a defect that shipped.
+PROBE = 'probe'
 
 
-def three_pass_report(*argv) -> str:
-    with tree(feature_status='done', story_statuses=('done',)) as root:
-        (root / ALPHA_RECORD).write_text(THREE_PASSES, encoding='utf-8')
-        put_ledger(root, status_line('2026-09-03T10:00:00Z', A_S0,
-                                     'building', 'done'))
-        code, out = report(root, '0.1', *argv)
+@pytest.mark.parametrize('fields, rel, placed, superseded', [
+    # 0.4.0/every-row-names-its-grain: an EMPTY snapshot, so `grain:` is the
+    # only thing that could place the row.
+    (dict(grain=A_S1), ROOT_LEDGER, A_S1, 0),
+    # The row says s1; the snapshot says s0 was live. Both are true, and only
+    # the stated one is what the work was on: it wins, ALONE.
+    (dict(grain=A_S1, tree=snapshot(stories_wip=[A_S0])), ROOT_LEDGER, A_S1, 0),
+    # 0.4.0/D8, M2: two live stories and no grain is the courier's refusal to
+    # guess, and the reader does not un-do it.
+    (dict(tree=snapshot(stories_wip=[A_S0, A_S1])), ROOT_LEDGER, None, 0),
+    # One story and the feature that owns it are ONE candidate; a feature
+    # beside it that does not own it is no candidate either.
+    (dict(tree=snapshot(stories_wip=[A_S1], features_building=[ALPHA])),
+     ROOT_LEDGER, A_S1, 0),
+    (dict(tree=snapshot(stories_wip=[A_S1], features_building=[BETA])),
+     ROOT_LEDGER, A_S1, 0),
+    # #39: one feature and no story places NOTHING, old shape or new.
+    (dict(tree=snapshot(features_building=[ALPHA])), ROOT_LEDGER, None, 0),
+    (dict(tree=snapshot_legacy(features_building=[ALPHA])), ROOT_LEDGER,
+     None, 0),
+    # M3: a stated grain this milestone does not hold never falls through to
+    # the snapshot. In the TREE's ledger it is simply not this milestone's...
+    (dict(grain='9.9/gone/s0', tree=snapshot(stories_wip=[A_S1])),
+     ROOT_LEDGER, None, 0),
+    # ...and in the milestone's OWN ledger it is superseded spend, counted.
+    (dict(grain='0.1/alpha/renamed-away'), OWN_LEDGER, None, 1),
+    # A row naming no grain, stamped with a branch no milestone declares: the
+    # snapshot is not consulted, because the stamp already said where it was.
+    (dict(branch='feat/x', tree=snapshot(stories_wip=[A_S1])), ROOT_LEDGER,
+     None, 0),
+], ids=['stated', 'stated-outranks-snapshot', 'ambiguous-snapshot',
+        'story-and-owner', 'story-and-stranger', 'feature-only',
+        'feature-only-legacy', 'stated-elsewhere-in-the-tree',
+        'stated-elsewhere-in-its-own-ledger', 'branch-outranks-snapshot'])
+def test_which_unit_a_row_is_on_is_read_off_the_row(fields, rel, placed,
+                                                    superseded):
+    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
+        seeded(root)
+        row = json.loads(dispatch_line('2026-09-03T12:00:00Z',
+                                       agent_type=PROBE, tokens_total=9,
+                                       **{k: v for k, v in fields.items()
+                                          if k != 'branch'}))
+        row.update({k: v for k, v in fields.items() if k == 'branch'})
+        with (root / rel).open('a', encoding='utf-8') as out:
+            out.write(json.dumps(row) + '\n')
+        code, out = report(root, '0.1', '--json')
     assert code == 0, out
-    return out
-
-
-def test_each_pass_of_one_record_is_its_own_row_in_document_order():
-    out = three_pass_report()
-    rows = block_rows(out, YIELD, 'verdict (3)')
-    assert [r[2] for r in rows] == ['1', '2', '3']
-    assert [r[3] for r in rows] == ['RELEASE-WITH-FIXES',
-                                    'RELEASE-WITH-FIXES', 'RELEASE-SAFE']
-    # findings landed rejected deferred open, per pass: the second pass landed
-    # the CRITICAL the first one raised, and the third raised none.
-    assert [r[-5:] for r in rows] == [['2', '0', '0', '1', '1'],
-                                      ['1', '1', '0', '0', '0'],
-                                      ['0', '0', '0', '0', '0']]
-    # Records and passes are counted separately, and the distribution counts
-    # PASSES — counting records would have to pick one of the three verdicts.
-    assert ('yield per review pass — 1 record(s), 3 pass(es), '
-            '3 finding(s)') in out
-    assert '3 pass(es) with a verdict' in out
-    assert block_rows(out, REWORK, 'verdict distribution (2)') == [
-        ['RELEASE-SAFE', '1'], ['RELEASE-WITH-FIXES', '2']]
-    # Severities and deferrals carry the pass that raised them.
-    assert block_rows(out, YIELD, 'findings by severity (3)') == [
-        [ALPHA, '1', 'CRITICAL', '1'], [ALPHA, '1', 'MINOR', '1'],
-        [ALPHA, '2', 'CRITICAL', '1']]
-    assert block_rows(out, YIELD, 'deferred to (1)') == [[BETA, ALPHA, '1', '1']]
-
-
-def test_the_json_nests_the_passes_under_the_one_record():
-    data = json.loads(three_pass_report('--json'))['yield']
-    assert len(data['records']) == 1
-    passes = data['records'][0]['passes']
-    assert [one['pass'] for one in passes] == [1, 2, 3]
-    assert passes[0]['dispositions']['open'] == 1
-    assert passes[1]['dispositions']['landed'] == 1
-    assert data['totals'] == {'records': 1, 'passes': 3, 'findings': 3}
-
-
-# --- section 4: the cause the tree cannot resolve -----------------------------
-
-def test_a_cause_that_resolves_to_nothing_still_gets_its_row():
-    """A retired or mistyped cause is a fact `pm validate` reports; the report
-    prints the row with `-` rather than dropping the bug — a dropped escape is
-    an escape nobody counts."""
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        bug(root, 'ghost', 'open', caused_by='0.9/vanished')
-        out = report(root, '0.1')[1]
-    assert row_of(out, ESCAPES, 'bugs naming a cause (3)', '0.9/vanished') == [
-        '0.9/vanished', '0.1/bugs/ghost', 'open', '-']
-    assert '3 bug(s) naming a cause, 3 feature(s)' in out
-
-
-# --- section 5: a delta needs both ends ---------------------------------------
-
-def test_one_session_row_alone_is_a_count_and_no_delta():
-    """A cumulative total with nothing to subtract from it is not a delta, and
-    the census still says the row is there — silence would read as a section
-    that never ran."""
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        put_ledger(root, session_line('2026-09-03T11:00:00Z',
-                                      session_id='sess-1', tool_calls=10,
-                                      usage={'output': 1000}))
-        out = section_of(report(root, '0.1')[1], OVERHEAD)
-    assert '0 dispatch row(s), 0 decision row(s), 1 session row(s)' in out
-    assert '-- session deltas (0)' in out
-
-
-def test_a_delta_needs_both_ends_measured():
-    """One end absent is not a delta of the other end minus zero."""
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        put_ledger(
-            root,
-            session_line('2026-09-03T11:00:00Z', session_id='sess-1',
-                         usage={'output': 1000}),
-            session_line('2026-09-03T11:05:00Z', session_id='sess-1',
-                         tool_calls=26, usage={'output': 2500}))
-        out = report(root, '0.1')[1]
-    assert row_of(out, OVERHEAD, 'session deltas (1)', 'sess-1')[-2:] == [
-        '1500', '-']
-
-
-# Section 3's per-story table left (0.2.0): `reopens` counted
-# `reviewing -> building` by name, `after_review` counted dispatches after the
-# first move into `reviewing` by name, and the story seed no longer holds the
-# word, so neither had a tree left to be a number on. What remains is the
-# verdict distribution the REWORK golden above holds.
-
-
-# --- nothing to report --------------------------------------------------------
-
-def test_a_row_that_names_its_grain_is_on_that_grains_line():
-    """0.4.0/every-row-names-its-grain, read side. Until the couriers passed
-    `--grain`, every automatic row reached the report with nothing but a tree
-    SNAPSHOT to be attributed by — which works for a status flip and not for a
-    session, so the per-grain table showed 0 dispatches against every story in
-    the milestone. The numbers were captured; nothing said what they bought.
-
-    The snapshot is deliberately EMPTY here, so `grain:` is the only thing that
-    could attribute the row.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
-                                 tool_calls=9),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
-    assert '-- rows naming no grain (0)' in out, out
-
-
-def test_a_stated_grain_outranks_the_snapshot_and_bills_nobody_else():
-    """The row says `0.1/alpha/s1`; the snapshot says `0.1/alpha/s0` was live.
-
-    Both are true — the OTHER story was in progress at that instant — and only
-    one of them is what the dispatch was doing. Adding the snapshot's grains on
-    top would bill s0 for nine tool calls it never spent, which is rule 4 on
-    the read side. The stated grain wins, and it wins ALONE.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        was = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', grain=A_S1,
-                                 tool_calls=9, tree=snapshot(stories_wip=[A_S0])),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-    assert '9' in row_of(out, 'spend per grain', 'story (3)', A_S1), out
-    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was, out
-    # And it is not a silent drop: `frozen_only` exists to disclose a snapshot
-    # the report read past, and a STATED grain is not that.
-    assert 'dispatch row(s)' in out
-
-
-# --- 0.4.0/D8: the reader does not un-do the writer's refusal ------------------
-def test_an_ambiguous_snapshot_places_nothing_and_stays_in_the_bucket():
-    """M2. `pm ledger record` omits the `grain` key when two stories are live,
-    because a row filed against the wrong one is uncorrectable. The reader was
-    then attributing that same row through its snapshot — to BOTH stories and
-    to their feature — so the decision was un-done on the way out and the
-    bucket the feature exists to fill printed `(0)`.
-
-    The snapshot here names two live stories and no grain, which is exactly
-    what the courier writes in the case this milestone was built for.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        was_s0 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
-                                 tree=snapshot(stories_wip=[A_S0, A_S1])),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
-    assert stray and '9' in stray[0], out
-    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == was_s0, out
-
-
-@pytest.mark.parametrize('taken, placed', [
-    # One story and the feature that owns it are ONE candidate: getting that
-    # wrong would empty the whole table.
-    (snapshot(stories_wip=[A_S1], features_building=[ALPHA]), A_S1),
-    # A feature beside it that does not own it is billed nothing.
-    (snapshot(stories_wip=[A_S1], features_building=[BETA]), A_S1),
-    # #39: one feature and no story places NOTHING. It was placed on that
-    # feature by elimination, and one such row was a PO for a story in another
-    # feature — bugs and milestone work are in no snapshot at all. Old-shape
-    # rows follow the same rule.
-    (snapshot(features_building=[ALPHA]), ''),
-    (snapshot_legacy(features_building=[ALPHA]), ''),
-], ids=['story-and-owner', 'story-and-stranger', 'feature-only',
-        'feature-only-legacy'])
-def test_a_snapshot_places_a_row_only_on_exactly_one_story(taken, placed):
-    """A feature is the roll-up of its placed story, never a candidate in its
-    own right (supersedes 0.4.0/D8's finest-kind clause)."""
-    before = seeded_report()
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9,
-                                 tree=taken),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-
-    def feature_row(text: str, fid: str) -> list[str]:
-        return row_of(text, 'spend per grain', 'feature (4)', fid)
-
-    assert feature_row(out, BETA) == feature_row(before, BETA), out
-    if placed:
-        assert '9' in row_of(out, 'spend per grain', 'story (3)', placed), out
-        assert feature_row(out, ALPHA) != feature_row(before, ALPHA), out
-        assert '-- rows naming no grain (0)' in out, out
-    else:
-        assert feature_row(out, ALPHA) == feature_row(before, ALPHA), out
-        stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
-        assert stray and '9' in stray[0], out
-
-
-def test_a_stated_grain_this_milestone_cannot_place_never_falls_through():
-    """M3. `stated in kinds` fell THROUGH to the snapshot, so a row naming a
-    story that had since been renamed away was billed to whichever other story
-    happened to be live — and `frozen_only` disclosed nothing, under a
-    docstring promising a stated grain is attributed by it and nothing else.
-
-    It gets its own counted line rather than joining `rows naming no grain`:
-    the two are opposites, and since D3 every milestone's report reads the
-    tree's shared ledger, so another milestone's rows are the ordinary case.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        was_s1 = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S1)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', grain='9.9/gone/s0',
-                                 tool_calls=9,
-                                 tree=snapshot(stories_wip=[A_S1])),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-    assert row_of(out, 'spend per grain', 'story (3)', A_S1) == was_s1, out
-    assert '-- rows naming no grain (0)' in out, out
-    assert 'does not hold' in out, out
-
-
-# --- 0.4.0/D3: the report reads BOTH ledgers -----------------------------------
-def test_the_trees_own_rows_are_counted_and_never_folded_into_a_grain():
-    """A milestone's report reads its own ledger AND `<roadmap>/ledger.jsonl`,
-    where every row that names no grain now lives.
-
-    Two claims, and the second is the one that could go wrong silently: the
-    root rows must appear in `rows naming no grain`, and they must not be added
-    to any grain's line. Reading only the milestone's file would empty that
-    bucket for every tree; folding the rows into a grain would bill a story for
-    seconds nobody spent on it.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        before = row_of(seeded_report(), 'spend per grain', 'story (3)', A_S0)
-        # An empty tree snapshot and no `grain`: nothing to attribute it to,
-        # which is exactly the row D3 gave a home to. A `gate` row beside it,
-        # because that one can never be attributed at all.
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', tool_calls=9),
-                   gate_line('2026-09-03T12:01:00Z', 'check'),
-                   rel='pm/roadmap/ledger.jsonl')
-        code, out = report(root, '0.1')
-    assert code == 0, out
-    # The block's own title carries the count, so the number is asserted where
-    # a reader reads it. It is `(0)` without this story — every seeded dispatch
-    # row is attributed through its tree snapshot — so the count IS the case.
-    stray = block_rows(out, 'spend per grain', 'rows naming no grain (1)')
-    assert stray and stray[0][0] == '1' and '9' in stray[0], out
-    # And not folded into a grain: the busiest story's row is unchanged from
-    # the same report over a tree with no root ledger.
-    assert row_of(out, 'spend per grain', 'story (3)', A_S0) == before
-    assert 'check' in section_of(out, 'gate cost'), out
+    data = json.loads(out)
+    assert [u['grain'] for u in data['units'] if u['agent'] == PROBE] == (
+        [placed] if placed else [])
+    assert data['superseded']['rows'] == superseded, data['superseded']
 
 
 # --- #39: a hand record naming its courier twin's agent_id is ONE dispatch ----
 COURIER = 'agent-7f'
 
 
-@pytest.mark.parametrize('hand_id, joined, s1, stray, delta', [
-    # The pair: the hand row's grain, the courier's MEASURED numbers — its 9
-    # tool calls and 70 out, never the hand's 8 or its reported 500 on top.
-    (COURIER, 1, ['1', '-', '70', '-', '-', '-', '9', '60'], 0, ['-2', '-32']),
-    # An id no courier row carries joins nothing and is counted as today.
-    ('agent-other', 0, ['1', '-', '-', '-', '-', '500', '8', '-'], 1,
-     ['-3', '-40']),
+@pytest.mark.parametrize('hand_id, branch, joined, units, elsewhere', [
+    # The pair: ONE unit, on the hand row's grain and outcome, with the
+    # courier's measured duration and issue — and nowhere else: not the
+    # tree's grainless dispatch, which the courier alone would be.
+    (COURIER, None, 1, [(A_S1, 60, 'landed', ['#41'])], (0, 0)),
+    # The courier on ANOTHER milestone's branch, in the tree's ledger that
+    # milestone reads too: still one unit, in the milestone the hand names.
+    (COURIER, 'milestone/0.2', 1, [(A_S1, 60, 'landed', ['#41'])], (0, 0)),
+    # An id no courier row carries joins nothing: the hand row is a unit on
+    # its grain, and the courier — naming no grain — is the tree's.
+    ('agent-other', None, 0, [(A_S1, None, 'landed', [])], (0, 1)),
 ])
-def test_a_hand_record_joins_its_courier_twin_by_agent_id(hand_id, joined, s1,
-                                                          stray, delta):
+def test_a_hand_record_joins_its_courier_twin_by_agent_id(hand_id, branch,
+                                                          joined, units,
+                                                          elsewhere):
     """The courier files a grainless row when no one story is building, and
-    the documented remedy, `pm ledger record --grain`, appended a SECOND: the
-    report summed both. Joined on `agent_id` and nothing else — never on
-    matching numbers, which is a guess from coincidence (rule 9)."""
+    the documented remedy, `pm ledger record --grain`, appended a SECOND.
+    Joined on `agent_id` and nothing else — never on matching numbers, which
+    is a guess from coincidence (rule 9). The join is over every ledger in
+    the tree, so no other report counts the pair a second time."""
+    courier = json.loads(dispatch_line(
+        '2026-09-03T12:00:00Z', agent_id=COURIER, messages=4, tool_calls=9,
+        duration_s=60, usage={'output': 70}, issue=['#41']))
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        second_milestone(root)
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', agent_id=COURIER,
-                                 messages=4, tool_calls=9, duration_s=60,
-                                 usage={'output': 70}),
-                   rel='pm/roadmap/ledger.jsonl')
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': f'"{SECOND}"', 'kind': 'milestone', 'name': 'Next',
+               'status': 'planning', 'branch': 'milestone/0.2'})
+        put_ledger(root, json.dumps({**courier, **({'branch': branch}
+                                                   if branch else {})}),
+                   rel=ROOT_LEDGER)
         code, said = run_cli(root, 'ledger', 'record', '--grain', A_S1,
                              '--agent-id', hand_id, '--tool-calls', '8',
-                             '--tokens-total', '500')
+                             '--tokens-total', '500', '--outcome', 'landed')
         assert code == 0, said
         code, out = report(root, '0.1')
         assert code == 0, out
-        code, compared = report(root, '0.1', SECOND)
-        assert code == 0, compared
-    assert row_of(out, 'spend per grain', 'story (3)', A_S1)[1:9] == s1, out
-    assert f'-- rows naming no grain ({stray})' in out, out
+        data = json.loads(report(root, '0.1', '--json')[1])
+        other = json.loads(report(root, SECOND, '--json')[1])
+        tree_rows = json.loads(report(root, '--tree', '--json')[1])['rows']
+    assert [(u['grain'], u['duration'], u['outcome'], u['issue'])
+            for u in data['units']] == units
     # Counted, and a zero is printed as a zero (rule 11).
     assert f'   {joined} courier/hand pair(s) joined by agent_id' in out, out
-    # The comparison builds each milestone the same way, so its delta row
-    # carries no double count: dispatch_rows and tool_calls, last - first.
-    cells = row_of(compared, 'milestone comparison', 'spend per grain (2)',
-                   'delta')
-    assert [cells[1].rstrip('*'), cells[10].rstrip('*')] == delta, compared
+    assert (len(other['units']), tree_rows.get('dispatch', 0)) == elsewhere
 
 
-def test_a_section_with_nothing_in_it_prints_one_line_and_says_what_it_counted():
-    """Never a table of zeros — and never silence either: a census that saw
-    nothing has to say so, or `no data` is indistinguishable from `not run`."""
-    with tree(feature_status='building', story_statuses=(),
-              with_record=False) as root:
-        put_ledger(root, status_line('2026-09-03T10:00:00Z', ALPHA,
-                                     'ready', 'building'))
-        code, out = report(root, '0.1')
-        assert code == 0, out
-        data = json.loads(report(root, '0.1', '--json')[1])
-    for title in (YIELD, REWORK, ESCAPES, OVERHEAD):
-        section = section_of(out, title)
-        assert len(section.splitlines()) == 2, section
-        assert section.splitlines()[1] == 'no data'
-    assert ('yield per review pass — 0 record(s), 0 pass(es), '
-            '0 finding(s)') in out
-    assert 'rework — 0 pass(es) with a verdict' in out
-    assert 'escapes — 0 bug(s) naming a cause, 0 feature(s)' in out
-    assert ('overhead shape — 0 dispatch row(s), 0 decision row(s), '
-            '0 session row(s)') in out
-    # The keys stay, with empty lists behind them: a consumer that has to
-    # branch on a missing key is a consumer this report broke.
-    assert data['yield']['records'] == []
-    assert data['rework']['verdicts'] == []
-    assert data['escapes']['bugs'] == []
-    assert data['overhead']['sessions'] == []
+# --- the tree's report: `--tree` ----------------------------------------------
+# A gate row names no grain, so 0.4.0/D3 files every one in the tree's ledger.
+# Before 0.10.0 every milestone's report printed that same table under its own
+# heading; now a milestone claims the runs stamped with its branch, and the
+# rest are printed ONCE, headed as the tree's. Pinned: one row per gate, one
+# run per row, a gate with ONE run still appears, a delta whose census moved
+# is marked, and a row this section cannot use is NAMED.
+GATES = 'gate cost'
 
-
-# --- the JSON for the same fixture --------------------------------------------
-
-def test_the_seeded_ledger_produces_this_exact_json():
-    """The same numbers, `null` where the table prints `-`, and the nesting is
-    the shape of the fact: a record is a file, a pass is a review, and a record
-    reviewed three times has one path and three verdicts."""
-    data = json.loads(seeded_report('--json'))
-    assert data['yield'] == {
-        'records': [
-            {'feature': ALPHA, 'record': ALPHA_RECORD, 'passes': [
-                {'pass': 1, 'verdict': 'SHIP-WITH-FIXES', 'findings': 4,
-                 'severities': {'MAJOR': 1, 'MINOR': 1, 'NIT': 1,
-                                'QUESTION': 1},
-                 'deferred': [{'target': BETA, 'findings': 1}],
-                 'dispositions': {'landed': 2, 'rejected': 1,
-                                  'deferred': 1, 'open': 0}}]},
-            {'feature': BETA, 'record': BETA_RECORD, 'passes': [
-                {'pass': 1, 'verdict': 'HOLD', 'findings': 3,
-                 'severities': {'CRITICAL': 1, 'MAJOR': 1, 'WARNING': 1},
-                 'deferred': [{'target': BETA, 'findings': 1},
-                              {'target': GAMMA, 'findings': 1}],
-                 'dispositions': {'landed': 0, 'rejected': 0,
-                                  'deferred': 2, 'open': 1}}]},
-            # No block at all: an empty `passes` list, never a pass numbered 1
-            # with nothing in it.
-            {'feature': DELTA, 'record': DELTA_RECORD, 'passes': []},
-        ],
-        'totals': {'records': 3, 'passes': 2, 'findings': 7}}
-    assert data['rework'] == {
-        'verdicts': [{'verdict': 'SHIP-WITH-FIXES', 'passes': 1},
-                     {'verdict': 'HOLD', 'passes': 1}],
-        'totals': {'passes': 2}}
-    assert data['escapes'] == {
-        'bugs': [
-            {'caused_by': ALPHA, 'bug': '0.1/bugs/crash', 'status': 'open',
-             'feature_status': 'done', 'feature_done': True},
-            {'caused_by': BETA, 'bug': '0.1/bugs/wobble', 'status': 'closed',
-             'feature_status': 'building', 'feature_done': False},
-        ],
-        'totals': {'bugs': 2, 'features': 2}}
-    assert data['overhead'] == {
-        'stories': [
-            {'grain': A_S0, 'dispatches': 3, 'before_first_write': 15,
-             'calls': [12, 3]},
-            {'grain': A_S1, 'dispatches': 0, 'before_first_write': None,
-             'calls': []},
-            {'grain': B_S0, 'dispatches': 0, 'before_first_write': None,
-             'calls': []},
-        ],
-        'decisions': [{'grain': '0.1', 'decisions': 1},
-                      {'grain': ALPHA, 'decisions': 1},
-                      {'grain': BETA, 'decisions': 0},
-                      {'grain': DELTA, 'decisions': 0},
-                      {'grain': GAMMA, 'decisions': 0}],
-        'gaps': [
-            {'grain': ALPHA, 'entry': 'D1', 'title': 'why',
-             'ts': '2026-09-03T10:21:00Z', 'next_status_s': None},
-            {'grain': '0.1', 'entry': 'D2', 'title': 'why',
-             'ts': '2026-09-03T10:22:00Z', 'next_status_s': 180},
-        ],
-        'sessions': [{'session_id': 'sess-1', 'ts': '2026-09-03T11:05:00Z',
-                      'output': 1500, 'tool_calls': 16}],
-        'totals': {'dispatch_rows': 3, 'decision_rows': 2, 'session_rows': 2}}
-
-
-def test_a_malformed_verdict_block_refuses_whole():
-    """The one refusal on content, and it refuses WHOLE: section 1's table
-    would otherwise be on stdout with a broken section 2 behind it, and a
-    report half-printed reads as a report."""
-    for argv in ((), ('--json',)):
-        with tree(feature_status='done',
-                  story_statuses=('done', 'ready')) as root:
-            seeded(root)
-            (root / ALPHA_RECORD).write_text(BAD_BLOCK, encoding='utf-8')
-            code, out = report(root, '0.1', *argv)
-        assert code == 2, out
-        assert '-- story (' not in out
-        assert '"milestone"' not in out
-        if not argv:
-            assert ALPHA_RECORD in out
-            assert 'line 3' in out
-            assert 'WOMBAT' in out
-
-
-# --- section 6: gate cost -----------------------------------------------------
-# The feature's own risk 3 is that telemetry nobody reads is cost with no
-# benefit, which is why this section is the feature's ship blocker rather than
-# its garnish. So the cases below pin the two ways the table could lie — a gate
-# omitted for having only one run, and a delta whose corpus moved presented as
-# a regression — and hard rule 4's read side: a row this section cannot use is
-# NAMED, never dropped into silence.
 
 def gate_line(ts: str, gate: str, verdict: str = 'PASS',
               duration_ms: int | None = 0, census: int | None = None) -> str:
@@ -774,10 +292,10 @@ def gate_line(ts: str, gate: str, verdict: str = 'PASS',
 
 
 def gates_report(*lines: str, argv: tuple = ()) -> str:
-    """A tree whose ledger is exactly the gate rows a case cares about."""
+    """A tree whose root ledger is exactly the gate rows a case cares about."""
     with tree(story_statuses=('done', 'ready')) as root:
-        put_ledger(root, *lines)
-        code, out = report(root, '0.1', *argv)
+        put_ledger(root, *lines, rel=ROOT_LEDGER)
+        code, out = report(root, '--tree', *argv)
     assert code == 0, out
     return out
 
@@ -807,39 +325,38 @@ BROKEN_GATE_ROWS = (
 def test_the_seeded_gate_rows_print_this_exact_table():
     """One row per gate, slowest-latest first, and a gate with ONE run still
     appears with no delta — a gate omitted for having too little data reads as
-    a gate that costs nothing, and the measurement that started this feature
-    found the gate suspected by NAME costing 0.2 s."""
-    assert section_of(gates_report(*THREE_PARSE_ONE_LINT), GATES) == """\
-[ledger:report] 0.1 — gate cost — 4 gate row(s), 2 gate(s), \
-across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 1 delta(s) marked \
-* for a census that moved or is absent, 0 row(s) this section could not use
+    a gate that costs nothing."""
+    assert gates_report(*THREE_PARSE_ONE_LINT).rstrip('\n') == """\
+[ledger:report] tree — gate cost — 4 gate row(s), 2 gate(s), 1 delta(s) \
+marked * for a census that moved or is absent, 0 row(s) this section could \
+not use
 
 -- gate (2)
 gate   runs  first_ms  last_ms  delta_ms  census
 parse     3      8000    30000   +22000*  -
 lint      1      2000     2000         -  -
 
--- rows this section could not use (0)"""
+-- rows this section could not use (0)
+
+   4 tree row(s) no milestone owns, by kind: gate 4; the same rows by branch: - 4
+   0 row(s) name a grain no milestone in this tree holds — counted in no report"""
 
 
 def test_a_gate_that_got_faster_carries_a_signed_negative_delta():
     out = gates_report(
         gate_line('2026-09-03T10:00:00Z', 'pm-shape-scan', duration_ms=34800),
         gate_line('2026-09-03T11:00:00Z', 'pm-shape-scan', duration_ms=900))
-    assert row_of(out, GATES, 'gate (1)', 'pm-shape-scan') == [
+    assert row_of(out, 'gate (1)', 'pm-shape-scan') == [
         'pm-shape-scan', '2', '34800', '900', '-33900*', '-']
 
 
-# A duration without its census invites the wrong conclusion (risk 2): the same
-# gate is legitimately slower on a bigger tree. The number is still printed —
-# it was measured — but nothing may present it as a regression.
+# A duration without its census invites the wrong conclusion: the same gate is
+# legitimately slower on a bigger tree. The number is still printed — it was
+# measured — but nothing may present it as a regression.
 @pytest.mark.parametrize('first_census,last_census,expected', [
-    # Held still: comparable, so no mark.
     (120, 120, ['parse', '2', '8000', '9000', '+1000', '120', '→', '120']),
-    # Moved: the delta is marked and the heading counts it.
     (120, 900, ['parse', '2', '8000', '30000', '+22000*', '120', '→', '900']),
-    # Half a pair is not half an answer: `120 → -` would read as a corpus that
-    # shrank to nothing, and an unqualified delta reads as a fact.
+    # Half a pair is not half an answer.
     (120, None, ['parse', '2', '8000', '30000', '+22000*', '-']),
 ])
 def test_a_delta_whose_census_moved_or_is_absent_is_marked(
@@ -850,72 +367,37 @@ def test_a_delta_whose_census_moved_or_is_absent_is_marked(
                   census=first_census),
         gate_line('2026-09-03T11:00:00Z', 'parse', duration_ms=last_ms,
                   census=last_census))
-    assert row_of(out, GATES, 'gate (1)', 'parse') == expected
+    assert row_of(out, 'gate (1)', 'parse') == expected
     marked = '0' if first_census == last_census else '1'
-    assert f'{marked} delta(s) marked' in section_of(out, GATES)
+    assert f'{marked} delta(s) marked' in out.splitlines()[0]
 
 
 def test_every_unusable_gate_row_is_named_with_why_and_the_good_row_survives():
     """Hard rule 4's read side: a row this section cannot use is NAMED, never
     dropped into silence and never coerced to a zero."""
-    assert section_of(gates_report(*BROKEN_GATE_ROWS), GATES) == """\
-[ledger:report] 0.1 — gate cost — 5 gate row(s), 1 gate(s), \
-across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
-* for a census that moved or is absent, 4 row(s) this section could not use
-
--- gate (1)
-gate   runs  first_ms  last_ms  delta_ms  census
-parse     1      8000     8000         -  -
-
--- rows this section could not use (4)
-gate      why                            ts
-lint      no duration_ms                 2026-09-03T10:01:00Z
-warnings  duration_ms is not an integer  2026-09-03T10:02:00Z
-unit      duration_ms is negative        2026-09-03T10:03:00Z
--         no gate name                   2026-09-03T10:04:00Z"""
+    out = gates_report(*BROKEN_GATE_ROWS)
+    assert block_rows(out, 'rows this section could not use (4)') == [
+        ['lint', 'no', 'duration_ms', '2026-09-03T10:01:00Z'],
+        ['warnings', 'duration_ms', 'is', 'not', 'an', 'integer',
+         '2026-09-03T10:02:00Z'],
+        ['unit', 'duration_ms', 'is', 'negative', '2026-09-03T10:03:00Z'],
+        ['-', 'no', 'gate', 'name', '2026-09-03T10:04:00Z']]
+    assert row_of(out, 'gate (1)', 'parse')[:2] == ['parse', '1']
 
 
-def test_the_gate_section_says_it_is_the_trees_and_two_milestones_agree():
-    """Review M2. `gate` rows name no grain, so 0.4.0/D3 files every one at the
-    tree's root and every milestone's report reads the same set — which makes
-    `runs` and `delta_ms` lifetime-of-TREE numbers under a MILESTONE heading.
-
-    Two claims, and the second is the one that would have been a silent lie:
-    the section states its own scope, and two different milestones' reports
-    print the identical gate line. Windowing by the milestone's timestamps was
-    the alternative and it loses — a milestone declares no time range, so the
-    window would be inferred and then quoted as if somebody had stated it.
-    """
-    with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        write(root / 'pm/roadmap/milestones/0.2.md',
-              {'id': '"0.2"', 'name': 'Next', 'status': 'building'})
-        put_ledger(root,
-                   gate_line('2026-01-01T00:00:00Z', 'unit'),
-                   gate_line('2026-07-01T00:00:00Z', 'unit'),
-                   rel='pm/roadmap/ledger.jsonl')
-        one = section_of(report(root, '0.1')[1], GATES)
-        two = section_of(report(root, '0.2')[1], GATES)
-    assert 'across the whole tree, not this milestone' in one, one
-    assert one.replace('0.1', 'X') == two.replace('0.2', 'X'), (one, two)
-
-
-def test_a_ledger_with_no_gate_row_still_prints_the_section():
-    """A missing section is indistinguishable from an empty one, and only one
+def test_a_tree_with_no_gate_row_still_prints_the_table():
+    """A missing table is indistinguishable from an empty one, and only one
     of those is true."""
-    out = gates_report(
-        status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
-        dispatch_line('2026-09-03T10:05:00Z', agent_type='developer'))
-    assert section_of(out, GATES) == """\
-[ledger:report] 0.1 — gate cost — 0 gate row(s), 0 gate(s), \
-across the whole tree, not this milestone: a gate row names no grain, so every one lands in the tree's ledger; 0 delta(s) marked \
-* for a census that moved or is absent, 0 row(s) this section could not use
-no data"""
+    out = gates_report(dispatch_line('2026-09-03T10:05:00Z',
+                                     agent_type='developer'))
+    assert '-- gate (0)' in out
+    assert '   1 tree row(s) no milestone owns, by kind: dispatch 1' in out
 
 
 def test_the_gate_json_carries_every_field_and_names_what_it_could_not_use():
     """The incomparable mark included, so a caller need not re-derive it."""
-    assert json.loads(gates_report(*THREE_PARSE_ONE_LINT,
-                                   argv=('--json',)))['gates'] == {
+    data = json.loads(gates_report(*THREE_PARSE_ONE_LINT, argv=('--json',)))
+    assert data['gates'] == {
         'gates': [
             {'gate': 'parse', 'runs': 3, 'first_ms': 8000, 'last_ms': 30000,
              'delta_ms': 22000, 'first_census': None, 'last_census': None,
@@ -926,29 +408,14 @@ def test_the_gate_json_carries_every_field_and_names_what_it_could_not_use():
         ],
         'unusable': [],
         'totals': {'rows': 4, 'gates': 2, 'incomparable': 1, 'unusable': 0}}
-    broken = json.loads(gates_report(*BROKEN_GATE_ROWS,
-                                     argv=('--json',)))['gates']
-    assert broken['unusable'] == [
-        {'gate': 'lint', 'why': 'no duration_ms',
-         'ts': '2026-09-03T10:01:00Z'},
-        {'gate': 'warnings', 'why': 'duration_ms is not an integer',
-         'ts': '2026-09-03T10:02:00Z'},
-        {'gate': 'unit', 'why': 'duration_ms is negative',
-         'ts': '2026-09-03T10:03:00Z'},
-        {'gate': None, 'why': 'no gate name', 'ts': '2026-09-03T10:04:00Z'}]
+    assert (data['rows'], data['unplaced']) == ({'gate': 4}, 0)
 
 
 # --- the roster: every block this report prints, named where a reader stands ---
-# `bg-a-read-verb-names-three-of-its-thirteen-sections`. The verb printed
-# twenty-three distinct block titles and `--help` named THREE, so the agent
-# that asked it the comparative question read the help, piped the output to
-# `head -60`, saw six sections and hand-rolled over the raw `.jsonl` two
-# censuses this report already computes.
-#
-# THE GATE IS THE SET, not the roster: `--help`'s block titles and the titles
-# the report PRINTS are compared both ways, so a fourteenth block reddens this
-# the day it lands and a block that retires reddens it too. The roster in
-# `--help` is what goes stale; this is what makes going stale a failure.
+# `bg-a-read-verb-names-three-of-its-thirteen-sections`. THE GATE IS THE SET:
+# `--help`'s block titles and the titles the report PRINTS are compared both
+# ways, so a new block reddens this the day it lands and a block that retires
+# reddens it too.
 SECTION_SEPARATOR = ' — '
 HEADING_MARK = ' (heading)'
 ROSTER_MARK = 'columns IN ORDER:'
@@ -958,8 +425,7 @@ KIND_JOIN = ' / '
 
 def help_roster() -> dict[str, tuple[str, ...]]:
     """`pm --help`'s block roster for `ledger report`, PARSED — one title to
-    the columns it names, in order. Parsed rather than restated: a roster
-    written down HERE would go stale exactly the way the one it guards did."""
+    the columns it names, in order."""
     from agentic_sdlc.repo.pm import cli as pm_cli
     entry = (pm_cli.USAGE or '').split('THE TELEMETRY REPORT')[-1]
     roster: dict[str, list[str]] = {}
@@ -981,13 +447,9 @@ def help_roster() -> dict[str, tuple[str, ...]]:
 
 
 def printed_blocks(out: str) -> dict[str, set[str]]:
-    """One report's block titles to the column names it printed under them.
-
-    Both shapes count as a block: a section HEADING — the three-part
-    `<prefix> <id> — <title> — <census>` line — and a `-- <title> (n)` table.
-    The summary line and the `no ledger` line carry ONE separator and are
-    neither.
-    """
+    """One report's block titles to the column names it printed under them:
+    a three-part `<prefix> <id> — <title> — <census>` heading, or a
+    `-- <title> (n)` table."""
     from agentic_sdlc.repo.pm import report as pm_report
     lines = out.splitlines()
     found: dict[str, set[str]] = {}
@@ -1003,27 +465,6 @@ def printed_blocks(out: str) -> dict[str, set[str]]:
     return found
 
 
-SECOND = '0.2'
-SECOND_LEDGER = 'pm/roadmap/ledgers/0.2.jsonl'
-
-
-def second_milestone(root) -> None:
-    """A second milestone with a ledger of its own — what a comparison needs
-    two of, and the smallest tree that produces one."""
-    write(root / 'pm/roadmap/milestones/0.2.md',
-          {'id': f'"{SECOND}"', 'kind': 'milestone', 'name': 'Next',
-           'status': 'planning'})
-    write(root / 'pm/roadmap/features/omega.md',
-          {'id': '0.2/omega', 'kind': 'feature', 'milestone': f'"{SECOND}"',
-           'name': 'Omega', 'status': 'building', 'reviewed': ''})
-    put_ledger(root,
-               status_line('2026-09-04T10:00:00Z', '0.2/omega',
-                           'planning', 'building'),
-               dispatch_line('2026-09-04T10:05:00Z', grain='0.2/omega',
-                             tool_calls=5, usage={'output': 700}),
-               rel=SECOND_LEDGER)
-
-
 def compared_report(*argv) -> str:
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
         seeded(root)
@@ -1033,41 +474,12 @@ def compared_report(*argv) -> str:
     return out
 
 
-def actors_report(*argv) -> str:
-    """A ledger of ARRIVALS, so `time per actor` prints rows and not `(0)`.
-
-    Its own seed because the sections fixture above has none, and a block that
-    only ever printed its `(0)` heading has never shown its columns — which is
-    how a column roster goes stale without any table changing.
-    """
-    from agentic_sdlc.repo.pm import arrive, ledger as _ledger
-
-    def disposition(ts: str, grain: str, state: str, answer: str,
-                    value: str = '') -> str:
-        return _ledger.dumps(_ledger.disposition_row(
-            grain, state, arrive.Said(answer, value), ts=ts))
-
-    with tree(story_statuses=('done', 'ready')) as root:
-        put_ledger(
-            root,
-            status_line('2026-09-03T10:00:00Z', A_S0, 'ready', 'building'),
-            disposition('2026-09-03T10:00:00Z', A_S0, 'building',
-                        '--by', 'agent developer'),
-            status_line('2026-09-03T10:10:00Z', A_S0, 'building', 'done'),
-            disposition('2026-09-03T10:10:00Z', A_S0, 'done', '--by',
-                        'agent reviewer'))
-        code, out = report(root, '0.1', *argv)
-    assert code == 0, out
-    return out
-
-
 def every_block_printed() -> dict[str, set[str]]:
-    """Every block the verb has, from the four seeds that between them reach
-    all of them: the sections fixture, a ledger of gate rows, a ledger of
-    arrivals, and two milestones side by side."""
+    """Every block the verb has, from the three seeds that between them reach
+    all of them: one milestone, the tree's gate rows, and two milestones."""
     found: dict[str, set[str]] = {}
     for out in (seeded_report(), gates_report(*THREE_PARSE_ONE_LINT),
-                actors_report(), compared_report()):
+                compared_report()):
         for title, columns in printed_blocks(out).items():
             found.setdefault(title, set()).update(columns)
     return found
@@ -1078,11 +490,9 @@ class TestTheHelpNamesEveryBlockItPrints:
 
     def test_the_census_of_blocks_is_not_zero(self):
         """Rule 4: an empty scrape would make both directions below pass over
-        nothing. The number is the claim — twenty-three blocks, of which
-        `--help` named three when this was filed."""
-        printed = every_block_printed()
-        assert len(printed) >= 20, sorted(printed)
-        assert len(help_roster()) >= 20, sorted(help_roster())
+        nothing."""
+        assert len(every_block_printed()) >= 8, sorted(every_block_printed())
+        assert len(help_roster()) >= 8, sorted(help_roster())
 
     def test_every_block_printed_is_named_in_help(self):
         printed, roster = every_block_printed(), help_roster()
@@ -1098,10 +508,8 @@ class TestTheHelpNamesEveryBlockItPrints:
             f'and no seed printed it')
 
     def test_every_column_named_is_a_column_printed(self):
-        """The roster's second half: a title with the wrong columns beside it
-        is the same defect one layer down. `<placeholder>` columns are the
-        clock's per-state ones, which are the project's words and not this
-        verb's."""
+        """A title with the wrong columns beside it is the same defect one
+        layer down. `<placeholder>` columns are the clock's per-state ones."""
         printed = every_block_printed()
         for title, columns in help_roster().items():
             if not printed.get(title):
@@ -1113,96 +521,42 @@ class TestTheHelpNamesEveryBlockItPrints:
 
 
 # --- more than one milestone --------------------------------------------------
-# `bg-the-telemetry-verb-cannot-compare-two-milestones`. Every telemetry
-# question actually asked of this tree is comparative — *where are we, compared
-# to the previous milestone, how are we improving* — and the answer used to be
-# six invocations or a `jq` join over N nested documents. What is pinned here:
-#
-#   * ONE GOLDEN for the whole compared report. The block titles, the row per
-#     milestone, the `delta` row's arithmetic (`last - first`), the `*` on a
-#     delta whose census moved, the `-` on one whose ends were never both
-#     measured — and the two blocks that say out loud they are the tree's rows
-#     rather than the milestone's, so a 0 delta cannot read as "no change";
-#   * the `--json` SHAPE, which is the decision this grain had to make: one
-#     joined document, because a nested report per milestone is the join the
-#     brief says a caller should not have to write;
-#   * ORDER is read, never chosen (rule 9). The plan sequences the ids the
-#     caller named when it holds every one of them; otherwise the caller's
-#     order stands, and the heading says which;
-#   * the refusal matrix. Two ids where one resolves to nothing, an id that is
-#     not a milestone, one id named twice, `--from` beside more than one.
+# `bg-the-telemetry-verb-cannot-compare-two-milestones`. What is pinned here:
+# ONE GOLDEN for the whole compared report; the `--json` SHAPE; ORDER read,
+# never chosen (rule 9); a root row in exactly ONE block; the refusal matrix.
 PLAN_REL = 'pm/roadmap/releases.md'
 COMPARED_TABLE = """\
 [ledger:report] 0.1 → 0.2 — milestone comparison — 2 milestone(s) in given \
-order, 9 block(s), 6 block(s) marked * for a census that moved or is \
-absent
+order, 3 block(s), 3 block(s) marked * for a census that moved or is absent
 
--- spend per grain (2)
-milestone  dispatch_rows  status_rows  grains  total_rows  in  out  \
-cache_create  cache_read  tokens_total  tool_calls  duration_s
-0.1                    3            5      10           0   -    -         \
-    -           -             -          37           -
-0.2                    1            1       1           0   -  700         \
-    -           -             -           5           -
-delta                -2*          -4*      -9         +0*   -    -         \
-    -           -             -        -32*           -
+-- units (2)
+milestone  units  open_units  tokens  duration  rows
+0.1            4           1    4000       300    11
+0.2            1           0     700        60     2
+delta         -3         -1*  -3300*     -240*   -9*
+
+-- by agent (2)
+milestone  agents  developer  reviewer
+0.1             2       3000      1000
+0.2             1        700         -
+delta          -1     -2300*         -
 
 -- time per state (2)
 milestone  grains  building_s  reviewing_s  closed_s   open_s
-0.1            10        1080          120      1200    88500
+0.1             7        1080          120      1200    88500
 0.2             1           -            -         -     3600
-delta          -9           -            -         -  -84900*
+delta          -6           -            -         -  -84900*
 
--- time per actor (2)
-milestone  actors  arrivals  seconds
-0.1             0         0        -
-0.2             0         0        -
-delta          +0        +0        -
+[ledger:report] tree — gate cost — 0 gate row(s), 0 gate(s), 0 delta(s) \
+marked * for a census that moved or is absent, 0 row(s) this section could \
+not use
 
--- rows naming no grain (2)
-milestone  dispatches  in  out  cache_create  cache_read  tokens_total  \
-tool_calls  duration_s
-0.1                 0   -    -             -           -             -     \
-      -           -
-0.2                 0   -    -             -           -             -     \
-      -           -
-delta              +0   -    -             -           -             -     \
-      -           -
-   dispatches: read from the tree's ledger, not this milestone's — so a row \
-whose `tree` snapshot held exactly one story in progress is billed to that \
-story instead and leaves this bucket, which is why the delta is real and not 0
+-- gate (0)
 
--- yield per review pass (2)
-milestone  records  passes  findings
-0.1              3       2         7
-0.2              0       0         0
-delta           -3     -2*       -7*
+-- rows this section could not use (0)
 
--- rework (2)
-milestone  passes
-0.1             2
-0.2             0
-delta          -2
-
--- escapes (2)
-milestone  bugs  features
-0.1           2         2
-0.2           0         0
-delta       -2*        -2
-
--- overhead shape (2)
-milestone  dispatch_rows  decision_rows  session_rows
-0.1                    3              2             2
-0.2                    1              0             0
-delta                 -2            -2*           -2*
-
--- gate cost (2)
-milestone  rows  gates  incomparable  unusable
-0.1           0      0             0         0
-0.2           0      0             0         0
-delta        +0     +0            +0        +0
-   gates: the same rows under every milestone: these name no grain, so \
-they live in the tree's ledger and this delta is 0 by construction"""
+   0 tree row(s) no milestone owns, by kind: none; the same rows by branch: none
+   0 row(s) name a grain no milestone in this tree holds — counted in no report"""
 
 
 @pytest.fixture
@@ -1238,33 +592,25 @@ class TestTwoMilestonesSideBySide:
 
     def test_the_json_is_one_joined_document_and_not_two_reports(self, frozen):
         """The shape decision, asserted where it is DECIDED — in
-        `report.compare_data`'s docstring and here. A caller gets the join; a
-        caller who wanted the nested document names one id."""
+        `report.compare_data`'s docstring and here."""
         with tree(feature_status='done',
                   story_statuses=('done', 'ready')) as root:
             two_milestones(root)
             code, out = compare(root, '--json')
         assert code == 0, out
         data = json.loads(out)
-        assert sorted(data) == ['blocks', 'milestones', 'order']
+        assert sorted(data) == ['blocks', 'milestones', 'order', 'tree']
         assert data['milestones'] == ['0.1', SECOND]
         assert data['order'] == 'given'
-        # NOT a document per milestone: no milestone id is a top-level key,
-        # which is the join this verb exists to save.
-        assert SECOND not in data
-        spend = data['blocks'][0]
-        assert spend['block'] == 'spend per grain'
-        assert spend['census'] == 'grains' and spend['moved'] is True
-        assert [row['milestone'] for row in spend['rows']] == ['0.1', SECOND]
-        assert spend['rows'][0]['grains'] == 10
-        assert spend['rows'][1]['grains'] == 1
-        assert spend['delta']['grains'] == -9
+        units = data['blocks'][0]
+        assert units['census'] == 'units' and units['moved'] is True
+        assert [row['milestone'] for row in units['rows']] == ['0.1', SECOND]
+        assert units['delta']['units'] == -3
         # Absent stays absent through the subtraction, exactly as in the table.
-        assert spend['delta']['in'] is None
+        agents = data['blocks'][1]
+        assert agents['delta']['reviewer'] is None
         assert [b['block'] for b in data['blocks']] == [
-            'spend per grain', 'time per state', 'time per actor',
-            'rows naming no grain', 'yield per review pass', 'rework',
-            'escapes', 'overhead shape', 'gate cost']
+            'units', 'by agent', 'time per state']
 
     def test_the_plan_sequences_the_ids_it_holds_and_says_so(self, frozen):
         """Rule 9's edge. `releases.md` `order` is a DECLARATION, so reading it
@@ -1275,8 +621,6 @@ class TestTwoMilestonesSideBySide:
             two_milestones(root)
             write(root / PLAN_REL, {'id': 'roadmap', 'kind': 'roadmap',
                                     'order': f'\n  - "{SECOND}"\n  - "0.1"'})
-            # Named 0.1 first; the plan ships 0.2 first, so the plan wins and
-            # the delta is measured the way the tree declared time runs.
             code, out = compare(root)
         assert code == 0, out
         assert out.splitlines()[0].startswith(
@@ -1299,61 +643,51 @@ class TestTwoMilestonesSideBySide:
         before the numbers."""
         with tree(feature_status='done',
                   story_statuses=('done', 'ready')) as root:
-            seeded(root)
-            second_milestone(root)
+            two_milestones(root)
             (root / SECOND_LEDGER).unlink()
             code, out = compare(root)
         assert code == 0, out
         assert out.splitlines()[1] == f'   {SECOND} — no ledger'
 
-    def test_a_note_claiming_a_zero_delta_sits_only_where_the_delta_is_zero(
-            self, frozen):
-        """Rule 4's first sin in PROSE, which is the form it took here.
-
-        Two blocks read rows that name no grain, so both read the tree's own
-        ledger rather than the milestone's — and they were given the same note,
-        saying the delta is *"0 by construction"*. It is, for a GATE row, which
-        carries no `tree` snapshot. It is not for an unattributed DISPATCH row,
-        which does: `named_grains` bills it to the single story in progress when
-        it was filed, so the row leaves this bucket under that story's milestone
-        and stays in it under every other. Shipped, the report printed
-        `dispatches -1` with "this delta is 0 by construction" underneath.
-
-        So the claim is gated rather than re-read: any block whose note says the
-        delta is zero must HAVE a zero delta, and the block that cannot must not
-        carry that note.
-        """
+    def test_a_root_row_lands_in_exactly_one_block(self, frozen):
+        """`ft-a-milestone-reports-only-its-own-rows`: a milestone reads only
+        rows it OWNS — its grain, or its declared `branch:` on a row naming no
+        grain. Every other root row is the TREE's, printed once under its own
+        heading and never under either milestone. Shipped, every root row
+        landed under EVERY milestone, and the delta read 0 over the lie."""
         with tree(feature_status='done',
                   story_statuses=('done', 'ready')) as root:
-            seeded(root)
-            second_milestone(root)
-            # A grainless dispatch in the TREE's ledger whose snapshot names the
-            # SECOND milestone's one story: unattributed under 0.1, billed to
-            # it under 0.2. This is the row the shipped note lied about. A
-            # STORY, because a feature alone places nothing (#39).
-            write(root / 'pm/roadmap/stories/omega-s0.md',
-                  {'id': '0.2/omega/s0', 'kind': 'story',
-                   'feature': '0.2/omega', 'milestone': f'"{SECOND}"',
-                   'name': 's0', 'status': 'building'})
-            (root / 'pm/roadmap/ledger.jsonl').write_text(
-                dispatch_line('2026-09-05T10:00:00Z', tool_calls=11,
-                              tree=snapshot(stories_wip=['0.2/omega/s0'])) + '\n',
-                encoding='utf-8')
+            two_milestones(root)
+            write(root / 'pm/roadmap/milestones/0.1.md',
+                  {'id': '"0.1"', 'kind': 'milestone', 'name': 'Demo',
+                   'status': 'building', 'branch': 'milestone/0.1'})
+            put_ledger(root, *(json.dumps(row) for row in (
+                {'ts': '2026-09-05T10:00:00Z', 'kind': 'gate', 'gate': 'unit',
+                 'verdict': 'PASS', 'duration_ms': 10, 'branch': 'main'},
+                {'ts': '2026-09-05T10:01:00Z', 'kind': 'gate', 'gate': 'lint',
+                 'verdict': 'PASS', 'duration_ms': 20,
+                 'branch': 'milestone/0.1'},
+                {'ts': '2026-09-05T10:02:00Z', 'kind': 'dispatch',
+                 'agent_type': 'scout', 'tokens_total': 900})),
+                rel=ROOT_LEDGER)
             code, out = compare(root, '--json')
+            own = json.loads(report(root, '0.1', '--json')[1])
         assert code == 0, out
-        blocks = {b['block']: b for b in json.loads(out)['blocks']}
-        no_grain = blocks['rows naming no grain']
-        # The delta is REAL, which is the whole finding.
-        assert no_grain['delta']['dispatches'] == -1, no_grain
-        assert report_module.TREE_WIDE_NOTE not in no_grain['note']
-        # And every block that DOES claim zero delivers one, over this same
-        # tree — the sweep, so a third block cannot inherit the wrong note.
-        claiming = [b for b in blocks.values()
-                    if b['note'] == report_module.TREE_WIDE_NOTE]
-        assert claiming, 'nothing claims a zero delta; the sweep proves nothing'
-        for block in claiming:
-            assert all(cell in (0, None) for cell in block['delta'].values()), \
-                f'{block["block"]} claims a 0 delta and prints {block["delta"]}'
+        data = json.loads(out)
+        tree_gates = [g['gate'] for g in data['tree']['gates']['gates']]
+        # The row on `main` is the tree's; the row on 0.1's branch is 0.1's,
+        # in 0.1's own gate table — every gate row in exactly one table.
+        assert tree_gates == ['unit'], data['tree']
+        assert [g['gate'] for g in own['gates']['gates']] == ['lint'], own
+        units = next(b for b in data['blocks'] if b['block'] == 'units')
+        rows = {r['milestone']: r['rows'] for r in units['rows']}
+        # The seeded 0.1 ledger's 11 placed rows (its session row names no
+        # grain and is counted apart), plus the gate on its branch.
+        assert rows == {'0.1': 12, SECOND: 2}, units
+        # The grainless dispatch names no grain and no branch: the tree's.
+        agents = next(b for b in data['blocks'] if b['block'] == 'by agent')
+        assert 'scout' not in agents['columns'], agents
+        assert data['tree']['rows'] == {'dispatch': 1, 'gate': 1}, data['tree']
 
     @pytest.mark.parametrize('argv, says', [
         # An id that resolves to nothing: the ONE sentence every verb gives a

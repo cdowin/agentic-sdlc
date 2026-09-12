@@ -3,11 +3,11 @@ id: ft-work-is-stamped-with-its-issue-and-agent
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: work is stamped with its start, stop, issue and agent
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: New `pm ledger stamp start|stop <grain> [--issue <id>]... [--agent <type>] [--tokens N] [--outcome …]` records a unit of work, and `ledger show` prints each unit on one line: start, stop, duration, issue, agent, tokens, outcome.
 ---
 
 # work is stamped with its start, stop, issue and agent

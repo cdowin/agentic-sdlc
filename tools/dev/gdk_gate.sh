@@ -120,9 +120,9 @@ _gdk_ledger_note() {
 #
 # What this does NOT fix, and it is the same class one level up: the report
 # directory is cleared per run, so a run that clears it while another holds a
-# sidecar there still costs that one its row. The transcript files collide the
-# same way. Both want a per-run directory, which is a bigger change than a
-# lost row justifies today.
+# sidecar there still costs that one its row. Makefile.devkit's gate macros
+# capture into `<slot>.<pid>` and rename it onto the slot; a runner capturing
+# into the path `gdk_gate_log` returns still shares it with a concurrent run.
 _gdk_ledger_sidecar() {
 	case "$1" in
 		*/*) printf '%s/.%s.%s.gdkms' "${1%/*}" "${1##*/}" "$$" ;;

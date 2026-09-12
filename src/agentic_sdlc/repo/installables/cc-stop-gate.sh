@@ -2,9 +2,11 @@
 # cc-stop-gate.sh — Claude Code Stop hook: when an AGENT tries to finish, run
 # the project's fast gate; on red, block the stop (exit 2) with the gate output
 # on stderr so the agent fixes before claiming done. Agent context only — the
-# scope marker or DEVKIT_AGENT_SCOPE; the orchestrator's trunk session exits 0
-# ungated, because it stops constantly. Stdin: the Stop event JSON
-# (cwd, stop_hook_active). Exit 0 = allow, exit 2 = block.
+# scope marker or DEVKIT_AGENT_SCOPE; the orchestrator's trunk session is never
+# gated, because it stops constantly — it is only TOLD when `check pm` names a
+# ready close (its CLOSE lines), and CLOSE_READY decides whether that informs or
+# holds the stop once. Stdin: the Stop event JSON (cwd, stop_hook_active).
+# Exit 0 = allow, exit 2 = block.
 set -eu
 
 # --- project config (yours to edit after install — the file is your repo's) --
@@ -19,6 +21,10 @@ UNIT_SLICE_ROOT="tests/unit"
 DEFAULT_BASE=""
 # The per-agent worktree marker written by tools/dev/agent-worktree.sh.
 SCOPE_MARKER=".agent-scope"
+# The trunk session's ask, grepped for `check pm`'s `(CLOSE)` lines; empty = never ask.
+CLOSE_ASK=(make -s sdlc ARGS="check pm")
+# A ready close at the trunk session's stop: "inform" names it; "block" holds the stop once.
+CLOSE_READY="inform"
 # -----------------------------------------------------------------------------
 
 # A header carried from an older install may lack a key: it runs at its stock value.
@@ -27,6 +33,8 @@ declare -p GATE_UNIT >/dev/null 2>&1 || GATE_UNIT=(make unit)
 declare -p UNIT_SLICE_ROOT >/dev/null 2>&1 || UNIT_SLICE_ROOT="tests/unit"
 declare -p DEFAULT_BASE >/dev/null 2>&1 || DEFAULT_BASE=""
 declare -p SCOPE_MARKER >/dev/null 2>&1 || SCOPE_MARKER=".agent-scope"
+declare -p CLOSE_ASK >/dev/null 2>&1 || CLOSE_ASK=(make -s sdlc ARGS="check pm")
+declare -p CLOSE_READY >/dev/null 2>&1 || CLOSE_READY="inform"
 
 # Inline, not sourced: a library the repo may lack would fail the hook.
 is_agent_context() {
@@ -58,6 +66,11 @@ json_bool() {
 		| head -1 \
 		| grep -oE '(true|false)' || true
 }
+# Stdin as one JSON string body: backslash, quote and tab escaped, lines joined by \n.
+json_escape() {
+	sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' \
+		| awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
+}
 
 # Re-entrancy guard: a stop already continuing from a prior block is not blocked again.
 [ "$(json_bool stop_hook_active)" = "true" ] && exit 0
@@ -69,8 +82,33 @@ REPO_ROOT="$(git -C "$SESSION_CWD" rev-parse --show-toplevel 2>/dev/null || true
 # Not inside a repo → nothing to gate.
 [ -n "$REPO_ROOT" ] || exit 0
 
-# Tested against the SESSION's repo root, not this process's cwd.
-is_agent_context "$REPO_ROOT" || exit 0
+# Tested against the SESSION's repo root, not this process's cwd. The trunk
+# session is never gated; a ready close is NAMED at its stop, because a CLOSE
+# line nobody reads before the session ends is read a session late.
+if ! is_agent_context "$REPO_ROOT"; then
+	if [ "${#CLOSE_ASK[@]}" -eq 0 ] || [ ! -f "${REPO_ROOT}/Makefile" ]; then
+		exit 0
+	fi
+	ready="$(cd "$REPO_ROOT" || exit 0
+		"${CLOSE_ASK[@]}" 2>/dev/null \
+			| grep -E '\(CLOSE\)[[:space:]]*$' \
+			| sed -E 's/^[[:space:]]*(WARN[[:space:]]+)?//')" || ready=''
+	[ -n "$ready" ] || exit 0
+	if [ "$CLOSE_READY" = "block" ]; then
+		{
+			echo "BLOCKED (Stop gate): a close is ready — run it, or say why it waits, then stop again:"
+			printf '%s\n' "$ready" | sed 's/^/  /'
+		} >&2
+		exit 2
+	fi
+	[ "$CLOSE_READY" = "inform" ] \
+		|| echo "cc-stop-gate: CLOSE_READY='${CLOSE_READY}' is neither inform nor block — informing" >&2
+	message="$(printf '%s\n%s\n%s\n' 'Stop gate: a close is ready —' "$ready" \
+		'(CLOSE_READY="block" in tools/hooks/cc-stop-gate.sh holds the stop instead)' \
+		| json_escape)"
+	printf '{"systemMessage": "%s"}\n' "$message"
+	exit 0
+fi
 
 cd "$REPO_ROOT"
 

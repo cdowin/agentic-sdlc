@@ -3,11 +3,11 @@ id: ft-the-flow-is-boring-by-construction
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: the flow is boring by construction
-status: planning
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `dispatch` reads a milestone's new `mode: serial|parallel` (or `--mode`) and under parallel renders the agent-owned worktree loop on its `branch:`; its preamble inlines the builder git and scope rules instead of a READ-THESE file list; `install-hooks` ships `cc-git-allowlist.sh` (refuses bisect/stash/reset/checkout/restore/clean/rebase/amend/force-push, each with the alternative) and `cc-agent-isolation.sh` (refuses `isolation: "worktree"`, naming `agent-worktree.sh`); the Stop gate names `check pm`'s CLOSE lines (`CLOSE_READY = inform|block`).
 ---
 
 # the flow is boring by construction
@@ -76,3 +76,13 @@ itself is built in parallel under these guards, and its telemetry is in its clos
   lands in: the hooks' own corpora; tests/test_dispatch.py; tests/test_check_hooks.py
   what already covers this: `cc-commit-pathspec.sh` blocks pathless commits, and nothing else binds
     the leader. SDLC.md's rules are prose, and prose did not stop the bisect.
+
+## Close note — what was not built (0.10.0 W3)
+
+Story 3's second half, the leader write-confinement (refusing a leader-scope write to `src/`), was
+**withdrawn at dispatch on 2026-09-12**. The owner's direction that day was a leaner loop, in which
+the orchestrator fixes small things itself (review fixes, merge conflicts, one-line gaps) rather than
+dispatching a builder for each. A hook that forces every source edit through a builder is the heavy
+flow this milestone set out to remove. The Agent-isolation guard, the git allowlist, the dispatch
+mode and the Stop gate's CLOSE lines shipped.
+

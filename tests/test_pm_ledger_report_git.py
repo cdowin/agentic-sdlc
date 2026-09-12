@@ -18,14 +18,13 @@ grain out of a per-milestone directory, so WHICH LAYOUT a tree is in is now a
 fact the reader has to ask — and `retire` leaves today's disk in a different
 layout from the rev being read, which is the exact shape of "the live tree
 leaking into a question about history". Every join that branches on the layout
-(the ledger's home, the milestone's document, a review record beside its grain)
+(the ledger's home, the milestone's document)
 is therefore asked of the SOURCE, and the equality case is what proves it.
 
 **Every case here spawns git**, which is why the set is small and each member
 guards a SILENT wrong answer rather than a loud one: a census that does not
-match the disk walk's, a directory listing parsed as a document, today's disk
-leaking into a read about history, CRLF producing a second table for one
-milestone, and a read verb that writes. The refusals kept are the ones where
+match the disk walk's, today's disk leaking into a read about history, CRLF
+producing a second table for one milestone, and a read verb that writes. The refusals kept are the ones where
 the alternative is not a crash — a rev that is really a git flag, and an empty
 `--from` quietly answering from the working tree.
 """
@@ -46,25 +45,7 @@ STORY, QUIET, FEATURE, BUG = ('0.1/alpha/s0', '0.1/alpha/s1', '0.1/alpha',
 # The tree, not a milestone's directory: 0.4.0 left the pools under it and
 # nothing under a per-milestone name. `pm/roadmap/` outlives every retire.
 ROADMAP = 'pm/roadmap'
-RECORD_REL = 'docs/reviews/alpha.md'
 TAG = 'v9.9.9'
-
-# A record as the installed reviewer writes one: prose, then the fenced block.
-# Present so that sections 2 and 3 have something to print — a `--from` read
-# that could not follow a feature's `reviewed:` pointer out of git would print
-# an EMPTY yield table, which reads exactly like a milestone nobody reviewed.
-RECORD = """\
-The pass, in prose.
-
-```text
-verdict: SHIP-WITH-FIXES
-| id | severity | disposition |
-| A1 | MAJOR | landed 0badc0f |
-| A2 | MINOR | landed in-place |
-| A3 | QUESTION | deferred: 0.1/beta |
-```
-"""
-
 
 def report(root, *argv) -> tuple[int, str]:
     return run_cli(root, 'ledger', 'report', *argv)
@@ -78,26 +59,25 @@ def capture(root, *argv) -> str:
 
 def seeded(root) -> None:
     """The tree every equality case reads: one story worked and closed, one
-    story nothing touched, the feature that owns them, one bug naming a cause,
-    a review record with a real verdict block, and rows of all four kinds.
+    story nothing touched, the feature that owns them, one bug, and a stamp
+    pair beside the dispatch and status rows.
 
-    All five sections have content on purpose. A `--from` read that lost ONE
-    of the file kinds it has to open — the milestone document, a feature, a
-    story, a bug, a review record, the ledger — must fail loudly here.
+    Every block has content on purpose. A `--from` read that lost ONE of the
+    file kinds it has to open — the milestone document, a feature, a story, a
+    bug, the ledger — must fail loudly here.
     """
-    # The quiet story, in the stories POOL, where `tree()` already put it: the
-    # rewrite is for `size:`, which is a spend column and so has to be in the
-    # census on both sides.
-    write(root / ROADMAP / 'stories/s1.md',
-          {'id': QUIET, 'kind': 'story', 'feature': FEATURE,
-           'milestone': '"0.1"', 'name': 'S1', 'status': 'ready', 'size': 'm'})
     bug(root, 'crash', 'closed', caused_by=FEATURE)
-    (root / RECORD_REL).write_text(RECORD, encoding='utf-8')
     put_ledger(
         root,
         status_line('2026-09-03T10:00:00Z', STORY, 'ready', 'building'),
+        json.dumps({'ts': '2026-09-03T10:01:00Z', 'kind': 'stamp',
+                    'grain': STORY, 'edge': 'start', 'issue': ['#41'],
+                    'agent': 'developer'}),
+        json.dumps({'ts': '2026-09-03T10:09:00Z', 'kind': 'stamp',
+                    'grain': STORY, 'edge': 'stop', 'issue': ['#41'],
+                    'tokens': 6000, 'outcome': 'landed'}),
         dispatch_line('2026-09-03T10:05:00Z', agent_type='developer',
-                      tool_calls=37, duration_s=812,
+                      tool_calls=37, duration_s=812, tokens_total=4000,
                       tool_calls_before_first_write=9,
                       usage={'input': 1200, 'output': 38000,
                              'cache_creation': 210000, 'cache_read': 9100000},
@@ -155,15 +135,8 @@ def refuses(root, *argv, needle: str = '') -> str:
 def test_the_report_at_the_tag_is_the_report_before_the_retire():
     """Text and JSON, byte for byte, through the REAL close: `retire` removes
     the milestone's grains and its ledger (D6), which is exactly the state
-    this whole story exists for.
-
-    0.4.0 put the record BESIDE the grain here rather than at the end of a
-    `reviewed:` pointer, and that is the sharpest form of this case's own
-    subject. `<stem>-review.md` beside the document is the POOLED spelling;
-    `review.md` inside a directory is the nested one — and once the retire has
-    emptied the pools, today's disk answers "nested" for a rev that is pooled.
-    A reader that asked the disk prints a milestone nobody reviewed, with two
-    whole sections quietly missing and no line saying so.
+    this whole story exists for — and once the retire has emptied the pools,
+    today's disk answers "nested" for a rev that is pooled.
 
     The milestone document is RENAMED off its id for the same reason: a pooled
     filename is convention and `id:` is identity, so a report that fell back
@@ -175,12 +148,6 @@ def test_the_report_at_the_tag_is_the_report_before_the_retire():
         seeded(root)
         (root / ROADMAP / 'milestones/0.1.md').rename(
             root / ROADMAP / 'milestones/ms-demo.md')
-        (root / RECORD_REL).unlink()
-        write(root / ROADMAP / 'features/alpha.md',
-              {'id': FEATURE, 'kind': 'feature', 'milestone': '"0.1"',
-               'name': 'Alpha', 'status': 'building', 'reviewed': ''})
-        (root / ROADMAP / 'features/alpha-review.md').write_text(
-            RECORD, encoding='utf-8')
         live = capture(root, '0.1')
         live_json = capture(root, '0.1', '--json')
         commit(root, 'the milestone, still in the tree')
@@ -192,7 +159,7 @@ def test_the_report_at_the_tag_is_the_report_before_the_retire():
         commit(root, 'retire 0.1')
         at_tag = capture(root, '0.1', '--from', TAG)
         at_tag_json = capture(root, '0.1', '--json', '--from', TAG)
-    assert 'SHIP-WITH-FIXES' in live
+    assert '#41' in live and 'landed' in live
     assert f' — at {TAG} — ' in at_tag
     assert stripped(at_tag) == live
     payload = json.loads(at_tag_json)
@@ -256,65 +223,21 @@ def test_the_census_at_a_rev_narrows_exactly_as_the_disk_walk_does():
     assert stripped(at_tag) == live
 
 
-def test_a_directory_at_the_rev_is_not_a_file():
-    """`git show <rev>:<a-directory>` SUCCEEDS and hands back a listing, which
-    a reader expecting a document parses as one. `is_file` asks git for the
-    object TYPE for exactly that reason, and a `reviewed:` pointing at a
-    directory must resolve to no record rather than to a yield built out of
-    `git ls-tree` output."""
-    with tree(story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        (root / RECORD_REL).unlink()
-        write(root / f'{RECORD_REL}/inside.md',
-              {'id': '0.1/nope', 'name': 'not a record'})
-        commit(root, 'a pointer that names a directory')
-        git(root, 'tag', TAG)
-        out = capture(root, '0.1', '--from', TAG)
-    assert 'alpha.md' not in out
-    assert 'not a record' not in out
-
-
-def test_an_absolute_reviewed_pointer_never_reads_todays_disk():
-    """An absolute path is in no rev. Answering it from the working tree would
-    put a file the milestone never shipped with into a report about history —
-    the live tree leaking into a historical read."""
-    with tree(story_statuses=('done', 'ready')) as root:
-        seeded(root)
-        outside = root / 'todays-record.md'
-        outside.write_text(RECORD.replace('SHIP-WITH-FIXES', 'HOLD'),
-                           encoding='utf-8')
-        # Resolved: the pointer must be spelled the way git names the root
-        # (`rev-parse --show-toplevel` follows symlinks; a macOS tempdir is
-        # one), or the mismatch alone hides the file from the rev read and the
-        # case passes for the wrong reason. `commit` adds `-A`, so the record
-        # IS in the rev — an absolute pointer must still not reach it.
-        write(root / ROADMAP / 'features/alpha.md',
-              {'id': FEATURE, 'kind': 'feature', 'milestone': '"0.1"',
-               'name': 'Alpha', 'status': 'done',
-               'reviewed': str(outside.resolve())})
-        commit(root, 'an absolute pointer')
-        git(root, 'tag', TAG)
-        out = capture(root, '0.1', '--from', TAG)
-    assert 'HOLD' not in out
-    assert str(outside) not in out
-
-
 def test_crlf_terminators_read_the_same_from_git_as_from_disk():
     """`git show` hands over the bytes as they are; `Path.read_text` — the
-    reader `ledger.read_rows` uses — translates. A ledger and a record whose
-    terminators are CRLF must still produce ONE table either way, or the same
-    milestone has two reports and nothing says which is which."""
+    reader `ledger.read_rows` uses — translates. A ledger whose terminators
+    are CRLF must still produce ONE table either way, or the same milestone
+    has two reports and nothing says which is which."""
     with tree(story_statuses=('done', 'ready')) as root:
         seeded(root)
-        for rel in (LEDGER_REL, RECORD_REL):
-            path = root / rel
-            path.write_bytes(path.read_text(encoding='utf-8')
-                             .replace('\n', '\r\n').encode('utf-8'))
+        path = root / LEDGER_REL
+        path.write_bytes(path.read_text(encoding='utf-8')
+                         .replace('\n', '\r\n').encode('utf-8'))
         live = capture(root, '0.1')
-        commit(root, 'CRLF terminators on both documents')
+        commit(root, 'CRLF terminators on the ledger')
         git(root, 'tag', TAG)
         at_tag = capture(root, '0.1', '--from', TAG)
-    assert 'SHIP-WITH-FIXES' in live
+    assert '#41' in live
     assert stripped(at_tag) == live
 
 

@@ -303,6 +303,8 @@ class TheSweptKeysAreTheTreesOwn(unittest.TestCase):
     # pattern-matched — adding one is a decision about whether it is a ref.
     NOT_REFS = frozenset({'id', 'kind', 'name', 'status', 'owner', 'phase',
                           'branch',
+                          # 0.9.0: `serial` or `parallel`, a word, never an id.
+                          vocabulary.FIELD_MODE,
                           # 0.6.0: free prose a human wrote, not an id. A
                           # sentence naming a renamed grain reads fine after
                           # the rename; rewriting inside it would edit English.

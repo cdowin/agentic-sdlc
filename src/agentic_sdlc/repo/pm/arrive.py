@@ -106,6 +106,26 @@ def take(node: vocabulary.Arrival | None,
     return NOTHING, list(args)
 
 
+AGENT_WORD = 'agent'
+
+
+def agent_named(node: vocabulary.Arrival | None, said: Said) -> str | None:
+    """The type typed where the project declared `agent <placeholder>`, or
+    None — so `--review agent <type>` reads like `--by agent <type>`."""
+    if node is None or not said:
+        return None
+    typed = said.value.split()
+    for answer in node.answers:
+        words = answer.split()
+        if words[0] != said.answer:
+            continue
+        for at, word in enumerate(words[1:-1]):
+            if (word == AGENT_WORD and PLACEHOLDER.fullmatch(words[at + 2])
+                    and typed[at:at + 1] == [AGENT_WORD]):
+                return typed[at + 1] if len(typed) > at + 1 else ''
+    return None
+
+
 def unknown_flag_hint(node: vocabulary.Arrival | None) -> str:
     """What a state DOES accept, for the refusal a flag it does not gets —
     rule 11: naming the answers beats naming the typo."""

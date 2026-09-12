@@ -3,8 +3,8 @@ id: ft-a-milestone-reports-only-its-own-rows
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: a milestone reports only its own rows
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: []
 consumed_by: []
 changelog: `pm ledger report` and its comparison read only rows the milestone owns — its grains', or grainless rows whose `branch` is its declared `branch:` — and every other root row is reported once by the new `pm ledger report --tree`; `ledger show` attributes a row as the report places it.

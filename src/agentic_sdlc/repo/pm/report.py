@@ -575,10 +575,12 @@ def _agent_of(row: dict) -> str:
 
 
 def _folded(courier: dict, hand: dict) -> dict:
-    """The hand row's grain on the courier row's numbers; the hand's where it has none."""
+    """The hand row's stamps — grain, outcome, issue — on the courier row's
+    measured numbers; the hand's numbers only where the courier has none."""
     data = dict(courier)
-    if hand.get(ledger.GRAIN_FIELD):
-        data[ledger.GRAIN_FIELD] = hand[ledger.GRAIN_FIELD]
+    for key in (ledger.GRAIN_FIELD, OUTCOME_FIELD, ISSUE_FIELD):
+        if hand.get(key):
+            data[key] = hand[key]
     spend = ('usage', TOTAL_KEY) if not courier.get('usage') else ()
     for key in (*spend, *COUNT_KEYS, AGENT_TYPE_KEY):
         if key in hand and courier.get(key) in (None, '', {}):
@@ -586,23 +588,42 @@ def _folded(courier: dict, hand: dict) -> dict:
     return data
 
 
-def join_twins(rows: list) -> tuple[list, int]:
-    """(rows, pairs joined): each hand dispatch row folded into the ONE courier
-    row a transcript measured under its `agent_id` (#39), since rows are never
-    rewritten (D7). No id, or not exactly one courier, joins nothing."""
-    couriers: dict[str, list[int]] = {}
-    for i, row in enumerate(rows):
-        if _agent_of(row.data) and MEASURED_KEY in row.data:
-            couriers.setdefault(_agent_of(row.data), []).append(i)
-    out, folded = list(rows), set()
-    for i, row in enumerate(rows):
-        twins = couriers.get(_agent_of(row.data), [])
-        if MEASURED_KEY in row.data or len(twins) != 1:
-            continue
-        out[twins[0]] = out[twins[0]]._replace(
-            data=_folded(out[twins[0]].data, row.data))
-        folded.add(i)
-    return [row for i, row in enumerate(out) if i not in folded], len(folded)
+def twin_index(rows) -> dict[str, dict]:
+    """`agent_id` → the ONE courier row a transcript measured under it, folded
+    with every hand row naming it (#39) — read over EVERY ledger in the tree,
+    so a pair whose halves sit in two files is still one dispatch. No hand
+    row, or not exactly one courier, is no entry."""
+    couriers: dict[str, list[dict]] = {}
+    hands: dict[str, list[dict]] = {}
+    for data in rows:
+        if _agent_of(data):
+            (couriers if MEASURED_KEY in data else hands).setdefault(
+                _agent_of(data), []).append(data)
+    index = {}
+    for agent, found in couriers.items():
+        if len(found) == 1 and agent in hands:
+            index[agent] = found[0]
+            for hand in hands[agent]:
+                index[agent] = _folded(index[agent], hand)
+    return index
+
+
+def join_twins(rows: list, index: dict[str, dict] | None = None
+               ) -> tuple[list, int]:
+    """(rows, pairs joined): each pair in `index` (these rows' own when None)
+    as ONE row, at its first hand row, since rows are never rewritten (D7).
+    The courier row is dropped wherever it sits: the pair belongs only where
+    its hand row is, so no two reports can both count it."""
+    index = twin_index(r.data for r in rows) if index is None else index
+    out, joined = [], set()
+    for row in rows:
+        agent = _agent_of(row.data)
+        if agent not in index:
+            out.append(row)
+        elif MEASURED_KEY not in row.data and agent not in joined:
+            joined.add(agent)
+            out.append(row._replace(data=index[agent]))
+    return out, len(joined)
 
 
 # --- the tree -----------------------------------------------------------------
@@ -992,7 +1013,8 @@ def dispatch_unit(row: dict, grain: str) -> dict:
     ended = ledger.parse_ts(stop)
     start = ((ended - timedelta(seconds=duration)).strftime(ledger.TS_FORMAT)
              if ended is not None and duration is not None else '')
-    return _unit(grain, start, stop, agent=_text(row.get(AGENT_TYPE_KEY)),
+    return _unit(grain, start, stop, issue=_issues(row),
+                 agent=_text(row.get(AGENT_TYPE_KEY)),
                  duration=duration, tokens=_int(row.get(TOTAL_KEY)),
                  outcome=_text(row.get(OUTCOME_FIELD)), kind=ledger.KIND_DISPATCH)
 
@@ -1024,14 +1046,17 @@ AT_REV = ' — at {rev}'
 
 
 def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, own_rows: list,
-          root_rows: list, src: Source | None = None) -> dict:
+          root_rows: list, src: Source | None = None,
+          twins: dict[str, dict] | None = None) -> dict:
     """The whole report as one object — what `--json` prints. `own_rows` are
     the milestone's ledger, `root_rows` the tree's; a row is read only if the
     milestone OWNS it (`owns`), and a row in its own ledger it cannot place is
-    counted, never folded in. `rev` is present only when there was one."""
+    counted, never folded in. `twins` is `twin_index` over every ledger in
+    the tree. `rev` is present only when there was one."""
     src = DiskSource() if src is None else src
     own_lines = {row.line for row in own_rows}
-    rows, joined = join_twins(in_time_order(list(own_rows) + list(root_rows)))
+    rows, joined = join_twins(
+        in_time_order(list(own_rows) + list(root_rows)), twins)
     claim, grains = claim_of(src, cfg, mid, mdir)
     mine, superseded, no_grain = [], [], []
     for row in rows:
@@ -1063,6 +1088,7 @@ def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, own_rows: list,
                             [r for r in mine if arrival_state(r.data)]),
         'owned': _tally(_text(r.data.get(ledger.KIND_FIELD)) or DASH
                         for r in mine),
+        'gates': gates_data([r.data for r in mine]),
         'unpaired': len(unpaired),
         'superseded': {'rows': len(superseded), 'tokens': spent,
                        'grains': sorted({d[ledger.GRAIN_FIELD]
@@ -1134,6 +1160,8 @@ def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
          for a in agents]))
     out.append('')
     out.extend(clock_lines(cfg, data['clock']))
+    out.append('')
+    out.extend(gate_tables(data['gates']))
     out.append('')
     owned = data['owned']
     branch = data[BRANCH_FIELD]
@@ -1259,10 +1287,12 @@ def gates_data(rows: list[dict]) -> dict:
                        'unusable': len(unusable)}}
 
 
-def tree_data(root_rows: list, claims: list[Claim]) -> dict:
+def tree_data(root_rows: list, claims: list[Claim],
+              twins: dict[str, dict] | None = None) -> dict:
     """The tree's report: every root row no milestone's `Claim` owns. A row
-    that NAMES a grain no milestone holds is counted, never kept."""
-    rows, _joined = join_twins(in_time_order(list(root_rows)))
+    that NAMES a grain no milestone holds is counted, never kept. `twins` is
+    `build`'s: a courier whose hand row is in a milestone's ledger is there."""
+    rows, _joined = join_twins(in_time_order(list(root_rows)), twins)
     mine, unplaced = [], 0
     for row in rows:
         if any(owns(row.data, claim) for claim in claims):
@@ -1287,10 +1317,10 @@ def _gate_census_cell(entry: dict) -> str:
             else f'{first}{CENSUS_ARROW}{last}')
 
 
-def tree_lines(data: dict) -> list[str]:
-    """The tree's report as lines: the gate table, what it could not use, and
-    the counts."""
-    section = data['gates']
+def gate_tables(section: dict) -> list[str]:
+    """`gates_data` as its two tables — the gate cost, and the rows it could
+    not use. The tree's report and a milestone's print the same pair, each
+    over the gate rows it owns, so every gate row is in exactly one."""
     cost = []
     for entry in section['gates']:
         delta = (DASH if entry[DELTA_MS_COLUMN] is None
@@ -1302,18 +1332,20 @@ def tree_lines(data: dict) -> list[str]:
                      delta, _gate_census_cell(entry)))
     unusable = [(_cell(e[GATE_KEY]), e[WHY_COLUMN], _cell(e[TS_COLUMN]))
                 for e in section['unusable']]
-    totals = section['totals']
+    return [*_table(f'{GATE_KEY} ({len(cost)})', GATE_COLUMNS,
+                    (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost), '',
+            *_table(f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
+                    UNUSABLE_COLUMNS, (LEFT, LEFT, LEFT), unusable)]
+
+
+def tree_lines(data: dict) -> list[str]:
+    """The tree's report as lines: the gate tables, then the counts."""
+    totals = data['gates']['totals']
     out = [f'{HEADING_PREFIX} {TREE_ID} — {GATES_TITLE} — '
            f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
            f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for '
            f'a {MOVED_NOTE}, {totals["unusable"]} row(s) this section could '
-           f'not use', '']
-    out.extend(_table(f'{GATE_KEY} ({len(cost)})', GATE_COLUMNS,
-                      (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost))
-    out.append('')
-    out.extend(_table(f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
-                      UNUSABLE_COLUMNS, (LEFT, LEFT, LEFT), unusable))
-    out.append('')
+           f'not use', '', *gate_tables(data['gates']), '']
     out.append(f'{NOTE_INDENT}{sum(data["rows"].values())} {TREE_ROWS_NOTE}: '
                f'{_by_kind(data["rows"])}; {BY_BRANCH_NOTE}: '
                f'{_by_kind(data["branches"])}')

@@ -2,11 +2,11 @@
 id: "ms-the-ledger-is-a-stamp"
 kind: milestone
 name: the ledger is a stamp
-status: building
+status: done
 depends_on: ["ms-the-tool-agrees-with-itself"]
 branch: milestone/0.10.0-the-ledger-is-a-stamp
 version: 0.10.0
-changelog:
+changelog: `pm ledger report` is reshaped (minor, rule 6): the stamp/units table, `by agent`, `time per state`, the milestone's own gate tables and named count lines replace the old 17-table report, and `--tree` holds every row no milestone owns — scripts grepping the removed blocks must move; `pm ledger stamp` and `record --outcome` are how a unit is stamped.
 order:
   - "ft-the-flow-is-boring-by-construction"
   - "ft-a-milestone-reports-only-its-own-rows"
@@ -17,6 +17,7 @@ order:
   - "bg-an-unknown-agent-type-is-recorded-as-a-dispatch"
   - "bg-two-gate-runs-share-one-log-and-inflate-its-census"
 mode: parallel
+reviewed: docs/reviews/2026-09-12-0.10.0-milestone-review.md
 ---
 
 # 0.10.0 — the ledger is a stamp

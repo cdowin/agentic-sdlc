@@ -3,8 +3,8 @@ id: ft-a-concurrent-dispatch-attributes-itself
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: a concurrent dispatch attributes itself, once
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.10.0-features.md
 depends_on: ["ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []
 changelog: `dispatch --grain` renders a `GDK-STAMP grain=<id> [issue=<n>]` line that `ledger record --from-transcript` copies verbatim, so concurrent dispatches attribute themselves without `GDK_LEDGER_GRAIN`; every ledger row now carries `branch`, read as text from HEAD.

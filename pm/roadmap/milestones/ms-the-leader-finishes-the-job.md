@@ -2,7 +2,7 @@
 id: "ms-the-leader-finishes-the-job"
 kind: milestone
 name: the leader finishes the job
-status: building
+status: done
 depends_on: []
 branch: milestone/0.12.0-the-leader-finishes-the-job
 mode: parallel

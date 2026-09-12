@@ -113,20 +113,33 @@ def test_the_newest_row_wins_so_an_average_cannot_hide_a_regression(tmp_path):
     and the age printed beside it must be that row's own, because an age
     computed from the row it did not pick certifies the stale number.
 
-    ACROSS BOTH FILES (#48): the stalest row sits in the gitignored local
-    ledger, read LAST, and the `integration` tier's only row is there too — a
-    gate that read the tracked file alone would call that tier UNMEASURED."""
+    A tree with no local ledger (one from before #48) grades its tracked rows."""
     rows = [gate_row('unit', 40_000, '2026-09-05T12:00:00Z'),
-            gate_row('unit', 1_000, '2026-09-05T10:00:00Z')]
-    local = [gate_row('unit', 1_000, '2020-01-01T00:00:00Z'),
-             gate_row('integration', 30_000)]
-    with tree(tmp_path, rows, BUDGET, local=local):
+            gate_row('unit', 1_000, '2026-09-05T10:00:00Z'),
+            gate_row('integration', 30_000)]
+    with tree(tmp_path, rows, BUDGET):
         code, out = check()
     assert code == 1, out
     line = next(l for l in out.splitlines() if 'OVER BUDGET unit' in l)
     assert '40.0s' in line, out
     assert budget._age('2026-09-05T12:00:00Z') in line, out
-    assert budget._age('2020-01-01T00:00:00Z') not in out, out
+    assert 'ok          integration' in out, out
+
+
+def test_a_tracked_row_is_another_machines_and_is_not_graded(tmp_path):
+    """0.12.0, found by CI on PR #50: once gate rows land in the local ledger
+    (#48), the tracked ones freeze, and a CI checkout that never ran `unit`
+    graded a laptop's 28.2s row from before the move as its own and failed.
+    A ceiling is about the machine that ran the tier: with local rows present,
+    only they are graded, and a tier this machine did not run is UNMEASURED —
+    reported, never a verdict on someone else's clock."""
+    rows = [gate_row('unit', 40_000, '2026-09-05T12:00:00Z')]
+    local = [gate_row('integration', 30_000)]
+    with tree(tmp_path, rows, BUDGET, local=local):
+        code, out = check()
+    assert code == 0, out
+    assert 'OVER BUDGET' not in out, out
+    assert 'UNMEASURED  unit' in out, out
     assert 'ok          integration' in out, out
 
 

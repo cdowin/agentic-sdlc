@@ -19,7 +19,7 @@ from agentic_sdlc.core import apply, frontmatter
 from agentic_sdlc.core.config import pointer_escapes
 from agentic_sdlc.repo import vehicle
 from agentic_sdlc.repo.pm import (arrive, inventory, ledger, rename, report,
-                                  templates, validate, vocabulary)
+                                  roster, templates, validate, vocabulary)
 
 PROG = 'agentic-sdlc pm'
 
@@ -790,6 +790,10 @@ def _answered(cfg: vocabulary.PmConfig, kind: str, args: list[str],
         said, rest = arrive.take(node, list(args))
     except arrive.Incomplete as err:
         raise Usage(str(err)) from err
+    agent = arrive.agent_named(node, said)
+    defect = roster.agent_defect(cfg.root, agent) if agent is not None else ''
+    if defect:
+        raise Usage(f'{said.answer} cannot record that answer: {defect}')
     stray = [a for a in rest
              if a.startswith(vocabulary.ANSWER_PREFIX) and a not in other]
     if stray:
@@ -2544,6 +2548,12 @@ def cmd_ledger_record(cfg: vocabulary.PmConfig, args: list[str]) -> int:
                     'or --grain <id> (a hand entry), or both — a transcript '
                     'carries the numbers and --grain carries what they were '
                     'spent on')
+    # Only a HAND entry's type can be a typo: a transcript's is what the
+    # harness spawned (`general-purpose`), and refusing it loses the spend.
+    defect =('' if source or '--agent-type' not in flags
+              else roster.agent_defect(cfg.root, flags['--agent-type']))
+    if defect:
+        raise Usage(f'--agent-type {defect}; no row was written')
     fields: dict[str, object] = {
         'session_id': flags.get('--session-id', ''),
         'agent_id': flags.get('--agent-id', ''),

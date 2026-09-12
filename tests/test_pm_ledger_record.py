@@ -47,7 +47,7 @@ from support.pm import (ledger_lines, ledger_rows, loaded, run_cli, run_gate,
                         tree, write)
 
 from agentic_sdlc.core import frontmatter
-from agentic_sdlc.repo.pm import arrive, ledger
+from agentic_sdlc.repo.pm import arrive, ledger, roster
 from agentic_sdlc.repo.pm import inventory, vocabulary
 
 # THE ALL-SEVEN-SEED FLOW, and why these rows keep the declaration they were
@@ -907,6 +907,12 @@ RECORD_REFUSALS = [
     (('--grain', '0.1/../0.1/alpha/s0'), ''),
     (('--grain', '/etc/hosts'), ''),
     (('--grain', '0.1/alpha/s*'), ''),
+    # The hand form's agent type is asked of the roster the case plants — the
+    # typo, then one representative per class of the grain grammar above.
+    (('--grain', STORY, '--agent-type', 'wombat'), "'wombat' is not an agent"),
+    (('--grain', STORY, '--agent-type', '../developer'), 'not an agent type'),
+    (('--grain', STORY, '--agent-type', '/developer'), 'not an agent type'),
+    (('--grain', STORY, '--agent-type', 'dev*'), 'not an agent type'),
     ((STORY, '--tokens-in', '5'), 'takes flags only'),
     (('--grain', STORY, '--wombat', '5'), 'takes flags only'),
     # A total and a split in one row is a row that can disagree with itself,
@@ -927,11 +933,25 @@ def test_the_record_flags_refuse_and_write_nothing():
         put_ledger(root, status_line(TS, STORY, 'ready', 'building'))
         outside = root.parent / 'outside.md'
         outside.write_text('---\nid: outside\n---\n', encoding='utf-8')
+        agents = root / roster.AGENTS_DIR
+        agents.mkdir(parents=True)
+        (agents / 'scout.md').write_text('# no frontmatter\n', encoding='utf-8')
         refuses(root, '--from-transcript', str(root / 'nope.jsonl'),
                 '--event', 'Stop', needle='is not a file')
         for argv, needle in RECORD_REFUSALS:
             refuses(root, *argv, needle=needle)
         assert outside.read_text(encoding='utf-8') == '---\nid: outside\n---\n'
+        # On the roster, by FILENAME when there is no `name:`; and a
+        # transcript's type is what the harness spawned, never a typo, so it
+        # is carried whatever the roster says rather than lose the spend.
+        for argv in (('--grain', STORY, '--agent-type', 'scout'),
+                     ('--from-transcript', str(SUBAGENT), '--event',
+                      'SubagentStop', '--agent-type', 'general-purpose')):
+            assert record(root, *argv)[0] == 0, argv
+        assert sorted(row['agent_type']
+                      for lines in all_ledger_lines(root).values()
+                      for row in map(json.loads, lines)
+                      if 'agent_type' in row) == ['general-purpose', 'scout']
 
 
 def test_a_transcript_this_module_cannot_read_refuses_loudly():

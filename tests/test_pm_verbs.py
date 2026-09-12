@@ -43,8 +43,8 @@ from support.pm import (
 
 from agentic_sdlc.core import frontmatter
 from agentic_sdlc.repo import vehicle
-from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, skills,
-                                  vocabulary)
+from agentic_sdlc.repo.pm import (arrive, cli, inventory, ledger, roster,
+                                  skills, vocabulary)
 
 FFILE = 'pm/roadmap/features/alpha.md'
 MFILE = 'pm/roadmap/milestones/0.1.md'
@@ -498,6 +498,32 @@ class AnArrivalIsTheOneEvent(unittest.TestCase):
                                 '--by', 'me')
             self.assertEqual(code, 2, out)
             self.assertIn('reviewing', out)
+
+    def test_an_agent_type_outside_the_roster_is_refused_by_name(self):
+        """`--by agent wombat` was written twice — a disposition and a
+        `rung.leave` — and `ledger report` totalled the work of an agent
+        nobody ships. The type is asked of the roster: the shipped
+        definitions plus the tree's own, the latter by `name:` (the file here
+        is `recon.md`). A tree holding no definition declares none and the
+        check is silent, the way `[emit]` is."""
+        with tree(feature_status='ready', config=self._declared()) as root:
+            self.assertEqual(roster.agent_roster(root), ())
+            agents = root / roster.AGENTS_DIR
+            agents.mkdir(parents=True)
+            (agents / 'recon.md').write_text('---\nname: scout\n---\n',
+                                             encoding='utf-8')
+            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
+                                '--by', 'agent', 'wombat')
+            self.assertEqual(code, 2, out)
+            for name in ('wombat', 'scout', 'developer'):
+                self.assertIn(name, out)
+            self.assertNotIn('recon', out)
+            self.assertEqual(frontmatter.field_of(root / FFILE, 'status'), 'ready')
+            self.assertEqual(ledger_rows(root), [])
+            code, out = run_cli(root, 'feature', 'building', '0.1/alpha',
+                                '--by', 'agent', 'scout')
+            self.assertEqual(code, 0, out)
+            self.assertEqual(self._dispositions(root)[0]['value'], 'agent scout')
 
     # --- 2: the fork ------------------------------------------------------
     def test_the_fork_prints_both_answers_as_commands_that_can_be_pasted(self):

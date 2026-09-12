@@ -95,7 +95,7 @@ def resume(root: Path) -> tuple[str, str]:
         return 'denied', (f'{" and ".join(said[DENY])} denies {RESUME_TOOL}, '
                           f'so a stopped subagent cannot be resumed — '
                           f'{REDISPATCH}{tail}')
-    if said[ALLOW]:
+    if said[ALLOW] and not unread:  # an unread file may hold the deny that wins
         return 'allowed', (f'{" and ".join(said[ALLOW])} allows '
                            f'{RESUME_TOOL}; a launch flag can still remove it '
                            f'and is not readable as text{tail}')

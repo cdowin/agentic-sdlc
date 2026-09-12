@@ -44,7 +44,10 @@ state?".
 
 ## Ship criterion
 
-<!-- Written when 0.11.0 is decomposed. -->
+After `pm install-skills`, `writing-plans` and `executing-plans` are installed, each with a
+`## Project config` block that a plain re-run keeps. The architect, po, developer,
+verification-builder, reviewer and milestone-reviewer briefs each carry the rule in their own terms,
+and `tests/test_install.py` proves them byte-current. (Written at review, 2026-09-12: 0.11.0 F6.)
 
 ## Proof budget
 

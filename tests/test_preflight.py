@@ -76,6 +76,11 @@ class ThePreflightReadsWhatTheSessionStandsIn(unittest.TestCase):
             got, meaning = preflight.resume(Path(tmp))
             self.assertEqual(got, preflight.UNKNOWN)
             self.assertIn(f'{SETTINGS} could not be read', meaning)
+            # Review F1: an allow beside an unreadable file is not `allowed` —
+            # the file it cannot read may hold the deny that wins.
+            _settings(Path(tmp), LOCAL, **allow)
+            got, meaning = preflight.resume(Path(tmp))
+            self.assertEqual(got, preflight.UNKNOWN, meaning)
 
         with self.subTest(hooks='no corpus'), \
                 tempfile.TemporaryDirectory() as tmp:

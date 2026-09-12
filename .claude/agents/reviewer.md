@@ -13,11 +13,13 @@ effort: high
 
 ## Scope, and what holds the line
 
-**One pass, over THIS feature's changeset, against THIS feature's ship criterion.** Two questions:
-does the feature do what its criterion says, and does it commit either of the two cardinal sins —
-a gate that prints PASS over what it did not measure, or a write that looks legitimate and is not.
-A general audit of everything the change touched is the MILESTONE reviewer's job; doing it here
-costs the feature's clock and finds mostly taste.
+**One pass per MILESTONE: every feature's record plus the milestone's cross-cutting record, in one
+dispatch.** Per feature, scope is its changeset against its ship criterion, and two questions:
+does it do what its criterion says, and does it commit either of the two cardinal sins — a gate
+that prints PASS over what it did not measure, or a write that looks legitimate and is not. The
+cross-cutting record asks what the features do to each other: the seams between lanes built in
+parallel are where the bugs hide. A general audit of everything the change touched finds mostly
+taste; skip it. Handed one feature, review that feature alone.
 
 **Severity is a judgement you make on purpose.** `BLOCKER`/`CRITICAL`/`MAJOR` HOLD the close;
 everything below is recorded, reported and carried forward. So raise a `MINOR` you genuinely want

@@ -1,44 +1,33 @@
-"""report.py — `pm ledger report`: a milestone's rows and records, added up.
+"""report.py — `pm ledger report`: the rows a milestone OWNS, as units.
 
-One milestone's ledger rows and review records, or more than one milestone's
-totals side by side. The ledger never judges; this is the caller judgement is
-left to. It may **sum, count, subtract and group, never weight, price or
-label** — no `size:` as a divisor, no dollar figure, no score. Stated here
-rather than cited, because a dangling decision id reads as settled while
-stopping an argument that was never had. Absent is `-`, not zero; the tree is
-walked, so every grain gets a row; nothing is dropped. It fails only on a
-document that will not parse, never on a number.
+One milestone's rows, or more than one milestone's totals side by side, or the
+tree's own rows (`--tree`). The ledger never judges; this is the caller
+judgement is left to. It may **sum, count, subtract and group** — and the one
+ratio it prints, an agent's `share` of the tokens its milestone's units
+recorded, is that sum divided by that sum, never a weight, price or score.
+Absent is `-`, not zero; nothing is dropped, and a row no report can place is
+COUNTED on a line of its own (rule 11). It never fails on a number.
+
+**Ownership is read, never inferred.** A milestone owns a row that names one
+of its grains, or — for a row naming no grain — one stamped with the branch
+the milestone DECLARES in `branch:`. A row from before either stamp is placed
+by its `tree` snapshot when that names exactly one of the milestone's stories.
+Every other root row is the tree's, and is printed once, under its own heading.
 """
 from __future__ import annotations
 
 import fnmatch
 import io
-from collections.abc import Callable, Iterable
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import NamedTuple
 
 from agentic_sdlc.core import frontmatter, spawn
-from agentic_sdlc.core.config import pointer_escapes
-from agentic_sdlc.repo.pm import arrive, inventory, ledger, verdict, vocabulary
+from agentic_sdlc.repo.pm import arrive, inventory, ledger, vocabulary
 
-# The two line shapes a consumer greps (rule 6); both carry the milestone id.
+# The line shape a consumer greps (rule 6); every heading carries the id.
 HEADING_PREFIX = '[ledger:report]'
-
-# What a section calls itself in `--json` and in its heading, in the order the
-# milestone asks.
-SECTION_SPEND = 'spend'
-SPEND_TITLE = 'spend per grain'
-SECTION_YIELD = 'yield'
-YIELD_TITLE = 'yield per review pass'
-SECTION_REWORK = 'rework'
-REWORK_TITLE = 'rework'
-SECTION_ESCAPES = 'escapes'
-ESCAPES_TITLE = 'escapes'
-SECTION_OVERHEAD = 'overhead'
-OVERHEAD_TITLE = 'overhead shape'
-SECTION_GATES = 'gates'
-GATES_TITLE = 'gate cost'
 
 # Printed for a number nobody recorded: a blank reads as zero and a `0` would
 # be a lie.
@@ -47,28 +36,21 @@ DASH = '-'
 # No `ledger.jsonl` at all: a fact, exit 0, one line.
 NO_LEDGER = 'no ledger'
 
-# A section that found nothing to count prints one line, never a table of
-# zeros.
-NO_DATA = 'no data'
-
 # The shape `pm status` already uses for its phase buckets.
 COLUMN_GAP = '  '
 BLOCK_PREFIX = '--'
 SUB_ROW_INDENT = '  '
+NOTE_INDENT = '   '
 
-# Frontmatter key printed as a column and used for nothing else — never a
-# divisor: dividing spend by `size` would be this module pricing work.
-SIZE_FIELD = 'size'
-
-# Grain kinds, in the order their tables print.
+# Grain kinds.
 KIND_STORY = vocabulary.GRAIN_STORY
 KIND_FEATURE = vocabulary.GRAIN_FEATURE
 KIND_BUG = vocabulary.GRAIN_BUG
-KIND_ORDER = (KIND_STORY, KIND_FEATURE, KIND_BUG)
+KIND_MILESTONE = vocabulary.GRAIN_MILESTONE
 
 # D3's snapshot buckets, by the kind of grain whose ids they hold;
-# `milestones_in_progress` is on every row and would attribute every dispatch
-# to every grain.
+# `milestones_in_progress` is on every row and would place every dispatch
+# under every milestone.
 CATEGORY_BUCKETS = (
     (KIND_STORY, (ledger.STORIES_IN_PROGRESS,)),
     (KIND_FEATURE, ('features_in_progress',)),
@@ -76,55 +58,17 @@ CATEGORY_BUCKETS = (
 # The old shape, read as-is (D7): matched by the seed's words when written, and
 # never re-read through a later declaration.
 LEGACY_BUCKETS = (
-    (KIND_STORY, ('stories_wip', 'stories_review')),
+    (KIND_STORY, ledger.STORY_SNAPSHOT_KEYS[1:]),
     (KIND_FEATURE, ('features_building', 'features_review')),
 )
 CATEGORY_KEYS = frozenset(key for _, keys in CATEGORY_BUCKETS for key in keys)
-# What a spend table says about old-shape rows that named nothing here: one of
-# three things, and only that it is not the fourth.
-LEGACY_NOTE = ('predate category keys and name no grain of this milestone — '
-               'an idle tree, another milestone\'s work, or words that shape '
-               'could not spell; not counted as empty')
-UNPLACED_NOTE = ('spent time in a state this declaration does not name — '
-                 'seconds in no category column, not zero')
-# UNPLACED_NOTE's dispatch-side twin: the drop is said out loud.
-FROZEN_ONLY_NOTE = ('named only through a deprecated key — at a word this '
-                    'declaration does not place in in_progress, so counted '
-                    'in no column above')
 
-# Column label <- `usage` key, in `ledger.USAGE_FIELDS` order so a new field
-# appears rather than being dropped.
-USAGE_KEYS = tuple(name for name, _ in ledger.USAGE_FIELDS)
-USAGE_LABELS = {'input': 'in', 'output': 'out',
-                'cache_creation': 'cache_create', 'cache_read': 'cache_read'}
-
-# The two summed keys a dispatch row carries outside `usage`.
-COUNT_KEYS = ('tool_calls', 'duration_s')
-
-# A hand-recorded ONE TOTAL, summed in its own column and folded into no other.
-# `in`/`out` is a split somebody MEASURED; this is a number somebody was TOLD,
-# and adding the two would report a spend nobody observed.
+# A hand-recorded ONE TOTAL — the number a dispatch unit's `tokens` reads.
 TOTAL_KEY = ledger.TOTAL_KEY
-TOTAL_ROWS = 'total_rows'
-SPLIT_NOTE = ('reported ONE total rather than the measured split — summed in '
-              f'`{TOTAL_KEY}` and added into no other column, because a total '
-              'and a split are not the same measurement')
-
-# The columns every spend table opens with, before the per-state ones.
-SPEND_COLUMNS = ('dispatches',) + tuple(
-    USAGE_LABELS[key] for key in USAGE_KEYS) + (TOTAL_KEY,) + COUNT_KEYS
-GRAIN_COLUMN = 'grain'
-KIND_COLUMN = 'kind'
-SIZE_COLUMN = 'size'
-TOTAL_COLUMN = 'total_s'
-NO_GRAIN_TITLE = 'rows naming no grain'
-# Said beside that bucket and counted apart from it: a row that named its grain
-# precisely, and named one this milestone does not hold, is the OPPOSITE of a
-# row that named none.
-ELSEWHERE_NOTE = ('name a grain this milestone does not hold — another '
-                  'milestone\'s work, read out of the tree\'s shared ledger; '
-                  'not unattributed')
+# The two counts a courier row carries outside `usage`, read by the join.
+COUNT_KEYS = ('tool_calls', 'duration_s')
 AGENT_ID_KEY = 'agent_id'
+AGENT_TYPE_KEY = 'agent_type'
 MEASURED_KEY = 'messages'
 JOINED_KEY = 'joined'
 JOINED_NOTE = ('courier/hand pair(s) joined by agent_id — one dispatch each, on '
@@ -133,72 +77,45 @@ JOINED_NOTE = ('courier/hand pair(s) joined by agent_id — one dispatch each, o
 # The payload key naming which milestone the report is OF — a key, not a kind.
 MILESTONE_KEY = 'milestone'
 
-# Section 2's columns; `verdict.DISPOSITION_KINDS` supplies the disposition
-# columns, so a new kind appears rather than counting into nothing.
-FEATURE_COLUMN = 'feature'
-RECORD_COLUMN = 'record'
-# One record, N passes; the ordinal is a column so two passes are told apart.
-PASS_COLUMN = 'pass'
-VERDICT_COLUMN = 'verdict'
-FINDINGS_COLUMN = 'findings'
-SEVERITY_COLUMN = 'severity'
-TARGET_COLUMN = 'target'
-VERDICT_TITLE = 'verdict'
-SEVERITY_TITLE = 'findings by severity'
-DEFERRED_TITLE = 'deferred to'
+# THE ROW CONTRACT this report reads (0.10.0). Every row may carry `branch`,
+# the HEAD it was filed on; a `stamp` row opens or closes one unit of work.
+BRANCH_FIELD = 'branch'
+KIND_STAMP = 'stamp'
+EDGE_FIELD = 'edge'
+EDGE_START, EDGE_STOP = 'start', 'stop'
+ISSUE_FIELD = 'issue'
+AGENT_FIELD = 'agent'
+TOKENS_FIELD = 'tokens'
+OUTCOME_FIELD = 'outcome'
 
-# Section 3's; this module reads no seed word (tests/test_pm_flow.py asserts it).
-STORY_COLUMN = 'story'
-PASSES_COLUMN = 'passes'
-DISTRIBUTION_TITLE = 'verdict distribution'
+# --- the columns, IN ORDER — what `--help` names (rule 11's read side) --------
+UNIT_TITLE = 'units'
+# The one-milestone heading; not `units`, which is the table under it.
+STAMP_TITLE = 'stamp table'
+UNIT_COLUMN, GRAIN_COLUMN, ISSUE_COLUMN, AGENT_COLUMN = (
+    'unit', 'grain', 'issue', 'agent')
+START_COLUMN, STOP_COLUMN, DURATION_COLUMN = 'start', 'stop', 'duration'
+TOKENS_COLUMN, OUTCOME_COLUMN = 'tokens', 'outcome'
+UNIT_COLUMNS = (UNIT_COLUMN, GRAIN_COLUMN, ISSUE_COLUMN, AGENT_COLUMN,
+                START_COLUMN, STOP_COLUMN, DURATION_COLUMN, TOKENS_COLUMN,
+                OUTCOME_COLUMN)
+AGENT_TITLE = 'by agent'
+UNITS_COLUMN, SHARE_COLUMN = 'units', 'share'
+AGENT_COLUMNS = (AGENT_COLUMN, UNITS_COLUMN, TOKENS_COLUMN, DURATION_COLUMN,
+                 SHARE_COLUMN)
+SHARE_MARK = '%'
+ISSUE_SEPARATOR = ','
 
-# Section 4's. The BINDING is `milestone:` and is not read here.
-CAUSED_BY_FIELD = 'caused_by'
-CAUSE_COLUMN = 'caused_by'
-BUG_COLUMN = 'bug'
-STATUS_COLUMN = 'status'
-FEATURE_STATUS_COLUMN = 'feature_status'
-ESCAPE_TITLE = 'bugs naming a cause'
-
-# Section 5's row keys; the separator makes the per-dispatch list one cell.
-BEFORE_WRITE_KEY = 'tool_calls_before_first_write'
-TOOL_CALLS_KEY = 'tool_calls'
-OUTPUT_KEY = 'output'
-LIST_SEPARATOR = ','
-DISPATCHES_COLUMN = 'dispatches'
-BEFORE_WRITE_COLUMN = 'before_first_write'
-CALLS_COLUMN = 'calls'
-DECISIONS_COLUMN = 'decisions'
-ENTRY_COLUMN = 'entry'
-TS_COLUMN = 'ts'
-NEXT_STATUS_COLUMN = 'next_status_s'
-SESSION_COLUMN = 'session_id'
-# The delta columns are headed by the keys they diff, in section 1's spelling.
-OUT_DELTA_COLUMN = USAGE_LABELS[OUTPUT_KEY]
-TOOL_CALLS_COLUMN = TOOL_CALLS_KEY
-BEFORE_WRITE_TITLE = 'story'
-DECISION_COUNT_TITLE = 'decisions per grain'
-DECISION_GAP_TITLE = 'decision to next status row'
-SESSION_TITLE = 'session deltas'
-
-# Section 6's, in milliseconds, the unit the row carries; rounding to seconds
-# would print `0` for most gates.
-GATE_KEY = 'gate'
-GATE_DURATION_KEY = 'duration_ms'
-GATE_CENSUS_KEY = 'census'
-GATE_COLUMN = 'gate'
-RUNS_COLUMN = 'runs'
-FIRST_MS_COLUMN = 'first_ms'
-LAST_MS_COLUMN = 'last_ms'
-DELTA_MS_COLUMN = 'delta_ms'
-CENSUS_COLUMN = 'census'
-WHY_COLUMN = 'why'
-GATE_COST_TITLE = 'gate'
-GATE_UNUSABLE_TITLE = 'rows this section could not use'
-# Marks a delta whose corpus moved: still printed, but a bigger tree is not a
-# regression.
-INCOMPARABLE_MARK = '*'
-CENSUS_ARROW = ' → '
+# The named count lines under the tables: each a fact the units do not hold.
+OWNED_NOTE = 'row(s) this milestone owns'
+NO_BRANCH_NOTE = ('no `branch:` declared, so no row naming no grain is placed '
+                  'here by branch')
+UNPAIRED_NOTE = ('stamp row(s) pair with nothing — a stop with no open start '
+                 'on its grain, or an edge that is neither; counted in no unit')
+SUPERSEDED_NOTE = ('superseded spend: {rows} row(s), {tokens} token(s) in this '
+                   'milestone\'s ledger naming a grain it does not hold')
+NO_GRAIN_NOTE = ('row(s) in this milestone\'s ledger name no grain and no '
+                 'branch it declares — counted in no unit')
 
 LEFT, RIGHT = 'left', 'right'
 
@@ -276,7 +193,7 @@ class _Blob:
 
 
 class Source:
-    """The tree the report reads, as the fourteen reads it makes — no more,
+    """The tree the report reads, as the eleven reads it makes — no more,
     none writing. The last four are the LAYOUT family: a rev read that asked
     `inventory.is_pooled` would look for a retired milestone's ledger, document and
     records in the layout the retire left.
@@ -301,13 +218,7 @@ class Source:
     def bug_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         raise NotImplementedError
 
-    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
-        raise NotImplementedError
-
     def field_of(self, path: Path, key: str) -> str:
-        raise NotImplementedError
-
-    def read_raw(self, path: Path) -> str:
         raise NotImplementedError
 
     def is_file(self, path: Path) -> bool:
@@ -324,10 +235,6 @@ class Source:
 
     def ledger_for(self, cfg: vocabulary.PmConfig, mid: str) -> Path:
         raise NotImplementedError
-
-    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
-        raise NotImplementedError
-
 
 class DiskSource(Source):
     """The working tree, delegated to `inventory` and `ledger` so the live
@@ -348,14 +255,8 @@ class DiskSource(Source):
     def bug_files(self, cfg: vocabulary.PmConfig, mid: str) -> list[Path]:
         return inventory.bug_files(cfg, mid)
 
-    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
-        return inventory.review_record_for(cfg, fid)
-
     def field_of(self, path: Path, key: str) -> str:
         return frontmatter.field_of(path, key)
-
-    def read_raw(self, path: Path) -> str:
-        return frontmatter.read_raw(path)
 
     def is_file(self, path: Path) -> bool:
         return path.is_file()
@@ -371,10 +272,6 @@ class DiskSource(Source):
 
     def ledger_for(self, cfg: vocabulary.PmConfig, mid: str) -> Path:
         return ledger.ledger_for(cfg, mid)
-
-    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
-        return inventory.shared_doc(cfg, path, name)
-
 
 class GitSource(Source):
     """The same tree at a rev, through `git show`, read-only by construction.
@@ -522,7 +419,7 @@ class GitSource(Source):
                 return path
         return None
 
-    # --- the fourteen reads ---------------------------------------------------
+    # --- the eleven reads -----------------------------------------------------
     def milestone_dir(self, cfg: vocabulary.PmConfig, mid: str) -> Path | None:
         """The milestone's HANDLE at the rev: its document in the pool, or the
         `<mid>-*` directory a pre-migration rev holds."""
@@ -596,26 +493,8 @@ class GitSource(Source):
         mdir = self.milestone_dir(cfg, mid)
         return self._grain_docs(mdir / BUGS_DIR) if mdir is not None else []
 
-    def review_record_for(self, cfg: vocabulary.PmConfig, fid: str) -> str | None:
-        """`inventory.review_record_for` at the rev. An absolute pointer resolves
-        to nothing here, even one inside the root: it named a place on one
-        machine's disk, not a path in the rev."""
-        ffile = self.feature_file(cfg, fid)
-        if ffile is None:
-            return None
-        pointer = self.field_of(ffile, 'reviewed')
-        # `pointer_escapes`, not `startswith('/')`: the local check accepted
-        # `../outside.md` and `~/x.md` (0.6.0, F1's class).
-        if pointer and pointer != 'null' and not pointer_escapes(pointer):
-            if self.is_file(cfg.root / pointer):
-                return pointer
-        return None
-
     def field_of(self, path: Path, key: str) -> str:
         return frontmatter.field_of(self._doc(path), key)
-
-    def read_raw(self, path: Path) -> str:
-        return frontmatter.read_raw(self._doc(path))
 
     def is_file(self, path: Path) -> bool:
         """Is there a blob at this path at the rev? A tree is not a file —
@@ -652,54 +531,40 @@ class GitSource(Source):
         return (ledger.ledger_path(mdir) if mdir is not None
                 else ledger.grainless_path(cfg.roadmap))
 
-    def shared_doc(self, cfg: vocabulary.PmConfig, path: Path, name: str) -> Path:
-        """`inventory.shared_doc` at the rev."""
-        if self.is_pooled(cfg):
-            return path.with_name(f'{path.stem}-{name}')
-        return path.parent / name
-
-
 class Grain(NamedTuple):
     """One story, feature or bug under the milestone, as the TREE holds it."""
     gid: str
     kind: str
-    size: str
-
-
-class Section(NamedTuple):
-    """One of the milestone's questions: `data` returns its own keys and
-    `lines` reads the whole object back, so a section may print another's
-    number and none recomputes one."""
-    name: str
-    data: Callable[[Source, vocabulary.PmConfig, str, Path, list], dict]
-    lines: Callable[[vocabulary.PmConfig, dict], list[str]]
 
 
 # --- the numbers --------------------------------------------------------------
-def _blank() -> dict:
-    """An accumulator that has seen nothing. Every sum starts ABSENT, not 0."""
-    return {'dispatches': 0, 'usage': {key: None for key in USAGE_KEYS},
-            TOTAL_KEY: None, 'tool_calls': None, 'duration_s': None}
+def _int(value: object) -> int | None:
+    """The integer on the row, or None for anything that is not one."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _text(value: object) -> str:
+    """The string on the row, or '' for anything that is not one."""
+    return value if isinstance(value, str) else ''
 
 
 def _plus(running: int | None, value: object) -> int | None:
     """`running` plus `value`, where an absent or non-integer value adds
     nothing: `None + absent` stays None, `0 + absent` stays 0. No number is
     ever this module's reason to fail."""
-    if isinstance(value, bool) or not isinstance(value, int):
+    if _int(value) is None:
         return running
-    return value if running is None else running + value
+    return value if running is None else running + value  # type: ignore[operator]
 
 
-def _add(acc: dict, row: dict) -> None:
-    """Fold one dispatch row into an accumulator. One row, counted once."""
-    acc['dispatches'] += 1
-    usage = row.get('usage')
-    usage = usage if isinstance(usage, dict) else {}
-    for key in USAGE_KEYS:
-        acc['usage'][key] = _plus(acc['usage'][key], usage.get(key))
-    for key in (TOTAL_KEY, *COUNT_KEYS):
-        acc[key] = _plus(acc[key], row.get(key))
+def _tally(values) -> dict[str, int]:
+    """Count per distinct value, sorted by value."""
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _agent_of(row: dict) -> str:
@@ -715,7 +580,7 @@ def _folded(courier: dict, hand: dict) -> dict:
     if hand.get(ledger.GRAIN_FIELD):
         data[ledger.GRAIN_FIELD] = hand[ledger.GRAIN_FIELD]
     spend = ('usage', TOTAL_KEY) if not courier.get('usage') else ()
-    for key in (*spend, *COUNT_KEYS, 'agent_type'):
+    for key in (*spend, *COUNT_KEYS, AGENT_TYPE_KEY):
         if key in hand and courier.get(key) in (None, '', {}):
             data[key] = hand[key]
     return data
@@ -743,10 +608,8 @@ def join_twins(rows: list) -> tuple[list, int]:
 # --- the tree -----------------------------------------------------------------
 def _grain(src: Source, path: Path, kind: str, fallback: str) -> Grain:
     """One grain document as a row: its own `id:` (the id `_ledger_id` writes,
-    which the report joins on), its kind, its `size:`; a missing id falls back
-    to the path's."""
-    gid = src.field_of(path, vocabulary.FIELD_ID) or fallback
-    return Grain(gid, kind, src.field_of(path, SIZE_FIELD))
+    which the report joins on); a missing id falls back to the path's."""
+    return Grain(src.field_of(path, vocabulary.FIELD_ID) or fallback, kind)
 
 
 def _bug_slug(mdir: Path, path: Path) -> str:
@@ -784,17 +647,16 @@ def walk_grains(src: Source, cfg: vocabulary.PmConfig, mid: str,
 
 def named_grains(row: dict, kinds: dict[str, str],
                  owned: dict[str, set[str]]) -> set[str]:
-    """The grains under this milestone that one dispatch row names.
+    """The grains under this milestone that one row names.
 
-    `grain` — what the dispatch was TOLD it was working on (0.4.0/D2) —
-    outranks the `tree` snapshot, and **a row that states a grain is attributed
-    by it and by nothing else**: falling through billed a row naming a
-    since-renamed story to whichever OTHER story was live.
+    `grain` — what the work was TOLD it was on (0.4.0/D2) — outranks the `tree`
+    snapshot, and **a row that states a grain is placed by it and by nothing
+    else**: falling through billed a row naming a since-renamed story to
+    whichever OTHER story was live.
 
     **A snapshot places a row only when it names exactly ONE story** (0.4.0/D8,
     its finest-kind clause superseded in 0.9.0): a feature is that story's
     roll-up, never a candidate, since bugs and milestone work are in no snapshot.
-
     Category keys when present; frozen keys only for an old-shape row.
     """
     stated = row.get(ledger.GRAIN_FIELD)
@@ -807,28 +669,6 @@ def named_grains(row: dict, kinds: dict[str, str],
     if len(stories) != 1:
         return set()
     return stories | {fid for fid, sids in owned.items() if sids & stories}
-
-
-def stated_elsewhere(row: dict, kinds: dict[str, str]) -> bool:
-    """Does this row STATE a grain this milestone does not hold? Its own line
-    in the spend section rather than pooled with `rows naming no grain` — see
-    `ELSEWHERE_NOTE`.
-    """
-    stated = row.get(ledger.GRAIN_FIELD)
-    return isinstance(stated, str) and bool(stated) and stated not in kinds
-
-
-def frozen_only_grains(row: dict, kinds: dict[str, str],
-                       owned: dict[str, set[str]]) -> set[str]:
-    """The grains a new-shape row names through the frozen keys and not the
-    category keys — what `named_grains` reads past, disclosed rather than
-    silent (rule 4). Empty for an old-shape row, and for a row that STATES its
-    grain: that is not a silent drop, the row said which grain it was.
-    """
-    if is_legacy(row) or isinstance(row.get(ledger.GRAIN_FIELD), str):
-        return set()
-    return (_named_through(row, LEGACY_BUCKETS, kinds, owned)
-            - _named_through(row, CATEGORY_BUCKETS, kinds, owned))
 
 
 def _named_through(row: dict, buckets_by_kind: tuple, kinds: dict[str, str],
@@ -851,37 +691,45 @@ def _named_through(row: dict, buckets_by_kind: tuple, kinds: dict[str, str],
 
 
 def is_legacy(row: dict) -> bool:
-    """Was this dispatch row written before the snapshot carried categories? A
-    row with no `tree` at all is not legacy; it never snapshotted."""
+    """Was this row written before the snapshot carried categories? A row with
+    no `tree` at all is not legacy; it never snapshotted."""
     tree = row.get('tree')
     return isinstance(tree, dict) and not (CATEGORY_KEYS & set(tree))
 
 
+class Claim(NamedTuple):
+    """What one milestone may claim a row by: the grains it holds (itself
+    included), which stories each feature owns, and its declared branch."""
+    kinds: dict[str, str]
+    owned: dict[str, set[str]]
+    branch: str
+
+
+def claim_of(src: Source, cfg: vocabulary.PmConfig, mid: str,
+             mdir: Path) -> tuple[Claim, list[Grain]]:
+    """The milestone's claim, read off its tree and its own `branch:`."""
+    grains, owned = walk_grains(src, cfg, mid, mdir)
+    kinds = {g.gid: g.kind for g in grains}
+    kinds[mid] = KIND_MILESTONE
+    branch = src.field_of(src.milestone_doc(mdir), BRANCH_FIELD)
+    return Claim(kinds, owned, '' if branch in ('', 'null') else branch), grains
+
+
+def owns(row: dict, claim: Claim) -> bool:
+    """Does this milestone own this row? A stated grain decides alone; a row
+    naming no grain is placed by its `branch` when it carries one, and by its
+    `tree` snapshot only when it carries neither — each a stamp the tree made
+    when the row was filed, never a guess from timestamps. So two milestones
+    with distinct grains and distinct branches can never share a row."""
+    if _text(row.get(ledger.GRAIN_FIELD)):
+        return row[ledger.GRAIN_FIELD] in claim.kinds
+    branch = _text(row.get(BRANCH_FIELD))
+    if branch:
+        return branch == claim.branch
+    return bool(named_grains(row, claim.kinds, claim.owned))
+
+
 # --- the clock ----------------------------------------------------------------
-def state_columns() -> tuple[str, ...]:
-    """The dwell columns: one per category, whatever the vocabulary; which word
-    within `in_progress` is `pm ledger show`. `done` has a column because a
-    reopened grain leaves it; the seconds after the last row are never counted;
-    re-entered categories sum; an undeclared word is `unplaced_s`.
-    """
-    return vocabulary.CATEGORIES
-
-
-def category_seconds(cfg: vocabulary.PmConfig, kind: str,
-                     seconds: dict[str, int]) -> tuple[dict[str, int], int]:
-    """(seconds per category, seconds in words the declaration does not name),
-    read through the current declaration."""
-    placed: dict[str, int] = {}
-    unplaced = 0
-    for word, spent in seconds.items():
-        category = vocabulary.category_of(cfg, kind, word)
-        if category is None:
-            unplaced += spent
-            continue
-        placed[category] = placed.get(category, 0) + spent
-    return placed, unplaced
-
-
 def in_time_order(rows: list) -> list:
     """The rows sorted stably by their own `ts`, unstamped ones last. The
     file's order is not time order under `merge=union`, and a subtraction over
@@ -961,38 +809,22 @@ def open_charge(cfg: vocabulary.PmConfig, kind: str, rows: list,
 # milestone's building time is a WALK of its features' and theirs of their
 # stories' — every level the one below plus its own, open charge included.
 CLOCK_TITLE = 'time per state'
-ACTOR_TITLE = 'time per actor'
+KIND_COLUMN = 'kind'
 STATE_SUFFIX = '_s'
 CLOSED_COLUMN = 'closed_s'
 OPEN_COLUMN = 'open_s'
 OPEN_STATE_COLUMN = 'open_state'
-ACTOR_COLUMN = 'actor'
-ARRIVALS_COLUMN = 'arrivals'
 GRAINS_COLUMN = 'grains'
-SECONDS_COLUMN = 'seconds'
-KIND_MILESTONE = vocabulary.GRAIN_MILESTONE
 # What `--help` names, in order (rule 11's read side): "total review time for
 # this milestone" is `… | awk` over these, never a flag this verb grew.
 CLOCK_COLUMNS = (GRAIN_COLUMN, f'<state>{STATE_SUFFIX}', CLOSED_COLUMN,
                  OPEN_COLUMN, OPEN_STATE_COLUMN)
-ACTOR_COLUMNS = (ACTOR_COLUMN, ARRIVALS_COLUMN, GRAINS_COLUMN, SECONDS_COLUMN)
 
 
 def _sum_into(into: dict[str, int], more: dict[str, int]) -> None:
     """One grain's seconds folded into its parent's; absent stays absent."""
     for state, spent in more.items():
         into[state] = into.get(state, 0) + spent
-
-
-def _actor_of(row: dict) -> str:
-    """The actor an arrival named, AS TYPED — `--by agent developer`. Nothing
-    here goes looking for that agent (rule 9), and `none` is an answer."""
-    answer = row.get('answer')
-    answer = answer if isinstance(answer, str) and answer else (
-        ledger.NO_DISPOSITION)
-    value = row.get('value')
-    return (f'{answer} {value}'.strip()
-            if isinstance(value, str) and value else answer)
 
 
 def subtree(rows: list[dict], focus: str) -> list[dict]:
@@ -1015,9 +847,9 @@ def clock_data(cfg: vocabulary.PmConfig, mid: str, grains: list, owned: dict,
                rows: list, now: datetime | None = None,
                focus: str = '') -> dict:
     """The milestone, its features, their stories and its bugs, each with the
-    seconds ITS OWN SUBTREE spent in each state and the charge it is accruing,
-    plus who was named at each arrival. `grains` arrives in tree order from
-    `walk_grains`, so `depth` is the shape and the walk is the sum."""
+    seconds ITS OWN SUBTREE spent in each state and the charge it is accruing.
+    `grains` arrives in tree order from `walk_grains`, so `depth` is the shape
+    and the walk is the sum."""
     when = now or _now()
     kinds = {g.gid: g.kind for g in grains}
     kinds[mid] = KIND_MILESTONE
@@ -1031,9 +863,9 @@ def clock_data(cfg: vocabulary.PmConfig, mid: str, grains: list, owned: dict,
               for gid, kind in kinds.items()}
     rolled = {gid: dict(spent) for gid, spent in own.items()}
     open_s = {gid: seconds for gid, (_state, seconds) in charge.items()}
-    stories = {sid for owns in owned.values() for sid in owns}
-    for feature, owns in owned.items():
-        for sid in owns:
+    stories = {sid for owns_ in owned.values() for sid in owns_}
+    for feature, owns_ in owned.items():
+        for sid in owns_:
             _sum_into(rolled[feature], own[sid])
             open_s[feature] = _plus(open_s[feature], open_s[sid])
     for grain in grains:
@@ -1044,13 +876,7 @@ def clock_data(cfg: vocabulary.PmConfig, mid: str, grains: list, owned: dict,
     out = [_clock_row(mid, KIND_MILESTONE, 0, rolled, open_s, charge)]
     out.extend(_clock_row(g.gid, g.kind, 2 if g.gid in stories else 1,
                           rolled, open_s, charge) for g in grains)
-    # Rolled over the milestone either way; the id says which level prints,
-    # actors included or the two tables disagree.
-    out = subtree(out, focus) if focus else out
-    named = {row[GRAIN_COLUMN] for row in out}
-    return {'rows': out,
-            'actors': actor_rows({gid: kind for gid, kind in kinds.items()
-                                  if not focus or gid in named}, mine)}
+    return {'rows': subtree(out, focus) if focus else out}
 
 
 def _clock_row(gid: str, kind: str, depth: int, rolled: dict, open_s: dict,
@@ -1063,35 +889,6 @@ def _clock_row(gid: str, kind: str, depth: int, rolled: dict, open_s: dict,
             CLOSED_COLUMN: sum(spent.values()) if spent else None,
             OPEN_COLUMN: open_s[gid],
             OPEN_STATE_COLUMN: charge[gid][0] or None}
-
-
-def actor_rows(kinds: dict[str, str], mine: dict[str, list]) -> list[dict]:
-    """Spend per actor, from disposition rows ALONE: how many arrivals each
-    answer opened, on how many grains, and how long those stints ran. A stint
-    still RUNNING contributes no seconds, because crediting a running clock to
-    whoever last spoke is the partial credit this feature refuses."""
-    tally: dict[str, dict] = {}
-    for gid in sorted(kinds):
-        grain_rows = mine.get(gid, [])
-        marks = arrivals(grain_rows)
-        ends = {start: end for (start, _s), (end, _e) in zip(marks, marks[1:])}
-        for row in grain_rows:
-            if not arrive.disposition_of(row.data):
-                continue
-            stamp = ledger.parse_ts(row.data.get(ledger.TS_FIELD))
-            entry = tally.setdefault(_actor_of(row.data),
-                                     {ACTOR_COLUMN: _actor_of(row.data),
-                                      ARRIVALS_COLUMN: 0, GRAINS_COLUMN: [],
-                                      SECONDS_COLUMN: None})
-            entry[ARRIVALS_COLUMN] += 1
-            if gid not in entry[GRAINS_COLUMN]:
-                entry[GRAINS_COLUMN].append(gid)
-            end = ends.get(stamp)
-            if end is not None:
-                entry[SECONDS_COLUMN] = _plus(
-                    entry[SECONDS_COLUMN], int((end - stamp).total_seconds()))
-    return [dict(entry, **{GRAINS_COLUMN: len(entry[GRAINS_COLUMN])})
-            for _actor, entry in sorted(tally.items())]
 
 
 def clock_columns(cfg: vocabulary.PmConfig, rows: list) -> tuple[str, ...]:
@@ -1107,8 +904,7 @@ def clock_columns(cfg: vocabulary.PmConfig, rows: list) -> tuple[str, ...]:
 
 
 def clock_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """The two blocks the clock adds to section 1: one row per grain in tree
-    order, indented by depth, then one row per actor."""
+    """One row per grain in tree order, indented by depth."""
     rows = data['rows']
     states = clock_columns(cfg, rows)
     headers = (GRAIN_COLUMN, *(f'{s}{STATE_SUFFIX}' for s in states),
@@ -1118,108 +914,167 @@ def clock_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
              *(_cell(entry['state_s'].get(state)) for state in states),
              _cell(entry[CLOSED_COLUMN]), _cell(entry[OPEN_COLUMN]),
              entry[OPEN_STATE_COLUMN] or DASH) for entry in rows]
-    out = _table(f'{CLOCK_TITLE} ({len(rows)})', headers, aligns, body)
-    actors = data['actors']
-    out.append('')
-    out.extend(_table(f'{ACTOR_TITLE} ({len(actors)})', ACTOR_COLUMNS,
-                      (LEFT, RIGHT, RIGHT, RIGHT),
-                      [(entry[ACTOR_COLUMN], str(entry[ARRIVALS_COLUMN]),
-                        str(entry[GRAINS_COLUMN]),
-                        _cell(entry[SECONDS_COLUMN])) for entry in actors]))
+    return _table(f'{CLOCK_TITLE} ({len(rows)})', headers, aligns, body)
+
+
+# --- the units ----------------------------------------------------------------
+# A UNIT is one piece of work with a start and a stop: a `stamp` start paired
+# with the next unclaimed stop on the same grain, or one `dispatch` row, whose
+# start is its `ts` less its `duration_s`. Pairing is by grain and order alone:
+# which of two concurrent starts a stop closes is the earlier one, because the
+# row says nothing more and this module may not guess (rule 9).
+def _issues(*rows: dict) -> list[str]:
+    """Every issue the rows name, first seen first."""
+    out: list[str] = []
+    for row in rows:
+        value = row.get(ISSUE_FIELD)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item and item not in out:
+                out.append(item)
     return out
 
 
-# --- section 1: spend per grain -----------------------------------------------
-def spend_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-               rows: list) -> dict:
-    """Section 1 as data: one entry per grain, the strays, and the totals."""
-    grains, owned = walk_grains(src, cfg, mid, mdir)
-    kinds = {g.gid: g.kind for g in grains}
-    dispatch = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DISPATCH]
-    status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS]
-    # The clock reads ARRIVALS, of which `status` is only half (D3/D6).
-    arrived = [r for r in rows if arrival_state(r.data)]
-    per_grain = {g.gid: _blank() for g in grains}
-    per_type: dict[str, dict[str | None, dict]] = {g.gid: {} for g in grains}
-    unattributed, totals = _blank(), _blank()
-    # The boundary, counted (D7): old-shape rows, and how many named nothing here.
-    legacy_rows = 0
-    legacy_unattributed = 0
-    # The drop, counted per grain: rows that named it only through a frozen key.
-    frozen_only = {g.gid: 0 for g in grains}
-    elsewhere = 0
-    for row in dispatch:
-        # Once, and before any narrowing: the summary line is about the FILE.
-        _add(totals, row.data)
-        legacy = is_legacy(row.data)
-        legacy_rows += legacy
-        for gid in frozen_only_grains(row.data, kinds, owned):
-            frozen_only[gid] += 1
-        if stated_elsewhere(row.data, kinds):
-            # Counted apart from `unattributed`: pooling the two would make a
-            # report over the tree's shared ledger look like a tree full of
-            # unattributed work.
-            elsewhere += 1
-            continue
-        named = named_grains(row.data, kinds, owned)
-        if not named:
-            _add(unattributed, row.data)
-            legacy_unattributed += legacy
-            continue
-        agent = row.data.get('agent_type')
-        agent = agent if isinstance(agent, str) and agent else None
-        for gid in named:
-            _add(per_grain[gid], row.data)
-            _add(per_type[gid].setdefault(agent, _blank()), row.data)
-    out = []
-    for grain in sorted(grains, key=lambda g: (KIND_ORDER.index(g.kind),
-                                               g.gid)):
-        names = {grain.gid}
-        my_status = [r for r in status if r.data.get(ledger.GRAIN_FIELD) in names]
-        # The category columns are now DERIVED from the state totals rather
-        # than the only number: `building` and `reviewing` are both
-        # `in_progress`, the distinction the clock block below stopped losing.
-        placed, unplaced = category_seconds(
-            cfg, grain.kind,
-            state_seconds([r for r in arrived
-                           if r.data.get(ledger.GRAIN_FIELD) in names]))
-        out.append({
-            GRAIN_COLUMN: grain.gid, KIND_COLUMN: grain.kind,
-            'size': grain.size or None,
-            **per_grain[grain.gid],
-            'agent_types': [{'agent_type': agent, **spend}
-                            for agent, spend in sorted(
-                                per_type[grain.gid].items(),
-                                key=lambda kv: (kv[0] is None, kv[0] or ''))],
-            'states': {category: placed.get(category)
-                       for category in state_columns()},
-            'unplaced_s': unplaced or None,
-            'frozen_only': frozen_only[grain.gid] or None,
-            'total_s': ledger.total_seconds(cfg, grain.kind, my_status),
-        })
-    in_flight, unplaceable = _in_flight_ages(cfg, kinds, status, arrived)
-    return {'section': SECTION_SPEND, 'grains': out,
-            'clock': clock_data(cfg, mid, grains, owned, arrived),
-            'in_flight': in_flight,
-            'in_flight_unplaceable': unplaceable,
-            'unattributed': unattributed,
-            'stated_elsewhere': elsewhere,
-            'legacy': {'rows': legacy_rows,
-                       'unattributed': legacy_unattributed},
-            'totals': {'dispatch_rows': len(dispatch),
-                       'status_rows': len(status), 'grains': len(grains),
-                       TOTAL_ROWS: sum(1 for r in dispatch
-                                       if TOTAL_KEY in r.data),
-                       **{k: v for k, v in totals.items()
-                          if k != 'dispatches'}}}
+def _unit(grain: str, start: str, stop: str, *, issue: list[str] | None = None,
+          agent: str = '', duration: int | None = None,
+          tokens: int | None = None, outcome: str = '', kind: str) -> dict:
+    return {GRAIN_COLUMN: grain or None, ISSUE_COLUMN: issue or [],
+            AGENT_COLUMN: agent or None, START_COLUMN: start or None,
+            STOP_COLUMN: stop or None, DURATION_COLUMN: duration,
+            TOKENS_COLUMN: tokens, OUTCOME_COLUMN: outcome or None,
+            KIND_COLUMN: kind}
 
 
+def _seconds_between(start: str, stop: str) -> int | None:
+    begun, ended = ledger.parse_ts(start), ledger.parse_ts(stop)
+    if begun is None or ended is None:
+        return None
+    return int((ended - begun).total_seconds())
+
+
+def stamp_units(rows: list) -> tuple[list[dict], list[dict]]:
+    """(units, the stamp rows no unit holds). An unpaired start is an OPEN
+    unit, stop blank; an unpaired stop is returned to be COUNTED."""
+    units: list[dict] = []
+    stray: list[dict] = []
+    waiting: dict[str, list[tuple[dict, dict]]] = {}
+    for row in rows:
+        data = row.data
+        if data.get(ledger.KIND_FIELD) != KIND_STAMP:
+            continue
+        grain, edge = _text(data.get(ledger.GRAIN_FIELD)), data.get(EDGE_FIELD)
+        if edge == EDGE_START:
+            unit = _unit(grain, _text(data.get(ledger.TS_FIELD)), '',
+                         issue=_issues(data),
+                         agent=_text(data.get(AGENT_FIELD)), kind=KIND_STAMP)
+            units.append(unit)
+            waiting.setdefault(grain, []).append((unit, data))
+            continue
+        if edge != EDGE_STOP or not waiting.get(grain):
+            stray.append(data)
+            continue
+        unit, begun = waiting[grain].pop(0)
+        stop = _text(data.get(ledger.TS_FIELD))
+        unit.update({
+            STOP_COLUMN: stop or None,
+            DURATION_COLUMN: _seconds_between(unit[START_COLUMN] or '', stop),
+            ISSUE_COLUMN: _issues(begun, data),
+            AGENT_COLUMN: unit[AGENT_COLUMN] or _text(data.get(AGENT_FIELD)) or None,
+            TOKENS_COLUMN: _int(data.get(TOKENS_FIELD)),
+            OUTCOME_COLUMN: _text(data.get(OUTCOME_FIELD)) or None})
+    return units, stray
+
+
+def dispatch_unit(row: dict, grain: str) -> dict:
+    """One dispatch row as a unit: it ENDED at `ts` and ran `duration_s`, so
+    its start is the subtraction, blank when either is missing."""
+    stop = _text(row.get(ledger.TS_FIELD))
+    duration = _int(row.get('duration_s'))
+    ended = ledger.parse_ts(stop)
+    start = ((ended - timedelta(seconds=duration)).strftime(ledger.TS_FORMAT)
+             if ended is not None and duration is not None else '')
+    return _unit(grain, start, stop, agent=_text(row.get(AGENT_TYPE_KEY)),
+                 duration=duration, tokens=_int(row.get(TOTAL_KEY)),
+                 outcome=_text(row.get(OUTCOME_FIELD)), kind=ledger.KIND_DISPATCH)
+
+
+def agent_rows(units: list[dict]) -> list[dict]:
+    """Units, tokens and duration per agent, and each agent's share of the
+    tokens the units recorded — `-` when none recorded any."""
+    tally: dict[str | None, dict] = {}
+    for unit in units:
+        entry = tally.setdefault(unit[AGENT_COLUMN], {
+            AGENT_COLUMN: unit[AGENT_COLUMN], UNITS_COLUMN: 0,
+            TOKENS_COLUMN: None, DURATION_COLUMN: None})
+        entry[UNITS_COLUMN] += 1
+        entry[TOKENS_COLUMN] = _plus(entry[TOKENS_COLUMN], unit[TOKENS_COLUMN])
+        entry[DURATION_COLUMN] = _plus(entry[DURATION_COLUMN],
+                                       unit[DURATION_COLUMN])
+    total = None
+    for entry in tally.values():
+        total = _plus(total, entry[TOKENS_COLUMN])
+    for entry in tally.values():
+        spent = entry[TOKENS_COLUMN]
+        entry[SHARE_COLUMN] = (round(100 * spent / total)
+                               if total and spent is not None else None)
+    return [tally[key] for key in sorted(tally, key=lambda k: (k is None, k or ''))]
+
+
+# --- one milestone ------------------------------------------------------------
 AT_REV = ' — at {rev}'
 
 
+def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, own_rows: list,
+          root_rows: list, src: Source | None = None) -> dict:
+    """The whole report as one object — what `--json` prints. `own_rows` are
+    the milestone's ledger, `root_rows` the tree's; a row is read only if the
+    milestone OWNS it (`owns`), and a row in its own ledger it cannot place is
+    counted, never folded in. `rev` is present only when there was one."""
+    src = DiskSource() if src is None else src
+    own_lines = {row.line for row in own_rows}
+    rows, joined = join_twins(in_time_order(list(own_rows) + list(root_rows)))
+    claim, grains = claim_of(src, cfg, mid, mdir)
+    mine, superseded, no_grain = [], [], []
+    for row in rows:
+        if owns(row.data, claim):
+            mine.append(row)
+        elif row.line in own_lines:
+            (superseded if _text(row.data.get(ledger.GRAIN_FIELD))
+             else no_grain).append(row.data)
+    units, unpaired = stamp_units(mine)
+    for row in mine:
+        if row.data.get(ledger.KIND_FIELD) == ledger.KIND_DISPATCH:
+            named = named_grains(row.data, claim.kinds, claim.owned)
+            stated = _text(row.data.get(ledger.GRAIN_FIELD))
+            story = [g for g in named if claim.kinds.get(g) == KIND_STORY]
+            units.append(dispatch_unit(
+                row.data, stated or (story[0] if story else '')))
+    units.sort(key=lambda u: u[START_COLUMN] or u[STOP_COLUMN] or '')
+    for number, unit in enumerate(units, 1):
+        unit[UNIT_COLUMN] = number
+    spent = None
+    for data in superseded:
+        spent = _plus(spent, data.get(TOTAL_KEY))
+        spent = _plus(spent, data.get(TOKENS_FIELD))
+    out: dict = {
+        MILESTONE_KEY: mid, BRANCH_FIELD: claim.branch or None,
+        GRAINS_COLUMN: len(grains), JOINED_KEY: joined,
+        'units': units, 'agents': agent_rows(units),
+        'clock': clock_data(cfg, mid, grains, claim.owned,
+                            [r for r in mine if arrival_state(r.data)]),
+        'owned': _tally(_text(r.data.get(ledger.KIND_FIELD)) or DASH
+                        for r in mine),
+        'unpaired': len(unpaired),
+        'superseded': {'rows': len(superseded), 'tokens': spent,
+                       'grains': sorted({d[ledger.GRAIN_FIELD]
+                                         for d in superseded})},
+        'no_grain': len(no_grain)}
+    if src.rev:
+        out['rev'] = src.rev
+    return out
+
+
 def heading_id(data: dict) -> str:
-    """The milestone id as a heading names it, plus ` — at <rev>` from git;
-    every section heading carries it, the summary line does not."""
+    """The milestone id as a heading names it, plus ` — at <rev>` from git."""
     rev = data.get('rev')
     return f'{data[MILESTONE_KEY]}{AT_REV.format(rev=rev)}' if rev else str(
         data[MILESTONE_KEY])
@@ -1246,512 +1101,109 @@ def _table(title: str, headers: tuple[str, ...], aligns: tuple[str, ...],
     return lines
 
 
-def _spend_cells(entry: dict) -> tuple[str, ...]:
-    """The columns every spend row shares: dispatches, the four measured sums,
-    the reported total, two counts."""
-    return (_cell(entry['dispatches']),
-            *(_cell(entry['usage'][key]) for key in USAGE_KEYS),
-            *(_cell(entry[key]) for key in (TOTAL_KEY, *COUNT_KEYS)))
+def _by_kind(counts: dict[str, int]) -> str:
+    return ', '.join(f'{kind} {n}' for kind, n in counts.items()) or 'none'
 
 
-def spend_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 1 as lines: a heading, one table per kind, the strays, a total."""
-    totals = data['totals']
-    out = [f'{HEADING_PREFIX} {heading_id(data)} — {SPEND_TITLE} — '
-           f'{totals["dispatch_rows"]} dispatch row(s), '
-           f'{totals["status_rows"]} status row(s), '
-           f'{totals["grains"]} grain(s)']
-    for kind in KIND_ORDER:
-        entries = [e for e in data['grains'] if e[KIND_COLUMN] == kind]
-        states = state_columns()
-        headers = (GRAIN_COLUMN, SIZE_COLUMN, *SPEND_COLUMNS, *states,
-                   TOTAL_COLUMN)
-        aligns = (LEFT, LEFT) + (RIGHT,) * (len(headers) - 2)
-        rows: list[tuple[str, ...]] = []
-        for entry in entries:
-            rows.append((entry[GRAIN_COLUMN], entry['size'] or '',
-                         *_spend_cells(entry),
-                         *(_cell(entry['states'][state]) for state in states),
-                         _cell(entry['total_s'])))
-            # One agent type is the grain's own row said twice.
-            if len(entry['agent_types']) > 1:
-                for split in entry['agent_types']:
-                    rows.append((
-                        f'{SUB_ROW_INDENT}{split["agent_type"] or DASH}', '',
-                        *_spend_cells(split), *('',) * (len(states) + 1)))
-        out.append('')
-        out.extend(_table(f'{kind} ({len(entries)})', headers, aligns, rows))
-        # Disclosed under the table it is missing from, so it cannot read as
-        # "no stint measured".
-        unplaced = [(e[GRAIN_COLUMN], e['unplaced_s']) for e in entries
-                    if e.get('unplaced_s')]
-        for gid, spent in unplaced:
-            out.append(f'   {gid} {UNPLACED_NOTE}: {spent} s')
-        # Its dispatch-side twin: a frozen-key-only attribution is not "no row".
-        for entry in entries:
-            if entry.get('frozen_only'):
-                out.append(f'   {entry[GRAIN_COLUMN]} {FROZEN_ONLY_NOTE}: '
-                           f'{entry["frozen_only"]} dispatch row(s)')
-    for entry in data.get('in_flight') or []:
-        out.append(f'   {entry["in_flight"]} {entry[KIND_COLUMN]}(s) in flight — '
-                   f'median {ledger.human_duration(entry["median_s"])}, worst '
-                   f'{ledger.human_duration(entry["worst_s"])}')
-    # Rule 4: a distribution over nothing says so, rather than reading as
-    # "nothing is in flight".
-    if data.get('in_flight_unplaceable'):
-        out.append(f'   {data["in_flight_unplaceable"]} arrival row(s) '
-                   f'{IN_FLIGHT_UNPLACEABLE}')
+def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
+    """The report as lines: the units, the agents, the clock, the counts."""
+    units, agents = data['units'], data['agents']
+    tokens = None
+    for unit in units:
+        tokens = _plus(tokens, unit[TOKENS_COLUMN])
+    out = [f'{HEADING_PREFIX} {heading_id(data)} — {STAMP_TITLE} — '
+           f'{len(units)} unit(s), '
+           f'{sum(1 for u in units if u[STOP_COLUMN] is None)} open unit(s), '
+           f'{_cell(tokens)} token(s)', '']
+    out.extend(_table(
+        f'{UNIT_TITLE} ({len(units)})', UNIT_COLUMNS,
+        (RIGHT, LEFT, LEFT, LEFT, LEFT, LEFT, RIGHT, RIGHT, LEFT),
+        [(str(u[UNIT_COLUMN]), u[GRAIN_COLUMN] or DASH,
+          ISSUE_SEPARATOR.join(u[ISSUE_COLUMN]) or DASH,
+          u[AGENT_COLUMN] or DASH, u[START_COLUMN] or DASH,
+          u[STOP_COLUMN] or DASH, _cell(u[DURATION_COLUMN]),
+          _cell(u[TOKENS_COLUMN]), u[OUTCOME_COLUMN] or DASH)
+         for u in units]))
+    out.append('')
+    out.extend(_table(
+        f'{AGENT_TITLE} ({len(agents)})', AGENT_COLUMNS,
+        (LEFT, RIGHT, RIGHT, RIGHT, RIGHT),
+        [(a[AGENT_COLUMN] or DASH, str(a[UNITS_COLUMN]),
+          _cell(a[TOKENS_COLUMN]), _cell(a[DURATION_COLUMN]),
+          DASH if a[SHARE_COLUMN] is None else f'{a[SHARE_COLUMN]}{SHARE_MARK}')
+         for a in agents]))
     out.append('')
     out.extend(clock_lines(cfg, data['clock']))
-    stray = data['unattributed']
     out.append('')
-    out.extend(_table(f'{NO_GRAIN_TITLE} ({stray["dispatches"]})',
-                      SPEND_COLUMNS, (RIGHT,) * len(SPEND_COLUMNS),
-                      [_spend_cells(stray)] if stray['dispatches'] else []))
-    legacy = data.get('legacy') or {}
-    if legacy.get('unattributed'):
-        out.append(f'   {legacy["unattributed"]} of these {LEGACY_NOTE}')
-    if data.get('stated_elsewhere'):
-        out.append(f'   {data["stated_elsewhere"]} further row(s) {ELSEWHERE_NOTE}')
-    out.append(f'   {data.get(JOINED_KEY, 0)} {JOINED_NOTE}')
-    out.append('')
-    out.append(f'{HEADING_PREFIX} {data[MILESTONE_KEY]} — '
-               f'{_cell(totals["usage"]["output"])} out / '
-               f'{_cell(totals["tool_calls"])} tool calls / '
-               f'{_cell(totals["duration_s"])} s across '
-               f'{totals["dispatch_rows"]} dispatch row(s)')
-    # WHICH number that `out` is, said where it is read: the summary sums the
-    # measured split, so a row carrying only a total is spend it does not cover.
-    if totals.get(TOTAL_ROWS):
-        out.append(f'   {totals[TOTAL_ROWS]} of those row(s) {SPLIT_NOTE}: '
-                   f'{_cell(totals[TOTAL_KEY])} token(s)')
+    owned = data['owned']
+    branch = data[BRANCH_FIELD]
+    out.append(f'{NOTE_INDENT}{sum(owned.values())} {OWNED_NOTE}: '
+               f'{_by_kind(owned)} — '
+               + (f'by grain, or by branch {branch} on a row naming no grain'
+                  if branch else f'by grain; {NO_BRANCH_NOTE}'))
+    out.append(f'{NOTE_INDENT}{data["unpaired"]} {UNPAIRED_NOTE}')
+    superseded = data['superseded']
+    out.append(NOTE_INDENT + SUPERSEDED_NOTE.format(
+        rows=superseded['rows'], tokens=_cell(superseded['tokens']))
+        + (f': {", ".join(superseded["grains"])}' if superseded['grains']
+           else ''))
+    out.append(f'{NOTE_INDENT}{data["no_grain"]} {NO_GRAIN_NOTE}')
+    out.append(f'{NOTE_INDENT}{data.get(JOINED_KEY, 0)} {JOINED_NOTE}')
     return out
 
 
-# --- the review records (sections 2 and 3) ------------------------------------
-# Where one feature's record is: the `reviewed:` pointer, then the record
-# beside the grain; the table prints the path it read.
-NO_VERDICT = 'no verdict block'
-
-
-class RecordError(Exception):
-    """A review record whose verdict block exists and will not parse, naming
-    record and line — the one content refusal sections 2-5 make. No block at
-    all is `NoVerdict`, listed as a fact."""
-
-
-def review_records(src: Source, cfg: vocabulary.PmConfig, mid: str,
-                   mdir: Path) -> list[tuple[str, str, Path]]:
-    """(feature id, the path as the report prints it, the path) per record."""
-    out: list[tuple[str, str, Path]] = []
-    for ffile in src.feature_files(cfg, mid):
-        fid = (src.field_of(ffile, vocabulary.FIELD_ID)
-               or f'{mid}/{ffile.parent.name}')
-        rel = src.review_record_for(cfg, fid)
-        path = (cfg.root / rel) if rel else None
-        if path is None:
-            # BESIDE the grain, wherever it sits. Asked of the SOURCE, since
-            # which layout it is, is a fact about the tree being read.
-            beside = src.shared_doc(cfg, ffile, vocabulary.REVIEW_FILE_NAME)
-            if src.is_file(beside):
-                path, rel = beside, cfg.rel(beside)
-        if path is not None and rel is not None:
-            out.append((fid, rel, path))
-    # The table's order is a contract; a walker's is a filesystem fact.
-    out.sort(key=lambda found: found[0])
-    return out
-
-
-def parsed_records(src: Source, cfg: vocabulary.PmConfig, mid: str,
-                   mdir: Path) -> list[tuple[str, str, object]]:
-    """Every record, parsed: its passes (one per verdict block, in order), or
-    `None` when it carries no block. Sections 2 and 3 both call this;
-    `verdict.parse` is the only reader either has."""
-    out: list[tuple[str, str, object]] = []
-    for fid, rel, path in review_records(src, cfg, mid, mdir):
-        try:
-            text = src.read_raw(path)
-        except (OSError, UnicodeDecodeError) as err:
-            raise RecordError(f'{rel} could not be read ({err})') from err
-        try:
-            out.append((fid, rel, verdict.parse(text)))
-        except verdict.NoVerdict:
-            out.append((fid, rel, None))
-        except verdict.MalformedVerdict as err:
-            raise RecordError(f'{rel}: line {err.lineno}: {err.why}\n'
-                              f'    {err.line}') from err
-    return out
-
-
-def _tally(values: Iterable) -> dict:
-    """Count per distinct value. The only thing this module does to a label."""
-    counts: dict = {}
-    for value in values:
-        counts[value] = counts.get(value, 0) + 1
-    return counts
-
-
-def _section(mid: str, title: str, census: str,
-             blocks: list[tuple[str, tuple, tuple, list]]) -> list[str]:
-    """One section: its heading, then its blocks — or one `no data` line when
-    it has none. Inside a section with rows, an empty block still prints its
-    `(0)` heading."""
-    out = ['', f'{HEADING_PREFIX} {mid} — {title} — {census}']
-    if not any(rows for _, _, _, rows in blocks):
-        out.append(NO_DATA)
-        return out
-    for btitle, headers, aligns, rows in blocks:
-        out.append('')
-        out.extend(_table(btitle, headers, aligns, rows))
-    return out
-
-
-# The disclosure that keeps an empty distribution from reading as a calm zero.
-IN_FLIGHT_UNPLACEABLE = ('name a grain this milestone does not hold, so no age '
-                         'was measured from them — `pm rename` moves a row\'s '
-                         'grain, or the ids were replaced under it')
-
-
-def _in_flight_ages(cfg: vocabulary.PmConfig, kinds: dict[str, str],
-                    status: list, arrived: list) -> tuple[list[dict], int]:
-    """`(per kind: in-flight count, median age, worst), rows this could not
-    place`.
-
-    Read off the same status rows the dwell columns use; a grain nobody has
-    moved contributes nothing, because it is UNMEASURED rather than young.
-
-    **The second number is what this shipped without.** A row naming a grain
-    the milestone does not hold was DISCARDED, so a tree whose ledger names
-    renamed ids reported `[]` with nothing saying one had been attempted
-    (rule 4). Over ARRIVALS, BOTH kinds: `status` alone left the
-    disposition-only ledger this feature serves silently short.
-
-    No threshold, no colour, no exit code: a ceiling on how long a grain may
-    stay in flight is this package having an opinion about somebody's week
-    (rule 9).
-    """
-    by_grain: dict[str, list] = {}
-    unplaceable = sum(1 for row in arrived
-                      if isinstance(row.data.get(ledger.GRAIN_FIELD), str)
-                      and row.data.get(ledger.GRAIN_FIELD)
-                      and row.data[ledger.GRAIN_FIELD] not in kinds)
-    for row in status:
-        gid = row.data.get(ledger.GRAIN_FIELD)
-        if isinstance(gid, str) and gid and gid in kinds:
-            by_grain.setdefault(gid, []).append(row)
-    ages: dict[str, list[int]] = {}
-    for gid, rows in by_grain.items():
-        rows.sort(key=lambda r: str(r.data.get(ledger.TS_FIELD) or ''))
-        seconds = ledger.open_seconds(cfg, kinds[gid], rows)
-        if seconds is not None:
-            ages.setdefault(kinds[gid], []).append(seconds)
-    out = []
-    for kind in KIND_ORDER:
-        found = sorted(ages.get(kind, ()))
-        if found:
-            out.append({KIND_COLUMN: kind, 'in_flight': len(found),
-                        'median_s': found[len(found) // 2],
-                        'worst_s': found[-1]})
-    return out, unplaceable
-
-
-# --- section 2: yield per review pass -----------------------------------------
-def yield_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-               rows: list) -> dict:
-    """Section 2 as data: counting over the block's closed sets per record. The
-    disposition is read as its kind, never as the shape of its value. Spend is
-    not joined in — picking "reviewer-shaped" agent types would be this module
-    LABELLING, the one thing a report over a ledger may not do.
-    """
-    records = []
-    for fid, rel, parsed in parsed_records(src, cfg, mid, mdir):
-        passes = []
-        for ordinal, one in enumerate(parsed or [], 1):
-            found = one.findings
-            passes.append({
-                'pass': ordinal,
-                'verdict': one.verdict,
-                'findings': len(found),
-                'severities': {
-                    sev: n for sev, n in
-                    sorted(_tally(f.severity for f in found).items(),
-                           key=lambda kv: verdict.SEVERITIES.index(kv[0]))},
-                'dispositions': {
-                    kind: sum(1 for f in found if f.disposition_kind == kind)
-                    for kind in verdict.DISPOSITION_KINDS},
-                'deferred': [
-                    {'target': target, 'findings': n} for target, n in
-                    sorted(_tally(f.disposition_value for f in found
-                                  if f.disposition_kind == verdict.DEFERRED
-                                  ).items())]})
-        records.append({FEATURE_COLUMN: fid, 'record': rel, 'passes': passes})
-    return {SECTION_YIELD: {
-        'records': records,
-        'totals': {'records': len(records),
-                   'passes': sum(len(r['passes']) for r in records),
-                   'findings': sum(one['findings'] for r in records
-                                   for one in r['passes'])}}}
-
-
-def yield_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 2 as lines: the pass, its severities, and where it deferred."""
-    section = data[SECTION_YIELD]
-    records = section['records']
-    # A record with no block keeps its one row; dropping it would read as every
-    # record reviewed.
-    passes = [(r[FEATURE_COLUMN], r['record'], str(one['pass']),
-               one['verdict'],
-               _cell(one['findings']),
-               *(_cell(one['dispositions'][kind])
-                 for kind in verdict.DISPOSITION_KINDS))
-              if one else
-              (r[FEATURE_COLUMN], r['record'], DASH, NO_VERDICT, _cell(None),
-               *(_cell(None) for _ in verdict.DISPOSITION_KINDS))
-              for r in records for one in (r['passes'] or [None])]
-    severities = [(r[FEATURE_COLUMN], str(one['pass']), sev, str(n))
-                  for r in records for one in r['passes']
-                  for sev, n in one['severities'].items()]
-    deferred = sorted((d['target'], r[FEATURE_COLUMN], str(one['pass']),
-                       str(d['findings']))
-                      for r in records for one in r['passes']
-                      for d in one['deferred'])
-    totals = section['totals']
-    return _section(
-        heading_id(data), YIELD_TITLE,
-        f'{totals["records"]} record(s), {totals["passes"]} pass(es), '
-        f'{totals["findings"]} finding(s)',
-        [(f'{VERDICT_TITLE} ({len(passes)})',
-          (FEATURE_COLUMN, RECORD_COLUMN, PASS_COLUMN, VERDICT_COLUMN,
-           FINDINGS_COLUMN, *verdict.DISPOSITION_KINDS),
-          (LEFT, LEFT, RIGHT, LEFT)
-          + (RIGHT,) * (1 + len(verdict.DISPOSITION_KINDS)),
-          passes),
-         (f'{SEVERITY_TITLE} ({len(severities)})',
-          (FEATURE_COLUMN, PASS_COLUMN, SEVERITY_COLUMN, FINDINGS_COLUMN),
-          (LEFT, RIGHT, LEFT, RIGHT), severities),
-         (f'{DEFERRED_TITLE} ({len(deferred)})',
-          (TARGET_COLUMN, FEATURE_COLUMN, PASS_COLUMN, FINDINGS_COLUMN),
-          (LEFT, LEFT, RIGHT, RIGHT), deferred)])
-
-
-# --- section 3: rework --------------------------------------------------------
-def rework_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-                rows: list) -> dict:
-    """Section 3 as data: the verdict spread, per pass rather than per record."""
-    spread = _tally(one.verdict
-                    for _, _, parsed in parsed_records(src, cfg, mid, mdir)
-                    if parsed is not None for one in parsed)
-    return {SECTION_REWORK: {
-        'verdicts': [{'verdict': name, 'passes': spread[name]}
-                     for name in verdict.VERDICTS if name in spread],
-        'totals': {'passes': sum(spread.values())}}}
-
-
-def rework_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 3 as lines: one row per verdict that was given."""
-    section = data[SECTION_REWORK]
-    spread = [(v['verdict'], str(v['passes'])) for v in section['verdicts']]
-    totals = section['totals']
-    return _section(
-        heading_id(data), REWORK_TITLE,
-        f'{totals["passes"]} pass(es) with a verdict',
-        [(f'{DISTRIBUTION_TITLE} ({len(spread)})',
-          (VERDICT_COLUMN, PASSES_COLUMN), (LEFT, RIGHT), spread)])
-
-
-# --- section 4: escapes -------------------------------------------------------
-def escapes_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-                 rows: list) -> dict:
-    """Section 4 as data: every bug whose `caused_by:` names a feature, grouped
-    by the id named, resolved wherever it lives; an unresolved cause keeps its
-    row with `-`. `feature_done` is the equality, never a judgement.
-    """
-    out = []
-    for bfile in src.bug_files(cfg, mid):
-        cause = src.field_of(bfile, CAUSED_BY_FIELD)
-        if not cause:
-            continue
-        gid = (src.field_of(bfile, vocabulary.FIELD_ID)
-               or f'{mid}/{BUGS_DIR}/{_bug_slug(mdir, bfile)}')
-        ffile = src.feature_file(cfg, cause)
-        fstatus = src.field_of(ffile,
-                               vocabulary.FIELD_STATUS) if ffile is not None else ''
-        out.append({
-            'caused_by': cause, BUG_COLUMN: gid,
-            STATUS_COLUMN: src.field_of(bfile, vocabulary.FIELD_STATUS) or None,
-            'feature_status': fstatus or None,
-            'feature_done': (None if not fstatus
-                             else ledger.ends_grain(cfg, KIND_FEATURE, fstatus))})
-    out.sort(key=lambda e: (e['caused_by'], e[BUG_COLUMN]))
-    return {SECTION_ESCAPES: {
-        'bugs': out,
-        'totals': {'bugs': len(out),
-                   'features': len({e['caused_by'] for e in out})}}}
-
-
-def escapes_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 4 as lines: cause, bug, the bug's state, the feature's."""
-    section = data[SECTION_ESCAPES]
-    bugs = [(e['caused_by'], e[BUG_COLUMN], _cell(e[STATUS_COLUMN]),
-             _cell(e['feature_status'])) for e in section['bugs']]
-    totals = section['totals']
-    return _section(
-        heading_id(data), ESCAPES_TITLE,
-        f'{totals["bugs"]} bug(s) naming a cause, '
-        f'{totals["features"]} feature(s)',
-        [(f'{ESCAPE_TITLE} ({len(bugs)})',
-          (CAUSE_COLUMN, BUG_COLUMN, STATUS_COLUMN, FEATURE_STATUS_COLUMN),
-          (LEFT, LEFT, LEFT, LEFT), bugs)])
-
-
-# --- section 5: overhead shape ------------------------------------------------
-def _int(value: object) -> int | None:
-    """The integer on the row, or None for anything that is not one."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
-def _delta(earlier: object, later: object) -> int | None:
-    """`later - earlier`, or None unless both ends are integers — an absent end
-    read as zero would invert a cumulative row."""
-    a, b = _int(earlier), _int(later)
-    return None if a is None or b is None else b - a
-
-
-def _usage_of(row: dict, key: str) -> object:
-    usage = row.get('usage')
-    return usage.get(key) if isinstance(usage, dict) else None
-
-
-def overhead_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-                  rows: list) -> dict:
-    """Section 5 as data: a story's `tool_calls_before_first_write` summed and
-    listed; a decision row against the grain its own `grain` names, never
-    divided or attributed; the seconds from a decision to the next status row
-    in its scope; session rows diffed per `session_id` (cumulative totals, D4).
-    """
+def clock_report(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
+                 src: Source, focus: str) -> dict:
+    """The clock at the LEVEL an id names — `pm ledger report <feature-id>`.
+    The rows are the milestone's, because that is where a ledger is (D6); the
+    id chooses which grain roots the table."""
     grains, owned = walk_grains(src, cfg, mid, mdir)
-    kinds = {g.gid: g.kind for g in grains}
-    dispatch = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DISPATCH]
-    status = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_STATUS
-              and isinstance(r.data.get(ledger.GRAIN_FIELD), str)]
-    decisions = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_DECISION]
-    sessions = [r for r in rows if r.data.get(ledger.KIND_FIELD) == ledger.KIND_SESSION]
-
-    stories = []
-    for grain in sorted((g for g in grains if g.kind == KIND_STORY),
-                        key=lambda g: g.gid):
-        mine = [r for r in dispatch
-                if grain.gid in named_grains(r.data, kinds, owned)]
-        calls = [n for n in (_int(r.data.get(BEFORE_WRITE_KEY)) for r in mine)
-                 if n is not None]
-        stories.append({GRAIN_COLUMN: grain.gid, 'dispatches': len(mine),
-                        'before_first_write': sum(calls) if calls else None,
-                        'calls': calls})
-
-    scopes = {mid: {g.gid for g in grains} | {mid}}
-    for fid, sids in owned.items():
-        scopes[fid] = {fid} | sids
-    # Every feature and the milestone itself, but only once something has been
-    # decided; zeros under a ledger with no decision row would wear a
-    # measurement's shape.
-    per_grain = ([{GRAIN_COLUMN: gid,
-                   'decisions': sum(1 for r in decisions
-                                    if r.data.get(ledger.GRAIN_FIELD) == gid)}
-                  for gid in [mid, *sorted(owned)]] if decisions else [])
-    events = []
-    for row in decisions:
-        gid = row.data.get(ledger.GRAIN_FIELD)
-        gid = gid if isinstance(gid, str) else None
-        scope = scopes.get(gid, {gid} if gid else set())
-        moment = ledger.parse_ts(row.data.get(ledger.TS_FIELD))
-        seconds = None
-        if moment is not None:
-            later = [ts for ts in (ledger.parse_ts(r.data.get(ledger.TS_FIELD))
-                                   for r in status
-                                   if r.data[ledger.GRAIN_FIELD] in scope)
-                     if ts is not None and ts > moment]
-            if later:
-                seconds = int((min(later) - moment).total_seconds())
-        entry = row.data.get('entry')
-        title = row.data.get('title')
-        stamp = row.data.get(ledger.TS_FIELD)
-        events.append({GRAIN_COLUMN: gid,
-                       'entry': entry if isinstance(entry, str) else None,
-                       'title': title if isinstance(title, str) else None,
-                       TS_COLUMN: stamp if isinstance(stamp, str) else None,
-                       'next_status_s': seconds})
-
-    grouped: dict = {}
-    for row in sessions:
-        sid = row.data.get('session_id')
-        grouped.setdefault(sid if isinstance(sid, str) and sid else None,
-                           []).append(row)
-    deltas = []
-    for sid in sorted(grouped, key=lambda s: (s is None, s or '')):
-        for earlier, later in zip(grouped[sid], grouped[sid][1:]):
-            stamp = later.data.get(ledger.TS_FIELD)
-            deltas.append({
-                'session_id': sid,
-                TS_COLUMN: stamp if isinstance(stamp, str) else None,
-                'output': _delta(_usage_of(earlier.data, OUTPUT_KEY),
-                                 _usage_of(later.data, OUTPUT_KEY)),
-                'tool_calls': _delta(earlier.data.get(TOOL_CALLS_KEY),
-                                     later.data.get(TOOL_CALLS_KEY))})
-    return {SECTION_OVERHEAD: {
-        'stories': stories, 'decisions': per_grain, 'gaps': events,
-        'sessions': deltas,
-        'totals': {'dispatch_rows': len(dispatch),
-                   'decision_rows': len(decisions),
-                   'session_rows': len(sessions)}}}
+    arrived = [r for r in in_time_order(rows) if arrival_state(r.data)]
+    out = {MILESTONE_KEY: mid, 'focus': focus,
+           'clock': clock_data(cfg, mid, grains, owned, arrived, focus=focus)}
+    if src.rev:
+        out['rev'] = src.rev
+    return out
 
 
-def overhead_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 5 as lines: four blocks, one per thing the shape is made of."""
-    section = data[SECTION_OVERHEAD]
-    stories = [(e[GRAIN_COLUMN], str(e['dispatches']),
-                _cell(e['before_first_write']),
-                LIST_SEPARATOR.join(str(n) for n in e['calls']) or DASH)
-               for e in section['stories']]
-    decisions = [(e[GRAIN_COLUMN], str(e['decisions']))
-                 for e in section['decisions']]
-    gaps = [(_cell(e[GRAIN_COLUMN]), _cell(e['entry']), _cell(e[TS_COLUMN]),
-             _cell(e['next_status_s'])) for e in section['gaps']]
-    deltas = [(_cell(e['session_id']), _cell(e[TS_COLUMN]), _cell(e['output']),
-               _cell(e['tool_calls'])) for e in section['sessions']]
-    totals = section['totals']
-    return _section(
-        heading_id(data), OVERHEAD_TITLE,
-        f'{totals["dispatch_rows"]} dispatch row(s), '
-        f'{totals["decision_rows"]} decision row(s), '
-        f'{totals["session_rows"]} session row(s)',
-        [(f'{BEFORE_WRITE_TITLE} ({len(stories)})',
-          (STORY_COLUMN, DISPATCHES_COLUMN, BEFORE_WRITE_COLUMN, CALLS_COLUMN),
-          (LEFT, RIGHT, RIGHT, LEFT), stories),
-         (f'{DECISION_COUNT_TITLE} ({len(decisions)})',
-          (GRAIN_COLUMN, DECISIONS_COLUMN), (LEFT, RIGHT), decisions),
-         (f'{DECISION_GAP_TITLE} ({len(gaps)})',
-          (GRAIN_COLUMN, ENTRY_COLUMN, TS_COLUMN, NEXT_STATUS_COLUMN),
-          (LEFT, LEFT, LEFT, RIGHT), gaps),
-         (f'{SESSION_TITLE} ({len(deltas)})',
-          (SESSION_COLUMN, TS_COLUMN, OUT_DELTA_COLUMN, TOOL_CALLS_COLUMN),
-          (LEFT, LEFT, RIGHT, RIGHT), deltas)])
+def clock_render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
+    """The focused report as lines: the grain, its milestone, the clock."""
+    rows = data['clock']['rows']
+    return [f'{HEADING_PREFIX} {data["focus"]} — {CLOCK_TITLE} — '
+            f'{len(rows)} grain(s), from {heading_id(data)}',
+            ''] + clock_lines(cfg, data['clock'])
 
 
-# --- section 6: gate cost -----------------------------------------------------
-# **THE ONE SECTION THAT IS NOT ABOUT THE MILESTONE IN THE HEADING**, and it
-# says so on the line rather than leaving a reader to assume otherwise: a gate
-# row lands in the tree's own ledger (0.4.0/D3), so `runs`, `first_ms` and
-# `delta_ms` are lifetime-of-TREE numbers and two milestones' reports print
-# identical gate rows, correctly.
-#
-# REJECTED: windowing the rows by the milestone's timestamps. A milestone has
-# no declared time range, so the window would be inferred from status rows — a
-# number nobody stated, quoted as if it had been. Naming what the numbers are
-# about is the cheapest honest fix (rule 11).
-GATES_SCOPE_NOTE = ('across the whole tree, not this milestone: a gate row '
-                    'names no grain, so every one lands in the tree\'s ledger')
+# --- the tree: the rows no milestone owns -------------------------------------
+# Gate, test, verify and session rows, and dispatches naming no grain, land in
+# the tree's ledger (0.4.0/D3). A milestone claims the ones stamped with its
+# declared branch; the rest are the TREE's, reported once, under their own
+# heading — never under every milestone, which is what they used to be.
+TREE_ID = 'tree'
+GATES_TITLE = 'gate cost'
+GATE_KEY = 'gate'
+GATE_DURATION_KEY = 'duration_ms'
+GATE_CENSUS_KEY = 'census'
+RUNS_COLUMN = 'runs'
+FIRST_MS_COLUMN = 'first_ms'
+LAST_MS_COLUMN = 'last_ms'
+DELTA_MS_COLUMN = 'delta_ms'
+CENSUS_COLUMN = 'census'
+WHY_COLUMN = 'why'
+TS_COLUMN = 'ts'
+GATE_COLUMNS = (GATE_KEY, RUNS_COLUMN, FIRST_MS_COLUMN, LAST_MS_COLUMN,
+                DELTA_MS_COLUMN, CENSUS_COLUMN)
+GATE_UNUSABLE_TITLE = 'rows this section could not use'
+UNUSABLE_COLUMNS = (GATE_KEY, WHY_COLUMN, TS_COLUMN)
+# Marks a delta whose corpus moved: still printed, but a bigger tree is not a
+# regression.
+INCOMPARABLE_MARK = '*'
+CENSUS_ARROW = ' → '
+MOVED_NOTE = 'census that moved or is absent'
+TREE_ROWS_NOTE = 'tree row(s) no milestone owns, by kind'
+BY_BRANCH_NOTE = 'the same rows by branch'
+UNPLACED_NOTE = ('row(s) name a grain no milestone in this tree holds — '
+                 'counted in no report')
 
 
 def _gate_unusable(row: dict) -> str | None:
@@ -1771,28 +1223,21 @@ def _gate_unusable(row: dict) -> str | None:
     return None
 
 
-def gates_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
-               rows: list) -> dict:
-    """Section 6 as data: one entry per `gate`, slowest-latest first;
-    `delta_ms` is `last - first`. A gate with one run still appears, with `-`;
-    a delta whose census moved is printed and marked (`comparable`). Nothing
-    here is a ceiling or a budget.
-    """
-    gate_rows = [r.data for r in rows
-                 if r.data.get(ledger.KIND_FIELD) == ledger.KIND_GATE]
+def gates_data(rows: list[dict]) -> dict:
+    """One entry per `gate`, slowest-latest first, ONE run per row; `delta_ms`
+    is `last - first`. A gate with one run still appears, with `-`; a delta
+    whose census moved is printed and marked (`comparable`)."""
+    gate_rows = [r for r in rows if r.get(ledger.KIND_FIELD) == ledger.KIND_GATE]
     unusable, runs_of = [], {}
     for row in gate_rows:
         why = _gate_unusable(row)
         if why is not None:
             name = row.get(GATE_KEY)
-            unusable.append({'gate': name if isinstance(name, str) and name
-                             else None, 'why': why,
-                             TS_COLUMN: row.get(ledger.TS_FIELD)
-                             if isinstance(row.get(ledger.TS_FIELD), str)
-                             else None})
+            unusable.append({GATE_KEY: name if isinstance(name, str) and name
+                             else None, WHY_COLUMN: why,
+                             TS_COLUMN: _text(row.get(ledger.TS_FIELD)) or None})
             continue
         runs_of.setdefault(row[GATE_KEY], []).append(row)
-
     entries = []
     for name, runs in runs_of.items():
         first, last = runs[0][GATE_DURATION_KEY], runs[-1][GATE_DURATION_KEY]
@@ -1800,18 +1245,38 @@ def gates_data(src: Source, cfg: vocabulary.PmConfig, mid: str, mdir: Path,
         censuses = (_int(runs[0].get(GATE_CENSUS_KEY)),
                     _int(runs[-1].get(GATE_CENSUS_KEY)))
         entries.append({
-            'gate': name, 'runs': len(runs),
-            'first_ms': first, 'last_ms': last, 'delta_ms': delta,
+            GATE_KEY: name, RUNS_COLUMN: len(runs),
+            FIRST_MS_COLUMN: first, LAST_MS_COLUMN: last,
+            DELTA_MS_COLUMN: delta,
             'first_census': censuses[0], 'last_census': censuses[1],
             'comparable': None if delta is None else (
                 None not in censuses and censuses[0] == censuses[1])})
-    entries.sort(key=lambda e: (-e['last_ms'], e['gate']))
-    return {SECTION_GATES: {
-        'gates': entries, 'unusable': unusable,
-        'totals': {'rows': len(gate_rows), 'gates': len(entries),
-                   'incomparable': sum(1 for e in entries
-                                       if e['comparable'] is False),
-                   'unusable': len(unusable)}}}
+    entries.sort(key=lambda e: (-e[LAST_MS_COLUMN], e[GATE_KEY]))
+    return {'gates': entries, 'unusable': unusable,
+            'totals': {'rows': len(gate_rows), 'gates': len(entries),
+                       'incomparable': sum(1 for e in entries
+                                           if e['comparable'] is False),
+                       'unusable': len(unusable)}}
+
+
+def tree_data(root_rows: list, claims: list[Claim]) -> dict:
+    """The tree's report: every root row no milestone's `Claim` owns. A row
+    that NAMES a grain no milestone holds is counted, never kept."""
+    rows, _joined = join_twins(in_time_order(list(root_rows)))
+    mine, unplaced = [], 0
+    for row in rows:
+        if any(owns(row.data, claim) for claim in claims):
+            continue
+        if _text(row.data.get(ledger.GRAIN_FIELD)):
+            unplaced += 1
+            continue
+        mine.append(row.data)
+    return {MILESTONE_KEY: TREE_ID, 'gates': gates_data(mine),
+            'rows': _tally(_text(r.get(ledger.KIND_FIELD)) or DASH
+                           for r in mine),
+            'branches': _tally(_text(r.get(BRANCH_FIELD)) or DASH
+                               for r in mine),
+            'unplaced': unplaced}
 
 
 def _gate_census_cell(entry: dict) -> str:
@@ -1822,253 +1287,112 @@ def _gate_census_cell(entry: dict) -> str:
             else f'{first}{CENSUS_ARROW}{last}')
 
 
-def gates_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """Section 6 as lines: the cost table, then whatever it could not read."""
-    section = data[SECTION_GATES]
+def tree_lines(data: dict) -> list[str]:
+    """The tree's report as lines: the gate table, what it could not use, and
+    the counts."""
+    section = data['gates']
     cost = []
     for entry in section['gates']:
-        delta = (DASH if entry['delta_ms'] is None
-                 else f'{entry["delta_ms"]:+d}')
+        delta = (DASH if entry[DELTA_MS_COLUMN] is None
+                 else f'{entry[DELTA_MS_COLUMN]:+d}')
         if entry['comparable'] is False:
             delta += INCOMPARABLE_MARK
-        cost.append((entry['gate'], str(entry['runs']),
-                     _cell(entry['first_ms']), _cell(entry['last_ms']),
+        cost.append((entry[GATE_KEY], str(entry[RUNS_COLUMN]),
+                     _cell(entry[FIRST_MS_COLUMN]), _cell(entry[LAST_MS_COLUMN]),
                      delta, _gate_census_cell(entry)))
-    unusable = [(_cell(e['gate']), e['why'], _cell(e[TS_COLUMN]))
+    unusable = [(_cell(e[GATE_KEY]), e[WHY_COLUMN], _cell(e[TS_COLUMN]))
                 for e in section['unusable']]
     totals = section['totals']
-    return _section(
-        heading_id(data), GATES_TITLE,
-        f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
-        f'{GATES_SCOPE_NOTE}; '
-        f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for a '
-        f'census that moved or is absent, '
-        f'{totals["unusable"]} row(s) this section could not use',
-        [(f'{GATE_COST_TITLE} ({len(cost)})',
-          (GATE_COLUMN, RUNS_COLUMN, FIRST_MS_COLUMN, LAST_MS_COLUMN,
-           DELTA_MS_COLUMN, CENSUS_COLUMN),
-          (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost),
-         (f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
-          (GATE_COLUMN, WHY_COLUMN, TS_COLUMN),
-          (LEFT, LEFT, LEFT), unusable)])
-
-
-# The registry: one row per question, one pair of functions each; a section is
-# added here and nowhere else.
-SECTIONS = (Section(SECTION_SPEND, spend_data, spend_lines),
-            Section(SECTION_YIELD, yield_data, yield_lines),
-            Section(SECTION_REWORK, rework_data, rework_lines),
-            Section(SECTION_ESCAPES, escapes_data, escapes_lines),
-            Section(SECTION_OVERHEAD, overhead_data, overhead_lines),
-            Section(SECTION_GATES, gates_data, gates_lines))
-
-
-def build(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
-          src: Source | None = None) -> dict:
-    """The whole report as one object — what `--json` prints. Section 1's keys
-    sit at the top level as shipped; sections 2-5 each add one key. `rev` is
-    present only when there was one (a `"rev": null` is a question nobody put).
-    """
-    src = DiskSource() if src is None else src
-    rows, joined = join_twins(in_time_order(rows))
-    out: dict = {MILESTONE_KEY: mid, JOINED_KEY: joined}
-    if src.rev:
-        out['rev'] = src.rev
-    for section in SECTIONS:
-        out.update(section.data(src, cfg, mid, mdir, rows))
+    out = [f'{HEADING_PREFIX} {TREE_ID} — {GATES_TITLE} — '
+           f'{totals["rows"]} gate row(s), {totals["gates"]} gate(s), '
+           f'{totals["incomparable"]} delta(s) marked {INCOMPARABLE_MARK} for '
+           f'a {MOVED_NOTE}, {totals["unusable"]} row(s) this section could '
+           f'not use', '']
+    out.extend(_table(f'{GATE_KEY} ({len(cost)})', GATE_COLUMNS,
+                      (LEFT, RIGHT, RIGHT, RIGHT, RIGHT, LEFT), cost))
+    out.append('')
+    out.extend(_table(f'{GATE_UNUSABLE_TITLE} ({len(unusable)})',
+                      UNUSABLE_COLUMNS, (LEFT, LEFT, LEFT), unusable))
+    out.append('')
+    out.append(f'{NOTE_INDENT}{sum(data["rows"].values())} {TREE_ROWS_NOTE}: '
+               f'{_by_kind(data["rows"])}; {BY_BRANCH_NOTE}: '
+               f'{_by_kind(data["branches"])}')
+    out.append(f'{NOTE_INDENT}{data["unplaced"]} {UNPLACED_NOTE}')
     return out
-
-
-def clock_report(cfg: vocabulary.PmConfig, mid: str, mdir: Path, rows: list,
-                 src: Source, focus: str) -> dict:
-    """The clock at the LEVEL an id names — `pm ledger report <feature-id>`.
-    The rows are the milestone's, because that is where a ledger is (D6); the
-    id chooses which grain roots the table. Spend, review passes and gate cost
-    are the MILESTONE's questions and are not printed under it (rule 4)."""
-    grains, owned = walk_grains(src, cfg, mid, mdir)
-    arrived = [r for r in in_time_order(rows) if arrival_state(r.data)]
-    out = {MILESTONE_KEY: mid, 'focus': focus,
-           'clock': clock_data(cfg, mid, grains, owned, arrived, focus=focus)}
-    if src.rev:
-        out['rev'] = src.rev
-    return out
-
-
-def clock_render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """The focused report as lines: the grain, its milestone, both tables."""
-    rows = data['clock']['rows']
-    return [f'{HEADING_PREFIX} {data["focus"]} — {CLOCK_TITLE} — '
-            f'{len(rows)} grain(s), from {heading_id(data)}',
-            ''] + clock_lines(cfg, data['clock'])
-
-
-def beyond_ledger(data: dict) -> bool:
-    """Did anything outside `ledger.jsonl` get measured — a verdict block or an
-    escape — so the caller does not stop at the one-line form? Narrow: a record
-    with no block is not a measurement."""
-    return (any(record['passes'] for record in data[SECTION_YIELD]['records'])
-            or bool(data[SECTION_ESCAPES]['totals']['bugs']))
-
-
-def render(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """The whole report as lines, in section order."""
-    lines: list[str] = []
-    for section in SECTIONS:
-        lines.extend(section.lines(cfg, data))
-    return lines
 
 
 # --- more than one milestone, side by side ------------------------------------
-# **The comparison is these same sections' own totals, put beside each other.**
-# Every number below is read out of a document `build` already returned, so
-# `pm ledger report <a> <b>` is two reports and an arithmetic, never a new
-# measurement: no ratio, no per-case cost, nothing this module was not already
-# allowed to do (sum, count, subtract, group).
+# **The comparison is these same reports' own totals, put beside each other**,
+# then the tree's report once, under its own heading: every number is read out
+# of a document `build` already returned, and no row is under two milestones.
 #
-# THE SHAPE, and why the delta is a ROW when the brief asked for a column. Rows
-# are MILESTONES, so a block has the same columns whether two ids are named or
-# five and `… | awk '$1 == "delta"'` means one thing every time. A column per
-# milestone would make column 4 a different measure per invocation — rule 6's
-# line shapes moving under a consumer, for a table nobody could pipe.
+# THE SHAPE: rows are MILESTONES, so a block has the same columns whether two
+# ids are named or five and `… | awk '$1 == "delta"'` means one thing every
+# time; the delta is a ROW, `last - first`.
 COMPARE_TITLE = 'milestone comparison'
-# The row key AND the column header, which is `MILESTONE_KEY` rather than a
-# second spelling of the word: a comparison's rows are indexed by the same key
-# a one-milestone document carries at its top level.
 COMPARE_COLUMN = MILESTONE_KEY
 DELTA_ROW = 'delta'
 # The plan is READ to sequence ids the caller named; it never chooses them
-# (rule 9). Which basis was used is printed, because a reordered argument list
-# that says nothing is the tool deciding quietly.
+# (rule 9). Which basis was used is printed.
 ORDER_PLAN = 'plan'
 ORDER_GIVEN = 'given'
-# Two blocks read rows that name no grain, so both read the tree's own ledger
-# (0.4.0/D3) rather than the milestone's — and they are NOT the same case, which
-# is why there are two notes and not one. A GATE row carries no `tree` snapshot,
-# so every milestone reads the identical set and the delta is 0 by construction.
-# An unattributed DISPATCH row does carry one, and `named_grains` bills it to
-# the single story that was in progress when it was filed — so the same row is
-# unattributed under one milestone and attributed under another, and the delta
-# is REAL. Measured: 9 grainless dispatch rows in this tree read as 9 under
-# 0.6.0's milestone and 8 under 0.7.0's, one of them having been filed while
-# exactly one 0.7.0 story was building. A single note saying "0 by
-# construction" over those numbers would be rule 4's first sin in prose.
-TREE_WIDE_NOTE = ('the same rows under every milestone: these name no grain, '
-                  'so they live in the tree\'s ledger and this delta is 0 by '
-                  'construction')
-NO_GRAIN_NOTE = ('read from the tree\'s ledger, not this milestone\'s — so a '
-                 'row whose `tree` snapshot held exactly one story in progress '
-                 'is billed to that story instead and leaves this bucket, '
-                 'which is why the delta is real and not 0')
-# What `*` means here, in gate cost's own words: the corpus moved, so the
-# delta is printed and is not a regression.
-MOVED_NOTE = 'census that moved or is absent'
-ACTORS_COLUMN = 'actors'
-GRAINS_CENSUS = GRAINS_COLUMN
+OPEN_UNITS_COLUMN = 'open_units'
+ROWS_COLUMN = 'rows'
+AGENTS_COLUMN = 'agents'
 
 
 class CompareBlock(NamedTuple):
     """One block of the comparison: what it is called, the measures it lifts
     out of one milestone's document, and WHICH of those measures is the corpus
-    the others were taken over — the column a moved census is read off, exactly
-    as `gates_data` reads `census` off a gate's first and last run."""
+    the others were taken over — the column a moved census is read off."""
     title: str
     measures: Callable[[vocabulary.PmConfig, dict], dict]
     census: str
-    note: str
 
 
-def _flat(totals: dict) -> dict:
-    """One section's `totals` as flat cells. `usage` is the only nested key any
-    section carries and it is spelled in section 1's column labels, so a
-    comparison row and a spend row use one vocabulary."""
-    out: dict = {}
-    for key, value in totals.items():
-        if key == 'usage' and isinstance(value, dict):
-            out.update({USAGE_LABELS[k]: v for k, v in value.items()
-                        if k in USAGE_LABELS})
-        else:
-            out[key] = value
-    return out
+def _compare_units(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """The stamp table's totals, and how many rows the milestone owns."""
+    tokens = duration = None
+    for unit in doc['units']:
+        tokens = _plus(tokens, unit[TOKENS_COLUMN])
+        duration = _plus(duration, unit[DURATION_COLUMN])
+    return {UNITS_COLUMN: len(doc['units']),
+            OPEN_UNITS_COLUMN: sum(1 for u in doc['units']
+                                   if u[STOP_COLUMN] is None),
+            TOKENS_COLUMN: tokens, DURATION_COLUMN: duration,
+            ROWS_COLUMN: sum(doc['owned'].values())}
 
 
-def _compare_spend(cfg: vocabulary.PmConfig, doc: dict) -> dict:
-    """Section 1's totals, which are about the FILE and not the milestone's
-    grains — `spend_data` folds every dispatch row in before any narrowing, the
-    tree's grainless ones included, exactly as the summary line does. So each
-    ROW carries a tree-wide component and the DELTA cancels it; a reader who
-    wants one milestone's own spend reads the per-grain tables."""
-    return _flat(doc['totals'])
+def _compare_agents(cfg: vocabulary.PmConfig, doc: dict) -> dict:
+    """Tokens per agent, one column each — `-` under a milestone that never
+    dispatched it."""
+    return {AGENTS_COLUMN: len(doc['agents']),
+            **{entry[AGENT_COLUMN] or DASH: entry[TOKENS_COLUMN]
+               for entry in doc['agents']}}
 
 
 def _compare_clock(cfg: vocabulary.PmConfig, doc: dict) -> dict:
     """The milestone's OWN roll-up row — `clock_data` already summed every
-    descendant into it, so this lifts a row rather than adding anything. The
-    grain census rides along because it is what the roll-up rolled over."""
+    descendant into it. The grain census rides along."""
     rows = doc['clock']['rows']
     root = rows[0] if rows else {}
     spent = root.get('state_s') or {}
-    states = clock_columns(cfg, rows)
-    return {GRAINS_CENSUS: doc['totals'][GRAINS_CENSUS],
-            **{f'{state}{STATE_SUFFIX}': spent.get(state) for state in states},
+    return {GRAINS_COLUMN: doc[GRAINS_COLUMN],
+            **{f'{state}{STATE_SUFFIX}': spent.get(state)
+               for state in clock_columns(cfg, rows)},
             CLOSED_COLUMN: root.get(CLOSED_COLUMN),
             OPEN_COLUMN: root.get(OPEN_COLUMN)}
 
 
-def _compare_actors(cfg: vocabulary.PmConfig, doc: dict) -> dict:
-    """How many actors were named, over how many arrivals, for how long. A
-    stint still running contributed no seconds to `actor_rows` and contributes
-    none here either."""
-    actors = doc['clock']['actors']
-    seconds = None
-    for entry in actors:
-        seconds = _plus(seconds, entry[SECONDS_COLUMN])
-    return {ACTORS_COLUMN: len(actors),
-            ARRIVALS_COLUMN: sum(e[ARRIVALS_COLUMN] for e in actors),
-            SECONDS_COLUMN: seconds}
-
-
-def _compare_unattributed(cfg: vocabulary.PmConfig, doc: dict) -> dict:
-    """The rows that named no grain — the tree's own ledger by construction
-    (D3), and NOT the same case as `gate cost` even though both read it.
-
-    A dispatch row carries a `tree` snapshot, so `named_grains` bills it to the
-    one story that was in progress when it was filed; the row then leaves this
-    bucket under that story's milestone and stays in it under every other. The
-    delta here is therefore real, which is why this block carries
-    `NO_GRAIN_NOTE` rather than `TREE_WIDE_NOTE`.
-    """
-    return _flat(doc['unattributed'])
-
-
-def _compare_section(name: str) -> Callable[[vocabulary.PmConfig, dict], dict]:
-    """One later section's totals, by section key."""
-    def measures(cfg: vocabulary.PmConfig, doc: dict) -> dict:
-        return _flat(doc[name]['totals'])
-    return measures
-
-
-# The registry, in the order the report prints its sections; a block is added
-# here and nowhere else, and `--help` names every title in it.
+# The registry, in the order the report prints its blocks.
 COMPARE_BLOCKS = (
-    CompareBlock(SPEND_TITLE, _compare_spend, GRAINS_CENSUS, ''),
-    CompareBlock(CLOCK_TITLE, _compare_clock, GRAINS_CENSUS, ''),
-    CompareBlock(ACTOR_TITLE, _compare_actors, ACTORS_COLUMN, ''),
-    CompareBlock(NO_GRAIN_TITLE, _compare_unattributed, DISPATCHES_COLUMN,
-                 NO_GRAIN_NOTE),
-    CompareBlock(YIELD_TITLE, _compare_section(SECTION_YIELD), 'records', ''),
-    CompareBlock(REWORK_TITLE, _compare_section(SECTION_REWORK), 'passes', ''),
-    CompareBlock(ESCAPES_TITLE, _compare_section(SECTION_ESCAPES),
-                 'features', ''),
-    CompareBlock(OVERHEAD_TITLE, _compare_section(SECTION_OVERHEAD),
-                 'dispatch_rows', ''),
-    CompareBlock(GATES_TITLE, _compare_section(SECTION_GATES), 'gates',
-                 TREE_WIDE_NOTE))
+    CompareBlock(UNIT_TITLE, _compare_units, UNITS_COLUMN),
+    CompareBlock(AGENT_TITLE, _compare_agents, AGENTS_COLUMN),
+    CompareBlock(CLOCK_TITLE, _compare_clock, GRAINS_COLUMN))
 
 
 def _columns_of(cells: list[dict]) -> tuple[str, ...]:
-    """Every measure any of these milestones carried, first seen first. A
-    state one milestone never held is a column the other still gets, with `-`
-    on the row that never held it — the clock's own rule, across grains."""
+    """Every measure any of these milestones carried, first seen first."""
     out: list[str] = []
     for row in cells:
         for key in row:
@@ -2078,23 +1402,15 @@ def _columns_of(cells: list[dict]) -> tuple[str, ...]:
 
 
 def _difference(first: object, last: object) -> int | None:
-    """`last - first`, or None when either end was never recorded. Half a pair
-    is no answer — `_gate_census_cell`'s rule, applied to the numbers."""
-    if any(isinstance(v, bool) or not isinstance(v, int)
-           for v in (first, last)):
-        return None
-    return int(last) - int(first)  # type: ignore[arg-type]
+    """`last - first`, or None when either end was never recorded."""
+    a, b = _int(first), _int(last)
+    return None if a is None or b is None else b - a
 
 
 def compare_data(cfg: vocabulary.PmConfig, documents: list[tuple[str, dict]],
-                 basis: str) -> dict:
+                 basis: str, tree: dict) -> dict:
     """More than one milestone as ONE object — what `--json` prints when more
-    than one id is named, and the shape is DECIDED here rather than left to the
-    caller.
-
-    A single id still prints `build`'s nested document, byte for byte; two or
-    more print this, because joining N nested documents on matching section
-    keys is the `jq` nobody should have to write. Top level::
+    than one id is named. Top level::
 
         {"milestones": [<id>, ...],        # in the order compared
          "order": "plan" | "given",        # what sequenced them
@@ -2102,13 +1418,9 @@ def compare_data(cfg: vocabulary.PmConfig, documents: list[tuple[str, dict]],
                      "columns": [<measure>, ...],
                      "census": <measure>,   # the corpus the rest was taken over
                      "moved": <bool>,       # did that corpus move, first to last
-                     "note": <str>,         # '' unless the rows are tree-wide
                      "rows": [{"milestone": <id>, <measure>: <n|null>, ...}],
-                     "delta": {<measure>: <n|null>, ...}}]}   # last - first
-
-    `delta` is `last - first` and the milestones between them are printed and
-    not differenced — `gates_data`'s arithmetic, across grains instead of
-    within one.
+                     "delta": {<measure>: <n|null>, ...}}],   # last - first
+         "tree": <the `--tree` document>}  # the rows no milestone owns
     """
     blocks = []
     for block in COMPARE_BLOCKS:
@@ -2119,29 +1431,27 @@ def compare_data(cfg: vocabulary.PmConfig, documents: list[tuple[str, dict]],
                             last.get(block.census)) != 0
         blocks.append({
             'block': block.title, 'columns': list(columns),
-            'census': block.census, 'moved': moved, 'note': block.note,
+            'census': block.census, 'moved': moved,
             'rows': [{COMPARE_COLUMN: mid,
                       **{c: row.get(c) for c in columns}}
                      for (mid, _doc), row in zip(documents, cells)],
             'delta': {c: _difference(first.get(c), last.get(c))
                       for c in columns}})
     return {'milestones': [mid for mid, _doc in documents],
-            'order': basis, 'blocks': blocks}
+            'order': basis, 'blocks': blocks, 'tree': tree}
 
 
 def _delta_cell(value: int | None, moved: bool) -> str:
     """One delta: signed, `-` when either end was absent, `*` when the census
-    under it moved — `gates_lines`' cell, and the same mark. A delta that is
-    `-` is never marked: gate cost leaves `comparable` None when there is no
-    delta, and a mark on a number nobody has says nothing twice."""
+    under it moved."""
     if value is None:
         return DASH
     return f'{value:+d}{INCOMPARABLE_MARK}' if moved else f'{value:+d}'
 
 
 def compare_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
-    """The comparison as lines: one heading, then one block per section with a
-    row per milestone and a `delta` row under them."""
+    """The comparison as lines: one heading, one block per measure family with
+    a row per milestone and a `delta` row under them, then the tree's report."""
     marked = sum(1 for block in data['blocks'] if block['moved'])
     out = [f'{HEADING_PREFIX} {CENSUS_ARROW.join(data["milestones"])} — '
            f'{COMPARE_TITLE} — {len(data["milestones"])} milestone(s) in '
@@ -2150,18 +1460,17 @@ def compare_lines(cfg: vocabulary.PmConfig, data: dict) -> list[str]:
            f'{MOVED_NOTE}']
     for block in data['blocks']:
         columns = tuple(block['columns'])
-        headers = (COMPARE_COLUMN, *columns)
         body = [(row[COMPARE_COLUMN], *(_cell(row[c]) for c in columns))
                 for row in block['rows']]
-        # The census column's own delta IS the statement that it moved, so it
-        # is the one cell the mark would be noise on.
+        # The census column's own delta IS the statement that it moved.
         body.append((DELTA_ROW,
                      *(_delta_cell(block['delta'][c],
                                    block['moved'] and c != block['census'])
                        for c in columns)))
         out.append('')
         out.extend(_table(f'{block["block"]} ({len(block["rows"])})',
-                          headers, (LEFT,) + (RIGHT,) * len(columns), body))
-        if block['note']:
-            out.append(f'   {block["census"]}: {block["note"]}')
+                          (COMPARE_COLUMN, *columns),
+                          (LEFT,) + (RIGHT,) * len(columns), body))
+    out.append('')
+    out.extend(tree_lines(data['tree']))
     return out

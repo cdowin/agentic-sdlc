@@ -25,17 +25,18 @@ version, name and summary after its documents are gone. All of them in `ledger.j
 
     pm ledger show <grain-id>       that grain's rows oldest first, with the
                                     seconds between status changes
-    pm ledger report [<grain-id>]   the same rows added up PER GRAIN:
-                                    dispatches, tokens in and out, cache
-                                    creation and reads, tool calls, wall-clock,
-                                    and seconds in each category
+    pm ledger report [<grain-id>]   the units of work a milestone OWNS: unit
+                                    grain issue agent start stop duration
+                                    tokens outcome, then spend by agent and
+                                    time per state
+    pm ledger report --tree         the rows no milestone owns: gate cost
     pm ledger report <a> <b>        TWO OR MORE MILESTONES SIDE BY SIDE: every
                                     block gets one row per milestone and a
                                     `delta` row — the comparative question,
                                     answered without a loop or a `jq` join
 
-`report` also carries review yield, rework, escapes and **gate cost** — what
-`make check` / `make unit` / `make test` took, and whether it moved. `--json`
+`--tree` carries **gate cost** — what `make check` / `make unit` / `make test`
+took on a branch no milestone declares, and whether it moved. `--json`
 gives the same numbers to a script; `--from <rev>` reads a milestone that has
 already been retired, out of git.
 

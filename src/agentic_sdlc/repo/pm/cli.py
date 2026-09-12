@@ -337,8 +337,9 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            rather than dropped. A row naming no
                                            grain lands in the tree's own
                                            <roadmap>/ledger.jsonl, with every
-                                           gate and test row, and is reported in
-                                           `rows naming no grain`)
+                                           gate and test row, and is the tree's
+                                           unless it carries a milestone's
+                                           branch (`ledger report --tree`))
   ledger record --grain <id> [--agent-type T] [--tokens-in N] [--tokens-out N |
                 --tokens-total N] [--tool-calls N] [--duration-s N] [--event E]
                 [--outcome O]
@@ -419,147 +420,92 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            milestone ledger AND the tree's, so
                                            it and `ledger report` cannot
                                            disagree about a row)
-  ledger report [<grain-id>...] [--json] [--from <rev>]
-                                          (THE TELEMETRY REPORT — token spend,
-                                           tool calls, wall-clock and gate cost,
-                                           per grain, from rows the tree already
-                                           recorded. Ask this before writing a
-                                           table of timings by hand.
-                                           Spend per grain from that milestone's
-                                           rows: dispatches, tokens, tool calls,
-                                           wall-clock and seconds in each
-                                           CATEGORY (todo / in_progress / done),
-                                           per story/feature/bug. `in`/`out`
-                                           are the MEASURED split; a row that
-                                           reported one number instead is summed
-                                           in `tokens_total` and folded into
-                                           neither, and the summary line says
-                                           how many did. With no id it
-                                           reports the CURRENT release's
-                                           milestone (`pm next`'s answer, from
-                                           the plan) — the rows themselves are
-                                           routed by their grain, never by a
-                                           status. Never exits non-zero on a
-                                           number.
-                                           A MILESTONE id reports all of it; a
-                                           feature or story id reports the clock
+  ledger report [<grain-id>...] [--json] [--from <rev>] | --tree [--json]
+                                          (THE TELEMETRY REPORT — the units of work
+                                           a milestone OWNS: who did what, on which
+                                           grain and issue, from when to when, for
+                                           how many tokens, and how it ended. Ask
+                                           this before writing a table of timings
+                                           by hand.
+                                           A milestone owns a row naming one of its
+                                           grains, or a row naming no grain stamped
+                                           with the branch it declares in
+                                           `branch:`; an old row carrying neither
+                                           is placed by its snapshot when that
+                                           names exactly one of its stories. No row
+                                           is under two milestones.
+                                           A UNIT is a `stamp` start paired with the
+                                           next stop on its grain (no stop yet: an
+                                           open unit, stop `-`), or one dispatch row
+                                           (start = ts less duration_s). With no id
+                                           it reports the CURRENT release's
+                                           milestone (`pm next`'s answer). Never
+                                           exits non-zero on a number.
+                                           A feature or story id reports the clock
                                            at that level — that grain and its
-                                           descendants, rolled — since the LEVEL
-                                           is the id's and the ledger is still
-                                           the milestone's.
+                                           descendants, rolled.
+                                           --tree reports the rows NO milestone
+                                           owns — gate runs on `main`, rows on a
+                                           branch no milestone declares — once,
+                                           under its own heading.
                                            MORE THAN ONE MILESTONE ID COMPARES
-                                           THEM, which is the comparative
-                                           question this verb exists for: every
-                                           block below gets one row per
-                                           milestone and a `delta` row,
-                                           `last - first`, marked * where the
-                                           census under it moved — `gate cost`'s
-                                           own arithmetic, across grains instead
-                                           of within one. WHICH milestones is
-                                           yours to name; the plan's `order`
-                                           SEQUENCES the ids you gave when it
-                                           holds every one of them, and the
-                                           heading says `plan` or `given` so the
-                                           basis is never guessed at.
-                                           `--json` then prints ONE JOINED
-                                           document — {"milestones": [<id>...],
-                                           "order": plan|given, "blocks":
-                                           [{"block", "columns", "census",
-                                           "moved", "note", "rows", "delta"}]} —
-                                           rather than a nested report per
-                                           milestone for you to join by hand.
-                                           ONE id still prints that nested
-                                           document, byte for byte.
-                                           Two blocks carry the SAME rows under
-                                           every milestone and say so on the
-                                           line: a gate row and an unattributed
-                                           row names no grain, so both live in
-                                           the tree's ledger and both deltas are
-                                           0 by construction.
-                                           Refused at exit 2: one id named
-                                           twice, a feature or story id beside
-                                           another id, and --from with more than
-                                           one.
-                                           EVERY BLOCK IT PRINTS, in print order.
-                                           A (heading) carries a census rather
-                                           than a table, and those same words
-                                           are its row in the comparison, so
-                                           this is one roster and not two —
+                                           THEM: every block below gets one row per
+                                           milestone and a `delta` row, `last -
+                                           first`, marked * where the census under
+                                           it moved, then the tree's report. The
+                                           plan's `order` SEQUENCES the ids you gave
+                                           when it holds every one of them, and the
+                                           heading says `plan` or `given`. `--json`
+                                           then prints ONE JOINED document —
+                                           {"milestones", "order", "blocks":
+                                           [{"block", "columns", "census", "moved",
+                                           "rows", "delta"}], "tree"}.
+                                           Refused at exit 2: one id named twice, a
+                                           feature or story id beside another id,
+                                           --from with more than one, --tree with
+                                           an id.
+                                           Tool calls and the measured token
+                                           split stay on the raw rows: `ledger
+                                           show <id> --json`.
+                                           EVERY BLOCK IT PRINTS, in print order,
                                            columns IN ORDER:
-                                             spend per grain (heading)
-                                               dispatch_rows status_rows
-                                               grains
-                                             story / feature / bug
-                                               grain size dispatches in out
-                                               cache_create cache_read
-                                               tokens_total tool_calls
-                                               duration_s todo in_progress
-                                               done total_s
+                                             stamp table (heading)
+                                               units open_units tokens
+                                             units
+                                               unit grain issue agent start stop
+                                               duration tokens outcome
+                                             by agent
+                                               agent units tokens duration share
                                              time per state
-                                               grain <state>_s closed_s
-                                               open_s open_state
-                                             time per actor
-                                               actor arrivals grains seconds
-                                             rows naming no grain
-                                               dispatches in out
-                                               cache_create cache_read
-                                               tokens_total tool_calls
-                                               duration_s
-                                             yield per review pass (heading)
-                                               records passes findings
-                                             verdict
-                                               feature record pass verdict
-                                               findings landed rejected
-                                               deferred open
-                                             findings by severity
-                                               feature pass severity
-                                               findings
-                                             deferred to
-                                               target feature pass findings
-                                             rework (heading)
-                                               passes
-                                             verdict distribution
-                                               verdict passes
-                                             escapes (heading)
-                                               bugs features
-                                             bugs naming a cause
-                                               caused_by bug status
-                                               feature_status
-                                             overhead shape (heading)
-                                               dispatch_rows decision_rows
-                                               session_rows
-                                             story
-                                               story dispatches
-                                               before_first_write calls
-                                             decisions per grain
-                                               grain decisions
-                                             decision to next status row
-                                               grain entry ts next_status_s
-                                             session deltas
-                                               session_id ts out tool_calls
+                                               grain <state>_s closed_s open_s
+                                               open_state
                                              gate cost (heading)
-                                               rows gates incomparable
-                                               unusable
+                                               rows gates incomparable unusable
                                              gate
-                                               gate runs first_ms last_ms
-                                               delta_ms census
+                                               gate runs first_ms last_ms delta_ms
+                                               census
                                              rows this section could not use
                                                gate why ts
                                              milestone comparison (heading)
-                                               milestones order blocks
-                                               marked
-                                           `<state>_s` is one column per state
-                                           this milestone's rows HELD, so
-                                           `… | awk` is the filter and no flag
-                                           is grown for a sum.
+                                               milestones order blocks marked
+                                           Under the milestone's tables, one line
+                                           each, printed at 0 too: the rows it owns
+                                           by kind and the branch it claims by;
+                                           stamp rows that pair with nothing;
+                                           superseded spend — rows in its ledger
+                                           naming a grain it no longer holds, their
+                                           tokens and those grain ids; rows in its
+                                           ledger naming no grain; courier/hand
+                                           pairs joined by agent_id. `share` is an
+                                           agent's tokens over the units' tokens;
+                                           `duration` is seconds. Under the tree's:
+                                           its rows by kind and by branch, and rows
+                                           naming a grain no milestone holds.
                                            --from <rev> reads the ledger and the
                                            grain docs out of git at that rev
                                            instead of the tree, for a milestone
                                            already retired — name the rev, it is
-                                           never inferred (D6), and the release
-                                           tag vX.Y.Z is the usual anchor
-                                           because a milestone is still in the
-                                           tree at its own release)
+                                           never inferred (D6))
   decide <grain-id> <title...>            (append one dated, ordinal-stamped
                                            heading, minting decisions.md if this is
                                            the first; the prose under it is yours.
@@ -2797,7 +2743,7 @@ def _resolved_grain(cfg: vocabulary.PmConfig, gid: str) -> inventory.Grain | Non
     """The grain a VERB resolved, or None. A refusal here
     would be a row lost to a lookup nobody asked for, so an id that will not
     resolve is treated as no resolution at all: the key is omitted and the row
-    lands in `rows naming no grain`, a bucket somebody can read. `--grain` is
+    lands in the tree ledger, which `ledger report --tree` reads. `--grain` is
     the opposite case and still refuses — a caller who named a grain must be
     told the name is wrong."""
     if not gid:
@@ -2838,7 +2784,7 @@ def _grain_from_tree(snap: dict) -> str:
         print(f'[pm] {len(live)} stories are in progress '
               f'({" ".join(live)}) — which one this row is about is not '
               f'something this verb may pick, so the row names none of them '
-              f'and lands in `rows naming no grain`. Dispatch with `dispatch '
+              f'and lands in the tree ledger (`ledger report --tree`). Dispatch with `dispatch '
               f'--grain <id>` (its {ledger.STAMP_PREFIX} line) or pass --grain '
               f'(GDK_LEDGER_GRAIN) to attribute it',
               file=sys.stderr)
@@ -2973,17 +2919,30 @@ REPORT_HINT = ', or name one: `pm ledger report <milestone-id>`'
 # `--from <rev>` reads the milestone out of git (D6); the rev is always the
 # caller's, never searched for.
 FROM_FLAG = '--from'
+# `--tree` reports the rows no milestone owns: its own heading, never folded
+# under every milestone (ft-a-milestone-reports-only-its-own-rows).
+TREE_FLAG = '--tree'
 
 
 def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
-    """One milestone's rows, added up per grain — see report.py. The building
-    milestone by default, an explicit id otherwise; no `ledger.jsonl` prints
-    one line at exit 0. `--from <rev>` runs the same `report.build` over
+    """One milestone's OWNED rows as units — see report.py. The current
+    release's milestone by default, an explicit id otherwise; no ledger at all
+    prints one line at exit 0. `--from <rev>` runs the same `report.build` over
     `report.GitSource`, writing nothing and touching no index. MORE THAN ONE
-    milestone id compares them — `_ledger_compare` below, the same sections'
-    totals side by side."""
+    milestone id compares them (`_ledger_compare`); `--tree` reports the rows
+    no milestone owns."""
     as_json = JSON_FLAG in args
     rest = [a for a in args if a != JSON_FLAG]
+    if TREE_FLAG in rest:
+        others = [a for a in rest if a != TREE_FLAG]
+        if others:
+            raise Usage(f'{TREE_FLAG} reports the rows no milestone owns and '
+                        f'takes no id or {FROM_FLAG} — {" ".join(others)!r} '
+                        f'was also given')
+        data = _tree_document(cfg)
+        print(json.dumps(data, ensure_ascii=False) if as_json
+              else '\n'.join(report.tree_lines(data)))
+        return 0
     # Whether `--from` was given and what it was given are two questions: an
     # empty value once read as "no rev" and was answered about the working
     # tree.
@@ -3002,7 +2961,8 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     for arg in rest:
         if arg.startswith('-'):
             raise Usage(f'unknown flag {arg!r} (ledger report takes '
-                        f'{JSON_FLAG}, {FROM_FLAG} <rev> and a grain id)')
+                        f'{JSON_FLAG}, {TREE_FLAG}, {FROM_FLAG} <rev> and a '
+                        f'grain id)')
     if given and len(rest) > 1:
         # Two subjects, one rev: the pair is only comparable if both were read
         # at the SAME moment, and one `--from` cannot say which moment each
@@ -3038,26 +2998,9 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         # layout the retire left behind.
         mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
         path = src.ledger_for(cfg, mid)
-        # Two files, one report. The milestone's ledger holds every
-        # ATTRIBUTED row; the tree's root ledger holds the rows naming no grain
-        # (D3), where `gate` and `test` rows live by construction. Reading only
-        # the first would empty that bucket and the gate-cost section for every
-        # milestone — the report going quiet about rows that exist.
-        root = ledger.grainless_path(cfg.roadmap)
-        try:
-            rows = src.ledger_rows(path)
-            if root != path:
-                rows += src.ledger_rows(root)
-        except ledger.LedgerError as err:
-            raise Usage(f'{err}') from err
-        try:
-            data = (report.clock_report(cfg, mid, mdir, rows, src, focus)
-                    if focus else report.build(cfg, mid, mdir, rows, src))
-        except report.RecordError as err:
-            # The second document this verb parses, refused the same way as the
-            # first: a verdict block that exists and cannot be read, named by
-            # record and line.
-            raise Usage(f'{err}') from err
+        own, root_rows = _report_rows(cfg, src, path)
+        data = (report.clock_report(cfg, mid, mdir, own + root_rows, src, focus)
+                if focus else report.build(cfg, mid, mdir, own, root_rows, src))
     except report.GitError as err:
         # Every git refusal, one exit code: a bad rev carries git's own words,
         # a missing path names the path.
@@ -3065,18 +3008,43 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
     if as_json:
         print(json.dumps(data, ensure_ascii=False))
         return 0
+    root = ledger.grainless_path(cfg.roadmap)
     if not src.is_file(path) and not src.is_file(root):
-        # No ledger is a fact about section 1 only; sections 2 and 4 read other
-        # documents, so the report still prints when those hold something — and
-        # a focused report is section 1's clock alone, so it stops here.
         print(f'{report.HEADING_PREFIX} {report.heading_id(data)} — '
               f'{report.NO_LEDGER}')
-        if focus or not report.beyond_ledger(data):
-            return 0
+        return 0
     for line in (report.clock_render(cfg, data) if focus
                  else report.render(cfg, data)):
         print(line)
     return 0
+
+
+def _report_rows(cfg: vocabulary.PmConfig, src: report.Source,
+                 path: Path) -> tuple[list, list]:
+    """(the milestone's ledger rows, the tree's). Two files, one report: the
+    milestone owns every row of the first it can place and the rows of the
+    second stamped with its branch — `report.owns` decides, never the file."""
+    root = ledger.grainless_path(cfg.roadmap)
+    try:
+        own = src.ledger_rows(path)
+        return own, (src.ledger_rows(root) if root != path else [])
+    except ledger.LedgerError as err:
+        raise Usage(f'{err}') from err
+
+
+def _tree_document(cfg: vocabulary.PmConfig) -> dict:
+    """The tree's report: its root rows less every row a milestone in the
+    tree claims — by grain, or by the `branch:` it declares."""
+    src = report.DiskSource()
+    claims = []
+    for found in inventory.milestones(cfg):
+        mid = found.field(vocabulary.FIELD_ID) or found.path.stem
+        claims.append(report.claim_of(src, cfg, mid, found.path)[0])
+    try:
+        root_rows = src.ledger_rows(ledger.grainless_path(cfg.roadmap))
+    except ledger.LedgerError as err:
+        raise Usage(f'{err}') from err
+    return report.tree_data(root_rows, claims)
 
 
 def _report_milestone_dir_at(cfg: vocabulary.PmConfig, src: report.GitSource,
@@ -3188,26 +3156,18 @@ def _ledger_compare(cfg: vocabulary.PmConfig, ids: list[str],
     # the argument line is a rule nobody could read off the output.
     planned = all(gid in order for gid in ids)
     basis = report.ORDER_PLAN if planned else report.ORDER_GIVEN
-    root = ledger.grainless_path(cfg.roadmap)
     documents: list[tuple[str, dict]] = []
     missing: list[str] = []
     for gid in (sorted(ids, key=order.index) if planned else ids):
         mdir = handles[gid]
         mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
         path = src.ledger_for(cfg, mid)
-        try:
-            rows = src.ledger_rows(path)
-            if root != path:
-                rows += src.ledger_rows(root)
-        except ledger.LedgerError as err:
-            raise Usage(f'{err}') from err
+        own, root_rows = _report_rows(cfg, src, path)
         if not src.is_file(path):
             missing.append(mid)
-        try:
-            documents.append((mid, report.build(cfg, mid, mdir, rows, src)))
-        except report.RecordError as err:
-            raise Usage(f'{err}') from err
-    data = report.compare_data(cfg, documents, basis)
+        documents.append((mid, report.build(cfg, mid, mdir, own, root_rows,
+                                            src)))
+    data = report.compare_data(cfg, documents, basis, _tree_document(cfg))
     if as_json:
         print(json.dumps(data, ensure_ascii=False))
         return 0

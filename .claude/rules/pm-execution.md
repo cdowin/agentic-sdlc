@@ -220,7 +220,7 @@ a list of ids and nothing else — never a rendered roster.
   names it; none or several, the row names none and says which. So a serial
   dispatch needs no export at all, and a concurrent one needs the next entry.
 - **`GDK_LEDGER_GRAIN`** — export it, and the session's or dispatch's rows land
-  on that grain's line instead of in `rows naming no grain`. The couriers read
+  on that grain instead of in the tree's report. The couriers read
   it from their own environment and pass it as `--grain`; **nothing exports it
   for you**, and it is the one `GDK_LEDGER_*` value the hook cannot get from
   the payload, because no hook event carries a grain. Whoever starts a session
@@ -235,13 +235,14 @@ a list of ids and nothing else — never a rendered roster.
   pairs it joined. Unset is normal: the verb then uses the one
   story in progress, and omits the key when there is none or several — never a
   guess.
-- `pm ledger report [<grain-id>]` — the same rows added up per grain:
-  dispatches, tokens in and out, tool calls, wall-clock, and seconds spent in
-  each category. This is the answer to *how long did this take*, *what did it
-  spend* and *what did the gates cost* — do not hand-write a table of them.
-  A row is filed against the milestone that owns its grain, at any status; a
-  row naming none lands in `<roadmap>/ledger.jsonl` and is reported in the
-  `rows naming no grain` bucket.
+- `pm ledger report [<grain-id>]` — the milestone's UNITS of work: one row per
+  stamp pair or dispatch, columns `unit grain issue agent start stop duration
+  tokens outcome`, then `by agent` (with each agent's `share` of the tokens).
+  This is the answer to *who did what, how long did it take* and *what did it
+  spend* — do not hand-write a table of them. A milestone reads only rows it
+  OWNS: its grains', and rows naming no grain stamped with its declared
+  `branch:`. Every other row in `<roadmap>/ledger.jsonl` is the tree's:
+  `pm ledger report --tree` prints them once, with what the gates cost.
   **`time per state` is the block that answers "how long has this been
   building"**: `grain`, one `<state>_s` column per state the rows actually
   hold, then `closed_s`, `open_s` and `open_state`, one row per grain in tree
@@ -249,8 +250,7 @@ a list of ids and nothing else — never a rendered roster.
   features', which is the sum of its stories'. Time still RUNNING is `open_s`
   and is never folded into a closed total, because a running clock and a
   finished one are different facts; a state a grain never held has no column
-  rather than a zero. `time per actor` is the same rows read by who was named
-  at each arrival. **The shell is the filter** — `pm ledger report <id> | awk`
+  rather than a zero. **The shell is the filter** — `pm ledger report <id> | awk`
   over those columns — never a new flag.
   The id names the LEVEL: a milestone id reports all of it, a feature or story
   id reports the clock rooted at that grain and its descendants. The ledger is

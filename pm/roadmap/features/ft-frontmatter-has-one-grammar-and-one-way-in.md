@@ -3,11 +3,11 @@ id: ft-frontmatter-has-one-grammar-and-one-way-in
 kind: feature
 milestone: "ms-the-tool-agrees-with-itself"
 name: frontmatter has one grammar and one way in
-status: reviewing
-reviewed:
+status: done
+reviewed: docs/reviews/2026-09-12-0.9.0-frontmatter-has-one-grammar-and-one-way-in.md
 depends_on: []
 consumed_by: []
-changelog:
+changelog: none
 order:
   - "st-rename-rewrites-through-the-storage-layer"
   - "st-a-rewritten-document-leaves-the-parse-cache"

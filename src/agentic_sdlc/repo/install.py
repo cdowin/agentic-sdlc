@@ -245,7 +245,7 @@ _NEXT_STEP = {
                      'Last, the ledger couriers read GDK_LEDGER_GRAIN from '
                      'THEIR OWN ENVIRONMENT and pass it as `--grain`, which is '
                      'what puts a session\'s tokens on a story\'s line rather '
-                     'than in `rows naming no grain`. Nothing exports it for '
+                     'than in the tree ledger. Nothing exports it for '
                      'you: whoever starts a session or dispatches an agent '
                      'exports the grain it was told to work on. Unset is '
                      'normal and passes no flag — the verb then resolves the '

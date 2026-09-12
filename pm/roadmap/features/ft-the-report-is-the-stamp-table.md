@@ -3,11 +3,11 @@ id: ft-the-report-is-the-stamp-table
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: the report is the stamp table
-status: building
+status: reviewing
 reviewed:
 depends_on: ["ft-a-milestone-reports-only-its-own-rows", "ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []
-changelog:
+changelog: `pm ledger report <milestone>` prints the units table (unit grain issue agent start stop duration tokens outcome), `by agent`, `time per state` and named count lines; the spend, yield, rework, escapes, overhead, time-per-actor, no-grain and in-flight blocks are removed (their rows stay in `ledger show --json`), and gate cost moves to `--tree`.
 ---
 
 # the report is the stamp table

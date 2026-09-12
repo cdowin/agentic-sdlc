@@ -3,7 +3,7 @@ id: ft-work-is-stamped-with-its-issue-and-agent
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: work is stamped with its start, stop, issue and agent
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []

@@ -263,7 +263,11 @@ budget = { unit = 20, integration = 130, test = 150 }
 # in the headered census, and `run-the-sdlc` found by its trigger phrase; +1
 # merged forward from 0.10.0's review fix (the cross-ledger twin row, F2): 1,707
 # on a host that skips a case, 1,708 in CI, which is the census this gate grades.
-cases = { test = 1708 }
+#
+# RE-SET at the close of 0.11.1: 1,708 -> 1,712 (+4 in CI, +3 on this host). The
+# review's false-ALLOW commands, each a refused row in test_hooks_payloads that
+# 0.11.1's first cut let through (M1-M3, m4).
+cases = { test = 1712 }
 # Nothing else is set. The prose ratchets, their six line caps and their three
 # grandfather ledgers were deleted in 0.15.0, and every key they read is now
 # named at exit 2 by `check pm` — so this file declares scope and roster, and

@@ -3,7 +3,7 @@ id: ft-the-guard-lets-the-leader-keep-house
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: the guard lets the leader keep house
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

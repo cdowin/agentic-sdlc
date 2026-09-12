@@ -3,7 +3,7 @@ id: ft-a-bare-host-is-named-at-session-start
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a bare host is named at session start
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

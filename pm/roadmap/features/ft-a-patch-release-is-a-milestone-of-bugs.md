@@ -3,7 +3,7 @@ id: ft-a-patch-release-is-a-milestone-of-bugs
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a patch release is a milestone of bugs
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []

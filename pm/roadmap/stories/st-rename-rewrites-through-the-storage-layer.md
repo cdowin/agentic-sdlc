@@ -4,10 +4,11 @@ kind: story
 feature: ft-frontmatter-has-one-grammar-and-one-way-in
 milestone: "ms-the-tool-agrees-with-itself"
 name: pm rename rewrites a document through the storage layer, in its grammar
-status: planning
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: `pm rename` rewrites a block list over exactly the lines the reader reads.
+done: 1a55d18 — rename rewrites through core/frontmatter.renamed_in
 ---
 
 # pm rename rewrites a document through the storage layer, in its grammar

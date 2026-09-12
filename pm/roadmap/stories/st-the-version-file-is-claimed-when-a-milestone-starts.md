@@ -4,10 +4,11 @@ kind: story
 feature: ft-the-gates-agree-and-a-dispatch-counts-once
 milestone: "ms-the-tool-agrees-with-itself"
 name: under version_at start, the version file belongs to the milestone that started
-status: planning
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: Under `version_at = "start"`, R5 grades the version file against the last milestone that has started, so it no longer demands the next milestone's version the moment `release` writes `done` (#43).
+done: b79c5c8 — R5 under start grades the last started milestone
 ---
 
 # under version_at start, the version file belongs to the milestone that started

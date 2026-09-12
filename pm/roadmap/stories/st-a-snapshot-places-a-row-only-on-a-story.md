@@ -4,10 +4,11 @@ kind: story
 feature: ft-the-gates-agree-and-a-dispatch-counts-once
 milestone: "ms-the-tool-agrees-with-itself"
 name: a snapshot places a grainless row only on a story, never on a feature by elimination
-status: planning
+status: done
 owner:
 depends_on: ["st-a-hand-record-joins-its-courier-twin"]
-changelog:
+changelog: A dispatch row naming no grain is placed only when its snapshot names exactly one story in progress; a feature alone no longer takes it (#39).
+done: b79c5c8 — a grainless row is placed only on exactly one story
 ---
 
 # a snapshot places a grainless row only on a story, never on a feature by elimination

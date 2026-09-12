@@ -4,10 +4,11 @@ kind: story
 feature: ft-the-gates-agree-and-a-dispatch-counts-once
 milestone: "ms-the-tool-agrees-with-itself"
 name: a hand record joins its courier twin instead of adding a second dispatch
-status: planning
+status: done
 owner:
 depends_on: []
-changelog:
+changelog: `pm ledger report` counts a hand record carrying a courier row's `agent_id` as one dispatch and prints how many pairs it joined; `dispatch` now asks for `--agent-id` (#39).
+done: b79c5c8 — report joins a hand record to its courier twin by agent_id
 ---
 
 # a hand record joins its courier twin instead of adding a second dispatch

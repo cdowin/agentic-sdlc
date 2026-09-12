@@ -193,7 +193,7 @@ def prose_and_code(path: Path) -> tuple[int, int]:
     counts, not the overlap this fixes, and moving it is a different argument.
     """
     source = path.read_text(encoding='utf-8')
-    # `split('\n')`, never `splitlines()`, for `core/frontmatter._split`'s
+    # `split('\n')`, never `splitlines()`, for `core/frontmatter.split_lines`'s
     # reason one root over: `splitlines()` also breaks on U+2028, U+2029, form
     # feed and \x1c-\x1e, while `tokenize` and `ast` break only on a newline.
     # After the first such character every later line number SHIFTS, so the

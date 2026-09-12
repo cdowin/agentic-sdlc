@@ -5,23 +5,26 @@ tree is read once per process; `field_of`, `list_field_of` and the three writers
 answer from it, and every write rewrites the lines it was asked for and preserves every
 other byte, terminators included. `tests/test_boundaries.py` forbids the parse, the raw
 read and the raw write elsewhere.
+
+A value is a scalar, a block list, or an INLINE list `["a", "b"]` — a stated format: the
+templates ship `depends_on: []`, `pm set` writes it, `check pm` grades it.
 """
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from agentic_sdlc.core import apply
 
 
-# Split on '\n' only: `splitlines()` also breaks on U+2028, U+2029, form feed
-# and lone CR, and would rewrite them on join (rule 3).
 _FENCE = re.compile(r'^---[ \t]*\r?$')
 
 
-def _split(text: str) -> list[str]:
+# Split on '\n' only: `splitlines()` also breaks on U+2028, U+2029, form feed
+# and lone CR, and would rewrite them on join (rule 3).
+def split_lines(text: str) -> list[str]:
     return text.split('\n')
 
 
@@ -49,19 +52,24 @@ def _eol(line: str) -> str:
     return '\r' if line.endswith('\r') else ''
 
 
-def _fence_bounds(lines: list[str]) -> tuple[int, int] | None:
+def is_fence(line: str) -> bool:
+    """Is this one line a `---` fence."""
+    return _FENCE.match(line) is not None
+
+
+def fence_bounds(lines: Sequence[str]) -> tuple[int, int] | None:
     """Index of the opening and closing `---` of the leading block, or None."""
-    if not lines or not _FENCE.match(lines[0]):
+    if not lines or not is_fence(lines[0]):
         return None
     for i in range(1, len(lines)):
-        if _FENCE.match(lines[i]):
+        if is_fence(lines[i]):
             return 0, i
     return None
 
 
 def field_in(lines: Sequence[str], key: str) -> str:
     """`field_of` over lines already read."""
-    bounds = _fence_bounds(lines)
+    bounds = fence_bounds(lines)
     if bounds is None:
         return ''
     for line in lines[bounds[0] + 1:bounds[1]]:
@@ -77,9 +85,9 @@ def field_in(lines: Sequence[str], key: str) -> str:
 # (bg-check-pm-reopens-every-file-per-field).
 #
 # PER PROCESS and nothing else: a module dict, never written anywhere. Every hit
-# re-`stat`s the file and re-parses when the stamp moved, and `write_raw` drops
-# what it rewrote — a gate answering off bytes that have moved on is rule 4's
-# first cardinal sin wearing a speedup.
+# re-`stat`s the file and re-parses when the stamp moved, and any `apply` step
+# since the last hit drops every parse — a gate answering off bytes that have
+# moved on is rule 4's first cardinal sin wearing a speedup.
 
 
 @dataclass(frozen=True)
@@ -95,7 +103,7 @@ class Document:
 
     @property
     def text(self) -> str:
-        """The bytes as read — `_split` is `str.split`, so the join is exact."""
+        """The bytes as read — `split_lines` is `str.split`, so the join is exact."""
         return '\n'.join(self.lines)
 
     def field(self, key: str) -> str:
@@ -115,8 +123,8 @@ def parse_document(text: str) -> Document:
     """One document's text, parsed. The scalars are read exactly as `field_in`
     reads them — first line wins, the key is what precedes the first `:` at
     column 0 — so the dict answers what a scan would answer."""
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
+    lines = split_lines(text)
+    bounds = fence_bounds(lines)
     fields: dict[str, str] = {}
     if bounds is not None:
         for line in lines[bounds[0] + 1:bounds[1]]:
@@ -133,6 +141,16 @@ DOCUMENT_CACHE_MAX_CHARS = 64_000_000
 # {str(path): (stamp, characters, the parse)}; `_stamp` says what a stamp is.
 _DOCUMENTS: dict[str, tuple[tuple[int, ...], int, Document]] = {}
 _DOCUMENT_CHARS = 0
+# `apply.mutations()` when `_DOCUMENTS` was last known current. A plan's write
+# never passes `write_raw`, and a same-length one in one mtime tick moves no stamp.
+_MUTATIONS_SEEN = 0
+
+
+def _drop_if_written() -> None:
+    global _MUTATIONS_SEEN, _DOCUMENT_CHARS
+    if apply.mutations() != _MUTATIONS_SEEN:
+        _DOCUMENTS.clear()
+        _DOCUMENT_CHARS, _MUTATIONS_SEEN = 0, apply.mutations()
 
 
 def _stamp(path) -> tuple[int, ...] | None:
@@ -150,6 +168,7 @@ def _stamp(path) -> tuple[int, ...] | None:
 def document(path) -> Document:
     """This file's parse — from the cache when the file has not moved since.
     Raises what `read_raw` raises, which every caller here already answers."""
+    _drop_if_written()
     key = str(path)
     try:
         stamp = _stamp(path)
@@ -190,6 +209,7 @@ def forget_document(path) -> None:
 
 def documents_held() -> int:
     """How many parses the cache is holding — the only way to ask."""
+    _drop_if_written()
     return len(_DOCUMENTS)
 
 
@@ -256,21 +276,80 @@ def _list_in(lines: Sequence[str], bounds: tuple[int, int] | None,
         rest = lines[i][len(key) + 1:].strip()
         if rest and not rest.startswith('#'):
             return []
-        out: list[str] = []
-        for line in lines[i + 1:close_i]:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
-                # Blank lines SPACE a long plan and comment lines ANNOTATE
-                # one. Truncating at either dropped every entry below it —
-                # silently, and `--append` then wrote a duplicate and reported
-                # a successful append (review A2).
-                continue
-            m = _LIST_ITEM.match(line)
-            if m is None:
-                break
-            out.append(unquote(_without_trailing_comment(m.group('value'))))
-        return out
+        return [unquote(_without_trailing_comment(
+                    _LIST_ITEM.match(lines[j]).group('value')))
+                for j in _block_items(lines, i + 1, close_i)]
     return []
+
+
+def _block_items(lines: Sequence[str], first: int, close_i: int) -> list[int]:
+    """Which lines are the block list starting at `first`, for every reader."""
+    out: list[int] = []
+    for j in range(first, close_i):
+        stripped = lines[j].strip()
+        if not stripped or stripped.startswith('#'):
+            # Blank lines SPACE a long plan and comment lines ANNOTATE
+            # one. Truncating at either dropped every entry below it —
+            # silently, and `--append` then wrote a duplicate and reported
+            # a successful append (review A2).
+            continue
+        if _LIST_ITEM.match(lines[j]) is None:
+            break
+        out.append(j)
+    return out
+
+
+def renamed_in(text: str, keys: Collection[str],
+               renames: Mapping[str, str]) -> tuple[str, tuple[str, ...]] | None:
+    """`text` with each whole value token under `keys` renamed, any shape, every
+    other byte kept — and the keys that moved. None when there is no fence."""
+    lines = split_lines(text)
+    bounds = fence_bounds(lines)
+    if bounds is None:
+        return None
+    open_i, close_i = bounds
+    moved: list[str] = []
+    for i in range(open_i + 1, close_i):
+        key, sep, rest = lines[i].partition(':')
+        if not sep or key not in keys:
+            continue
+        value = rest.strip()
+        if value and not value.startswith('#'):
+            swapped = (_inline_renamed(rest, renames) if value.startswith('[')
+                       else _token_renamed(rest, renames))
+            if swapped is not None:
+                lines[i] = f'{key}:{swapped}'
+                moved.append(key)
+            continue
+        for j in _block_items(lines, i + 1, close_i):
+            # The bullet is the first `-`, so a dashed id cannot be split on.
+            indent, _, item = lines[j].partition('-')
+            swapped = _token_renamed(item, renames)
+            if swapped is not None:
+                lines[j] = f'{indent}-{swapped}'
+                moved.append(key)
+    return '\n'.join(lines), tuple(dict.fromkeys(moved))
+
+
+def _token_renamed(raw: str, renames: Mapping[str, str]) -> str | None:
+    """One token, renamed in place; None when `renames` does not name it."""
+    value = _without_trailing_comment(raw).strip()
+    new = renames.get(unquote(value))
+    if new is None:
+        return None
+    quote = value[0] if value[:1] in ('"', "'") else ''
+    return raw.replace(value, f'{quote}{new}{quote}', 1)
+
+
+def _inline_renamed(rest: str, renames: Mapping[str, str]) -> str | None:
+    if '[' not in rest or ']' not in rest:
+        return None
+    head, tail = rest.index('[') + 1, rest.rindex(']')
+    parts = rest[head:tail].split(',')
+    swapped = [_token_renamed(p, renames) or p for p in parts]
+    if swapped == parts:
+        return None
+    return rest[:head] + ','.join(swapped) + rest[tail:]
 
 
 def sequence_defect(path: Path, key: str) -> str:
@@ -311,8 +390,8 @@ def set_fields(path: Path, updates: dict[str, str]) -> bool:
         text = read_raw(path)
     except (OSError, UnicodeDecodeError):
         return False
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
+    lines = split_lines(text)
+    bounds = fence_bounds(lines)
     if bounds is None:
         return False
     open_i, close_i = bounds
@@ -343,8 +422,8 @@ def set_list_field(path: Path, key: str, values: list[str]) -> bool:
         text = read_raw(path)
     except (OSError, UnicodeDecodeError):
         return False
-    lines = _split(text)
-    bounds = _fence_bounds(lines)
+    lines = split_lines(text)
+    bounds = fence_bounds(lines)
     if bounds is None:
         return False
     open_i, close_i = bounds

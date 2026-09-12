@@ -3,7 +3,7 @@ id: bg-the-storage-layers-privates-are-reached-from-outside-it
 kind: bug
 milestone: ms-the-tool-agrees-with-itself
 name: fourteen sites reach core/frontmatter's private names, and the gate only forbids re-binding them
-status: open
+status: closed
 caused_by: ft-the-module-says-what-it-does
 ---
 
@@ -61,3 +61,7 @@ which is the defect the feature's own M1 was.
 `core/walk.py`, `core/apply.py` and `core/spawn.py`. Their guards hold a different property — an
 allowlist of who may call, not a ban on reaching privates — and neither carries an exemption
 roster at all.
+
+## Close
+
+Fixed in 1a55d18 (2026-09-12), by ft-frontmatter-has-one-grammar-and-one-way-in.

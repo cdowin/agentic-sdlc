@@ -3,7 +3,7 @@ id: bg-the-hard-rule-numbers-are-an-api-nobody-states
 kind: bug
 milestone: "ms-the-tool-agrees-with-itself"
 name: the hard-rule numbers are a public API and CLAUDE.md does not say so
-status: open
+status: closed
 caused_by:
 changelog: none
 ---
@@ -36,3 +36,8 @@ the sentence, so the sentence cannot go stale.
 Then close #15 on GitHub. Its consequences 1–3 shipped in 0.6.0 and 0.8.0 (see its comments). This
 bug is consequence 4. The phase-specific preamble is the pool feature
 `ft-a-phase-declares-what-it-hands-an-agent`, and the closing comment names it.
+
+## Close
+
+Fixed in 071b249 (2026-09-12): one sentence under `## Hard rules`. Measured with
+`git grep -ioE 'rule [0-9]+' -- src tests tools | wc -l` = 539 citations (1425 tree-wide).

@@ -3,7 +3,7 @@ id: ft-frontmatter-has-one-grammar-and-one-way-in
 kind: feature
 milestone: "ms-the-tool-agrees-with-itself"
 name: frontmatter has one grammar and one way in
-status: planning
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []

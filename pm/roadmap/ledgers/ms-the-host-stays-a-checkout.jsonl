@@ -1,0 +1,3 @@
+{"ts":"2026-09-12T13:56:47Z","kind":"status","grain":"ms-the-host-stays-a-checkout","from":"planning","to":"building","branch":"milestone/0.11.1-the-host-stays-a-checkout"}
+{"ts":"2026-09-12T13:56:47Z","kind":"disposition","grain":"ms-the-host-stays-a-checkout","state":"building","answer":"none","branch":"milestone/0.11.1-the-host-stays-a-checkout"}
+{"ts":"2026-09-12T13:56:48Z","kind":"rung.leave","grain":"ms-the-host-stays-a-checkout","state":"building","answer":"none","next_rung":"release","next_checks":["tree-clean","on-milestone-branch","changelog-unreleased-nonempty","features-done","findings-resolved","version-sync","gate"],"next_actions":["make sdlc ARGS='release <version>'"],"have":[],"branch":"milestone/0.11.1-the-host-stays-a-checkout"}

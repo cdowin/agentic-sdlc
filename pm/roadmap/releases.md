@@ -13,6 +13,7 @@ order:
   - "ms-the-tool-agrees-with-itself"
   - "ms-the-ledger-is-a-stamp"
   - "ms-a-session-starts-knowing-what-it-can-do"
+  - "ms-the-host-stays-a-checkout"
 ---
 
 # The release plan

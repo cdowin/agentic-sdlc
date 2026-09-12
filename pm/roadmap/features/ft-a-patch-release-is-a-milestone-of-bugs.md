@@ -3,11 +3,11 @@ id: ft-a-patch-release-is-a-milestone-of-bugs
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a patch release is a milestone of bugs
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `ready-for milestone` and `release` accept a bug-only milestone (no features, at least one bound bug, all done) without `--force`, and `release`'s last `next:` line syncs the mainline.
 ---
 
 # a patch release is a milestone of bugs

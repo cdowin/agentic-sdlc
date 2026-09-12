@@ -3,11 +3,11 @@ id: ft-a-bare-host-is-named-at-session-start
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a bare host is named at session start
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `preflight` gains a fifth row, `repository`: `bare` (and that `git config core.bare false` restores it) when the checkout's shared git config has `core.bare = true` under a working tree, else `ok` or `unknown`.
 ---
 
 # a bare host is named at session start

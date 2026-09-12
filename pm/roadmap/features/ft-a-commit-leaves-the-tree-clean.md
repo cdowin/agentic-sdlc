@@ -3,11 +3,11 @@ id: ft-a-commit-leaves-the-tree-clean
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: a commit leaves the tree clean
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: Gate, test and verify rows land in the gitignored `<roadmap>/ledger.local.jsonl` (and `pm ledger record --gate` says so), so a commit whose hook runs the gates leaves the tree clean; re-run `pm init` to add the `.gitignore` line (#48).
 ---
 
 # a commit leaves the tree clean

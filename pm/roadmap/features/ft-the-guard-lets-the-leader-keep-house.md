@@ -3,11 +3,11 @@ id: ft-the-guard-lets-the-leader-keep-house
 kind: feature
 milestone: "ms-the-leader-finishes-the-job"
 name: the guard lets the leader keep house
-status: building
+status: reviewing
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: The git guard allows routine upkeep — `pull --ff-only`, `merge --ff-only <remote>/<branch>`, `branch -d`, `switch`/`switch -c`, `symbolic-ref <ref>`, `stash list` — and `agent-worktree.sh done` deletes a lane branch merged into the mainline and carries a lane's uncommitted `pm/roadmap/*.jsonl` rows to the main checkout (new header key `CARRY_ROWS`).
 ---
 
 # the guard lets the leader keep house

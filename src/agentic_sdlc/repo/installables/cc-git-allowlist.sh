@@ -7,9 +7,11 @@
 # `--amend` (cc-commit-pathspec.sh judges its paths); `push` bar a force or a
 # PROTECTED_BRANCHES destination; `merge` of a MERGE_BRANCHES branch; `config`
 # reads; `branch` and `tag` bar delete/move/force; `worktree list|prune`;
-# `remote` bar rewiring; `archive`; `init` only with a target outside this
-# repository; and any git whose `-C` leaves every checkout of this repository
-# (a scratch probe's). Blocked, each with its reason and the boring
+# `remote` bar rewiring; `archive` bar `-o`/`--remote`; and a scratch probe's
+# git: `init`, or any verb, whose every `-C` and init target is an ABSOLUTE path
+# outside every checkout of this repository (the hook's own, CLAUDE_PROJECT_DIR's
+# and cwd's) — never in a command that runs `ln` or sets a GIT_* location,
+# `--git-dir`, `--work-tree` or `--namespace`. Blocked, each with its reason and the boring
 # alternative: bisect, stash, reset, checkout, switch, restore, clean, rebase,
 # pull, and any subcommand named nowhere here. Only the command the agent TYPES
 # is read: git run inside a script or a make target — tools/dev/agent-worktree.sh's
@@ -47,18 +49,18 @@ HOOK_NAME="cc-git-allowlist.sh"
 
 # The payload, escaped by hand, so a row costs one fork rather than two.
 self_test_payload() {
-	local s="$2"
+	local s="$2" cwd="${3:-/}"
 	s="${s//\\/\\\\}"
 	s="${s//\"/\\\"}"
 	s="${s//$'\t'/\\t}"
 	s="${s//$'\n'/\\n}"
-	printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"/"}' "$1" "$s"
+	printf '{"tool_name":"%s","tool_input":{"command":"%s"},"cwd":"%s"}' "$1" "$s" "$cwd"
 }
 
-# case <hook> <want exit> <tool> <command> — a block must also name its alternative.
+# case <hook> <want exit> <tool> <command> [cwd] — a block must also name its alternative.
 self_test_case() {
 	local hook="$1" want="$2" tool="$3" line="$4" out rc=0 miss=""
-	out="$(self_test_payload "$tool" "$line" | bash "$hook" 2>&1)" || rc=$?
+	out="$(self_test_payload "$tool" "$line" "${5:-/}" | bash "$hook" 2>&1)" || rc=$?
 	if [ "$rc" != "$want" ]; then
 		miss="wanted exit $want, got $rc"
 	elif [ "$want" = 2 ]; then
@@ -80,19 +82,19 @@ self_test() {
 		return 1
 	fi
 	tmp="$(mktemp -d "${TMPDIR:-/tmp}/cc-git-allowlist-selftest.XXXXXX")"
-	stock="$tmp/stock.sh"
-	widened="$tmp/widened.sh"
+	# The copies sit in `repo`, and the table replays from its linked worktree `wt`: the bug's seat.
+	mkdir -p "$tmp/repo/.git/worktrees/wt" "$tmp/repo/sub" "$tmp/wt" "$tmp/scratch/.git"
+	printf 'gitdir: %s\n' "$tmp/repo/.git/worktrees/wt" >"$tmp/wt/.git"
+	printf '%s\n' "$tmp/wt/.git" >"$tmp/repo/.git/worktrees/wt/gitdir"
+	printf '../..\n' >"$tmp/repo/.git/worktrees/wt/commondir"
+	stock="$tmp/repo/stock.sh"
+	widened="$tmp/repo/widened.sh"
 	# The opening marker is split so this line is never mistaken for it.
 	awk 'BEGIN { opening = "--- project " "config (yours" }
 		!done && index($0, opening) { skip = 1; next }
 		skip && /^# ---+$/ { skip = 0; done = 1; next }
 		!skip { print }' "$0" >"$stock"
 	{ echo 'ALLOW_SUBCOMMANDS="stash"'; cat "$stock"; } >"$widened"
-	# The table replays from a linked worktree `wt` of a repository `repo`: the bug's own seat.
-	mkdir -p "$tmp/repo/.git/worktrees/wt" "$tmp/repo/sub" "$tmp/wt"
-	printf 'gitdir: %s\n' "$tmp/repo/.git/worktrees/wt" >"$tmp/wt/.git"
-	printf '%s\n' "$tmp/wt/.git" >"$tmp/repo/.git/worktrees/wt/gitdir"
-	printf '../..\n' >"$tmp/repo/.git/worktrees/wt/commondir"
 
 	# <want exit> <command>, one per line; the replay prints `<blocked> <allowed>`.
 	cat >"$tmp/corpus" <<'CORPUS'
@@ -144,6 +146,20 @@ self_test() {
 2 git init -q ../repo/sub
 2 git -C ../repo init
 2 git -C ../repo stash
+2 GIT_DIR=/r/.git/worktrees/x git init -q /tmp/zz
+2 git -C /tmp --git-dir=/r/.git --work-tree=/r reset --hard
+2 env GIT_WORK_TREE=/r git -C /tmp/x reset --hard
+2 git --namespace x -C /tmp/x reset --hard
+2 GIT_INDEX_FILE=/r/.git/index git -C /tmp/x reset
+2 cd src && git -C .. reset --hard
+2 cd .claude && git -C .. init
+2 git -C ~/scratch init -q
+2 git init -q ~/scratch
+2 git -C /tmp -C src reset --hard
+2 ln -s /r /tmp/l && git -C /tmp/l reset --hard
+2 git archive -o /r/.git/config HEAD
+2 git archive --output=x.tar HEAD
+2 git archive --remote=origin HEAD
 # Allowed: the flow itself, the reads, the kit's own tools, and git named as data.
 0 git add src/x.py tests/test_x.py
 0 git commit -m "feat: x" -- src/x.py
@@ -212,6 +228,11 @@ EOF
 git status
 EOF
 git stash" && blocked=$((blocked + 1)) || rc=1
+	# "This repository" is the hook's own checkout too, wherever a `cd` left cwd.
+	self_test_case "$stock" 2 Bash "git -C $tmp/repo reset --hard" "$tmp/scratch" && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" "$tmp/scratch" && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 2 Bash "git -C $tmp/wt init -q" / && blocked=$((blocked + 1)) || rc=1
+	self_test_case "$stock" 0 Bash "git -C /tmp/x init -q" / && allowed=$((allowed + 1)) || rc=1
 	# Only a Bash call is judged.
 	self_test_case "$stock" 0 Edit "git stash" && allowed=$((allowed + 1)) || rc=1
 	# The header is what widens the list, and it widens only what it names.
@@ -234,7 +255,7 @@ git stash" && blocked=$((blocked + 1)) || rc=1
 # segment, so `cd x && git stash` and `$(git stash)` are both seen. A word it
 # cannot know (`$BRANCH`) is never guessed at: it ALLOWS. Prints the block
 # message, or nothing; every exception is nothing.
-# argv: ALLOW_SUBCOMMANDS PROTECTED_BRANCHES MERGE_BRANCHES [--corpus]
+# argv: ALLOW_SUBCOMMANDS PROTECTED_BRANCHES MERGE_BRANCHES HOOK_DIR [--corpus]
 # shellcheck disable=SC2016  # the python source stays literal
 ANALYZER='
 import fnmatch, json, os, re, sys
@@ -242,6 +263,8 @@ import fnmatch, json, os, re, sys
 ALLOW = set(sys.argv[1].split())
 PROTECTED = set(sys.argv[2].split())
 MERGEABLE = sys.argv[3].split()
+HOOK_DIR = sys.argv[4]
+REDIRECTS = ("GIT_DIR=", "GIT_WORK_TREE=", "GIT_COMMON_DIR=", "GIT_INDEX_FILE=", "--git-dir", "--work-tree", "--namespace")
 OPAQUE = "__OPAQUE__"
 OPENER = re.compile(r"(?<!<)<<(?!<)-?\s*([\x27\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 OPS = ";&|()<>\n"
@@ -290,7 +313,9 @@ REMOTE = ("rewires where this repository fetches from and pushes to",
 MERGE_NOTHING = ("names no branch, so it merges whatever the upstream config says",
                  "name it — `git merge <milestone-branch>`")
 INIT = ("with no target outside this repository it re-initialises a checkout of it, and in a linked worktree that writes `core.bare = true` into the config every checkout shares",
-        "build a scratch repository by explicit path, in one command — `git -C <scratch> init -q && git -C <scratch> add -A`")
+        "build a scratch repository by absolute path, in one command — `git -C /abs/scratch init -q && git -C /abs/scratch add -A`")
+ARCHIVE = ("writes the archive to a path, or reads another repository",
+           "stream it — `git archive HEAD | tar -x -C /abs/scratch`")
 
 
 def tokens(text):
@@ -365,7 +390,7 @@ def segments(command):
         yield current
 
 
-def git_call(words):
+def command_word(words):
     i, n = 0, len(words)
     while i < n:
         if words[i] == "timeout":
@@ -381,7 +406,13 @@ def git_call(words):
             i += 1
         else:
             break
-    if i >= n or words[i].rsplit("/", 1)[-1] != "git":
+    return i, (words[i].rsplit("/", 1)[-1] if i < n else "")
+
+
+def git_call(words):
+    i, name = command_word(words)
+    n = len(words)
+    if name != "git":
         return None
     i, cdirs = i + 1, []
     while i < n and words[i].startswith("-"):
@@ -428,13 +459,23 @@ def checkouts(cwd):
     return sorted(found)
 
 
-def outside(cwd, parts):
-    """True when `-C`/target `parts` resolve outside every checkout of cwd\x27s repository."""
-    if not parts or any(unknowable(p) for p in parts):
+def repo_roots(cwd, segs):
+    """This repository: the hook\x27s own checkout, CLAUDE_PROJECT_DIR\x27s and cwd\x27s, each with
+    every checkout it shares a repository with. None at all when the command redirects git
+    (a GIT_* location, --git-dir, --work-tree, --namespace) or makes a link, so no `-C` is exempt."""
+    for words in segs:
+        if command_word(words)[1] == "ln" or any(w.startswith(REDIRECTS) for w in words):
+            return []
+    anchors = [HOOK_DIR, os.environ.get("CLAUDE_PROJECT_DIR", ""), cwd]
+    return sorted({r for a in anchors if a for r in checkouts(a)})
+
+
+def outside(parts, roots):
+    """True when every part is an absolute literal path and they land outside every root."""
+    if not parts or not roots or not all(p.startswith("/") and not unknowable(p) for p in parts):
         return False
-    roots = checkouts(cwd)
-    target = os.path.realpath(os.path.join(cwd, *[os.path.expanduser(p) for p in parts]))
-    return bool(roots) and not any(target == r or target.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
+    target = os.path.realpath(os.path.join(*parts))
+    return not any(target == r or target.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
 
 
 def split_args(args, long_values=(), short_values=""):
@@ -539,23 +580,25 @@ JUDGES = {"commit": commit, "push": push, "merge": merge, "config": config,
           "branch": branch, "tag": tag, "worktree": worktree, "remote": remote}
 
 
-def init(args, cdirs, cwd):
+def init(args, cdirs, roots):
     _, pos, _ = split_args(args, ("--template", "--separate-git-dir", "--object-format", "--ref-format", "--initial-branch"), "b")
-    parts = cdirs + pos[:1]
-    if not parts:
-        return INIT
-    if any(unknowable(p) for p in parts) or outside(cwd, parts) or not checkouts(cwd):
-        return None
-    return INIT
+    return None if outside(cdirs + pos[:1], roots) else INIT
 
 
-def judge(sub, args, cdirs, cwd):
-    if unknowable(sub) or sub in ALLOW or sub == "archive" or "--help" in args:
+def archive(args):
+    opts, _, letters = split_args(args, ("--output", "--remote", "--format", "--prefix", "--exec", "--add-file"), "o")
+    return ARCHIVE if opts & {"--output", "--remote"} or "o" in letters else None
+
+
+def judge(sub, args, cdirs, roots):
+    if unknowable(sub) or sub in ALLOW or "--help" in args:
         return None
     if sub == "init":
-        return init(args, cdirs, cwd)
-    if outside(cwd, cdirs):
+        return init(args, cdirs, roots)
+    if outside(cdirs, roots):
         return None
+    if sub == "archive":
+        return archive(args)
     if sub in JUDGES:
         return JUDGES[sub](args)
     if sub in NAMED:
@@ -565,9 +608,11 @@ def judge(sub, args, cdirs, cwd):
 
 def verdict(command, cwd):
     try:
-        for words in segments(command):
+        segs = list(segments(command))
+        roots = repo_roots(cwd, segs)
+        for words in segs:
             found = git_call(words)
-            said = judge(*found, cwd) if found else None
+            said = judge(*found, roots) if found else None
             if said:
                 return "\n".join([
                     "BLOCKED (git allowlist): `git " + found[0] + "` — " + said[0] + ".",
@@ -610,10 +655,17 @@ def corpus():
     return 1 if missed else 0
 
 
-if sys.argv[4:] == ["--corpus"]:
+if sys.argv[5:] == ["--corpus"]:
     sys.exit(corpus())
 sys.stdout.buffer.write(payload().encode("utf-8"))
 '
+
+# This hook's own directory, without a fork: its checkout is "this repository" wherever cwd is.
+case "$0" in
+	/*) HOOK_DIR="${0%/*}" ;;
+	*/*) HOOK_DIR="$PWD/${0%/*}" ;;
+	*) HOOK_DIR="$PWD" ;;
+esac
 
 if [ "${1:-}" = "--self-test" ]; then
 	# Through `||`, so the fail-open ERR trap cannot turn a self-test failure into exit 0.
@@ -624,7 +676,7 @@ fi
 if [ "${1:-}" = "--self-test-replay" ]; then
 	# The corpus table on stdin, judged at THIS file's values; self_test runs it on the stock copy.
 	replay_rc=0
-	python3 -c "$ANALYZER" "$ALLOW_SUBCOMMANDS" "$PROTECTED_BRANCHES" "$MERGE_BRANCHES" --corpus || replay_rc=$?
+	python3 -c "$ANALYZER" "$ALLOW_SUBCOMMANDS" "$PROTECTED_BRANCHES" "$MERGE_BRANCHES" "$HOOK_DIR" --corpus || replay_rc=$?
 	exit "$replay_rc"
 fi
 
@@ -640,7 +692,7 @@ esac
 # Without python3 the guard yields rather than guess with regexes.
 command -v python3 >/dev/null 2>&1 || exit 0
 VERDICT="$(printf '%s' "$INPUT" | python3 -c "$ANALYZER" \
-	"$ALLOW_SUBCOMMANDS" "$PROTECTED_BRANCHES" "$MERGE_BRANCHES" 2>/dev/null || true)"
+	"$ALLOW_SUBCOMMANDS" "$PROTECTED_BRANCHES" "$MERGE_BRANCHES" "$HOOK_DIR" 2>/dev/null || true)"
 [ -n "$VERDICT" ] || exit 0   # allowed, not a Bash call, or unparseable → fail open
 
 printf '%s\n' "$VERDICT" >&2

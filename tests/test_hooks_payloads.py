@@ -63,10 +63,10 @@ def hooks_repo(tmp_path_factory) -> Path:
     return root
 
 
-def fire(root: Path, hook: str, command: str) -> int:
+def fire(root: Path, hook: str, command: str, cwd: str = '') -> int:
     event = json.dumps({'tool_name': 'Bash',
                         'tool_input': {'command': command},
-                        'cwd': str(root)})
+                        'cwd': cwd or str(root)})
     return subprocess.run(['bash', str(root / hook)], input=event,
                           text=True, capture_output=True).returncode
 
@@ -92,18 +92,30 @@ BLOCKED = (
     'git commit -am "sweep"',
     'git commit --all -m "sweep"',
     'git -C sub commit -m "sweep"',        # `-C` inside this repository
+    # pre-fix (bb81f46): false-ALLOWED — only an absolute `-C`, in a command
+    # that neither points git elsewhere nor makes a link, is a probe's
+    'cd src && git -C .. commit -am sweep',
+    'git -C ~/scratch commit -m sweep',
+    'git -C /tmp --git-dir=/r/.git --work-tree=/r commit -am sweep',
+    'GIT_DIR=/r/.git git -C /tmp/x commit -m sweep',
+    'ln -s /r /tmp/l && git -C /tmp/l commit -m sweep',
 )
 
 
 def test_pathspec_allows_every_path_naming_spelling_and_blocks_the_pathless(
-        hooks_repo):
-    """Fourteen rows, one case, both directions: a hook that blocks everything
+        hooks_repo, tmp_path):
+    """Twenty rows, one case, both directions: a hook that blocks everything
     and a hook that is disarmed are equally broken, and only the pair tells
-    them apart. A row that answers wrongly names itself."""
+    them apart. A row that answers wrongly names itself. The last row is the
+    hook's own checkout, from a scratch repo a `cd` moved cwd into (pre-fix:
+    allowed)."""
+    (tmp_path / '.git').mkdir()
     wrong = ([f'BLOCKED: {c}' for c in ALLOWED
               if fire(hooks_repo, PATHSPEC, c) != 0]
              + [f'allowed: {c}' for c in BLOCKED
-                if fire(hooks_repo, PATHSPEC, c) != 2])
+                if fire(hooks_repo, PATHSPEC, c) != 2]
+             + [f'allowed from scratch: {c}' for c in [f'git -C {hooks_repo} commit -am sweep']
+                if fire(hooks_repo, PATHSPEC, c, cwd=str(tmp_path)) != 2])
     assert not wrong, wrong
 
 

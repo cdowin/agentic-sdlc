@@ -272,8 +272,8 @@ class TheModeIsTheMilestones(unittest.TestCase):
             code, out, err = run('--grain', STORY)
         self.assertEqual(code, 0, err)
         self.assertNotIn(LOOP, out)
-        self.assertIn('serial: commit nothing — report your diff; the '
-                      'orchestrator commits by pathspec', out)
+        self.assertIn('-- <paths> — serial: on the milestone branch, your '
+                      'files only', out)
 
     def test_a_parallel_milestone_renders_the_loop_on_its_branch(self):
         with grain_tree() as root:
@@ -297,7 +297,7 @@ class TheModeIsTheMilestones(unittest.TestCase):
                      '-m "…" -- <paths>'):
             self.assertIn(line, out)
         self.assertNotIn('merge --no-ff', out)
-        self.assertNotIn('serial: commit nothing', out)
+        self.assertNotIn('serial: on the milestone branch', out)
         # `--mode` overrides the declaration, and serial is today's text.
         self.assertNotIn(LOOP, serial)
 

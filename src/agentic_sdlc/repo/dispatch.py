@@ -228,9 +228,8 @@ def _rules(mode: Mode) -> list[str]:
     from agentic_sdlc.repo.verify import rules
     story, milestone = _rung(rules.STORY), _rung(rules.MILESTONE)
     commit = ('commit only by pathspec: git add <paths>; git commit -m "…" '
-              '-- <paths>' if mode.parallel else
-              'serial: commit nothing — report your diff; the orchestrator '
-              'commits by pathspec')
+              '-- <paths>' + ('' if mode.parallel else
+                              ' — serial: on the milestone branch, your files only'))
     out = ['', 'THE GRAIN FILE IS THE BRIEF: build it; do not write a plan.',
            '', 'GIT AND SCOPE — the gates and hooks hold you to these:',
            '  never a repo-wide git command: no stash, reset, checkout -- ., '

@@ -60,9 +60,14 @@ GDK_SUM_TAIL   := { grep -aE '^\[[A-Za-z][A-Za-z:_-]*\] ' "$$log" || tail -1 "$$
 # Quiet capture, one verdict line, the command's own exit code. The fifth
 # argument prints how many things the run walked, for the ledger row and
 # `check budget`; guarded on `$(origin 5)` because of --warn-undefined-variables.
+# The run captures into `<slot>.<pid>` and renames it onto the slot at the end:
+# `$$log` in the summary, census and failure excerpt is THIS run's transcript,
+# never a slot a concurrent run of the same gate is appending to, and the slot
+# holds the last whole run to finish. Watch a run in flight at `<slot>.*`.
 define gdk_gate
 @set -o pipefail; . $(GDK_GATE_LIB); \
-log="$$(gdk_gate_log $(1))"; \
+slot="$$(gdk_gate_log $(1))"; log="$$slot.$$$$"; : > "$$log"; \
+gdk_on_exit 'rm -f -- "$$log"'; \
 gdk_gate_capture "$$log" -- $(4); \
 status="$$GDK_GATE_EXIT"; \
 summary="$$($(3))"; \
@@ -72,7 +77,8 @@ if [ "$$status" -ne 0 ]; then \
 		|| tail -$(GDK_GATE_FAIL_LINES) "$$log"; \
 	summary="FAIL (exit $$status) — $$summary"; \
 fi; \
-gdk_gate_verdict $(2) "$$summary" "$$log"; \
+mv -f -- "$$log" "$$slot"; \
+gdk_gate_verdict $(2) "$$summary" "$$slot"; \
 exit "$$status"
 endef
 
@@ -153,16 +159,19 @@ gdk-tiers-none-milestone:
 # `precommit` and `milestone` run `check` plus the declared tiers as the goals
 # of one sub-make inside a slot of their own name, so the ledger gets a row
 # for the whole target. Only the members reach the console: the composition's
-# own verdict line goes to its transcript. `make -n` still runs nothing.
+# own verdict line goes to its transcript. `make -n` still runs nothing. The
+# transcript is per run and renamed onto the slot, as in `gdk_gate`.
 # $(call gdk_composition,<log slot>,<TAG>,<goals...>)
 define gdk_composition
 @set -o pipefail; . $(GDK_GATE_LIB); \
-log="$$(gdk_gate_log $(1))"; verbose="$$VERBOSE"; \
+slot="$$(gdk_gate_log $(1))"; log="$$slot.$$$$"; : > "$$log"; \
+gdk_on_exit 'rm -f -- "$$log"'; verbose="$$VERBOSE"; \
 VERBOSE=1 gdk_gate_capture "$$log" -- env VERBOSE="$$verbose" $${MAKE:-make} $(3); \
 status="$$GDK_GATE_EXIT"; \
 summary="PASS ($(strip $(3)))"; \
 [ "$$status" -eq 0 ] || summary="FAIL (exit $$status) — $(strip $(3))"; \
-gdk_gate_verdict $(2) "$$summary" "$$log" >> "$$log"; \
+gdk_gate_verdict $(2) "$$summary" "$$slot" >> "$$log"; \
+mv -f -- "$$log" "$$slot"; \
 exit "$$status"
 endef
 

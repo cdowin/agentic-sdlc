@@ -13,11 +13,18 @@ same declaration the verb it describes reads — `[verify]`, `[checks]`,
 copied: copying puts a 163-line paste in every brief, and the answer is
 placement, not volume. Naming them is the rule 11 fix — the measured failure
 was not disobedience, it was no signal they existed.
+
+Re-measured in 0.9.0: `CLAUDE.md` DOES reach a dispatched agent now, and the
+rest of a declared contract (~32KB here) is mostly nothing a builder needs. So
+the preamble says `CLAUDE.md` is loaded, names the rest as reference, and
+inlines the handful of rules the gates and hooks hold a builder to.
 """
 from __future__ import annotations
 
+import re
 import shlex
 import sys
+from typing import NamedTuple
 
 from agentic_sdlc.core.config import (ConfigError, config_section,
                                       section_declared)
@@ -29,8 +36,15 @@ PROJECT_KEY = 'project'
 CONTRACTS_KEY = 'contracts'
 # The one `GDK_LEDGER_*` value no hook payload carries, so nothing exports it.
 LEDGER_GRAIN_ENV = 'GDK_LEDGER_GRAIN'
+# What the harness loads into every agent at spawn: named as loaded, not listed.
+AUTOLOADED = ('CLAUDE.md', '.claude/CLAUDE.md')
+# The worktree tool's installed name, the one `install-hooks` writes.
+WORKTREE_TOOL = 'agent-worktree.sh'
+# `agent-worktree.sh`'s `validate_slug`: what a branch suffix and a directory
+# name may both hold.
+_NOT_SLUG = re.compile(r'[^A-Za-z0-9._-]')
 
-USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>]
+USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>] [--mode serial|parallel]
 
   --grain <id>   name the grain in the preamble, with its status and document
                  path, so the agent's first read is the brief and not a guess —
@@ -38,6 +52,12 @@ USAGE = """usage: agentic-sdlc dispatch [--grain <id>] [--role <name>]
                  need, beside the `pm ledger record` line for its return
   --role <name>  name the role the brief is for; the header, and --agent-type
                  on the record line
+  --mode <m>     serial or parallel, overriding the `mode:` the grain's
+                 milestone declares (absent or empty is serial). Parallel
+                 renders the loop the AGENT owns: agent-worktree.sh new on the
+                 milestone's `branch:`, build, commit by pathspec, merge back,
+                 agent-worktree.sh done, report the merge hash. It needs a
+                 --grain whose milestone declares a `branch:`, or exit 2.
 
 Renders the contract preamble to STDOUT. Paste it at the top of a dispatch, or
 pipe it. It spawns nothing, reads no network and writes no file — the two
@@ -48,10 +68,12 @@ lists `make check` runs from [checks] all (or the stock roster) and [gates]
 extra, the state vocabulary from [pm.states.*] — so none of it is retyped and
 none of it can drift. Every command in it is spelled through the stock wiring,
 `make pm ARGS=…` or `make sdlc ARGS=…`, because that is what reaches the pin.
+So are the builder's git and scope rules, which follow the mode.
 
-WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files.
-They are named, never copied. A declared path that resolves to nothing is exit
-2: a preamble naming a file nobody can open is worse than one naming none."""
+WHAT IS POINTED AT is `[dispatch] contracts`, the project's own authored files:
+CLAUDE.md is named as already loaded, the rest as reference, never copied. A
+declared path that resolves to nothing is exit 2: a preamble naming a file
+nobody can open is worse than one naming none."""
 
 HELP_WORDS = ('-h', '--help', 'help')
 
@@ -121,18 +143,138 @@ def _escapes(value: str) -> str:
     return _escapes_checkout(value) or ''
 
 
+def _rung(name: str) -> str:
+    """One `[verify]` rung's command, or '' where none is declared."""
+    from agentic_sdlc.repo.verify import rules
+    if not section_declared(rules.SECTION):
+        return ''
+    return rules.read(config_section(rules.SECTION)).rung(name) or ''
+
+
 def _ladder() -> list[str]:
     """The rungs, from `[verify]` — the same reader `verify --plan` uses."""
     from agentic_sdlc.repo.verify import rules
     if not section_declared(rules.SECTION):
         return [f'  (no [{rules.SECTION}] declared — this project has no ladder)']
-    ladder = rules.read(config_section(rules.SECTION))
     out = []
     for name in rules.RUNGS:
-        command = ladder.rung(name)
+        command = _rung(name)
         out.append(f'  {name:<10} {command}' if command
                    else f'  {name:<10} (not declared)')
     return out
+
+
+class Mode(NamedTuple):
+    """What `mode:` the dispatch runs in, and what the parallel loop needs."""
+
+    parallel: bool
+    milestone: str = ''
+    branch: str = ''
+    declared: bool = False      # the milestone said so, not `--mode`
+
+
+def _mode(gid: str, override: str) -> Mode:
+    """The grain's milestone's `mode:`, READ — absent or empty is serial, a
+    word outside `MODES` is refused by name (rule 9) — unless `--mode` names
+    one. Parallel refuses without a `branch:` to base the worktree on: a loop
+    based on the default branch is the 0.8.0 failure this renders away."""
+    from agentic_sdlc.repo.pm import inventory, vocabulary
+    milestone = None
+    declared = ''
+    if gid:
+        cfg = vocabulary.load()
+        index = inventory.grain_index(cfg)
+        milestone = index.get(inventory.milestone_of(cfg, gid))
+        if milestone is not None:
+            declared = milestone.field(vocabulary.FIELD_MODE).strip()
+            if declared and declared not in vocabulary.MODES:
+                raise ConfigError(
+                    f'{cfg.rel(milestone.path)}: {vocabulary.FIELD_MODE}: '
+                    f'{declared!r} is not one of {", ".join(vocabulary.MODES)}'
+                    f' — absent or empty is {vocabulary.MODE_SERIAL}')
+    if (override or declared) != vocabulary.MODE_PARALLEL:
+        return Mode(False)
+    if not gid:
+        raise ConfigError('--mode parallel needs --grain <id>: the loop is '
+                          'rendered against the grain\'s milestone `branch:`')
+    if milestone is None:
+        raise ConfigError(f'--grain {gid!r} belongs to no milestone, so a '
+                          f'parallel loop has no `branch:` to base on')
+    branch = milestone.field('branch').strip()
+    if not branch:
+        set_it = vehicle.command('pm', 'set', milestone.gid, 'branch',
+                                 vehicle.Slot('<branch>'))
+        raise ConfigError(f'milestone {milestone.gid} declares no `branch:`, '
+                          f'so a parallel worktree has nothing to base on — '
+                          f'`{set_it}`')
+    return Mode(True, milestone.gid, branch, declared=not override)
+
+
+def _contract(contracts: tuple[str, ...]) -> list[str]:
+    """`CLAUDE.md` named as loaded, the rest as reference — never a reading
+    list: the harness already delivered the one, and the rest is volume."""
+    loaded = [c for c in contracts if c in AUTOLOADED]
+    rest = [c for c in contracts if c not in AUTOLOADED]
+    out = [f'{c} is already in your context: the harness loads it.'
+           for c in loaded]
+    if rest:
+        out.append('Reference, open when a question needs it: '
+                   + ', '.join(rest))
+    return out
+
+
+def _rules(mode: Mode) -> list[str]:
+    """The builder's git and scope rules, the ones the gates and hooks hold —
+    inlined because the documents that carry them are ~32KB of mostly else."""
+    from agentic_sdlc.repo.pm import vocabulary
+    from agentic_sdlc.repo.verify import rules
+    story, milestone = _rung(rules.STORY), _rung(rules.MILESTONE)
+    commit = ('commit only by pathspec: git add <paths>; git commit -m "…" '
+              '-- <paths>' if mode.parallel else
+              'serial: commit nothing — report your diff; the orchestrator '
+              'commits by pathspec')
+    out = ['', 'THE GRAIN FILE IS THE BRIEF: build it; do not write a plan.',
+           '', 'GIT AND SCOPE — the gates and hooks hold you to these:',
+           '  never a repo-wide git command: no stash, reset, checkout -- ., '
+           'restore, clean, bisect',
+           f'  {commit}']
+    try:
+        roadmap = vocabulary.load().roadmap_dir
+    except SystemExit:
+        roadmap = ''
+    if roadmap:
+        out.append(f'  never touch {roadmap.rstrip("/")}/ — the PM tree is the '
+                   f'orchestrator\'s')
+    rung = f'the story rung, `{story}`' if story else 'the narrowest rung below'
+    wide = f', never `{milestone}`' if milestone else ''
+    out.append(f'  verify with {rung} — a tier target, never a test file named '
+               f'by path{wide}')
+    return out
+
+
+def _loop(gid: str, mode: Mode) -> list[str]:
+    """The loop a parallel builder owns, end to end, against the milestone's
+    `branch:` — every command spelled, so nothing is improvised per dispatch.
+    `new` and `done` run from the main checkout, which is where the script
+    finds its worktrees; the merge lands in the checkout holding `branch:`."""
+    from agentic_sdlc.repo import install
+    tool = dict(install.PLANS['install-hooks'])[WORKTREE_TOOL]
+    root = shlex.quote(str(repo_root()))
+    slug = _NOT_SLUG.sub('-', gid)
+    branch = shlex.quote(mode.branch)
+    why = (f'milestone {mode.milestone} declares `mode: parallel`'
+           if mode.declared else '`--mode parallel`')
+    return ['', f'THE LOOP — {why}. You own it, end to end:',
+            f'  1. cd {root} && bash {tool} new {slug} {branch}',
+            '     it prints your worktree\'s path (work ONLY there) and names '
+            'your branch',
+            '  2. build; verify with the story rung; commit there by pathspec',
+            f'  3. git -C {root} branch --show-current    must print {branch}; '
+            f'anything else: stop and report',
+            f'  4. git -C {root} merge --no-ff --no-edit <your-branch>',
+            f'  5. cd {root} && bash {tool} done {slug}    refuses on '
+            f'uncommitted or unmerged work',
+            f'  6. report the merge hash: git -C {root} rev-parse HEAD']
 
 
 def _vocabulary() -> list[str]:
@@ -180,20 +322,22 @@ def _recording(gid: str, role: str) -> list[str]:
 
 
 def render(grain: str = '', role: str = '', *,
-           stock_gates: tuple[str, ...]) -> str:
+           stock_gates: tuple[str, ...], mode: str = '') -> str:
     """The preamble. `stock_gates` is what `check all` runs when `[checks]
     all` is undeclared, handed down by the router that owns the roster:
     `repo/` reaching up for it is the import `test_boundaries.py` refuses."""
     project, contracts = settings()
+    named = _grain(grain) if grain else []
+    chosen = _mode(grain, mode)
     who = f' — for: {role}' if role else ''
-    out = [f'=== PROJECT CONTRACT{who} ===', '', project, '',
-           'READ THESE BEFORE YOUR FIRST EDIT. They are this project\'s own '
-           'rules and',
-           'they are enforceable — the gates below fail on them:']
-    out += [f'  {path}' for path in contracts]
+    out = [f'=== PROJECT CONTRACT{who} ===', '', project, '']
+    out += _contract(contracts)
+    out += _rules(chosen)
     if grain:
-        out += ['', 'THE GRAIN YOU ARE WORKING ON:'] + _grain(grain)
+        out += ['', 'THE GRAIN YOU ARE WORKING ON:'] + named
         out += _recording(grain, role)
+        if chosen.parallel:
+            out += _loop(grain, chosen)
     out += ['', 'THE LADDER — never run a rung wider than what you changed:']
     out += _ladder()
     out += ['', 'STATIC GATES — `make check` runs the devkit gates, then this '
@@ -245,26 +389,28 @@ def main(argv: list[str], stock_gates: tuple[str, ...]) -> int:
     if argv and argv[0] in HELP_WORDS:
         print(USAGE)
         return 0
-    grain = role = ''
+    from agentic_sdlc.repo.pm import vocabulary
+    given = {'--grain': '', '--role': '', '--mode': ''}
     rest = list(argv)
     while rest:
         flag = rest.pop(0)
-        if flag in ('--grain', '--role'):
+        if flag in given:
             if not rest:
                 print(f'agentic-sdlc dispatch: {flag} needs a value',
                       file=sys.stderr)
                 return 2
-            value = rest.pop(0)
-            if flag == '--grain':
-                grain = value
-            else:
-                role = value
+            given[flag] = rest.pop(0)
             continue
         print(f'agentic-sdlc dispatch: unexpected argument {flag!r}',
               file=sys.stderr)
         return 2
+    if given['--mode'] and given['--mode'] not in vocabulary.MODES:
+        print(f'agentic-sdlc dispatch: --mode {given["--mode"]!r} is not one '
+              f'of {", ".join(vocabulary.MODES)}', file=sys.stderr)
+        return 2
     try:
-        print(render(grain, role, stock_gates=stock_gates))
+        print(render(given['--grain'], given['--role'],
+                     stock_gates=stock_gates, mode=given['--mode']))
     except ConfigError as err:
         print(f'agentic-sdlc dispatch: {err}', file=sys.stderr)
         return 2

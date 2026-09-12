@@ -18,7 +18,7 @@ import unittest
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from support.pm import run_cli, tree as pm_tree
+from support.pm import run_cli, run_gate, tree as pm_tree
 
 from agentic_sdlc.cli import stock_roster
 from agentic_sdlc.core.project import load_config, repo_root
@@ -105,15 +105,33 @@ class ThePreambleIsRenderedNotRetyped(unittest.TestCase):
                           f'(the stock roster', out)
             self.assertIn('[gates] extra  (none declared)', out)
             self.assertNotIn('agentic-sdlc check', out)
+            # The builder's rules, inlined and DERIVED: the story rung and the
+            # full gate from `[verify]`, the tree from `[pm] roadmap_dir`.
+            self.assertIn('THE GRAIN FILE IS THE BRIEF: build it; do not '
+                          'write a plan.', out)
+            self.assertIn('no stash, reset, checkout -- ., restore, clean', out)
+            self.assertIn('never touch pm/roadmap/', out)
+            self.assertIn('the story rung, `make unit` — a tier target, never '
+                          'a test file named by path, never `make milestone`',
+                          out)
 
     def test_the_contract_is_POINTED_AT_and_never_copied(self):
         """The whole placement argument. A 163-line paste in every brief is the
-        volume this milestone rejected; naming the file is the rule 11 fix."""
-        with tree(contracts={'RULES.md': 'SECRET-CONTRACT-BODY\n' * 40}):
+        volume this milestone rejected; naming the file is the rule 11 fix.
+        And CLAUDE.md, which the harness already loaded, is not a reading list
+        item at all (0.9.0): the rest is reference, never required reading."""
+        config = ('[dispatch]\nproject = "p"\n'
+                  'contracts = ["CLAUDE.md", "RULES.md"]\n')
+        with tree(config=config,
+                  contracts={'CLAUDE.md': '# c', 'RULES.md':
+                             'SECRET-CONTRACT-BODY\n' * 40}):
             code, out, _ = run()
             self.assertEqual(code, 0)
-            self.assertIn('RULES.md', out)
+            self.assertIn('CLAUDE.md is already in your context', out)
+            self.assertIn('Reference, open when a question needs it: '
+                          'RULES.md\n', out)
             self.assertNotIn('SECRET-CONTRACT-BODY', out)
+            self.assertNotIn('READ THESE', out)
 
     def test_the_ladder_follows_the_declaration_rather_than_a_copy(self):
         """THE PROBE for the property this feature exists to hold: change the
@@ -203,6 +221,77 @@ class TheDispatchCanBeRECORDED(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn('ledger record', out)
         self.assertNotIn('GDK_LEDGER_GRAIN', out)
+
+
+LOOP = 'THE LOOP'
+
+
+class TheModeIsTheMilestones(unittest.TestCase):
+    """0.8.0 hand-wrote ~25 briefs, and a harness worktree based every
+    parallel builder on the default branch. The milestone declares `mode:`;
+    under parallel the loop the agent owns is RENDERED on its `branch:`."""
+
+    def test_the_architect_brief_passes_the_output_verbatim(self):
+        from agentic_sdlc.repo import install
+        self.assertIn('Pass its output verbatim; add only what the grain file '
+                      'cannot know.', install.body_of('architect.md'))
+
+    def test_serial_is_the_default_and_renders_no_loop(self):
+        with grain_tree():
+            code, out, err = run('--grain', STORY)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn(LOOP, out)
+        self.assertIn('serial: commit nothing — report your diff; the '
+                      'orchestrator commits by pathspec', out)
+
+    def test_a_parallel_milestone_renders_the_loop_on_its_branch(self):
+        with grain_tree() as root:
+            self.assertEqual(run_cli(root, 'set', '0.1', 'branch',
+                                     'milestone/0.1')[0], 0)
+            _, gate_before = run_gate(root)
+            self.assertEqual(run_cli(root, 'set', '0.1', 'mode',
+                                     'parallel')[0], 0)
+            # `check pm` takes the field as it takes any other.
+            self.assertEqual(run_gate(root)[1], gate_before)
+            code, out, err = run('--grain', STORY)
+            _, serial, _ = run('--grain', STORY, '--mode', 'serial')
+            main = str(repo_root())
+        self.assertEqual(code, 0, err)
+        self.assertIn('milestone 0.1 declares `mode: parallel`', out)
+        slug = '0.1-alpha-s0'    # the id, spelled as agent-worktree takes it
+        for line in (f'cd {main} && bash tools/dev/agent-worktree.sh new '
+                     f'{slug} milestone/0.1',
+                     f'git -C {main} branch --show-current    must print '
+                     f'milestone/0.1',
+                     f'git -C {main} merge --no-ff --no-edit <your-branch>',
+                     f'cd {main} && bash tools/dev/agent-worktree.sh done '
+                     f'{slug}',
+                     f'report the merge hash: git -C {main} rev-parse HEAD',
+                     'commit only by pathspec: git add <paths>; git commit '
+                     '-m "…" -- <paths>'):
+            self.assertIn(line, out)
+        self.assertNotIn('serial: commit nothing', out)
+        # `--mode` overrides the declaration, and serial is today's text.
+        self.assertNotIn(LOOP, serial)
+
+    def test_a_mode_it_cannot_honour_is_exit_2_by_name(self):
+        """Rule 9: a malformed declaration is refused while READING, and a
+        parallel loop with no `branch:` would base on the default branch —
+        the 0.8.0 failure, rendered."""
+        refusals = (('no branch', ('--grain', STORY, '--mode', 'parallel'),
+                     'declares no `branch:`'),
+                    ('no grain', ('--mode', 'parallel'), 'needs --grain'),
+                    ('bad flag', ('--grain', STORY, '--mode', 'wat'),
+                     "--mode 'wat'"),
+                    ('bad field', ('--grain', STORY),
+                     "mode: 'both' is not one of serial, parallel"))
+        with grain_tree() as root:
+            for why, argv, said in refusals:
+                if why == 'bad field':
+                    run_cli(root, 'set', '0.1', 'mode', 'both')
+                code, out, err = run(*argv)
+                self.assertEqual((code, out), (2, ''), why)
+                self.assertIn(said, err, why)
 
 
 class TheDeclarationIsRefusedByName(unittest.TestCase):

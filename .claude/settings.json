@@ -45,6 +45,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash tools/hooks/cc-session-preflight.sh"
+          }
+        ]
+      }
     ]
   }
 }

@@ -124,6 +124,10 @@ grain             building_s  reviewing_s  fixed_s  closed_s  open_s  open_state
     0.1/alpha/s1           -            -        -         -       -  -
   0.1/bugs/crash           -            -       30        30       -  -
 
+-- gate (0)
+
+-- rows this section could not use (0)
+
    11 row(s) this milestone owns: dispatch 2, stamp 4, status 5 — by grain; no `branch:` declared, so no row naming no grain is placed here by branch
    1 stamp row(s) pair with nothing — a stop with no open start on its grain, or an edge that is neither; counted in no unit
    superseded spend: 1 row(s), 700 token(s) in this milestone's ledger naming a grain it does not hold: 0.1/alpha/gone
@@ -157,9 +161,9 @@ def test_the_seeded_ledger_produces_this_exact_json_object():
     assert code == 0, out
     assert len(out.strip().splitlines()) == 1, out
     data = json.loads(out)
-    assert sorted(data) == ['agents', 'branch', 'clock', 'grains', 'joined',
-                            'milestone', 'no_grain', 'owned', 'superseded',
-                            'units', 'unpaired']
+    assert sorted(data) == ['agents', 'branch', 'clock', 'gates', 'grains',
+                            'joined', 'milestone', 'no_grain', 'owned',
+                            'superseded', 'units', 'unpaired']
     assert data['units'][1] == {
         'unit': 2, 'grain': STORY, 'issue': ['#41'], 'agent': 'developer',
         'start': '2026-09-03T10:00:30Z', 'stop': '2026-09-03T10:09:00Z',

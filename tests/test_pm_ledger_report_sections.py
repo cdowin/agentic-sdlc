@@ -228,36 +228,50 @@ def test_which_unit_a_row_is_on_is_read_off_the_row(fields, rel, placed,
 COURIER = 'agent-7f'
 
 
-@pytest.mark.parametrize('hand_id, joined, units', [
-    # The pair: ONE unit, on the hand row's grain, with the courier's
-    # measured duration.
-    (COURIER, 1, [(A_S1, 60)]),
+@pytest.mark.parametrize('hand_id, branch, joined, units, elsewhere', [
+    # The pair: ONE unit, on the hand row's grain and outcome, with the
+    # courier's measured duration and issue — and nowhere else: not the
+    # tree's grainless dispatch, which the courier alone would be.
+    (COURIER, None, 1, [(A_S1, 60, 'landed', ['#41'])], (0, 0)),
+    # The courier on ANOTHER milestone's branch, in the tree's ledger that
+    # milestone reads too: still one unit, in the milestone the hand names.
+    (COURIER, 'milestone/0.2', 1, [(A_S1, 60, 'landed', ['#41'])], (0, 0)),
     # An id no courier row carries joins nothing: the hand row is a unit on
     # its grain, and the courier — naming no grain — is the tree's.
-    ('agent-other', 0, [(A_S1, None)]),
+    ('agent-other', None, 0, [(A_S1, None, 'landed', [])], (0, 1)),
 ])
-def test_a_hand_record_joins_its_courier_twin_by_agent_id(hand_id, joined,
-                                                          units):
+def test_a_hand_record_joins_its_courier_twin_by_agent_id(hand_id, branch,
+                                                          joined, units,
+                                                          elsewhere):
     """The courier files a grainless row when no one story is building, and
     the documented remedy, `pm ledger record --grain`, appended a SECOND.
     Joined on `agent_id` and nothing else — never on matching numbers, which
-    is a guess from coincidence (rule 9)."""
+    is a guess from coincidence (rule 9). The join is over every ledger in
+    the tree, so no other report counts the pair a second time."""
+    courier = json.loads(dispatch_line(
+        '2026-09-03T12:00:00Z', agent_id=COURIER, messages=4, tool_calls=9,
+        duration_s=60, usage={'output': 70}, issue=['#41']))
     with tree(feature_status='done', story_statuses=('done', 'ready')) as root:
-        put_ledger(root,
-                   dispatch_line('2026-09-03T12:00:00Z', agent_id=COURIER,
-                                 messages=4, tool_calls=9, duration_s=60,
-                                 usage={'output': 70}),
+        write(root / 'pm/roadmap/milestones/0.2.md',
+              {'id': f'"{SECOND}"', 'kind': 'milestone', 'name': 'Next',
+               'status': 'planning', 'branch': 'milestone/0.2'})
+        put_ledger(root, json.dumps({**courier, **({'branch': branch}
+                                                   if branch else {})}),
                    rel=ROOT_LEDGER)
         code, said = run_cli(root, 'ledger', 'record', '--grain', A_S1,
                              '--agent-id', hand_id, '--tool-calls', '8',
-                             '--tokens-total', '500')
+                             '--tokens-total', '500', '--outcome', 'landed')
         assert code == 0, said
         code, out = report(root, '0.1')
         assert code == 0, out
         data = json.loads(report(root, '0.1', '--json')[1])
-    assert [(u['grain'], u['duration']) for u in data['units']] == units
+        other = json.loads(report(root, SECOND, '--json')[1])
+        tree_rows = json.loads(report(root, '--tree', '--json')[1])['rows']
+    assert [(u['grain'], u['duration'], u['outcome'], u['issue'])
+            for u in data['units']] == units
     # Counted, and a zero is printed as a zero (rule 11).
     assert f'   {joined} courier/hand pair(s) joined by agent_id' in out, out
+    assert (len(other['units']), tree_rows.get('dispatch', 0)) == elsewhere
 
 
 # --- the tree's report: `--tree` ----------------------------------------------
@@ -657,11 +671,14 @@ class TestTwoMilestonesSideBySide:
                  'agent_type': 'scout', 'tokens_total': 900})),
                 rel=ROOT_LEDGER)
             code, out = compare(root, '--json')
+            own = json.loads(report(root, '0.1', '--json')[1])
         assert code == 0, out
         data = json.loads(out)
         tree_gates = [g['gate'] for g in data['tree']['gates']['gates']]
-        # The row on `main` is the tree's; the row on 0.1's branch is not.
+        # The row on `main` is the tree's; the row on 0.1's branch is 0.1's,
+        # in 0.1's own gate table — every gate row in exactly one table.
         assert tree_gates == ['unit'], data['tree']
+        assert [g['gate'] for g in own['gates']['gates']] == ['lint'], own
         units = next(b for b in data['blocks'] if b['block'] == 'units')
         rows = {r['milestone']: r['rows'] for r in units['rows']}
         # The seeded 0.1 ledger's 11 placed rows (its session row names no

@@ -447,7 +447,9 @@ way. `pm config --seed` shows the whole declaration with an example.
                                            --tree reports the rows NO milestone
                                            owns — gate runs on `main`, rows on a
                                            branch no milestone declares — once,
-                                           under its own heading.
+                                           under its own heading. A milestone
+                                           prints the same gate tables over the
+                                           gate runs on its own branch.
                                            MORE THAN ONE MILESTONE ID COMPARES
                                            THEM: every block below gets one row per
                                            milestone and a `delta` row, `last -
@@ -3000,7 +3002,8 @@ def cmd_ledger_report(cfg: vocabulary.PmConfig, args: list[str]) -> int:
         path = src.ledger_for(cfg, mid)
         own, root_rows = _report_rows(cfg, src, path)
         data = (report.clock_report(cfg, mid, mdir, own + root_rows, src, focus)
-                if focus else report.build(cfg, mid, mdir, own, root_rows, src))
+                if focus else report.build(cfg, mid, mdir, own, root_rows, src,
+                                           _twins(cfg, src)))
     except report.GitError as err:
         # Every git refusal, one exit code: a bad rev carries git's own words,
         # a missing path names the path.
@@ -3032,6 +3035,19 @@ def _report_rows(cfg: vocabulary.PmConfig, src: report.Source,
         raise Usage(f'{err}') from err
 
 
+def _twins(cfg: vocabulary.PmConfig, src: report.Source) -> dict | None:
+    """`report.twin_index` over EVERY ledger in the tree, so a courier row and
+    its hand twin in two files are one dispatch in one report. None at a rev,
+    whose ledgers are not today's: `--from` joins within the two it reads."""
+    if src.rev:
+        return None
+    try:
+        return report.twin_index(row.data for path in ledger.ledger_paths(cfg)
+                                 for row in ledger.read_rows(path))
+    except ledger.LedgerError as err:
+        raise Usage(f'{err}') from err
+
+
 def _tree_document(cfg: vocabulary.PmConfig) -> dict:
     """The tree's report: its root rows less every row a milestone in the
     tree claims — by grain, or by the `branch:` it declares."""
@@ -3044,7 +3060,7 @@ def _tree_document(cfg: vocabulary.PmConfig) -> dict:
         root_rows = src.ledger_rows(ledger.grainless_path(cfg.roadmap))
     except ledger.LedgerError as err:
         raise Usage(f'{err}') from err
-    return report.tree_data(root_rows, claims)
+    return report.tree_data(root_rows, claims, _twins(cfg, src))
 
 
 def _report_milestone_dir_at(cfg: vocabulary.PmConfig, src: report.GitSource,
@@ -3158,6 +3174,7 @@ def _ledger_compare(cfg: vocabulary.PmConfig, ids: list[str],
     basis = report.ORDER_PLAN if planned else report.ORDER_GIVEN
     documents: list[tuple[str, dict]] = []
     missing: list[str] = []
+    twins = _twins(cfg, src)
     for gid in (sorted(ids, key=order.index) if planned else ids):
         mdir = handles[gid]
         mid = _ledger_id(src.milestone_doc(mdir), mdir.stem, src)
@@ -3166,7 +3183,7 @@ def _ledger_compare(cfg: vocabulary.PmConfig, ids: list[str],
         if not src.is_file(path):
             missing.append(mid)
         documents.append((mid, report.build(cfg, mid, mdir, own, root_rows,
-                                            src)))
+                                            src, twins)))
     data = report.compare_data(cfg, documents, basis, _tree_document(cfg))
     if as_json:
         print(json.dumps(data, ensure_ascii=False))

@@ -3,9 +3,9 @@ id: bg-an-unknown-agent-type-is-recorded-as-a-dispatch
 kind: bug
 milestone: ms-the-ledger-is-a-stamp
 name: an unknown agent type is recorded as a dispatch
-status: open
+status: closed
 caused_by:
-changelog: An agent type outside the installed roster is refused by name instead of recorded: `--by agent <type>` resolves against a roster the code is asked for, so a typo can no longer reach the ledger and be totalled in `pm ledger report`'s per-actor block.
+changelog: An agent type outside the roster (the `install-agents` definitions plus the project's `.claude/agents/*.md`) is refused by name at exit 2 on `--by agent <type>` and `pm ledger record --grain … --agent-type`.
 ---
 
 # an unknown agent type is recorded as a dispatch

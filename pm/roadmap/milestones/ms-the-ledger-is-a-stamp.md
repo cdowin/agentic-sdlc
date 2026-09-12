@@ -2,7 +2,7 @@
 id: "ms-the-ledger-is-a-stamp"
 kind: milestone
 name: the ledger is a stamp
-status: planning
+status: building
 depends_on: ["ms-the-tool-agrees-with-itself"]
 branch: milestone/0.10.0-the-ledger-is-a-stamp
 version: 0.10.0
@@ -16,6 +16,7 @@ order:
   - "ft-a-dispatch-row-carries-its-outcome"
   - "bg-an-unknown-agent-type-is-recorded-as-a-dispatch"
   - "bg-two-gate-runs-share-one-log-and-inflate-its-census"
+mode: parallel
 ---
 
 # 0.10.0 — the ledger is a stamp

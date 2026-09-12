@@ -3,11 +3,11 @@ id: ft-the-flow-is-boring-by-construction
 kind: feature
 milestone: "ms-the-ledger-is-a-stamp"
 name: the flow is boring by construction
-status: planning
+status: building
 reviewed:
 depends_on: []
 consumed_by: []
-changelog:
+changelog: `dispatch` reads a milestone's new `mode: serial|parallel` (or `--mode`) and under parallel renders the agent-owned worktree loop on its `branch:`; its preamble inlines the builder git and scope rules instead of a READ-THESE file list; `install-hooks` ships `cc-git-allowlist.sh` (refuses bisect/stash/reset/checkout/restore/clean/rebase/amend/force-push, each with the alternative) and `cc-agent-isolation.sh` (refuses `isolation: "worktree"`, naming `agent-worktree.sh`); the Stop gate names `check pm`'s CLOSE lines (`CLOSE_READY = inform|block`).
 ---
 
 # the flow is boring by construction

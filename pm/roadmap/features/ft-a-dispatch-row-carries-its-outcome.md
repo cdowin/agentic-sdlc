@@ -3,7 +3,7 @@ id: ft-a-dispatch-row-carries-its-outcome
 kind: feature
 milestone: ms-the-ledger-is-a-stamp
 name: a dispatch row carries its outcome, and spend rolls up by role
-status: planning
+status: building
 reviewed:
 depends_on: ["ft-work-is-stamped-with-its-issue-and-agent"]
 consumed_by: []

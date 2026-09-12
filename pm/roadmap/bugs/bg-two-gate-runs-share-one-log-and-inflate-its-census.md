@@ -3,9 +3,9 @@ id: bg-two-gate-runs-share-one-log-and-inflate-its-census
 kind: bug
 milestone: ms-the-ledger-is-a-stamp
 name: two concurrent make check runs share .gate-reports/check.log and the verdict counts 10 of a 5-gate roster
-status: open
+status: closed
 caused_by:
-changelog: none
+changelog: Two concurrent runs of one gate no longer share one transcript: each verdict counts only its own run, and `.gate-reports/<gate>.log` holds the last whole run to finish (a run in flight writes `<gate>.log.<pid>`).
 ---
 
 # two gate runs share one log and inflate its census

@@ -20,7 +20,7 @@ Cold-start only. Everything derivable is a command — never restate `pm status`
 ```bash
 git log --oneline <base>..HEAD    # the commit messages carry the arguments
 pm status <id>                    # every grain, its state, its story count
-pm ledger report                  # spend per grain, and what the gates cost
+pm ledger report                  # the units of work, and spend by agent
 pm validate                       # refs resolve; the tree is not contradicting itself
 make help                         # the authoritative target list
 verify --plan                     # the rungs, with the cost each last took

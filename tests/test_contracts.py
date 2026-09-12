@@ -36,7 +36,7 @@ SURFACES = {
     'vocabulary.FLOW_KINDS': 'test_every_grain_kind_reaches_the_tables_keyed_on_it',
     'config.pointer_escapes': 'test_no_caller_hand_rolls_its_own_escape_check',
     'cli.ROADMAP_COLUMNS': 'test_pm_roadmap_help_names_its_columns',
-    'report.CLOCK_COLUMNS': 'test_ledger_report_help_names_its_clock_and_actor_columns',
+    'report.UNIT_COLUMNS': 'test_ledger_report_help_names_its_unit_agent_and_clock_columns',
 }
 
 # The stamp every durable row sorts on. `'at'` is the spelling that shipped and
@@ -81,17 +81,24 @@ class TheRowsRoundTrip(unittest.TestCase):
         and never taught to the reader fails HERE rather than in a table
         somebody reads next month.
         """
-        # Routing and provenance: read by the walk, never a spend column.
+        # Routing and provenance: read by the walk (placement, the twin
+        # join), never a unit column.
         ROUTING = {'ts', 'kind', 'grain', 'session_id', 'agent_id',
-                   'agent_type', 'model', 'started_at', 'ended_at',
-                   'messages', 'tools', 'tool_calls_before_first_write',
-                   'usage', 'tree'}
-        rendered = set(report.SPEND_COLUMNS) | set(report.USAGE_LABELS.values())
+                   'messages', 'tree', report.BRANCH_FIELD}
+        # Deliberately unrendered since 0.10.0's stamp table: the measured
+        # split and its counts stay on the raw row, `ledger show --json`.
+        RAW = {'model', 'started_at', 'ended_at', 'tools', 'tool_calls',
+               'tool_calls_before_first_write', 'usage'}
+        # The row key each unit column of a dispatch unit reads.
+        UNIT = {'agent_type': report.AGENT_COLUMN,
+                'duration_s': report.DURATION_COLUMN,
+                ledger.TOTAL_KEY: report.TOKENS_COLUMN,
+                report.OUTCOME_FIELD: report.OUTCOME_COLUMN}
         for key in ledger.ROW_KEYS:
             with self.subTest(key=key):
                 self.assertTrue(
-                    key in ROUTING or key in rendered
-                    or report.USAGE_LABELS.get(key, key) in rendered,
+                    key in ROUTING or key in RAW
+                    or UNIT.get(key) in report.UNIT_COLUMNS,
                     f'{key!r} is in ledger.ROW_KEYS and the report neither '
                     f'renders nor routes it — a writer met no reader')
 
@@ -311,9 +318,10 @@ class EveryReadVerbsHelpNamesItsColumns(unittest.TestCase):
     def test_pm_roadmap_help_names_its_columns(self):
         self._named(pm_cli.ROADMAP_COLUMNS, self._help(pm_cli), 'pm roadmap')
 
-    def test_ledger_report_help_names_its_clock_and_actor_columns(self):
+    def test_ledger_report_help_names_its_unit_agent_and_clock_columns(self):
         text = self._help(pm_cli)
-        for columns in (report.CLOCK_COLUMNS, report.ACTOR_COLUMNS):
+        for columns in (report.UNIT_COLUMNS, report.AGENT_COLUMNS,
+                        report.CLOCK_COLUMNS):
             self._named(columns, text, 'pm ledger report')
 
     def test_pm_list_help_names_every_kinds_columns(self):
@@ -338,7 +346,8 @@ class EveryReadVerbsHelpNamesItsColumns(unittest.TestCase):
                              (pm_cli, 'ROADMAP_COLUMNS'),
                              (pm_cli, 'LIST_COLUMNS'),
                              (report, 'CLOCK_COLUMNS'),
-                             (report, 'ACTOR_COLUMNS')):
+                             (report, 'UNIT_COLUMNS'),
+                             (report, 'AGENT_COLUMNS')):
             with self.subTest(name=name):
                 self.assertTrue(getattr(module, name, None), name)
         self.assertGreater(len(self._help(pm_cli)), 2000,

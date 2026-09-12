@@ -638,9 +638,7 @@ VOCABULARIES = {
             # Printed COLUMN headers and payload keys — contract (rule 6), and
             # a different vocabulary that happens to share four words.
             'pm.cli': frozenset({'LIST_COLUMNS', 'ROADMAP_COLUMNS'}),
-            'pm.report': frozenset({'MILESTONE_KEY', 'FEATURE_COLUMN',
-                                    'STORY_COLUMN', 'BUG_COLUMN',
-                                    'BEFORE_WRITE_TITLE'}),
+            'pm.report': frozenset({'MILESTONE_KEY'}),
         }),
     'frontmatter field': Vocabulary(
         FIELD_WORDS, ('pm.vocabulary', 'FIELD_<NAME>'), FIELD_ARGUMENT,
